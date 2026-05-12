@@ -1,0 +1,31 @@
+---
+pid: 15060
+cwd: "C:\\Users\\Сергей"
+command: "powershell -NoProfile -Command \"$env:GH_PAGER='cat'; & 'C:\\Program Files\\GitHub CLI\\gh.exe' auth login --hostname github.com --git-protocol https --web 2>&1 | Select-Object -First 20\""
+started_at: 2026-05-12T06:55:00.697Z
+running_for_ms: 901804   
+---
+=cat : ��� "=cat" �� �ᯮ����� ��� ��� ���������, �㭪樨, 䠩�� �業��� ��� �믮��塞�� �ணࠬ��. �஢���� �ࠢ��
+쭮��� ����ᠭ�� �����, � ⠪�� ����稥 � �ࠢ��쭮��� ���, ��᫥ 祣� ������ ������.
+��ப�:1 ����:1
++ ='cat'; & 'C:\Program Files\GitHub CLI\gh.exe' auth login --hostname  ...
++ ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=cat:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+gh.exe : 
+��ப�:1 ����:9
++ ='cat'; & 'C:\Program Files\GitHub CLI\gh.exe' auth login --hostname  ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+! First copy your one-time code: 62EC-8270
+Open this URL to continue in your web browser: https://github.com/login/device
+failed to authenticate via web browser: context deadline exceeded
+
+---
+exit_code: 1
+elapsed_ms: 903799
+ended_at: 2026-05-12T07:10:04.496Z
+---
