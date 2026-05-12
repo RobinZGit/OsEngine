@@ -1,7 +1,0 @@
-GodMode
-False
-ПИК ао.txt
-Tester
-TestClass
-False
-Tester

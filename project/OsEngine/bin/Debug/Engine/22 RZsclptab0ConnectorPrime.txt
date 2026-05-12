@@ -1,7 +1,0 @@
-GodMode
-False
-RAGR.txt
-Tester
-TestClass
-False
-Tester

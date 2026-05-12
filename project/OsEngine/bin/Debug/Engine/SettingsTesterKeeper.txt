@@ -1,7 +1,0 @@
-futuresBol@FuturesStart1Bollinger@False@futuresBol
-futuresKelt@FuturesStart2Keltner@False@
-soliders@AlgoStart2Soldiers@False@
-pricechan@AlgoStart3PriceChannel@False@
-RZsclp@RZsclp@True@
-RzPrevailCandles@RzStrategByPrevailCandles@True@
-multiindicator@TrendMultiIndicatorScreener@True@

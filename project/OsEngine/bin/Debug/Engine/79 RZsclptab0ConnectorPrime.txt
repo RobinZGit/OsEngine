@@ -1,7 +1,0 @@
-GodMode
-False
-KAZTP.txt
-Tester
-TestClass
-False
-Tester

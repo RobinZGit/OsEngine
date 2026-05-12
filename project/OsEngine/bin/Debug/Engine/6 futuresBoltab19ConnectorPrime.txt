@@ -1,7 +1,0 @@
-GodMode
-False
-MNH9.txt
-Tester
-TestClass
-True
-Tester

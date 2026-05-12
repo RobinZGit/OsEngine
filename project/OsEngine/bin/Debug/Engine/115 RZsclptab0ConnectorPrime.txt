@@ -1,7 +1,0 @@
-GodMode
-False
-NMTP.txt
-Tester
-TestClass
-False
-Tester

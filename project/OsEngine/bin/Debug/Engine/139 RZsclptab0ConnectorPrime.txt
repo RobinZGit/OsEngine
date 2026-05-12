@@ -1,7 +1,0 @@
-GodMode
-False
-SELG.txt
-Tester
-TestClass
-False
-Tester

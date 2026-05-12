@@ -1,7 +1,0 @@
-GodMode
-False
-ЛСР ао.txt
-Tester
-TestClass
-False
-Tester

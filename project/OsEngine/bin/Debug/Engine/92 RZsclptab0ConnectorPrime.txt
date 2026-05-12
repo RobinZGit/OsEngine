@@ -1,7 +1,0 @@
-GodMode
-False
-LNZL.txt
-Tester
-TestClass
-False
-Tester

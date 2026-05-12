@@ -1,7 +1,0 @@
-GodMode
-False
-AFM5.txt
-Tester
-TestClass
-True
-Tester

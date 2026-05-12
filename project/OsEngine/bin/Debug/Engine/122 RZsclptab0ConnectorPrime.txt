@@ -1,7 +1,0 @@
-GodMode
-False
-OGKB.txt
-Tester
-TestClass
-False
-Tester

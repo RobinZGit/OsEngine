@@ -1,7 +1,0 @@
-GodMode
-False
-CNTLP.txt
-Tester
-TestClass
-False
-Tester

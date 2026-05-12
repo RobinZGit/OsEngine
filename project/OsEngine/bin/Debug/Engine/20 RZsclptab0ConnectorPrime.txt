@@ -1,7 +1,0 @@
-GodMode
-False
-PIKK.txt
-Tester
-TestClass
-False
-Tester

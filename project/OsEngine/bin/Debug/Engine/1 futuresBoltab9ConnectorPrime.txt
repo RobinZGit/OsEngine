@@ -1,7 +1,0 @@
-GodMode
-False
-LKH1.txt
-Tester
-TestClass
-False
-Tester

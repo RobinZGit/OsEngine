@@ -1,7 +1,0 @@
-GodMode
-False
-MNH3.txt
-Tester
-TestClass
-True
-Tester

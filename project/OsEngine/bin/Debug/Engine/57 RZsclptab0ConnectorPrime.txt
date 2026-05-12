@@ -1,7 +1,0 @@
-GodMode
-False
-DVEC.txt
-Tester
-TestClass
-False
-Tester

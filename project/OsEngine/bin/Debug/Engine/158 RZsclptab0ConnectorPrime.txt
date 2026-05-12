@@ -1,7 +1,0 @@
-GodMode
-False
-UFOSP.txt
-Tester
-TestClass
-False
-Tester

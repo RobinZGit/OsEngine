@@ -1,7 +1,0 @@
-GodMode
-False
-AFZ0.txt
-Tester
-TestClass
-True
-Tester

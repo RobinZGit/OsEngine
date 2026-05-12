@@ -1,7 +1,0 @@
-GodMode
-False
-AFU5.txt
-Tester
-TestClass
-True
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-APTK.txt
-Tester
-TestClass
-False
-Tester

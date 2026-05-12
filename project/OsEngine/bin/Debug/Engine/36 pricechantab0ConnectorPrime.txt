@@ -1,7 +1,0 @@
-GodMode
-False
-Татнфт 3ао.txt
-Tester
-TestClass
-False
-Tester

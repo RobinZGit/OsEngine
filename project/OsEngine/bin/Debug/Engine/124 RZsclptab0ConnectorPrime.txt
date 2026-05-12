@@ -1,7 +1,0 @@
-GodMode
-False
-OZON.txt
-Tester
-TestClass
-False
-Tester

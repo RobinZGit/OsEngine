@@ -1,7 +1,0 @@
-GodMode
-False
-Аэрофлот.txt
-Tester
-TestClass
-False
-Tester

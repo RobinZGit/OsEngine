@@ -1,7 +1,0 @@
-GodMode
-False
-MDMG.txt
-Tester
-TestClass
-False
-Tester

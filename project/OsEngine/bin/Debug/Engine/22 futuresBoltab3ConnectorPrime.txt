@@ -1,7 +1,0 @@
-GodMode
-False
-SPU1.txt
-Tester
-TestClass
-False
-Tester

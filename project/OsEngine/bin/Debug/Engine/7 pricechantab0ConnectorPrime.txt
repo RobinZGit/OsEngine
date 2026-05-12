@@ -1,7 +1,0 @@
-GodMode
-False
-ВТБ ао.txt
-Tester
-TestClass
-False
-Tester

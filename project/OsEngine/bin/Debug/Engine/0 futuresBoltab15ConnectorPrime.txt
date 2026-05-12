@@ -1,7 +1,0 @@
-GodMode
-False
-ALH0.txt
-Tester
-TestClass
-True
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-LKZ3.txt
-Tester
-TestClass
-True
-Tester

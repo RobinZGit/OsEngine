@@ -1,7 +1,0 @@
-GodMode
-False
-HEAD.txt
-Tester
-TestClass
-False
-Tester

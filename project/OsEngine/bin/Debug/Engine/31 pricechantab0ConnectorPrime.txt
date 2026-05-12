@@ -1,7 +1,0 @@
-GodMode
-False
-СевСт-ао.txt
-Tester
-TestClass
-False
-Tester

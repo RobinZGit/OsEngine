@@ -1,7 +1,0 @@
-GodMode
-False
-GZZ2.txt
-Tester
-TestClass
-False
-Tester

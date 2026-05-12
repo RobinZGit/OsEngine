@@ -1,7 +1,0 @@
-GodMode
-False
-OBNE.txt
-Tester
-TestClass
-False
-Tester

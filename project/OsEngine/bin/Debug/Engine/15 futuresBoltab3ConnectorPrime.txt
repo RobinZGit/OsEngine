@@ -1,7 +1,0 @@
-GodMode
-False
-SPM1.txt
-Tester
-TestClass
-False
-Tester

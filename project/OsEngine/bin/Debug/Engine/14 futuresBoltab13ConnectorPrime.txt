@@ -1,7 +1,0 @@
-GodMode
-False
-GKU5.txt
-Tester
-TestClass
-True
-Tester

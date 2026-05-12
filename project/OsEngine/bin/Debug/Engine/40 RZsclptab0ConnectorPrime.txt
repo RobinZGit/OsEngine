@@ -1,7 +1,0 @@
-GodMode
-False
-ASTR.txt
-Tester
-TestClass
-False
-Tester

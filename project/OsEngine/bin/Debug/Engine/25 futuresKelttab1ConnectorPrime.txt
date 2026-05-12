@@ -1,7 +1,0 @@
-GodMode
-False
-SRZ4.txt
-Tester
-TestClass
-False
-Tester

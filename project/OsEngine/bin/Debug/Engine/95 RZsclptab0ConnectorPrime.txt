@@ -1,7 +1,0 @@
-GodMode
-False
-LSNGP.txt
-Tester
-TestClass
-False
-Tester

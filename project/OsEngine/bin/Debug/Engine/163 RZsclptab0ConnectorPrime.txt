@@ -1,7 +1,0 @@
-GodMode
-False
-VEON-RX.txt
-Tester
-TestClass
-False
-Tester

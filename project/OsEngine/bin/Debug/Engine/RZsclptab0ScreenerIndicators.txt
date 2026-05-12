@@ -1,2 +1,0 @@
-PriceChannelAdaptive$Prime$2$False$50$840
-LinearRegressionChannelFast_Indicator$Prime$1$False$180$Close$4,4$4,4

@@ -1,7 +1,0 @@
-GodMode
-False
-BSPB.txt
-Tester
-TestClass
-True
-Tester

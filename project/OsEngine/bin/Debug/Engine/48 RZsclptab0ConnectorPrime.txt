@@ -1,7 +1,0 @@
-GodMode
-False
-CBOM.txt
-Tester
-TestClass
-False
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-Сургнфгз-п.txt
-Tester
-TestClass
-False
-Tester

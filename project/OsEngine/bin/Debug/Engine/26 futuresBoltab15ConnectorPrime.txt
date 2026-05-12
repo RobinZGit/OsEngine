@@ -1,7 +1,0 @@
-GodMode
-False
-ALZ4.txt
-Tester
-TestClass
-True
-Tester

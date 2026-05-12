@@ -1,7 +1,0 @@
-GodMode
-False
-GKZ5.txt
-Tester
-TestClass
-True
-Tester

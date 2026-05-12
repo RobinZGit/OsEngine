@@ -1,7 +1,0 @@
-GodMode
-False
-SRH1.txt
-Tester
-TestClass
-False
-Tester

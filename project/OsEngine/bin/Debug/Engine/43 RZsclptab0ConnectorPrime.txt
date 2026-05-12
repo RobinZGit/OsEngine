@@ -1,7 +1,0 @@
-GodMode
-False
-BAZA.txt
-Tester
-TestClass
-False
-Tester

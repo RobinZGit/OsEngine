@@ -1,7 +1,0 @@
-GodMode
-False
-Россети.txt
-Tester
-TestClass
-False
-Tester

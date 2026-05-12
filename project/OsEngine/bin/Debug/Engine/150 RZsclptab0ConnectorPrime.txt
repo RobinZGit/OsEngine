@@ -1,7 +1,0 @@
-GodMode
-False
-TGKA.txt
-Tester
-TestClass
-False
-Tester

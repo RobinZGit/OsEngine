@@ -1,7 +1,0 @@
-GodMode
-False
-MNU9.txt
-Tester
-TestClass
-True
-Tester

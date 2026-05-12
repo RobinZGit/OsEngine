@@ -1,4 +1,0 @@
-EMA ATR&-8355712&Line&False&
-Up Channel&-14774017&Line&True&
-Down Channel&-14774017&Line&True&
-Middle EMA&-8355712&Line&True&

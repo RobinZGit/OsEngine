@@ -1,7 +1,0 @@
-GodMode
-False
-CHMF.txt
-Tester
-TestClass
-True
-Tester

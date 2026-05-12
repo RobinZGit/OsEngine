@@ -1,7 +1,0 @@
-GodMode
-False
-CNRU.txt
-Tester
-TestClass
-False
-Tester

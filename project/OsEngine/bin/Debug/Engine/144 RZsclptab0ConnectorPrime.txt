@@ -1,7 +1,0 @@
-GodMode
-False
-SMLT.txt
-Tester
-TestClass
-False
-Tester

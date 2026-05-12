@@ -1,7 +1,0 @@
-GodMode
-False
-TGKJ.txt
-Tester
-TestClass
-False
-Tester

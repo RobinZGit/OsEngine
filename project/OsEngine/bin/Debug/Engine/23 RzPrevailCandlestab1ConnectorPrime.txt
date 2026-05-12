@@ -1,7 +1,0 @@
-GodMode
-False
-RUAL.txt
-Tester
-TestClass
-True
-Tester

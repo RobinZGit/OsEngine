@@ -1,7 +1,0 @@
-GodMode
-False
-НМТП ао.txt
-Tester
-TestClass
-False
-Tester

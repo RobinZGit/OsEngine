@@ -1,7 +1,0 @@
-GodMode
-False
-ЛУКОЙЛ.txt
-Tester
-TestClass
-False
-Tester

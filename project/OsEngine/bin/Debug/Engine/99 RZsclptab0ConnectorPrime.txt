@@ -1,7 +1,0 @@
-GodMode
-False
-MGKL.txt
-Tester
-TestClass
-False
-Tester

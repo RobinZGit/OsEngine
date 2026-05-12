@@ -1,7 +1,0 @@
-GodMode
-False
-SPH2.txt
-Tester
-TestClass
-False
-Tester

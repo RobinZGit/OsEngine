@@ -1,7 +1,0 @@
-GodMode
-False
-GZU3.txt
-Tester
-TestClass
-False
-Tester

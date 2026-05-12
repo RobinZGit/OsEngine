@@ -1,7 +1,0 @@
-GodMode
-False
-Роснефть.txt
-Tester
-TestClass
-False
-Tester

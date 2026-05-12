@@ -1,3 +1,0 @@
-Sma@1Smamultiindicatortab0@Prime@False@IsScript
-Stochastic@3Stochasticmultiindicatortab0@Second@False@IsScript
-LinearRegressionChannelFast_Indicator@6LinearRegressionChannelFast_Indicatormultiindicatortab0@Prime@False@IsScript

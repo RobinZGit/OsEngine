@@ -1,7 +1,0 @@
-GodMode
-False
-KRKNP.txt
-Tester
-TestClass
-False
-Tester

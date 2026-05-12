@@ -1,7 +1,0 @@
-GodMode
-False
-YDEX.txt
-Tester
-TestClass
-False
-Tester

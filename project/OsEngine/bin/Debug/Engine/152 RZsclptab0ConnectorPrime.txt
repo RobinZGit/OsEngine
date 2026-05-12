@@ -1,7 +1,0 @@
-GodMode
-False
-TGKBP.txt
-Tester
-TestClass
-False
-Tester

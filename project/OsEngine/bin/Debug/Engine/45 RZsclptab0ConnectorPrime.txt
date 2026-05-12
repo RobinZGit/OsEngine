@@ -1,7 +1,0 @@
-GodMode
-False
-BLNG.txt
-Tester
-TestClass
-False
-Tester

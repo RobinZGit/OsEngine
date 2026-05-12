@@ -1,7 +1,0 @@
-GodMode
-False
-NSVZ.txt
-Tester
-TestClass
-False
-Tester

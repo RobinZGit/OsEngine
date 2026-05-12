@@ -1,7 +1,0 @@
-Day
-False
-Tick
-Simple
-TimeFrame#Day$NonTradingCandles#False
-False
-0,2

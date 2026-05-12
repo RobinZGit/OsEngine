@@ -1,7 +1,0 @@
-GodMode
-False
-ТМК ао.txt
-Tester
-TestClass
-False
-Tester

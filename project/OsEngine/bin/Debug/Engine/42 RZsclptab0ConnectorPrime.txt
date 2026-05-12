@@ -1,7 +1,0 @@
-GodMode
-False
-BANEP.txt
-Tester
-TestClass
-False
-Tester

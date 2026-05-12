@@ -1,7 +1,0 @@
-GodMode
-False
-ALM5.txt
-Tester
-TestClass
-True
-Tester

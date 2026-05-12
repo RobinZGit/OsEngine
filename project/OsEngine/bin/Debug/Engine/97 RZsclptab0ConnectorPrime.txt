@@ -1,7 +1,0 @@
-GodMode
-False
-MBNK.txt
-Tester
-TestClass
-False
-Tester

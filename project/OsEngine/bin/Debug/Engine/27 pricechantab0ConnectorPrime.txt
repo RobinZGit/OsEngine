@@ -1,7 +1,0 @@
-GodMode
-False
-Ростел -ап.txt
-Tester
-TestClass
-False
-Tester

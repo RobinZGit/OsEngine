@@ -1,7 +1,0 @@
-GodMode
-False
-MOEX.txt
-Tester
-TestClass
-True
-Tester

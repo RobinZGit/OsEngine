@@ -1,7 +1,0 @@
-GodMode
-False
-LSRG.txt
-Tester
-TestClass
-False
-Tester

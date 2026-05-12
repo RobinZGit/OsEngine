@@ -1,7 +1,0 @@
-GodMode
-False
-Сбербанк.txt
-Optimizer
-TestClass
-True
-Optimizer

@@ -1,7 +1,0 @@
-GodMode
-False
-UGLD.txt
-Tester
-TestClass
-False
-Tester

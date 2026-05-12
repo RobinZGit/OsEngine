@@ -1,7 +1,0 @@
-GodMode
-False
-RNZ3.txt
-Tester
-TestClass
-False
-Tester

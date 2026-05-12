@@ -1,7 +1,0 @@
-GodMode
-False
-SBER.txt
-Tester
-TestClass
-True
-Tester

@@ -1,7 +1,0 @@
-Min15
-False
-Tick
-Simple
-TimeFrame#Min15$NonTradingCandles#False
-False
-0,5

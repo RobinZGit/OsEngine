@@ -1,7 +1,0 @@
-GodMode
-False
-ELFV.txt
-Tester
-TestClass
-False
-Tester

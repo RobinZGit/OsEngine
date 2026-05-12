@@ -1,4 +1,0 @@
-Data\Set_15m tdata
-Candle
-Set
-

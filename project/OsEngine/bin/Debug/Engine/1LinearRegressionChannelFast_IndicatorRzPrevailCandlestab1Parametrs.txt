@@ -1,4 +1,0 @@
-Length#180#
-Candle Point#Close#
-Up channel deviation#4,4#
-Down channel deviation#4,4#

@@ -1,7 +1,0 @@
-GodMode
-False
-LKU5.txt
-Tester
-TestClass
-True
-Tester

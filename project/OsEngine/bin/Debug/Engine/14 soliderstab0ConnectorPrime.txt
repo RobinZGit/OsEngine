@@ -1,7 +1,0 @@
-GodMode
-False
-MTLRP.txt
-Tester
-TestClass
-True
-Tester

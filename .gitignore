@@ -338,3 +338,7 @@ project/OsEngine/bin/**/Engine/Log/
 project/OsEngine/bin/**/Engine/Log/**
 project/OsEngine/bin/**/Plaza/Log/
 project/OsEngine/bin/**/Plaza/Log/**
+
+# OsEngine local engine state (charts, params, updater, etc.) — forced visible by !bin/** above
+project/OsEngine/bin/Debug/Engine/
+project/OsEngine/bin/Debug/Engine/**

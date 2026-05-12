@@ -1,3 +1,0 @@
-enginePair@EnginePair@False@
-MyNewBot@RzStrategByPrevailCandles@True@
-candleEngine@Engine@False@

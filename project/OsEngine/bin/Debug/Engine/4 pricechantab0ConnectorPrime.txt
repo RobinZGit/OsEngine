@@ -1,7 +1,0 @@
-GodMode
-False
-Башнефт ап.txt
-Tester
-TestClass
-False
-Tester

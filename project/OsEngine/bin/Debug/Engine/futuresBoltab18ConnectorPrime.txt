@@ -1,7 +1,0 @@
-GodMode
-False
-MGNT.txt
-Tester
-TestClass
-False
-Tester

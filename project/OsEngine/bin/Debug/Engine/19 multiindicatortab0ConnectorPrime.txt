@@ -1,7 +1,0 @@
-GodMode
-False
-PHOR.txt
-Tester
-TestClass
-True
-Tester

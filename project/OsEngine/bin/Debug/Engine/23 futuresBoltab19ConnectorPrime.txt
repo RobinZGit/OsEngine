@@ -1,7 +1,0 @@
-GodMode
-False
-MNZ2.txt
-Tester
-TestClass
-True
-Tester

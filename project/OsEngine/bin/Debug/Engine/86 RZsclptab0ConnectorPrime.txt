@@ -1,7 +1,0 @@
-GodMode
-False
-KZIZP.txt
-Tester
-TestClass
-False
-Tester

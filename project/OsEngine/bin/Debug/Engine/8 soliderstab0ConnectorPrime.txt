@@ -1,7 +1,0 @@
-GodMode
-False
-GMKN.txt
-Tester
-TestClass
-True
-Tester

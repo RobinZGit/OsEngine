@@ -1,7 +1,0 @@
-GodMode
-False
-POSI.txt
-Tester
-TestClass
-False
-Tester

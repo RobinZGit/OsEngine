@@ -1,8 +1,0 @@
-\Images\RestartBenchmark.png
-\TDataSecuritiesLots.txt
-\Custom\Indicators\Scripts\HMA.cs
-\Microsoft.Web.WebView2.Core.dll
-\Microsoft.Web.WebView2.WinForms.dll
-\Microsoft.Web.WebView2.Wpf.dll
-\NSec.Cryptography.dll
-\libsodium.dll

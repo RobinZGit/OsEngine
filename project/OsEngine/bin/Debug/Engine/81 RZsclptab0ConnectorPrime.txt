@@ -1,7 +1,0 @@
-GodMode
-False
-KLVZ.txt
-Tester
-TestClass
-False
-Tester

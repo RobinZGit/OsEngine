@@ -1,7 +1,0 @@
-GodMode
-False
-SFTL.txt
-Tester
-TestClass
-False
-Tester

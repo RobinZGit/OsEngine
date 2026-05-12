@@ -1,7 +1,0 @@
-GodMode
-False
-АЛРОСА ао.txt
-Tester
-TestClass
-False
-Tester

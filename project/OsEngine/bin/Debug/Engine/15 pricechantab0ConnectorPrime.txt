@@ -1,7 +1,0 @@
-GodMode
-False
-Магнит ао.txt
-Tester
-TestClass
-False
-Tester

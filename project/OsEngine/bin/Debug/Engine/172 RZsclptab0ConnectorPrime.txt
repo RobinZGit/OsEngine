@@ -1,7 +1,0 @@
-GodMode
-False
-ZAYM.txt
-Tester
-TestClass
-False
-Tester

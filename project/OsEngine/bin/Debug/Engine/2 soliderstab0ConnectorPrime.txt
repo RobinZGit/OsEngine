@@ -1,7 +1,0 @@
-GodMode
-False
-AFLT.txt
-Tester
-TestClass
-True
-Tester

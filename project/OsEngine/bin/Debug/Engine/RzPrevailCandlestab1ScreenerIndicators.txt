@@ -1,3 +1,0 @@
-LinearRegressionChannelFast_Indicator$Prime$1$False$180$Close$4,4$4,4
-Bollinger$Prime$2$False$100$2
-RSI$Second$3$False$25

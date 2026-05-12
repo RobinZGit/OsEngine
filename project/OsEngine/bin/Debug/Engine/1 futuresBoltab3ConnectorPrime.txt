@@ -1,7 +1,0 @@
-GodMode
-False
-SPZ1.txt
-Tester
-TestClass
-False
-Tester

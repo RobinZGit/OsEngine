@@ -1,7 +1,0 @@
-GodMode
-False
-NLMK.txt
-Tester
-TestClass
-True
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-LKM4.txt
-Tester
-TestClass
-True
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-FEES.txt
-Tester
-TestClass
-True
-Tester

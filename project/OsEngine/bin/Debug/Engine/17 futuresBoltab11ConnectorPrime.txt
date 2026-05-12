@@ -1,7 +1,0 @@
-GodMode
-False
-VBU3.txt
-Tester
-TestClass
-True
-Tester

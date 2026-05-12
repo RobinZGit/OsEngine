@@ -1,7 +1,0 @@
-GodMode
-False
-ALU5.txt
-Tester
-TestClass
-True
-Tester

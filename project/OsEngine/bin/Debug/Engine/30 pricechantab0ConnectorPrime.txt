@@ -1,7 +1,0 @@
-GodMode
-False
-Сбербанк-п.txt
-Tester
-TestClass
-False
-Tester

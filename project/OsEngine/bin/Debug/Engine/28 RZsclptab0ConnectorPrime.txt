@@ -1,7 +1,0 @@
-GodMode
-False
-SNGS.txt
-Tester
-TestClass
-False
-Tester

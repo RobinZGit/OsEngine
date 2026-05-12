@@ -1,7 +1,0 @@
-GodMode
-False
-КАМАЗ.txt
-Tester
-TestClass
-False
-Tester

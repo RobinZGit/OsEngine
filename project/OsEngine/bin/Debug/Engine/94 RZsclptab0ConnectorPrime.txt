@@ -1,7 +1,0 @@
-GodMode
-False
-LSNG.txt
-Tester
-TestClass
-False
-Tester

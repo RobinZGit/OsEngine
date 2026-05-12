@@ -1,7 +1,0 @@
-GodMode
-False
-ММК.txt
-Tester
-TestClass
-False
-Tester

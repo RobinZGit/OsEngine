@@ -1,7 +1,0 @@
-GodMode
-False
-VBZ4.txt
-Tester
-TestClass
-True
-Tester

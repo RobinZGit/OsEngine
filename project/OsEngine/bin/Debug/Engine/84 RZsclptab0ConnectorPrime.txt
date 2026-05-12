@@ -1,7 +1,0 @@
-GodMode
-False
-KROT.txt
-Tester
-TestClass
-False
-Tester

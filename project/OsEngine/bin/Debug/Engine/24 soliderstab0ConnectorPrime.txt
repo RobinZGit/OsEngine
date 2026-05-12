@@ -1,7 +1,0 @@
-GodMode
-False
-SBERP.txt
-Tester
-TestClass
-True
-Tester

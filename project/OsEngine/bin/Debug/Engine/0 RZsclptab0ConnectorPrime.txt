@@ -1,7 +1,0 @@
-GodMode
-False
-AFKS.txt
-Tester
-TestClass
-False
-Tester

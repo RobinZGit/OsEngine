@@ -1,7 +1,0 @@
-GodMode
-False
-KLSB.txt
-Tester
-TestClass
-False
-Tester

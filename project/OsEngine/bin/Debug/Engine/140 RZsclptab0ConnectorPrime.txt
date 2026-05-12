@@ -1,7 +1,0 @@
-GodMode
-False
-SFIN.txt
-Tester
-TestClass
-False
-Tester

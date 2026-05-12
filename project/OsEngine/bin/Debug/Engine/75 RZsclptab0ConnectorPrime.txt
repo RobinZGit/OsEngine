@@ -1,7 +1,0 @@
-GodMode
-False
-IRKT.txt
-Tester
-TestClass
-False
-Tester

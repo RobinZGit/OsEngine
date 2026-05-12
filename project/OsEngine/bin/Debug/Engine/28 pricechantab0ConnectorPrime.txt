@@ -1,7 +1,0 @@
-GodMode
-False
-РусГидро.txt
-Tester
-TestClass
-False
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-MNM0.txt
-Tester
-TestClass
-True
-Tester

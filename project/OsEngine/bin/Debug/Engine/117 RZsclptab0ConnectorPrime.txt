@@ -1,7 +1,0 @@
-GodMode
-False
-NOMPP.txt
-Tester
-TestClass
-False
-Tester

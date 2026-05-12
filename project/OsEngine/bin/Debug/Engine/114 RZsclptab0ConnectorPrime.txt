@@ -1,7 +1,0 @@
-GodMode
-False
-NKNCP.txt
-Tester
-TestClass
-False
-Tester

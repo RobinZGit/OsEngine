@@ -1,7 +1,0 @@
-GodMode
-False
-GKH2.txt
-Tester
-TestClass
-True
-Tester

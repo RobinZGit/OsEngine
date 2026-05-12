@@ -1,7 +1,0 @@
-GodMode
-False
-МТС-ао.txt
-Tester
-TestClass
-False
-Tester

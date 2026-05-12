@@ -1,7 +1,0 @@
-GodMode
-False
-ALRS.txt
-Tester
-TestClass
-True
-Tester

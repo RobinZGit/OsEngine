@@ -1,7 +1,0 @@
-GodMode
-False
-VTBR.txt
-Tester
-TestClass
-True
-Tester

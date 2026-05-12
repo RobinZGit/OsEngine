@@ -1,7 +1,0 @@
-GodMode
-False
-MGTSP.txt
-Tester
-TestClass
-False
-Tester

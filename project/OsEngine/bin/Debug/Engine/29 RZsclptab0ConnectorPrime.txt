@@ -1,7 +1,0 @@
-GodMode
-False
-SNGSP.txt
-Tester
-TestClass
-False
-Tester

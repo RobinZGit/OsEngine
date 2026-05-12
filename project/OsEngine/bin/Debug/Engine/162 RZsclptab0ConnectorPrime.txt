@@ -1,7 +1,0 @@
-GodMode
-False
-UWGN.txt
-Tester
-TestClass
-False
-Tester

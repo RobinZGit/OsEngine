@@ -1,7 +1,0 @@
-GodMode
-False
-TATNP.txt
-Tester
-TestClass
-False
-Tester

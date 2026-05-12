@@ -1,7 +1,0 @@
-GodMode
-False
-ИнтерРАОао.txt
-Tester
-TestClass
-False
-Tester

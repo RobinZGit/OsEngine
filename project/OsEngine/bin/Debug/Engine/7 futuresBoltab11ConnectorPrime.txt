@@ -1,7 +1,0 @@
-GodMode
-False
-VBM0.txt
-Tester
-TestClass
-True
-Tester

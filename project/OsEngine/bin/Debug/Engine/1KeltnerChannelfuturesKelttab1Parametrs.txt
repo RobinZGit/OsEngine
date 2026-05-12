@@ -1,5 +1,0 @@
-EMA Period#150#
-ATR Period#24#
-ATR EMA Period#24#
-ATR multiplier#3,9#
-Candle Point#Typical#

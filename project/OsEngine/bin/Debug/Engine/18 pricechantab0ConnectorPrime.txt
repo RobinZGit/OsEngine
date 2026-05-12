@@ -1,7 +1,0 @@
-GodMode
-False
-Мостотрест.txt
-Tester
-TestClass
-False
-Tester

@@ -1,7 +1,0 @@
-GodMode
-False
-NVTK.txt
-Tester
-TestClass
-True
-Tester
