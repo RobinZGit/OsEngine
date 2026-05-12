@@ -1,0 +1,7 @@
+---
+pid: 17276
+cwd: "C:\\Users\\Сергей"
+command: "powershell -NoProfile -Command \"@('C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe','C:\\\\Program Files (x86)\\\\GitHub CLI\\\\gh.exe') | ForEach-Object { if (Test-Path $_) { $_ } }\""
+started_at: 2026-05-12T06:49:49.146Z
+running_for_ms: 289698   
+---
