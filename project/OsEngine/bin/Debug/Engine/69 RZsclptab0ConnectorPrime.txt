@@ -1,0 +1,7 @@
+GodMode
+False
+GLRX.txt
+Tester
+TestClass
+False
+Tester

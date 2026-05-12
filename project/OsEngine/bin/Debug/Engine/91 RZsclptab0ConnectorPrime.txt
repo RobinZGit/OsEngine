@@ -1,0 +1,7 @@
+GodMode
+False
+LIFE.txt
+Tester
+TestClass
+False
+Tester

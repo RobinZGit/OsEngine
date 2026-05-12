@@ -1,0 +1,7 @@
+GodMode
+False
+SOFL.txt
+Tester
+TestClass
+False
+Tester

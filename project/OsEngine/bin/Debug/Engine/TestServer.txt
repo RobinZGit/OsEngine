@@ -1,0 +1,11 @@
+Data\Set_TInvAllLIquid34
+0
+1000000
+Candle
+Set
+
+0
+Touch
+True
+True
+True

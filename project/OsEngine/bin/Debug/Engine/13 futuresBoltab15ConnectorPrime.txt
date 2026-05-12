@@ -1,0 +1,7 @@
+GodMode
+False
+ALM9.txt
+Tester
+TestClass
+True
+Tester

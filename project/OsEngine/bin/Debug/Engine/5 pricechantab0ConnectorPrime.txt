@@ -1,0 +1,7 @@
+GodMode
+False
+БСП ао.txt
+Tester
+TestClass
+False
+Tester

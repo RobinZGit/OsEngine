@@ -1,0 +1,7 @@
+GodMode
+False
+GKH5.txt
+Tester
+TestClass
+True
+Tester

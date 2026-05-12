@@ -1,0 +1,55 @@
+GodMode
+TestClass
+Min15
+Optimizer&Optimizer
+False
+Tick&0,5&False
+Simple
+None
+0
+False
+True
+Simple
+TimeFrame#Min15$NonTradingCandles#False
+Акрон.txt^TestClass^False
+АЛРОСА ао.txt^TestClass^False
+Аэрофлот.txt^TestClass^False
+Башнефт ао.txt^TestClass^False
+Башнефт ап.txt^TestClass^False
+БСП ао.txt^TestClass^False
+ВСМПО-АВСМ.txt^TestClass^False
+ВТБ ао.txt^TestClass^False
+ГАЗПРОМ ао.txt^TestClass^True
+ГМКНорНик.txt^TestClass^False
+ИнтерРАОао.txt^TestClass^False
+КАМАЗ.txt^TestClass^False
+ЛСР ао.txt^TestClass^False
+ЛУКОЙЛ.txt^TestClass^False
+М.видео.txt^TestClass^False
+Магнит ао.txt^TestClass^False
+ММК.txt^TestClass^False
+Мостотрест.txt^TestClass^False
+МТС-ао.txt^TestClass^False
+НЛМК ао.txt^TestClass^False
+НМТП ао.txt^TestClass^False
+Новатэк ао.txt^TestClass^False
+ПИК ао.txt^TestClass^False
+Роснефть.txt^TestClass^False
+Россети.txt^TestClass^False
+Ростел -ао.txt^TestClass^False
+Ростел -ап.txt^TestClass^False
+РусГидро.txt^TestClass^False
+Сбербанк.txt^TestClass^True
+Сбербанк-п.txt^TestClass^True
+СевСт-ао.txt^TestClass^False
+Система ао.txt^TestClass^False
+СОЛЛЕРС.txt^TestClass^False
+Сургнфгз.txt^TestClass^False
+Сургнфгз-п.txt^TestClass^False
+Татнфт 3ао.txt^TestClass^False
+Татнфт 3ап.txt^TestClass^False
+ТМК ао.txt^TestClass^False
+Транснф ап.txt^TestClass^False
+ФосАгро ао.txt^TestClass^False
+ЧеркизГ-ао.txt^TestClass^False
+Юнипро ао.txt^TestClass^False

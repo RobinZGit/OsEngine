@@ -1,0 +1,7 @@
+GodMode
+False
+SPM3.txt
+Tester
+TestClass
+False
+Tester

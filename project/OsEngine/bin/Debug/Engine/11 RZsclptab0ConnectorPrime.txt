@@ -1,0 +1,7 @@
+GodMode
+False
+MAGN.txt
+Tester
+TestClass
+False
+Tester

@@ -1,0 +1,7 @@
+GodMode
+False
+GKU1.txt
+Tester
+TestClass
+True
+Tester

@@ -1,0 +1,7 @@
+GodMode
+False
+NTZL.txt
+Tester
+TestClass
+False
+Tester

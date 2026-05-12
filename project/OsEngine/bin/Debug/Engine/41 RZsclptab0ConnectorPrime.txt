@@ -1,0 +1,7 @@
+GodMode
+False
+BANE.txt
+Tester
+TestClass
+False
+Tester

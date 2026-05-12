@@ -1,0 +1,7 @@
+GodMode
+False
+LKU9.txt
+Tester
+TestClass
+True
+Tester

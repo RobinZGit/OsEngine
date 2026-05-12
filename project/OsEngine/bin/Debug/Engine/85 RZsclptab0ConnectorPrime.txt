@@ -1,0 +1,7 @@
+GodMode
+False
+KZIZ.txt
+Tester
+TestClass
+False
+Tester

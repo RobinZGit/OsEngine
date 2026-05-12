@@ -1,0 +1,7 @@
+GodMode
+False
+NKHP.txt
+Tester
+TestClass
+False
+Tester

@@ -1,0 +1,3 @@
+Up channel&-16711681&Line&True&
+Regression Line &-10496&Line&False&
+Down channel&-47872&Line&True&

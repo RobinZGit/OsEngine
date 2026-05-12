@@ -1,0 +1,13 @@
+
+
+Min1
+None&
+False
+Tick&0,5&False
+Simple
+None
+0
+False
+False
+Simple
+TimeFrame#Min30$NonTradingCandles#False

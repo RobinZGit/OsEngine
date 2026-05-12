@@ -1,0 +1,7 @@
+GodMode
+False
+Акрон.txt
+Tester
+TestClass
+False
+Tester

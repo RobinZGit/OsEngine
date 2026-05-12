@@ -1,0 +1,7 @@
+GodMode
+False
+Транснф ап.txt
+Tester
+TestClass
+False
+Tester

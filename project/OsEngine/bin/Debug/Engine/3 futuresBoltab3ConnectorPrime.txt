@@ -1,0 +1,7 @@
+GodMode
+False
+SPZ3.txt
+Tester
+TestClass
+False
+Tester

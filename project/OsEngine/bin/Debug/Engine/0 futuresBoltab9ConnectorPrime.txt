@@ -1,0 +1,7 @@
+GodMode
+False
+LKH0.txt
+Tester
+TestClass
+False
+Tester

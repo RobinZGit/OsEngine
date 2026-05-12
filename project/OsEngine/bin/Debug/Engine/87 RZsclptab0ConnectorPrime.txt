@@ -1,0 +1,7 @@
+GodMode
+False
+KZOS.txt
+Tester
+TestClass
+False
+Tester

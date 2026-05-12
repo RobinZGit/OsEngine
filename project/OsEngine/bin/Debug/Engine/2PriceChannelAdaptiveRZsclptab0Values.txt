@@ -1,0 +1,3 @@
+Up Channel&-14774017&Line&True&
+Down Channel&-65536&Line&True&
+Channel adaptive length&-657931&Line&False&

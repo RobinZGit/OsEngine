@@ -1,0 +1,7 @@
+GodMode
+False
+DATA.txt
+Tester
+TestClass
+False
+Tester

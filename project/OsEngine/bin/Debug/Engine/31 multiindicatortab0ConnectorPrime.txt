@@ -1,0 +1,7 @@
+GodMode
+False
+TATNP.txt
+Tester
+TestClass
+True
+Tester

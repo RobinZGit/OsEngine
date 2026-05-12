@@ -1,0 +1,39 @@
+Linear regression Length#180#180#20#300#10#
+Linear regression deviation#3,4#4,4#1#4#0,1#
+Ema портфеля#1000000,0000000000000000000005#0#1#4#0,001#
+Период для расчета собственного Ema, штук#20#20#20#300#10#
+При закрытии позиции если портфель ниже средней выждать, раз#3#10#0#20#1#
+При закрытии позиции если портфель ниже средней выждали (тек.значение), раз#2#0#0#20#1#
+Regime#On#Off#On#
+Iceberg orders count#1#1#1#3#1#
+Max positions#10#10#0#20#1#
+Volatility cluster to trade#2#3#1#3#1#
+Volatility cluster lookBack#80#80#10#300#1#
+Show last clusters#
+Profit % from height of pattern#185#185#0#20#1#
+Stop % from height of pattern#106#106#0#20#1#
+Non trade periods#
+Volume type#Deposit percent#Contracts#Contract currency#Deposit percent#
+Volume#10#10#1,0#50#4#
+Asset in portfolio#Prime#Prime#
+Days volatility adaptive#7#7#0#20#1#
+Height soldiers volatility percent#80#80#0#20#1#
+Sma filter is on#False#True#
+Sma filter Len#150#150#10#300#10#
+Green more Red total looking count#20#20#0#20#1#
+Green more than Red by#2#3#0#20#1#
+Buysell mode#BuyAndSell#OnlyBuy#OnlySell#BuyAndSell#
+Buy - стандартная логика, Sell - инверсия логики#OpenIsBuy#OpenIsBuy#OpenIsSell#
+Timeframe#H1#M1#M2#M3#M5#M10#M15#H1#H4#D1#
+Fake портфель(инфо)#0#0#0#20#1#
+Портфель(инфо)#0#0#0#20#1#
+MWhen less then TOTAL STOP LOSS AND INVERSE#900000#900000#0#20#1#
+Прошлый портфель для сравнения и фикса#900000#900000#0#20#1#
+ Дата прошлого портфеля для сравнения и фикса#01.01.0001#
+Перезапись портфеля для фикса в базовом ритме умнож на этот коэф#1#1#10#300#10#
+Robot is in retesting since##
+Start date#08.05.2026#08.05.2026#
+Percent when min sum portfolio is increased#0,5#0,5#0#100#0,01#
+После убытка выждать, дней#10#10#0#20#1#
+Тестовый Total SL and TP#Off#Off#On#
+Info##

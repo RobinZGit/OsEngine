@@ -1,0 +1,7 @@
+GodMode
+False
+EUTR.txt
+Tester
+TestClass
+False
+Tester

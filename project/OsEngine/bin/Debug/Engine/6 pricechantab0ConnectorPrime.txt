@@ -1,0 +1,7 @@
+GodMode
+False
+ВСМПО-АВСМ.txt
+Tester
+TestClass
+False
+Tester

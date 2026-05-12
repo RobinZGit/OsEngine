@@ -1,0 +1,15 @@
+Regime#On#Off#On#
+Iceberg orders count#1#1#1#3#1#
+Volatility cluster to trade#1#2#1#3#1#
+Volatility cluster lookBack#10#100#10#300#1#
+Show last clusters#
+Max poses#1#10#1#20#1#
+Non trade periods#
+Trend#Buy on top (trend)#Buy on top (trend)#Sell on top (countertrend)#
+Volume type#Deposit percent#Contracts#Contract currency#Deposit percent#
+Volume#1,0#10#1,0#50#4#
+Asset in portfolio#Prime#Prime#
+Pc adx length#10#50#10#250#2#
+Pc ratio#5#840#5#2000#1#
+Sma filter is on#True#True#
+Sma filter Len#100#70#100#300#10#

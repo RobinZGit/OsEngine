@@ -1,0 +1,7 @@
+GodMode
+False
+AFM4.txt
+Tester
+TestClass
+True
+Tester

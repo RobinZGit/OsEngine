@@ -1,0 +1,7 @@
+GodMode
+False
+AFH9.txt
+Tester
+TestClass
+True
+Tester

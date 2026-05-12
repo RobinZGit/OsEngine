@@ -317,3 +317,19 @@ __pycache__/
 # Cake - Uncomment if you are using it
 # tools/**
 # !tools/packages.config
+
+# OsEngine output:
+# The full `project/OsEngine/bin` folder is ~28GB (includes large data dumps) and
+# cannot be pushed to GitHub as-is. We keep the runnable artifacts but continue
+# to ignore bulky runtime data/cache folders.
+!project/
+!project/OsEngine/
+!project/OsEngine/bin/
+!project/OsEngine/bin/Debug/
+!project/OsEngine/bin/Debug/**
+project/OsEngine/bin/**/Data/
+project/OsEngine/bin/**/Data/**
+project/OsEngine/bin/**/Engine/Log/
+project/OsEngine/bin/**/Engine/Log/**
+project/OsEngine/bin/**/Plaza/Log/
+project/OsEngine/bin/**/Plaza/Log/**

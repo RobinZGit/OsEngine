@@ -1,0 +1,25 @@
+7
+RzStrategByPrevailCandles
+100000
+10
+False
+-10
+False
+0,001
+False
+1
+False
+08/02/2021 09:45:00
+04/05/2026 23:45:00
+30
+0
+False
+False
+1
+None
+0
+True
+Touch
+0
+0
+False

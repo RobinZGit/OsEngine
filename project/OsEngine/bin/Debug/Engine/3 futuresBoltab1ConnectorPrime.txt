@@ -1,0 +1,7 @@
+GodMode
+False
+SRZ5.txt
+Tester
+TestClass
+False
+Tester

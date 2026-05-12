@@ -1,0 +1,7 @@
+GodMode
+False
+RNFT.txt
+Tester
+TestClass
+False
+Tester

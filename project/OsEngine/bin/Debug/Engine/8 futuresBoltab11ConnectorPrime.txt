@@ -1,0 +1,7 @@
+GodMode
+False
+VBM1.txt
+Tester
+TestClass
+True
+Tester

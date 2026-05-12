@@ -1,0 +1,7 @@
+GodMode
+False
+ALZ2.txt
+Tester
+TestClass
+True
+Tester

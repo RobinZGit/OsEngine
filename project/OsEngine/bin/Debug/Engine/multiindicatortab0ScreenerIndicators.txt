@@ -1,0 +1,4 @@
+Sma$Prime$1$False$100$Close
+Stochastic$Second$3$False$5$3$3
+LinearRegressionChannelFast_Indicator$Prime$6$False$30$Close$2$2
+Rsi$Second$2$False$14$Close

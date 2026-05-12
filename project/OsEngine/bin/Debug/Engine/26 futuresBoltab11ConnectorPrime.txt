@@ -1,0 +1,7 @@
+GodMode
+False
+VBZ5.txt
+Tester
+TestClass
+True
+Tester

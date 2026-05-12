@@ -1,0 +1,7 @@
+GodMode
+False
+ГАЗПРОМ ао.txt
+Tester
+TestClass
+False
+Tester

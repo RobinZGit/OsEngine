@@ -1,0 +1,7 @@
+GodMode
+False
+SPH1.txt
+Tester
+TestClass
+False
+Tester

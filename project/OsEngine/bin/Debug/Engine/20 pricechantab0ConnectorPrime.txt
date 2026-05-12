@@ -1,0 +1,7 @@
+GodMode
+False
+НЛМК ао.txt
+Tester
+TestClass
+False
+Tester

@@ -1,0 +1,7 @@
+GodMode
+False
+ГМКНорНик.txt
+Tester
+TestClass
+False
+Tester

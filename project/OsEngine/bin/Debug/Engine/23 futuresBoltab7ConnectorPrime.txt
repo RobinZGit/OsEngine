@@ -1,0 +1,7 @@
+GodMode
+False
+RNZ2.txt
+Tester
+TestClass
+False
+Tester
