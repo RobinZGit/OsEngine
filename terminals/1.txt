@@ -1,9 +1,0 @@
----
-pid: 10076
-cwd: |
-  C:\PROJECTS\OsEngine
----
-PS C:\PROJECTS\OsEngine>
- *  History restored 
-
-PS C:\PROJECTS\OsEngine>

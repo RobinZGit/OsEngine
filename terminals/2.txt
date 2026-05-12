@@ -1,6 +1,0 @@
----
-pid: 12224
-cwd: |
-  C:\PROJECTS\OsEngine
----
-PS C:\PROJECTS\OsEngine>
