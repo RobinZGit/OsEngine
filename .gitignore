@@ -319,16 +319,21 @@ __pycache__/
 # !tools/packages.config
 
 # OsEngine output:
-# The full `project/OsEngine/bin` folder is ~28GB (includes large data dumps) and
-# cannot be pushed to GitHub as-is. We keep the runnable artifacts but continue
-# to ignore bulky runtime data/cache folders.
+# Track all of `project/OsEngine/bin`, but exclude binaries and bulky runtime data.
 !project/
 !project/OsEngine/
 !project/OsEngine/bin/
-!project/OsEngine/bin/Debug/
-!project/OsEngine/bin/Debug/**
+!project/OsEngine/bin/**
+
+# Exclude binaries
+project/OsEngine/bin/**/*.dll
+project/OsEngine/bin/**/*.exe
+
+# Exclude Data folder contents anywhere under bin
 project/OsEngine/bin/**/Data/
 project/OsEngine/bin/**/Data/**
+
+# Exclude runtime logs (can exceed GitHub size limits)
 project/OsEngine/bin/**/Engine/Log/
 project/OsEngine/bin/**/Engine/Log/**
 project/OsEngine/bin/**/Plaza/Log/
