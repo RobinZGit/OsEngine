@@ -25,12 +25,16 @@ Screener trend robot using multiple indicators simultaneously:
 - Bollinger
 - Linear Regression Curve
 - RZIgreensMinusReds (greens minus reds over lookback)
+- Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
+- DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
+«Логика индикаторов»: «И» — все включённые должны согласоваться; «ИЛИ» — достаточно одного включённого.
 
 Entry:
-Open Long when ALL enabled indicators are bullish.
-Open Short when ALL enabled indicators are bearish.
+Open Long when enabled indicators agree per «Логика индикаторов»: «И» — все включённые должны быть бычьими; «ИЛИ» — достаточно одного бычьего среди включённых.
+Open Short — то же для медвежьих условий.
+If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
 
 Exit/Reverse:
 If a position exists and opposite signal appears, close and (if allowed) open opposite.
@@ -44,6 +48,9 @@ namespace OsEngine.Robots.Custom
 {
     public class TrendMultiIndicatorScreener : BotPanel
     {
+        // DiscreteMidBestPair: весь связанный код обёрнут в «#if false // DiscreteMidBestPair» … «#endif» (не удалён).
+        // Чтобы снова включить индикатор — замените false на true во всех таких директивах в этом файле.
+
         private const int NumSma = 1;
         private const int NumRsi = 2;
         private const int NumStoch = 3;
@@ -51,6 +58,16 @@ namespace OsEngine.Robots.Custom
         private const int NumBollinger = 5;
         private const int NumLinReg = 6;
         private const int NumRzi = 7;
+        private const int NumVolumeIndicator = 9;
+#if false // DiscreteMidBestPair: код сохранён, отключён (замените false на true для включения)
+        private const int NumDiscreteMidBestPair = 8;
+
+        /// <summary>Маркер входа для постановки SL/TP по дискретной сетке (см. TryPlaceDiscreteStopAndProfit).</summary>
+        private const string SignalOpenWithDiscreteSlTp = "TrendMultiDiscreteSlTp";
+#endif
+
+        private const string IndicatorsLogicAndOption = "И (все одновременно)";
+        private const string IndicatorsLogicOrOption = "ИЛИ (хотя бы один)";
 
         private const string AreaPrime = "Prime";
         private const string AreaSecond = "Second";
@@ -61,6 +78,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _regime;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
+        private StrategyParameterString _indicatorsLogic;
 
         // volume
         private StrategyParameterString _volumeType;
@@ -75,6 +93,10 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useBollinger;
         private StrategyParameterBool _useLinReg;
         private StrategyParameterBool _useRzi;
+        private StrategyParameterBool _useVolumeIndicator;
+#if false // DiscreteMidBestPair
+        private StrategyParameterBool _useDiscreteMidBestPair;
+#endif
 
         // indicator params
         private StrategyParameterInt _smaLen;
@@ -102,6 +124,13 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _rziLen;
         private StrategyParameterInt _rziStep;
         private StrategyParameterInt _rziSignalLevel;
+
+        private StrategyParameterDecimal _volumeIndicatorMinGrowthPercent;
+
+#if false // DiscreteMidBestPair
+        private StrategyParameterInt _discreteMidBestPairLevels;
+        private StrategyParameterInt _discreteEntryThreshold;
+#endif
 
         // Non-trade periods (AlgoStart pattern)
         private NonTradePeriods _tradePeriodsSettings;
@@ -146,6 +175,10 @@ namespace OsEngine.Robots.Custom
             _regime = CreateParameter("Regime", "Off", new[] { "Off", "On", "OnlyLong", "OnlyShort", "OnlyClosePosition" });
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
+            _indicatorsLogic = CreateParameter(
+                "Логика индикаторов",
+                IndicatorsLogicAndOption,
+                new[] { IndicatorsLogicAndOption, IndicatorsLogicOrOption });
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
@@ -169,6 +202,10 @@ namespace OsEngine.Robots.Custom
             _useBollinger = CreateParameter("Use Bollinger", true);
             _useLinReg = CreateParameter("Use Linear Regression", true);
             _useRzi = CreateParameter("Use RZIgreensMinusReds", false); //! default false
+            _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
+#if false // DiscreteMidBestPair
+            _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
+#endif
 
             // SMA
             _smaLen = CreateParameter("SMA length", 100, 5, 300, 1);
@@ -203,12 +240,24 @@ namespace OsEngine.Robots.Custom
             _rziStep = CreateParameter("RZI step in loop", 1, 1, 20, 1);
             _rziSignalLevel = CreateParameter("RZI signal level (long if >N, short if <-N)", 3, 0, 200, 1);
 
+            _volumeIndicatorMinGrowthPercent = CreateParameter("Volume vs prev candle min growth %", 5m, 0m, 500m, 0.5m);
+
+#if false // DiscreteMidBestPair
+            // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
+            _discreteMidBestPairLevels = CreateParameter("DiscreteMidBestPair levels", 32, 2, 256, 1);
+            _discreteEntryThreshold = CreateParameter("Порог входа дискретизации", 1, 0, 256, 1);
+#endif
+
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
 
             // create only enabled indicators
             SyncIndicators();
 
-            Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI, non-trade periods, volatility clusters.";
+#if false // DiscreteMidBestPair
+            Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
+#else
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume (optional), logic И/ИЛИ, non-trade periods, volatility clusters.";
+#endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
         }
@@ -340,6 +389,22 @@ namespace OsEngine.Robots.Custom
                 },
                 AreaSecond,
                 _useRzi.ValueBool);
+
+            EnsureIndicator(
+                NumVolumeIndicator,
+                "Volume",
+                new List<string>(),
+                AreaSecond,
+                _useVolumeIndicator.ValueBool);
+
+#if false // DiscreteMidBestPair
+            EnsureIndicator(
+                NumDiscreteMidBestPair,
+                "DiscreteMidBestPair",
+                new List<string> { _discreteMidBestPairLevels.ValueInt.ToString() },
+                AreaPrime,
+                _useDiscreteMidBestPair.ValueBool);
+#endif
         }
 
         private void EnsureIndicator(int num, string type, List<string> parameters, string area, bool enabled)
@@ -404,6 +469,10 @@ namespace OsEngine.Robots.Custom
             {
                 return;
             }
+
+#if false // DiscreteMidBestPair
+            TryPlaceDiscreteStopAndProfit(tab, candles);
+#endif
 
             List<Position> positions = tab.PositionsOpenAll;
 
@@ -488,145 +557,293 @@ namespace OsEngine.Robots.Custom
             return list.Find(source => source.Connector.SecurityName == tab.Connector.SecurityName) != null;
         }
 
+        private bool IsIndicatorsLogicAnd()
+        {
+            return string.Equals(_indicatorsLogic.ValueString, IndicatorsLogicAndOption, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// null — индикатор выключен; true/false — результат проверки.
+        /// combineWithAnd: все ненулевые должны быть true; иначе хотя бы один true. Нет включённых: для «И» true (как раньше), для «ИЛИ» false.
+        /// </summary>
+        private bool CombineIndicatorResults(bool combineWithAnd, List<bool?> parts)
+        {
+            int count = 0;
+            bool any = false;
+
+            for (int i = 0; i < parts.Count; i++)
+            {
+                bool? p = parts[i];
+                if (!p.HasValue)
+                    continue;
+
+                count++;
+                if (p.Value)
+                    any = true;
+
+                if (combineWithAnd && !p.Value)
+                    return false;
+            }
+
+            if (count == 0)
+                return combineWithAnd;
+
+            return combineWithAnd || any;
+        }
+
         private bool IsBullSignal(List<Candle> candles, BotTabSimple tab)
         {
             decimal close = candles[candles.Count - 1].Close;
+            bool useAnd = IsIndicatorsLogicAnd();
 
-            if (_useSma.ValueBool)
+            var parts = new List<bool?>
             {
-                Aindicator sma = FindIndicator(tab, NumSma, "Sma");
-                if (sma == null) return false;
-                decimal v = sma.DataSeries[0].Last;
-                if (v == 0 || close <= v) return false;
-            }
+                BullSmaPasses(close, tab),
+                BullRsiPasses(close, tab),
+                BullStochPasses(close, tab),
+                BullMomentumPasses(close, tab),
+                BullBollingerPasses(close, tab),
+                BullLinRegPasses(close, tab),
+                BullRziPasses(close, tab),
+#if false // DiscreteMidBestPair
+                BullDiscretePasses(candles, tab),
+#endif
+                BullVolumePasses(candles, tab),
+            };
 
-            if (_useRsi.ValueBool)
-            {
-                Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
-                if (rsi == null) return false;
-                decimal v = rsi.DataSeries[0].Last;
-                if (v == 0 || v < _rsiLongMin.ValueDecimal) return false;
-            }
-
-            if (_useStoch.ValueBool)
-            {
-                Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
-                if (st == null) return false;
-                decimal k = st.DataSeries[0].Last;
-                if (k == 0 || k < _stochLongMin.ValueDecimal) return false;
-            }
-
-            if (_useMomentum.ValueBool)
-            {
-                Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
-                if (mom == null) return false;
-                decimal v = mom.DataSeries[0].Last;
-                if (v == 0 || v < _momLongMin.ValueDecimal) return false;
-            }
-
-            if (_useBollinger.ValueBool)
-            {
-                Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
-                if (boll == null) return false;
-                if (boll.DataSeries.Count < 2) return false;
-                decimal up = boll.DataSeries[0].Last;
-                decimal down = boll.DataSeries[1].Last;
-                if (up == 0 || down == 0) return false;
-                // trend filter: close above mid of band
-                decimal mid = (up + down) / 2m;
-                if (close <= mid) return false;
-            }
-
-            if (_useLinReg.ValueBool)
-            {
-                Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
-                if (lr == null) return false;
-
-                // DataSeries[0] is upper channel line in built-in screener example
-                decimal up = lr.DataSeries[0].Last;
-                if (up == 0 || close <= up) return false;
-            }
-
-            if (_useRzi.ValueBool)
-            {
-                Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
-                if (rzi == null) return false;
-                decimal v = rzi.DataSeries[0].Last;
-                if (v <= _rziSignalLevel.ValueInt) return false;
-            }
-
-            return true;
+            return CombineIndicatorResults(useAnd, parts);
         }
 
         private bool IsBearSignal(List<Candle> candles, BotTabSimple tab)
         {
             decimal close = candles[candles.Count - 1].Close;
+            bool useAnd = IsIndicatorsLogicAnd();
 
-            if (_useSma.ValueBool)
+            var parts = new List<bool?>
             {
-                Aindicator sma = FindIndicator(tab, NumSma, "Sma");
-                if (sma == null) return false;
-                decimal v = sma.DataSeries[0].Last;
-                if (v == 0 || close >= v) return false;
-            }
+                BearSmaPasses(close, tab),
+                BearRsiPasses(close, tab),
+                BearStochPasses(close, tab),
+                BearMomentumPasses(close, tab),
+                BearBollingerPasses(close, tab),
+                BearLinRegPasses(close, tab),
+                BearRziPasses(close, tab),
+#if false // DiscreteMidBestPair
+                BearDiscretePasses(candles, tab),
+#endif
+                BearVolumePasses(candles, tab),
+            };
 
-            if (_useRsi.ValueBool)
-            {
-                Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
-                if (rsi == null) return false;
-                decimal v = rsi.DataSeries[0].Last;
-                if (v == 0 || v > _rsiShortMax.ValueDecimal) return false;
-            }
+            return CombineIndicatorResults(useAnd, parts);
+        }
 
-            if (_useStoch.ValueBool)
-            {
-                Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
-                if (st == null) return false;
-                decimal k = st.DataSeries[0].Last;
-                if (k == 0 || k > _stochShortMax.ValueDecimal) return false;
-            }
+        private bool? BullSmaPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useSma.ValueBool)
+                return null;
+            Aindicator sma = FindIndicator(tab, NumSma, "Sma");
+            if (sma == null)
+                return false;
+            decimal v = sma.DataSeries[0].Last;
+            return v != 0 && close > v;
+        }
 
-            if (_useMomentum.ValueBool)
-            {
-                Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
-                if (mom == null) return false;
-                decimal v = mom.DataSeries[0].Last;
-                if (v == 0 || v > _momShortMax.ValueDecimal) return false;
-            }
+        private bool? BullRsiPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useRsi.ValueBool)
+                return null;
+            Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
+            if (rsi == null)
+                return false;
+            decimal v = rsi.DataSeries[0].Last;
+            return v != 0 && v >= _rsiLongMin.ValueDecimal;
+        }
 
-            if (_useBollinger.ValueBool)
-            {
-                Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
-                if (boll == null) return false;
-                if (boll.DataSeries.Count < 2) return false;
-                decimal up = boll.DataSeries[0].Last;
-                decimal down = boll.DataSeries[1].Last;
-                if (up == 0 || down == 0) return false;
-                decimal mid = (up + down) / 2m;
-                if (close >= mid) return false;
-            }
+        private bool? BullStochPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useStoch.ValueBool)
+                return null;
+            Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
+            if (st == null)
+                return false;
+            decimal k = st.DataSeries[0].Last;
+            return k != 0 && k >= _stochLongMin.ValueDecimal;
+        }
 
-            if (_useLinReg.ValueBool)
-            {
-                Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
-                if (lr == null) return false;
+        private bool? BullMomentumPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useMomentum.ValueBool)
+                return null;
+            Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
+            if (mom == null)
+                return false;
+            decimal v = mom.DataSeries[0].Last;
+            return v != 0 && v >= _momLongMin.ValueDecimal;
+        }
 
-                // DataSeries[2] is lower channel line in built-in screener example
-                if (lr.DataSeries.Count < 3) return false;
-                decimal down = lr.DataSeries[2].Last;
-                if (down == 0 || close >= down) return false;
-            }
+        private bool? BullBollingerPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useBollinger.ValueBool)
+                return null;
+            Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
+            if (boll == null || boll.DataSeries.Count < 2)
+                return false;
+            decimal up = boll.DataSeries[0].Last;
+            decimal down = boll.DataSeries[1].Last;
+            if (up == 0 || down == 0)
+                return false;
+            decimal mid = (up + down) / 2m;
+            return close > mid;
+        }
 
-            if (_useRzi.ValueBool)
-            {
-                Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
-                if (rzi == null) return false;
-                decimal v = rzi.DataSeries[0].Last;
-                decimal shortBound = -_rziSignalLevel.ValueInt;
-                if (v >= shortBound) return false;
-            }
+        private bool? BullLinRegPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useLinReg.ValueBool)
+                return null;
+            Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
+            if (lr == null)
+                return false;
+            decimal up = lr.DataSeries[0].Last;
+            return up != 0 && close > up;
+        }
 
-            return true;
+        private bool? BullRziPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useRzi.ValueBool)
+                return null;
+            Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
+            if (rzi == null)
+                return false;
+            decimal v = rzi.DataSeries[0].Last;
+            return v > _rziSignalLevel.ValueInt;
+        }
+
+#if false // DiscreteMidBestPair
+        private bool? BullDiscretePasses(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useDiscreteMidBestPair.ValueBool)
+                return null;
+            Aindicator dmb = FindIndicator(tab, NumDiscreteMidBestPair, "DiscreteMidBestPair");
+            if (dmb == null || dmb.DataSeries.Count < 2)
+                return false;
+            decimal first = dmb.DataSeries[0].Last;
+            decimal second = dmb.DataSeries[1].Last;
+            decimal diff = second - first;
+            int thr = _discreteEntryThreshold.ValueInt;
+            return diff > 0 && diff >= thr;
+        }
+#endif
+
+        private bool? BullVolumePasses(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useVolumeIndicator.ValueBool)
+                return null;
+            return VolumeIndicatorGrowthOk(candles, tab);
+        }
+
+        private bool? BearSmaPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useSma.ValueBool)
+                return null;
+            Aindicator sma = FindIndicator(tab, NumSma, "Sma");
+            if (sma == null)
+                return false;
+            decimal v = sma.DataSeries[0].Last;
+            return v != 0 && close < v;
+        }
+
+        private bool? BearRsiPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useRsi.ValueBool)
+                return null;
+            Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
+            if (rsi == null)
+                return false;
+            decimal v = rsi.DataSeries[0].Last;
+            return v != 0 && v <= _rsiShortMax.ValueDecimal;
+        }
+
+        private bool? BearStochPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useStoch.ValueBool)
+                return null;
+            Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
+            if (st == null)
+                return false;
+            decimal k = st.DataSeries[0].Last;
+            return k != 0 && k <= _stochShortMax.ValueDecimal;
+        }
+
+        private bool? BearMomentumPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useMomentum.ValueBool)
+                return null;
+            Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
+            if (mom == null)
+                return false;
+            decimal v = mom.DataSeries[0].Last;
+            return v != 0 && v <= _momShortMax.ValueDecimal;
+        }
+
+        private bool? BearBollingerPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useBollinger.ValueBool)
+                return null;
+            Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
+            if (boll == null || boll.DataSeries.Count < 2)
+                return false;
+            decimal up = boll.DataSeries[0].Last;
+            decimal down = boll.DataSeries[1].Last;
+            if (up == 0 || down == 0)
+                return false;
+            decimal mid = (up + down) / 2m;
+            return close < mid;
+        }
+
+        private bool? BearLinRegPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useLinReg.ValueBool)
+                return null;
+            Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
+            if (lr == null || lr.DataSeries.Count < 3)
+                return false;
+            decimal down = lr.DataSeries[2].Last;
+            return down != 0 && close < down;
+        }
+
+        private bool? BearRziPasses(decimal close, BotTabSimple tab)
+        {
+            if (!_useRzi.ValueBool)
+                return null;
+            Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
+            if (rzi == null)
+                return false;
+            decimal v = rzi.DataSeries[0].Last;
+            decimal shortBound = -_rziSignalLevel.ValueInt;
+            return v < shortBound;
+        }
+
+#if false // DiscreteMidBestPair
+        private bool? BearDiscretePasses(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useDiscreteMidBestPair.ValueBool)
+                return null;
+            Aindicator dmb = FindIndicator(tab, NumDiscreteMidBestPair, "DiscreteMidBestPair");
+            if (dmb == null || dmb.DataSeries.Count < 2)
+                return false;
+            decimal first = dmb.DataSeries[0].Last;
+            decimal second = dmb.DataSeries[1].Last;
+            decimal diff = second - first;
+            int thr = _discreteEntryThreshold.ValueInt;
+            return diff < 0 && -diff > thr;
+        }
+#endif
+
+        private bool? BearVolumePasses(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useVolumeIndicator.ValueBool)
+                return null;
+            return VolumeIndicatorGrowthOk(candles, tab);
         }
 
         private Aindicator FindIndicator(BotTabSimple tab, int num, string type)
@@ -658,11 +875,164 @@ namespace OsEngine.Robots.Custom
             return null;
         }
 
+        /// <summary>
+        /// Индикатор Volume: объём текущей (закрытой) свечи не ниже чем у предыдущей, увеличенный на заданный %.
+        /// </summary>
+        private bool VolumeIndicatorGrowthOk(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useVolumeIndicator.ValueBool)
+                return true;
+
+            if (candles == null || candles.Count < 2)
+                return false;
+
+            Aindicator volInd = FindIndicator(tab, NumVolumeIndicator, "Volume");
+            if (volInd == null || volInd.DataSeries.Count < 1)
+                return false;
+
+            decimal curVol = candles[candles.Count - 1].Volume;
+            decimal prevVol = candles[candles.Count - 2].Volume;
+            decimal pct = _volumeIndicatorMinGrowthPercent.ValueDecimal;
+
+            if (prevVol <= 0m)
+                return curVol > 0m;
+
+            decimal minRequired = prevVol * (1m + pct / 100m);
+            return curVol >= minRequired;
+        }
+
+#if false // DiscreteMidBestPair
+        private string DiscreteOpenSignal()
+        {
+            return _useDiscreteMidBestPair.ValueBool ? SignalOpenWithDiscreteSlTp : "";
+        }
+
+        /// <summary>
+        /// Ширина одного дискретного диапазона в цене (как в DiscreteMidBestPair): (maxMid−minMid)/(levels−1) по всем свечам окна.
+        /// </summary>
+        private bool TryComputeDiscreteRangeStep(List<Candle> candles, out decimal rangeStep)
+        {
+            rangeStep = 0;
+            if (candles == null || candles.Count == 0)
+                return false;
+
+            int levels = _discreteMidBestPairLevels.ValueInt;
+            if (levels < 2)
+                levels = 2;
+
+            decimal minMid = decimal.MaxValue;
+            decimal maxMid = decimal.MinValue;
+            for (int i = 0; i < candles.Count; i++)
+            {
+                Candle c = candles[i];
+                decimal mid = (c.Open + c.Close) * 0.5m;
+                if (mid < minMid) minMid = mid;
+                if (mid > maxMid) maxMid = mid;
+            }
+
+            if (minMid == maxMid)
+                return false;
+
+            rangeStep = (maxMid - minMid) / (levels - 1);
+            return rangeStep > 0;
+        }
+
+        /// <summary>
+        /// SL: на один диапазон ниже входа (лонг) или выше (шорт). TP: цена одного диапазона × (уровень1 − уровень2) от индикатора, в цене: entry − rangeStep×(first−second) (линия активации тейка).
+        /// </summary>
+        private void TryPlaceDiscreteStopAndProfit(BotTabSimple tab, List<Candle> candles)
+        {
+            if (!_useDiscreteMidBestPair.ValueBool
+                || tab == null
+                || candles == null
+                || candles.Count == 0)
+            {
+                return;
+            }
+
+            if (!TryComputeDiscreteRangeStep(candles, out decimal rangeStep))
+                return;
+
+            Aindicator dmb = FindIndicator(tab, NumDiscreteMidBestPair, "DiscreteMidBestPair");
+            if (dmb == null || dmb.DataSeries.Count < 2)
+                return;
+
+            decimal first = dmb.DataSeries[0].Last;
+            decimal second = dmb.DataSeries[1].Last;
+            decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
+
+            List<Position> open = tab.PositionsOpenAll;
+            if (open == null || open.Count == 0)
+                return;
+
+            for (int i = 0; i < open.Count; i++)
+            {
+                Position pos = open[i];
+                if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0)
+                    continue;
+                if (pos.SignalTypeOpen != SignalOpenWithDiscreteSlTp)
+                    continue;
+                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != GetNameStrategyType())
+                    continue;
+                if (pos.StopOrderIsActive && pos.ProfitOrderIsActive)
+                    continue;
+
+                decimal entry = pos.EntryPrice;
+                decimal diffLevels = first - second;
+                decimal profitRedLine = entry - rangeStep * diffLevels;
+
+                if (pos.Direction == Side.Buy)
+                {
+                    if (!pos.StopOrderIsActive)
+                    {
+                        decimal stopRed = tab.RoundPrice(entry - rangeStep, tab.Security, Side.Sell);
+                        decimal stopOrd = tab.RoundPrice(stopRed - slip, tab.Security, Side.Sell);
+                        tab.CloseAtStop(pos, stopRed, stopOrd);
+                    }
+
+                    if (!pos.ProfitOrderIsActive && diffLevels != 0)
+                    {
+                        decimal pr = tab.RoundPrice(profitRedLine, tab.Security, Side.Sell);
+                        decimal po = tab.RoundPrice(pr - slip, tab.Security, Side.Sell);
+                        tab.CloseAtProfit(pos, pr, po);
+                    }
+                }
+                else if (pos.Direction == Side.Sell)
+                {
+                    if (!pos.StopOrderIsActive)
+                    {
+                        decimal stopRed = tab.RoundPrice(entry + rangeStep, tab.Security, Side.Buy);
+                        decimal stopOrd = tab.RoundPrice(stopRed + slip, tab.Security, Side.Buy);
+                        tab.CloseAtStop(pos, stopRed, stopOrd);
+                    }
+
+                    if (!pos.ProfitOrderIsActive && diffLevels != 0)
+                    {
+                        decimal pr = tab.RoundPrice(profitRedLine, tab.Security, Side.Buy);
+                        decimal po = tab.RoundPrice(pr + slip, tab.Security, Side.Buy);
+                        tab.CloseAtProfit(pos, pr, po);
+                    }
+                }
+            }
+        }
+#endif
+
         private void TryOpenOnSignal(List<Candle> candles, BotTabSimple tab, bool bull, bool bear)
         {
             decimal close = candles[candles.Count - 1].Close;
             decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
+#if false // DiscreteMidBestPair
+            string openSignal = DiscreteOpenSignal();
 
+            if (bull && _regime.ValueString != "OnlyShort")
+            {
+                tab.BuyAtLimit(GetVolume(tab), close + slip, openSignal);
+            }
+            else if (bear && _regime.ValueString != "OnlyLong")
+            {
+                tab.SellAtLimit(GetVolume(tab), close - slip, openSignal);
+            }
+#else
             if (bull && _regime.ValueString != "OnlyShort")
             {
                 tab.BuyAtLimit(GetVolume(tab), close + slip);
@@ -671,6 +1041,7 @@ namespace OsEngine.Robots.Custom
             {
                 tab.SellAtLimit(GetVolume(tab), close - slip);
             }
+#endif
         }
 
         private void TryCloseOrReverse(List<Candle> candles, BotTabSimple tab, Position pos, bool bull, bool bear)
@@ -682,7 +1053,34 @@ namespace OsEngine.Robots.Custom
 
             decimal close = candles[candles.Count - 1].Close;
             decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
+#if false // DiscreteMidBestPair
+            string openSignal = DiscreteOpenSignal();
 
+            if (pos.Direction == Side.Buy && bear)
+            {
+                tab.CloseAtLimit(pos, close - slip, pos.OpenVolume);
+
+                if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
+                {
+                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
+                    {
+                        tab.SellAtLimit(GetVolume(tab), close - slip, openSignal);
+                    }
+                }
+            }
+            else if (pos.Direction == Side.Sell && bull)
+            {
+                tab.CloseAtLimit(pos, close + slip, pos.OpenVolume);
+
+                if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
+                {
+                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
+                    {
+                        tab.BuyAtLimit(GetVolume(tab), close + slip, openSignal);
+                    }
+                }
+            }
+#else
             if (pos.Direction == Side.Buy && bear)
             {
                 tab.CloseAtLimit(pos, close - slip, pos.OpenVolume);
@@ -707,6 +1105,7 @@ namespace OsEngine.Robots.Custom
                     }
                 }
             }
+#endif
         }
 
         private decimal GetVolume(BotTabSimple tab)
