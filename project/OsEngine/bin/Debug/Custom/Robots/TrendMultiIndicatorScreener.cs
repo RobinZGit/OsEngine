@@ -34,6 +34,8 @@ Each indicator has an enable/disable parameter. Disabled indicators are not crea
 
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
+«Инверсия логики (покупка ↔ продажа)»: если включена — по сигналу бычьей формулы открывается продажа, по медвежьей — покупка (то же при закрытии и реверсе).
+
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
 
 Exit/Reverse:
@@ -80,6 +82,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _regime;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
+        private StrategyParameterBool _invertEntryLogic;
 
         // volume
         private StrategyParameterString _volumeType;
@@ -227,6 +230,7 @@ namespace OsEngine.Robots.Custom
             _regime = CreateParameter("Regime", "Off", new[] { "Off", "On", "OnlyLong", "OnlyShort", "OnlyClosePosition" });
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
+            _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
@@ -324,7 +328,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/Avg Profit % Long; И-группы по |№|, минус = NOT, ИЛИ между |№|; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/Avg Profit % Long; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -568,6 +572,13 @@ namespace OsEngine.Robots.Custom
 
             bool bull = IsBullSignal(candles, tab);
             bool bear = IsBearSignal(candles, tab);
+
+            if (_invertEntryLogic.ValueBool)
+            {
+                bool tmp = bull;
+                bull = bear;
+                bear = tmp;
+            }
 
             if (!bull && !bear)
             {
