@@ -26,14 +26,14 @@ Screener trend robot using multiple indicators simultaneously:
 - Linear Regression Curve
 - RZIgreensMinusReds (greens minus reds over lookback)
 - Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
+- AverageProfitLong (средняя доходность лонга в окне: по умолчанию в % от средней Close пары; опционально в цене; пороги long/short)
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
-«Логика индикаторов»: «И» — все включённые должны согласоваться; «ИЛИ» — достаточно одного включённого.
+У каждого индикатора — «№ И-группы»: одинаковый номер → условия этих индикаторов склеиваются через И; разные номера групп → между группами ИЛИ (достаточно выполнения одной целой группы).
 
 Entry:
-Open Long when enabled indicators agree per «Логика индикаторов»: «И» — все включённые должны быть бычьими; «ИЛИ» — достаточно одного бычьего среди включённых.
-Open Short — то же для медвежьих условий.
+Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
 
 Exit/Reverse:
@@ -59,15 +59,13 @@ namespace OsEngine.Robots.Custom
         private const int NumLinReg = 6;
         private const int NumRzi = 7;
         private const int NumVolumeIndicator = 9;
+        private const int NumAverageProfitLong = 10;
 #if false // DiscreteMidBestPair: код сохранён, отключён (замените false на true для включения)
         private const int NumDiscreteMidBestPair = 8;
 
         /// <summary>Маркер входа для постановки SL/TP по дискретной сетке (см. TryPlaceDiscreteStopAndProfit).</summary>
         private const string SignalOpenWithDiscreteSlTp = "TrendMultiDiscreteSlTp";
 #endif
-
-        private const string IndicatorsLogicAndOption = "И (все одновременно)";
-        private const string IndicatorsLogicOrOption = "ИЛИ (хотя бы один)";
 
         private const string AreaPrime = "Prime";
         private const string AreaSecond = "Second";
@@ -78,7 +76,6 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _regime;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
-        private StrategyParameterString _indicatorsLogic;
 
         // volume
         private StrategyParameterString _volumeType;
@@ -94,6 +91,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useLinReg;
         private StrategyParameterBool _useRzi;
         private StrategyParameterBool _useVolumeIndicator;
+        private StrategyParameterBool _useAverageProfitLong;
 #if false // DiscreteMidBestPair
         private StrategyParameterBool _useDiscreteMidBestPair;
 #endif
@@ -127,9 +125,64 @@ namespace OsEngine.Robots.Custom
 
         private StrategyParameterDecimal _volumeIndicatorMinGrowthPercent;
 
+        private StrategyParameterInt _avgProfitLongPeriod;
+        private StrategyParameterInt _avgProfitLongPairs;
+        private StrategyParameterBool _avgProfitLongAsPercent;
+        private StrategyParameterDecimal _avgProfitLongBullMin;
+        private StrategyParameterDecimal _avgProfitLongBearMax;
+
+        /*
+         * ---------------------------------------------------------------------------
+         * ЛОГИКА «И-ГРУПП» И ОБЩЕГО «ИЛИ» МЕЖДУ ГРУППАМИ (сигналы IsBullSignal / IsBearSignal)
+         * ---------------------------------------------------------------------------
+         *
+         * У каждого индикатора задаётся целое «№ И-группы» (параметры *AndGroup). Индикаторы
+         * с ОДИНАКОВЫМ номером группы образуют один блок, внутри которого все их условия
+         * связаны логическим И (AND): группа считается выполненной только если КАЖДЫЙ
+         * включённый индикатор этой группы дал «своё» true (бычий или медвежий тест).
+         *
+         * Разные номера групп — это РАЗНЫЕ блоки. Блоки между собой связаны логическим ИЛИ (OR):
+         * общий сигнал (лонг или шорт) считается true, если выполнена ХОТЯ БЫ ОДНА группа
+         * целиком (т.е. существует номер группы G, для которого все индикаторы с группой G
+         * одновременно прошли проверку).
+         *
+         * Итоговая булева формула имеет вид:
+         *   (все из группы 1)  OR  (все из группы 2)  OR  (все из группы 3)  OR ...
+         * где «все из группы K» = cond_A ∧ cond_B ∧ ... только для тех индикаторов,
+         * у которых в настройках стоит Use* = true и номер группы = K.
+         *
+         * Примеры:
+         *  - Все индикаторы с номером 1 (значение по умолчанию): одна группа → чистое И
+         *    по всем включённым индикаторам (как классический «все фильтры сразу»).
+         *  - SMA=1, RSI=1, Volume=2: (SMA∧RSI) ∨ (Volume) — либо оба трендовых, либо объём.
+         *  - Три разных номера 1,2,3 по одному индикатору в группе: фактически ИЛИ трёх
+         *    одиночных условий (каждая «группа» из одного элемента выполняется, если он true).
+         *
+         * Выключенный индикатор (Use* = false) в расчёт не попадает: для него не вызывается
+         * AddGroupedIndicatorResult (методы *Passes возвращают null).
+         *
+         * Если ни один индикатор не включён, список условий пуст — для совместимости с
+         * прежним поведением возвращается true (нет активных фильтров).
+         *
+         * Реализация: CombineGroupedOrOfAnds группирует пары (group, pass) по group и для
+         * каждой группы проверяет grp.All(x => x.pass); если хотя бы одна группа полностью
+         * true — возвращается true; иначе false.
+         * ---------------------------------------------------------------------------
+         */
+        private StrategyParameterInt _smaAndGroup;
+        private StrategyParameterInt _rsiAndGroup;
+        private StrategyParameterInt _stochAndGroup;
+        private StrategyParameterInt _momAndGroup;
+        private StrategyParameterInt _bollAndGroup;
+        private StrategyParameterInt _linRegAndGroup;
+        private StrategyParameterInt _rziAndGroup;
+        private StrategyParameterInt _volumeAndGroup;
+        private StrategyParameterInt _avgProfitLongAndGroup;
+
 #if false // DiscreteMidBestPair
         private StrategyParameterInt _discreteMidBestPairLevels;
         private StrategyParameterInt _discreteEntryThreshold;
+        private StrategyParameterInt _discreteAndGroup;
 #endif
 
         // Non-trade periods (AlgoStart pattern)
@@ -175,10 +228,6 @@ namespace OsEngine.Robots.Custom
             _regime = CreateParameter("Regime", "Off", new[] { "Off", "On", "OnlyLong", "OnlyShort", "OnlyClosePosition" });
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
-            _indicatorsLogic = CreateParameter(
-                "Логика индикаторов",
-                IndicatorsLogicAndOption,
-                new[] { IndicatorsLogicAndOption, IndicatorsLogicOrOption });
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
@@ -203,6 +252,8 @@ namespace OsEngine.Robots.Custom
             _useLinReg = CreateParameter("Use Linear Regression", true);
             _useRzi = CreateParameter("Use RZIgreensMinusReds", false); //! default false
             _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
+            _useAverageProfitLong = CreateParameter("Use AverageProfitLong", false);
+
 #if false // DiscreteMidBestPair
             _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
 #endif
@@ -242,10 +293,28 @@ namespace OsEngine.Robots.Custom
 
             _volumeIndicatorMinGrowthPercent = CreateParameter("Volume vs prev candle min growth %", 5m, 0m, 500m, 0.5m);
 
+            // AverageProfitLong (Custom/Indicators/Scripts/AverageProfitLong.cs)
+            _avgProfitLongPeriod = CreateParameter("AProfLong period (candles)", 50, 2, 500, 1);
+            _avgProfitLongPairs = CreateParameter("AProfLong random pairs", 100, 1, 2000, 1);
+            _avgProfitLongAsPercent = CreateParameter("AProfLong: % от средней цены пары", true);
+            _avgProfitLongBullMin = CreateParameter("AProfLong long: value >", 0m, -1000000m, 1000000m, 0.0001m);
+            _avgProfitLongBearMax = CreateParameter("AProfLong short: value <", 0m, -1000000m, 1000000m, 0.0001m);
+
+            _smaAndGroup = CreateParameter("SMA: № И-группы", 1, 1, 32, 1);
+            _rsiAndGroup = CreateParameter("RSI: № И-группы", 1, 1, 32, 1);
+            _stochAndGroup = CreateParameter("Stochastic: № И-группы", 1, 1, 32, 1);
+            _momAndGroup = CreateParameter("Momentum: № И-группы", 1, 1, 32, 1);
+            _bollAndGroup = CreateParameter("Bollinger: № И-группы", 1, 1, 32, 1);
+            _linRegAndGroup = CreateParameter("LinReg: № И-группы", 1, 1, 32, 1);
+            _rziAndGroup = CreateParameter("RZI: № И-группы", 1, 1, 32, 1);
+            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы", 1, 1, 32, 1);
+            _avgProfitLongAndGroup = CreateParameter("AProfLong: № И-группы", 1, 1, 32, 1);
+
 #if false // DiscreteMidBestPair
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
             _discreteMidBestPairLevels = CreateParameter("DiscreteMidBestPair levels", 32, 2, 256, 1);
             _discreteEntryThreshold = CreateParameter("Порог входа дискретизации", 1, 0, 256, 1);
+            _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы", 1, 1, 32, 1);
 #endif
 
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
@@ -256,7 +325,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume (optional), logic И/ИЛИ, non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/AProfLong, И-группы (И внутри, ИЛИ между), non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -396,6 +465,18 @@ namespace OsEngine.Robots.Custom
                 new List<string>(),
                 AreaSecond,
                 _useVolumeIndicator.ValueBool);
+
+            EnsureIndicator(
+                NumAverageProfitLong,
+                "AverageProfitLong",
+                new List<string>
+                {
+                    _avgProfitLongPeriod.ValueInt.ToString(),
+                    _avgProfitLongPairs.ValueInt.ToString(),
+                    _avgProfitLongAsPercent.ValueBool.ToString()
+                },
+                AreaSecond,
+                _useAverageProfitLong.ValueBool);
 
 #if false // DiscreteMidBestPair
             EnsureIndicator(
@@ -557,84 +638,88 @@ namespace OsEngine.Robots.Custom
             return list.Find(source => source.Connector.SecurityName == tab.Connector.SecurityName) != null;
         }
 
-        private bool IsIndicatorsLogicAnd()
+        /// <summary>
+        /// Добавляет в список участников формулы «(И внутри группы) ИЛИ между группами» одну пару
+        /// (номер_группы, прошёл_ли_индикатор). Если индикатор выключен, passResult == null — запись не добавляется.
+        /// Номер группы &lt; 1 приводится к 1, чтобы не получить «пустой» ключ группировки.
+        /// </summary>
+        private static void AddGroupedIndicatorResult(List<(int group, bool pass)> items, StrategyParameterInt groupParam, bool? passResult)
         {
-            return string.Equals(_indicatorsLogic.ValueString, IndicatorsLogicAndOption, StringComparison.Ordinal);
+            if (!passResult.HasValue)
+                return;
+            int g = groupParam.ValueInt;
+            if (g < 1)
+                g = 1;
+            items.Add((g, passResult.Value));
         }
 
         /// <summary>
-        /// null — индикатор выключен; true/false — результат проверки.
-        /// combineWithAnd: все ненулевые должны быть true; иначе хотя бы один true. Нет включённых: для «И» true (как раньше), для «ИЛИ» false.
+        /// Сводит список (группа, результат_индикатора) к одному булеву значению по правилам из
+        /// большого комментария над полями *_AndGroup: внутри каждой группы — логическое И всех pass;
+        /// между группами — логическое ИЛИ (достаточно одной группы, у которой все pass == true).
+        /// Пустой список: true (нет включённых индикаторов — не блокируем вход).
         /// </summary>
-        private bool CombineIndicatorResults(bool combineWithAnd, List<bool?> parts)
+        private bool CombineGroupedOrOfAnds(List<(int group, bool pass)> items)
         {
-            int count = 0;
-            bool any = false;
+            if (items.Count == 0)
+                return true;
 
-            for (int i = 0; i < parts.Count; i++)
+            foreach (var grp in items.GroupBy(x => x.group))
             {
-                bool? p = parts[i];
-                if (!p.HasValue)
-                    continue;
-
-                count++;
-                if (p.Value)
-                    any = true;
-
-                if (combineWithAnd && !p.Value)
-                    return false;
+                if (grp.All(x => x.pass))
+                    return true;
             }
 
-            if (count == 0)
-                return combineWithAnd;
-
-            return combineWithAnd || any;
+            return false;
         }
 
+        /// <summary>
+        /// Лонг: собирает бычьи проверки всех включённых индикаторов с их «№ И-группы» и передаёт
+        /// в <see cref="CombineGroupedOrOfAnds"/> (см. комментарий к полям *_AndGroup выше).
+        /// </summary>
         private bool IsBullSignal(List<Candle> candles, BotTabSimple tab)
         {
             decimal close = candles[candles.Count - 1].Close;
-            bool useAnd = IsIndicatorsLogicAnd();
+            var items = new List<(int group, bool pass)>();
 
-            var parts = new List<bool?>
-            {
-                BullSmaPasses(close, tab),
-                BullRsiPasses(close, tab),
-                BullStochPasses(close, tab),
-                BullMomentumPasses(close, tab),
-                BullBollingerPasses(close, tab),
-                BullLinRegPasses(close, tab),
-                BullRziPasses(close, tab),
+            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab));
+            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab));
+            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab));
+            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab));
+            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab));
+            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab));
+            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab));
 #if false // DiscreteMidBestPair
-                BullDiscretePasses(candles, tab),
+            AddGroupedIndicatorResult(items, _discreteAndGroup, BullDiscretePasses(candles, tab));
 #endif
-                BullVolumePasses(candles, tab),
-            };
+            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab));
+            AddGroupedIndicatorResult(items, _avgProfitLongAndGroup, BullAverageProfitLongPasses(candles, tab));
 
-            return CombineIndicatorResults(useAnd, parts);
+            return CombineGroupedOrOfAnds(items);
         }
 
+        /// <summary>
+        /// Шорт: та же схема И-групп / ИЛИ между группами, что и для лонга, но с медвежьими *Passes.
+        /// </summary>
         private bool IsBearSignal(List<Candle> candles, BotTabSimple tab)
         {
             decimal close = candles[candles.Count - 1].Close;
-            bool useAnd = IsIndicatorsLogicAnd();
+            var items = new List<(int group, bool pass)>();
 
-            var parts = new List<bool?>
-            {
-                BearSmaPasses(close, tab),
-                BearRsiPasses(close, tab),
-                BearStochPasses(close, tab),
-                BearMomentumPasses(close, tab),
-                BearBollingerPasses(close, tab),
-                BearLinRegPasses(close, tab),
-                BearRziPasses(close, tab),
+            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab));
+            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab));
+            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab));
+            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab));
+            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab));
+            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab));
+            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab));
 #if false // DiscreteMidBestPair
-                BearDiscretePasses(candles, tab),
+            AddGroupedIndicatorResult(items, _discreteAndGroup, BearDiscretePasses(candles, tab));
 #endif
-                BearVolumePasses(candles, tab),
-            };
+            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab));
+            AddGroupedIndicatorResult(items, _avgProfitLongAndGroup, BearAverageProfitLongPasses(candles, tab));
 
-            return CombineIndicatorResults(useAnd, parts);
+            return CombineGroupedOrOfAnds(items);
         }
 
         private bool? BullSmaPasses(decimal close, BotTabSimple tab)
@@ -741,6 +826,20 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab);
         }
 
+        private bool? BullAverageProfitLongPasses(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useAverageProfitLong.ValueBool)
+                return null;
+            int period = Math.Max(2, _avgProfitLongPeriod.ValueInt);
+            if (candles == null || candles.Count < period)
+                return false;
+            Aindicator ap = FindIndicator(tab, NumAverageProfitLong, "AverageProfitLong");
+            if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
+                return false;
+            decimal v = ap.DataSeries[0].Last;
+            return v > _avgProfitLongBullMin.ValueDecimal;
+        }
+
         private bool? BearSmaPasses(decimal close, BotTabSimple tab)
         {
             if (!_useSma.ValueBool)
@@ -844,6 +943,20 @@ namespace OsEngine.Robots.Custom
             if (!_useVolumeIndicator.ValueBool)
                 return null;
             return VolumeIndicatorGrowthOk(candles, tab);
+        }
+
+        private bool? BearAverageProfitLongPasses(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_useAverageProfitLong.ValueBool)
+                return null;
+            int period = Math.Max(2, _avgProfitLongPeriod.ValueInt);
+            if (candles == null || candles.Count < period)
+                return false;
+            Aindicator ap = FindIndicator(tab, NumAverageProfitLong, "AverageProfitLong");
+            if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
+                return false;
+            decimal v = ap.DataSeries[0].Last;
+            return v < _avgProfitLongBearMax.ValueDecimal;
         }
 
         private Aindicator FindIndicator(BotTabSimple tab, int num, string type)
