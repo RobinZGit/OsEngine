@@ -342,3 +342,6 @@ project/OsEngine/bin/**/Plaza/Log/**
 # OsEngine local engine state (charts, params, updater, etc.) — forced visible by !bin/** above
 project/OsEngine/bin/Debug/Engine/
 project/OsEngine/bin/Debug/Engine/**
+
+# Windows shortcuts next to Custom output (local convenience, not source)
+project/OsEngine/bin/**/*.lnk
