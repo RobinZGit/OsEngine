@@ -26,11 +26,11 @@ Screener trend robot using multiple indicators simultaneously:
 - Linear Regression Curve
 - RZIgreensMinusReds (greens minus reds over lookback)
 - Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
-- AverageProfitLong (средняя доходность лонга в окне: по умолчанию в % от средней Close пары; опционально в цене; пороги long/short)
+- Average Profit Percent Long (средняя доходность лонга в окне: по умолчанию в % от средней Close пары; опционально в цене; пороги long/short)
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
-У каждого индикатора — «№ И-группы»: одинаковый номер → условия этих индикаторов склеиваются через И; разные номера групп → между группами ИЛИ (достаточно выполнения одной целой группы).
+У каждого индикатора — «№ И-группы» (целое, может быть отрицательным): по модулю номера строится одна И-группа (например 2 и −2 — одна группа); внутри группы условия связаны И. Отрицательный номер означает отрицание условия индикатора (NOT). Разные значения |номера| — разные группы; между группами ИЛИ.
 
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
@@ -59,7 +59,11 @@ namespace OsEngine.Robots.Custom
         private const int NumLinReg = 6;
         private const int NumRzi = 7;
         private const int NumVolumeIndicator = 9;
-        private const int NumAverageProfitLong = 10;
+
+        /// <summary>Как в атрибуте [Indicator("...")] у скрипта AverageProfitPercentLong.</summary>
+        private const string AverageProfitPercentLongIndicatorType = "Average Profit Percent Long";
+
+        private const int NumAverageProfitPercentLong = 10;
 #if false // DiscreteMidBestPair: код сохранён, отключён (замените false на true для включения)
         private const int NumDiscreteMidBestPair = 8;
 
@@ -91,7 +95,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useLinReg;
         private StrategyParameterBool _useRzi;
         private StrategyParameterBool _useVolumeIndicator;
-        private StrategyParameterBool _useAverageProfitLong;
+        private StrategyParameterBool _useAverageProfitPercentLong;
 #if false // DiscreteMidBestPair
         private StrategyParameterBool _useDiscreteMidBestPair;
 #endif
@@ -125,38 +129,33 @@ namespace OsEngine.Robots.Custom
 
         private StrategyParameterDecimal _volumeIndicatorMinGrowthPercent;
 
-        private StrategyParameterInt _avgProfitLongPeriod;
-        private StrategyParameterInt _avgProfitLongPairs;
-        private StrategyParameterBool _avgProfitLongAsPercent;
-        private StrategyParameterDecimal _avgProfitLongBullMin;
-        private StrategyParameterDecimal _avgProfitLongBearMax;
+        private StrategyParameterInt _avgProfitPercentLongPeriod;
+        private StrategyParameterInt _avgProfitPercentLongPairs;
+        private StrategyParameterBool _avgProfitPercentLongAsPercent;
+        private StrategyParameterDecimal _avgProfitPercentLongBullMin;
+        private StrategyParameterDecimal _avgProfitPercentLongBearMax;
 
         /*
          * ---------------------------------------------------------------------------
          * ЛОГИКА «И-ГРУПП» И ОБЩЕГО «ИЛИ» МЕЖДУ ГРУППАМИ (сигналы IsBullSignal / IsBearSignal)
          * ---------------------------------------------------------------------------
          *
-         * У каждого индикатора задаётся целое «№ И-группы» (параметры *AndGroup). Индикаторы
-         * с ОДИНАКОВЫМ номером группы образуют один блок, внутри которого все их условия
-         * связаны логическим И (AND): группа считается выполненной только если КАЖДЫЙ
-         * включённый индикатор этой группы дал «своё» true (бычий или медвежий тест).
+         * У каждого индикатора задаётся целое «№ И-группы» (параметры *AndGroup), диапазон в т.ч.
+         * отрицательные значения. Ключ блока И — это |номер|: индикаторы с номерами G и −G попадают
+         * в одну и ту же группу (один блок для OR между группами).
          *
-         * Разные номера групп — это РАЗНЫЕ блоки. Блоки между собой связаны логическим ИЛИ (OR):
-         * общий сигнал (лонг или шорт) считается true, если выполнена ХОТЯ БЫ ОДНА группа
-         * целиком (т.е. существует номер группы G, для которого все индикаторы с группой G
-         * одновременно прошли проверку).
+         * Внутри блока с ключом |G| все условия связаны логическим И (AND). Для положительного номера
+         * группы берётся результат *Passes как есть; для отрицательного — инверсия (NOT): индикатор
+         * «должен не выполнять» своё обычное условие.
          *
-         * Итоговая булева формула имеет вид:
-         *   (все из группы 1)  OR  (все из группы 2)  OR  (все из группы 3)  OR ...
-         * где «все из группы K» = cond_A ∧ cond_B ∧ ... только для тех индикаторов,
-         * у которых в настройках стоит Use* = true и номер группы = K.
+         * Разные |номер| — разные блоки. Блоки между собой — логическое ИЛИ (OR): общий сигнал true,
+         * если хотя бы один блок целиком true (все его участники с учётом знака дали true).
          *
          * Примеры:
-         *  - Все индикаторы с номером 1 (значение по умолчанию): одна группа → чистое И
-         *    по всем включённым индикаторам (как классический «все фильтры сразу»).
-         *  - SMA=1, RSI=1, Volume=2: (SMA∧RSI) ∨ (Volume) — либо оба трендовых, либо объём.
-         *  - Три разных номера 1,2,3 по одному индикатору в группе: фактически ИЛИ трёх
-         *    одиночных условий (каждая «группа» из одного элемента выполняется, если он true).
+         *  - SMA=1, RSI=1: как раньше — (SMA ∧ RSI).
+         *  - SMA=1, RSI=−1: одна группа |1| — (SMA ∧ ¬RSI).
+         *  - SMA=2, RSI=−2: та же группа |2| — (SMA ∧ ¬RSI); с Volume=1 получится (SMA₂∧¬RSI₂) ∨ (Volume₁).
+         *  - Номер 0 в настройках не используется как отдельный ключ: для совместимости трактуется как 1.
          *
          * Выключенный индикатор (Use* = false) в расчёт не попадает: для него не вызывается
          * AddGroupedIndicatorResult (методы *Passes возвращают null).
@@ -164,9 +163,9 @@ namespace OsEngine.Robots.Custom
          * Если ни один индикатор не включён, список условий пуст — для совместимости с
          * прежним поведением возвращается true (нет активных фильтров).
          *
-         * Реализация: CombineGroupedOrOfAnds группирует пары (group, pass) по group и для
-         * каждой группы проверяет grp.All(x => x.pass); если хотя бы одна группа полностью
-         * true — возвращается true; иначе false.
+         * Реализация: AddGroupedIndicatorResult кладёт (|g|, pass или ¬pass); CombineGroupedOrOfAnds
+         * группирует по ключу и для каждой группы проверяет grp.All(x => x.pass); если хотя бы одна
+         * группа полностью true — возвращается true; иначе false.
          * ---------------------------------------------------------------------------
          */
         private StrategyParameterInt _smaAndGroup;
@@ -177,7 +176,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _linRegAndGroup;
         private StrategyParameterInt _rziAndGroup;
         private StrategyParameterInt _volumeAndGroup;
-        private StrategyParameterInt _avgProfitLongAndGroup;
+        private StrategyParameterInt _avgProfitPercentLongAndGroup;
 
 #if false // DiscreteMidBestPair
         private StrategyParameterInt _discreteMidBestPairLevels;
@@ -252,7 +251,7 @@ namespace OsEngine.Robots.Custom
             _useLinReg = CreateParameter("Use Linear Regression", true);
             _useRzi = CreateParameter("Use RZIgreensMinusReds", false); //! default false
             _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
-            _useAverageProfitLong = CreateParameter("Use AverageProfitLong", false);
+            _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
 
 #if false // DiscreteMidBestPair
             _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
@@ -293,28 +292,28 @@ namespace OsEngine.Robots.Custom
 
             _volumeIndicatorMinGrowthPercent = CreateParameter("Volume vs prev candle min growth %", 5m, 0m, 500m, 0.5m);
 
-            // AverageProfitLong (Custom/Indicators/Scripts/AverageProfitLong.cs)
-            _avgProfitLongPeriod = CreateParameter("AProfLong period (candles)", 50, 2, 500, 1);
-            _avgProfitLongPairs = CreateParameter("AProfLong random pairs", 100, 1, 2000, 1);
-            _avgProfitLongAsPercent = CreateParameter("AProfLong: % от средней цены пары", true);
-            _avgProfitLongBullMin = CreateParameter("AProfLong long: value >", 0m, -1000000m, 1000000m, 0.0001m);
-            _avgProfitLongBearMax = CreateParameter("AProfLong short: value <", 0m, -1000000m, 1000000m, 0.0001m);
+            // Average Profit Percent Long (Custom/Indicators/Scripts/AverageProfitPercentLong.cs)
+            _avgProfitPercentLongPeriod = CreateParameter("Avg Profit % Long period (candles)", 50, 2, 500, 1);
+            _avgProfitPercentLongPairs = CreateParameter("Avg Profit % Long random pairs", 100, 1, 2000, 1);
+            _avgProfitPercentLongAsPercent = CreateParameter("Avg Profit % Long: % from pair mid price", true);
+            _avgProfitPercentLongBullMin = CreateParameter("Avg Profit % Long long: value >", 0m, -1000000m, 1000000m, 0.0001m);
+            _avgProfitPercentLongBearMax = CreateParameter("Avg Profit % Long short: value <", 0m, -1000000m, 1000000m, 0.0001m);
 
-            _smaAndGroup = CreateParameter("SMA: № И-группы", 1, 1, 32, 1);
-            _rsiAndGroup = CreateParameter("RSI: № И-группы", 1, 1, 32, 1);
-            _stochAndGroup = CreateParameter("Stochastic: № И-группы", 1, 1, 32, 1);
-            _momAndGroup = CreateParameter("Momentum: № И-группы", 1, 1, 32, 1);
-            _bollAndGroup = CreateParameter("Bollinger: № И-группы", 1, 1, 32, 1);
-            _linRegAndGroup = CreateParameter("LinReg: № И-группы", 1, 1, 32, 1);
-            _rziAndGroup = CreateParameter("RZI: № И-группы", 1, 1, 32, 1);
-            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы", 1, 1, 32, 1);
-            _avgProfitLongAndGroup = CreateParameter("AProfLong: № И-группы", 1, 1, 32, 1);
+            _smaAndGroup = CreateParameter("SMA: № И-группы", 1, -32, 32, 1);
+            _rsiAndGroup = CreateParameter("RSI: № И-группы", 1, -32, 32, 1);
+            _stochAndGroup = CreateParameter("Stochastic: № И-группы", 1, -32, 32, 1);
+            _momAndGroup = CreateParameter("Momentum: № И-группы", 1, -32, 32, 1);
+            _bollAndGroup = CreateParameter("Bollinger: № И-группы", 1, -32, 32, 1);
+            _linRegAndGroup = CreateParameter("LinReg: № И-группы", 1, -32, 32, 1);
+            _rziAndGroup = CreateParameter("RZI: № И-группы", 1, -32, 32, 1);
+            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы", 1, -32, 32, 1);
+            _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы", 1, -32, 32, 1);
 
 #if false // DiscreteMidBestPair
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
             _discreteMidBestPairLevels = CreateParameter("DiscreteMidBestPair levels", 32, 2, 256, 1);
             _discreteEntryThreshold = CreateParameter("Порог входа дискретизации", 1, 0, 256, 1);
-            _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы", 1, 1, 32, 1);
+            _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы", 1, -32, 32, 1);
 #endif
 
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
@@ -325,7 +324,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/AProfLong, И-группы (И внутри, ИЛИ между), non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/Avg Profit % Long; И-группы по |№|, минус = NOT, ИЛИ между |№|; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -467,16 +466,16 @@ namespace OsEngine.Robots.Custom
                 _useVolumeIndicator.ValueBool);
 
             EnsureIndicator(
-                NumAverageProfitLong,
-                "AverageProfitLong",
+                NumAverageProfitPercentLong,
+                AverageProfitPercentLongIndicatorType,
                 new List<string>
                 {
-                    _avgProfitLongPeriod.ValueInt.ToString(),
-                    _avgProfitLongPairs.ValueInt.ToString(),
-                    _avgProfitLongAsPercent.ValueBool.ToString()
+                    _avgProfitPercentLongPeriod.ValueInt.ToString(),
+                    _avgProfitPercentLongPairs.ValueInt.ToString(),
+                    _avgProfitPercentLongAsPercent.ValueBool.ToString()
                 },
                 AreaSecond,
-                _useAverageProfitLong.ValueBool);
+                _useAverageProfitPercentLong.ValueBool);
 
 #if false // DiscreteMidBestPair
             EnsureIndicator(
@@ -639,24 +638,28 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Добавляет в список участников формулы «(И внутри группы) ИЛИ между группами» одну пару
-        /// (номер_группы, прошёл_ли_индикатор). Если индикатор выключен, passResult == null — запись не добавляется.
-        /// Номер группы &lt; 1 приводится к 1, чтобы не получить «пустой» ключ группировки.
+        /// Добавляет пару для формулы «(И внутри группы по |№|) ИЛИ между разными |№|».
+        /// Номер группы может быть отрицательным: тогда в список попадает то же |номер|, но с инвертированным pass (NOT).
+        /// Ноль как номер группы не используется как ключ: для совместимости приводится к 1.
+        /// Выключенный индикатор: passResult == null — запись не добавляется.
         /// </summary>
         private static void AddGroupedIndicatorResult(List<(int group, bool pass)> items, StrategyParameterInt groupParam, bool? passResult)
         {
             if (!passResult.HasValue)
                 return;
-            int g = groupParam.ValueInt;
-            if (g < 1)
-                g = 1;
-            items.Add((g, passResult.Value));
+            int raw = groupParam.ValueInt;
+            if (raw == 0)
+                raw = 1;
+            int groupKey = Math.Abs(raw);
+            bool pass = passResult.Value;
+            if (raw < 0)
+                pass = !pass;
+            items.Add((groupKey, pass));
         }
 
         /// <summary>
-        /// Сводит список (группа, результат_индикатора) к одному булеву значению по правилам из
-        /// большого комментария над полями *_AndGroup: внутри каждой группы — логическое И всех pass;
-        /// между группами — логическое ИЛИ (достаточно одной группы, у которой все pass == true).
+        /// Сводит список (ключ_группы = |исходный_номер|, результат с учётом знака) к одному булеву значению:
+        /// внутри каждой группы — И всех pass; между группами — ИЛИ.
         /// Пустой список: true (нет включённых индикаторов — не блокируем вход).
         /// </summary>
         private bool CombineGroupedOrOfAnds(List<(int group, bool pass)> items)
@@ -693,7 +696,7 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _discreteAndGroup, BullDiscretePasses(candles, tab));
 #endif
             AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab));
-            AddGroupedIndicatorResult(items, _avgProfitLongAndGroup, BullAverageProfitLongPasses(candles, tab));
+            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -717,7 +720,7 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _discreteAndGroup, BearDiscretePasses(candles, tab));
 #endif
             AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab));
-            AddGroupedIndicatorResult(items, _avgProfitLongAndGroup, BearAverageProfitLongPasses(candles, tab));
+            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -826,18 +829,18 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab);
         }
 
-        private bool? BullAverageProfitLongPasses(List<Candle> candles, BotTabSimple tab)
+        private bool? BullAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab)
         {
-            if (!_useAverageProfitLong.ValueBool)
+            if (!_useAverageProfitPercentLong.ValueBool)
                 return null;
-            int period = Math.Max(2, _avgProfitLongPeriod.ValueInt);
+            int period = Math.Max(2, _avgProfitPercentLongPeriod.ValueInt);
             if (candles == null || candles.Count < period)
                 return false;
-            Aindicator ap = FindIndicator(tab, NumAverageProfitLong, "AverageProfitLong");
+            Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
             if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
                 return false;
             decimal v = ap.DataSeries[0].Last;
-            return v > _avgProfitLongBullMin.ValueDecimal;
+            return v > _avgProfitPercentLongBullMin.ValueDecimal;
         }
 
         private bool? BearSmaPasses(decimal close, BotTabSimple tab)
@@ -945,18 +948,18 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab);
         }
 
-        private bool? BearAverageProfitLongPasses(List<Candle> candles, BotTabSimple tab)
+        private bool? BearAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab)
         {
-            if (!_useAverageProfitLong.ValueBool)
+            if (!_useAverageProfitPercentLong.ValueBool)
                 return null;
-            int period = Math.Max(2, _avgProfitLongPeriod.ValueInt);
+            int period = Math.Max(2, _avgProfitPercentLongPeriod.ValueInt);
             if (candles == null || candles.Count < period)
                 return false;
-            Aindicator ap = FindIndicator(tab, NumAverageProfitLong, "AverageProfitLong");
+            Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
             if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
                 return false;
             decimal v = ap.DataSeries[0].Last;
-            return v < _avgProfitLongBearMax.ValueDecimal;
+            return v < _avgProfitPercentLongBearMax.ValueDecimal;
         }
 
         private Aindicator FindIndicator(BotTabSimple tab, int num, string type)

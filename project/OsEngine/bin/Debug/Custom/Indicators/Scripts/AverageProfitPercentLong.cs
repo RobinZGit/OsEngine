@@ -7,7 +7,7 @@ namespace OsEngine.Indicators
 {
     /*
      * =============================================================================
-     * ИНДИКАТОР «Средняя прибыль Long» (AverageProfitLong) — как он работает
+     * ИНДИКАТОР «Average Profit Percent Long» — как он работает
      * =============================================================================
      *
      * НАЗНАЧЕНИЕ
@@ -16,28 +16,17 @@ namespace OsEngine.Indicators
      * случайно выбрали момент входа и момент выхода только из свечей фиксированного
      * недавнего окна. Это не реальная торговля и не учёт комиссий.
      *
-     * В режиме «в процентах» для каждой пары считается не сырой ход цены, а
-     * относительное изменение в процентах: (Close_позже − Close_раньше) делится на
-     * среднюю цену двух свечей пары ((Close₁+Close₂)/2) и умножается на 100.
+     * В режиме «в процентах» для каждой пары считается относительное изменение в %:
+     * (Close_позже − Close_раньше) / ((Close₁+Close₂)/2) × 100.
      * В серию попадает среднее этих процентов по всем случайным парам.
      *
-     * В режиме «абсолют» — как раньше: среднее (Close_позже − Close_раньше) в единицах цены.
+     * В режиме «абсолют» — среднее (Close_позже − Close_раньше) в единицах цены.
      *
      * ПАРАМЕТРЫ
      * ----------
-     * 1) «Период (свечей назад)» — сколько последних свечей участвуют в выборке.
-     * 2) «Число случайных пар» — сколько независимых пар на один бар (Monte Carlo).
-     * 3) «В процентах» — если да, серия в %; если нет — в единицах цены инструмента.
-     *
-     * АЛГОРИТМ НА ОДНОМ БАРЕ (OnProcess для индекса index)
-     * ----------------------------------------------------
-     * 1. Если данных меньше, чем `period` (index < period - 1), в серию пишется 0.
-     * 2. Иначе окно [index - period + 1, index], внутри — `pairs` случайных пар
-     *    (две разные свечи, упорядоченные по времени: earlier → later).
-     * 3. Для пары: diff = later.Close - earlier.Close.
-     *    В процентах: mid = (earlier.Close + later.Close) / 2; если |mid| слишком мало,
-     *    пара пропускается (не входит в среднее). Иначе вклад = 100 * diff / mid.
-     * 4. Среднее по учтённым парам (в процентах — только по парам с ненулевой серединой).
+     * 1) «Период (свечей назад)» — размер окна для выборки пар.
+     * 2) «Число случайных пар» — итераций Monte Carlo на бар.
+     * 3) «В процентах от средней цены пары» — серия в % или в цене.
      *
      * =============================================================================
      */
@@ -46,21 +35,17 @@ namespace OsEngine.Indicators
     /// Средняя по случайным парам свечей доходность виртуального лонга внутри окна:
     /// в процентах от средней Close пары или в абсолютных единицах цены.
     /// </summary>
-    [Indicator("AverageProfitLong")]
-    public class AverageProfitLong : Aindicator
+    [Indicator("Average Profit Percent Long")]
+    public class AverageProfitPercentLong : Aindicator
     {
         private static readonly decimal MinMidAbs = 1e-12m;
 
-        /// <summary>Длина окна: сколько последних свечей участвуют в случайном выборе пар.</summary>
         private IndicatorParameterInt _period;
 
-        /// <summary>Сколько независимых случайных пар обрабатывается на одном баре (чем больше — тем гладче среднее).</summary>
         private IndicatorParameterInt _pairsCount;
 
-        /// <summary>Если true — серия в процентах (среднее 100·ΔClose/средняя_цена_пары); иначе — среднее ΔClose в цене.</summary>
         private IndicatorParameterBool _asPercent;
 
-        /// <summary>Одна линия: средняя доходность лонга по описанной схеме.</summary>
         private IndicatorDataSeries _series;
 
         public override void OnStateChange(IndicatorState state)
@@ -70,7 +55,7 @@ namespace OsEngine.Indicators
                 _period = CreateParameterInt("Период (свечей назад)", 50);
                 _pairsCount = CreateParameterInt("Число случайных пар", 100);
                 _asPercent = CreateParameterBool("В процентах от средней цены пары", true);
-                _series = CreateSeries("Средняя доходность Long", Color.SeaGreen, IndicatorChartPaintType.Line, true);
+                _series = CreateSeries("Average Profit Percent Long", Color.SeaGreen, IndicatorChartPaintType.Line, true);
             }
             else if (state == IndicatorState.Dispose)
             {
