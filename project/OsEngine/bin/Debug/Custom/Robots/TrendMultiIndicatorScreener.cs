@@ -15,6 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using OsEngine.Candles;
 using OsEngine.Candles.Factory;
+using OsEngine.Candles.Series;
 using OsEngine.Entity;
 using OsEngine.Indicators;
 using OsEngine.Logging;
