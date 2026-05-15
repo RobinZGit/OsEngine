@@ -58,7 +58,7 @@ Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
 - Volatility cluster to trade (1–3) with lookback; only tabs in the chosen cluster can open new positions.
 
-Emergency portfolio stop (tab «Аварийная остановка портфеля»): optional % стоп/тейк от базы сессии, «Трейлинг % по портфелю (от пика)», «Трейлинг-стоп % (на каждую позицию)». Самоиндикация (tab «самоиндикация»): виртуальный портфель по сигналам на окне свечей → % годовых; выше порога — вход как обычно, ниже −порога — переключить инверсию и войти, между — боковик без входа.
+Emergency portfolio stop (tab «Аварийная остановка портфеля»): optional % стоп/тейк от базы сессии, «Трейлинг % по портфелю (от пика)», «Трейлинг-стоп % (на каждую позицию)», «После трейлинг-стопа: свечей выждать» (0 = выкл.) — пауза новых входов на вкладке. Самоиндикация (tab «самоиндикация»): виртуальный портфель по сигналам на окне свечей → % годовых; выше порога — вход как обычно, ниже −порога — переключить инверсию и войти, между — боковик без входа.
 
 Schedule (tab «Расписание»): «Дата-время начала работы» — пустая строка = выкл.; если задано, торговая логика и фиксация базы портфеля для стоп/тейк не идут, пока время сравнения (свеча в тестере, сервер в лайве) строго меньше заданного.
 
@@ -263,7 +263,12 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _techPortfolioBaselineDisplay;
         private StrategyParameterString _portfolioTrailingStopPercent;
         private StrategyParameterString _portfolioTrailingOrderType;
+        private StrategyParameterInt _portfolioTrailingCooldownCandles;
         private StrategyParameterButton _stopRobotButton;
+
+        /// <summary>Осталось свечей паузы входа на вкладке после трейлинг-стопа (ключ = TabName).</summary>
+        private readonly Dictionary<string, int> _portfolioTrailingCooldownBarsLeft =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         private const string PortfolioTrailingStopSignal = "TrendMultiPortfolioTrail";
 
@@ -388,6 +393,13 @@ namespace OsEngine.Robots.Custom
                 "Трейлинг-стоп: тип ордера",
                 "Market",
                 new[] { "Market", "Limit" },
+                emergencyTab);
+            _portfolioTrailingCooldownCandles = CreateParameter(
+                "После трейлинг-стопа: свечей выждать",
+                0,
+                0,
+                500,
+                1,
                 emergencyTab);
             _stopRobotButton = CreateParameterButton("Остановить робота", emergencyTab);
             _stopRobotButton.UserClickOnButtonEvent += StopRobotButton_UserClickOnButtonEvent;
@@ -2570,7 +2582,8 @@ namespace OsEngine.Robots.Custom
                 + (_portfolioEquityTrailingPercent?.ValueString ?? "").Trim() + "|"
                 + (_stopDateTime?.ValueString ?? "").Trim() + "|"
                 + (_portfolioTrailingStopPercent?.ValueString ?? "").Trim() + "|"
-                + (_portfolioTrailingOrderType?.ValueString ?? "").Trim();
+                + (_portfolioTrailingOrderType?.ValueString ?? "").Trim() + "|"
+                + (_portfolioTrailingCooldownCandles?.ValueInt.ToString() ?? "0");
             if (force || sig != _emergencySettingsSignature)
             {
                 _emergencySettingsSignature = sig;
@@ -2826,6 +2839,7 @@ namespace OsEngine.Robots.Custom
                     _portfolioEquityPeakCaptured = false;
                     _portfolioEquityPeak = 0m;
                     _portfolioTrailingExtremeByPosition.Clear();
+                    _portfolioTrailingCooldownBarsLeft.Clear();
                 }
 
                 if (_prevRegimeSnapshot == "Off" && regime != "Off")
@@ -3086,14 +3100,113 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// Запуск паузы входа на вкладке после срабатывания трейлинг-стопа по позиции.
+        /// </summary>
+        private void StartPortfolioTrailingStopCooldown(BotTabSimple tab)
+        {
+            int waitBars = _portfolioTrailingCooldownCandles?.ValueInt ?? 0;
+            if (waitBars <= 0 || tab == null || string.IsNullOrEmpty(tab.TabName))
+            {
+                return;
+            }
+
+            _portfolioTrailingCooldownBarsLeft[tab.TabName] = waitBars;
+        }
+
+        /// <summary>
+        /// Пауза новых входов на вкладке после трейлинг-стопа (0 в параметре — выкл.).
+        /// </summary>
+        private bool IsPortfolioTrailingStopEntryCooldown(BotTabSimple tab)
+        {
+            int waitBars = _portfolioTrailingCooldownCandles?.ValueInt ?? 0;
+            if (waitBars <= 0 || tab == null || string.IsNullOrEmpty(tab.TabName))
+            {
+                return false;
+            }
+
+            return _portfolioTrailingCooldownBarsLeft.TryGetValue(tab.TabName, out int left) && left > 0;
+        }
+
+        /// <summary>
+        /// В конце свечи уменьшает счётчик паузы (не в свечу срабатывания стопа).
+        /// </summary>
+        private void TickPortfolioTrailingStopCooldown(BotTabSimple tab, bool trailingStopFiredThisBar)
+        {
+            if (trailingStopFiredThisBar || tab == null || string.IsNullOrEmpty(tab.TabName))
+            {
+                return;
+            }
+
+            if (_portfolioTrailingCooldownBarsLeft.TryGetValue(tab.TabName, out int left) && left > 0)
+            {
+                _portfolioTrailingCooldownBarsLeft[tab.TabName] = left - 1;
+            }
+        }
+
+        /// <summary>
+        /// Позиция закрыта трейлинг-стопом робота на этой свече (по журналу).
+        /// </summary>
+        private bool TryDetectPortfolioTrailingStopClosedThisBar(BotTabSimple tab, DateTime candleTime)
+        {
+            if (tab == null || _portfolioTrailingCooldownCandles.ValueInt <= 0)
+            {
+                return false;
+            }
+
+            List<Position> closed = tab.PositionsCloseAll;
+            if (closed == null || closed.Count == 0)
+            {
+                return false;
+            }
+
+            string botType = GetNameStrategyType();
+            TimeSpan barSpan = tab.Connector?.TimeFrameBuilder?.TimeFrameTimeSpan ?? TimeSpan.Zero;
+            if (barSpan <= TimeSpan.Zero)
+            {
+                barSpan = TimeSpan.FromMinutes(1);
+            }
+
+            DateTime barEnd = candleTime + barSpan;
+
+            for (int i = closed.Count - 1; i >= 0; i--)
+            {
+                Position pos = closed[i];
+                if (pos == null || pos.State != PositionStateType.Done)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(pos.SignalTypeClose, PortfolioTrailingStopSignal, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (pos.TimeClose < candleTime || pos.TimeClose >= barEnd)
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Трейлинг-стоп по настройкам аварийной вкладки: на каждую открытую позицию робота на текущей вкладке скринера.
         /// Long: стоп следует за максимумом цены; short — за минимумом. Пустой % — выключено.
         /// </summary>
-        private void TryManagePortfolioTrailingStops(BotTabSimple tab, List<Candle> candles)
+        /// <returns>true, если на этой свече был немедленный выход по пробою Low/High.</returns>
+        private bool TryManagePortfolioTrailingStops(BotTabSimple tab, List<Candle> candles)
         {
             if (tab == null || candles == null || candles.Count == 0 || _emergencyStopExecuted)
             {
-                return;
+                return false;
             }
 
             if (!TryParsePercentThreshold(_portfolioTrailingStopPercent, out decimal trailPct))
@@ -3103,12 +3216,12 @@ namespace OsEngine.Robots.Custom
                     _portfolioTrailingExtremeByPosition.Clear();
                 }
 
-                return;
+                return false;
             }
 
             if (tab.Security == null || tab.Security.PriceStep <= 0m)
             {
-                return;
+                return false;
             }
 
             PrunePortfolioTrailingExtremeCache();
@@ -3124,8 +3237,10 @@ namespace OsEngine.Robots.Custom
             List<Position> openPositions = tab.PositionsOpenAll;
             if (openPositions == null || openPositions.Count == 0)
             {
-                return;
+                return false;
             }
+
+            bool trailingFiredThisBar = false;
 
             for (int i = 0; i < openPositions.Count; i++)
             {
@@ -3172,6 +3287,7 @@ namespace OsEngine.Robots.Custom
                     if (TryCloseIfCandleBreachedTrailingStop(tab, pos, last, stopActivation))
                     {
                         _portfolioTrailingExtremeByPosition.Remove(key);
+                        trailingFiredThisBar = true;
                         continue;
                     }
                 }
@@ -3204,10 +3320,35 @@ namespace OsEngine.Robots.Custom
                     if (TryCloseIfCandleBreachedTrailingStop(tab, pos, last, stopActivation))
                     {
                         _portfolioTrailingExtremeByPosition.Remove(key);
+                        trailingFiredThisBar = true;
                         continue;
                     }
                 }
             }
+
+            return trailingFiredThisBar;
+        }
+
+        /// <summary>
+        /// Учёт срабатывания трейлинг-стопа и тик паузы входа на вкладке.
+        /// </summary>
+        private void UpdatePortfolioTrailingStopCooldownState(BotTabSimple tab, List<Candle> candles, bool immediateTrailingClose)
+        {
+            if (tab == null || candles == null || candles.Count == 0)
+            {
+                return;
+            }
+
+            DateTime candleTime = candles[^1].TimeStart;
+            bool trailingFired = immediateTrailingClose
+                || TryDetectPortfolioTrailingStopClosedThisBar(tab, candleTime);
+
+            if (trailingFired)
+            {
+                StartPortfolioTrailingStopCooldown(tab);
+            }
+
+            TickPortfolioTrailingStopCooldown(tab, trailingFired);
         }
 
         /// <summary>
@@ -3542,9 +3683,11 @@ namespace OsEngine.Robots.Custom
             DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
             TryEmergencyShutdownIfNeeded(tab, candles, decisionTime);
 
+            bool trailingClosedThisBar = false;
             if ((_regime.ValueString ?? "Off") != "Off")
             {
-                TryManagePortfolioTrailingStops(tab, candles);
+                trailingClosedThisBar = TryManagePortfolioTrailingStops(tab, candles);
+                UpdatePortfolioTrailingStopCooldownState(tab, candles, trailingClosedThisBar);
             }
 
             if (_regime.ValueString == "Off")
@@ -3609,6 +3752,11 @@ namespace OsEngine.Robots.Custom
             if (!haveOpenPos)
             {
                 if (_regime.ValueString == "OnlyClosePosition")
+                {
+                    return;
+                }
+
+                if (IsPortfolioTrailingStopEntryCooldown(tab))
                 {
                     return;
                 }
