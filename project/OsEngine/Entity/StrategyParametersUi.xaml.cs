@@ -246,10 +246,7 @@ namespace OsEngine.Entity
         {
             try
             {
-                for (int i = 0; i < _tabs.Count; i++)
-                {
-                    _tabs[i].Save();
-                }
+                SaveEditedValuesFromGui();
 
                 Close();
             }
@@ -263,14 +260,22 @@ namespace OsEngine.Entity
         {
             try
             {
-                for (int i = 0; i < _tabs.Count; i++)
-                {
-                    _tabs[i].Save();
-                }
+                SaveEditedValuesFromGui();
             }
             catch (Exception ex)
             {
                 _panel?.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Записать в объекты параметров значения из ячеек таблицы (без закрытия окна).
+        /// </summary>
+        public void SaveEditedValuesFromGui()
+        {
+            for (int i = 0; i < _tabs.Count; i++)
+            {
+                _tabs[i].Save();
             }
         }
 
@@ -977,6 +982,16 @@ namespace OsEngine.Entity
 
         public void Save()
         {
+            if (_grid != null)
+            {
+                if (_grid.IsCurrentCellInEditMode)
+                {
+                    _grid.EndEdit();
+                }
+
+                _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            }
+
             for (int i = 0; i < _parameters.Count; i++)
             {
                 try

@@ -58,7 +58,7 @@ Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
 - Volatility cluster to trade (1–3) with lookback; only tabs in the chosen cluster can open new positions.
 
-Emergency portfolio stop (tab «Аварийная остановка портфеля»): optional % стоп/тейк по значению портфеля (как «Asset in portfolio») и/или дата-время; пустой параметр = выкл. Срабатывание: CloseAtMarket по всем позициям робота, Regime=Off, сообщение в лог (типы System и User — дальше по настройкам OsEngine: Telegram/SMS/проч.). Кнопка «Остановить робота» — то же вручную.
+Emergency portfolio stop (tab «Аварийная остановка портфеля»): optional % стоп/тейк от базы сессии, «Трейлинг % по портфелю (от пика)», «Трейлинг-стоп % (на каждую позицию)». Самоиндикация (tab «самоиндикация»): виртуальный портфель по сигналам на окне свечей → % годовых; выше порога — вход как обычно, ниже −порога — переключить инверсию и войти, между — боковик без входа.
 
 Schedule (tab «Расписание»): «Дата-время начала работы» — пустая строка = выкл.; если задано, торговая логика и фиксация базы портфеля для стоп/тейк не идут, пока время сравнения (свеча в тестере, сервер в лайве) строго меньше заданного.
 
@@ -112,6 +112,25 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
         private StrategyParameterBool _invertEntryLogic;
+
+        /*
+         * ---------------------------------------------------------------------------
+         * самоиндикация (вкладка параметров «самоиндикация»)
+         * ---------------------------------------------------------------------------
+         * Логика (только при открытии новой позиции):
+         * На окне свечей строится виртуальный портфель: те же сигналы IsBullSignal / IsBearSignal,
+         * что у робота, без реальных сделок; доходность close-to-close в long/short с учётом Regime.
+         * Считается % годовых за окно (масштабирование по ТФ вкладки).
+         * Годовые % > порога → вход как обычно (с учётом текущей «Инверсии логики»).
+         * Годовые % < −порога → переключается параметр «Инверсия логики» (было вкл. → выкл.,
+         * не было → вкл.), затем вход по сигналам.
+         * Между −порогом и +порогом → боковик, вход не выполняется.
+         * При закрытии/реверсе открытых позиций самоиндикация не участвует — только старая
+         * инверсия из параметров.
+         */
+        private StrategyParameterBool _useSamoindikatsiya;
+        private StrategyParameterDecimal _samoindikatsiyaThresholdAnnualPercent;
+        private StrategyParameterInt _samoindikatsiyaCandlesLookback;
 
         // volume
         private StrategyParameterString _volumeType;
@@ -238,10 +257,19 @@ namespace OsEngine.Robots.Custom
         // Аварийная остановка: % стоп по портфелю / % take profit по портфелю / дата-время (пустая строка = параметр выключен)
         private StrategyParameterString _portfolioStopLossPercentWhole;
         private StrategyParameterString _portfolioTakeProfitPercentWhole;
+        private StrategyParameterString _portfolioEquityTrailingPercent;
         private StrategyParameterString _stopDateTime;
         private StrategyParameterString _workStartDateTime;
         private StrategyParameterString _techPortfolioBaselineDisplay;
+        private StrategyParameterString _portfolioTrailingStopPercent;
+        private StrategyParameterString _portfolioTrailingOrderType;
         private StrategyParameterButton _stopRobotButton;
+
+        private const string PortfolioTrailingStopSignal = "TrendMultiPortfolioTrail";
+
+        /// <summary>Экстремум цены для трейлинга: long — максимум, short — минимум (ключ = вкладка|№ позиции).</summary>
+        private readonly Dictionary<string, decimal> _portfolioTrailingExtremeByPosition =
+            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
         private StrategyParameterString _moexFuturesTickerPrefixes;
         private StrategyParameterButton _moexFuturesLoadButton;
@@ -272,6 +300,8 @@ namespace OsEngine.Robots.Custom
         private string _prevRegimeSnapshot = "Off";
         private bool _portfolioBaselineCaptured;
         private decimal _portfolioBaselineValue;
+        private bool _portfolioEquityPeakCaptured;
+        private decimal _portfolioEquityPeak;
         private bool _emergencyStopExecuted;
         private string _emergencySettingsSignature = "";
 
@@ -309,6 +339,23 @@ namespace OsEngine.Robots.Custom
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
             _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
 
+            const string samoindikatsiyaTab = "самоиндикация";
+            _useSamoindikatsiya = CreateParameter("Самоиндикация включена", false, samoindikatsiyaTab);
+            _samoindikatsiyaThresholdAnnualPercent = CreateParameter(
+                "Пороговый процент годовых",
+                10m,
+                0.1m,
+                500m,
+                0.1m,
+                samoindikatsiyaTab);
+            _samoindikatsiyaCandlesLookback = CreateParameter(
+                "Свечей назад для самоиндикации",
+                50,
+                2,
+                5000,
+                1,
+                samoindikatsiyaTab);
+
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
             _clustersLookBack = CreateParameter("Volatility cluster lookBack", 30, 10, 300, 1);
@@ -321,8 +368,21 @@ namespace OsEngine.Robots.Custom
             const string emergencyTab = "Аварийная остановка портфеля";
             _portfolioStopLossPercentWhole = CreateParameter("Процент стоп лосс всего портфеля", "", emergencyTab);
             _portfolioTakeProfitPercentWhole = CreateParameter("Процент take profit всего портфеля", "", emergencyTab);
+            _portfolioEquityTrailingPercent = CreateParameter(
+                "Трейлинг % по портфелю (от пика)",
+                "",
+                emergencyTab);
             _stopDateTime = CreateParameter("Дата/время остановки", "", emergencyTab);
             _techPortfolioBaselineDisplay = CreateParameter("(техн.) База портфеля при старте сессии", "", emergencyTab);
+            _portfolioTrailingStopPercent = CreateParameter(
+                "Трейлинг-стоп % (на каждую позицию)",
+                "",
+                emergencyTab);
+            _portfolioTrailingOrderType = CreateParameter(
+                "Трейлинг-стоп: тип ордера",
+                "Market",
+                new[] { "Market", "Limit" },
+                emergencyTab);
             _stopRobotButton = CreateParameterButton("Остановить робота", emergencyTab);
             _stopRobotButton.UserClickOnButtonEvent += StopRobotButton_UserClickOnButtonEvent;
 
@@ -2501,11 +2561,16 @@ namespace OsEngine.Robots.Custom
         {
             string sig = (_portfolioStopLossPercentWhole?.ValueString ?? "").Trim() + "|"
                 + (_portfolioTakeProfitPercentWhole?.ValueString ?? "").Trim() + "|"
-                + (_stopDateTime?.ValueString ?? "").Trim();
+                + (_portfolioEquityTrailingPercent?.ValueString ?? "").Trim() + "|"
+                + (_stopDateTime?.ValueString ?? "").Trim() + "|"
+                + (_portfolioTrailingStopPercent?.ValueString ?? "").Trim() + "|"
+                + (_portfolioTrailingOrderType?.ValueString ?? "").Trim();
             if (force || sig != _emergencySettingsSignature)
             {
                 _emergencySettingsSignature = sig;
                 _emergencyStopExecuted = false;
+                _portfolioEquityPeakCaptured = false;
+                _portfolioEquityPeak = 0m;
             }
         }
 
@@ -2752,12 +2817,17 @@ namespace OsEngine.Robots.Custom
                 if (regime == "Off")
                 {
                     _portfolioBaselineCaptured = false;
+                    _portfolioEquityPeakCaptured = false;
+                    _portfolioEquityPeak = 0m;
+                    _portfolioTrailingExtremeByPosition.Clear();
                 }
 
                 if (_prevRegimeSnapshot == "Off" && regime != "Off")
                 {
                     _emergencyStopExecuted = false;
                     _portfolioBaselineCaptured = false;
+                    _portfolioEquityPeakCaptured = false;
+                    _portfolioEquityPeak = 0m;
                 }
 
                 _prevRegimeSnapshot = regime;
@@ -2782,6 +2852,87 @@ namespace OsEngine.Robots.Custom
             _portfolioBaselineValue = v.Value;
             _portfolioBaselineCaptured = true;
             _techPortfolioBaselineDisplay.ValueString = _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Обновляет пик стоимости портфеля (ValueCurrent / Asset in portfolio) для трейлинга от пика.
+        /// </summary>
+        private void UpdatePortfolioEquityPeak(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
+        {
+            if (!TryParsePercentThreshold(_portfolioEquityTrailingPercent, out _))
+            {
+                if (_portfolioEquityPeakCaptured)
+                {
+                    _portfolioEquityPeakCaptured = false;
+                    _portfolioEquityPeak = 0m;
+                }
+
+                return;
+            }
+
+            string regime = _regime.ValueString ?? "Off";
+            if (regime == "Off" || tab == null || IsBeforeScheduledWorkStart(tab, candleTime, decisionTime))
+            {
+                return;
+            }
+
+            decimal? vOpt = TryGetMonitoredPortfolioValue(tab);
+            if (!vOpt.HasValue || vOpt.Value <= 0m)
+            {
+                return;
+            }
+
+            decimal v = vOpt.Value;
+            if (!_portfolioEquityPeakCaptured)
+            {
+                _portfolioEquityPeak = v;
+                _portfolioEquityPeakCaptured = true;
+                return;
+            }
+
+            if (v > _portfolioEquityPeak)
+            {
+                _portfolioEquityPeak = v;
+            }
+        }
+
+        /// <summary>
+        /// Трейлинг по портфелю: просадка текущего значения ниже пика × (1 − %/100).
+        /// </summary>
+        private string TryBuildPortfolioEquityTrailingReason(BotTabSimple tab)
+        {
+            if (!TryParsePercentThreshold(_portfolioEquityTrailingPercent, out decimal trailPct))
+            {
+                return null;
+            }
+
+            if ((_regime.ValueString ?? "Off") == "Off" || !_portfolioEquityPeakCaptured || _portfolioEquityPeak <= 0m)
+            {
+                return null;
+            }
+
+            decimal? curOpt = TryGetMonitoredPortfolioValue(tab);
+            if (!curOpt.HasValue)
+            {
+                return null;
+            }
+
+            decimal cur = curOpt.Value;
+            decimal floor = _portfolioEquityPeak * (1m - trailPct / 100m);
+
+            if (cur >= floor)
+            {
+                return null;
+            }
+
+            decimal dropPct = (_portfolioEquityPeak - cur) / _portfolioEquityPeak * 100m;
+
+            return "Сработал трейлинг по портфелю (от пика): текущее "
+                + cur.ToString("G29", CultureInfo.InvariantCulture)
+                + " ниже пола " + floor.ToString("G29", CultureInfo.InvariantCulture)
+                + " (пик " + _portfolioEquityPeak.ToString("G29", CultureInfo.InvariantCulture)
+                + ", отступ " + trailPct.ToString("G29", CultureInfo.InvariantCulture)
+                + "%, просадка от пика " + dropPct.ToString("F2", CultureInfo.InvariantCulture) + "%).";
         }
 
         /// <summary>
@@ -2849,6 +3000,211 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// Ключ кэша экстремума для трейлинг-стопа позиции на вкладке скринера.
+        /// </summary>
+        private static string GetPortfolioTrailingPositionKey(BotTabSimple tab, Position pos)
+        {
+            return tab.TabName + "|" + pos.Number;
+        }
+
+        /// <summary>
+        /// Удаляет из кэша трейлинга закрытые позиции.
+        /// </summary>
+        private void PrunePortfolioTrailingExtremeCache()
+        {
+            if (_portfolioTrailingExtremeByPosition.Count == 0 || _screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            HashSet<string> aliveKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[t];
+                if (tab?.PositionsOpenAll == null)
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < tab.PositionsOpenAll.Count; p++)
+                {
+                    Position pos = tab.PositionsOpenAll[p];
+                    if (pos != null && pos.State == PositionStateType.Open && pos.OpenVolume > 0m)
+                    {
+                        aliveKeys.Add(GetPortfolioTrailingPositionKey(tab, pos));
+                    }
+                }
+            }
+
+            List<string> removeKeys = new List<string>();
+            foreach (string key in _portfolioTrailingExtremeByPosition.Keys)
+            {
+                if (!aliveKeys.Contains(key))
+                {
+                    removeKeys.Add(key);
+                }
+            }
+
+            for (int i = 0; i < removeKeys.Count; i++)
+            {
+                _portfolioTrailingExtremeByPosition.Remove(removeKeys[i]);
+            }
+        }
+
+        /// <summary>
+        /// В тестере сделки свечи (O→H→L→C) приходят до CandleFinished; если Low/High уже пробили новый стоп — закрыть сразу.
+        /// </summary>
+        private static bool TryCloseIfCandleBreachedTrailingStop(
+            BotTabSimple tab,
+            Position pos,
+            Candle candle,
+            decimal stopActivation)
+        {
+            if (tab == null || pos == null || candle == null || stopActivation <= 0m)
+            {
+                return false;
+            }
+
+            bool breached = pos.Direction == Side.Buy
+                ? candle.Low <= stopActivation
+                : pos.Direction == Side.Sell && candle.High >= stopActivation;
+
+            if (!breached)
+            {
+                return false;
+            }
+
+            tab.CloseAtMarket(pos, pos.OpenVolume);
+            return true;
+        }
+
+        /// <summary>
+        /// Трейлинг-стоп по настройкам аварийной вкладки: на каждую открытую позицию робота на текущей вкладке скринера.
+        /// Long: стоп следует за максимумом цены; short — за минимумом. Пустой % — выключено.
+        /// </summary>
+        private void TryManagePortfolioTrailingStops(BotTabSimple tab, List<Candle> candles)
+        {
+            if (tab == null || candles == null || candles.Count == 0 || _emergencyStopExecuted)
+            {
+                return;
+            }
+
+            if (!TryParsePercentThreshold(_portfolioTrailingStopPercent, out decimal trailPct))
+            {
+                if (_portfolioTrailingExtremeByPosition.Count > 0)
+                {
+                    _portfolioTrailingExtremeByPosition.Clear();
+                }
+
+                return;
+            }
+
+            if (tab.Security == null || tab.Security.PriceStep <= 0m)
+            {
+                return;
+            }
+
+            PrunePortfolioTrailingExtremeCache();
+
+            string botType = GetNameStrategyType();
+            bool useMarket = !string.Equals(
+                _portfolioTrailingOrderType?.ValueString,
+                "Limit",
+                StringComparison.OrdinalIgnoreCase);
+            decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
+            Candle last = candles[^1];
+
+            List<Position> openPositions = tab.PositionsOpenAll;
+            if (openPositions == null || openPositions.Count == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < openPositions.Count; i++)
+            {
+                Position pos = openPositions[i];
+                if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume <= 0m)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
+                {
+                    continue;
+                }
+
+                string key = GetPortfolioTrailingPositionKey(tab, pos);
+                decimal extreme;
+
+                if (pos.Direction == Side.Buy)
+                {
+                    if (!_portfolioTrailingExtremeByPosition.TryGetValue(key, out extreme))
+                    {
+                        extreme = Math.Max(pos.EntryPrice, last.High);
+                    }
+                    else
+                    {
+                        extreme = Math.Max(extreme, last.High);
+                    }
+
+                    _portfolioTrailingExtremeByPosition[key] = extreme;
+
+                    decimal stopActivation = extreme * (1m - trailPct / 100m);
+                    stopActivation = tab.RoundPrice(stopActivation, tab.Security, Side.Sell);
+
+                    if (useMarket)
+                    {
+                        tab.CloseAtTrailingStopMarket(pos, stopActivation, PortfolioTrailingStopSignal);
+                    }
+                    else
+                    {
+                        decimal stopOrder = tab.RoundPrice(stopActivation - slip, tab.Security, Side.Sell);
+                        tab.CloseAtTrailingStop(pos, stopActivation, stopOrder, PortfolioTrailingStopSignal);
+                    }
+
+                    if (TryCloseIfCandleBreachedTrailingStop(tab, pos, last, stopActivation))
+                    {
+                        _portfolioTrailingExtremeByPosition.Remove(key);
+                        continue;
+                    }
+                }
+                else if (pos.Direction == Side.Sell)
+                {
+                    if (!_portfolioTrailingExtremeByPosition.TryGetValue(key, out extreme))
+                    {
+                        extreme = Math.Min(pos.EntryPrice, last.Low);
+                    }
+                    else
+                    {
+                        extreme = Math.Min(extreme, last.Low);
+                    }
+
+                    _portfolioTrailingExtremeByPosition[key] = extreme;
+
+                    decimal stopActivation = extreme * (1m + trailPct / 100m);
+                    stopActivation = tab.RoundPrice(stopActivation, tab.Security, Side.Buy);
+
+                    if (useMarket)
+                    {
+                        tab.CloseAtTrailingStopMarket(pos, stopActivation, PortfolioTrailingStopSignal);
+                    }
+                    else
+                    {
+                        decimal stopOrder = tab.RoundPrice(stopActivation + slip, tab.Security, Side.Buy);
+                        tab.CloseAtTrailingStop(pos, stopActivation, stopOrder, PortfolioTrailingStopSignal);
+                    }
+
+                    if (TryCloseIfCandleBreachedTrailingStop(tab, pos, last, stopActivation))
+                    {
+                        _portfolioTrailingExtremeByPosition.Remove(key);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// CloseAtMarket по всем открытым позициям робота на всех вкладках скринера.
         /// </summary>
         private void CloseAllBotPositionsAtMarket()
@@ -2909,6 +3265,9 @@ namespace OsEngine.Robots.Custom
             CloseAllBotPositionsAtMarket();
             _regime.ValueString = "Off";
             _emergencyStopExecuted = true;
+            _portfolioEquityPeakCaptured = false;
+            _portfolioEquityPeak = 0m;
+            _portfolioTrailingExtremeByPosition.Clear();
 
             string full = NameStrategyUniq + ": остановка по кнопке «Остановить робота». Позиции закрыты по рынку, Regime=Off.";
             SendNewLogMessage(full, LogMessageType.System);
@@ -2926,6 +3285,9 @@ namespace OsEngine.Robots.Custom
             }
 
             _emergencyStopExecuted = true;
+            _portfolioEquityPeakCaptured = false;
+            _portfolioEquityPeak = 0m;
+            _portfolioTrailingExtremeByPosition.Clear();
 
             CloseAllBotPositionsAtMarket();
 
@@ -2941,14 +3303,17 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void TryEmergencyShutdownIfNeeded(BotTabSimple tab, List<Candle> candles, DateTime decisionTime)
         {
-            UpdateEmergencyRegimeAndBaseline(tab, candles[^1].TimeStart, decisionTime);
+            DateTime candleTime = candles[^1].TimeStart;
+            UpdateEmergencyRegimeAndBaseline(tab, candleTime, decisionTime);
+            UpdatePortfolioEquityPeak(tab, candleTime, decisionTime);
 
             if (_emergencyStopExecuted)
             {
                 return;
             }
 
-            string reason = TryBuildEmergencyReason(tab, candles, decisionTime);
+            string reason = TryBuildEmergencyReason(tab, candles, decisionTime)
+                ?? TryBuildPortfolioEquityTrailingReason(tab);
             if (reason == null)
             {
                 return;
@@ -3171,6 +3536,11 @@ namespace OsEngine.Robots.Custom
             DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
             TryEmergencyShutdownIfNeeded(tab, candles, decisionTime);
 
+            if ((_regime.ValueString ?? "Off") != "Off")
+            {
+                TryManagePortfolioTrailingStops(tab, candles);
+            }
+
             if (_regime.ValueString == "Off")
             {
                 return;
@@ -3211,7 +3581,14 @@ namespace OsEngine.Robots.Custom
             bool bull = IsBullSignal(candles, tab);
             bool bear = IsBearSignal(candles, tab);
 
-            if (_invertEntryLogic.ValueBool)
+            if (!haveOpenPos)
+            {
+                if (!TryApplySamoindikatsiyaBeforeEntry(candles, tab, ref bull, ref bear))
+                {
+                    return;
+                }
+            }
+            else if (_invertEntryLogic.ValueBool)
             {
                 bool tmp = bull;
                 bull = bear;
@@ -3329,6 +3706,270 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// Значение серии индикатора на свече index; index &lt; 0 — Last.
+        /// </summary>
+        private static decimal SeriesValueAt(Aindicator indicator, int seriesIndex, int candleIndex)
+        {
+            if (indicator?.DataSeries == null || seriesIndex >= indicator.DataSeries.Count)
+            {
+                return 0m;
+            }
+
+            IndicatorDataSeries series = indicator.DataSeries[seriesIndex];
+            if (series?.Values == null || series.Values.Count == 0)
+            {
+                return 0m;
+            }
+
+            if (candleIndex < 0 || candleIndex >= series.Values.Count)
+            {
+                return series.Last;
+            }
+
+            return series.Values[candleIndex];
+        }
+
+        /// <summary>
+        /// Число свечей в году для текущего ТФ вкладки (для годовых %).
+        /// </summary>
+        private static decimal EstimateBarsPerYear(BotTabSimple tab)
+        {
+            if (tab?.Connector?.TimeFrameBuilder == null)
+            {
+                return 252m;
+            }
+
+            TimeSpan span = tab.Connector.TimeFrameBuilder.TimeFrameTimeSpan;
+            if (span <= TimeSpan.Zero)
+            {
+                return 252m;
+            }
+
+            decimal barsPerDay = (decimal)(TimeSpan.FromDays(1).Ticks / (double)span.Ticks);
+            return barsPerDay * 365.25m;
+        }
+
+        /// <summary>
+        /// Виртуальный портфель по сигналам робота на окне свечей (без реальных сделок); годовые %.
+        /// </summary>
+        private bool TryEvaluateSamoindikatsiyaAnnualizedPercent(
+            List<Candle> candles,
+            BotTabSimple tab,
+            out decimal annualizedPercent)
+        {
+            annualizedPercent = 0m;
+
+            if (candles == null || tab == null)
+            {
+                return false;
+            }
+
+            int lookback = Math.Max(2, _samoindikatsiyaCandlesLookback.ValueInt);
+            int endIdx = candles.Count - 1;
+            int startIdx = endIdx - lookback + 1;
+            int minIdx = GetMinBarsForTradingLogic() - 1;
+            if (startIdx < minIdx)
+            {
+                startIdx = minIdx;
+            }
+
+            if (endIdx <= startIdx)
+            {
+                return false;
+            }
+
+            string regime = _regime.ValueString ?? "Off";
+            bool allowLong = regime != "OnlyShort" && regime != "OnlyClosePosition";
+            bool allowShort = regime != "OnlyLong" && regime != "OnlyClosePosition";
+            bool allowReverse = regime != "OnlyClosePosition";
+
+            decimal equity = 1m;
+            Side virtualSide = Side.None;
+
+            for (int i = startIdx; i <= endIdx; i++)
+            {
+                if (i > startIdx && virtualSide != Side.None)
+                {
+                    decimal prevClose = candles[i - 1].Close;
+                    decimal curClose = candles[i].Close;
+                    if (prevClose <= 0m || curClose <= 0m)
+                    {
+                        return false;
+                    }
+
+                    if (virtualSide == Side.Buy)
+                    {
+                        equity *= curClose / prevClose;
+                    }
+                    else
+                    {
+                        equity *= prevClose / curClose;
+                    }
+                }
+
+                bool bull = IsBullSignalAt(candles, tab, i);
+                bool bear = IsBearSignalAt(candles, tab, i);
+
+                if (virtualSide == Side.None)
+                {
+                    if (bull && allowLong)
+                    {
+                        virtualSide = Side.Buy;
+                    }
+                    else if (bear && allowShort)
+                    {
+                        virtualSide = Side.Sell;
+                    }
+                }
+                else if (virtualSide == Side.Buy && bear)
+                {
+                    if (allowReverse && allowShort)
+                    {
+                        virtualSide = Side.Sell;
+                    }
+                    else
+                    {
+                        virtualSide = Side.None;
+                    }
+                }
+                else if (virtualSide == Side.Sell && bull)
+                {
+                    if (allowReverse && allowLong)
+                    {
+                        virtualSide = Side.Buy;
+                    }
+                    else
+                    {
+                        virtualSide = Side.None;
+                    }
+                }
+            }
+
+            decimal startEquity = 1m;
+            int barsInPeriod = endIdx - startIdx;
+            if (barsInPeriod <= 0 || equity <= 0m)
+            {
+                return false;
+            }
+
+            decimal barsPerYear = EstimateBarsPerYear(tab);
+            if (barsPerYear <= 0m)
+            {
+                return false;
+            }
+
+            double years = (double)barsInPeriod / (double)barsPerYear;
+            if (years <= 0d)
+            {
+                return false;
+            }
+
+            double totalReturn = (double)(equity / startEquity);
+            if (totalReturn <= 0d)
+            {
+                return false;
+            }
+
+            annualizedPercent = (decimal)((Math.Pow(totalReturn, 1d / years) - 1d) * 100d);
+            return true;
+        }
+
+        /// <summary>
+        /// Самоиндикация: фильтр/инверсия только при открытии; боковик — вход запрещён.
+        /// </summary>
+        private bool TryApplySamoindikatsiyaBeforeEntry(
+            List<Candle> candles,
+            BotTabSimple tab,
+            ref bool bull,
+            ref bool bear)
+        {
+            if (!_useSamoindikatsiya.ValueBool)
+            {
+                ApplyInvertEntryLogic(ref bull, ref bear);
+                return true;
+            }
+
+            if (!TryEvaluateSamoindikatsiyaAnnualizedPercent(candles, tab, out decimal annualPct))
+            {
+                return false;
+            }
+
+            decimal threshold = _samoindikatsiyaThresholdAnnualPercent.ValueDecimal;
+            if (threshold <= 0m)
+            {
+                ApplyInvertEntryLogic(ref bull, ref bear);
+                return true;
+            }
+
+            if (annualPct > threshold)
+            {
+                ApplyInvertEntryLogic(ref bull, ref bear);
+                return true;
+            }
+
+            if (annualPct < -threshold)
+            {
+                _invertEntryLogic.ValueBool = !_invertEntryLogic.ValueBool;
+                ApplyInvertEntryLogic(ref bull, ref bear);
+                return true;
+            }
+
+            return false;
+        }
+
+        private void ApplyInvertEntryLogic(ref bool bull, ref bool bear)
+        {
+            if (_invertEntryLogic.ValueBool)
+            {
+                bool tmp = bull;
+                bull = bear;
+                bear = tmp;
+            }
+        }
+
+        /// <summary>
+        /// Бычий сигнал на свече candleIndex (для самоиндикации).
+        /// </summary>
+        private bool IsBullSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex)
+        {
+            decimal close = candles[candleIndex].Close;
+            var items = new List<(int group, bool pass)>();
+
+            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
+
+            return CombineGroupedOrOfAnds(items);
+        }
+
+        /// <summary>
+        /// Медвежий сигнал на свече candleIndex (для самоиндикации).
+        /// </summary>
+        private bool IsBearSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex)
+        {
+            decimal close = candles[candleIndex].Close;
+            var items = new List<(int group, bool pass)>();
+
+            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
+
+            return CombineGroupedOrOfAnds(items);
+        }
+
+        /// <summary>
         /// Лонг: собирает бычьи проверки всех включённых индикаторов с их «№ И-группы» и передаёт
         /// в <see cref="CombineGroupedOrOfAnds"/> (см. комментарий к полям *_AndGroup выше).
         /// </summary>
@@ -3337,18 +3978,19 @@ namespace OsEngine.Robots.Custom
             decimal close = candles[candles.Count - 1].Close;
             var items = new List<(int group, bool pass)>();
 
-            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab));
-            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab));
-            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab));
+            int idx = candles.Count - 1;
+            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, idx));
 #if false // DiscreteMidBestPair
             AddGroupedIndicatorResult(items, _discreteAndGroup, BullDiscretePasses(candles, tab));
 #endif
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab));
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab));
+            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, idx));
+            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, idx));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -3361,18 +4003,19 @@ namespace OsEngine.Robots.Custom
             decimal close = candles[candles.Count - 1].Close;
             var items = new List<(int group, bool pass)>();
 
-            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab));
-            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab));
-            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab));
+            int idx = candles.Count - 1;
+            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, idx));
 #if false // DiscreteMidBestPair
             AddGroupedIndicatorResult(items, _discreteAndGroup, BearDiscretePasses(candles, tab));
 #endif
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab));
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab));
+            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, idx));
+            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, idx));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -3380,71 +4023,71 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// SMA: close выше линии — бычье условие.
         /// </summary>
-        private bool? BullSmaPasses(decimal close, BotTabSimple tab)
+        private bool? BullSmaPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useSma.ValueBool)
                 return null;
             Aindicator sma = FindIndicator(tab, NumSma, "Sma");
             if (sma == null)
                 return false;
-            decimal v = sma.DataSeries[0].Last;
+            decimal v = SeriesValueAt(sma, 0, candleIndex);
             return v != 0 && close > v;
         }
 
         /// <summary>
         /// RSI ≥ long min.
         /// </summary>
-        private bool? BullRsiPasses(decimal close, BotTabSimple tab)
+        private bool? BullRsiPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useRsi.ValueBool)
                 return null;
             Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
             if (rsi == null)
                 return false;
-            decimal v = rsi.DataSeries[0].Last;
+            decimal v = SeriesValueAt(rsi, 0, candleIndex);
             return v != 0 && v >= _rsiLongMin.ValueDecimal;
         }
 
         /// <summary>
         /// Stochastic K ≥ long min.
         /// </summary>
-        private bool? BullStochPasses(decimal close, BotTabSimple tab)
+        private bool? BullStochPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useStoch.ValueBool)
                 return null;
             Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
             if (st == null)
                 return false;
-            decimal k = st.DataSeries[0].Last;
+            decimal k = SeriesValueAt(st, 0, candleIndex);
             return k != 0 && k >= _stochLongMin.ValueDecimal;
         }
 
         /// <summary>
         /// Momentum ≥ long min.
         /// </summary>
-        private bool? BullMomentumPasses(decimal close, BotTabSimple tab)
+        private bool? BullMomentumPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useMomentum.ValueBool)
                 return null;
             Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
             if (mom == null)
                 return false;
-            decimal v = mom.DataSeries[0].Last;
+            decimal v = SeriesValueAt(mom, 0, candleIndex);
             return v != 0 && v >= _momLongMin.ValueDecimal;
         }
 
         /// <summary>
         /// Close выше середины полос.
         /// </summary>
-        private bool? BullBollingerPasses(decimal close, BotTabSimple tab)
+        private bool? BullBollingerPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useBollinger.ValueBool)
                 return null;
             Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
             if (boll == null || boll.DataSeries.Count < 2)
                 return false;
-            decimal up = boll.DataSeries[0].Last;
-            decimal down = boll.DataSeries[1].Last;
+            decimal up = SeriesValueAt(boll, 0, candleIndex);
+            decimal down = SeriesValueAt(boll, 1, candleIndex);
             if (up == 0 || down == 0)
                 return false;
             decimal mid = (up + down) / 2m;
@@ -3454,28 +4097,28 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Close выше верхней линии LinReg.
         /// </summary>
-        private bool? BullLinRegPasses(decimal close, BotTabSimple tab)
+        private bool? BullLinRegPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useLinReg.ValueBool)
                 return null;
             Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
             if (lr == null)
                 return false;
-            decimal up = lr.DataSeries[0].Last;
+            decimal up = SeriesValueAt(lr, 0, candleIndex);
             return up != 0 && close > up;
         }
 
         /// <summary>
         /// RZI > уровня сигнала.
         /// </summary>
-        private bool? BullRziPasses(decimal close, BotTabSimple tab)
+        private bool? BullRziPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useRzi.ValueBool)
                 return null;
             Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
             if (rzi == null)
                 return false;
-            decimal v = rzi.DataSeries[0].Last;
+            decimal v = SeriesValueAt(rzi, 0, candleIndex);
             return v > _rziSignalLevel.ValueInt;
         }
 
@@ -3498,98 +4141,99 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Рост объёма свечи vs предыдущая.
         /// </summary>
-        private bool? BullVolumePasses(List<Candle> candles, BotTabSimple tab)
+        private bool? BullVolumePasses(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useVolumeIndicator.ValueBool)
                 return null;
-            return VolumeIndicatorGrowthOk(candles, tab);
+            return VolumeIndicatorGrowthOk(candles, tab, candleIndex);
         }
 
         /// <summary>
         /// Avg Profit % Long > bull min.
         /// </summary>
-        private bool? BullAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab)
+        private bool? BullAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useAverageProfitPercentLong.ValueBool)
                 return null;
             int period = Math.Max(2, _avgProfitPercentLongPeriod.ValueInt);
-            if (candles == null || candles.Count < period)
+            int idx = candleIndex >= 0 ? candleIndex : candles.Count - 1;
+            if (candles == null || idx < period - 1)
                 return false;
             Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
             if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
                 return false;
-            decimal v = ap.DataSeries[0].Last;
+            decimal v = SeriesValueAt(ap, 0, idx);
             return v > _avgProfitPercentLongBullMin.ValueDecimal;
         }
 
         /// <summary>
         /// SMA: close ниже линии.
         /// </summary>
-        private bool? BearSmaPasses(decimal close, BotTabSimple tab)
+        private bool? BearSmaPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useSma.ValueBool)
                 return null;
             Aindicator sma = FindIndicator(tab, NumSma, "Sma");
             if (sma == null)
                 return false;
-            decimal v = sma.DataSeries[0].Last;
+            decimal v = SeriesValueAt(sma, 0, candleIndex);
             return v != 0 && close < v;
         }
 
         /// <summary>
         /// RSI ≤ short max.
         /// </summary>
-        private bool? BearRsiPasses(decimal close, BotTabSimple tab)
+        private bool? BearRsiPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useRsi.ValueBool)
                 return null;
             Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
             if (rsi == null)
                 return false;
-            decimal v = rsi.DataSeries[0].Last;
+            decimal v = SeriesValueAt(rsi, 0, candleIndex);
             return v != 0 && v <= _rsiShortMax.ValueDecimal;
         }
 
         /// <summary>
         /// Stochastic K ≤ short max.
         /// </summary>
-        private bool? BearStochPasses(decimal close, BotTabSimple tab)
+        private bool? BearStochPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useStoch.ValueBool)
                 return null;
             Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
             if (st == null)
                 return false;
-            decimal k = st.DataSeries[0].Last;
+            decimal k = SeriesValueAt(st, 0, candleIndex);
             return k != 0 && k <= _stochShortMax.ValueDecimal;
         }
 
         /// <summary>
         /// Momentum ≤ short max.
         /// </summary>
-        private bool? BearMomentumPasses(decimal close, BotTabSimple tab)
+        private bool? BearMomentumPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useMomentum.ValueBool)
                 return null;
             Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
             if (mom == null)
                 return false;
-            decimal v = mom.DataSeries[0].Last;
+            decimal v = SeriesValueAt(mom, 0, candleIndex);
             return v != 0 && v <= _momShortMax.ValueDecimal;
         }
 
         /// <summary>
         /// Close ниже середины полос.
         /// </summary>
-        private bool? BearBollingerPasses(decimal close, BotTabSimple tab)
+        private bool? BearBollingerPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useBollinger.ValueBool)
                 return null;
             Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
             if (boll == null || boll.DataSeries.Count < 2)
                 return false;
-            decimal up = boll.DataSeries[0].Last;
-            decimal down = boll.DataSeries[1].Last;
+            decimal up = SeriesValueAt(boll, 0, candleIndex);
+            decimal down = SeriesValueAt(boll, 1, candleIndex);
             if (up == 0 || down == 0)
                 return false;
             decimal mid = (up + down) / 2m;
@@ -3599,28 +4243,28 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Close ниже нижней линии LinReg.
         /// </summary>
-        private bool? BearLinRegPasses(decimal close, BotTabSimple tab)
+        private bool? BearLinRegPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useLinReg.ValueBool)
                 return null;
             Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
             if (lr == null || lr.DataSeries.Count < 3)
                 return false;
-            decimal down = lr.DataSeries[2].Last;
+            decimal down = SeriesValueAt(lr, 2, candleIndex);
             return down != 0 && close < down;
         }
 
         /// <summary>
         /// RZI < −уровня.
         /// </summary>
-        private bool? BearRziPasses(decimal close, BotTabSimple tab)
+        private bool? BearRziPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useRzi.ValueBool)
                 return null;
             Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
             if (rzi == null)
                 return false;
-            decimal v = rzi.DataSeries[0].Last;
+            decimal v = SeriesValueAt(rzi, 0, candleIndex);
             decimal shortBound = -_rziSignalLevel.ValueInt;
             return v < shortBound;
         }
@@ -3644,27 +4288,28 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Рост объёма (то же условие, что для лонга).
         /// </summary>
-        private bool? BearVolumePasses(List<Candle> candles, BotTabSimple tab)
+        private bool? BearVolumePasses(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useVolumeIndicator.ValueBool)
                 return null;
-            return VolumeIndicatorGrowthOk(candles, tab);
+            return VolumeIndicatorGrowthOk(candles, tab, candleIndex);
         }
 
         /// <summary>
         /// Avg Profit % Long < bear max.
         /// </summary>
-        private bool? BearAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab)
+        private bool? BearAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useAverageProfitPercentLong.ValueBool)
                 return null;
             int period = Math.Max(2, _avgProfitPercentLongPeriod.ValueInt);
-            if (candles == null || candles.Count < period)
+            int idx = candleIndex >= 0 ? candleIndex : candles.Count - 1;
+            if (candles == null || idx < period - 1)
                 return false;
             Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
             if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
                 return false;
-            decimal v = ap.DataSeries[0].Last;
+            decimal v = SeriesValueAt(ap, 0, idx);
             return v < _avgProfitPercentLongBearMax.ValueDecimal;
         }
 
@@ -3703,7 +4348,7 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Индикатор Volume: объём текущей (закрытой) свечи не ниже чем у предыдущей, увеличенный на заданный %.
         /// </summary>
-        private bool VolumeIndicatorGrowthOk(List<Candle> candles, BotTabSimple tab)
+        private bool VolumeIndicatorGrowthOk(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
         {
             if (!_useVolumeIndicator.ValueBool)
                 return true;
@@ -3711,12 +4356,16 @@ namespace OsEngine.Robots.Custom
             if (candles == null || candles.Count < 2)
                 return false;
 
+            int idx = candleIndex >= 0 ? candleIndex : candles.Count - 1;
+            if (idx < 1)
+                return false;
+
             Aindicator volInd = FindIndicator(tab, NumVolumeIndicator, "Volume");
             if (volInd == null || volInd.DataSeries.Count < 1)
                 return false;
 
-            decimal curVol = candles[candles.Count - 1].Volume;
-            decimal prevVol = candles[candles.Count - 2].Volume;
+            decimal curVol = candles[idx].Volume;
+            decimal prevVol = candles[idx - 1].Volume;
             decimal pct = _volumeIndicatorMinGrowthPercent.ValueDecimal;
 
             if (prevVol <= 0m)

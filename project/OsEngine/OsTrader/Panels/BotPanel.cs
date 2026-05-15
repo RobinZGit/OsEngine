@@ -1263,6 +1263,26 @@ position => position.State != PositionStateType.OpeningFail
         /// </summary>
         public bool ParamGuiIsOpen => _parametersUi != null;
 
+        /// <summary>
+        /// If the parameter window is open, apply edited cell values to parameter objects (same as «Update» in that window).
+        /// </summary>
+        public void ApplyOpenParameterDialogEdits()
+        {
+            if (_parametersUi == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _parametersUi.SaveEditedValuesFromGui();
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
         /// <summary>       
         /// Gui Settings
         /// </summary>
