@@ -267,6 +267,12 @@ namespace OsEngine.Robots.Custom
 
         private const string PortfolioTrailingStopSignal = "TrendMultiPortfolioTrail";
 
+        /// <summary>Макс. виртуальный equity в самоиндикации (защита от OverflowException).</summary>
+        private const decimal SamoindikatsiyaMaxVirtualEquity = 1_000_000_000m;
+
+        /// <summary>Макс. |% годовых| для приведения к decimal.</summary>
+        private const double SamoindikatsiyaMaxAnnualizedPercentMagnitude = 1_000_000d;
+
         /// <summary>Экстремум цены для трейлинга: long — максимум, short — минимум (ключ = вкладка|№ позиции).</summary>
         private readonly Dictionary<string, decimal> _portfolioTrailingExtremeByPosition =
             new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
@@ -3797,13 +3803,20 @@ namespace OsEngine.Robots.Custom
                         return false;
                     }
 
-                    if (virtualSide == Side.Buy)
+                    decimal barFactor = virtualSide == Side.Buy
+                        ? curClose / prevClose
+                        : prevClose / curClose;
+
+                    if (barFactor <= 0m || barFactor > SamoindikatsiyaMaxVirtualEquity)
                     {
-                        equity *= curClose / prevClose;
+                        return false;
                     }
-                    else
+
+                    equity *= barFactor;
+
+                    if (equity <= 0m || equity > SamoindikatsiyaMaxVirtualEquity)
                     {
-                        equity *= prevClose / curClose;
+                        return false;
                     }
                 }
 
@@ -3865,12 +3878,48 @@ namespace OsEngine.Robots.Custom
             }
 
             double totalReturn = (double)(equity / startEquity);
-            if (totalReturn <= 0d)
+            if (totalReturn <= 0d || double.IsNaN(totalReturn) || double.IsInfinity(totalReturn))
             {
                 return false;
             }
 
-            annualizedPercent = (decimal)((Math.Pow(totalReturn, 1d / years) - 1d) * 100d);
+            double exponent = 1d / years;
+            if (double.IsNaN(exponent) || double.IsInfinity(exponent))
+            {
+                return false;
+            }
+
+            double annualizedFraction;
+            try
+            {
+                annualizedFraction = Math.Pow(totalReturn, exponent) - 1d;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+
+            if (double.IsNaN(annualizedFraction) || double.IsInfinity(annualizedFraction))
+            {
+                return false;
+            }
+
+            double annualizedPctDouble = annualizedFraction * 100d;
+            if (double.IsNaN(annualizedPctDouble) || double.IsInfinity(annualizedPctDouble))
+            {
+                return false;
+            }
+
+            if (annualizedPctDouble > SamoindikatsiyaMaxAnnualizedPercentMagnitude)
+            {
+                annualizedPctDouble = SamoindikatsiyaMaxAnnualizedPercentMagnitude;
+            }
+            else if (annualizedPctDouble < -SamoindikatsiyaMaxAnnualizedPercentMagnitude)
+            {
+                annualizedPctDouble = -SamoindikatsiyaMaxAnnualizedPercentMagnitude;
+            }
+
+            annualizedPercent = (decimal)annualizedPctDouble;
             return true;
         }
 
