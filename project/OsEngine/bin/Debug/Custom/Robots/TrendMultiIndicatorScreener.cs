@@ -4,13 +4,25 @@
 */
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using OsEngine.Candles;
+using OsEngine.Candles.Factory;
 using OsEngine.Entity;
 using OsEngine.Indicators;
 using OsEngine.Logging;
 using OsEngine.Market;
+using OsEngine.Market.Connectors;
 using OsEngine.Market.Servers;
+using OsEngine.Market.Servers.Optimizer;
+using OsEngine.Market.Servers.Tester;
 using OsEngine.OsTrader.Panels;
 using OsEngine.OsTrader.Panels.Tab;
 
@@ -44,10 +56,26 @@ If a position exists and opposite signal appears, close and (if allowed) open op
 Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
 - Volatility cluster to trade (1–3) with lookback; only tabs in the chosen cluster can open new positions.
+
+Emergency portfolio stop (tab «Аварийная остановка портфеля»): optional % стоп/тейк по значению портфеля (как «Asset in portfolio») и/или дата-время; пустой параметр = выкл. Срабатывание: CloseAtMarket по всем позициям робота, Regime=Off, сообщение в лог (типы System и User — дальше по настройкам OsEngine: Telegram/SMS/проч.). Кнопка «Остановить робота» — то же вручную.
+
+Schedule (tab «Расписание»): «Дата-время начала работы» — пустая строка = выкл.; если задано, торговая логика и фиксация базы портфеля для стоп/тейк не идут, пока время сравнения (свеча в тестере, сервер в лайве) строго меньше заданного.
+
+Emergency «Дата/время остановки»: пустая строка = выкл.; иначе аварийная остановка при decisionTime >= заданного момента (в тестере — по времени свечи).
+
+MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
+
+MOEX futures: префиксы корня, класс Futures (TInvest) или TestClass (тестер), без фильтра экспирации в тестере.
+
+MOEX stocks: тикеры (точное имя), класс Stock rub (TInvest) или TestClass (тестер).
 */
 
 namespace OsEngine.Robots.Custom
 {
+    /// <summary>
+    /// Скринерный трендовый робот: несколько индикаторов, И-группы (AND внутри |№|, OR между |№|),
+    /// MOEX reload (TInvest/Tester), аварийная остановка портфеля, расписание, кластеры волатильности.
+    /// </summary>
     public class TrendMultiIndicatorScreener : BotPanel
     {
         // DiscreteMidBestPair: весь связанный код обёрнут в «#if false // DiscreteMidBestPair» … «#endif» (не удалён).
@@ -199,6 +227,53 @@ namespace OsEngine.Robots.Custom
         private VolatilityStageClusters _volatilityStageClusters = new VolatilityStageClusters();
         private DateTime _lastTimeSetClusters;
 
+        /// <summary>Доп. корни тикера MOEX FORTS (в параметре — «человеческий» префикс, на бирже — код серии).</summary>
+        private static readonly Dictionary<string, string[]> MoexFuturesPrefixAliases =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "CNY", new[] { "CR" } },
+            };
+
+        // Аварийная остановка: % стоп по портфелю / % take profit по портфелю / дата-время (пустая строка = параметр выключен)
+        private StrategyParameterString _portfolioStopLossPercentWhole;
+        private StrategyParameterString _portfolioTakeProfitPercentWhole;
+        private StrategyParameterString _stopDateTime;
+        private StrategyParameterString _workStartDateTime;
+        private StrategyParameterString _techPortfolioBaselineDisplay;
+        private StrategyParameterButton _stopRobotButton;
+
+        private StrategyParameterString _moexFuturesTickerPrefixes;
+        private StrategyParameterButton _moexFuturesLoadButton;
+        private StrategyParameterString _moexStockTickerPrefixes;
+        private StrategyParameterButton _moexStockLoadButton;
+
+        private const string DefaultMoexStockTickerPrefixes =
+            "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
+            + "NVTK, NLMK, PLZL, PIKK, PHOR, ROSN, RUAL, RTKMP, SBER, SBERP, SNGSP, SNGS, TATN, TATNP, UPRO, VTBR";
+
+        /// <summary>Режим перезагрузки MOEX: фьючерсы или акции.</summary>
+        private enum MoexScreenerInstrumentMode
+        {
+            Futures,
+            Stock
+        }
+
+        /// <summary>Снимок настроек скринера перед MOEX reload (портфель, сервер, ТФ, класс).</summary>
+        private struct MoexScreenerPreserveSettings
+        {
+            public string PortfolioName;
+            public ServerType ServerType;
+            public string ServerName;
+            public TimeFrame TimeFrame;
+            public string SecuritiesClass;
+        }
+
+        private string _prevRegimeSnapshot = "Off";
+        private bool _portfolioBaselineCaptured;
+        private decimal _portfolioBaselineValue;
+        private bool _emergencyStopExecuted;
+        private string _emergencySettingsSignature = "";
+
         public TrendMultiIndicatorScreener(string name, StartProgram startProgram)
             : base(name, startProgram)
         {
@@ -223,6 +298,7 @@ namespace OsEngine.Robots.Custom
 
             TabCreate(BotTabType.Screener);
             _screenerTab = TabsScreener[0];
+            RemoveCorruptScreenerTabSetFileIfNeeded();
 
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
 
@@ -240,6 +316,33 @@ namespace OsEngine.Robots.Custom
 
             _tradePeriodsShowDialogButton = CreateParameterButton("Non trade periods");
             _tradePeriodsShowDialogButton.UserClickOnButtonEvent += TradePeriodsShowDialogButton_UserClickOnButtonEvent;
+
+            const string emergencyTab = "Аварийная остановка портфеля";
+            _portfolioStopLossPercentWhole = CreateParameter("Процент стоп лосс всего портфеля", "", emergencyTab);
+            _portfolioTakeProfitPercentWhole = CreateParameter("Процент take profit всего портфеля", "", emergencyTab);
+            _stopDateTime = CreateParameter("Дата/время остановки", "", emergencyTab);
+            _techPortfolioBaselineDisplay = CreateParameter("(техн.) База портфеля при старте сессии", "", emergencyTab);
+            _stopRobotButton = CreateParameterButton("Остановить робота", emergencyTab);
+            _stopRobotButton.UserClickOnButtonEvent += StopRobotButton_UserClickOnButtonEvent;
+
+            const string scheduleTab = "Расписание";
+            _workStartDateTime = CreateParameter("Дата-время начала работы", "", scheduleTab);
+
+            const string moexFuturesTab = "MOEX фьючерсы";
+            _moexFuturesTickerPrefixes = CreateParameter(
+                "Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
+                "",
+                moexFuturesTab);
+            _moexFuturesLoadButton = CreateParameterButton("Обновить фьючерсы", moexFuturesTab);
+            _moexFuturesLoadButton.UserClickOnButtonEvent += MoexFuturesLoadButton_UserClickOnButtonEvent;
+
+            const string moexStockTab = "MOEX акции";
+            _moexStockTickerPrefixes = CreateParameter(
+                "Тикеры акций (через запятую; T-Инвестиции, точное совпадение с Ticker)",
+                DefaultMoexStockTickerPrefixes,
+                moexStockTab);
+            _moexStockLoadButton = CreateParameterButton("Обновить акции", moexStockTab);
+            _moexStockLoadButton.UserClickOnButtonEvent += MoexStockLoadButton_UserClickOnButtonEvent;
 
             // volume
             _volumeType = CreateParameter("Volume type", "Deposit percent", new[] { "Contracts", "Contract currency", "Deposit percent" });
@@ -321,6 +424,7 @@ namespace OsEngine.Robots.Custom
 #endif
 
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
+            RefreshEmergencySettingsSignature(force: true);
 
             // create only enabled indicators
             SyncIndicators();
@@ -334,6 +438,11 @@ namespace OsEngine.Robots.Custom
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
         }
 
+        /// <summary>
+        /// Обработчик удаления робота: удаляет настройки нерабочих периодов с диска.
+        /// </summary>
+        #region События жизненного цикла и UI-кнопки
+
         private void TrendMultiIndicatorScreener_DeleteEvent()
         {
             try
@@ -346,11 +455,17 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        /// <summary>
+        /// Кнопка «Non trade periods»: открывает диалог календаря/времени запрета торговли.
+        /// </summary>
         private void TradePeriodsShowDialogButton_UserClickOnButtonEvent()
         {
             _tradePeriodsSettings.ShowDialog();
         }
 
+        /// <summary>
+        /// Кнопка «Show last clusters»: выводит в лог состав кластеров волатильности по вкладкам скринера.
+        /// </summary>
         private void ClusterShowLast_UserClickOnButtonEvent()
         {
             try
@@ -385,20 +500,2468 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        /// <summary>
+        /// Сохранить значения из открытого окна параметров (как «Обновить»), без BotPanel.ApplyOpenParameterDialogEdits — совместимо со старой OsEngine.dll.
+        /// </summary>
+        private void ApplyPrefixesFromOpenParameterDialog()
+        {
+            if (!ParamGuiIsOpen)
+            {
+                return;
+            }
+
+            try
+            {
+                MethodInfo applyMethod = typeof(BotPanel).GetMethod(
+                    "ApplyOpenParameterDialogEdits",
+                    BindingFlags.Instance | BindingFlags.Public);
+                if (applyMethod != null)
+                {
+                    applyMethod.Invoke(this, null);
+                    return;
+                }
+
+                FieldInfo uiField = typeof(BotPanel).GetField(
+                    "_parametersUi",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                object uiObj = uiField?.GetValue(this);
+                if (uiObj == null)
+                {
+                    return;
+                }
+
+                Type uiType = uiObj.GetType();
+                MethodInfo saveAll = uiType.GetMethod(
+                    "SaveEditedValuesFromGui",
+                    BindingFlags.Instance | BindingFlags.Public);
+                if (saveAll != null)
+                {
+                    saveAll.Invoke(uiObj, null);
+                    return;
+                }
+
+                FieldInfo tabsField = uiType.GetField(
+                    "_tabs",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (tabsField?.GetValue(uiObj) is IList tabs)
+                {
+                    for (int i = 0; i < tabs.Count; i++)
+                    {
+                        object tab = tabs[i];
+                        tab?.GetType().GetMethod("Save", BindingFlags.Instance | BindingFlags.Public)?.Invoke(tab, null);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Кнопка «Обновить фьючерсы»: пересборка списка бумаг скринера по префиксам корня FORTS.
+        /// </summary>
+        #endregion
+
+        #region MOEX: перезагрузка бумаг скринера (TInvest / Tester)
+
+        private void MoexFuturesLoadButton_UserClickOnButtonEvent()
+        {
+            ReloadMoexScreenerInstruments(MoexScreenerInstrumentMode.Futures);
+        }
+
+        /// <summary>
+        /// Кнопка «Обновить акции»: пересборка списка бумаг скринера по точным тикерам MOEX.
+        /// </summary>
+        private void MoexStockLoadButton_UserClickOnButtonEvent()
+        {
+            ReloadMoexScreenerInstruments(MoexScreenerInstrumentMode.Stock);
+        }
+
+        /// <summary>
+        /// Общая логика MOEX reload: коннектор, класс бумаг, фильтры, очистка, добавление ActivatedSecurity, перезагрузка вкладок.
+        /// </summary>
+        private void ReloadMoexScreenerInstruments(MoexScreenerInstrumentMode mode)
+        {
+            try
+            {
+                ApplyPrefixesFromOpenParameterDialog();
+
+                bool isFutures = mode == MoexScreenerInstrumentMode.Futures;
+                StrategyParameterString prefixesParam = isFutures
+                    ? _moexFuturesTickerPrefixes
+                    : _moexStockTickerPrefixes;
+
+                List<string> prefixes = ParseTickerPrefixes(prefixesParam?.ValueString);
+                if (prefixes.Count == 0)
+                {
+                    string fillHint = isFutures
+                        ? "заполните «Префиксы корня тикера фьючерса» (через запятую)"
+                        : "заполните «Тикеры акций» (через запятую)";
+                    SendNewLogMessage(
+                        NameStrategyUniq + ": " + fillHint + ", затем снова нажмите кнопку.",
+                        LogMessageType.Error);
+                    return;
+                }
+
+                bool useTester = ShouldUseMoexTesterConnector();
+                bool preserveLiveScreenerSetup = !useTester && HasConfiguredLiveScreenerConnection();
+                MoexScreenerPreserveSettings preserved = preserveLiveScreenerSetup
+                    ? CaptureMoexScreenerPreserveSettings()
+                    : default;
+
+                if (!useTester && !preserveLiveScreenerSetup
+                    && !TryValidateLiveScreenerBeforeMoexReload(out string setupError))
+                {
+                    SendNewLogMessage(NameStrategyUniq + ": " + setupError, LogMessageType.Error);
+                    return;
+                }
+
+                if (!TryApplyMoexConnectorToScreener(useTester, out string connectorError))
+                {
+                    SendNewLogMessage(NameStrategyUniq + ": " + connectorError, LogMessageType.Error);
+                    return;
+                }
+
+                IServer server = useTester ? FindTesterLikeServer() : ResolveMoexLiveServer();
+                if (server == null)
+                {
+                    string notFound = useTester
+                        ? "не найден коннектор Tester. Укажите папку с файлами истории в настройках тестера."
+                        : "не найден коннектор «Т-Инвестиции» (TInvest). Подключите его в OsEngine или выберите в настройках скринера.";
+                    SendNewLogMessage(NameStrategyUniq + ": " + notFound, LogMessageType.Error);
+                    return;
+                }
+
+                List<Security> instrumentsToScan = GetMoexReloadInstrumentList(server, useTester);
+                if (instrumentsToScan == null || instrumentsToScan.Count == 0)
+                {
+                    string emptyMsg = useTester
+                        ? "в сете нет бумаг с таймфреймом «" + _screenerTab.TimeFrame
+                          + "» (как в настройках скринера). В окне Tester в таблице инструментов для каждой строки выберите ТФ "
+                          + _screenerTab.TimeFrame + " в колонке таймфрейма, перезагрузите сет — затем снова «Обновить»."
+                        : "у коннектора «" + server.ServerNameAndPrefix + "» пустой список бумаг. Дождитесь загрузки инструментов или проверьте подключение.";
+                    SendNewLogMessage(NameStrategyUniq + ": " + emptyMsg, LogMessageType.Error);
+                    return;
+                }
+
+                string targetClass = useTester
+                    ? "TestClass"
+                    : ResolveMoexTargetSecuritiesClass(server, mode, prefixes);
+                if (string.IsNullOrEmpty(targetClass))
+                {
+                    string classHint = isFutures ? "класс фьючерсов" : "класс акций (Stock)";
+                    SendNewLogMessage(
+                        NameStrategyUniq + ": на коннекторе «" + server.ServerNameAndPrefix + "» не найден " + classHint + ".",
+                        LogMessageType.Error);
+                    return;
+                }
+
+                int clearedSecurities = ClearAllScreenerSecuritiesAndTabs();
+                string previousClass = _screenerTab.SecuritiesClass;
+                if (useTester || string.IsNullOrWhiteSpace(_screenerTab.SecuritiesClass))
+                {
+                    _screenerTab.SecuritiesClass = targetClass;
+                }
+
+                DateTime now =
+                    _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0
+                        ? _screenerTab.Tabs[0].TimeServerCurrent
+                        : DateTime.Now;
+                if (now == DateTime.MinValue)
+                {
+                    now = DateTime.Now;
+                }
+
+                int instrumentsTotal = 0;
+                int matchedPrefixAny = 0;
+                int matchedPrefixEligible = 0;
+                int skippedExpired = 0;
+                int skippedClass = 0;
+                List<string> syncedNames = new List<string>();
+
+                bool testerLike = IsTesterLikeServer(server);
+
+                for (int i = 0; i < instrumentsToScan.Count; i++)
+                {
+                    Security sec = instrumentsToScan[i];
+                    if (!IsScreenerInstrument(sec, server, mode))
+                    {
+                        continue;
+                    }
+
+                    instrumentsTotal++;
+
+                    if (!SecurityMatchesPrefixes(sec, prefixes, mode))
+                    {
+                        continue;
+                    }
+
+                    matchedPrefixAny++;
+
+                    if (isFutures
+                        && !testerLike
+                        && sec.Expiration != DateTime.MinValue
+                        && sec.Expiration.Date < now.Date)
+                    {
+                        skippedExpired++;
+                        continue;
+                    }
+
+                    matchedPrefixEligible++;
+
+                    string secClass = GetSecurityClassName(sec);
+                    if (!string.Equals(secClass, targetClass, StringComparison.OrdinalIgnoreCase))
+                    {
+                        skippedClass++;
+                        continue;
+                    }
+
+                    _screenerTab.SecuritiesNames.Add(new ActivatedSecurity
+                    {
+                        SecurityName = sec.Name,
+                        SecurityClass = secClass,
+                        IsOn = true
+                    });
+
+                    if (syncedNames.Count < 30)
+                    {
+                        syncedNames.Add(sec.Name);
+                    }
+                }
+
+                int syncedTotal = _screenerTab.SecuritiesNames?.Count ?? 0;
+
+                if (syncedTotal == 0)
+                {
+                    string kindLabel = isFutures ? "фьючерсов" : "акций";
+                    string msg = NameStrategyUniq + ": не найдено " + kindLabel + " по списку ["
+                        + string.Join(", ", prefixes) + "]. ";
+                    msg += "Всего " + kindLabel + " у коннектора: " + instrumentsTotal + ".";
+                    msg += " По списку подошло (все): " + matchedPrefixAny + ".";
+                    msg += " По списку и прошло фильтры: " + matchedPrefixEligible + ".";
+                    if (skippedExpired > 0)
+                    {
+                        msg += " Отсечено по экспирации: " + skippedExpired + ".";
+                    }
+
+                    if (skippedClass > 0)
+                    {
+                        msg += " Отсечено (не класс «" + targetClass + "»): " + skippedClass + ".";
+                    }
+
+                    if (matchedPrefixEligible == 0 && isFutures)
+                    {
+                        msg += useTester
+                            ? " В сете нужны имена фьючерсов (ROSN-6.26, CRZ5), а не спот (ROSN). Для CNY на FORTS часто серия CR."
+                            : " Совпадений по корню тикера (и не истёкших по дате) нет (для CNY на FORTS часто код серии CR; вечный — CNYRUBF).";
+                    }
+                    else if (matchedPrefixEligible == 0 && !isFutures)
+                    {
+                        msg += useTester
+                            ? " В сете — спот-файлы (SBER.txt, GAZP.txt), не фьючерсы (ROSN-6.26). Тикер = имя файла без расширения."
+                            : " Проверьте T-Инвестиции, класс «Stock rub» и точные тикеры (SBER, GAZP, …).";
+                    }
+
+                    if (useTester && instrumentsToScan.Count > 0 && instrumentsTotal == 0)
+                    {
+                        msg += " На ТФ «" + _screenerTab.TimeFrame + "» в сете: " + instrumentsToScan.Count + " файл(ов).";
+                        msg += " Примеры: " + FormatTesterSetNameSamples(instrumentsToScan, 4) + ".";
+                    }
+
+                    SendNewLogMessage(msg, LogMessageType.Error);
+                    return;
+                }
+
+                if (preserveLiveScreenerSetup)
+                {
+                    RestoreMoexScreenerPreserveSettings(preserved);
+                }
+
+                int tabsBefore = _screenerTab.Tabs?.Count ?? 0;
+                string reloadNote = ApplyMoexScreenerReload();
+                int tabsAfter = _screenerTab.Tabs?.Count ?? 0;
+                int tabsCreated = Math.Max(0, tabsAfter - tabsBefore);
+
+                string instrumentWord = isFutures ? "фьючерс(ов)" : "акций";
+                string ok = NameStrategyUniq + ": очищено бумаг скринера: " + clearedSecurities + ".";
+                ok += " Класс: «" + targetClass + "»"
+                    + (string.IsNullOrEmpty(previousClass) || string.Equals(previousClass, targetClass, StringComparison.OrdinalIgnoreCase)
+                        ? "."
+                        : " (было «" + previousClass + "»).");
+                ok += " Коннектор: «" + server.ServerNameAndPrefix + "», портфель: «"
+                    + (_screenerTab.PortfolioName ?? "") + "», ТФ: " + _screenerTab.TimeFrame + ".";
+                ok += " Добавлено " + syncedTotal + " " + instrumentWord + " по списку ["
+                    + string.Join(", ", prefixes) + "].";
+
+                if (tabsCreated > 0)
+                {
+                    ok += " Создано вкладок: " + tabsCreated + ".";
+                }
+
+                if (!string.IsNullOrEmpty(reloadNote))
+                {
+                    ok += " " + reloadNote;
+                }
+
+                if (syncedNames.Count > 0)
+                {
+                    ok += " Инструменты: " + string.Join(", ", syncedNames) + ".";
+                }
+
+                SendNewLogMessage(ok, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Очищает SecuritiesNames и удаляет все дочерние вкладки скринера; сбрасывает файл ScreenerTabSet.
+        /// </summary>
+        private int ClearAllScreenerSecuritiesAndTabs()
+        {
+            int clearedList = 0;
+            if (_screenerTab.SecuritiesNames != null)
+            {
+                clearedList = _screenerTab.SecuritiesNames.Count;
+                _screenerTab.SecuritiesNames.Clear();
+            }
+
+            int clearedTabs = 0;
+            if (_screenerTab.Tabs != null)
+            {
+                for (int i = _screenerTab.Tabs.Count - 1; i >= 0; i--)
+                {
+                    BotTabSimple tab = _screenerTab.Tabs[i];
+                    if (tab == null)
+                    {
+                        _screenerTab.Tabs.RemoveAt(i);
+                        continue;
+                    }
+
+                    clearedTabs++;
+                    tab.Clear();
+                    tab.Delete();
+                    _screenerTab.Tabs.RemoveAt(i);
+                }
+            }
+
+            ClearScreenerPersistedTabListFile();
+            _screenerTab.SaveSettings();
+            _screenerTab.NeedToReloadTabs = true;
+
+            TryInvokeScreenerRePaintSecuritiesGrid();
+
+            if (clearedTabs > clearedList)
+            {
+                clearedList = clearedTabs;
+            }
+
+            return clearedList;
+        }
+
+        /// <summary>Пустой ScreenerTabSet.txt ломает BotTabScreener.TryLoadTabs() при любом старте (трейдер, тестер).</summary>
+        private void RemoveCorruptScreenerTabSetFileIfNeeded()
+        {
+            if (string.IsNullOrEmpty(_screenerTab?.TabName))
+            {
+                return;
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _screenerTab.TabName + "ScreenerTabSet.txt");
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                string firstLine;
+                using (StreamReader reader = new StreamReader(path))
+                {
+                    firstLine = reader.ReadLine();
+                }
+
+                if (firstLine == null || firstLine.Length == 0)
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        /// <summary>Удалить файл списка вкладок перед пересборкой списка бумаг.</summary>
+        private void ClearScreenerPersistedTabListFile()
+        {
+            if (string.IsNullOrEmpty(_screenerTab?.TabName))
+            {
+                return;
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _screenerTab.TabName + "ScreenerTabSet.txt");
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        /// <summary>
+        /// Через reflection вызывает RePaintSecuritiesGrid у BotTabScreener для обновления таблицы бумаг.
+        /// </summary>
+        private void TryInvokeScreenerRePaintSecuritiesGrid()
+        {
+            try
+            {
+                MethodInfo repaint = _screenerTab.GetType().GetMethod(
+                    "RePaintSecuritiesGrid",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                repaint?.Invoke(_screenerTab, null);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        /// <summary>
+        /// True, если сервер — Tester или Optimizer (особые правила имён и TestClass).
+        /// </summary>
+        private static bool IsTesterLikeServer(IServer server)
+        {
+            return server != null
+                && (server.ServerType == ServerType.Tester
+                    || server.ServerType == ServerType.Optimizer);
+        }
+
+        /// <summary>В тестере — только инструменты подключённого сета (SecuritiesTester), не посторонние файлы истории.</summary>
+        private List<Security> GetMoexReloadInstrumentList(IServer server, bool useTester)
+        {
+            if (!useTester)
+            {
+                return server?.Securities;
+            }
+
+            return BuildTesterConnectedSetSecurities(server, _screenerTab.TimeFrame);
+        }
+
+        /// <summary>
+        /// Имена как в SecuritiesTester.Security.Name и тот же TimeFrame, что у скринера —
+        /// иначе OsEngine снимает галочки «в торгах» и предлагает удалить вкладки.
+        /// </summary>
+        private static List<Security> BuildTesterConnectedSetSecurities(IServer server, TimeFrame requiredTimeFrame)
+        {
+            List<SecurityTester> testers = TryGetSecuritiesTesterList(server);
+            if (testers == null || testers.Count == 0)
+            {
+                return new List<Security>();
+            }
+
+            Dictionary<string, Security> byTesterName = new Dictionary<string, Security>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < testers.Count; i++)
+            {
+                SecurityTester st = testers[i];
+                if (st?.Security == null || string.IsNullOrEmpty(st.Security.Name))
+                {
+                    continue;
+                }
+
+                if (st.TimeFrame != requiredTimeFrame)
+                {
+                    continue;
+                }
+
+                string testerName = st.Security.Name.Trim();
+
+                if (byTesterName.ContainsKey(testerName))
+                {
+                    continue;
+                }
+
+                Security sec = new Security();
+                sec.LoadFromString(st.Security.GetSaveStr());
+                sec.Name = testerName;
+                if (string.IsNullOrWhiteSpace(sec.NameClass))
+                {
+                    sec.NameClass = "TestClass";
+                }
+
+                string tickerKey = GetTesterInstrumentTicker(testerName);
+                sec.SecurityType = IsMoexFuturesStyleName(tickerKey)
+                    ? SecurityType.Futures
+                    : SecurityType.Stock;
+
+                byTesterName[testerName] = sec;
+            }
+
+            return byTesterName.Values.ToList();
+        }
+
+        /// <summary>
+        /// Возвращает SecuritiesTester с TesterServer или OptimizerServer.
+        /// </summary>
+        private static List<SecurityTester> TryGetSecuritiesTesterList(IServer server)
+        {
+            if (server is TesterServer testerServer)
+            {
+                return testerServer.SecuritiesTester;
+            }
+
+            if (server is OptimizerServer optimizerServer)
+            {
+                return optimizerServer.SecuritiesTester;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Фильтр типа инструмента: фьючерс/акция; в тестере — по стилю имени, в лайве — по SecurityType.
+        /// </summary>
+        private static bool IsScreenerInstrument(Security sec, IServer server, MoexScreenerInstrumentMode mode)
+        {
+            if (sec == null || string.IsNullOrEmpty(sec.Name))
+            {
+                return false;
+            }
+
+            if (IsTesterLikeServer(server))
+            {
+                string ticker = GetTesterInstrumentTicker(sec.Name);
+                return mode == MoexScreenerInstrumentMode.Futures
+                    ? IsMoexFuturesStyleName(ticker)
+                    : IsMoexStockStyleName(ticker);
+            }
+
+            return mode == MoexScreenerInstrumentMode.Futures
+                ? sec.SecurityType == SecurityType.Futures
+                : sec.SecurityType == SecurityType.Stock;
+        }
+
+        /// <summary>Спот: только буквы, без даты/серии FORTS (ROSN, SBER, SBERP).</summary>
+        private static bool IsPlainEquityTicker(string ticker)
+        {
+            if (string.IsNullOrWhiteSpace(ticker))
+            {
+                return false;
+            }
+
+            string t = NormalizeFuturesTicker(ticker);
+            if (t.Length == 0 || t.Length > 6)
+            {
+                return false;
+            }
+
+            if (t.EndsWith("RUBF", StringComparison.OrdinalIgnoreCase)
+                || t.EndsWith("TOM", StringComparison.OrdinalIgnoreCase)
+                || t.EndsWith("TOD", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < t.Length; i++)
+            {
+                if (!char.IsLetter(t[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>Фьючерс: ROSN-6.26, CRZ5, CNYRUBF и т.п., не голый тикер акции.</summary>
+        private static bool IsMoexFuturesStyleName(string ticker)
+        {
+            if (string.IsNullOrWhiteSpace(ticker))
+            {
+                return false;
+            }
+
+            string t = NormalizeFuturesTicker(ticker);
+
+            if (IsPlainEquityTicker(t))
+            {
+                return false;
+            }
+
+            int dash = t.IndexOf('-');
+            if (dash > 0 && dash < t.Length - 1)
+            {
+                for (int i = dash + 1; i < t.Length; i++)
+                {
+                    if (char.IsDigit(t[i]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (t.EndsWith("RUBF", StringComparison.OrdinalIgnoreCase)
+                || t.EndsWith("TOM", StringComparison.OrdinalIgnoreCase)
+                || t.EndsWith("TOD", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string fortBase = TryExtractMoexFortsSeriesBase(t);
+            if (fortBase.Length > 0 && fortBase.Length < t.Length)
+            {
+                int len = t.Length;
+                if (len >= 3 && char.IsLetter(t[len - 2]) && char.IsDigit(t[len - 1]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Спот MOEX: проходит IsPlainEquityTicker и не является фьючерсным именем.
+        /// </summary>
+        private static bool IsMoexStockStyleName(string ticker)
+        {
+            string t = NormalizeFuturesTicker(ticker);
+            return IsPlainEquityTicker(t) && !IsMoexFuturesStyleName(t);
+        }
+
+        /// <summary>
+        /// Сопоставление бумаги со списком: акции — точный тикер; фьючерсы — корень/префикс.
+        /// </summary>
+        private static bool SecurityMatchesPrefixes(Security sec, List<string> prefixes, MoexScreenerInstrumentMode mode)
+        {
+            return mode == MoexScreenerInstrumentMode.Stock
+                ? SecurityExactTickerMatchesAnyPrefix(sec, prefixes)
+                : SecurityLetterRootMatchesAnyPrefix(sec, prefixes);
+        }
+
+        /// <summary>
+        /// Точное совпадение Name/NameId с одним из тикеров (с учётом расширения файла в тестере).
+        /// </summary>
+        private static bool SecurityExactTickerMatchesAnyPrefix(Security sec, List<string> prefixes)
+        {
+            if (sec == null || prefixes == null || prefixes.Count == 0)
+            {
+                return false;
+            }
+
+            string[] candidates = { sec.Name, sec.NameId };
+            for (int c = 0; c < candidates.Length; c++)
+            {
+                if (string.IsNullOrWhiteSpace(candidates[c]))
+                {
+                    continue;
+                }
+
+                string name = NormalizeFuturesTicker(candidates[c].Trim());
+                string testerTicker = GetTesterInstrumentTicker(candidates[c]);
+                for (int i = 0; i < prefixes.Count; i++)
+                {
+                    if (string.Equals(name, prefixes[i], StringComparison.OrdinalIgnoreCase)
+                        || (!string.IsNullOrEmpty(testerTicker)
+                            && string.Equals(testerTicker, prefixes[i], StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// NameClass бумаги или Stock/Futures/TestClass по SecurityType.
+        /// </summary>
+        private static string GetSecurityClassName(Security sec)
+        {
+            if (sec == null)
+            {
+                return "TestClass";
+            }
+
+            if (!string.IsNullOrWhiteSpace(sec.NameClass))
+            {
+                return sec.NameClass;
+            }
+
+            if (sec.SecurityType == SecurityType.Stock)
+            {
+                return "Stock";
+            }
+
+            if (sec.SecurityType == SecurityType.Futures)
+            {
+                return SecurityType.Futures.ToString();
+            }
+
+            return "TestClass";
+        }
+
+        /// <summary>
+        /// Определяет класс фьючерсов на сервере (TInvest: Futures; иначе SPBFUT).
+        /// </summary>
+        private static string DetectFuturesSecuritiesClass(IServer server)
+        {
+            if (server?.ServerType == ServerType.TInvest)
+            {
+                return DetectTInvestFuturesSecuritiesClass(server);
+            }
+
+            return DetectMoexSecuritiesClass(server, MoexScreenerInstrumentMode.Futures, "SPBFUT");
+        }
+
+        /// <summary>TInvest: NameClass = «Futures», не SPBFUT.</summary>
+        private static string DetectTInvestFuturesSecuritiesClass(IServer server)
+        {
+            if (server?.Securities == null || server.Securities.Count == 0)
+            {
+                return null;
+            }
+
+            int futuresCount = 0;
+            for (int i = 0; i < server.Securities.Count; i++)
+            {
+                Security sec = server.Securities[i];
+                if (IsScreenerInstrument(sec, server, MoexScreenerInstrumentMode.Futures))
+                {
+                    futuresCount++;
+                }
+            }
+
+            return futuresCount > 0 ? SecurityType.Futures.ToString() : null;
+        }
+
+        /// <summary>
+        /// Определяет класс акций на сервере (TInvest — через DetectTInvestStockSecuritiesClass).
+        /// </summary>
+        private static string DetectStockSecuritiesClass(IServer server)
+        {
+            if (server?.ServerType == ServerType.TInvest)
+            {
+                return DetectTInvestStockSecuritiesClass(server);
+            }
+
+            return DetectMoexSecuritiesClass(server, MoexScreenerInstrumentMode.Stock, "Stock");
+        }
+
+        /// <summary>TInvest: NameClass вида «Stock rub», не «Stock usd» по всему списку.</summary>
+        private static string DetectTInvestStockSecuritiesClass(IServer server)
+        {
+            return DetectTInvestStockSecuritiesClass(server, null);
+        }
+
+        /// <summary>
+        /// TInvest: класс Stock* с максимальным числом бумаг; при списке тикеров — только по ним; приоритет Stock rub. Перегрузка: класс только среди бумаг из списка тикеров.
+        /// </summary>
+        private static string DetectTInvestStockSecuritiesClass(IServer server, List<string> tickerPrefixes)
+        {
+            if (server?.Securities == null || server.Securities.Count == 0)
+            {
+                return null;
+            }
+
+            Dictionary<string, int> classCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            bool filterByTickers = tickerPrefixes != null && tickerPrefixes.Count > 0;
+
+            for (int i = 0; i < server.Securities.Count; i++)
+            {
+                Security sec = server.Securities[i];
+                if (!IsScreenerInstrument(sec, server, MoexScreenerInstrumentMode.Stock))
+                {
+                    continue;
+                }
+
+                if (filterByTickers && !SecurityExactTickerMatchesAnyPrefix(sec, tickerPrefixes))
+                {
+                    continue;
+                }
+
+                string className = GetSecurityClassName(sec);
+                if (!className.StartsWith("Stock", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!classCounts.ContainsKey(className))
+                {
+                    classCounts[className] = 0;
+                }
+
+                classCounts[className]++;
+            }
+
+            return PickBestMoexStockClass(classCounts);
+        }
+
+        /// <summary>
+        /// Выбор класса акций: предпочтение Stock rub, иначе класс с максимальным счётчиком.
+        /// </summary>
+        private static string PickBestMoexStockClass(Dictionary<string, int> classCounts)
+        {
+            if (classCounts == null || classCounts.Count == 0)
+            {
+                return null;
+            }
+
+            const string moexRubClass = "Stock rub";
+            if (classCounts.TryGetValue(moexRubClass, out int rubCount) && rubCount > 0)
+            {
+                return moexRubClass;
+            }
+
+            string bestClass = null;
+            int bestCount = 0;
+            foreach (KeyValuePair<string, int> pair in classCounts)
+            {
+                if (pair.Value > bestCount)
+                {
+                    bestCount = pair.Value;
+                    bestClass = pair.Key;
+                }
+            }
+
+            return bestClass;
+        }
+
+        /// <summary>
+        /// Класс для MOEX reload: по тикерам на TInvest, иначе общий Detect*.
+        /// </summary>
+        private static string ResolveMoexTargetSecuritiesClass(
+            IServer server,
+            MoexScreenerInstrumentMode mode,
+            List<string> prefixes)
+        {
+            if (server == null)
+            {
+                return null;
+            }
+
+            bool isFutures = mode == MoexScreenerInstrumentMode.Futures;
+
+            if (server.ServerType == ServerType.TInvest && prefixes != null && prefixes.Count > 0)
+            {
+                string fromTickers = isFutures
+                    ? DetectTInvestFuturesSecuritiesClassForTickers(server, prefixes)
+                    : DetectTInvestStockSecuritiesClass(server, prefixes);
+                if (!string.IsNullOrEmpty(fromTickers))
+                {
+                    return fromTickers;
+                }
+            }
+
+            return isFutures
+                ? DetectFuturesSecuritiesClass(server)
+                : DetectStockSecuritiesClass(server);
+        }
+
+        /// <summary>
+        /// Класс фьючерсов только среди бумаг, подошедших под префиксы пользователя.
+        /// </summary>
+        private static string DetectTInvestFuturesSecuritiesClassForTickers(IServer server, List<string> prefixes)
+        {
+            if (server?.Securities == null || server.Securities.Count == 0 || prefixes == null || prefixes.Count == 0)
+            {
+                return null;
+            }
+
+            Dictionary<string, int> classCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < server.Securities.Count; i++)
+            {
+                Security sec = server.Securities[i];
+                if (!IsScreenerInstrument(sec, server, MoexScreenerInstrumentMode.Futures))
+                {
+                    continue;
+                }
+
+                if (!SecurityLetterRootMatchesAnyPrefix(sec, prefixes))
+                {
+                    continue;
+                }
+
+                string className = GetSecurityClassName(sec);
+                if (!classCounts.ContainsKey(className))
+                {
+                    classCounts[className] = 0;
+                }
+
+                classCounts[className]++;
+            }
+
+            if (classCounts.Count == 0)
+            {
+                return null;
+            }
+
+            string futuresClass = SecurityType.Futures.ToString();
+            if (classCounts.TryGetValue(futuresClass, out int futuresCount) && futuresCount > 0)
+            {
+                return futuresClass;
+            }
+
+            string bestClass = null;
+            int bestCount = 0;
+            foreach (KeyValuePair<string, int> pair in classCounts)
+            {
+                if (pair.Value > bestCount)
+                {
+                    bestCount = pair.Value;
+                    bestClass = pair.Key;
+                }
+            }
+
+            return bestClass;
+        }
+
+        /// <summary>
+        /// True в тестере/оптимизаторе — не переключать на TInvest.
+        /// </summary>
+        private bool ShouldUseMoexTesterConnector()
+        {
+            return StartProgram == StartProgram.IsTester
+                || StartProgram == StartProgram.IsOsOptimizer;
+        }
+
+        /// <summary>
+        /// В лайве заданы TInvest, имя сервера и портфель в настройках скринера. Перегрузка: проверка по переданной вкладке скринера.
+        /// </summary>
+        private static bool HasConfiguredLiveScreenerConnection(BotTabScreener screenerTab)
+        {
+            return screenerTab != null
+                && screenerTab.ServerType == ServerType.TInvest
+                && !string.IsNullOrWhiteSpace(screenerTab.ServerName)
+                && !string.IsNullOrWhiteSpace(screenerTab.PortfolioName);
+        }
+
+        /// <summary>
+        /// В лайве заданы TInvest, имя сервера и портфель в настройках скринера.
+        /// </summary>
+        private bool HasConfiguredLiveScreenerConnection()
+        {
+            return HasConfiguredLiveScreenerConnection(_screenerTab);
+        }
+
+        /// <summary>
+        /// Снимок портфеля, сервера, ТФ и класса бумаг перед MOEX reload. Перегрузка: снимок настроек переданного скринера.
+        /// </summary>
+        private static MoexScreenerPreserveSettings CaptureMoexScreenerPreserveSettings(BotTabScreener screenerTab)
+        {
+            return new MoexScreenerPreserveSettings
+            {
+                PortfolioName = screenerTab?.PortfolioName,
+                ServerType = screenerTab?.ServerType ?? ServerType.None,
+                ServerName = screenerTab?.ServerName,
+                TimeFrame = screenerTab?.TimeFrame ?? TimeFrame.Min1,
+                SecuritiesClass = screenerTab?.SecuritiesClass
+            };
+        }
+
+        /// <summary>
+        /// Снимок портфеля, сервера, ТФ и класса бумаг перед MOEX reload.
+        /// </summary>
+        private MoexScreenerPreserveSettings CaptureMoexScreenerPreserveSettings()
+        {
+            return CaptureMoexScreenerPreserveSettings(_screenerTab);
+        }
+
+        /// <summary>
+        /// Восстанавливает снимок настроек скринера после добавления бумаг.
+        /// </summary>
+        private void RestoreMoexScreenerPreserveSettings(MoexScreenerPreserveSettings preserved)
+        {
+            if (_screenerTab == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(preserved.PortfolioName))
+            {
+                _screenerTab.PortfolioName = preserved.PortfolioName;
+            }
+
+            if (preserved.ServerType != ServerType.None)
+            {
+                _screenerTab.ServerType = preserved.ServerType;
+            }
+
+            if (!string.IsNullOrWhiteSpace(preserved.ServerName))
+            {
+                _screenerTab.ServerName = preserved.ServerName;
+            }
+
+            _screenerTab.TimeFrame = preserved.TimeFrame;
+
+            if (!string.IsNullOrWhiteSpace(preserved.SecuritiesClass))
+            {
+                _screenerTab.SecuritiesClass = preserved.SecuritiesClass;
+            }
+        }
+
+        /// <summary>
+        /// Проверка перед первым MOEX reload: сервер, портфель и их наличие на коннекторе.
+        /// </summary>
+        private bool TryValidateLiveScreenerBeforeMoexReload(out string error)
+        {
+            error = null;
+
+            if (_screenerTab == null)
+            {
+                error = "скринер не инициализирован.";
+                return false;
+            }
+
+            if (_screenerTab.ServerType != ServerType.TInvest
+                || string.IsNullOrWhiteSpace(_screenerTab.ServerName))
+            {
+                error = "в настройках вкладки скринера выберите подключение T-Инвестиции (t-invest / t-invest 2), затем нажмите кнопку снова.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(_screenerTab.PortfolioName))
+            {
+                error = "в настройках вкладки скринера выберите портфель, затем нажмите кнопку снова.";
+                return false;
+            }
+
+            IServer server = FindServerForScreener() ?? FindTInvestServerByScreenerName(_screenerTab.ServerName);
+            if (server == null)
+            {
+                error = "коннектор «" + _screenerTab.ServerName.Trim()
+                    + "» не найден среди подключённых T-Инвестиции.";
+                return false;
+            }
+
+            if (!PortfolioExistsOnServer(server, _screenerTab.PortfolioName))
+            {
+                error = "портфель «" + _screenerTab.PortfolioName.Trim()
+                    + "» не найден на коннекторе «" + server.ServerNameAndPrefix + "».";
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Есть ли портфель с таким Number на сервере.
+        /// </summary>
+        private static bool PortfolioExistsOnServer(IServer server, string portfolioName)
+        {
+            if (server?.Portfolios == null || string.IsNullOrWhiteSpace(portfolioName))
+            {
+                return false;
+            }
+
+            string name = portfolioName.Trim();
+            for (int i = 0; i < server.Portfolios.Count; i++)
+            {
+                Portfolio p = server.Portfolios[i];
+                if (p != null && string.Equals(p.Number, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Совпадение имени сервера скринера с ServerNameAndPrefix (t-invest / TInvest_t-invest).
+        /// </summary>
+        private static bool ServerNamesMatch(string screenerServerName, IServer server)
+        {
+            if (server == null || string.IsNullOrWhiteSpace(screenerServerName))
+            {
+                return false;
+            }
+
+            string wanted = screenerServerName.Trim();
+            string full = server.ServerNameAndPrefix?.Trim() ?? string.Empty;
+
+            if (wanted.Length == 0 || full.Length == 0)
+            {
+                return false;
+            }
+
+            if (string.Equals(wanted, full, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (full.EndsWith("_" + wanted, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            int underscore = full.IndexOf('_');
+            if (underscore >= 0 && underscore < full.Length - 1)
+            {
+                string suffix = full.Substring(underscore + 1);
+                if (string.Equals(wanted, suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return string.Equals(wanted, server.ServerType.ToString(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(full, server.ServerType.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Ищет TInvest-сервер по имени из настроек скринера (полное или суффикс).
+        /// </summary>
+        private static IServer FindTInvestServerByScreenerName(string screenerServerName)
+        {
+            if (string.IsNullOrWhiteSpace(screenerServerName))
+            {
+                return null;
+            }
+
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            IServer partialMatch = null;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null || s.ServerType != ServerType.TInvest)
+                {
+                    continue;
+                }
+
+                if (!ServerNamesMatch(screenerServerName, s))
+                {
+                    continue;
+                }
+
+                if (s.Securities != null && s.Securities.Count > 0)
+                {
+                    return s;
+                }
+
+                if (partialMatch == null)
+                {
+                    partialMatch = s;
+                }
+            }
+
+            return partialMatch;
+        }
+
+        /// <summary>
+        /// В лайве не меняет коннектор, если уже настроен TInvest; иначе назначает первый TInvest.
+        /// </summary>
+        private bool TryApplyMoexConnectorToScreener(bool useTester, out string error)
+        {
+            error = null;
+
+            if (useTester)
+            {
+                IServer server = FindTesterLikeServer();
+                if (server == null)
+                {
+                    error = "В тестере не найден коннектор Tester. Проверьте настройки тестирования.";
+                    return false;
+                }
+
+                _screenerTab.ServerType = server.ServerType;
+                if (server.ServerType == ServerType.Tester)
+                {
+                    _screenerTab.ServerName = ServerType.Tester.ToString();
+                }
+                else if (server.ServerType == ServerType.Optimizer)
+                {
+                    _screenerTab.ServerName = ServerType.Optimizer.ToString();
+                }
+                else
+                {
+                    _screenerTab.ServerName = server.ServerNameAndPrefix;
+                }
+
+                return true;
+            }
+
+            if (HasConfiguredLiveScreenerConnection()
+                || (_screenerTab.ServerType == ServerType.TInvest
+                    && !string.IsNullOrWhiteSpace(_screenerTab.ServerName)))
+            {
+                return true;
+            }
+
+            IServer tInvest = FindTInvestServer();
+            if (tInvest == null)
+            {
+                error = "Сначала подключите коннектор «Т-Инвестиции» (TInvest) в OsEngine или выберите его в настройках скринера (подключение и портфель).";
+                return false;
+            }
+
+            _screenerTab.ServerType = ServerType.TInvest;
+            _screenerTab.ServerName = tInvest.ServerNameAndPrefix;
+            return true;
+        }
+
+        /// <summary>
+        /// Сервер для MOEX в лайве: из настроек скринера, иначе первый TInvest с бумагами.
+        /// </summary>
+        private IServer ResolveMoexLiveServer()
+        {
+            if (_screenerTab != null
+                && _screenerTab.ServerType == ServerType.TInvest
+                && !string.IsNullOrWhiteSpace(_screenerTab.ServerName))
+            {
+                IServer configured = FindServerForScreener() ?? FindTInvestServerByScreenerName(_screenerTab.ServerName);
+                if (configured != null)
+                {
+                    return configured;
+                }
+            }
+
+            return FindTInvestServer();
+        }
+
+        /// <summary>
+        /// Первый Tester/Optimizer с непустым списком бумаг.
+        /// </summary>
+        private static IServer FindTesterLikeServer()
+        {
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            IServer firstTester = null;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null)
+                {
+                    continue;
+                }
+
+                if (s.ServerType != ServerType.Tester && s.ServerType != ServerType.Optimizer)
+                {
+                    continue;
+                }
+
+                if (firstTester == null)
+                {
+                    firstTester = s;
+                }
+
+                if (s.Securities != null && s.Securities.Count > 0)
+                {
+                    return s;
+                }
+            }
+
+            return firstTester;
+        }
+
+        /// <summary>
+        /// Первый TInvest с загруженными бумагами (fallback).
+        /// </summary>
+        private static IServer FindTInvestServer()
+        {
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            IServer firstTInvest = null;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null || s.ServerType != ServerType.TInvest)
+                {
+                    continue;
+                }
+
+                if (firstTInvest == null)
+                {
+                    firstTInvest = s;
+                }
+
+                if (s.Securities != null && s.Securities.Count > 0)
+                {
+                    return s;
+                }
+            }
+
+            return firstTInvest;
+        }
+
+        /// <summary>
+        /// Подсчёт классов на сервере; preferredClass или TestClass в тестере.
+        /// </summary>
+        private static string DetectMoexSecuritiesClass(IServer server, MoexScreenerInstrumentMode mode, string preferredClass)
+        {
+            if (server?.Securities == null || server.Securities.Count == 0)
+            {
+                return null;
+            }
+
+            bool testerLike = IsTesterLikeServer(server);
+            Dictionary<string, int> classCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < server.Securities.Count; i++)
+            {
+                Security sec = server.Securities[i];
+                if (!IsScreenerInstrument(sec, server, mode))
+                {
+                    continue;
+                }
+
+                string className = GetSecurityClassName(sec);
+
+                if (!classCounts.ContainsKey(className))
+                {
+                    classCounts[className] = 0;
+                }
+
+                classCounts[className]++;
+            }
+
+            if (classCounts.Count == 0)
+            {
+                return testerLike ? "TestClass" : null;
+            }
+
+            if (!testerLike
+                && !string.IsNullOrEmpty(preferredClass)
+                && classCounts.TryGetValue(preferredClass, out int preferredCount)
+                && preferredCount > 0)
+            {
+                return preferredClass;
+            }
+
+            if (testerLike && classCounts.ContainsKey("TestClass"))
+            {
+                return "TestClass";
+            }
+
+            string bestClass = null;
+            int bestCount = 0;
+            foreach (KeyValuePair<string, int> pair in classCounts)
+            {
+                if (pair.Value > bestCount)
+                {
+                    bestCount = pair.Value;
+                    bestClass = pair.Key;
+                }
+            }
+
+            return bestClass;
+        }
+
+        /// <summary>
+        /// IServer по ServerType и ServerName скринера.
+        /// </summary>
+        private IServer FindServerForScreener()
+        {
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null)
+                {
+                    continue;
+                }
+
+                if (s.ServerType != _screenerTab.ServerType)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(_screenerTab.ServerName))
+                {
+                    if (string.Equals(s.ServerNameAndPrefix, _screenerTab.ServerType.ToString(), StringComparison.Ordinal))
+                    {
+                        return s;
+                    }
+
+                    continue;
+                }
+
+                if (ServerNamesMatch(_screenerTab.ServerName, s))
+                {
+                    return s;
+                }
+            }
+
+            return FindTInvestServerByScreenerName(_screenerTab.ServerName);
+        }
+
+        /// <summary>
+        /// Сохранение, ожидание TInvest, TryReLoadTabs, повтор при неполном создании вкладок.
+        /// </summary>
+        private string ApplyMoexScreenerReload()
+        {
+            EnsureScreenerCandleInfrastructure();
+
+            if (!ShouldUseMoexTesterConnector())
+            {
+                IServer server = ResolveMoexLiveServer();
+                WaitForMoexServerReady(server, 8000);
+            }
+
+            _screenerTab.SaveSettings();
+            RunMoexScreenerTabsReloadPass();
+
+            int expectedTabs = CountActivatedScreenerSecurities();
+            int tabsAfterFirst = _screenerTab.Tabs?.Count ?? 0;
+
+            if (expectedTabs > 0 && tabsAfterFirst < expectedTabs)
+            {
+                ScheduleMoexScreenerTabsReloadRetry(expectedTabs, attempt: 1);
+                return "Вкладки догружаются (повтор через 2 с после подключения T-Инвест)…";
+            }
+
+            return BuildMoexScreenerReloadResultNote();
+        }
+
+        /// <summary>
+        /// Текст ошибки, если вкладки не созданы (портфель/сервер).
+        /// </summary>
+        private string BuildMoexScreenerReloadResultNote()
+        {
+            if (_screenerTab.Tabs != null && _screenerTab.Tabs.Count > 0)
+            {
+                return string.Empty;
+            }
+
+            if (string.IsNullOrEmpty(_screenerTab.PortfolioName))
+            {
+                return "Вкладки не созданы: в скринере не задан портфель (Portfolio).";
+            }
+
+            if (_screenerTab.ServerType == ServerType.None)
+            {
+                return "Вкладки не созданы: в скринере не выбран сервер/коннектор.";
+            }
+
+            return "Вкладки не созданы: откройте настройки вкладки скринера и проверьте портфель, сервер и класс бумаг.";
+        }
+
+        /// <summary>
+        /// Число бумаг с IsOn в SecuritiesNames.
+        /// </summary>
+        private int CountActivatedScreenerSecurities()
+        {
+            if (_screenerTab?.SecuritiesNames == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            for (int i = 0; i < _screenerTab.SecuritiesNames.Count; i++)
+            {
+                if (_screenerTab.SecuritiesNames[i]?.IsOn == true)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Один проход TryLoadTabs/TryReLoadTabs с инициализацией CandleSeriesRealization.
+        /// </summary>
+        private void RunMoexScreenerTabsReloadPass()
+        {
+            EnsureScreenerCandleInfrastructure();
+            EnsureExistingScreenerTabsCandleInfrastructure();
+
+            _screenerTab.NeedToReloadTabs = true;
+            _screenerTab.TryLoadTabs();
+            _screenerTab.TryReLoadTabs();
+            _screenerTab.ReloadIndicatorsOnTabs();
+            TryInvokeScreenerRePaintSecuritiesGrid();
+        }
+
+        /// <summary>
+        /// Отложенный повтор перезагрузки вкладок (до 5 раз) после подключения TInvest.
+        /// </summary>
+        private void ScheduleMoexScreenerTabsReloadRetry(int expectedTabs, int attempt)
+        {
+            if (attempt > 5 || _screenerTab == null)
+            {
+                return;
+            }
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(2000).ConfigureAwait(false);
+
+                    if (!ShouldUseMoexTesterConnector())
+                    {
+                        WaitForMoexServerReady(ResolveMoexLiveServer(), 10000);
+                    }
+
+                    RunMoexScreenerTabsReloadPass();
+
+                    int tabsCount = _screenerTab.Tabs?.Count ?? 0;
+                    if (expectedTabs > 0 && tabsCount < expectedTabs && attempt < 5)
+                    {
+                        ScheduleMoexScreenerTabsReloadRetry(expectedTabs, attempt + 1);
+                        return;
+                    }
+
+                    if (tabsCount > 0)
+                    {
+                        string ok = NameStrategyUniq + ": догрузка вкладок скринера завершена (" + tabsCount + ").";
+                        SendNewLogMessage(ok, LogMessageType.System);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Ожидание Connect и непустого Securities на сервере.
+        /// </summary>
+        private static bool WaitForMoexServerReady(IServer server, int maxWaitMs)
+        {
+            if (server == null || maxWaitMs <= 0)
+            {
+                return false;
+            }
+
+            DateTime deadline = DateTime.Now.AddMilliseconds(maxWaitMs);
+            while (DateTime.Now < deadline)
+            {
+                if (server.ServerStatus == ServerConnectStatus.Connect)
+                {
+                    if (server.Securities == null || server.Securities.Count == 0)
+                    {
+                        Thread.Sleep(250);
+                        continue;
+                    }
+
+                    return true;
+                }
+
+                Thread.Sleep(250);
+            }
+
+            return server.ServerStatus == ServerConnectStatus.Connect;
+        }
+
+        /// <summary>
+        /// Создаёт CandleSeriesRealization у скринера и дочерних вкладок при необходимости.
+        /// </summary>
+        private void EnsureScreenerCandleInfrastructure()
+        {
+            if (_screenerTab == null)
+            {
+                return;
+            }
+
+            if (_screenerTab.CandleSeriesRealization == null)
+            {
+                string seriesType = string.IsNullOrWhiteSpace(_screenerTab.CandleCreateMethodType)
+                    ? "Simple"
+                    : _screenerTab.CandleCreateMethodType;
+                _screenerTab.CandleSeriesRealization = CandleFactory.CreateCandleSeriesRealization(seriesType);
+                _screenerTab.CandleSeriesRealization?.Init(StartProgram);
+            }
+
+            EnsureExistingScreenerTabsCandleInfrastructure();
+        }
+
+        /// <summary>
+        /// Проставляет CandleSeriesRealization на всех существующих вкладках скринера.
+        /// </summary>
+        private void EnsureExistingScreenerTabsCandleInfrastructure()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.CandleSeriesRealization == null)
+            {
+                return;
+            }
+
+            string screenerSeriesState = _screenerTab.CandleSeriesRealization.GetSaveString();
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                EnsureTabCandleSeriesRealization(_screenerTab.Tabs[i], screenerSeriesState);
+            }
+        }
+
+        /// <summary>
+        /// Инициализирует CandleSeriesRealization на коннекторе вкладки из состояния скринера.
+        /// </summary>
+        private void EnsureTabCandleSeriesRealization(BotTabSimple tab, string screenerSeriesState)
+        {
+            if (tab?.Connector?.TimeFrameBuilder == null)
+            {
+                return;
+            }
+
+            TimeFrameBuilder builder = tab.Connector.TimeFrameBuilder;
+            if (builder.CandleSeriesRealization == null)
+            {
+                string seriesType = string.IsNullOrWhiteSpace(tab.Connector.CandleCreateMethodType)
+                    ? "Simple"
+                    : tab.Connector.CandleCreateMethodType;
+                builder.CandleSeriesRealization = CandleFactory.CreateCandleSeriesRealization(seriesType);
+                builder.CandleSeriesRealization?.Init(StartProgram);
+            }
+
+            if (builder.CandleSeriesRealization == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(screenerSeriesState))
+            {
+                builder.CandleSeriesRealization.SetSaveString(screenerSeriesState);
+                builder.CandleSeriesRealization.OnStateChange(CandleSeriesState.ParametersChange);
+            }
+        }
+
+        /// <summary>
+        /// Разбор строки префиксов/тикеров через запятую без дубликатов.
+        /// </summary>
+        #endregion
+
+        #region MOEX: тикеры, классы бумаг, поиск серверов
+
+        private static List<string> ParseTickerPrefixes(string raw)
+        {
+            List<string> result = new List<string>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return result;
+            }
+
+            string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string p = parts[i].Trim();
+                if (p.Length == 0 || seen.Contains(p))
+                {
+                    continue;
+                }
+
+                seen.Add(p);
+                result.Add(p);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Корень FORTS бумаги совпадает с одним из префиксов (с алиасами CNY→CR).
+        /// </summary>
+        private static bool SecurityLetterRootMatchesAnyPrefix(Security sec, List<string> prefixes)
+        {
+            if (sec == null || prefixes == null || prefixes.Count == 0)
+            {
+                return false;
+            }
+
+            string[] candidates = { sec.Name, sec.NameFull, sec.NameId };
+            for (int c = 0; c < candidates.Length; c++)
+            {
+                if (string.IsNullOrWhiteSpace(candidates[c]))
+                {
+                    continue;
+                }
+
+                string raw = candidates[c].Trim();
+                if (TickerLetterRootMatchesAnyPrefix(raw, prefixes))
+                {
+                    return true;
+                }
+
+                string testerTicker = GetTesterInstrumentTicker(raw);
+                if (!string.IsNullOrEmpty(testerTicker)
+                    && !string.Equals(testerTicker, raw, StringComparison.OrdinalIgnoreCase)
+                    && TickerLetterRootMatchesAnyPrefix(testerTicker, prefixes))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Tester: Security.Name = имя файла истории (SBER.txt, ROSN-6.26.csv).</summary>
+        private static string GetTesterInstrumentTicker(string rawName)
+        {
+            if (string.IsNullOrWhiteSpace(rawName))
+            {
+                return string.Empty;
+            }
+
+            string t = rawName.Trim();
+            int slash = t.LastIndexOf('\\');
+            int slash2 = t.LastIndexOf('/');
+            int sep = Math.Max(slash, slash2);
+            if (sep >= 0 && sep < t.Length - 1)
+            {
+                t = t.Substring(sep + 1).Trim();
+            }
+
+            int dot = t.LastIndexOf('.');
+            if (dot > 0)
+            {
+                t = t.Substring(0, dot).Trim();
+            }
+
+            return NormalizeFuturesTicker(t);
+        }
+
+        /// <summary>
+        /// Примеры имён из сета тестера для сообщения об ошибке.
+        /// </summary>
+        private static string FormatTesterSetNameSamples(List<Security> instruments, int maxCount)
+        {
+            if (instruments == null || instruments.Count == 0 || maxCount <= 0)
+            {
+                return "—";
+            }
+
+            int take = Math.Min(maxCount, instruments.Count);
+            List<string> parts = new List<string>(take);
+            for (int i = 0; i < take; i++)
+            {
+                string raw = instruments[i]?.Name;
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                string ticker = GetTesterInstrumentTicker(raw);
+                parts.Add(string.IsNullOrEmpty(ticker) || string.Equals(ticker, raw, StringComparison.OrdinalIgnoreCase)
+                    ? raw
+                    : raw + "→" + ticker);
+            }
+
+            return parts.Count == 0 ? "—" : string.Join(", ", parts);
+        }
+
+        /// <summary>Quik: «CRZ5+SPBFUT» → «CRZ5»; иные суффиксы после «+» отбрасываются.</summary>
+        private static string NormalizeFuturesTicker(string ticker)
+        {
+            if (string.IsNullOrWhiteSpace(ticker))
+            {
+                return string.Empty;
+            }
+
+            string t = ticker.Trim();
+            int plus = t.IndexOf('+');
+            if (plus > 0)
+            {
+                t = t.Substring(0, plus).Trim();
+            }
+
+            return t;
+        }
+
+        /// <summary>
+        /// Префикс пользователя + биржевые алиасы (CNY→CR).
+        /// </summary>
+        private static IEnumerable<string> ExpandPrefixWithMoexAliases(string userPrefix)
+        {
+            if (string.IsNullOrWhiteSpace(userPrefix))
+            {
+                yield break;
+            }
+
+            yield return userPrefix.Trim();
+
+            if (MoexFuturesPrefixAliases.TryGetValue(userPrefix.Trim(), out string[] aliases))
+            {
+                for (int i = 0; i < aliases.Length; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(aliases[i]))
+                    {
+                        yield return aliases[i].Trim();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Корень для сопоставления с префиксом: до «-»/«.»; код FORTS вида CRZ5/LKZ5 → буквы до месяца (CR, LK);
+        /// иначе буквы с начала (CNYRUBF → CNYRUBF).
+        /// </summary>
+        private static string ExtractFuturesLetterRoot(string ticker)
+        {
+            if (string.IsNullOrWhiteSpace(ticker))
+            {
+                return string.Empty;
+            }
+
+            string t = NormalizeFuturesTicker(ticker);
+            int dash = t.IndexOf('-');
+            if (dash > 0)
+            {
+                return t.Substring(0, dash).Trim();
+            }
+
+            int dot = t.IndexOf('.');
+            if (dot > 0)
+            {
+                bool allLettersBeforeDot = true;
+                for (int k = 0; k < dot; k++)
+                {
+                    if (!char.IsLetter(t[k]))
+                    {
+                        allLettersBeforeDot = false;
+                        break;
+                    }
+                }
+
+                if (allLettersBeforeDot)
+                {
+                    return t.Substring(0, dot).Trim();
+                }
+            }
+
+            string fortBase = TryExtractMoexFortsSeriesBase(t);
+            if (fortBase.Length > 0)
+            {
+                return fortBase;
+            }
+
+            int end = 0;
+            while (end < t.Length && char.IsLetter(t[end]))
+            {
+                end++;
+            }
+
+            return end > 0 ? t.Substring(0, end) : string.Empty;
+        }
+
+        /// <summary>Краткий код серии FORTS: CRZ5 → CR, SiH6 → Si (последние 2 символа — месяц и год).</summary>
+        private static string TryExtractMoexFortsSeriesBase(string ticker)
+        {
+            if (ticker.Length < 3)
+            {
+                return string.Empty;
+            }
+
+            int len = ticker.Length;
+            char yearCh = ticker[len - 1];
+            char monthCh = ticker[len - 2];
+
+            if (!char.IsLetter(monthCh) || !char.IsDigit(yearCh))
+            {
+                return string.Empty;
+            }
+
+            string basePart = ticker.Substring(0, len - 2);
+            if (basePart.Length < 1)
+            {
+                return string.Empty;
+            }
+
+            for (int i = 0; i < basePart.Length; i++)
+            {
+                if (!char.IsLetter(basePart[i]))
+                {
+                    return string.Empty;
+                }
+            }
+
+            return basePart;
+        }
+
+        /// <summary>
+        /// Совпадение корня с префиксом (включая вложенные префиксы).
+        /// </summary>
+        private static bool RootMatchesExpandedPrefix(string root, string expandedPrefix)
+        {
+            if (root.Length == 0 || string.IsNullOrWhiteSpace(expandedPrefix))
+            {
+                return false;
+            }
+
+            if (string.Equals(root, expandedPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (expandedPrefix.Length <= root.Length
+                && root.StartsWith(expandedPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (root.Length <= expandedPrefix.Length
+                && expandedPrefix.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Корень тикера подходит под любой префикс из списка.
+        /// </summary>
+        private static bool TickerLetterRootMatchesAnyPrefix(string ticker, List<string> prefixes)
+        {
+            string root = ExtractFuturesLetterRoot(ticker);
+            string normalized = NormalizeFuturesTicker(ticker);
+
+            if (root.Length == 0 && normalized.Length == 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < prefixes.Count; i++)
+            {
+                foreach (string expanded in ExpandPrefixWithMoexAliases(prefixes[i]))
+                {
+                    if (root.Length > 0 && RootMatchesExpandedPrefix(root, expanded))
+                    {
+                        return true;
+                    }
+
+                    if (normalized.Length > 0
+                        && expanded.Length <= normalized.Length
+                        && normalized.StartsWith(expanded, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Имя типа стратегии для OsEngine.
+        /// </summary>
+        #endregion
+
+        #region Параметры, аварийная остановка, расписание
+
         public override string GetNameStrategyType()
         {
             return "TrendMultiIndicatorScreener";
         }
 
+        /// <summary>
+        /// Отдельный диалог настроек не используется.
+        /// </summary>
         public override void ShowIndividualSettingsDialog()
         {
         }
 
+        /// <summary>
+        /// При изменении параметров: сигнатура аварийки, SyncIndicators, обновление параметров на вкладках.
+        /// </summary>
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
+            RefreshEmergencySettingsSignature(force: false);
             SyncIndicators();
             _screenerTab.UpdateIndicatorsParameters();
         }
+
+        /// <summary>
+        /// Сброс флага аварийной остановки при смене порогов/даты остановки.
+        /// </summary>
+        private void RefreshEmergencySettingsSignature(bool force)
+        {
+            string sig = (_portfolioStopLossPercentWhole?.ValueString ?? "").Trim() + "|"
+                + (_portfolioTakeProfitPercentWhole?.ValueString ?? "").Trim() + "|"
+                + (_stopDateTime?.ValueString ?? "").Trim();
+            if (force || sig != _emergencySettingsSignature)
+            {
+                _emergencySettingsSignature = sig;
+                _emergencyStopExecuted = false;
+            }
+        }
+
+        /// <summary>
+        /// Время для расписания и аварийки: в тестере — свеча; в лайве — сервер или свеча.
+        /// </summary>
+        private static DateTime GetDecisionTime(BotTabSimple tab, DateTime candleTime)
+        {
+            if (tab != null
+                && (tab.StartProgram == StartProgram.IsTester
+                    || tab.StartProgram == StartProgram.IsOsOptimizer))
+            {
+                return candleTime;
+            }
+
+            if (tab != null)
+            {
+                DateTime serverT = tab.TimeServerCurrent;
+                if (serverT != DateTime.MinValue)
+                {
+                    return serverT;
+                }
+            }
+
+            return candleTime;
+        }
+
+        /// <summary>
+        /// Календарная дата для парсинга «только время» (HH:mm).
+        /// </summary>
+        private static DateTime GetCalendarDateForTimeOnly(BotTabSimple tab, DateTime candleTime)
+        {
+            DateTime t = GetDecisionTime(tab, candleTime);
+            if (t == DateTime.MinValue)
+            {
+                t = candleTime;
+            }
+
+            return t.Date;
+        }
+
+        /// <summary>
+        /// Парсинг положительного процента из строкового параметра; пусто — выкл.
+        /// </summary>
+        private bool TryParsePercentThreshold(StrategyParameterString param, out decimal percent)
+        {
+            percent = 0m;
+            if (param == null || string.IsNullOrWhiteSpace(param.ValueString))
+            {
+                return false;
+            }
+
+            string s = param.ValueString.Trim().Replace(',', '.');
+            if (!decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out percent)
+                || percent <= 0m)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Строковый параметр задан (не пустой и не пробелы).
+        /// </summary>
+        private static bool IsFilledStringParameter(StrategyParameterString param)
+        {
+            return param != null && !string.IsNullOrWhiteSpace(param.ValueString);
+        }
+
+        /// <summary>
+        /// Есть ли цифра в строке (для отсечения мусора при парсинге даты).
+        /// </summary>
+        private static bool ContainsDigit(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (char.IsDigit(value[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Парсинг даты/времени: dd.MM.yyyy, ISO, только HH:mm (дата — календарный день decision time).
+        /// </summary>
+        private static bool TryParseFlexibleDateTime(BotTabSimple tab, DateTime candleTime, string rawSource, out DateTime parsed)
+        {
+            parsed = default;
+            if (string.IsNullOrWhiteSpace(rawSource))
+            {
+                return false;
+            }
+
+            string raw = rawSource.Trim();
+            if (!ContainsDigit(raw))
+            {
+                return false;
+            }
+
+            DateTime referenceDate = GetCalendarDateForTimeOnly(tab, candleTime);
+
+            string[] formatsFull =
+            {
+                "dd.MM.yyyy HH:mm:ss",
+                "dd.MM.yyyy HH:mm",
+                "dd.MM.yyyy",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd",
+                "HH:mm:ss",
+                "HH:mm"
+            };
+
+            foreach (string fmt in formatsFull)
+            {
+                if (DateTime.TryParseExact(raw, fmt, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime exact))
+                {
+                    if (fmt.StartsWith("HH", StringComparison.Ordinal))
+                    {
+                        parsed = referenceDate.Add(exact.TimeOfDay);
+                    }
+                    else
+                    {
+                        parsed = exact;
+                    }
+
+                    return true;
+                }
+            }
+
+            if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime loose))
+            {
+                parsed = loose;
+                return true;
+            }
+
+            if (DateTime.TryParse(raw, new CultureInfo("ru-RU"), DateTimeStyles.None, out DateTime looseRu))
+            {
+                parsed = looseRu;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Дедлайн из «Дата/время остановки»; пустой параметр — false.
+        /// </summary>
+        private bool TryParseStopDeadline(BotTabSimple tab, DateTime candleTime, out DateTime deadline)
+        {
+            deadline = default;
+            if (!IsFilledStringParameter(_stopDateTime))
+            {
+                return false;
+            }
+
+            return TryParseFlexibleDateTime(tab, candleTime, _stopDateTime.ValueString, out deadline);
+        }
+
+        /// <summary>
+        /// True, если decision time строго меньше «Дата-время начала работы» (пустой параметр — false).
+        /// </summary>
+        private bool IsBeforeScheduledWorkStart(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
+        {
+            if (!IsFilledStringParameter(_workStartDateTime))
+            {
+                return false;
+            }
+
+            if (!TryParseFlexibleDateTime(tab, candleTime, _workStartDateTime.ValueString, out DateTime workStart))
+            {
+                return false;
+            }
+
+            return decisionTime < workStart;
+        }
+
+        /// <summary>
+        /// Текущее значение актива портфеля для стоп/тейк (Prime или выбранный инструмент).
+        /// </summary>
+        private decimal? TryGetMonitoredPortfolioValue(BotTabSimple tab)
+        {
+            if (tab == null)
+            {
+                return null;
+            }
+
+            Portfolio myPortfolio = tab.Portfolio;
+            if (myPortfolio == null)
+            {
+                return null;
+            }
+
+            decimal portfolioPrimeAsset = 0;
+
+            if (_tradeAssetInPortfolio.ValueString == "Prime")
+            {
+                portfolioPrimeAsset = myPortfolio.ValueCurrent;
+            }
+            else
+            {
+                List<PositionOnBoard> positionOnBoard = myPortfolio.GetPositionOnBoard();
+                if (positionOnBoard == null)
+                {
+                    return null;
+                }
+
+                for (int i = 0; i < positionOnBoard.Count; i++)
+                {
+                    if (positionOnBoard[i].SecurityNameCode == _tradeAssetInPortfolio.ValueString)
+                    {
+                        portfolioPrimeAsset = positionOnBoard[i].ValueCurrent;
+                        break;
+                    }
+                }
+            }
+
+            if (portfolioPrimeAsset <= 0m)
+            {
+                return null;
+            }
+
+            return portfolioPrimeAsset;
+        }
+
+        /// <summary>
+        /// Фиксация базы портфеля при переходе Regime в On; сброс при Off и смене настроек.
+        /// </summary>
+        private void UpdateEmergencyRegimeAndBaseline(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
+        {
+            string regime = _regime.ValueString ?? "Off";
+
+            if (_prevRegimeSnapshot != regime)
+            {
+                if (regime == "Off")
+                {
+                    _portfolioBaselineCaptured = false;
+                }
+
+                if (_prevRegimeSnapshot == "Off" && regime != "Off")
+                {
+                    _emergencyStopExecuted = false;
+                    _portfolioBaselineCaptured = false;
+                }
+
+                _prevRegimeSnapshot = regime;
+            }
+
+            if (IsBeforeScheduledWorkStart(tab, candleTime, decisionTime))
+            {
+                return;
+            }
+
+            if (regime == "Off" || _portfolioBaselineCaptured || tab == null)
+            {
+                return;
+            }
+
+            decimal? v = TryGetMonitoredPortfolioValue(tab);
+            if (!v.HasValue)
+            {
+                return;
+            }
+
+            _portfolioBaselineValue = v.Value;
+            _portfolioBaselineCaptured = true;
+            _techPortfolioBaselineDisplay.ValueString = _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Причина аварийной остановки: время, % SL/TP от базы; пустые параметры не учитываются.
+        /// </summary>
+        private string TryBuildEmergencyReason(BotTabSimple tab, List<Candle> candles, DateTime decisionTime)
+        {
+            bool hasSl = TryParsePercentThreshold(_portfolioStopLossPercentWhole, out decimal slPct);
+            bool hasTp = TryParsePercentThreshold(_portfolioTakeProfitPercentWhole, out decimal tpPct);
+            bool hasTimeStop = TryParseStopDeadline(tab, candles[^1].TimeStart, out DateTime stopDeadline);
+
+            if (!hasSl && !hasTp && !hasTimeStop)
+            {
+                return null;
+            }
+
+            if (hasTimeStop && decisionTime >= stopDeadline)
+            {
+                return "Сработало «Дата/время остановки»: " + stopDeadline.ToString("G", CultureInfo.InvariantCulture)
+                    + " (текущее время сравнения: " + decisionTime.ToString("G", CultureInfo.InvariantCulture) + ").";
+            }
+
+            if ((_regime.ValueString ?? "Off") == "Off" || !_portfolioBaselineCaptured)
+            {
+                return null;
+            }
+
+            decimal? curOpt = TryGetMonitoredPortfolioValue(tab);
+            if (!curOpt.HasValue)
+            {
+                return null;
+            }
+
+            decimal cur = curOpt.Value;
+            if (_portfolioBaselineValue <= 0m)
+            {
+                return null;
+            }
+
+            if (hasSl && cur < _portfolioBaselineValue)
+            {
+                decimal lossPct = (_portfolioBaselineValue - cur) / _portfolioBaselineValue * 100m;
+                if (lossPct >= slPct)
+                {
+                    return "Сработал стоп по портфелю: просадка " + lossPct.ToString("F2", CultureInfo.InvariantCulture)
+                        + "% от базы " + _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture)
+                        + " (порог " + slPct.ToString("G29", CultureInfo.InvariantCulture) + "%), текущее значение "
+                        + cur.ToString("G29", CultureInfo.InvariantCulture) + ".";
+                }
+            }
+
+            if (hasTp && cur > _portfolioBaselineValue)
+            {
+                decimal profitPct = (cur - _portfolioBaselineValue) / _portfolioBaselineValue * 100m;
+                if (profitPct >= tpPct)
+                {
+                    return "Сработал take profit по портфелю: прибыль " + profitPct.ToString("F2", CultureInfo.InvariantCulture)
+                        + "% от базы " + _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture)
+                        + " (порог " + tpPct.ToString("G29", CultureInfo.InvariantCulture) + "%), текущее значение "
+                        + cur.ToString("G29", CultureInfo.InvariantCulture) + ".";
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// CloseAtMarket по всем открытым позициям робота на всех вкладках скринера.
+        /// </summary>
+        private void CloseAllBotPositionsAtMarket()
+        {
+            if (_screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            string botType = GetNameStrategyType();
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple t = _screenerTab.Tabs[i];
+                if (t?.PositionsOpenAll == null || t.PositionsOpenAll.Count == 0)
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < t.PositionsOpenAll.Count; p++)
+                {
+                    Position pos = t.PositionsOpenAll[p];
+                    if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0m)
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
+                    {
+                        continue;
+                    }
+
+                    t.CloseAtMarket(pos, pos.OpenVolume);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Кнопка «Остановить робота»: закрытие позиций и Regime=Off.
+        /// </summary>
+        private void StopRobotButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ExecuteManualRobotStop();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Ручная остановка: CloseAtMarket, Regime Off, лог System+User.
+        /// </summary>
+        private void ExecuteManualRobotStop()
+        {
+            CloseAllBotPositionsAtMarket();
+            _regime.ValueString = "Off";
+            _emergencyStopExecuted = true;
+
+            string full = NameStrategyUniq + ": остановка по кнопке «Остановить робота». Позиции закрыты по рынку, Regime=Off.";
+            SendNewLogMessage(full, LogMessageType.System);
+            SendNewLogMessage(full, LogMessageType.User);
+        }
+
+        /// <summary>
+        /// Аварийная остановка один раз: закрытие, Regime Off, сообщение в лог.
+        /// </summary>
+        private void ExecuteEmergencyShutdown(string reason)
+        {
+            if (_emergencyStopExecuted)
+            {
+                return;
+            }
+
+            _emergencyStopExecuted = true;
+
+            CloseAllBotPositionsAtMarket();
+
+            _regime.ValueString = "Off";
+
+            string full = NameStrategyUniq + ": аварийная остановка. " + reason;
+            SendNewLogMessage(full, LogMessageType.System);
+            SendNewLogMessage(full, LogMessageType.User);
+        }
+
+        /// <summary>
+        /// На каждой свече: база, проверка TryBuildEmergencyReason, ExecuteEmergencyShutdown.
+        /// </summary>
+        private void TryEmergencyShutdownIfNeeded(BotTabSimple tab, List<Candle> candles, DateTime decisionTime)
+        {
+            UpdateEmergencyRegimeAndBaseline(tab, candles[^1].TimeStart, decisionTime);
+
+            if (_emergencyStopExecuted)
+            {
+                return;
+            }
+
+            string reason = TryBuildEmergencyReason(tab, candles, decisionTime);
+            if (reason == null)
+            {
+                return;
+            }
+
+            ExecuteEmergencyShutdown(reason);
+        }
+
+        /// <summary>
+        /// Создание/удаление индикаторов на всех вкладках скринера по флагам Use*.
+        /// </summary>
+        #endregion
+
+        #region Индикаторы на вкладках скринера
 
         private void SyncIndicators()
         {
@@ -491,6 +3054,9 @@ namespace OsEngine.Robots.Custom
 #endif
         }
 
+        /// <summary>
+        /// Добавляет или убирает индикатор с заданным номером и типом на всех вкладках.
+        /// </summary>
         private void EnsureIndicator(int num, string type, List<string> parameters, string area, bool enabled)
         {
             IndicatorOnTabs existing = _screenerTab._indicators.FirstOrDefault(i => i.Num == num);
@@ -537,14 +3103,85 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        /// <summary>
+        /// Минимум свечей для торговли по максимальному периоду включённых индикаторов.
+        /// </summary>
+        private int GetMinBarsForTradingLogic()
+        {
+            int min = 50;
+
+            if (_useSma.ValueBool)
+            {
+                min = Math.Max(min, _smaLen.ValueInt + 2);
+            }
+
+            if (_useRsi.ValueBool)
+            {
+                min = Math.Max(min, _rsiLen.ValueInt + 2);
+            }
+
+            if (_useStoch.ValueBool)
+            {
+                min = Math.Max(min, _stochP1.ValueInt + _stochP2.ValueInt + _stochP3.ValueInt + 2);
+            }
+
+            if (_useMomentum.ValueBool)
+            {
+                min = Math.Max(min, _momLen.ValueInt + 2);
+            }
+
+            if (_useBollinger.ValueBool)
+            {
+                min = Math.Max(min, _bollLen.ValueInt + 2);
+            }
+
+            if (_useLinReg.ValueBool)
+            {
+                min = Math.Max(min, _linRegLen.ValueInt + 2);
+            }
+
+            if (_useRzi.ValueBool)
+            {
+                min = Math.Max(min, _rziLen.ValueInt + 2);
+            }
+
+            if (_useAverageProfitPercentLong.ValueBool)
+            {
+                min = Math.Max(min, _avgProfitPercentLongPeriod.ValueInt + 2);
+            }
+
+            return min;
+        }
+
+        /// <summary>
+        /// Главный цикл: аварийка, расписание, фильтры, сигналы, вход/выход/реверс.
+        /// </summary>
+        #endregion
+
+        #region Торговая логика (сигналы, вход, выход)
+
         private void ScreenerTab_CandleFinishedEvent(List<Candle> candles, BotTabSimple tab)
         {
+            if (candles == null || candles.Count == 0)
+            {
+                return;
+            }
+
+            DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
+            TryEmergencyShutdownIfNeeded(tab, candles, decisionTime);
+
             if (_regime.ValueString == "Off")
             {
                 return;
             }
 
-            if (candles == null || candles.Count < 50)
+            if (IsBeforeScheduledWorkStart(tab, candles[^1].TimeStart, decisionTime))
+            {
+                return;
+            }
+
+            int minBars = GetMinBarsForTradingLogic();
+            if (candles.Count < minBars)
             {
                 return;
             }
@@ -609,6 +3246,9 @@ namespace OsEngine.Robots.Custom
             TryCloseOrReverse(candles, tab, firstOpen, bull, bear);
         }
 
+        /// <summary>
+        /// Вкладка входит в выбранный кластер волатильности (1–3).
+        /// </summary>
         private bool CheckVolatilityCluster(DateTime time, BotTabSimple tab)
         {
             int cluster = _clusterToTrade.ValueInt;
@@ -736,6 +3376,9 @@ namespace OsEngine.Robots.Custom
             return CombineGroupedOrOfAnds(items);
         }
 
+        /// <summary>
+        /// SMA: close выше линии — бычье условие.
+        /// </summary>
         private bool? BullSmaPasses(decimal close, BotTabSimple tab)
         {
             if (!_useSma.ValueBool)
@@ -747,6 +3390,9 @@ namespace OsEngine.Robots.Custom
             return v != 0 && close > v;
         }
 
+        /// <summary>
+        /// RSI ≥ long min.
+        /// </summary>
         private bool? BullRsiPasses(decimal close, BotTabSimple tab)
         {
             if (!_useRsi.ValueBool)
@@ -758,6 +3404,9 @@ namespace OsEngine.Robots.Custom
             return v != 0 && v >= _rsiLongMin.ValueDecimal;
         }
 
+        /// <summary>
+        /// Stochastic K ≥ long min.
+        /// </summary>
         private bool? BullStochPasses(decimal close, BotTabSimple tab)
         {
             if (!_useStoch.ValueBool)
@@ -769,6 +3418,9 @@ namespace OsEngine.Robots.Custom
             return k != 0 && k >= _stochLongMin.ValueDecimal;
         }
 
+        /// <summary>
+        /// Momentum ≥ long min.
+        /// </summary>
         private bool? BullMomentumPasses(decimal close, BotTabSimple tab)
         {
             if (!_useMomentum.ValueBool)
@@ -780,6 +3432,9 @@ namespace OsEngine.Robots.Custom
             return v != 0 && v >= _momLongMin.ValueDecimal;
         }
 
+        /// <summary>
+        /// Close выше середины полос.
+        /// </summary>
         private bool? BullBollingerPasses(decimal close, BotTabSimple tab)
         {
             if (!_useBollinger.ValueBool)
@@ -795,6 +3450,9 @@ namespace OsEngine.Robots.Custom
             return close > mid;
         }
 
+        /// <summary>
+        /// Close выше верхней линии LinReg.
+        /// </summary>
         private bool? BullLinRegPasses(decimal close, BotTabSimple tab)
         {
             if (!_useLinReg.ValueBool)
@@ -806,6 +3464,9 @@ namespace OsEngine.Robots.Custom
             return up != 0 && close > up;
         }
 
+        /// <summary>
+        /// RZI > уровня сигнала.
+        /// </summary>
         private bool? BullRziPasses(decimal close, BotTabSimple tab)
         {
             if (!_useRzi.ValueBool)
@@ -833,6 +3494,9 @@ namespace OsEngine.Robots.Custom
         }
 #endif
 
+        /// <summary>
+        /// Рост объёма свечи vs предыдущая.
+        /// </summary>
         private bool? BullVolumePasses(List<Candle> candles, BotTabSimple tab)
         {
             if (!_useVolumeIndicator.ValueBool)
@@ -840,6 +3504,9 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab);
         }
 
+        /// <summary>
+        /// Avg Profit % Long > bull min.
+        /// </summary>
         private bool? BullAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab)
         {
             if (!_useAverageProfitPercentLong.ValueBool)
@@ -854,6 +3521,9 @@ namespace OsEngine.Robots.Custom
             return v > _avgProfitPercentLongBullMin.ValueDecimal;
         }
 
+        /// <summary>
+        /// SMA: close ниже линии.
+        /// </summary>
         private bool? BearSmaPasses(decimal close, BotTabSimple tab)
         {
             if (!_useSma.ValueBool)
@@ -865,6 +3535,9 @@ namespace OsEngine.Robots.Custom
             return v != 0 && close < v;
         }
 
+        /// <summary>
+        /// RSI ≤ short max.
+        /// </summary>
         private bool? BearRsiPasses(decimal close, BotTabSimple tab)
         {
             if (!_useRsi.ValueBool)
@@ -876,6 +3549,9 @@ namespace OsEngine.Robots.Custom
             return v != 0 && v <= _rsiShortMax.ValueDecimal;
         }
 
+        /// <summary>
+        /// Stochastic K ≤ short max.
+        /// </summary>
         private bool? BearStochPasses(decimal close, BotTabSimple tab)
         {
             if (!_useStoch.ValueBool)
@@ -887,6 +3563,9 @@ namespace OsEngine.Robots.Custom
             return k != 0 && k <= _stochShortMax.ValueDecimal;
         }
 
+        /// <summary>
+        /// Momentum ≤ short max.
+        /// </summary>
         private bool? BearMomentumPasses(decimal close, BotTabSimple tab)
         {
             if (!_useMomentum.ValueBool)
@@ -898,6 +3577,9 @@ namespace OsEngine.Robots.Custom
             return v != 0 && v <= _momShortMax.ValueDecimal;
         }
 
+        /// <summary>
+        /// Close ниже середины полос.
+        /// </summary>
         private bool? BearBollingerPasses(decimal close, BotTabSimple tab)
         {
             if (!_useBollinger.ValueBool)
@@ -913,6 +3595,9 @@ namespace OsEngine.Robots.Custom
             return close < mid;
         }
 
+        /// <summary>
+        /// Close ниже нижней линии LinReg.
+        /// </summary>
         private bool? BearLinRegPasses(decimal close, BotTabSimple tab)
         {
             if (!_useLinReg.ValueBool)
@@ -924,6 +3609,9 @@ namespace OsEngine.Robots.Custom
             return down != 0 && close < down;
         }
 
+        /// <summary>
+        /// RZI < −уровня.
+        /// </summary>
         private bool? BearRziPasses(decimal close, BotTabSimple tab)
         {
             if (!_useRzi.ValueBool)
@@ -952,6 +3640,9 @@ namespace OsEngine.Robots.Custom
         }
 #endif
 
+        /// <summary>
+        /// Рост объёма (то же условие, что для лонга).
+        /// </summary>
         private bool? BearVolumePasses(List<Candle> candles, BotTabSimple tab)
         {
             if (!_useVolumeIndicator.ValueBool)
@@ -959,6 +3650,9 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab);
         }
 
+        /// <summary>
+        /// Avg Profit % Long < bear max.
+        /// </summary>
         private bool? BearAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab)
         {
             if (!_useAverageProfitPercentLong.ValueBool)
@@ -973,6 +3667,9 @@ namespace OsEngine.Robots.Custom
             return v < _avgProfitPercentLongBearMax.ValueDecimal;
         }
 
+        /// <summary>
+        /// Поиск индикатора на вкладке по номеру+типу+TabName или по имени типа.
+        /// </summary>
         private Aindicator FindIndicator(BotTabSimple tab, int num, string type)
         {
             if (tab == null || tab.Indicators == null || tab.Indicators.Count == 0)
@@ -1144,6 +3841,9 @@ namespace OsEngine.Robots.Custom
         }
 #endif
 
+        /// <summary>
+        /// Открытие лонга/шорта по лимиту с учётом Regime и проскальзывания.
+        /// </summary>
         private void TryOpenOnSignal(List<Candle> candles, BotTabSimple tab, bool bull, bool bear)
         {
             decimal close = candles[candles.Count - 1].Close;
@@ -1171,6 +3871,9 @@ namespace OsEngine.Robots.Custom
 #endif
         }
 
+        /// <summary>
+        /// Закрытие или реверс позиции при противоположном сигнале.
+        /// </summary>
         private void TryCloseOrReverse(List<Candle> candles, BotTabSimple tab, Position pos, bool bull, bool bear)
         {
             if (pos.State != PositionStateType.Open)
@@ -1235,6 +3938,9 @@ namespace OsEngine.Robots.Custom
 #endif
         }
 
+        /// <summary>
+        /// Расчёт объёма заявки: контракты, валюта контракта или % депозита.
+        /// </summary>
         private decimal GetVolume(BotTabSimple tab)
         {
             decimal volume = 0;
@@ -1334,6 +4040,8 @@ namespace OsEngine.Robots.Custom
 
             return volume;
         }
+
+        #endregion
     }
 }
 
