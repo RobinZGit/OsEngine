@@ -60,7 +60,7 @@ Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
 - Volatility cluster to trade (1–3) with lookback; only tabs in the chosen cluster can open new positions.
 
-Самоиндикация (tab «самоиндикация»): виртуальный портфель по сигналам на окне свечей → % годовых; выше порога — вход как обычно, ниже −порога — переключить инверсию и войти, между — боковик без входа.
+Самоиндикация (tab «самоиндикация»): виртуальный портфель → % годовых; выше порога — вход как обычно; ниже −порога — разворот всех позиций скринера; опционально переключение «Инверсии логики» (да — разворот + переключение, нет — только разворот); между порогами — боковик.
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
@@ -114,6 +114,7 @@ namespace OsEngine.Robots.Custom
 
         private const string SignalPositionTrailingStop = "TrendMultiTrailPosition";
         private const string SignalPortfolioTrailingStop = "TrendMultiTrailPortfolio";
+        private const string SignalSamoindikatsiyaInvert = "TrendMultiSamoInvert";
 
         private BotTabScreener _screenerTab;
 
@@ -132,8 +133,10 @@ namespace OsEngine.Robots.Custom
          * что у робота, без реальных сделок; доходность close-to-close в long/short с учётом Regime.
          * Считается % годовых за окно (масштабирование по ТФ вкладки).
          * Годовые % > порога → вход как обычно (с учётом текущей «Инверсии логики»).
-         * Годовые % < −порога → переключается параметр «Инверсия логики» (было вкл. → выкл.,
-         * не было → вкл.), затем вход по сигналам.
+         * Годовые % < −порога → разворот всех открытых позиций скринера (закрытие по рынку +
+         * открытие в противоположную сторону тем же объёмом). Если «Инверсия логики при −пороге» = да —
+         * дополнительно переключается параметр «Инверсия логики»; если нет — только разворот позиций.
+         * Затем вход по сигналам (с текущей инверсией из параметров).
          * Между −порогом и +порогом → боковик, вход не выполняется.
          * При закрытии/реверсе открытых позиций самоиндикация не участвует — только старая
          * инверсия из параметров.
@@ -141,6 +144,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useSamoindikatsiya;
         private StrategyParameterDecimal _samoindikatsiyaThresholdAnnualPercent;
         private StrategyParameterInt _samoindikatsiyaCandlesLookback;
+        private StrategyParameterBool _samoindikatsiyaToggleInvertEntryLogic;
 
         // стопы (трейлинг позиции + страховка портфеля)
         private StrategyParameterBool _usePositionTrailing;
@@ -376,6 +380,10 @@ namespace OsEngine.Robots.Custom
                 2,
                 5000,
                 1,
+                samoindikatsiyaTab);
+            _samoindikatsiyaToggleInvertEntryLogic = CreateParameter(
+                "Инверсия логики при отрицательном пороге",
+                true,
                 samoindikatsiyaTab);
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
@@ -3852,12 +3860,132 @@ namespace OsEngine.Robots.Custom
 
             if (annualPct < -threshold)
             {
-                _invertEntryLogic.ValueBool = !_invertEntryLogic.ValueBool;
+                ReverseAllBeforeSamoindikatsiyaInvertIfNeeded();
+
+                if (_samoindikatsiyaToggleInvertEntryLogic.ValueBool)
+                {
+                    _invertEntryLogic.ValueBool = !_invertEntryLogic.ValueBool;
+                }
+
                 ApplyInvertEntryLogic(ref bull, ref bear);
                 return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Перед переключением инверсии по самоиндикации — развернуть все открытые позиции скринера.
+        /// </summary>
+        private void ReverseAllBeforeSamoindikatsiyaInvertIfNeeded()
+        {
+            List<Position> positions = _screenerTab.PositionsOpenAll;
+            if (positions == null || positions.Count == 0)
+            {
+                return;
+            }
+
+            List<(BotTabSimple tab, Position pos)> toReverse = new List<(BotTabSimple, Position)>();
+
+            for (int i = 0; i < positions.Count; i++)
+            {
+                Position pos = positions[i];
+                if (pos.State != PositionStateType.Open)
+                {
+                    continue;
+                }
+
+                BotTabSimple tab = _screenerTab.GetTabWithThisPosition(pos.Number);
+                if (tab == null)
+                {
+                    continue;
+                }
+
+                toReverse.Add((tab, pos));
+            }
+
+            if (toReverse.Count == 0)
+            {
+                return;
+            }
+
+            int reversed = 0;
+            for (int i = 0; i < toReverse.Count; i++)
+            {
+                if (TryReverseSamoindikatsiyaPosition(toReverse[i].tab, toReverse[i].pos))
+                {
+                    reversed++;
+                }
+            }
+
+            if (reversed > 0)
+            {
+                SendNewLogMessage(
+                    "Самоиндикация: развёрнуто позиций скринера перед переключением инверсии: "
+                    + reversed.ToString(CultureInfo.InvariantCulture),
+                    LogMessageType.Signal);
+            }
+        }
+
+        /// <summary>
+        /// Закрытие по рынку и открытие в противоположную сторону тем же объёмом (с учётом Regime).
+        /// </summary>
+        private bool TryReverseSamoindikatsiyaPosition(BotTabSimple tab, Position pos)
+        {
+            return TryFlipPositionAtMarket(tab, pos, SignalSamoindikatsiyaInvert);
+        }
+
+        /// <summary>
+        /// Разворот: CloseAtMarket + открытие в обратную сторону на OpenVolume (не GetVolume).
+        /// </summary>
+        private bool TryFlipPositionAtMarket(BotTabSimple tab, Position pos, string signalType)
+        {
+            if (tab == null || pos == null || pos.State != PositionStateType.Open)
+            {
+                return false;
+            }
+
+            decimal volume = pos.OpenVolume;
+            if (volume <= 0m)
+            {
+                return false;
+            }
+
+            string regime = _regime.ValueString ?? "Off";
+            Side direction = pos.Direction;
+
+            tab.CloseAtMarket(pos, volume, signalType);
+            _positionTrailingPeaks.Remove(GetPositionTrailingKey(tab, pos));
+
+            if (regime == "OnlyClosePosition")
+            {
+                return true;
+            }
+
+            if (direction == Side.Buy)
+            {
+                if (regime == "OnlyLong")
+                {
+                    return true;
+                }
+
+                tab.SellAtMarket(volume, signalType);
+            }
+            else if (direction == Side.Sell)
+            {
+                if (regime == "OnlyShort")
+                {
+                    return true;
+                }
+
+                tab.BuyAtMarket(volume, signalType);
+            }
+            else
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private void ApplyInvertEntryLogic(ref bool bull, ref bool bear)
