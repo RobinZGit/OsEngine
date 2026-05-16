@@ -40,6 +40,8 @@ Screener trend robot using multiple indicators simultaneously:
 - RZIgreensMinusReds (greens minus reds over lookback)
 - Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
 - Average Profit Percent Long (средняя доходность лонга в окне: по умолчанию в % от средней Close пары; опционально в цене; пороги long/short)
+- VWAP (close выше/ниже линии; сброс по календарному дню)
+- ATR (фильтр роста волатильности: ATR вырос на % за lookback свечей)
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
@@ -58,11 +60,11 @@ Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
 - Volatility cluster to trade (1–3) with lookback; only tabs in the chosen cluster can open new positions.
 
-Emergency portfolio stop (tab «Аварийная остановка портфеля»): optional % стоп/тейк от базы сессии, «Трейлинг % по портфелю (от пика)», «Трейлинг-стоп % (на каждую позицию)», «После трейлинг-стопа: свечей выждать» (0 = выкл.) — пауза новых входов на вкладке. Самоиндикация (tab «самоиндикация»): виртуальный портфель по сигналам на окне свечей → % годовых; выше порога — вход как обычно, ниже −порога — переключить инверсию и войти, между — боковик без входа.
+Самоиндикация (tab «самоиндикация»): виртуальный портфель по сигналам на окне свечей → % годовых; выше порога — вход как обычно, ниже −порога — переключить инверсию и войти, между — боковик без входа.
 
-Schedule (tab «Расписание»): «Дата-время начала работы» — пустая строка = выкл.; если задано, торговая логика и фиксация базы портфеля для стоп/тейк не идут, пока время сравнения (свеча в тестере, сервер в лайве) строго меньше заданного.
+Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
-Emergency «Дата/время остановки»: пустая строка = выкл.; иначе аварийная остановка при decisionTime >= заданного момента (в тестере — по времени свечи).
+Stops (tab «Стопы»): трейлинг позиции — в OsTrader встроенный CloseAtTrailingStopMarket по пику цены; в тестере — проверка High/Low свечи. Страховка портфеля — при просадке equity от пика закрыть все позиции скринера (опционально Regime → OnlyClosePosition).
 
 MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
 
@@ -75,7 +77,7 @@ namespace OsEngine.Robots.Custom
 {
     /// <summary>
     /// Скринерный трендовый робот: несколько индикаторов, И-группы (AND внутри |№|, OR между |№|),
-    /// MOEX reload (TInvest/Tester), аварийная остановка портфеля, расписание, кластеры волатильности.
+    /// MOEX reload (TInvest/Tester), расписание, самоиндикация, стопы, кластеры волатильности.
     /// </summary>
     public class TrendMultiIndicatorScreener : BotPanel
     {
@@ -95,6 +97,11 @@ namespace OsEngine.Robots.Custom
         private const string AverageProfitPercentLongIndicatorType = "Average Profit Percent Long";
 
         private const int NumAverageProfitPercentLong = 10;
+        private const int NumVwap = 11;
+        private const int NumAtr = 12;
+
+        private const string VwapIndicatorType = "VWAP";
+
 #if false // DiscreteMidBestPair: код сохранён, отключён (замените false на true для включения)
         private const int NumDiscreteMidBestPair = 8;
 
@@ -104,6 +111,9 @@ namespace OsEngine.Robots.Custom
 
         private const string AreaPrime = "Prime";
         private const string AreaSecond = "Second";
+
+        private const string SignalPositionTrailingStop = "TrendMultiTrailPosition";
+        private const string SignalPortfolioTrailingStop = "TrendMultiTrailPortfolio";
 
         private BotTabScreener _screenerTab;
 
@@ -132,6 +142,20 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _samoindikatsiyaThresholdAnnualPercent;
         private StrategyParameterInt _samoindikatsiyaCandlesLookback;
 
+        // стопы (трейлинг позиции + страховка портфеля)
+        private StrategyParameterBool _usePositionTrailing;
+        private StrategyParameterDecimal _positionTrailingPercent;
+        private StrategyParameterBool _usePortfolioTrailing;
+        private StrategyParameterDecimal _portfolioTrailingDrawdownPercent;
+        private StrategyParameterBool _portfolioTrailingSetOnlyCloseRegime;
+
+        private readonly Dictionary<string, decimal> _positionTrailingPeaks =
+            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        private decimal _portfolioEquityPeak;
+        private string _prevRegimeForPortfolioTrailing;
+        private DateTime _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
+
         // volume
         private StrategyParameterString _volumeType;
         private StrategyParameterDecimal _volume;
@@ -147,6 +171,8 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useRzi;
         private StrategyParameterBool _useVolumeIndicator;
         private StrategyParameterBool _useAverageProfitPercentLong;
+        private StrategyParameterBool _useVwap;
+        private StrategyParameterBool _useAtr;
 #if false // DiscreteMidBestPair
         private StrategyParameterBool _useDiscreteMidBestPair;
 #endif
@@ -185,6 +211,13 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _avgProfitPercentLongAsPercent;
         private StrategyParameterDecimal _avgProfitPercentLongBullMin;
         private StrategyParameterDecimal _avgProfitPercentLongBearMax;
+
+        private StrategyParameterInt _atrLen;
+        private StrategyParameterDecimal _atrGrowPercent;
+        private StrategyParameterInt _atrGrowLookBack;
+
+        private StrategyParameterInt _vwapAndGroup;
+        private StrategyParameterInt _atrAndGroup;
 
         /*
          * ---------------------------------------------------------------------------
@@ -251,36 +284,21 @@ namespace OsEngine.Robots.Custom
         private static readonly Dictionary<string, string[]> MoexFuturesPrefixAliases =
             new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
             {
-                { "CNY", new[] { "CR" } },
+                { "CNY", new[] { "CR", "CNYRUBF" } },
+                { "SI", new[] { "Si", "SV", "SILV" } },
+                { "RUAL", new[] { "RU" } },
             };
 
-        // Аварийная остановка: % стоп по портфелю / % take profit по портфелю / дата-время (пустая строка = параметр выключен)
-        private StrategyParameterString _portfolioStopLossPercentWhole;
-        private StrategyParameterString _portfolioTakeProfitPercentWhole;
-        private StrategyParameterString _portfolioEquityTrailingPercent;
-        private StrategyParameterString _stopDateTime;
         private StrategyParameterString _workStartDateTime;
-        private StrategyParameterString _techPortfolioBaselineDisplay;
-        private StrategyParameterString _portfolioTrailingStopPercent;
-        private StrategyParameterString _portfolioTrailingOrderType;
-        private StrategyParameterInt _portfolioTrailingCooldownCandles;
-        private StrategyParameterButton _stopRobotButton;
+        private StrategyParameterString _workEndDateTime;
 
-        /// <summary>Осталось свечей паузы входа на вкладке после трейлинг-стопа (ключ = TabName).</summary>
-        private readonly Dictionary<string, int> _portfolioTrailingCooldownBarsLeft =
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-        private const string PortfolioTrailingStopSignal = "TrendMultiPortfolioTrail";
+        private DateTime _lastScheduleEndCloseDecisionTime = DateTime.MinValue;
 
         /// <summary>Макс. виртуальный equity в самоиндикации (защита от OverflowException).</summary>
         private const decimal SamoindikatsiyaMaxVirtualEquity = 1_000_000_000m;
 
         /// <summary>Макс. |% годовых| для приведения к decimal.</summary>
         private const double SamoindikatsiyaMaxAnnualizedPercentMagnitude = 1_000_000d;
-
-        /// <summary>Экстремум цены для трейлинга: long — максимум, short — минимум (ключ = вкладка|№ позиции).</summary>
-        private readonly Dictionary<string, decimal> _portfolioTrailingExtremeByPosition =
-            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
         private StrategyParameterString _moexFuturesTickerPrefixes;
         private StrategyParameterButton _moexFuturesLoadButton;
@@ -307,14 +325,6 @@ namespace OsEngine.Robots.Custom
             public TimeFrame TimeFrame;
             public string SecuritiesClass;
         }
-
-        private string _prevRegimeSnapshot = "Off";
-        private bool _portfolioBaselineCaptured;
-        private decimal _portfolioBaselineValue;
-        private bool _portfolioEquityPeakCaptured;
-        private decimal _portfolioEquityPeak;
-        private bool _emergencyStopExecuted;
-        private string _emergencySettingsSignature = "";
 
         public TrendMultiIndicatorScreener(string name, StartProgram startProgram)
             : base(name, startProgram)
@@ -343,6 +353,7 @@ namespace OsEngine.Robots.Custom
             RemoveCorruptScreenerTabSetFileIfNeeded();
 
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
+            _screenerTab.PositionOpeningSuccesEvent += ScreenerTab_PositionOpeningSuccesEvent;
 
             // basic
             _regime = CreateParameter("Regime", "Off", new[] { "Off", "On", "OnlyLong", "OnlyShort", "OnlyClosePosition" });
@@ -376,36 +387,37 @@ namespace OsEngine.Robots.Custom
             _tradePeriodsShowDialogButton = CreateParameterButton("Non trade periods");
             _tradePeriodsShowDialogButton.UserClickOnButtonEvent += TradePeriodsShowDialogButton_UserClickOnButtonEvent;
 
-            const string emergencyTab = "Аварийная остановка портфеля";
-            _portfolioStopLossPercentWhole = CreateParameter("Процент стоп лосс всего портфеля", "", emergencyTab);
-            _portfolioTakeProfitPercentWhole = CreateParameter("Процент take profit всего портфеля", "", emergencyTab);
-            _portfolioEquityTrailingPercent = CreateParameter(
-                "Трейлинг % по портфелю (от пика)",
-                "",
-                emergencyTab);
-            _stopDateTime = CreateParameter("Дата/время остановки", "", emergencyTab);
-            _techPortfolioBaselineDisplay = CreateParameter("(техн.) База портфеля при старте сессии", "", emergencyTab);
-            _portfolioTrailingStopPercent = CreateParameter(
-                "Трейлинг-стоп % (на каждую позицию)",
-                "",
-                emergencyTab);
-            _portfolioTrailingOrderType = CreateParameter(
-                "Трейлинг-стоп: тип ордера",
-                "Market",
-                new[] { "Market", "Limit" },
-                emergencyTab);
-            _portfolioTrailingCooldownCandles = CreateParameter(
-                "После трейлинг-стопа: свечей выждать",
-                0,
-                0,
-                500,
-                1,
-                emergencyTab);
-            _stopRobotButton = CreateParameterButton("Остановить робота", emergencyTab);
-            _stopRobotButton.UserClickOnButtonEvent += StopRobotButton_UserClickOnButtonEvent;
-
             const string scheduleTab = "Расписание";
-            _workStartDateTime = CreateParameter("Дата-время начала работы", "", scheduleTab);
+            _workStartDateTime = CreateParameter(
+                "Дата-время начала работы (dd.MM.yyyy, dd.MM.yyyy HH:mm, yyyy-MM-dd, HH:mm; пусто = выкл.)",
+                "",
+                scheduleTab);
+            _workEndDateTime = CreateParameter(
+                "Дата-время окончания работы (dd.MM.yyyy, dd.MM.yyyy HH:mm, yyyy-MM-dd, HH:mm; пусто = выкл.)",
+                "",
+                scheduleTab);
+
+            const string stopsTab = "Стопы";
+            _usePositionTrailing = CreateParameter("Трейлинг позиции", true, stopsTab);
+            _positionTrailingPercent = CreateParameter(
+                "Трейлинг позиции, % от пика",
+                1m,
+                0.1m,
+                50m,
+                0.1m,
+                stopsTab);
+            _usePortfolioTrailing = CreateParameter("Страховка портфеля (просадка от пика)", true, stopsTab);
+            _portfolioTrailingDrawdownPercent = CreateParameter(
+                "Просадка портфеля от пика, %",
+                5m,
+                0.1m,
+                50m,
+                0.1m,
+                stopsTab);
+            _portfolioTrailingSetOnlyCloseRegime = CreateParameter(
+                "После страховки: OnlyClosePosition",
+                true,
+                stopsTab);
 
             const string moexFuturesTab = "MOEX фьючерсы";
             _moexFuturesTickerPrefixes = CreateParameter(
@@ -438,6 +450,8 @@ namespace OsEngine.Robots.Custom
             _useRzi = CreateParameter("Use RZIgreensMinusReds", false); //! default false
             _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
             _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
+            _useVwap = CreateParameter("Use VWAP", false);
+            _useAtr = CreateParameter("Use ATR", false);
 
 #if false // DiscreteMidBestPair
             _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
@@ -485,6 +499,10 @@ namespace OsEngine.Robots.Custom
             _avgProfitPercentLongBullMin = CreateParameter("Avg Profit % Long long: value >", 0m, -1000000m, 1000000m, 0.0001m);
             _avgProfitPercentLongBearMax = CreateParameter("Avg Profit % Long short: value <", 0m, -1000000m, 1000000m, 0.0001m);
 
+            _atrLen = CreateParameter("ATR length", 14, 2, 200, 1);
+            _atrGrowPercent = CreateParameter("ATR min grow % vs lookback", 3m, 0m, 100m, 0.1m);
+            _atrGrowLookBack = CreateParameter("ATR grow lookback (candles)", 5, 1, 500, 1);
+
             _smaAndGroup = CreateParameter("SMA: № И-группы", 1, -32, 32, 1);
             _rsiAndGroup = CreateParameter("RSI: № И-группы", 1, -32, 32, 1);
             _stochAndGroup = CreateParameter("Stochastic: № И-группы", 1, -32, 32, 1);
@@ -494,6 +512,8 @@ namespace OsEngine.Robots.Custom
             _rziAndGroup = CreateParameter("RZI: № И-группы", 1, -32, 32, 1);
             _volumeAndGroup = CreateParameter("Volume ind.: № И-группы", 1, -32, 32, 1);
             _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы", 1, -32, 32, 1);
+            _vwapAndGroup = CreateParameter("VWAP: № И-группы", 1, -32, 32, 1);
+            _atrAndGroup = CreateParameter("ATR: № И-группы", 1, -32, 32, 1);
 
 #if false // DiscreteMidBestPair
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
@@ -503,7 +523,6 @@ namespace OsEngine.Robots.Custom
 #endif
 
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
-            RefreshEmergencySettingsSignature(force: true);
 
             // create only enabled indicators
             SyncIndicators();
@@ -511,7 +530,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/Avg Profit % Long; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/Avg Profit % Long/VWAP/ATR; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -831,9 +850,24 @@ namespace OsEngine.Robots.Custom
 
                     if (matchedPrefixEligible == 0 && isFutures)
                     {
-                        msg += useTester
-                            ? " В сете нужны имена фьючерсов (ROSN-6.26, CRZ5), а не спот (ROSN). Для CNY на FORTS часто серия CR."
-                            : " Совпадений по корню тикера (и не истёкших по дате) нет (для CNY на FORTS часто код серии CR; вечный — CNYRUBF).";
+                        if (useTester && instrumentsTotal > 0 && matchedPrefixAny == 0)
+                        {
+                            msg += " В подключённом сете тестера (ТФ «" + _screenerTab.TimeFrame
+                                + "») нет фьючерсов с корнями [" + string.Join(", ", prefixes) + "].";
+                            msg += " Сейчас в сете: " + FormatTesterFuturesRootsDiagnostic(instrumentsToScan, server, mode) + ".";
+                            msg += " Добавьте в Tester файлы (ROSN-6.26, RUAL-6.26, CRZ5 для CNY, Si-6.26 для SI)"
+                                + " с тем же ТФ или измените префиксы под фактические тикеры сета.";
+                        }
+                        else
+                        {
+                            msg += useTester
+                                ? " В сете нужны имена фьючерсов (ROSN-6.26, CRZ5), а не спот (ROSN). Для CNY на FORTS часто серия CR."
+                                : " Совпадений по корню тикера (и не истёкших по дате) нет (для CNY на FORTS часто код серии CR; вечный — CNYRUBF).";
+                            if (useTester && instrumentsTotal > 0)
+                            {
+                                msg += " В сете: " + FormatTesterFuturesRootsDiagnostic(instrumentsToScan, server, mode) + ".";
+                            }
+                        }
                     }
                     else if (matchedPrefixEligible == 0 && !isFutures)
                     {
@@ -2270,6 +2304,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
+            HashSet<string> tickersToTry = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string[] candidates = { sec.Name, sec.NameFull, sec.NameId };
             for (int c = 0; c < candidates.Length; c++)
             {
@@ -2279,21 +2314,70 @@ namespace OsEngine.Robots.Custom
                 }
 
                 string raw = candidates[c].Trim();
-                if (TickerLetterRootMatchesAnyPrefix(raw, prefixes))
+                string testerTicker = GetTesterInstrumentTicker(raw);
+                if (!string.IsNullOrEmpty(testerTicker))
                 {
-                    return true;
+                    tickersToTry.Add(testerTicker);
                 }
 
-                string testerTicker = GetTesterInstrumentTicker(raw);
-                if (!string.IsNullOrEmpty(testerTicker)
-                    && !string.Equals(testerTicker, raw, StringComparison.OrdinalIgnoreCase)
-                    && TickerLetterRootMatchesAnyPrefix(testerTicker, prefixes))
+                string normalized = NormalizeFuturesTicker(raw);
+                if (!string.IsNullOrEmpty(normalized))
+                {
+                    tickersToTry.Add(normalized);
+                }
+            }
+
+            foreach (string ticker in tickersToTry)
+            {
+                if (TickerLetterRootMatchesAnyPrefix(ticker, prefixes))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Для сообщения об ошибке: корни FORTS бумаг в сете тестера.
+        /// </summary>
+        private static string FormatTesterFuturesRootsDiagnostic(
+            List<Security> instruments,
+            IServer server,
+            MoexScreenerInstrumentMode mode)
+        {
+            if (instruments == null || instruments.Count == 0)
+            {
+                return "—";
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < instruments.Count && parts.Count < 12; i++)
+            {
+                Security sec = instruments[i];
+                if (!IsScreenerInstrument(sec, server, mode))
+                {
+                    continue;
+                }
+
+                string name = GetTesterInstrumentTicker(sec?.Name ?? "");
+                if (string.IsNullOrEmpty(name))
+                {
+                    name = NormalizeFuturesTicker(sec?.Name ?? "");
+                }
+
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                string root = ExtractFuturesLetterRoot(name);
+                parts.Add(string.IsNullOrEmpty(root) || string.Equals(root, name, StringComparison.OrdinalIgnoreCase)
+                    ? name
+                    : name + "→" + root);
+            }
+
+            return parts.Count == 0 ? "—" : string.Join(", ", parts);
         }
 
         /// <summary>Tester: Security.Name = имя файла истории (SBER.txt, ROSN-6.26.csv).</summary>
@@ -2404,7 +2488,15 @@ namespace OsEngine.Robots.Custom
                 return string.Empty;
             }
 
-            string t = NormalizeFuturesTicker(ticker);
+            string t = GetTesterInstrumentTicker(ticker);
+            if (string.IsNullOrEmpty(t))
+            {
+                t = NormalizeFuturesTicker(ticker);
+            }
+            else
+            {
+                t = NormalizeFuturesTicker(t);
+            }
             int dash = t.IndexOf('-');
             if (dash > 0)
             {
@@ -2514,8 +2606,17 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private static bool TickerLetterRootMatchesAnyPrefix(string ticker, List<string> prefixes)
         {
-            string root = ExtractFuturesLetterRoot(ticker);
-            string normalized = NormalizeFuturesTicker(ticker);
+            string normalized = GetTesterInstrumentTicker(ticker);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                normalized = NormalizeFuturesTicker(ticker);
+            }
+            else
+            {
+                normalized = NormalizeFuturesTicker(normalized);
+            }
+
+            string root = ExtractFuturesLetterRoot(normalized);
 
             if (root.Length == 0 && normalized.Length == 0)
             {
@@ -2526,6 +2627,11 @@ namespace OsEngine.Robots.Custom
             {
                 foreach (string expanded in ExpandPrefixWithMoexAliases(prefixes[i]))
                 {
+                    if (string.IsNullOrWhiteSpace(expanded))
+                    {
+                        continue;
+                    }
+
                     if (root.Length > 0 && RootMatchesExpandedPrefix(root, expanded))
                     {
                         return true;
@@ -2534,6 +2640,13 @@ namespace OsEngine.Robots.Custom
                     if (normalized.Length > 0
                         && expanded.Length <= normalized.Length
                         && normalized.StartsWith(expanded, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+
+                    if (normalized.Length > 0
+                        && expanded.Length >= 2
+                        && normalized.IndexOf(expanded, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         return true;
                     }
@@ -2548,7 +2661,7 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         #endregion
 
-        #region Параметры, аварийная остановка, расписание
+        #region Параметры, расписание
 
         public override string GetNameStrategyType()
         {
@@ -2563,38 +2676,16 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// При изменении параметров: сигнатура аварийки, SyncIndicators, обновление параметров на вкладках.
+        /// При изменении параметров: SyncIndicators, обновление параметров на вкладках.
         /// </summary>
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
-            RefreshEmergencySettingsSignature(force: false);
             SyncIndicators();
             _screenerTab.UpdateIndicatorsParameters();
         }
 
         /// <summary>
-        /// Сброс флага аварийной остановки при смене порогов/даты остановки.
-        /// </summary>
-        private void RefreshEmergencySettingsSignature(bool force)
-        {
-            string sig = (_portfolioStopLossPercentWhole?.ValueString ?? "").Trim() + "|"
-                + (_portfolioTakeProfitPercentWhole?.ValueString ?? "").Trim() + "|"
-                + (_portfolioEquityTrailingPercent?.ValueString ?? "").Trim() + "|"
-                + (_stopDateTime?.ValueString ?? "").Trim() + "|"
-                + (_portfolioTrailingStopPercent?.ValueString ?? "").Trim() + "|"
-                + (_portfolioTrailingOrderType?.ValueString ?? "").Trim() + "|"
-                + (_portfolioTrailingCooldownCandles?.ValueInt.ToString() ?? "0");
-            if (force || sig != _emergencySettingsSignature)
-            {
-                _emergencySettingsSignature = sig;
-                _emergencyStopExecuted = false;
-                _portfolioEquityPeakCaptured = false;
-                _portfolioEquityPeak = 0m;
-            }
-        }
-
-        /// <summary>
-        /// Время для расписания и аварийки: в тестере — свеча; в лайве — сервер или свеча.
+        /// Время для расписания: в тестере — свеча; в лайве — сервер или свеча.
         /// </summary>
         private static DateTime GetDecisionTime(BotTabSimple tab, DateTime candleTime)
         {
@@ -2632,32 +2723,25 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Парсинг положительного процента из строкового параметра; пусто — выкл.
-        /// </summary>
-        private bool TryParsePercentThreshold(StrategyParameterString param, out decimal percent)
-        {
-            percent = 0m;
-            if (param == null || string.IsNullOrWhiteSpace(param.ValueString))
-            {
-                return false;
-            }
-
-            string s = param.ValueString.Trim().Replace(',', '.');
-            if (!decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out percent)
-                || percent <= 0m)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Строковый параметр задан (не пустой и не пробелы).
         /// </summary>
         private static bool IsFilledStringParameter(StrategyParameterString param)
         {
             return param != null && !string.IsNullOrWhiteSpace(param.ValueString);
+        }
+
+        /// <summary>
+        /// В строке только дата (без времени): нет «:», есть цифры.
+        /// </summary>
+        private static bool IsDateOnlyScheduleInput(string rawSource)
+        {
+            if (string.IsNullOrWhiteSpace(rawSource))
+            {
+                return false;
+            }
+
+            string raw = rawSource.Trim();
+            return !raw.Contains(':') && ContainsDigit(raw);
         }
 
         /// <summary>
@@ -2745,20 +2829,6 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Дедлайн из «Дата/время остановки»; пустой параметр — false.
-        /// </summary>
-        private bool TryParseStopDeadline(BotTabSimple tab, DateTime candleTime, out DateTime deadline)
-        {
-            deadline = default;
-            if (!IsFilledStringParameter(_stopDateTime))
-            {
-                return false;
-            }
-
-            return TryParseFlexibleDateTime(tab, candleTime, _stopDateTime.ValueString, out deadline);
-        }
-
-        /// <summary>
         /// True, если decision time строго меньше «Дата-время начала работы» (пустой параметр — false).
         /// </summary>
         private bool IsBeforeScheduledWorkStart(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
@@ -2777,7 +2847,101 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Текущее значение актива портфеля для стоп/тейк (Prime или выбранный инструмент).
+        /// True, если decision time строго больше «Дата-время окончания работы» (пустой параметр — false).
+        /// При первом срабатывании на момент времени — закрытие всех позиций скринера по рынку.
+        /// </summary>
+        private bool HandleScheduledWorkEndIfNeeded(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
+        {
+            if (!IsFilledStringParameter(_workEndDateTime))
+            {
+                return false;
+            }
+
+            if (!TryParseFlexibleDateTime(tab, candleTime, _workEndDateTime.ValueString, out DateTime workEnd))
+            {
+                return false;
+            }
+
+            // Только дата без времени — работа включительно до конца этого календарного дня.
+            if (IsDateOnlyScheduleInput(_workEndDateTime.ValueString))
+            {
+                workEnd = workEnd.Date.AddDays(1);
+            }
+
+            if (decisionTime <= workEnd)
+            {
+                return false;
+            }
+
+            if (decisionTime != _lastScheduleEndCloseDecisionTime)
+            {
+                _lastScheduleEndCloseDecisionTime = decisionTime;
+                _screenerTab.CloseAllPositionAtMarket();
+                _positionTrailingPeaks.Clear();
+
+                SendNewLogMessage(
+                    "Расписание: окончание работы "
+                    + workEnd.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+                    + ", decision="
+                    + decisionTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+                    + " — закрыты все позиции скринера.",
+                    LogMessageType.Signal);
+            }
+
+            return true;
+        }
+
+        private static bool IsTesterLikeProgram(BotTabSimple tab)
+        {
+            return tab != null
+                && (tab.StartProgram == StartProgram.IsTester
+                    || tab.StartProgram == StartProgram.IsOsOptimizer);
+        }
+
+        private static string GetPositionTrailingKey(BotTabSimple tab, Position position)
+        {
+            return tab.TabName + "|" + position.Number;
+        }
+
+        private decimal GetPositionTrailingPercent()
+        {
+            if (!_usePositionTrailing.ValueBool)
+            {
+                return 0m;
+            }
+
+            return _positionTrailingPercent.ValueDecimal;
+        }
+
+        private static decimal ComputeTrailingStopFromPeak(Side direction, decimal peak, decimal percent)
+        {
+            if (peak <= 0m || percent <= 0m)
+            {
+                return 0m;
+            }
+
+            decimal factor = percent / 100m;
+            return direction == Side.Buy
+                ? peak * (1m - factor)
+                : peak * (1m + factor);
+        }
+
+        private static void UpdateTrailingPeakFromCandle(ref decimal peak, Side direction, Candle candle, decimal entryPrice)
+        {
+            if (direction == Side.Buy)
+            {
+                decimal candidate = Math.Max(candle.High, entryPrice);
+                peak = peak <= 0m ? candidate : Math.Max(peak, candidate);
+            }
+            else
+            {
+                decimal candidate = Math.Min(candle.Low, entryPrice);
+                peak = peak <= 0m ? candidate : Math.Min(peak, candidate);
+            }
+        }
+
+        /// <summary>
+        /// Текущая стоимость актива портфеля (Prime или выбранный инструмент).
         /// </summary>
         private decimal? TryGetMonitoredPortfolioValue(BotTabSimple tab)
         {
@@ -2792,686 +2956,248 @@ namespace OsEngine.Robots.Custom
                 return null;
             }
 
-            decimal portfolioPrimeAsset = 0;
-
             if (_tradeAssetInPortfolio.ValueString == "Prime")
             {
-                portfolioPrimeAsset = myPortfolio.ValueCurrent;
+                return myPortfolio.ValueCurrent;
             }
-            else
+
+            List<PositionOnBoard> positionOnBoard = myPortfolio.GetPositionOnBoard();
+            if (positionOnBoard == null)
             {
-                List<PositionOnBoard> positionOnBoard = myPortfolio.GetPositionOnBoard();
-                if (positionOnBoard == null)
+                return null;
+            }
+
+            for (int i = 0; i < positionOnBoard.Count; i++)
+            {
+                if (positionOnBoard[i].SecurityNameCode == _tradeAssetInPortfolio.ValueString)
                 {
-                    return null;
-                }
-
-                for (int i = 0; i < positionOnBoard.Count; i++)
-                {
-                    if (positionOnBoard[i].SecurityNameCode == _tradeAssetInPortfolio.ValueString)
-                    {
-                        portfolioPrimeAsset = positionOnBoard[i].ValueCurrent;
-                        break;
-                    }
-                }
-            }
-
-            if (portfolioPrimeAsset <= 0m)
-            {
-                return null;
-            }
-
-            return portfolioPrimeAsset;
-        }
-
-        /// <summary>
-        /// Фиксация базы портфеля при переходе Regime в On; сброс при Off и смене настроек.
-        /// </summary>
-        private void UpdateEmergencyRegimeAndBaseline(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
-        {
-            string regime = _regime.ValueString ?? "Off";
-
-            if (_prevRegimeSnapshot != regime)
-            {
-                if (regime == "Off")
-                {
-                    _portfolioBaselineCaptured = false;
-                    _portfolioEquityPeakCaptured = false;
-                    _portfolioEquityPeak = 0m;
-                    _portfolioTrailingExtremeByPosition.Clear();
-                    _portfolioTrailingCooldownBarsLeft.Clear();
-                }
-
-                if (_prevRegimeSnapshot == "Off" && regime != "Off")
-                {
-                    _emergencyStopExecuted = false;
-                    _portfolioBaselineCaptured = false;
-                    _portfolioEquityPeakCaptured = false;
-                    _portfolioEquityPeak = 0m;
-                }
-
-                _prevRegimeSnapshot = regime;
-            }
-
-            if (IsBeforeScheduledWorkStart(tab, candleTime, decisionTime))
-            {
-                return;
-            }
-
-            if (regime == "Off" || _portfolioBaselineCaptured || tab == null)
-            {
-                return;
-            }
-
-            decimal? v = TryGetMonitoredPortfolioValue(tab);
-            if (!v.HasValue)
-            {
-                return;
-            }
-
-            _portfolioBaselineValue = v.Value;
-            _portfolioBaselineCaptured = true;
-            _techPortfolioBaselineDisplay.ValueString = _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture);
-        }
-
-        /// <summary>
-        /// Обновляет пик стоимости портфеля (ValueCurrent / Asset in portfolio) для трейлинга от пика.
-        /// </summary>
-        private void UpdatePortfolioEquityPeak(BotTabSimple tab, DateTime candleTime, DateTime decisionTime)
-        {
-            if (!TryParsePercentThreshold(_portfolioEquityTrailingPercent, out _))
-            {
-                if (_portfolioEquityPeakCaptured)
-                {
-                    _portfolioEquityPeakCaptured = false;
-                    _portfolioEquityPeak = 0m;
-                }
-
-                return;
-            }
-
-            string regime = _regime.ValueString ?? "Off";
-            if (regime == "Off" || tab == null || IsBeforeScheduledWorkStart(tab, candleTime, decisionTime))
-            {
-                return;
-            }
-
-            decimal? vOpt = TryGetMonitoredPortfolioValue(tab);
-            if (!vOpt.HasValue || vOpt.Value <= 0m)
-            {
-                return;
-            }
-
-            decimal v = vOpt.Value;
-            if (!_portfolioEquityPeakCaptured)
-            {
-                _portfolioEquityPeak = v;
-                _portfolioEquityPeakCaptured = true;
-                return;
-            }
-
-            if (v > _portfolioEquityPeak)
-            {
-                _portfolioEquityPeak = v;
-            }
-        }
-
-        /// <summary>
-        /// Трейлинг по портфелю: просадка текущего значения ниже пика × (1 − %/100).
-        /// </summary>
-        private string TryBuildPortfolioEquityTrailingReason(BotTabSimple tab)
-        {
-            if (!TryParsePercentThreshold(_portfolioEquityTrailingPercent, out decimal trailPct))
-            {
-                return null;
-            }
-
-            if ((_regime.ValueString ?? "Off") == "Off" || !_portfolioEquityPeakCaptured || _portfolioEquityPeak <= 0m)
-            {
-                return null;
-            }
-
-            decimal? curOpt = TryGetMonitoredPortfolioValue(tab);
-            if (!curOpt.HasValue)
-            {
-                return null;
-            }
-
-            decimal cur = curOpt.Value;
-            decimal floor = _portfolioEquityPeak * (1m - trailPct / 100m);
-
-            if (cur >= floor)
-            {
-                return null;
-            }
-
-            decimal dropPct = (_portfolioEquityPeak - cur) / _portfolioEquityPeak * 100m;
-
-            return "Сработал трейлинг по портфелю (от пика): текущее "
-                + cur.ToString("G29", CultureInfo.InvariantCulture)
-                + " ниже пола " + floor.ToString("G29", CultureInfo.InvariantCulture)
-                + " (пик " + _portfolioEquityPeak.ToString("G29", CultureInfo.InvariantCulture)
-                + ", отступ " + trailPct.ToString("G29", CultureInfo.InvariantCulture)
-                + "%, просадка от пика " + dropPct.ToString("F2", CultureInfo.InvariantCulture) + "%).";
-        }
-
-        /// <summary>
-        /// Причина аварийной остановки: время, % SL/TP от базы; пустые параметры не учитываются.
-        /// </summary>
-        private string TryBuildEmergencyReason(BotTabSimple tab, List<Candle> candles, DateTime decisionTime)
-        {
-            bool hasSl = TryParsePercentThreshold(_portfolioStopLossPercentWhole, out decimal slPct);
-            bool hasTp = TryParsePercentThreshold(_portfolioTakeProfitPercentWhole, out decimal tpPct);
-            bool hasTimeStop = TryParseStopDeadline(tab, candles[^1].TimeStart, out DateTime stopDeadline);
-
-            if (!hasSl && !hasTp && !hasTimeStop)
-            {
-                return null;
-            }
-
-            if (hasTimeStop && decisionTime >= stopDeadline)
-            {
-                return "Сработало «Дата/время остановки»: " + stopDeadline.ToString("G", CultureInfo.InvariantCulture)
-                    + " (текущее время сравнения: " + decisionTime.ToString("G", CultureInfo.InvariantCulture) + ").";
-            }
-
-            if ((_regime.ValueString ?? "Off") == "Off" || !_portfolioBaselineCaptured)
-            {
-                return null;
-            }
-
-            decimal? curOpt = TryGetMonitoredPortfolioValue(tab);
-            if (!curOpt.HasValue)
-            {
-                return null;
-            }
-
-            decimal cur = curOpt.Value;
-            if (_portfolioBaselineValue <= 0m)
-            {
-                return null;
-            }
-
-            if (hasSl && cur < _portfolioBaselineValue)
-            {
-                decimal lossPct = (_portfolioBaselineValue - cur) / _portfolioBaselineValue * 100m;
-                if (lossPct >= slPct)
-                {
-                    return "Сработал стоп по портфелю: просадка " + lossPct.ToString("F2", CultureInfo.InvariantCulture)
-                        + "% от базы " + _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture)
-                        + " (порог " + slPct.ToString("G29", CultureInfo.InvariantCulture) + "%), текущее значение "
-                        + cur.ToString("G29", CultureInfo.InvariantCulture) + ".";
-                }
-            }
-
-            if (hasTp && cur > _portfolioBaselineValue)
-            {
-                decimal profitPct = (cur - _portfolioBaselineValue) / _portfolioBaselineValue * 100m;
-                if (profitPct >= tpPct)
-                {
-                    return "Сработал take profit по портфелю: прибыль " + profitPct.ToString("F2", CultureInfo.InvariantCulture)
-                        + "% от базы " + _portfolioBaselineValue.ToString("G29", CultureInfo.InvariantCulture)
-                        + " (порог " + tpPct.ToString("G29", CultureInfo.InvariantCulture) + "%), текущее значение "
-                        + cur.ToString("G29", CultureInfo.InvariantCulture) + ".";
+                    return positionOnBoard[i].ValueCurrent;
                 }
             }
 
             return null;
         }
 
-        /// <summary>
-        /// Ключ кэша экстремума для трейлинг-стопа позиции на вкладке скринера.
-        /// </summary>
-        private static string GetPortfolioTrailingPositionKey(BotTabSimple tab, Position pos)
+        private void UpdatePortfolioTrailingOnRegimeChange(BotTabSimple tab)
         {
-            return tab.TabName + "|" + pos.Number;
-        }
+            string regime = _regime.ValueString ?? "Off";
 
-        /// <summary>
-        /// Удаляет из кэша трейлинга закрытые позиции.
-        /// </summary>
-        private void PrunePortfolioTrailingExtremeCache()
-        {
-            if (_portfolioTrailingExtremeByPosition.Count == 0 || _screenerTab?.Tabs == null)
+            if (_prevRegimeForPortfolioTrailing == regime)
             {
                 return;
             }
 
-            HashSet<string> aliveKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            if (regime == "Off")
             {
-                BotTabSimple tab = _screenerTab.Tabs[t];
-                if (tab?.PositionsOpenAll == null)
-                {
-                    continue;
-                }
-
-                for (int p = 0; p < tab.PositionsOpenAll.Count; p++)
-                {
-                    Position pos = tab.PositionsOpenAll[p];
-                    if (pos != null && pos.State == PositionStateType.Open && pos.OpenVolume > 0m)
-                    {
-                        aliveKeys.Add(GetPortfolioTrailingPositionKey(tab, pos));
-                    }
-                }
+                _portfolioEquityPeak = 0m;
+                _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
+                _positionTrailingPeaks.Clear();
+            }
+            else if (_prevRegimeForPortfolioTrailing == "Off" || string.IsNullOrEmpty(_prevRegimeForPortfolioTrailing))
+            {
+                decimal? value = TryGetMonitoredPortfolioValue(tab);
+                _portfolioEquityPeak = value ?? 0m;
             }
 
-            List<string> removeKeys = new List<string>();
-            foreach (string key in _portfolioTrailingExtremeByPosition.Keys)
-            {
-                if (!aliveKeys.Contains(key))
-                {
-                    removeKeys.Add(key);
-                }
-            }
-
-            for (int i = 0; i < removeKeys.Count; i++)
-            {
-                _portfolioTrailingExtremeByPosition.Remove(removeKeys[i]);
-            }
+            _prevRegimeForPortfolioTrailing = regime;
         }
 
-        /// <summary>
-        /// В тестере сделки свечи (O→H→L→C) приходят до CandleFinished; если Low/High уже пробили новый стоп — закрыть сразу.
-        /// </summary>
-        private static bool TryCloseIfCandleBreachedTrailingStop(
-            BotTabSimple tab,
-            Position pos,
-            Candle candle,
-            decimal stopActivation)
+        private void TryManagePortfolioEquityTrailing(BotTabSimple tab, DateTime decisionTime)
         {
-            if (tab == null || pos == null || candle == null || stopActivation <= 0m)
-            {
-                return false;
-            }
-
-            bool breached = pos.Direction == Side.Buy
-                ? candle.Low <= stopActivation
-                : pos.Direction == Side.Sell && candle.High >= stopActivation;
-
-            if (!breached)
-            {
-                return false;
-            }
-
-            tab.CloseAtMarket(pos, pos.OpenVolume);
-            return true;
-        }
-
-        /// <summary>
-        /// Запуск паузы входа на вкладке после срабатывания трейлинг-стопа по позиции.
-        /// </summary>
-        private void StartPortfolioTrailingStopCooldown(BotTabSimple tab)
-        {
-            int waitBars = _portfolioTrailingCooldownCandles?.ValueInt ?? 0;
-            if (waitBars <= 0 || tab == null || string.IsNullOrEmpty(tab.TabName))
+            if (!_usePortfolioTrailing.ValueBool)
             {
                 return;
             }
 
-            _portfolioTrailingCooldownBarsLeft[tab.TabName] = waitBars;
-        }
-
-        /// <summary>
-        /// Пауза новых входов на вкладке после трейлинг-стопа (0 в параметре — выкл.).
-        /// </summary>
-        private bool IsPortfolioTrailingStopEntryCooldown(BotTabSimple tab)
-        {
-            int waitBars = _portfolioTrailingCooldownCandles?.ValueInt ?? 0;
-            if (waitBars <= 0 || tab == null || string.IsNullOrEmpty(tab.TabName))
-            {
-                return false;
-            }
-
-            return _portfolioTrailingCooldownBarsLeft.TryGetValue(tab.TabName, out int left) && left > 0;
-        }
-
-        /// <summary>
-        /// В конце свечи уменьшает счётчик паузы (не в свечу срабатывания стопа).
-        /// </summary>
-        private void TickPortfolioTrailingStopCooldown(BotTabSimple tab, bool trailingStopFiredThisBar)
-        {
-            if (trailingStopFiredThisBar || tab == null || string.IsNullOrEmpty(tab.TabName))
+            decimal drawdownPercent = _portfolioTrailingDrawdownPercent.ValueDecimal;
+            if (drawdownPercent <= 0m)
             {
                 return;
             }
 
-            if (_portfolioTrailingCooldownBarsLeft.TryGetValue(tab.TabName, out int left) && left > 0)
-            {
-                _portfolioTrailingCooldownBarsLeft[tab.TabName] = left - 1;
-            }
-        }
-
-        /// <summary>
-        /// Позиция закрыта трейлинг-стопом робота на этой свече (по журналу).
-        /// </summary>
-        private bool TryDetectPortfolioTrailingStopClosedThisBar(BotTabSimple tab, DateTime candleTime)
-        {
-            if (tab == null || _portfolioTrailingCooldownCandles.ValueInt <= 0)
-            {
-                return false;
-            }
-
-            List<Position> closed = tab.PositionsCloseAll;
-            if (closed == null || closed.Count == 0)
-            {
-                return false;
-            }
-
-            string botType = GetNameStrategyType();
-            TimeSpan barSpan = tab.Connector?.TimeFrameBuilder?.TimeFrameTimeSpan ?? TimeSpan.Zero;
-            if (barSpan <= TimeSpan.Zero)
-            {
-                barSpan = TimeSpan.FromMinutes(1);
-            }
-
-            DateTime barEnd = candleTime + barSpan;
-
-            for (int i = closed.Count - 1; i >= 0; i--)
-            {
-                Position pos = closed[i];
-                if (pos == null || pos.State != PositionStateType.Done)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
-                {
-                    continue;
-                }
-
-                if (!string.Equals(pos.SignalTypeClose, PortfolioTrailingStopSignal, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (pos.TimeClose < candleTime || pos.TimeClose >= barEnd)
-                {
-                    continue;
-                }
-
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Трейлинг-стоп по настройкам аварийной вкладки: на каждую открытую позицию робота на текущей вкладке скринера.
-        /// Long: стоп следует за максимумом цены; short — за минимумом. Пустой % — выключено.
-        /// </summary>
-        /// <returns>true, если на этой свече был немедленный выход по пробою Low/High.</returns>
-        private bool TryManagePortfolioTrailingStops(BotTabSimple tab, List<Candle> candles)
-        {
-            if (tab == null || candles == null || candles.Count == 0 || _emergencyStopExecuted)
-            {
-                return false;
-            }
-
-            if (!TryParsePercentThreshold(_portfolioTrailingStopPercent, out decimal trailPct))
-            {
-                if (_portfolioTrailingExtremeByPosition.Count > 0)
-                {
-                    _portfolioTrailingExtremeByPosition.Clear();
-                }
-
-                return false;
-            }
-
-            if (tab.Security == null || tab.Security.PriceStep <= 0m)
-            {
-                return false;
-            }
-
-            PrunePortfolioTrailingExtremeCache();
-
-            string botType = GetNameStrategyType();
-            bool useMarket = !string.Equals(
-                _portfolioTrailingOrderType?.ValueString,
-                "Limit",
-                StringComparison.OrdinalIgnoreCase);
-            decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
-            Candle last = candles[^1];
-
-            List<Position> openPositions = tab.PositionsOpenAll;
-            if (openPositions == null || openPositions.Count == 0)
-            {
-                return false;
-            }
-
-            bool trailingFiredThisBar = false;
-
-            for (int i = 0; i < openPositions.Count; i++)
-            {
-                Position pos = openPositions[i];
-                if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume <= 0m)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
-                {
-                    continue;
-                }
-
-                string key = GetPortfolioTrailingPositionKey(tab, pos);
-                decimal extreme;
-
-                if (pos.Direction == Side.Buy)
-                {
-                    if (!_portfolioTrailingExtremeByPosition.TryGetValue(key, out extreme))
-                    {
-                        extreme = Math.Max(pos.EntryPrice, last.High);
-                    }
-                    else
-                    {
-                        extreme = Math.Max(extreme, last.High);
-                    }
-
-                    _portfolioTrailingExtremeByPosition[key] = extreme;
-
-                    decimal stopActivation = extreme * (1m - trailPct / 100m);
-                    stopActivation = tab.RoundPrice(stopActivation, tab.Security, Side.Sell);
-
-                    if (useMarket)
-                    {
-                        tab.CloseAtTrailingStopMarket(pos, stopActivation, PortfolioTrailingStopSignal);
-                    }
-                    else
-                    {
-                        decimal stopOrder = tab.RoundPrice(stopActivation - slip, tab.Security, Side.Sell);
-                        tab.CloseAtTrailingStop(pos, stopActivation, stopOrder, PortfolioTrailingStopSignal);
-                    }
-
-                    if (TryCloseIfCandleBreachedTrailingStop(tab, pos, last, stopActivation))
-                    {
-                        _portfolioTrailingExtremeByPosition.Remove(key);
-                        trailingFiredThisBar = true;
-                        continue;
-                    }
-                }
-                else if (pos.Direction == Side.Sell)
-                {
-                    if (!_portfolioTrailingExtremeByPosition.TryGetValue(key, out extreme))
-                    {
-                        extreme = Math.Min(pos.EntryPrice, last.Low);
-                    }
-                    else
-                    {
-                        extreme = Math.Min(extreme, last.Low);
-                    }
-
-                    _portfolioTrailingExtremeByPosition[key] = extreme;
-
-                    decimal stopActivation = extreme * (1m + trailPct / 100m);
-                    stopActivation = tab.RoundPrice(stopActivation, tab.Security, Side.Buy);
-
-                    if (useMarket)
-                    {
-                        tab.CloseAtTrailingStopMarket(pos, stopActivation, PortfolioTrailingStopSignal);
-                    }
-                    else
-                    {
-                        decimal stopOrder = tab.RoundPrice(stopActivation + slip, tab.Security, Side.Buy);
-                        tab.CloseAtTrailingStop(pos, stopActivation, stopOrder, PortfolioTrailingStopSignal);
-                    }
-
-                    if (TryCloseIfCandleBreachedTrailingStop(tab, pos, last, stopActivation))
-                    {
-                        _portfolioTrailingExtremeByPosition.Remove(key);
-                        trailingFiredThisBar = true;
-                        continue;
-                    }
-                }
-            }
-
-            return trailingFiredThisBar;
-        }
-
-        /// <summary>
-        /// Учёт срабатывания трейлинг-стопа и тик паузы входа на вкладке.
-        /// </summary>
-        private void UpdatePortfolioTrailingStopCooldownState(BotTabSimple tab, List<Candle> candles, bool immediateTrailingClose)
-        {
-            if (tab == null || candles == null || candles.Count == 0)
+            if (decisionTime == _lastPortfolioTrailingDecisionTime)
             {
                 return;
             }
 
-            DateTime candleTime = candles[^1].TimeStart;
-            bool trailingFired = immediateTrailingClose
-                || TryDetectPortfolioTrailingStopClosedThisBar(tab, candleTime);
+            _lastPortfolioTrailingDecisionTime = decisionTime;
 
-            if (trailingFired)
-            {
-                StartPortfolioTrailingStopCooldown(tab);
-            }
-
-            TickPortfolioTrailingStopCooldown(tab, trailingFired);
-        }
-
-        /// <summary>
-        /// CloseAtMarket по всем открытым позициям робота на всех вкладках скринера.
-        /// </summary>
-        private void CloseAllBotPositionsAtMarket()
-        {
-            if (_screenerTab?.Tabs == null)
+            decimal? currentValue = TryGetMonitoredPortfolioValue(tab);
+            if (!currentValue.HasValue || currentValue.Value <= 0m)
             {
                 return;
             }
 
-            string botType = GetNameStrategyType();
-
-            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            if (_portfolioEquityPeak <= 0m)
             {
-                BotTabSimple t = _screenerTab.Tabs[i];
-                if (t?.PositionsOpenAll == null || t.PositionsOpenAll.Count == 0)
+                _portfolioEquityPeak = currentValue.Value;
+                return;
+            }
+
+            if (currentValue.Value > _portfolioEquityPeak)
+            {
+                _portfolioEquityPeak = currentValue.Value;
+                return;
+            }
+
+            decimal floor = _portfolioEquityPeak * (1m - drawdownPercent / 100m);
+            if (currentValue.Value > floor)
+            {
+                return;
+            }
+
+            _screenerTab.CloseAllPositionAtMarket();
+            _positionTrailingPeaks.Clear();
+
+            SendNewLogMessage(
+                "Страховка портфеля: просадка "
+                + drawdownPercent.ToString(CultureInfo.InvariantCulture)
+                + "% от пика "
+                + _portfolioEquityPeak.ToString(CultureInfo.InvariantCulture)
+                + ", equity="
+                + currentValue.Value.ToString(CultureInfo.InvariantCulture),
+                LogMessageType.Signal);
+
+            if (_portfolioTrailingSetOnlyCloseRegime.ValueBool)
+            {
+                _regime.ValueString = "OnlyClosePosition";
+            }
+
+            _portfolioEquityPeak = currentValue.Value;
+        }
+
+        private void ScreenerTab_PositionOpeningSuccesEvent(Position position, BotTabSimple tab)
+        {
+            decimal percent = GetPositionTrailingPercent();
+            if (percent <= 0m || position == null || tab == null || position.State != PositionStateType.Open)
+            {
+                return;
+            }
+
+            decimal entry = position.EntryPrice;
+            if (entry <= 0m)
+            {
+                entry = tab.PriceBestAsk > 0 ? tab.PriceBestAsk : tab.PriceBestBid;
+            }
+
+            if (entry <= 0m)
+            {
+                return;
+            }
+
+            string key = GetPositionTrailingKey(tab, position);
+            _positionTrailingPeaks[key] = entry;
+
+            if (!IsTesterLikeProgram(tab))
+            {
+                decimal stop = ComputeTrailingStopFromPeak(position.Direction, entry, percent);
+                if (stop > 0m)
+                {
+                    tab.CloseAtTrailingStopMarket(position, stop, SignalPositionTrailingStop);
+                }
+            }
+        }
+
+        private void TryManagePositionTrailingStops(BotTabSimple tab, List<Candle> candles)
+        {
+            decimal percent = GetPositionTrailingPercent();
+            if (percent <= 0m || tab == null || candles == null || candles.Count == 0)
+            {
+                return;
+            }
+
+            List<Position> positions = tab.PositionsOpenAll;
+            if (positions == null || positions.Count == 0)
+            {
+                PrunePositionTrailingPeaksForTab(tab, null);
+                return;
+            }
+
+            Candle candle = candles[^1];
+            HashSet<string> activeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < positions.Count; i++)
+            {
+                Position pos = positions[i];
+                if (pos.State != PositionStateType.Open)
                 {
                     continue;
                 }
 
-                for (int p = 0; p < t.PositionsOpenAll.Count; p++)
+                string key = GetPositionTrailingKey(tab, pos);
+                activeKeys.Add(key);
+
+                decimal entry = pos.EntryPrice > 0 ? pos.EntryPrice : candle.Close;
+                if (!_positionTrailingPeaks.TryGetValue(key, out decimal peak))
                 {
-                    Position pos = t.PositionsOpenAll[p];
-                    if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0m)
-                    {
-                        continue;
-                    }
+                    peak = entry;
+                    _positionTrailingPeaks[key] = peak;
+                }
 
-                    if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
-                    {
-                        continue;
-                    }
+                UpdateTrailingPeakFromCandle(ref peak, pos.Direction, candle, entry);
+                _positionTrailingPeaks[key] = peak;
 
-                    t.CloseAtMarket(pos, pos.OpenVolume);
+                decimal stop = ComputeTrailingStopFromPeak(pos.Direction, peak, percent);
+                if (stop <= 0m)
+                {
+                    continue;
+                }
+
+                if (IsTesterLikeProgram(tab))
+                {
+                    bool breached = pos.Direction == Side.Buy
+                        ? candle.Low <= stop
+                        : candle.High >= stop;
+
+                    if (breached)
+                    {
+                        tab.CloseAtMarket(pos, pos.OpenVolume, SignalPositionTrailingStop);
+                    }
+                }
+                else
+                {
+                    tab.CloseAtTrailingStopMarket(pos, stop, SignalPositionTrailingStop);
                 }
             }
+
+            PrunePositionTrailingPeaksForTab(tab, activeKeys);
         }
 
-        /// <summary>
-        /// Кнопка «Остановить робота»: закрытие позиций и Regime=Off.
-        /// </summary>
-        private void StopRobotButton_UserClickOnButtonEvent()
+        private void PrunePositionTrailingPeaksForTab(BotTabSimple tab, HashSet<string> activeKeysOnTab)
         {
-            try
-            {
-                ExecuteManualRobotStop();
-            }
-            catch (Exception ex)
-            {
-                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
-            }
-        }
-
-        /// <summary>
-        /// Ручная остановка: CloseAtMarket, Regime Off, лог System+User.
-        /// </summary>
-        private void ExecuteManualRobotStop()
-        {
-            CloseAllBotPositionsAtMarket();
-            _regime.ValueString = "Off";
-            _emergencyStopExecuted = true;
-            _portfolioEquityPeakCaptured = false;
-            _portfolioEquityPeak = 0m;
-            _portfolioTrailingExtremeByPosition.Clear();
-
-            string full = NameStrategyUniq + ": остановка по кнопке «Остановить робота». Позиции закрыты по рынку, Regime=Off.";
-            SendNewLogMessage(full, LogMessageType.System);
-            SendNewLogMessage(full, LogMessageType.User);
-        }
-
-        /// <summary>
-        /// Аварийная остановка один раз: закрытие, Regime Off, сообщение в лог.
-        /// </summary>
-        private void ExecuteEmergencyShutdown(string reason)
-        {
-            if (_emergencyStopExecuted)
+            if (_positionTrailingPeaks.Count == 0 || tab == null)
             {
                 return;
             }
 
-            _emergencyStopExecuted = true;
-            _portfolioEquityPeakCaptured = false;
-            _portfolioEquityPeak = 0m;
-            _portfolioTrailingExtremeByPosition.Clear();
+            string prefix = tab.TabName + "|";
+            List<string> stale = null;
 
-            CloseAllBotPositionsAtMarket();
+            foreach (string key in _positionTrailingPeaks.Keys)
+            {
+                if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
 
-            _regime.ValueString = "Off";
+                if (activeKeysOnTab == null || !activeKeysOnTab.Contains(key))
+                {
+                    stale ??= new List<string>();
+                    stale.Add(key);
+                }
+            }
 
-            string full = NameStrategyUniq + ": аварийная остановка. " + reason;
-            SendNewLogMessage(full, LogMessageType.System);
-            SendNewLogMessage(full, LogMessageType.User);
-        }
-
-        /// <summary>
-        /// На каждой свече: база, проверка TryBuildEmergencyReason, ExecuteEmergencyShutdown.
-        /// </summary>
-        private void TryEmergencyShutdownIfNeeded(BotTabSimple tab, List<Candle> candles, DateTime decisionTime)
-        {
-            DateTime candleTime = candles[^1].TimeStart;
-            UpdateEmergencyRegimeAndBaseline(tab, candleTime, decisionTime);
-            UpdatePortfolioEquityPeak(tab, candleTime, decisionTime);
-
-            if (_emergencyStopExecuted)
+            if (stale == null)
             {
                 return;
             }
 
-            string reason = TryBuildEmergencyReason(tab, candles, decisionTime)
-                ?? TryBuildPortfolioEquityTrailingReason(tab);
-            if (reason == null)
+            for (int i = 0; i < stale.Count; i++)
             {
-                return;
+                _positionTrailingPeaks.Remove(stale[i]);
             }
-
-            ExecuteEmergencyShutdown(reason);
         }
 
-        /// <summary>
-        /// Создание/удаление индикаторов на всех вкладках скринера по флагам Use*.
-        /// </summary>
         #endregion
 
         #region Индикаторы на вкладках скринера
@@ -3556,6 +3282,20 @@ namespace OsEngine.Robots.Custom
                 },
                 AreaSecond,
                 _useAverageProfitPercentLong.ValueBool);
+
+            EnsureIndicator(
+                NumVwap,
+                VwapIndicatorType,
+                new List<string>(),
+                AreaPrime,
+                _useVwap.ValueBool);
+
+            EnsureIndicator(
+                NumAtr,
+                "ATR",
+                new List<string> { _atrLen.ValueInt.ToString(), "Absolute" },
+                AreaSecond,
+                _useAtr.ValueBool);
 
 #if false // DiscreteMidBestPair
             EnsureIndicator(
@@ -3663,11 +3403,21 @@ namespace OsEngine.Robots.Custom
                 min = Math.Max(min, _avgProfitPercentLongPeriod.ValueInt + 2);
             }
 
+            if (_useVwap.ValueBool)
+            {
+                min = Math.Max(min, 3);
+            }
+
+            if (_useAtr.ValueBool)
+            {
+                min = Math.Max(min, _atrLen.ValueInt + _atrGrowLookBack.ValueInt + 2);
+            }
+
             return min;
         }
 
         /// <summary>
-        /// Главный цикл: аварийка, расписание, фильтры, сигналы, вход/выход/реверс.
+        /// Главный цикл: стопы, расписание, фильтры, сигналы, вход/выход/реверс.
         /// </summary>
         #endregion
 
@@ -3681,16 +3431,14 @@ namespace OsEngine.Robots.Custom
             }
 
             DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
-            TryEmergencyShutdownIfNeeded(tab, candles, decisionTime);
-
-            bool trailingClosedThisBar = false;
-            if ((_regime.ValueString ?? "Off") != "Off")
-            {
-                trailingClosedThisBar = TryManagePortfolioTrailingStops(tab, candles);
-                UpdatePortfolioTrailingStopCooldownState(tab, candles, trailingClosedThisBar);
-            }
+            UpdatePortfolioTrailingOnRegimeChange(tab);
 
             if (_regime.ValueString == "Off")
+            {
+                return;
+            }
+
+            if (HandleScheduledWorkEndIfNeeded(tab, candles[^1].TimeStart, decisionTime))
             {
                 return;
             }
@@ -3699,6 +3447,9 @@ namespace OsEngine.Robots.Custom
             {
                 return;
             }
+
+            TryManagePortfolioEquityTrailing(tab, decisionTime);
+            TryManagePositionTrailingStops(tab, candles);
 
             int minBars = GetMinBarsForTradingLogic();
             if (candles.Count < minBars)
@@ -3752,11 +3503,6 @@ namespace OsEngine.Robots.Custom
             if (!haveOpenPos)
             {
                 if (_regime.ValueString == "OnlyClosePosition")
-                {
-                    return;
-                }
-
-                if (IsPortfolioTrailingStopEntryCooldown(tab))
                 {
                     return;
                 }
@@ -4141,6 +3887,8 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4162,6 +3910,8 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
+            AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4188,6 +3938,8 @@ namespace OsEngine.Robots.Custom
 #endif
             AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, idx));
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, idx));
+            AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, idx));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4213,6 +3965,8 @@ namespace OsEngine.Robots.Custom
 #endif
             AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, idx));
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, idx));
+            AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, idx));
+            AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, idx));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4361,6 +4115,108 @@ namespace OsEngine.Robots.Custom
                 return false;
             decimal v = SeriesValueAt(ap, 0, idx);
             return v > _avgProfitPercentLongBullMin.ValueDecimal;
+        }
+
+        /// <summary>
+        /// VWAP: close выше линии (лонг).
+        /// </summary>
+        private bool? BullVwapPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
+        {
+            if (!_useVwap.ValueBool)
+            {
+                return null;
+            }
+
+            Aindicator vwap = FindIndicator(tab, NumVwap, VwapIndicatorType);
+            if (vwap == null)
+            {
+                return false;
+            }
+
+            decimal v = SeriesValueAt(vwap, 0, candleIndex);
+            return v != 0 && close > v;
+        }
+
+        /// <summary>
+        /// ATR: рост волатильности на % за lookback (фильтр, без направления).
+        /// </summary>
+        private bool? BullAtrPasses(BotTabSimple tab, int candleIndex = -1)
+        {
+            return AtrVolatilityFilterPasses(tab, candleIndex);
+        }
+
+        /// <summary>
+        /// ATR вырос минимум на заданный % относительно значения lookback свечей назад.
+        /// </summary>
+        private bool? AtrVolatilityFilterPasses(BotTabSimple tab, int candleIndex)
+        {
+            if (!_useAtr.ValueBool)
+            {
+                return null;
+            }
+
+            Aindicator atr = FindIndicator(tab, NumAtr, "ATR");
+            if (atr == null || atr.DataSeries == null || atr.DataSeries.Count == 0)
+            {
+                return false;
+            }
+
+            int lookBack = Math.Max(1, _atrGrowLookBack.ValueInt);
+            int idx = candleIndex;
+
+            if (idx < 0)
+            {
+                if (atr.DataSeries[0].Values == null || atr.DataSeries[0].Values.Count == 0)
+                {
+                    return false;
+                }
+
+                idx = atr.DataSeries[0].Values.Count - 1;
+            }
+
+            if (idx < lookBack)
+            {
+                return false;
+            }
+
+            decimal atrLast = SeriesValueAt(atr, 0, idx);
+            decimal atrPast = SeriesValueAt(atr, 0, idx - lookBack);
+
+            if (atrLast == 0 || atrPast == 0)
+            {
+                return false;
+            }
+
+            decimal growPercent = atrLast / (atrPast / 100m) - 100m;
+            return growPercent >= _atrGrowPercent.ValueDecimal;
+        }
+
+        /// <summary>
+        /// VWAP: close ниже линии (шорт).
+        /// </summary>
+        private bool? BearVwapPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
+        {
+            if (!_useVwap.ValueBool)
+            {
+                return null;
+            }
+
+            Aindicator vwap = FindIndicator(tab, NumVwap, VwapIndicatorType);
+            if (vwap == null)
+            {
+                return false;
+            }
+
+            decimal v = SeriesValueAt(vwap, 0, candleIndex);
+            return v != 0 && close < v;
+        }
+
+        /// <summary>
+        /// ATR: тот же фильтр роста волатильности, что и для лонга.
+        /// </summary>
+        private bool? BearAtrPasses(BotTabSimple tab, int candleIndex = -1)
+        {
+            return AtrVolatilityFilterPasses(tab, candleIndex);
         }
 
         /// <summary>
