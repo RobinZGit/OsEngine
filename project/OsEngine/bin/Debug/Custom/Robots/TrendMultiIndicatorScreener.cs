@@ -37,10 +37,9 @@ Screener trend robot using multiple indicators simultaneously:
 - Momentum
 - Bollinger
 - Linear Regression Curve
-- RZIgreensMinusReds (greens minus reds over lookback)
 - Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
-- Average Profit Percent Long (средняя доходность лонга в окне: по умолчанию в % от средней Close пары; опционально в цене; пороги long/short)
 - VWAP (close выше/ниже линии; сброс по календарному дню)
+- RZIgreensMinusReds, Average Profit Percent Long — в исходниках отключены (#if false), код не удалён.
 - ATR (фильтр роста волатильности: ATR вырос на % за lookback свечей)
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
@@ -81,7 +80,7 @@ namespace OsEngine.Robots.Custom
     /// </summary>
     public class TrendMultiIndicatorScreener : BotPanel
     {
-        // DiscreteMidBestPair: весь связанный код обёрнут в «#if false // DiscreteMidBestPair» … «#endif» (не удалён).
+        // DiscreteMidBestPair, RZIgreensMinusReds, Average Profit Percent Long: связанный код в «#if false … #endif» (не удалён).
         // Чтобы снова включить индикатор — замените false на true во всех таких директивах в этом файле.
 
         private const int NumSma = 1;
@@ -90,13 +89,19 @@ namespace OsEngine.Robots.Custom
         private const int NumMomentum = 4;
         private const int NumBollinger = 5;
         private const int NumLinReg = 6;
-        private const int NumRzi = 7;
         private const int NumVolumeIndicator = 9;
 
+#if false // RZIgreensMinusReds
+        private const int NumRzi = 7;
+#endif
+
+#if false // AverageProfitPercentLong
         /// <summary>Как в атрибуте [Indicator("...")] у скрипта AverageProfitPercentLong.</summary>
         private const string AverageProfitPercentLongIndicatorType = "Average Profit Percent Long";
 
         private const int NumAverageProfitPercentLong = 10;
+#endif
+
         private const int NumVwap = 11;
         private const int NumAtr = 12;
 
@@ -120,6 +125,7 @@ namespace OsEngine.Robots.Custom
 
         // basic
         private StrategyParameterString _regime;
+        private StrategyParameterButton _stopRobotAndSellAllButton;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
         private StrategyParameterBool _invertEntryLogic;
@@ -172,10 +178,14 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useMomentum;
         private StrategyParameterBool _useBollinger;
         private StrategyParameterBool _useLinReg;
-        private StrategyParameterBool _useRzi;
         private StrategyParameterBool _useVolumeIndicator;
-        private StrategyParameterBool _useAverageProfitPercentLong;
         private StrategyParameterBool _useVwap;
+#if false // RZIgreensMinusReds
+        private StrategyParameterBool _useRzi;
+#endif
+#if false // AverageProfitPercentLong
+        private StrategyParameterBool _useAverageProfitPercentLong;
+#endif
         private StrategyParameterBool _useAtr;
 #if false // DiscreteMidBestPair
         private StrategyParameterBool _useDiscreteMidBestPair;
@@ -204,17 +214,21 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _linRegLen;
         private StrategyParameterDecimal _linRegDev;
 
+        private StrategyParameterDecimal _volumeIndicatorMinGrowthPercent;
+
+#if false // RZIgreensMinusReds
         private StrategyParameterInt _rziLen;
         private StrategyParameterInt _rziStep;
         private StrategyParameterInt _rziSignalLevel;
+#endif
 
-        private StrategyParameterDecimal _volumeIndicatorMinGrowthPercent;
-
+#if false // AverageProfitPercentLong
         private StrategyParameterInt _avgProfitPercentLongPeriod;
         private StrategyParameterInt _avgProfitPercentLongPairs;
         private StrategyParameterBool _avgProfitPercentLongAsPercent;
         private StrategyParameterDecimal _avgProfitPercentLongBullMin;
         private StrategyParameterDecimal _avgProfitPercentLongBearMax;
+#endif
 
         private StrategyParameterInt _atrLen;
         private StrategyParameterDecimal _atrGrowPercent;
@@ -262,9 +276,13 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _momAndGroup;
         private StrategyParameterInt _bollAndGroup;
         private StrategyParameterInt _linRegAndGroup;
-        private StrategyParameterInt _rziAndGroup;
         private StrategyParameterInt _volumeAndGroup;
+#if false // RZIgreensMinusReds
+        private StrategyParameterInt _rziAndGroup;
+#endif
+#if false // AverageProfitPercentLong
         private StrategyParameterInt _avgProfitPercentLongAndGroup;
+#endif
 
 #if false // DiscreteMidBestPair
         private StrategyParameterInt _discreteMidBestPairLevels;
@@ -361,6 +379,9 @@ namespace OsEngine.Robots.Custom
 
             // basic
             _regime = CreateParameter("Regime", "Off", new[] { "Off", "On", "OnlyLong", "OnlyShort", "OnlyClosePosition" });
+            _stopRobotAndSellAllButton = CreateParameterButton("Остановить робота и продать всё");
+            _stopRobotAndSellAllButton.UserClickOnButtonEvent += StopRobotAndSellAllButton_UserClickOnButtonEvent;
+
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
             _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
@@ -455,10 +476,14 @@ namespace OsEngine.Robots.Custom
             _useMomentum = CreateParameter("Use Momentum", true);
             _useBollinger = CreateParameter("Use Bollinger", true);
             _useLinReg = CreateParameter("Use Linear Regression", true);
-            _useRzi = CreateParameter("Use RZIgreensMinusReds", false); //! default false
             _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
-            _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
             _useVwap = CreateParameter("Use VWAP", false);
+#if false // RZIgreensMinusReds
+            _useRzi = CreateParameter("Use RZIgreensMinusReds", false);
+#endif
+#if false // AverageProfitPercentLong
+            _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
+#endif
             _useAtr = CreateParameter("Use ATR", false);
 
 #if false // DiscreteMidBestPair
@@ -493,19 +518,23 @@ namespace OsEngine.Robots.Custom
             _linRegLen = CreateParameter("LinReg length", 50, 20, 300, 10);
             _linRegDev = CreateParameter("LinReg deviation", 2m, 1m, 4m, 0.1m);
 
+            _volumeIndicatorMinGrowthPercent = CreateParameter("Volume vs prev candle min growth %", 5m, 0m, 500m, 0.5m);
+
+#if false // RZIgreensMinusReds
             // RZIgreensMinusReds (script Custom/Indicators/Scripts/RZIgreensMinusReds.cs)
             _rziLen = CreateParameter("RZI lookback candles", 20, 5, 500, 1);
             _rziStep = CreateParameter("RZI step in loop", 1, 1, 20, 1);
             _rziSignalLevel = CreateParameter("RZI signal level (long if >N, short if <-N)", 3, 0, 200, 1);
+#endif
 
-            _volumeIndicatorMinGrowthPercent = CreateParameter("Volume vs prev candle min growth %", 5m, 0m, 500m, 0.5m);
-
+#if false // AverageProfitPercentLong
             // Average Profit Percent Long (Custom/Indicators/Scripts/AverageProfitPercentLong.cs)
             _avgProfitPercentLongPeriod = CreateParameter("Avg Profit % Long period (candles)", 50, 2, 500, 1);
             _avgProfitPercentLongPairs = CreateParameter("Avg Profit % Long random pairs", 100, 1, 2000, 1);
             _avgProfitPercentLongAsPercent = CreateParameter("Avg Profit % Long: % from pair mid price", true);
             _avgProfitPercentLongBullMin = CreateParameter("Avg Profit % Long long: value >", 0m, -1000000m, 1000000m, 0.0001m);
             _avgProfitPercentLongBearMax = CreateParameter("Avg Profit % Long short: value <", 0m, -1000000m, 1000000m, 0.0001m);
+#endif
 
             _atrLen = CreateParameter("ATR length", 14, 2, 200, 1);
             _atrGrowPercent = CreateParameter("ATR min grow % vs lookback", 3m, 0m, 100m, 0.1m);
@@ -517,9 +546,13 @@ namespace OsEngine.Robots.Custom
             _momAndGroup = CreateParameter("Momentum: № И-группы", 1, -32, 32, 1);
             _bollAndGroup = CreateParameter("Bollinger: № И-группы", 1, -32, 32, 1);
             _linRegAndGroup = CreateParameter("LinReg: № И-группы", 1, -32, 32, 1);
-            _rziAndGroup = CreateParameter("RZI: № И-группы", 1, -32, 32, 1);
             _volumeAndGroup = CreateParameter("Volume ind.: № И-группы", 1, -32, 32, 1);
+#if false // RZIgreensMinusReds
+            _rziAndGroup = CreateParameter("RZI: № И-группы", 1, -32, 32, 1);
+#endif
+#if false // AverageProfitPercentLong
             _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы", 1, -32, 32, 1);
+#endif
             _vwapAndGroup = CreateParameter("VWAP: № И-группы", 1, -32, 32, 1);
             _atrAndGroup = CreateParameter("ATR: № И-группы", 1, -32, 32, 1);
 
@@ -538,7 +571,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/Volume/Avg Profit % Long/VWAP/ATR; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -567,6 +600,118 @@ namespace OsEngine.Robots.Custom
         private void TradePeriodsShowDialogButton_UserClickOnButtonEvent()
         {
             _tradePeriodsSettings.ShowDialog();
+        }
+
+        /// <summary>
+        /// Кнопка «Остановить робота и продать всё»: закрытие позиций скринера по рынку, Regime=Off.
+        /// </summary>
+        private void StopRobotAndSellAllButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                CloseParameterDialogIfOpen();
+                ExecuteStopRobotAndSellAll();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Сохранить правки из окна параметров и закрыть его (перед остановкой робота).
+        /// </summary>
+        private void CloseParameterDialogIfOpen()
+        {
+            if (!ParamGuiIsOpen)
+            {
+                return;
+            }
+
+            try
+            {
+                ApplyPrefixesFromOpenParameterDialog();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+
+            try
+            {
+                MethodInfo closeMethod = typeof(BotPanel).GetMethod(
+                    "CloseParameterDialog",
+                    BindingFlags.Instance | BindingFlags.Public);
+                if (closeMethod != null)
+                {
+                    closeMethod.Invoke(this, null);
+                    return;
+                }
+
+                FieldInfo uiField = typeof(BotPanel).GetField(
+                    "_parametersUi",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (uiField?.GetValue(this) is System.Windows.Window parametersWindow)
+                {
+                    parametersWindow.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Закрыть позиции этого робота на всех вкладках скринера по рынку и выключить Regime.
+        /// </summary>
+        private void ExecuteStopRobotAndSellAll()
+        {
+            CloseAllBotPositionsAtMarket();
+            _positionTrailingPeaks.Clear();
+            _portfolioEquityPeak = 0m;
+            _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
+            _regime.ValueString = "Off";
+
+            string full = NameStrategyUniq
+                + ": «Остановить робота и продать всё» — позиции закрыты по рынку, Regime=Off.";
+            SendNewLogMessage(full, LogMessageType.System);
+            SendNewLogMessage(full, LogMessageType.User);
+        }
+
+        private void CloseAllBotPositionsAtMarket()
+        {
+            if (_screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            string botType = GetNameStrategyType();
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple t = _screenerTab.Tabs[i];
+                if (t?.PositionsOpenAll == null || t.PositionsOpenAll.Count == 0)
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < t.PositionsOpenAll.Count; p++)
+                {
+                    Position pos = t.PositionsOpenAll[p];
+                    if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0m)
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
+                    {
+                        continue;
+                    }
+
+                    t.CloseAtMarket(pos, pos.OpenVolume);
+                }
+            }
         }
 
         /// <summary>
@@ -3260,6 +3405,7 @@ namespace OsEngine.Robots.Custom
                 AreaPrime,
                 _useLinReg.ValueBool);
 
+#if false // RZIgreensMinusReds
             EnsureIndicator(
                 NumRzi,
                 "RZIgreensMinusReds",
@@ -3271,6 +3417,7 @@ namespace OsEngine.Robots.Custom
                 },
                 AreaSecond,
                 _useRzi.ValueBool);
+#endif
 
             EnsureIndicator(
                 NumVolumeIndicator,
@@ -3279,6 +3426,7 @@ namespace OsEngine.Robots.Custom
                 AreaSecond,
                 _useVolumeIndicator.ValueBool);
 
+#if false // AverageProfitPercentLong
             EnsureIndicator(
                 NumAverageProfitPercentLong,
                 AverageProfitPercentLongIndicatorType,
@@ -3290,6 +3438,7 @@ namespace OsEngine.Robots.Custom
                 },
                 AreaSecond,
                 _useAverageProfitPercentLong.ValueBool);
+#endif
 
             EnsureIndicator(
                 NumVwap,
@@ -3401,15 +3550,19 @@ namespace OsEngine.Robots.Custom
                 min = Math.Max(min, _linRegLen.ValueInt + 2);
             }
 
+#if false // RZIgreensMinusReds
             if (_useRzi.ValueBool)
             {
                 min = Math.Max(min, _rziLen.ValueInt + 2);
             }
+#endif
 
+#if false // AverageProfitPercentLong
             if (_useAverageProfitPercentLong.ValueBool)
             {
                 min = Math.Max(min, _avgProfitPercentLongPeriod.ValueInt + 2);
             }
+#endif
 
             if (_useVwap.ValueBool)
             {
@@ -4012,9 +4165,13 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
+#if false // RZIgreensMinusReds
+            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
+#endif
+#if false // AverageProfitPercentLong
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
+#endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
 
@@ -4035,9 +4192,13 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
+#if false // RZIgreensMinusReds
+            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
+#endif
+#if false // AverageProfitPercentLong
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
+#endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
 
@@ -4060,12 +4221,16 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, idx));
 #if false // DiscreteMidBestPair
             AddGroupedIndicatorResult(items, _discreteAndGroup, BullDiscretePasses(candles, tab));
 #endif
             AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, idx));
+#if false // RZIgreensMinusReds
+            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, idx));
+#endif
+#if false // AverageProfitPercentLong
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, idx));
+#endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, idx));
 
@@ -4087,12 +4252,16 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, idx));
 #if false // DiscreteMidBestPair
             AddGroupedIndicatorResult(items, _discreteAndGroup, BearDiscretePasses(candles, tab));
 #endif
             AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, idx));
+#if false // RZIgreensMinusReds
+            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, idx));
+#endif
+#if false // AverageProfitPercentLong
             AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, idx));
+#endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, idx));
 
@@ -4187,6 +4356,7 @@ namespace OsEngine.Robots.Custom
             return up != 0 && close > up;
         }
 
+#if false // RZIgreensMinusReds
         /// <summary>
         /// RZI > уровня сигнала.
         /// </summary>
@@ -4200,6 +4370,7 @@ namespace OsEngine.Robots.Custom
             decimal v = SeriesValueAt(rzi, 0, candleIndex);
             return v > _rziSignalLevel.ValueInt;
         }
+#endif
 
 #if false // DiscreteMidBestPair
         private bool? BullDiscretePasses(List<Candle> candles, BotTabSimple tab)
@@ -4227,6 +4398,7 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab, candleIndex);
         }
 
+#if false // AverageProfitPercentLong
         /// <summary>
         /// Avg Profit % Long > bull min.
         /// </summary>
@@ -4244,6 +4416,7 @@ namespace OsEngine.Robots.Custom
             decimal v = SeriesValueAt(ap, 0, idx);
             return v > _avgProfitPercentLongBullMin.ValueDecimal;
         }
+#endif
 
         /// <summary>
         /// VWAP: close выше линии (лонг).
@@ -4435,6 +4608,7 @@ namespace OsEngine.Robots.Custom
             return down != 0 && close < down;
         }
 
+#if false // RZIgreensMinusReds
         /// <summary>
         /// RZI < −уровня.
         /// </summary>
@@ -4449,6 +4623,7 @@ namespace OsEngine.Robots.Custom
             decimal shortBound = -_rziSignalLevel.ValueInt;
             return v < shortBound;
         }
+#endif
 
 #if false // DiscreteMidBestPair
         private bool? BearDiscretePasses(List<Candle> candles, BotTabSimple tab)
@@ -4476,6 +4651,7 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab, candleIndex);
         }
 
+#if false // AverageProfitPercentLong
         /// <summary>
         /// Avg Profit % Long < bear max.
         /// </summary>
@@ -4493,6 +4669,7 @@ namespace OsEngine.Robots.Custom
             decimal v = SeriesValueAt(ap, 0, idx);
             return v < _avgProfitPercentLongBearMax.ValueDecimal;
         }
+#endif
 
         /// <summary>
         /// Поиск индикатора на вкладке по номеру+типу+TabName или по имени типа.
