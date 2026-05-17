@@ -327,6 +327,9 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _moexStockTickerPrefixes;
         private StrategyParameterButton _moexStockLoadButton;
 
+        private const string DefaultMoexFuturesTickerPrefixes =
+            "Si,USDRUBF,Eu,EURRUBF,CNY,MX,MM,IMOEXF,RI,BR,GD,SR,GZ,LK,RN,NK,GN,TT,VB,SN,SG,RL";
+
         private const string DefaultMoexStockTickerPrefixes =
             "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
             + "NVTK, NLMK, PLZL, PIKK, PHOR, ROSN, RUAL, RTKMP, SBER, SBERP, SNGSP, SNGS, TATN, TATNP, UPRO, VTBR";
@@ -451,7 +454,7 @@ namespace OsEngine.Robots.Custom
             const string moexFuturesTab = "MOEX фьючерсы";
             _moexFuturesTickerPrefixes = CreateParameter(
                 "Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
-                "",
+                DefaultMoexFuturesTickerPrefixes,
                 moexFuturesTab);
             _moexFuturesLoadButton = CreateParameterButton("Обновить фьючерсы", moexFuturesTab);
             _moexFuturesLoadButton.UserClickOnButtonEvent += MoexFuturesLoadButton_UserClickOnButtonEvent;
