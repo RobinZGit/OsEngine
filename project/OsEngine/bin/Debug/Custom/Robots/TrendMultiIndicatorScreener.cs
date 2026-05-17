@@ -328,7 +328,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _moexStockLoadButton;
 
         private const string DefaultMoexFuturesTickerPrefixes =
-            "Si,USDRUBF,Eu,EURRUBF,CNY,MX,MM,IMOEXF,RI,BR,GD,SR,GZ,LK,RN,NK,GN,TT,VB,SN,SG,RL";
+            "Si,USDRUBF,Eu,EURRUBF,CNY,MX,MM,IMOEXF,RI,BR,GD,GLDRUBF,SV,PT,PD,CU,NG,CL,SR,GZ,LK,RN,NK,GN,TT,VB,SN,SG,RL";
 
         private const string DefaultMoexStockTickerPrefixes =
             "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
