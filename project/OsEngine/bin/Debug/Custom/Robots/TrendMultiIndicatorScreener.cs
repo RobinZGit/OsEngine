@@ -39,6 +39,7 @@ Screener trend robot using multiple indicators simultaneously:
 - Linear Regression Curve
 - Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
 - VWAP (close выше/ниже линии; сброс по календарному дню)
+- MACD (линия MACD выше/ниже сигнальной; по умолчанию выкл.)
 - RZIgreensMinusReds, Average Profit Percent Long — в исходниках отключены (#if false), код не удалён.
 - ATR (фильтр роста волатильности: ATR вырос на % за lookback свечей)
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
@@ -104,6 +105,7 @@ namespace OsEngine.Robots.Custom
 
         private const int NumVwap = 11;
         private const int NumAtr = 12;
+        private const int NumMacd = 13;
 
         private const string VwapIndicatorType = "VWAP";
 
@@ -187,6 +189,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useAverageProfitPercentLong;
 #endif
         private StrategyParameterBool _useAtr;
+        private StrategyParameterBool _useMacd;
 #if false // DiscreteMidBestPair
         private StrategyParameterBool _useDiscreteMidBestPair;
 #endif
@@ -234,8 +237,13 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _atrGrowPercent;
         private StrategyParameterInt _atrGrowLookBack;
 
+        private StrategyParameterInt _macdFastLen;
+        private StrategyParameterInt _macdSlowLen;
+        private StrategyParameterInt _macdSignalLen;
+
         private StrategyParameterInt _vwapAndGroup;
         private StrategyParameterInt _atrAndGroup;
+        private StrategyParameterInt _macdAndGroup;
 
         /*
          * ---------------------------------------------------------------------------
@@ -488,6 +496,7 @@ namespace OsEngine.Robots.Custom
             _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
 #endif
             _useAtr = CreateParameter("Use ATR", false);
+            _useMacd = CreateParameter("Use MACD", false);
 
 #if false // DiscreteMidBestPair
             _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
@@ -543,6 +552,10 @@ namespace OsEngine.Robots.Custom
             _atrGrowPercent = CreateParameter("ATR min grow % vs lookback", 3m, 0m, 100m, 0.1m);
             _atrGrowLookBack = CreateParameter("ATR grow lookback (candles)", 5, 1, 500, 1);
 
+            _macdFastLen = CreateParameter("MACD fast length", 12, 2, 100, 1);
+            _macdSlowLen = CreateParameter("MACD slow length", 26, 2, 300, 1);
+            _macdSignalLen = CreateParameter("MACD signal length", 9, 2, 100, 1);
+
             _smaAndGroup = CreateParameter("SMA: № И-группы", 1, -32, 32, 1);
             _rsiAndGroup = CreateParameter("RSI: № И-группы", 1, -32, 32, 1);
             _stochAndGroup = CreateParameter("Stochastic: № И-группы", 1, -32, 32, 1);
@@ -558,6 +571,7 @@ namespace OsEngine.Robots.Custom
 #endif
             _vwapAndGroup = CreateParameter("VWAP: № И-группы", 1, -32, 32, 1);
             _atrAndGroup = CreateParameter("ATR: № И-группы", 1, -32, 32, 1);
+            _macdAndGroup = CreateParameter("MACD: № И-группы", 1, -32, 32, 1);
 
 #if false // DiscreteMidBestPair
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
@@ -574,7 +588,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; опция инверсии входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -3457,6 +3471,18 @@ namespace OsEngine.Robots.Custom
                 AreaSecond,
                 _useAtr.ValueBool);
 
+            EnsureIndicator(
+                NumMacd,
+                "MACD",
+                new List<string>
+                {
+                    _macdFastLen.ValueInt.ToString(),
+                    _macdSlowLen.ValueInt.ToString(),
+                    _macdSignalLen.ValueInt.ToString()
+                },
+                AreaSecond,
+                _useMacd.ValueBool);
+
 #if false // DiscreteMidBestPair
             EnsureIndicator(
                 NumDiscreteMidBestPair,
@@ -3575,6 +3601,11 @@ namespace OsEngine.Robots.Custom
             if (_useAtr.ValueBool)
             {
                 min = Math.Max(min, _atrLen.ValueInt + _atrGrowLookBack.ValueInt + 2);
+            }
+
+            if (_useMacd.ValueBool)
+            {
+                min = Math.Max(min, Math.Max(_macdSlowLen.ValueInt, _macdFastLen.ValueInt) + _macdSignalLen.ValueInt + 2);
             }
 
             return min;
@@ -4177,6 +4208,7 @@ namespace OsEngine.Robots.Custom
 #endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
+            AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4204,6 +4236,7 @@ namespace OsEngine.Robots.Custom
 #endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
+            AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4236,6 +4269,7 @@ namespace OsEngine.Robots.Custom
 #endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, idx));
+            AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, idx));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4267,6 +4301,7 @@ namespace OsEngine.Robots.Custom
 #endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, idx));
             AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, idx));
+            AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, idx));
 
             return CombineGroupedOrOfAnds(items);
         }
@@ -4521,6 +4556,48 @@ namespace OsEngine.Robots.Custom
         private bool? BearAtrPasses(BotTabSimple tab, int candleIndex = -1)
         {
             return AtrVolatilityFilterPasses(tab, candleIndex);
+        }
+
+        /// <summary>
+        /// MACD: линия MACD выше сигнальной (лонг).
+        /// </summary>
+        private bool? BullMacdPasses(BotTabSimple tab, int candleIndex = -1)
+        {
+            if (!_useMacd.ValueBool)
+            {
+                return null;
+            }
+
+            Aindicator macd = FindIndicator(tab, NumMacd, "MACD");
+            if (macd == null || macd.DataSeries.Count < 3)
+            {
+                return false;
+            }
+
+            decimal macdLine = SeriesValueAt(macd, 1, candleIndex);
+            decimal signalLine = SeriesValueAt(macd, 2, candleIndex);
+            return macdLine != 0 && signalLine != 0 && macdLine > signalLine;
+        }
+
+        /// <summary>
+        /// MACD: линия MACD ниже сигнальной (шорт).
+        /// </summary>
+        private bool? BearMacdPasses(BotTabSimple tab, int candleIndex = -1)
+        {
+            if (!_useMacd.ValueBool)
+            {
+                return null;
+            }
+
+            Aindicator macd = FindIndicator(tab, NumMacd, "MACD");
+            if (macd == null || macd.DataSeries.Count < 3)
+            {
+                return false;
+            }
+
+            decimal macdLine = SeriesValueAt(macd, 1, candleIndex);
+            decimal signalLine = SeriesValueAt(macd, 2, candleIndex);
+            return macdLine != 0 && signalLine != 0 && macdLine < signalLine;
         }
 
         /// <summary>
