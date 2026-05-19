@@ -13,6 +13,8 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
+using OsEngine.Alerts;
 using OsEngine.Candles;
 using OsEngine.Candles.Factory;
 using OsEngine.Candles.Series;
@@ -50,7 +52,7 @@ Each indicator has an enable/disable parameter. Disabled indicators are not crea
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
 «Инверсия логики (покупка ↔ продажа)»: если включена — по сигналу бычьей формулы открывается продажа, по медвежьей — покупка (то же при закрытии и реверсе).
-«Контртренд (инверсия + индикаторы)»: при true — та же инверсия входа/выхода, включается «Инверсия логики», пресет RSI/Stoch/LinReg/VWAP (экстремумы); при false — эти индикаторы выключаются (сообщение в лог).
+«Контртренд (инверсия + индикаторы)»: при смене — всплывающий алерт и мгновенный пресет; переключается «Инверсия логики»; RSI/Stoch (экстремумы); LinReg/VWAP не меняются.
 
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
 
@@ -405,10 +407,11 @@ namespace OsEngine.Robots.Custom
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
             _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
             _counterTrendInvertAndIndicators = CreateParameter("Контртренд (инверсия + индикаторы)", false);
+            _counterTrendInvertAndIndicators.ValueChange += CounterTrendInvertAndIndicators_ValueChange;
             _lastCounterTrendInvertAndIndicators = _counterTrendInvertAndIndicators.ValueBool;
             if (_lastCounterTrendInvertAndIndicators)
             {
-                ApplyCounterTrendPreset(enable: true, logToJournal: true);
+                ApplyCounterTrendPreset(enable: true, showUserAlert: false);
             }
 
             const string samoindikatsiyaTab = "самоиндикация";
@@ -2864,6 +2867,15 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
+            SyncIndicators();
+            _screenerTab.UpdateIndicatorsParameters();
+        }
+
+        /// <summary>
+        /// Сразу при переключении «Контртренд (инверсия + индикаторы)» в окне параметров.
+        /// </summary>
+        private void CounterTrendInvertAndIndicators_ValueChange()
+        {
             HandleCounterTrendInvertAndIndicatorsParameterChange();
             SyncIndicators();
             _screenerTab.UpdateIndicatorsParameters();
@@ -2889,25 +2901,24 @@ namespace OsEngine.Robots.Custom
             }
 
             _lastCounterTrendInvertAndIndicators = current;
-            ApplyCounterTrendPreset(current, logToJournal: true);
+            ApplyCounterTrendPreset(current, showUserAlert: true);
         }
 
         /// <summary>
-        /// Пресет контртренда: инверсия + RSI/Stoch/LinReg/VWAP с экстремальными порогами, одна И-группа.
+        /// Пресет контртренда: инверсия вкл/выкл; RSI/Stoch с экстремальными порогами (И-группа 1). LinReg и VWAP не трогаем.
         /// </summary>
-        private void ApplyCounterTrendPreset(bool enable, bool logToJournal)
+        private void ApplyCounterTrendPreset(bool enable, bool showUserAlert)
         {
+            _invertEntryLogic.ValueBool = enable;
+
             if (enable)
             {
-                _invertEntryLogic.ValueBool = true;
                 _useSma.ValueBool = false;
                 _useRsi.ValueBool = true;
                 _useStoch.ValueBool = true;
                 _useMomentum.ValueBool = false;
                 _useBollinger.ValueBool = false;
-                _useLinReg.ValueBool = true;
                 _useVolumeIndicator.ValueBool = false;
-                _useVwap.ValueBool = true;
                 _useAtr.ValueBool = false;
                 _useMacd.ValueBool = false;
 
@@ -2919,25 +2930,24 @@ namespace OsEngine.Robots.Custom
                 _smaAndGroup.ValueInt = 1;
                 _rsiAndGroup.ValueInt = 1;
                 _stochAndGroup.ValueInt = 1;
-                _linRegAndGroup.ValueInt = 1;
-                _vwapAndGroup.ValueInt = 1;
 
-                if (logToJournal)
+                if (showUserAlert)
                 {
-                    SendNewLogMessage(
-                        NameStrategyUniq
-                        + ": «Контртренд (инверсия + индикаторы)» включён — активирована инверсия входа; "
-                        + "включены RSI (long min "
+                    ShowCounterTrendUserAlert(
+                        "«Контртренд (инверсия + индикаторы)» включён.\n\n"
+                        + "• Инверсия входа: включена\n"
+                        + "• RSI: включён (long min "
                         + CounterTrendRsiLongMin.ToString(CultureInfo.InvariantCulture)
                         + ", short max "
                         + CounterTrendRsiShortMax.ToString(CultureInfo.InvariantCulture)
-                        + "), Stochastic (long min "
+                        + ")\n"
+                        + "• Stochastic: включён (long min "
                         + CounterTrendStochLongMin.ToString(CultureInfo.InvariantCulture)
                         + ", short max "
                         + CounterTrendStochShortMax.ToString(CultureInfo.InvariantCulture)
-                        + "), LinReg, VWAP (И-группа 1); "
-                        + "выключены SMA, Momentum, Bollinger, Volume, ATR, MACD.",
-                        LogMessageType.User);
+                        + ", И-группа 1)\n"
+                        + "• Выключены: SMA, Momentum, Bollinger, Volume, ATR, MACD\n"
+                        + "• LinReg и VWAP не изменялись");
                 }
 
                 return;
@@ -2945,16 +2955,41 @@ namespace OsEngine.Robots.Custom
 
             _useRsi.ValueBool = false;
             _useStoch.ValueBool = false;
-            _useLinReg.ValueBool = false;
-            _useVwap.ValueBool = false;
 
-            if (logToJournal)
+            if (showUserAlert)
             {
-                SendNewLogMessage(
-                    NameStrategyUniq
-                    + ": «Контртренд (инверсия + индикаторы)» выключен — отключены индикаторы пресета: "
-                    + "RSI, Stochastic, LinReg, VWAP.",
-                    LogMessageType.User);
+                ShowCounterTrendUserAlert(
+                    "«Контртренд (инверсия + индикаторы)» выключен.\n\n"
+                    + "• Инверсия входа: выключена\n"
+                    + "• Отключены: RSI, Stochastic\n"
+                    + "• LinReg и VWAP не изменялись");
+            }
+        }
+
+        /// <summary>
+        /// Всплывающее окно-алерт при переключении пресета (как AlertMessageSimpleUi в BotPanel).
+        /// </summary>
+        private void ShowCounterTrendUserAlert(string message)
+        {
+            if (StartProgram == StartProgram.IsOsOptimizer)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!MainWindow.GetDispatcher.CheckAccess())
+                {
+                    MainWindow.GetDispatcher.Invoke(new Action<string>(ShowCounterTrendUserAlert), message);
+                    return;
+                }
+
+                AlertMessageSimpleUi ui = new AlertMessageSimpleUi(message);
+                ui.Show();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
