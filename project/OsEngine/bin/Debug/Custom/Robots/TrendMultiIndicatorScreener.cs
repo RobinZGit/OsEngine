@@ -133,6 +133,9 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _stopRobotAndSellAllButton;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
+        private StrategyParameterBool _useRandomPriceShift;
+        private StrategyParameterDecimal _randomPriceShiftPercent;
+        private readonly Random _randomPriceShiftRng = new Random();
         private StrategyParameterBool _invertEntryLogic;
 
         /*
@@ -597,6 +600,9 @@ namespace OsEngine.Robots.Custom
             _vwapAndGroup = CreateParameter("VWAP: № И-группы", 1, -32, 32, 1);
             _atrAndGroup = CreateParameter("ATR: № И-группы", 1, -32, 32, 1);
             _macdAndGroup = CreateParameter("MACD: № И-группы", 1, -32, 32, 1);
+
+            _useRandomPriceShift = CreateParameter("Рандомный сдвиг цен", false);
+            _randomPriceShiftPercent = CreateParameter("Процент рандомного сдвига цен", 0.1m, 0m, 50m, 0.01m);
 
 #if false // DiscreteMidBestPair
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
@@ -1086,9 +1092,12 @@ namespace OsEngine.Robots.Custom
                         {
                             msg += " В подключённом сете тестера (ТФ «" + _screenerTab.TimeFrame
                                 + "») нет фьючерсов с корнями [" + string.Join(", ", prefixes) + "].";
-                            msg += " Сейчас в сете: " + FormatTesterFuturesRootsDiagnostic(instrumentsToScan, server, mode) + ".";
-                            msg += " Добавьте в Tester файлы (ROSN-6.26, RUAL-6.26, CRZ5 для CNY, Si-6.26 для SI)"
-                                + " с тем же ТФ или измените префиксы под фактические тикеры сета.";
+                            msg += " Сейчас в сете (корни): "
+                                + FormatTesterFuturesRootsDiagnostic(instrumentsToScan, server, mode) + ".";
+                            msg += " " + FormatTesterSetTimeFrameDiagnostic(server, _screenerTab.TimeFrame) + ".";
+                            msg += " Учитываются только строки сета с галочкой и ТФ = «" + _screenerTab.TimeFrame
+                                + "» (не все файлы из папки датасета). Добавьте в Tester файлы (Si-6.26, CRZ5, …)"
+                                + " с этим ТФ или допишите префикс под фактическое имя (напр. JPY для JPYRUBTODTOM).";
                         }
                         else
                         {
@@ -2870,6 +2879,60 @@ namespace OsEngine.Robots.Custom
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Сводка по подключённому сету тестера: сколько строк всего и сколько на ТФ скринера.
+        /// </summary>
+        private static string FormatTesterSetTimeFrameDiagnostic(IServer server, TimeFrame requiredTimeFrame)
+        {
+            List<SecurityTester> testers = TryGetSecuritiesTesterList(server);
+            if (testers == null || testers.Count == 0)
+            {
+                return "сет тестера пуст";
+            }
+
+            int totalRows = testers.Count;
+            int onTf = 0;
+            int futuresOnTf = 0;
+            List<string> namesOnTf = new List<string>();
+
+            for (int i = 0; i < testers.Count; i++)
+            {
+                SecurityTester st = testers[i];
+                if (st?.Security == null || st.TimeFrame != requiredTimeFrame)
+                {
+                    continue;
+                }
+
+                onTf++;
+                string name = GetTesterInstrumentTicker(st.Security.Name);
+                if (string.IsNullOrEmpty(name))
+                {
+                    name = st.Security.Name?.Trim() ?? "";
+                }
+
+                if (!string.IsNullOrEmpty(name))
+                {
+                    namesOnTf.Add(name);
+                }
+
+                Security sec = new Security();
+                sec.LoadFromString(st.Security.GetSaveStr());
+                sec.Name = name;
+                if (IsMoexFuturesStyleName(name))
+                {
+                    futuresOnTf++;
+                }
+            }
+
+            string sample = namesOnTf.Count == 0
+                ? "—"
+                : string.Join(", ", namesOnTf.Take(20))
+                + (namesOnTf.Count > 20 ? ", …" : "");
+
+            return "всего в сете " + totalRows + " строк; на ТФ «" + requiredTimeFrame + "»: "
+                + onTf + " (фьючерсных имён: " + futuresOnTf + "): " + sample;
         }
 
         /// <summary>
@@ -5950,7 +6013,36 @@ namespace OsEngine.Robots.Custom
 #endif
 
         /// <summary>
-        /// Открытие лонга/шорта по лимиту с учётом Regime и проскальзывания.
+        /// Случайный сдвиг цены заявки в пределах ±«Процент рандомного сдвига цен» (после проскальзывания).
+        /// </summary>
+        private decimal ApplyRandomPriceShift(decimal price, BotTabSimple tab)
+        {
+            if (!_useRandomPriceShift.ValueBool || price <= 0m)
+            {
+                return price;
+            }
+
+            decimal percent = _randomPriceShiftPercent.ValueDecimal;
+            if (percent <= 0m)
+            {
+                return price;
+            }
+
+            double maxFraction = (double)percent / 100.0;
+            double offset = (_randomPriceShiftRng.NextDouble() * 2.0 - 1.0) * maxFraction;
+            decimal shifted = price * (1m + (decimal)offset);
+
+            decimal step = tab?.Security?.PriceStep ?? 0m;
+            if (step > 0m)
+            {
+                shifted = Math.Round(shifted / step, MidpointRounding.AwayFromZero) * step;
+            }
+
+            return shifted > 0m ? shifted : price;
+        }
+
+        /// <summary>
+        /// Открытие лонга/шорта по лимиту с учётом Regime, проскальзывания и опционального рандомного сдвига цены.
         /// </summary>
         private void TryOpenOnSignal(List<Candle> candles, BotTabSimple tab, bool bull, bool bear)
         {
@@ -5961,20 +6053,20 @@ namespace OsEngine.Robots.Custom
 
             if (bull && _regime.ValueString != "OnlyShort")
             {
-                tab.BuyAtLimit(GetVolume(tab), close + slip, openSignal);
+                tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab), openSignal);
             }
             else if (bear && _regime.ValueString != "OnlyLong")
             {
-                tab.SellAtLimit(GetVolume(tab), close - slip, openSignal);
+                tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab), openSignal);
             }
 #else
             if (bull && _regime.ValueString != "OnlyShort")
             {
-                tab.BuyAtLimit(GetVolume(tab), close + slip);
+                tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab));
             }
             else if (bear && _regime.ValueString != "OnlyLong")
             {
-                tab.SellAtLimit(GetVolume(tab), close - slip);
+                tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab));
             }
 #endif
         }
@@ -5996,50 +6088,50 @@ namespace OsEngine.Robots.Custom
 
             if (pos.Direction == Side.Buy && bear)
             {
-                tab.CloseAtLimit(pos, close - slip, pos.OpenVolume);
+                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close - slip, tab), pos.OpenVolume);
 
                 if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.SellAtLimit(GetVolume(tab), close - slip, openSignal);
+                        tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab), openSignal);
                     }
                 }
             }
             else if (pos.Direction == Side.Sell && bull)
             {
-                tab.CloseAtLimit(pos, close + slip, pos.OpenVolume);
+                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close + slip, tab), pos.OpenVolume);
 
                 if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.BuyAtLimit(GetVolume(tab), close + slip, openSignal);
+                        tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab), openSignal);
                     }
                 }
             }
 #else
             if (pos.Direction == Side.Buy && bear)
             {
-                tab.CloseAtLimit(pos, close - slip, pos.OpenVolume);
+                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close - slip, tab), pos.OpenVolume);
 
                 if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.SellAtLimit(GetVolume(tab), close - slip);
+                        tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab));
                     }
                 }
             }
             else if (pos.Direction == Side.Sell && bull)
             {
-                tab.CloseAtLimit(pos, close + slip, pos.OpenVolume);
+                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close + slip, tab), pos.OpenVolume);
 
                 if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.BuyAtLimit(GetVolume(tab), close + slip);
+                        tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab));
                     }
                 }
             }
