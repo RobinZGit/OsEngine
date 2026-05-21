@@ -5,9 +5,16 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using System.Threading;
+using OsEngine.Candles;
+using OsEngine.Candles.Factory;
+using OsEngine.Candles.Series;
 using OsEngine.Entity;
 using OsEngine.Logging;
 using OsEngine.Market;
+using OsEngine.Market.Connectors;
 using OsEngine.Market.Servers;
 using OsEngine.OsTrader.Panels;
 using OsEngine.OsTrader.Panels.Attributes;
@@ -53,6 +60,7 @@ namespace OsEngine.Robots.Custom
         {
             TabCreate(BotTabType.Screener);
             _screenerTab = TabsScreener[0];
+            RemoveCorruptScreenerTabSetFileIfNeeded();
 
             const string moexTab = "MOEX фьючерсы";
             const string tradeTab = "Торговля";
@@ -166,7 +174,14 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            IServer server = GetScreenerServer();
+            bool useTester = StartProgram == StartProgram.IsTester || StartProgram == StartProgram.IsOsOptimizer;
+            if (!TryApplyMoexConnectorToScreener(useTester, out string connectorError))
+            {
+                SendNewLogMessage(NameStrategyUniq + ": " + connectorError, LogMessageType.Error);
+                return;
+            }
+
+            IServer server = ResolveServer();
             if (server?.Securities == null || server.Securities.Count == 0)
             {
                 SendNewLogMessage(NameStrategyUniq + ": нет бумаг на сервере скринера.", LogMessageType.Error);
@@ -179,6 +194,13 @@ namespace OsEngine.Robots.Custom
             {
                 now = _screenerTab.Tabs[0].TimeServerCurrent;
             }
+
+            if (!useTester)
+            {
+                WaitForMoexServerReady(server, 8000);
+            }
+
+            EnsureScreenerCandleInfrastructure();
 
             _hedgePairs.Clear();
             ClearScreenerSecuritiesAndTabs();
@@ -226,19 +248,28 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (StartProgram == StartProgram.IsTester || string.IsNullOrWhiteSpace(_screenerTab.SecuritiesClass))
+            if (useTester || string.IsNullOrWhiteSpace(_screenerTab.SecuritiesClass))
             {
-                _screenerTab.SecuritiesClass = StartProgram == StartProgram.IsTester
+                _screenerTab.SecuritiesClass = useTester
                     ? "TestClass"
                     : SecurityType.Futures.ToString();
             }
 
+            _screenerTab.SaveSettings();
+            TryInvokeScreenerRePaintSecuritiesGrid();
             ReloadScreenerTabs();
 
-            string msg = NameStrategyUniq + ": пар " + _hedgePairs.Count + ": " + string.Join("; ", added);
+            string msg = NameStrategyUniq + ": пар " + _hedgePairs.Count + ", вкладок " + (_screenerTab.Tabs?.Count ?? 0)
+                + ". " + string.Join("; ", added);
             if (errors.Count > 0)
             {
                 msg += ". Пропуски: " + string.Join("; ", errors);
+            }
+
+            if (useTester)
+            {
+                msg += " Тестер: в сете Tester для каждой бумаги включите галочку и ТФ «"
+                    + _screenerTab.TimeFrame + "» (как в настройках скринера).";
             }
 
             SendNewLogMessage(msg, LogMessageType.System);
@@ -320,15 +351,223 @@ namespace OsEngine.Robots.Custom
                 }
             }
 
+            ClearScreenerPersistedTabListFile();
             _screenerTab.NeedToReloadTabs = true;
+            TryInvokeScreenerRePaintSecuritiesGrid();
         }
 
         private void ReloadScreenerTabs()
         {
+            EnsureScreenerCandleInfrastructure();
+
             _screenerTab.NeedToReloadTabs = true;
             _screenerTab.TryLoadTabs();
             _screenerTab.TryReLoadTabs();
+
+            EnsureExistingScreenerTabsCandleInfrastructure();
             _screenerTab.SaveSettings();
+            TryInvokeScreenerRePaintSecuritiesGrid();
+        }
+
+        private void RemoveCorruptScreenerTabSetFileIfNeeded()
+        {
+            if (string.IsNullOrEmpty(_screenerTab?.TabName))
+            {
+                return;
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _screenerTab.TabName + "ScreenerTabSet.txt");
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                using (StreamReader reader = new StreamReader(path))
+                {
+                    string firstLine = reader.ReadLine();
+                    if (firstLine == null || firstLine.Length == 0)
+                    {
+                        File.Delete(path);
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private void ClearScreenerPersistedTabListFile()
+        {
+            if (string.IsNullOrEmpty(_screenerTab?.TabName))
+            {
+                return;
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _screenerTab.TabName + "ScreenerTabSet.txt");
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private void TryInvokeScreenerRePaintSecuritiesGrid()
+        {
+            try
+            {
+                MethodInfo repaint = _screenerTab.GetType().GetMethod(
+                    "RePaintSecuritiesGrid",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                repaint?.Invoke(_screenerTab, null);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private void EnsureScreenerCandleInfrastructure()
+        {
+            if (_screenerTab == null)
+            {
+                return;
+            }
+
+            if (_screenerTab.CandleSeriesRealization == null)
+            {
+                string seriesType = string.IsNullOrWhiteSpace(_screenerTab.CandleCreateMethodType)
+                    ? "Simple"
+                    : _screenerTab.CandleCreateMethodType;
+                _screenerTab.CandleSeriesRealization = CandleFactory.CreateCandleSeriesRealization(seriesType);
+                _screenerTab.CandleSeriesRealization?.Init(StartProgram);
+            }
+
+            EnsureExistingScreenerTabsCandleInfrastructure();
+        }
+
+        private void EnsureExistingScreenerTabsCandleInfrastructure()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.CandleSeriesRealization == null)
+            {
+                return;
+            }
+
+            string screenerSeriesState = _screenerTab.CandleSeriesRealization.GetSaveString();
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                EnsureTabCandleSeriesRealization(_screenerTab.Tabs[i], screenerSeriesState);
+            }
+        }
+
+        private void EnsureTabCandleSeriesRealization(BotTabSimple tab, string screenerSeriesState)
+        {
+            if (tab?.Connector?.TimeFrameBuilder == null)
+            {
+                return;
+            }
+
+            TimeFrameBuilder builder = tab.Connector.TimeFrameBuilder;
+            if (builder.CandleSeriesRealization == null)
+            {
+                string seriesType = string.IsNullOrWhiteSpace(tab.Connector.CandleCreateMethodType)
+                    ? "Simple"
+                    : tab.Connector.CandleCreateMethodType;
+                builder.CandleSeriesRealization = CandleFactory.CreateCandleSeriesRealization(seriesType);
+                builder.CandleSeriesRealization?.Init(StartProgram);
+            }
+
+            if (builder.CandleSeriesRealization == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(screenerSeriesState))
+            {
+                builder.CandleSeriesRealization.SetSaveString(screenerSeriesState);
+                builder.CandleSeriesRealization.OnStateChange(CandleSeriesState.ParametersChange);
+            }
+        }
+
+        private bool TryApplyMoexConnectorToScreener(bool useTester, out string error)
+        {
+            error = null;
+
+            if (useTester)
+            {
+                IServer server = FindTesterLikeServer();
+                if (server == null)
+                {
+                    error = "В тестере не найден коннектор Tester.";
+                    return false;
+                }
+
+                _screenerTab.ServerType = server.ServerType;
+                _screenerTab.ServerName = server.ServerType == ServerType.Tester
+                    ? ServerType.Tester.ToString()
+                    : server.ServerNameAndPrefix;
+                return true;
+            }
+
+            if (HasConfiguredLiveScreenerConnection())
+            {
+                return true;
+            }
+
+            IServer tInvest = FindTInvestServer();
+            if (tInvest == null)
+            {
+                error = "Подключите T-Инвестиции или задайте сервер и портфель во вкладке скринера.";
+                return false;
+            }
+
+            _screenerTab.ServerType = ServerType.TInvest;
+            _screenerTab.ServerName = tInvest.ServerNameAndPrefix;
+            return true;
+        }
+
+        private bool HasConfiguredLiveScreenerConnection()
+        {
+            return _screenerTab != null
+                && _screenerTab.ServerType == ServerType.TInvest
+                && !string.IsNullOrWhiteSpace(_screenerTab.ServerName)
+                && !string.IsNullOrWhiteSpace(_screenerTab.PortfolioName);
+        }
+
+        private static bool WaitForMoexServerReady(IServer server, int maxWaitMs)
+        {
+            if (server == null || maxWaitMs <= 0)
+            {
+                return false;
+            }
+
+            DateTime deadline = DateTime.Now.AddMilliseconds(maxWaitMs);
+            while (DateTime.Now < deadline)
+            {
+                if (server.ServerStatus == ServerConnectStatus.Connect)
+                {
+                    if (server.Securities == null || server.Securities.Count == 0)
+                    {
+                        Thread.Sleep(250);
+                        continue;
+                    }
+
+                    return true;
+                }
+
+                Thread.Sleep(250);
+            }
+
+            return server.ServerStatus == ServerConnectStatus.Connect;
         }
 
         private void ExecuteBuyPairs()
@@ -559,7 +798,7 @@ namespace OsEngine.Robots.Custom
         {
             _hedgePairs.Clear();
             List<string> prefixes = ParsePrefixes(_futuresPrefixes?.ValueString);
-            IServer server = GetScreenerServer();
+            IServer server = ResolveServer();
 
             if (prefixes.Count == 0 || _screenerTab?.SecuritiesNames == null)
             {
@@ -681,9 +920,194 @@ namespace OsEngine.Robots.Custom
                 : Math.Round(volume, tab.Security.DecimalsVolume, MidpointRounding.AwayFromZero);
         }
 
-        private IServer GetScreenerServer()
+        private IServer ResolveServer()
         {
-            return _screenerTab?.Connector?.MyServer;
+            if (StartProgram == StartProgram.IsTester || StartProgram == StartProgram.IsOsOptimizer)
+            {
+                return FindTesterLikeServer();
+            }
+
+            IServer fromScreener = FindServerForScreener();
+            if (fromScreener != null)
+            {
+                return fromScreener;
+            }
+
+            return FindTInvestServer();
+        }
+
+        private IServer FindServerForScreener()
+        {
+            if (_screenerTab == null)
+            {
+                return null;
+            }
+
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null || s.ServerType != _screenerTab.ServerType)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(_screenerTab.ServerName))
+                {
+                    if (string.Equals(s.ServerNameAndPrefix, _screenerTab.ServerType.ToString(), StringComparison.Ordinal))
+                    {
+                        return s;
+                    }
+
+                    continue;
+                }
+
+                if (ServerNamesMatch(_screenerTab.ServerName, s))
+                {
+                    return s;
+                }
+            }
+
+            return FindTInvestServerByScreenerName(_screenerTab.ServerName);
+        }
+
+        private static IServer FindTesterLikeServer()
+        {
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            IServer firstTester = null;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null)
+                {
+                    continue;
+                }
+
+                if (s.ServerType != ServerType.Tester && s.ServerType != ServerType.Optimizer)
+                {
+                    continue;
+                }
+
+                if (firstTester == null)
+                {
+                    firstTester = s;
+                }
+
+                if (s.Securities != null && s.Securities.Count > 0)
+                {
+                    return s;
+                }
+            }
+
+            return firstTester;
+        }
+
+        private static IServer FindTInvestServer()
+        {
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            IServer firstTInvest = null;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null || s.ServerType != ServerType.TInvest)
+                {
+                    continue;
+                }
+
+                if (firstTInvest == null)
+                {
+                    firstTInvest = s;
+                }
+
+                if (s.Securities != null && s.Securities.Count > 0)
+                {
+                    return s;
+                }
+            }
+
+            return firstTInvest;
+        }
+
+        private static IServer FindTInvestServerByScreenerName(string screenerServerName)
+        {
+            if (string.IsNullOrWhiteSpace(screenerServerName))
+            {
+                return null;
+            }
+
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            IServer partialMatch = null;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer s = servers[i];
+                if (s == null || s.ServerType != ServerType.TInvest)
+                {
+                    continue;
+                }
+
+                if (!ServerNamesMatch(screenerServerName, s))
+                {
+                    continue;
+                }
+
+                if (s.Securities != null && s.Securities.Count > 0)
+                {
+                    return s;
+                }
+
+                if (partialMatch == null)
+                {
+                    partialMatch = s;
+                }
+            }
+
+            return partialMatch;
+        }
+
+        private static bool ServerNamesMatch(string screenerServerName, IServer server)
+        {
+            if (server == null || string.IsNullOrWhiteSpace(screenerServerName))
+            {
+                return false;
+            }
+
+            string wanted = screenerServerName.Trim();
+            string full = server.ServerNameAndPrefix?.Trim() ?? string.Empty;
+
+            if (wanted.Length == 0 || full.Length == 0)
+            {
+                return false;
+            }
+
+            if (string.Equals(wanted, full, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return full.EndsWith("_" + wanted, StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsMoexFuturesInstrument(Security sec)
