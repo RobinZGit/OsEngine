@@ -438,10 +438,6 @@ namespace OsEngine.Robots.Custom
                 1,
                 samoindikatsiyaTab);
             _useSamoindikatsiya.ValueChange += UseSamoindikatsiya_ValueChange;
-            if (_useSamoindikatsiya.ValueBool)
-            {
-                RefreshSamoindikatsiyaEnabledAtLock();
-            }
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
@@ -620,6 +616,11 @@ namespace OsEngine.Robots.Custom
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
+
+            if (_useSamoindikatsiya.ValueBool)
+            {
+                RefreshSamoindikatsiyaEnabledAtLock();
+            }
         }
 
         /// <summary>
@@ -4561,8 +4562,21 @@ namespace OsEngine.Robots.Custom
             setter(result, bestValue);
         }
 
+        private bool AreIndicatorParametersReadyForSamoindikatsiya()
+        {
+            return _useSma != null
+                && _useRsi != null
+                && _smaLen != null
+                && _macdSignalLen != null;
+        }
+
         private void RefreshSamoindikatsiyaEnabledAtLock()
         {
+            if (!AreIndicatorParametersReadyForSamoindikatsiya())
+            {
+                return;
+            }
+
             _samoindikatsiyaEnabledAtLock = SamoindikatsiyaIndicatorSnapshot.Capture(this);
         }
 
@@ -4595,7 +4609,11 @@ namespace OsEngine.Robots.Custom
         {
             if (_useSamoindikatsiya.ValueBool)
             {
-                RefreshSamoindikatsiyaEnabledAtLock();
+                if (AreIndicatorParametersReadyForSamoindikatsiya())
+                {
+                    RefreshSamoindikatsiyaEnabledAtLock();
+                }
+
                 _samoindikatsiyaFirstEntryBaselineCaptured = false;
             }
             else
