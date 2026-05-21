@@ -165,6 +165,13 @@ namespace OsEngine.Robots.Custom
         /// <summary>Отложенная установка индикаторов после MOEX reload (чарты вкладок ещё не готовы).</summary>
         private int _moexIndicatorsAttachPassId;
 
+        private const int MoexIndicatorsAttachMaxAttempts = 25;
+
+        /// <summary>Пауза между вкладками при «Обновить акции» — снижает гонку ClearJournalsArray в GlobalPositionViewer.</summary>
+        private const int MoexStockTabReloadDelayMs = 700;
+
+        private int _moexStockReloadInProgress;
+
         /// <summary>Счётчик закрытых свечей (глобально по времени бара) для интервала пересчёта N.</summary>
         private int _samoindikatsiyaGlobalBarCounter;
 
@@ -406,6 +413,7 @@ namespace OsEngine.Robots.Custom
             RemoveCorruptScreenerTabSetFileIfNeeded();
 
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
+            _screenerTab.NewTabCreateEvent += ScreenerTab_NewTabCreateEvent;
             _screenerTab.PositionOpeningSuccesEvent += ScreenerTab_PositionOpeningSuccesEvent;
 
             // basic
@@ -602,7 +610,7 @@ namespace OsEngine.Robots.Custom
             _macdAndGroup = CreateParameter("MACD: № И-группы", 1, -32, 32, 1);
 
             _useRandomPriceShift = CreateParameter("Рандомный сдвиг цен", false);
-            _randomPriceShiftPercent = CreateParameter("Процент рандомного сдвига цен", 0.1m, 0m, 50m, 0.01m);
+            _randomPriceShiftPercent = CreateParameter("Рандомность движений, %", 0.1m, 0m, 50m, 0.01m);
 
 #if false // DiscreteMidBestPair
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
@@ -911,7 +919,25 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void MoexStockLoadButton_UserClickOnButtonEvent()
         {
-            ReloadMoexScreenerInstruments(MoexScreenerInstrumentMode.Stock);
+            if (Interlocked.CompareExchange(ref _moexStockReloadInProgress, 1, 0) != 0)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": обновление акций уже выполняется.",
+                    LogMessageType.System);
+                return;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    ReloadMoexScreenerInstruments(MoexScreenerInstrumentMode.Stock);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _moexStockReloadInProgress, 0);
+                }
+            });
         }
 
         /// <summary>
@@ -993,7 +1019,9 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
-                int clearedSecurities = ClearAllScreenerSecuritiesAndTabs();
+                int clearedSecurities = isFutures
+                    ? ClearAllScreenerSecuritiesAndTabs()
+                    : ClearMoexStockSecuritiesForReload();
                 string previousClass = _screenerTab.SecuritiesClass;
                 if (useTester || string.IsNullOrWhiteSpace(_screenerTab.SecuritiesClass))
                 {
@@ -1015,6 +1043,7 @@ namespace OsEngine.Robots.Custom
                 int skippedExpired = 0;
                 int skippedClass = 0;
                 List<string> syncedNames = new List<string>();
+                List<ActivatedSecurity> pendingStockSecurities = isFutures ? null : new List<ActivatedSecurity>();
 
                 bool testerLike = IsTesterLikeServer(server);
 
@@ -1053,12 +1082,21 @@ namespace OsEngine.Robots.Custom
                         continue;
                     }
 
-                    _screenerTab.SecuritiesNames.Add(new ActivatedSecurity
+                    ActivatedSecurity activated = new ActivatedSecurity
                     {
                         SecurityName = sec.Name,
                         SecurityClass = secClass,
                         IsOn = true
-                    });
+                    };
+
+                    if (isFutures)
+                    {
+                        _screenerTab.SecuritiesNames.Add(activated);
+                    }
+                    else
+                    {
+                        pendingStockSecurities.Add(activated);
+                    }
 
                     if (syncedNames.Count < 30)
                     {
@@ -1066,7 +1104,9 @@ namespace OsEngine.Robots.Custom
                     }
                 }
 
-                int syncedTotal = _screenerTab.SecuritiesNames?.Count ?? 0;
+                int syncedTotal = isFutures
+                    ? _screenerTab.SecuritiesNames?.Count ?? 0
+                    : pendingStockSecurities.Count;
 
                 if (syncedTotal == 0)
                 {
@@ -1133,7 +1173,9 @@ namespace OsEngine.Robots.Custom
                 }
 
                 int tabsBefore = _screenerTab.Tabs?.Count ?? 0;
-                string reloadNote = ApplyMoexScreenerReload();
+                string reloadNote = isFutures
+                    ? ApplyMoexScreenerReload()
+                    : ApplyMoexStockScreenerReloadStaggered(pendingStockSecurities);
                 int tabsAfter = _screenerTab.Tabs?.Count ?? 0;
                 int tabsCreated = Math.Max(0, tabsAfter - tabsBefore);
 
@@ -1213,6 +1255,25 @@ namespace OsEngine.Robots.Custom
                 clearedList = clearedTabs;
             }
 
+            return clearedList;
+        }
+
+        /// <summary>
+        /// MOEX акции: очистить список бумаг без ручного удаления вкладок (вкладки снимет TryReLoadTabs).
+        /// Без SaveSettings — меньше лишних ReloadRiskJournals / ClearJournalsArray.
+        /// </summary>
+        private int ClearMoexStockSecuritiesForReload()
+        {
+            int clearedList = 0;
+            if (_screenerTab.SecuritiesNames != null)
+            {
+                clearedList = _screenerTab.SecuritiesNames.Count;
+                _screenerTab.SecuritiesNames.Clear();
+            }
+
+            ClearScreenerPersistedTabListFile();
+            _screenerTab.NeedToReloadTabs = true;
+            TryInvokeScreenerRePaintSecuritiesGrid();
             return clearedList;
         }
 
@@ -2299,6 +2360,71 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// MOEX акции: по одной бумаге и пауза между TryReLoadTabs — меньше гонок GlobalPositionViewer.ClearJournalsArray.
+        /// </summary>
+        private string ApplyMoexStockScreenerReloadStaggered(List<ActivatedSecurity> securities)
+        {
+            if (securities == null || securities.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            EnsureScreenerCandleInfrastructure();
+
+            if (!ShouldUseMoexTesterConnector())
+            {
+                IServer server = ResolveMoexLiveServer();
+                WaitForMoexServerReady(server, 8000);
+            }
+
+            SendNewLogMessage(
+                NameStrategyUniq + ": обновление акций — поэтапное создание вкладок (" + securities.Count + ")…",
+                LogMessageType.System);
+
+            List<IndicatorOnTabs> indicatorSnapshot = SnapshotScreenerIndicators();
+            _screenerTab._indicators.Clear();
+
+            if (_screenerTab.SecuritiesNames == null)
+            {
+                return BuildMoexScreenerReloadResultNote();
+            }
+
+            _screenerTab.SecuritiesNames.Clear();
+            _screenerTab.NeedToReloadTabs = true;
+            _screenerTab.TryLoadTabs();
+            _screenerTab.TryReLoadTabs();
+            Thread.Sleep(MoexStockTabReloadDelayMs);
+
+            for (int i = 0; i < securities.Count; i++)
+            {
+                _screenerTab.SecuritiesNames.Add(securities[i]);
+                _screenerTab.NeedToReloadTabs = true;
+                _screenerTab.TryReLoadTabs();
+
+                if (i < securities.Count - 1)
+                {
+                    Thread.Sleep(MoexStockTabReloadDelayMs);
+                }
+            }
+
+            RestoreScreenerIndicators(indicatorSnapshot);
+            ScheduleMoexIndicatorsAttach(attempt: 0);
+            TryInvokeScreenerRePaintSecuritiesGrid();
+            _screenerTab.SaveSettings();
+
+            int expectedTabs = CountActivatedScreenerSecurities();
+            int tabsAfterFirst = _screenerTab.Tabs?.Count ?? 0;
+
+            if (expectedTabs > 0 && tabsAfterFirst < expectedTabs)
+            {
+                ScheduleMoexScreenerTabsReloadRetry(expectedTabs, attempt: 1);
+                return "Вкладки догружаются (повтор через 2 с после подключения T-Инвест)…";
+            }
+
+            return BuildMoexScreenerReloadResultNote();
+        }
+
+        /// <summary>
         /// Текст ошибки, если вкладки не созданы (портфель/сервер).
         /// </summary>
         private string BuildMoexScreenerReloadResultNote()
@@ -2418,7 +2544,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Отложенно: индикаторы на каждую вкладку (без SynchFirstTab — только Custom, без вызовов ядра на неготовый чарт).
+        /// Отложенно: индикаторы на каждую готовую вкладку (без SynchFirstTab; ChartCandle не обязателен — в тестере он часто null до отрисовки).
         /// </summary>
         private void ScheduleMoexIndicatorsAttach(int attempt)
         {
@@ -2436,23 +2562,22 @@ namespace OsEngine.Robots.Custom
                         return;
                     }
 
-                    if (!AreAllScreenerTabsReadyForIndicators())
-                    {
-                        if (attempt < 10)
-                        {
-                            ScheduleMoexIndicatorsAttach(attempt + 1);
-                        }
-                        else
-                        {
-                            SendNewLogMessage(
-                                NameStrategyUniq + ": индикаторы не установлены — вкладки/чарты не готовы после ожидания.",
-                                LogMessageType.Error);
-                        }
+                    SafeReloadScreenerIndicatorsOnAllTabsQuiet(logSummary: attempt == 0 || attempt == MoexIndicatorsAttachMaxAttempts);
 
+                    if (!MoexIndicatorsAttachStillNeeded())
+                    {
                         return;
                     }
 
-                    SafeReloadScreenerIndicatorsOnAllTabsQuiet();
+                    if (attempt < MoexIndicatorsAttachMaxAttempts)
+                    {
+                        ScheduleMoexIndicatorsAttach(attempt + 1);
+                        return;
+                    }
+
+                    SendNewLogMessage(
+                        NameStrategyUniq + ": индикаторы не установлены полностью — " + BuildMoexIndicatorsAttachDiagnostic(),
+                        LogMessageType.Error);
                 }
                 catch (Exception ex)
                 {
@@ -2463,32 +2588,35 @@ namespace OsEngine.Robots.Custom
             });
         }
 
-        private bool AreAllScreenerTabsReadyForIndicators()
+        private void ScreenerTab_NewTabCreateEvent(BotTabSimple tab)
         {
-            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            if (tab == null)
             {
-                return false;
+                return;
             }
 
-            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            Task.Run(async () =>
             {
-                if (!IsTabChartReadyForIndicators(_screenerTab.Tabs[i]))
+                try
                 {
-                    return false;
+                    await Task.Delay(800).ConfigureAwait(false);
+                    TryEnsureRobotIndicatorsOnTabIfNeeded(tab);
                 }
-            }
-
-            return true;
+                catch
+                {
+                    // ignore background attach errors
+                }
+            });
         }
 
         /// <summary>
         /// Установка индикаторов робота на все готовые вкладки (без ReloadIndicatorsOnTabs / SynchFirstTab из ядра).
         /// </summary>
-        private void SafeReloadScreenerIndicatorsOnAllTabsQuiet()
+        private int SafeReloadScreenerIndicatorsOnAllTabsQuiet(bool logSummary = true)
         {
             if (_screenerTab?._indicators == null || _screenerTab.Tabs == null)
             {
-                return;
+                return 0;
             }
 
             int attached = 0;
@@ -2518,18 +2646,168 @@ namespace OsEngine.Robots.Custom
                 }
             }
 
-            if (attached > 0)
+            if (logSummary && attached > 0)
             {
                 SendNewLogMessage(
                     NameStrategyUniq + ": индикаторы на вкладках скринера обновлены (успешно: " + attached + ").",
                     LogMessageType.System);
             }
 
-            if (skipped > 0)
+            if (logSummary && skipped > 0)
             {
                 SendNewLogMessage(
-                    NameStrategyUniq + ": часть вкладок пропущена (чарт не готов): " + skipped + ". Повторите «Обновить» через несколько секунд.",
+                    NameStrategyUniq + ": часть вкладок пропущена (бумага/chartMaster не готовы): " + skipped + ".",
                     LogMessageType.System);
+            }
+
+            return attached;
+        }
+
+        /// <summary>Нужны ли ещё попытки установки индикаторов (бумага/chartMaster/сами индикаторы).</summary>
+        private bool MoexIndicatorsAttachStillNeeded()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return true;
+            }
+
+            if (_screenerTab._indicators == null || _screenerTab._indicators.Count == 0)
+            {
+                return false;
+            }
+
+            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[t];
+                if (tab == null)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(tab.Connector?.SecurityName))
+                {
+                    return true;
+                }
+
+                if (TryGetTabChartMaster(tab) == null)
+                {
+                    return true;
+                }
+
+                if (TabIsMissingAnyRobotIndicator(tab))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TabIsMissingAnyRobotIndicator(BotTabSimple tab)
+        {
+            for (int i = 0; i < _screenerTab._indicators.Count; i++)
+            {
+                IndicatorOnTabs ind = _screenerTab._indicators[i];
+                if (ind == null)
+                {
+                    continue;
+                }
+
+                if (FindIndicator(tab, ind.Num, ind.Type) == null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private string BuildMoexIndicatorsAttachDiagnostic()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return "нет вкладок скринера";
+            }
+
+            List<string> parts = new List<string>();
+
+            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[t];
+                if (tab == null)
+                {
+                    continue;
+                }
+
+                string sec = tab.Connector?.SecurityName;
+                if (string.IsNullOrWhiteSpace(sec))
+                {
+                    parts.Add((tab.TabName ?? "?") + ": бумага не задана");
+                    continue;
+                }
+
+                if (TryGetTabChartMaster(tab) == null)
+                {
+                    parts.Add(sec + ": chartMaster отсутствует");
+                    continue;
+                }
+
+                if (!TabIsMissingAnyRobotIndicator(tab))
+                {
+                    continue;
+                }
+
+                List<string> missingTypes = new List<string>();
+                for (int i = 0; i < _screenerTab._indicators.Count; i++)
+                {
+                    IndicatorOnTabs ind = _screenerTab._indicators[i];
+                    if (ind == null)
+                    {
+                        continue;
+                    }
+
+                    if (FindIndicator(tab, ind.Num, ind.Type) == null)
+                    {
+                        missingTypes.Add(ind.Type);
+                    }
+                }
+
+                parts.Add(sec + ": нет " + string.Join(", ", missingTypes));
+            }
+
+            if (parts.Count == 0)
+            {
+                return "вкладки ждут подключения бумаги (повторите «Обновить»)";
+            }
+
+            return string.Join("; ", parts);
+        }
+
+        /// <summary>Догрузить индикаторы на одной вкладке, если после MOEX reload они не созданы.</summary>
+        private void TryEnsureRobotIndicatorsOnTabIfNeeded(BotTabSimple tab)
+        {
+            if (tab == null || _screenerTab?._indicators == null || !IsTabChartReadyForIndicators(tab))
+            {
+                return;
+            }
+
+            if (!TabIsMissingAnyRobotIndicator(tab))
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab._indicators.Count; i++)
+            {
+                IndicatorOnTabs ind = _screenerTab._indicators[i];
+                if (ind == null)
+                {
+                    continue;
+                }
+
+                if (FindIndicator(tab, ind.Num, ind.Type) == null)
+                {
+                    TryAttachRobotIndicatorOnTab(tab, ind);
+                }
             }
         }
 
@@ -2540,8 +2818,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            ChartCandleMaster chartMaster = TryGetTabChartMaster(tab);
-            return chartMaster != null && chartMaster.ChartCandle != null;
+            return TryGetTabChartMaster(tab) != null;
         }
 
         private static ChartCandleMaster TryGetTabChartMaster(BotTabSimple tab)
@@ -4112,6 +4389,8 @@ namespace OsEngine.Robots.Custom
             {
                 return;
             }
+
+            TryEnsureRobotIndicatorsOnTabIfNeeded(tab);
 
             DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
             UpdatePortfolioTrailingOnRegimeChange(tab);
@@ -6013,7 +6292,7 @@ namespace OsEngine.Robots.Custom
 #endif
 
         /// <summary>
-        /// Случайный сдвиг цены заявки в пределах ±«Процент рандомного сдвига цен» (после проскальзывания).
+        /// Случайный сдвиг цены заявки в пределах ±«Рандомность движений, %» (после проскальзывания).
         /// </summary>
         private decimal ApplyRandomPriceShift(decimal price, BotTabSimple tab)
         {
