@@ -26,6 +26,7 @@ using OsEngine.Market.Connectors;
 using OsEngine.Market.Servers;
 using OsEngine.Market.Servers.Optimizer;
 using OsEngine.Market.Servers.Tester;
+using OsEngine.Charts.CandleChart;
 using OsEngine.OsTrader.Panels;
 using OsEngine.OsTrader.Panels.Tab;
 
@@ -53,7 +54,6 @@ Each indicator has an enable/disable parameter. Disabled indicators are not crea
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
 «Инверсия логики (покупка ↔ продажа)»: если включена — по сигналу бычьей формулы открывается продажа, по медвежьей — покупка (то же при закрытии и реверсе).
-«Контртренд (инверсия + индикаторы)»: при смене — всплывающий алерт и мгновенный пресет; переключается «Инверсия логики»; RSI/Stoch (экстремумы); LinReg/VWAP не меняются.
 
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
 
@@ -64,7 +64,7 @@ Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
 - Volatility cluster to trade (1–3) with lookback; only tabs in the chosen cluster can open new positions.
 
-Самоиндикация: фиксация включённых Use* при вкл./первом входе; подбор Use* только для них и чисел (±5%); раз на бар, каждые N свечей.
+Самоиндикация: фиксация Use* при вкл./первом входе; опция «Проверять вкл/выкл индикаторов»; иначе только ±5% чисел; раз на бар, каждые N свечей.
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
@@ -134,13 +134,6 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
         private StrategyParameterBool _invertEntryLogic;
-        private StrategyParameterBool _counterTrendInvertAndIndicators;
-        private bool _lastCounterTrendInvertAndIndicators;
-
-        private const decimal CounterTrendRsiLongMin = 70m;
-        private const decimal CounterTrendRsiShortMax = 30m;
-        private const decimal CounterTrendStochLongMin = 80m;
-        private const decimal CounterTrendStochShortMax = 20m;
 
         /*
          * ---------------------------------------------------------------------------
@@ -149,20 +142,25 @@ namespace OsEngine.Robots.Custom
          * Логика (только при открытии новой позиции):
          * На окне «Свечей назад» строится виртуальный портфель по IsBullSignalAt / IsBearSignalAt.
          * При включении самоиндикации, при её повторном вкл. и при первом входе фиксируется список Use*,
-         * которые были включены в этот момент; подбор Use* (вкл/выкл) — только для них.
+         * которые были включены в этот момент.
+         * «Проверять включение/выключение индикаторов» = да: перебор Use* (вкл/выкл) только для них; нет — только ±5% чисел.
          * Подбор при сигнале, не чаще раза на бар и только на свечах, кратных N.
-         * Числовые параметры (±5%, не И-группы) — только у индикаторов из этого списка; проверки — снимок шага;
+         * Числовые параметры (±5%, не И-группы) — у индикаторов из списка; проверки — снимок шага;
          * пересчёт индикаторов только на текущей вкладке (не весь скринер на каждую попытку).
          * Затем вход как обычно (с учётом «Инверсии логики»). При закрытии позиций не участвует.
          */
         private StrategyParameterBool _useSamoindikatsiya;
         private StrategyParameterInt _samoindikatsiyaCandlesLookback;
         private StrategyParameterInt _samoindikatsiyaRecalcEveryNCandles;
+        private StrategyParameterBool _samoindikatsiyaCheckIndicatorOnOff;
 
         private const decimal SamoindikatsiyaParamAdjustFraction = 0.05m;
 
         /// <summary>Время последней свечи, на которой уже выполнен подбор параметров (один раз на бар для всего робота).</summary>
         private DateTime _samoindikatsiyaLastOptimizedBarTime = DateTime.MinValue;
+
+        /// <summary>Отложенная установка индикаторов после MOEX reload (чарты вкладок ещё не готовы).</summary>
+        private int _moexIndicatorsAttachPassId;
 
         /// <summary>Счётчик закрытых свечей (глобально по времени бара) для интервала пересчёта N.</summary>
         private int _samoindikatsiyaGlobalBarCounter;
@@ -348,8 +346,10 @@ namespace OsEngine.Robots.Custom
         private const decimal SamoindikatsiyaMaxVirtualEquity = 1_000_000_000m;
 
         private StrategyParameterString _moexFuturesTickerPrefixes;
+        private StrategyParameterButton _moexFuturesResetPrefixesButton;
         private StrategyParameterButton _moexFuturesLoadButton;
         private StrategyParameterString _moexStockTickerPrefixes;
+        private StrategyParameterButton _moexStockResetPrefixesButton;
         private StrategyParameterButton _moexStockLoadButton;
 
         private const string DefaultMoexFuturesTickerPrefixes =
@@ -413,13 +413,6 @@ namespace OsEngine.Robots.Custom
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
             _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
-            _counterTrendInvertAndIndicators = CreateParameter("Контртренд (инверсия + индикаторы)", false);
-            _counterTrendInvertAndIndicators.ValueChange += CounterTrendInvertAndIndicators_ValueChange;
-            _lastCounterTrendInvertAndIndicators = _counterTrendInvertAndIndicators.ValueBool;
-            if (_lastCounterTrendInvertAndIndicators)
-            {
-                ApplyCounterTrendPreset(enable: true, showUserAlert: false);
-            }
 
             const string samoindikatsiyaTab = "самоиндикация";
             _useSamoindikatsiya = CreateParameter("Самоиндикация включена", false, samoindikatsiyaTab);
@@ -436,6 +429,10 @@ namespace OsEngine.Robots.Custom
                 1,
                 10000,
                 1,
+                samoindikatsiyaTab);
+            _samoindikatsiyaCheckIndicatorOnOff = CreateParameter(
+                "Проверять включение/выключение индикаторов",
+                false,
                 samoindikatsiyaTab);
             _useSamoindikatsiya.ValueChange += UseSamoindikatsiya_ValueChange;
 
@@ -485,6 +482,8 @@ namespace OsEngine.Robots.Custom
                 "Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
                 DefaultMoexFuturesTickerPrefixes,
                 moexFuturesTab);
+            _moexFuturesResetPrefixesButton = CreateParameterButton("Установить префиксы фьючерсов по умолчанию", moexFuturesTab);
+            _moexFuturesResetPrefixesButton.UserClickOnButtonEvent += MoexFuturesResetPrefixesButton_UserClickOnButtonEvent;
             _moexFuturesLoadButton = CreateParameterButton("Обновить фьючерсы", moexFuturesTab);
             _moexFuturesLoadButton.UserClickOnButtonEvent += MoexFuturesLoadButton_UserClickOnButtonEvent;
 
@@ -493,6 +492,8 @@ namespace OsEngine.Robots.Custom
                 "Тикеры акций (через запятую; T-Инвестиции, точное совпадение с Ticker)",
                 DefaultMoexStockTickerPrefixes,
                 moexStockTab);
+            _moexStockResetPrefixesButton = CreateParameterButton("Установить тикеры акций по умолчанию", moexStockTab);
+            _moexStockResetPrefixesButton.UserClickOnButtonEvent += MoexStockResetPrefixesButton_UserClickOnButtonEvent;
             _moexStockLoadButton = CreateParameterButton("Обновить акции", moexStockTab);
             _moexStockLoadButton.UserClickOnButtonEvent += MoexStockLoadButton_UserClickOnButtonEvent;
 
@@ -612,7 +613,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; пресет «Контртренд (инверсия + индикаторы)»; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -852,6 +853,38 @@ namespace OsEngine.Robots.Custom
             catch (Exception ex)
             {
                 SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Кнопка «Установить префиксы по умолчанию» на вкладке MOEX фьючерсы: только строка параметра, без подбора бумаг.
+        /// </summary>
+        private void MoexFuturesResetPrefixesButton_UserClickOnButtonEvent()
+        {
+            _moexFuturesTickerPrefixes.ValueString = DefaultMoexFuturesTickerPrefixes;
+            RepaintParameterGuiTables();
+            SendNewLogMessage(
+                "Префиксы корня фьючерсов установлены по умолчанию (подбор бумаг не выполнялся).",
+                LogMessageType.System);
+        }
+
+        /// <summary>
+        /// Кнопка «Установить префиксы по умолчанию» на вкладке MOEX акции: только строка параметра, без подбора бумаг.
+        /// </summary>
+        private void MoexStockResetPrefixesButton_UserClickOnButtonEvent()
+        {
+            _moexStockTickerPrefixes.ValueString = DefaultMoexStockTickerPrefixes;
+            RepaintParameterGuiTables();
+            SendNewLogMessage(
+                "Тикеры акций установлены по умолчанию (подбор бумаг не выполнялся).",
+                LogMessageType.System);
+        }
+
+        private void RepaintParameterGuiTables()
+        {
+            if (ParamGuiSettings != null)
+            {
+                ParamGuiSettings.RePaintParameterTables();
             }
         }
 
@@ -2303,17 +2336,319 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>
         /// Один проход TryLoadTabs/TryReLoadTabs с инициализацией CandleSeriesRealization.
+        /// Индикаторы на время пересоздания вкладок снимаются: иначе TryReLoadTabs вызывает ReloadIndicatorsOnTabs
+        /// на ещё не готовых чартах (NullReferenceException в ChartCandleMaster.CreateIndicator).
         /// </summary>
         private void RunMoexScreenerTabsReloadPass()
         {
             EnsureScreenerCandleInfrastructure();
             EnsureExistingScreenerTabsCandleInfrastructure();
 
+            List<IndicatorOnTabs> indicatorSnapshot = SnapshotScreenerIndicators();
+            _screenerTab._indicators.Clear();
+
             _screenerTab.NeedToReloadTabs = true;
             _screenerTab.TryLoadTabs();
             _screenerTab.TryReLoadTabs();
-            _screenerTab.ReloadIndicatorsOnTabs();
+
+            RestoreScreenerIndicators(indicatorSnapshot);
+            ScheduleMoexIndicatorsAttach(attempt: 0);
             TryInvokeScreenerRePaintSecuritiesGrid();
+        }
+
+        /// <summary>Копия списка индикаторов скринера (для временного снятия на MOEX reload).</summary>
+        private List<IndicatorOnTabs> SnapshotScreenerIndicators()
+        {
+            var snapshot = new List<IndicatorOnTabs>();
+            if (_screenerTab?._indicators == null)
+            {
+                return snapshot;
+            }
+
+            for (int i = 0; i < _screenerTab._indicators.Count; i++)
+            {
+                IndicatorOnTabs src = _screenerTab._indicators[i];
+                if (src == null)
+                {
+                    continue;
+                }
+
+                var copy = new IndicatorOnTabs();
+                copy.SetFromStr(src.GetSaveStr());
+                snapshot.Add(copy);
+            }
+
+            return snapshot;
+        }
+
+        private void RestoreScreenerIndicators(List<IndicatorOnTabs> snapshot)
+        {
+            if (_screenerTab == null)
+            {
+                return;
+            }
+
+            if (_screenerTab._indicators == null)
+            {
+                _screenerTab._indicators = new List<IndicatorOnTabs>();
+            }
+
+            _screenerTab._indicators.Clear();
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                if (snapshot[i] != null)
+                {
+                    _screenerTab._indicators.Add(snapshot[i]);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Отложенно: индикаторы на каждую вкладку (без SynchFirstTab — только Custom, без вызовов ядра на неготовый чарт).
+        /// </summary>
+        private void ScheduleMoexIndicatorsAttach(int attempt)
+        {
+            int passId = Interlocked.Increment(ref _moexIndicatorsAttachPassId);
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    int delayMs = attempt == 0 ? 1500 : 2500;
+                    await Task.Delay(delayMs).ConfigureAwait(false);
+
+                    if (passId != _moexIndicatorsAttachPassId || _screenerTab == null)
+                    {
+                        return;
+                    }
+
+                    if (!AreAllScreenerTabsReadyForIndicators())
+                    {
+                        if (attempt < 10)
+                        {
+                            ScheduleMoexIndicatorsAttach(attempt + 1);
+                        }
+                        else
+                        {
+                            SendNewLogMessage(
+                                NameStrategyUniq + ": индикаторы не установлены — вкладки/чарты не готовы после ожидания.",
+                                LogMessageType.Error);
+                        }
+
+                        return;
+                    }
+
+                    SafeReloadScreenerIndicatorsOnAllTabsQuiet();
+                }
+                catch (Exception ex)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + ": установка индикаторов после MOEX — " + ex.Message,
+                        LogMessageType.Error);
+                }
+            });
+        }
+
+        private bool AreAllScreenerTabsReadyForIndicators()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                if (!IsTabChartReadyForIndicators(_screenerTab.Tabs[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Установка индикаторов робота на все готовые вкладки (без ReloadIndicatorsOnTabs / SynchFirstTab из ядра).
+        /// </summary>
+        private void SafeReloadScreenerIndicatorsOnAllTabsQuiet()
+        {
+            if (_screenerTab?._indicators == null || _screenerTab.Tabs == null)
+            {
+                return;
+            }
+
+            int attached = 0;
+            int skipped = 0;
+
+            for (int i = 0; i < _screenerTab._indicators.Count; i++)
+            {
+                IndicatorOnTabs ind = _screenerTab._indicators[i];
+                if (ind == null)
+                {
+                    continue;
+                }
+
+                for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+                {
+                    BotTabSimple tab = _screenerTab.Tabs[t];
+                    if (!IsTabChartReadyForIndicators(tab))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (TryAttachRobotIndicatorOnTab(tab, ind))
+                    {
+                        attached++;
+                    }
+                }
+            }
+
+            if (attached > 0)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": индикаторы на вкладках скринера обновлены (успешно: " + attached + ").",
+                    LogMessageType.System);
+            }
+
+            if (skipped > 0)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": часть вкладок пропущена (чарт не готов): " + skipped + ". Повторите «Обновить» через несколько секунд.",
+                    LogMessageType.System);
+            }
+        }
+
+        private bool IsTabChartReadyForIndicators(BotTabSimple tab)
+        {
+            if (tab == null || string.IsNullOrWhiteSpace(tab.Connector?.SecurityName))
+            {
+                return false;
+            }
+
+            ChartCandleMaster chartMaster = TryGetTabChartMaster(tab);
+            return chartMaster != null && chartMaster.ChartCandle != null;
+        }
+
+        private static ChartCandleMaster TryGetTabChartMaster(BotTabSimple tab)
+        {
+            if (tab == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                FieldInfo field = typeof(BotTabSimple).GetField(
+                    "_chartMaster",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                return field?.GetValue(tab) as ChartCandleMaster;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Создать/обновить индикатор на одной вкладке; false — пропуск без вызова ядра на неготовый чарт.</summary>
+        private bool TryAttachRobotIndicatorOnTab(BotTabSimple tab, IndicatorOnTabs ind)
+        {
+            if (tab == null || ind == null || !IsTabChartReadyForIndicators(tab))
+            {
+                return false;
+            }
+
+            try
+            {
+                Aindicator existing = FindIndicator(tab, ind.Num, ind.Type);
+                if (existing != null)
+                {
+                    ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
+                    return true;
+                }
+
+                Aindicator newIndicator = IndicatorsFactory.CreateIndicatorByName(
+                    ind.Type,
+                    ind.Num + ind.Type + _screenerTab.TabName,
+                    false);
+                if (newIndicator == null)
+                {
+                    return false;
+                }
+
+                newIndicator.CanDelete = ind.CanDelete;
+                CopyIndicatorOnTabsParameters(ind, newIndicator);
+
+                Aindicator created;
+                try
+                {
+                    created = (Aindicator)tab.CreateCandleIndicator(newIndicator, ind.NameArea);
+                }
+                catch (Exception ex)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + tab.TabName + "] «" + ind.Type + "»: " + ex.Message,
+                        LogMessageType.Error);
+                    return false;
+                }
+
+                if (created == null)
+                {
+                    return false;
+                }
+
+                created.CanDelete = ind.CanDelete;
+                created.Save();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + tab.TabName + "] «" + ind.Type + "»: " + ex.Message,
+                    LogMessageType.Error);
+                return false;
+            }
+        }
+
+        private static void CopyIndicatorOnTabsParameters(IndicatorOnTabs ind, Aindicator newIndicator)
+        {
+            if (ind?.Parameters == null || newIndicator?.Parameters == null)
+            {
+                return;
+            }
+
+            if (ind.Parameters.Count != newIndicator.Parameters.Count)
+            {
+                return;
+            }
+
+            for (int i2 = 0; i2 < ind.Parameters.Count; i2++)
+            {
+                IndicatorParameter param = newIndicator.Parameters[i2];
+                string raw = ind.Parameters[i2];
+
+                if (param.Type == IndicatorParameterType.Int)
+                {
+                    ((IndicatorParameterInt)param).ValueInt = Convert.ToInt32(raw, CultureInfo.InvariantCulture);
+                }
+                else if (param.Type == IndicatorParameterType.Decimal)
+                {
+                    ((IndicatorParameterDecimal)param).ValueDecimal = raw.ToDecimal();
+                }
+                else if (param.Type == IndicatorParameterType.Bool)
+                {
+                    ((IndicatorParameterBool)param).ValueBool = Convert.ToBoolean(raw, CultureInfo.InvariantCulture);
+                }
+                else if (param.Type == IndicatorParameterType.String)
+                {
+                    ((IndicatorParameterString)param).ValueString = raw;
+                }
+            }
         }
 
         /// <summary>
@@ -2880,7 +3215,7 @@ namespace OsEngine.Robots.Custom
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
             SyncIndicators();
-            _screenerTab.UpdateIndicatorsParameters();
+            RefreshAllTabsIndicatorsSafely();
         }
 
         private void ResetIndicatorParametersToDefaultButton_UserClickOnButtonEvent()
@@ -2889,17 +3224,14 @@ namespace OsEngine.Robots.Custom
 
             TrendMultiIndicatorScreener_ParametrsChangeByUser();
 
-            if (ParamGuiSettings != null)
-            {
-                ParamGuiSettings.RePaintParameterTables();
-            }
+            RepaintParameterGuiTables();
 
             SendNewLogMessage("Параметры индикаторов установлены по умолчанию (значения из кода робота).", LogMessageType.System);
         }
 
         /// <summary>
         /// Заводские значения только параметров индикаторов — как в конструкторе CreateParameter.
-        /// Режим, объём, стопы, MOEX, контртренд и прочее не меняются.
+        /// Режим, объём, стопы, MOEX и прочее не меняются.
         /// </summary>
         private void ApplyFactoryDefaultIndicatorParameters()
         {
@@ -2940,125 +3272,11 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Сразу при переключении «Контртренд (инверсия + индикаторы)» в окне параметров.
-        /// </summary>
-        private void CounterTrendInvertAndIndicators_ValueChange()
-        {
-            HandleCounterTrendInvertAndIndicatorsParameterChange();
-            SyncIndicators();
-            _screenerTab.UpdateIndicatorsParameters();
-        }
-
-        /// <summary>
-        /// Инверсия входа/выхода: вручную или через пресет «Контртренд (инверсия + индикаторы)».
+        /// Инверсия входа/выхода по параметру «Инверсия логики (покупка ↔ продажа)».
         /// </summary>
         private bool IsEntryLogicInverted()
         {
-            return _invertEntryLogic.ValueBool || _counterTrendInvertAndIndicators.ValueBool;
-        }
-
-        /// <summary>
-        /// Реакция на переключение «Контртренд (инверсия + индикаторы)».
-        /// </summary>
-        private void HandleCounterTrendInvertAndIndicatorsParameterChange()
-        {
-            bool current = _counterTrendInvertAndIndicators.ValueBool;
-            if (current == _lastCounterTrendInvertAndIndicators)
-            {
-                return;
-            }
-
-            _lastCounterTrendInvertAndIndicators = current;
-            ApplyCounterTrendPreset(current, showUserAlert: true);
-        }
-
-        /// <summary>
-        /// Пресет контртренда: инверсия вкл/выкл; RSI/Stoch с экстремальными порогами (И-группа 1). LinReg и VWAP не трогаем.
-        /// </summary>
-        private void ApplyCounterTrendPreset(bool enable, bool showUserAlert)
-        {
-            _invertEntryLogic.ValueBool = enable;
-
-            if (enable)
-            {
-                _useSma.ValueBool = false;
-                _useRsi.ValueBool = true;
-                _useStoch.ValueBool = true;
-                _useMomentum.ValueBool = false;
-                _useBollinger.ValueBool = false;
-                _useVolumeIndicator.ValueBool = false;
-                _useAtr.ValueBool = false;
-                _useMacd.ValueBool = false;
-
-                _rsiLongMin.ValueDecimal = CounterTrendRsiLongMin;
-                _rsiShortMax.ValueDecimal = CounterTrendRsiShortMax;
-                _stochLongMin.ValueDecimal = CounterTrendStochLongMin;
-                _stochShortMax.ValueDecimal = CounterTrendStochShortMax;
-
-                _smaAndGroup.ValueInt = 1;
-                _rsiAndGroup.ValueInt = 1;
-                _stochAndGroup.ValueInt = 1;
-
-                if (showUserAlert)
-                {
-                    ShowCounterTrendUserAlert(
-                        "«Контртренд (инверсия + индикаторы)» включён.\n\n"
-                        + "• Инверсия входа: включена\n"
-                        + "• RSI: включён (long min "
-                        + CounterTrendRsiLongMin.ToString(CultureInfo.InvariantCulture)
-                        + ", short max "
-                        + CounterTrendRsiShortMax.ToString(CultureInfo.InvariantCulture)
-                        + ")\n"
-                        + "• Stochastic: включён (long min "
-                        + CounterTrendStochLongMin.ToString(CultureInfo.InvariantCulture)
-                        + ", short max "
-                        + CounterTrendStochShortMax.ToString(CultureInfo.InvariantCulture)
-                        + ", И-группа 1)\n"
-                        + "• Выключены: SMA, Momentum, Bollinger, Volume, ATR, MACD\n"
-                        + "• LinReg и VWAP не изменялись");
-                }
-
-                return;
-            }
-
-            _useRsi.ValueBool = false;
-            _useStoch.ValueBool = false;
-
-            if (showUserAlert)
-            {
-                ShowCounterTrendUserAlert(
-                    "«Контртренд (инверсия + индикаторы)» выключен.\n\n"
-                    + "• Инверсия входа: выключена\n"
-                    + "• Отключены: RSI, Stochastic\n"
-                    + "• LinReg и VWAP не изменялись");
-            }
-        }
-
-        /// <summary>
-        /// Всплывающее окно-алерт при переключении пресета (как AlertMessageSimpleUi в BotPanel).
-        /// </summary>
-        private void ShowCounterTrendUserAlert(string message)
-        {
-            if (StartProgram == StartProgram.IsOsOptimizer)
-            {
-                return;
-            }
-
-            try
-            {
-                if (!MainWindow.GetDispatcher.CheckAccess())
-                {
-                    MainWindow.GetDispatcher.Invoke(new Action<string>(ShowCounterTrendUserAlert), message);
-                    return;
-                }
-
-                AlertMessageSimpleUi ui = new AlertMessageSimpleUi(message);
-                ui.Show();
-            }
-            catch (Exception ex)
-            {
-                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
-            }
+            return _invertEntryLogic.ValueBool;
         }
 
         /// <summary>
@@ -4203,10 +4421,39 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void SyncIndicatorsForSamoindikatsiya()
+        /// <summary>
+        /// Достаточно свечей на вкладке для Reload индикаторов (иначе SMA и др. падают с ArgumentOutOfRange).
+        /// </summary>
+        private bool TabCanSafelyReloadIndicators(BotTabSimple tab)
         {
-            SyncIndicators();
-            _screenerTab?.UpdateIndicatorsParameters();
+            if (tab == null)
+            {
+                return false;
+            }
+
+            List<Candle> candles = tab.CandlesAll;
+            if (candles == null || candles.Count == 0)
+            {
+                return false;
+            }
+
+            return candles.Count >= GetMinBarsForTradingLogic();
+        }
+
+        /// <summary>
+        /// Обновить параметры индикаторов на всех вкладках, где уже загружена история (без UpdateIndicatorsParameters по всему скринеру).
+        /// </summary>
+        private void RefreshAllTabsIndicatorsSafely()
+        {
+            if (_screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                RefreshSamoindikatsiyaTabIndicators(_screenerTab.Tabs[i]);
+            }
         }
 
         /// <summary>
@@ -4324,7 +4571,19 @@ namespace OsEngine.Robots.Custom
                 }
             }
 
-            indicator.Reload();
+            if (TabCanSafelyReloadIndicators(tab))
+            {
+                try
+                {
+                    indicator.Reload();
+                }
+                catch (Exception ex)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + tab.TabName + "]: Reload индикатора " + type + " — " + ex.Message,
+                        LogMessageType.Error);
+                }
+            }
         }
 
         /// <summary>
@@ -4562,11 +4821,16 @@ namespace OsEngine.Robots.Custom
             setter(result, bestValue);
         }
 
+        /// <summary>Все параметры индикаторов (Use* и числовые) уже созданы в конструкторе.</summary>
         private bool AreIndicatorParametersReadyForSamoindikatsiya()
         {
             return _useSma != null
                 && _useRsi != null
+                && _useStoch != null
                 && _smaLen != null
+                && _rsiLongMin != null
+                && _stochLongMin != null
+                && _smaAndGroup != null
                 && _macdSignalLen != null;
         }
 
@@ -4737,70 +5001,74 @@ namespace OsEngine.Robots.Custom
             }
 
             SamoindikatsiyaIndicatorSnapshot result = stepBaseline.Clone();
+            bool checkOnOff = _samoindikatsiyaCheckIndicatorOnOff.ValueBool;
 
-            if (enabledAtLock.UseSma)
+            if (checkOnOff)
             {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseSma, (s, v) => s.UseSma = v);
+                if (enabledAtLock.UseSma)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseSma, (s, v) => s.UseSma = v);
+                }
+
+                if (enabledAtLock.UseRsi)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseRsi, (s, v) => s.UseRsi = v);
+                }
+
+                if (enabledAtLock.UseStoch)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseStoch, (s, v) => s.UseStoch = v);
+                }
+
+                if (enabledAtLock.UseMomentum)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseMomentum, (s, v) => s.UseMomentum = v);
+                }
+
+                if (enabledAtLock.UseBollinger)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseBollinger, (s, v) => s.UseBollinger = v);
+                }
+
+                if (enabledAtLock.UseLinReg)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseLinReg, (s, v) => s.UseLinReg = v);
+                }
+
+                if (enabledAtLock.UseVolumeIndicator)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseVolumeIndicator, (s, v) => s.UseVolumeIndicator = v);
+                }
+
+                if (enabledAtLock.UseVwap)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseVwap, (s, v) => s.UseVwap = v);
+                }
+
+                if (enabledAtLock.UseAtr)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseAtr, (s, v) => s.UseAtr = v);
+                }
+
+                if (enabledAtLock.UseMacd)
+                {
+                    OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseMacd, (s, v) => s.UseMacd = v);
+                }
             }
 
-            if (enabledAtLock.UseRsi)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseRsi, (s, v) => s.UseRsi = v);
-            }
-
-            if (enabledAtLock.UseStoch)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseStoch, (s, v) => s.UseStoch = v);
-            }
-
-            if (enabledAtLock.UseMomentum)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseMomentum, (s, v) => s.UseMomentum = v);
-            }
-
-            if (enabledAtLock.UseBollinger)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseBollinger, (s, v) => s.UseBollinger = v);
-            }
-
-            if (enabledAtLock.UseLinReg)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseLinReg, (s, v) => s.UseLinReg = v);
-            }
-
-            if (enabledAtLock.UseVolumeIndicator)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseVolumeIndicator, (s, v) => s.UseVolumeIndicator = v);
-            }
-
-            if (enabledAtLock.UseVwap)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseVwap, (s, v) => s.UseVwap = v);
-            }
-
-            if (enabledAtLock.UseAtr)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseAtr, (s, v) => s.UseAtr = v);
-            }
-
-            if (enabledAtLock.UseMacd)
-            {
-                OptimizeSamoindikatsiyaBoolFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, s => s.UseMacd, (s, v) => s.UseMacd = v);
-            }
-
-            if (enabledAtLock.UseSma && result.UseSma)
+            if (enabledAtLock.UseSma && (!checkOnOff || result.UseSma))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _smaLen, s => s.SmaLen, (s, v) => s.SmaLen = v);
             }
 
-            if (enabledAtLock.UseRsi && result.UseRsi)
+            if (enabledAtLock.UseRsi && (!checkOnOff || result.UseRsi))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _rsiLen, s => s.RsiLen, (s, v) => s.RsiLen = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _rsiLongMin, s => s.RsiLongMin, (s, v) => s.RsiLongMin = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _rsiShortMax, s => s.RsiShortMax, (s, v) => s.RsiShortMax = v);
             }
 
-            if (enabledAtLock.UseStoch && result.UseStoch)
+            if (enabledAtLock.UseStoch && (!checkOnOff || result.UseStoch))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _stochP1, s => s.StochP1, (s, v) => s.StochP1 = v);
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _stochP2, s => s.StochP2, (s, v) => s.StochP2 = v);
@@ -4809,38 +5077,38 @@ namespace OsEngine.Robots.Custom
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _stochShortMax, s => s.StochShortMax, (s, v) => s.StochShortMax = v);
             }
 
-            if (enabledAtLock.UseMomentum && result.UseMomentum)
+            if (enabledAtLock.UseMomentum && (!checkOnOff || result.UseMomentum))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _momLen, s => s.MomLen, (s, v) => s.MomLen = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _momLongMin, s => s.MomLongMin, (s, v) => s.MomLongMin = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _momShortMax, s => s.MomShortMax, (s, v) => s.MomShortMax = v);
             }
 
-            if (enabledAtLock.UseBollinger && result.UseBollinger)
+            if (enabledAtLock.UseBollinger && (!checkOnOff || result.UseBollinger))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _bollLen, s => s.BollLen, (s, v) => s.BollLen = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _bollDev, s => s.BollDev, (s, v) => s.BollDev = v);
             }
 
-            if (enabledAtLock.UseLinReg && result.UseLinReg)
+            if (enabledAtLock.UseLinReg && (!checkOnOff || result.UseLinReg))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _linRegLen, s => s.LinRegLen, (s, v) => s.LinRegLen = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _linRegDev, s => s.LinRegDev, (s, v) => s.LinRegDev = v);
             }
 
-            if (enabledAtLock.UseVolumeIndicator && result.UseVolumeIndicator)
+            if (enabledAtLock.UseVolumeIndicator && (!checkOnOff || result.UseVolumeIndicator))
             {
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _volumeIndicatorMinGrowthPercent, s => s.VolumeIndicatorMinGrowthPercent, (s, v) => s.VolumeIndicatorMinGrowthPercent = v);
             }
 
-            if (enabledAtLock.UseAtr && result.UseAtr)
+            if (enabledAtLock.UseAtr && (!checkOnOff || result.UseAtr))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _atrLen, s => s.AtrLen, (s, v) => s.AtrLen = v);
                 OptimizeSamoindikatsiyaDecimalFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _atrGrowPercent, s => s.AtrGrowPercent, (s, v) => s.AtrGrowPercent = v);
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _atrGrowLookBack, s => s.AtrGrowLookBack, (s, v) => s.AtrGrowLookBack = v);
             }
 
-            if (enabledAtLock.UseMacd && result.UseMacd)
+            if (enabledAtLock.UseMacd && (!checkOnOff || result.UseMacd))
             {
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _macdFastLen, s => s.MacdFastLen, (s, v) => s.MacdFastLen = v);
                 OptimizeSamoindikatsiyaIntFromStepBaseline(stepBaseline, result, stepBaselineProfit, candles, tab, _macdSlowLen, s => s.MacdSlowLen, (s, v) => s.MacdSlowLen = v);
@@ -4848,7 +5116,8 @@ namespace OsEngine.Robots.Custom
             }
 
             result.Apply(this);
-            SyncIndicatorsForSamoindikatsiya();
+            SyncIndicators();
+            RefreshSamoindikatsiyaTabIndicators(tab);
         }
 
         /// <summary>Учесть закрытие бара (один раз на время свечи для всего робота).</summary>

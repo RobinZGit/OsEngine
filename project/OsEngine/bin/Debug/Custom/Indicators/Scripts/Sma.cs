@@ -25,6 +25,16 @@ namespace OsEngine.Indicators
 
         public override void OnProcess(List<Candle> candles, int index)
         {
+            if (candles == null || index < 0 || index >= candles.Count)
+            {
+                return;
+            }
+
+            while (_series.Values.Count <= index)
+            {
+                _series.Values.Add(0);
+            }
+
             if (_length.ValueInt > index)
             {
                 _series.Values[index] = 0;
