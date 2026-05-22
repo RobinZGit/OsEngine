@@ -21,8 +21,12 @@ using OsEngine.OsTrader.Panels.Attributes;
 using OsEngine.OsTrader.Panels.Tab;
 
 /*
- * Смарт Хедж — ручной календарный хедж фьючерсов MOEX (только кнопки, без автосигналов).
- * Префиксы и подбор — как в TrendMultiIndicatorScreener.
+ * Смарт Хедж — ручной календарный хедж фьючерсов MOEX (только кнопки).
+ * «Подобрать фьючерсы»: по префиксу — ближняя экспирация и следующая более поздняя (календарный спред).
+ * «Купить пару»: ближний лонг + дальний шорт, объём = «Количество позиций в одну сторону» (по умолчанию 3).
+ * «Скорректировать пару (Trail)»: ожидание локального максимума профита на закрытии свечи ноги в плюсе,
+ *   затем закрыть профитную ногу и добавить 1/3 объёма на убыточную (3→4).
+ * «Скорректировать пару (сразу)»: та же коррекция без ожидания — по всем открытым парам сразу.
  */
 
 namespace OsEngine.Robots.Custom
@@ -33,11 +37,14 @@ namespace OsEngine.Robots.Custom
         private const string DefaultMoexFuturesTickerPrefixes =
             "Si,USDRUBF,Eu,EURRUBF,CNY,MX,MM,IMOEXF,RI,BR,BRM,CL,NG,NGM,GD,GLDRUBF,SV,PT,PD,CU,SR,GZ,LK,RN,NK,GN,TT,VB,SN,SG,RL";
 
+        /// <summary>Минимальная длина префикса для сопоставления «корень начинается с префикса» (иначе «C» = CR, CL, CU, …).</summary>
+        private const int MinPrefixLengthForStartsWithMatch = 2;
+
         private static readonly Dictionary<string, string[]> MoexFuturesPrefixAliases =
             new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
             {
-                { "CNY", new[] { "CR" } },
-                { "UCNY", new[] { "CR" } },
+                { "CNY", new[] { "CR", "CNYRUBF" } },
+                { "UCNY", new[] { "CR", "CNYRUBF" } },
             };
 
         private BotTabScreener _screenerTab;
@@ -46,20 +53,34 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _moexFuturesResetPrefixesButton;
         private StrategyParameterButton _loadFuturesButton;
         private StrategyParameterButton _buyPairButton;
-        private StrategyParameterButton _adjustPairButton;
+        private StrategyParameterButton _adjustPairTrailButton;
+        private StrategyParameterButton _adjustPairImmediateButton;
         private StrategyParameterButton _sellAllButton;
 
+        private StrategyParameterInt _positionsPerSide;
         private StrategyParameterString _volumeType;
         private StrategyParameterDecimal _volume;
         private StrategyParameterString _tradeAssetInPortfolio;
 
         private readonly List<HedgePairState> _hedgePairs = new List<HedgePairState>();
 
+        /// <summary>После «Скорректировать пару (Trail)» ждём снижения профита на свечах профитной ноги.</summary>
+        private bool _adjustPairsPending;
+
+        private readonly Dictionary<string, decimal> _adjustProfitByPairPrefix =
+            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        private readonly HashSet<string> _adjustCompletedPairPrefixes =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         public SmartHedge(string name, StartProgram startProgram)
             : base(name, startProgram)
         {
             TabCreate(BotTabType.Screener);
             _screenerTab = TabsScreener[0];
+            _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
+            _screenerTab.NewTabCreateEvent += ScreenerTab_NewTabCreateEvent;
+            EnsureScreenerEventsOn();
             RemoveCorruptScreenerTabSetFileIfNeeded();
 
             const string moexTab = "MOEX фьючерсы";
@@ -78,14 +99,17 @@ namespace OsEngine.Robots.Custom
 
             _buyPairButton = CreateParameterButton("Купить пару", tradeTab);
             _buyPairButton.UserClickOnButtonEvent += BuyPairButton_UserClickOnButtonEvent;
-            _adjustPairButton = CreateParameterButton("Скорректировать пару", tradeTab);
-            _adjustPairButton.UserClickOnButtonEvent += AdjustPairButton_UserClickOnButtonEvent;
+            _adjustPairTrailButton = CreateParameterButton("Скорректировать пару (Trail)", tradeTab);
+            _adjustPairTrailButton.UserClickOnButtonEvent += AdjustPairTrailButton_UserClickOnButtonEvent;
+            _adjustPairImmediateButton = CreateParameterButton("Скорректировать пару (сразу)", tradeTab);
+            _adjustPairImmediateButton.UserClickOnButtonEvent += AdjustPairImmediateButton_UserClickOnButtonEvent;
             _sellAllButton = CreateParameterButton("Продать всё", tradeTab);
             _sellAllButton.UserClickOnButtonEvent += SellAllButton_UserClickOnButtonEvent;
 
-            _volumeType = CreateParameter("Volume type", "Contracts", new[] { "Contracts", "Contract currency", "Deposit percent" });
-            _volume = CreateParameter("Volume", 1, 1m, 500m, 1m);
-            _tradeAssetInPortfolio = CreateParameter("Asset in portfolio", "Prime");
+            _positionsPerSide = CreateParameter("Количество позиций в одну сторону", 3, 1, 100, 1, tradeTab);
+            _volumeType = CreateParameter("Volume type", "Contracts", new[] { "Contracts", "Contract currency", "Deposit percent" }, tradeTab);
+            _volume = CreateParameter("Volume", 3, 1m, 500m, 1m, tradeTab);
+            _tradeAssetInPortfolio = CreateParameter("Asset in portfolio", "Prime", tradeTab);
 
             Description = "Смарт Хедж: календарный хедж фьючерсов MOEX только по кнопкам.";
         }
@@ -140,11 +164,80 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void AdjustPairButton_UserClickOnButtonEvent()
+        private void AdjustPairTrailButton_UserClickOnButtonEvent()
         {
             try
             {
-                ExecuteAdjustPairs();
+                ArmAdjustPairsWaiting();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void AdjustPairImmediateButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ExecuteAdjustAllPairsImmediately();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void ScreenerTab_NewTabCreateEvent(BotTabSimple tab)
+        {
+            if (tab == null || _screenerTab == null || !_screenerTab.EventsIsOn)
+            {
+                return;
+            }
+
+            tab.EventsIsOn = true;
+        }
+
+        private void EnsureScreenerEventsOn()
+        {
+            if (_screenerTab == null)
+            {
+                return;
+            }
+
+            if (!_screenerTab.EventsIsOn)
+            {
+                _screenerTab.EventsIsOn = true;
+                SendNewLogMessage(
+                    NameStrategyUniq + ": включены события скринера (нужны для коррекции Trail по свечам).",
+                    LogMessageType.System);
+            }
+
+            if (_screenerTab.Tabs == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab != null && !tab.EventsIsOn)
+                {
+                    tab.EventsIsOn = true;
+                }
+            }
+        }
+
+        private void ScreenerTab_CandleFinishedEvent(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!_adjustPairsPending || tab == null)
+            {
+                return;
+            }
+
+            try
+            {
+                TryProcessAdjustPairsOnCandle(tab);
             }
             catch (Exception ex)
             {
@@ -211,24 +304,24 @@ namespace OsEngine.Robots.Custom
             for (int p = 0; p < prefixes.Count; p++)
             {
                 string prefix = prefixes[p];
+                if (prefix.Length < MinPrefixLengthForStartsWithMatch)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + ": префикс «" + prefix + "» слишком короткий — укажите код серии целиком "
+                        + "(доллар: Si или USDRUBF; юань: CNY или CR; серебро в руб.: S2 или SL). "
+                        + "Одна буква «C» подбирает все корни CR, CL, CU, …, но не Si и не S2.",
+                        LogMessageType.Error);
+                    continue;
+                }
+
                 if (!TryPickTwoNearestFutures(server, prefix, now, out Security near, out Security far, out string error))
                 {
                     errors.Add(prefix + ": " + error);
                     continue;
                 }
 
-                _screenerTab.SecuritiesNames.Add(new ActivatedSecurity
-                {
-                    SecurityName = near.Name,
-                    SecurityClass = GetSecurityClassName(near),
-                    IsOn = true
-                });
-                _screenerTab.SecuritiesNames.Add(new ActivatedSecurity
-                {
-                    SecurityName = far.Name,
-                    SecurityClass = GetSecurityClassName(far),
-                    IsOn = true
-                });
+                AddActivatedSecurityIfNew(near);
+                AddActivatedSecurityIfNew(far);
 
                 _hedgePairs.Add(new HedgePairState
                 {
@@ -237,7 +330,7 @@ namespace OsEngine.Robots.Custom
                     FarSecurityName = far.Name
                 });
 
-                added.Add(near.Name + " / " + far.Name);
+                added.Add(FormatSecurityExpiration(near) + " / " + FormatSecurityExpiration(far));
             }
 
             if (_hedgePairs.Count == 0)
@@ -260,7 +353,8 @@ namespace OsEngine.Robots.Custom
             ReloadScreenerTabs();
 
             string msg = NameStrategyUniq + ": пар " + _hedgePairs.Count + ", вкладок " + (_screenerTab.Tabs?.Count ?? 0)
-                + ". " + string.Join("; ", added);
+                + ". " + string.Join("; ", added)
+                + " [префиксы: " + string.Join(", ", prefixes) + "]";
             if (errors.Count > 0)
             {
                 msg += ". Пропуски: " + string.Join("; ", errors);
@@ -297,12 +391,12 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                if (!SecurityMatchesPrefix(sec, prefix))
+                if (sec.Expiration != DateTime.MinValue && sec.Expiration.Date < now.Date)
                 {
                     continue;
                 }
 
-                if (sec.Expiration != DateTime.MinValue && sec.Expiration.Date < now.Date)
+                if (!SecurityMatchesExactFuturesRoot(sec, prefix))
                 {
                     continue;
                 }
@@ -310,16 +404,186 @@ namespace OsEngine.Robots.Custom
                 matched.Add(sec);
             }
 
-            if (matched.Count < 2)
+            return TrySelectNearAndFarByExpiration(matched, out near, out far, out error);
+        }
+
+        /// <summary>
+        /// Ближний контракт — минимальная дата экспирации по префиксу; дальний — та же серия, следующая экспирация позже.
+        /// </summary>
+        private static bool TrySelectNearAndFarByExpiration(
+            List<Security> matched,
+            out Security near,
+            out Security far,
+            out string error)
+        {
+            near = null;
+            far = null;
+            error = string.Empty;
+
+            if (matched == null || matched.Count < 2)
             {
-                error = "найдено " + matched.Count;
+                error = "найдено " + (matched?.Count ?? 0)
+                    + (matched != null && matched.Count > 0
+                        ? " [" + FormatMatchedFuturesTickers(matched) + " → корни: "
+                          + FormatMatchedFuturesRoots(matched) + "]"
+                        : string.Empty);
                 return false;
             }
 
             matched.Sort(CompareByExpiration);
             near = matched[0];
-            far = matched[1];
-            return true;
+            DateTime nearExp = GetExpirationSortKey(near);
+
+            for (int i = 1; i < matched.Count; i++)
+            {
+                Security candidate = matched[i];
+                DateTime candidateExp = GetExpirationSortKey(candidate);
+
+                if (candidateExp > nearExp)
+                {
+                    far = candidate;
+                    return true;
+                }
+            }
+
+            error = "нет второй серии с экспирацией позже "
+                + FormatSecurityExpiration(near)
+                + " (в списке: " + FormatMatchedFuturesWithExpiration(matched) + ")";
+            return false;
+        }
+
+        private static DateTime GetExpirationSortKey(Security sec)
+        {
+            if (sec == null || sec.Expiration == DateTime.MinValue)
+            {
+                return DateTime.MaxValue;
+            }
+
+            return sec.Expiration;
+        }
+
+        private static string FormatSecurityExpiration(Security sec)
+        {
+            if (sec == null)
+            {
+                return "?";
+            }
+
+            if (sec.Expiration == DateTime.MinValue)
+            {
+                return sec.Name + " (без даты экспирации)";
+            }
+
+            return sec.Name + " (" + sec.Expiration.ToString("yyyy-MM-dd") + ")";
+        }
+
+        private static string FormatMatchedFuturesWithExpiration(List<Security> matched)
+        {
+            if (matched == null || matched.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var parts = new List<string>(matched.Count);
+            for (int i = 0; i < matched.Count; i++)
+            {
+                parts.Add(FormatSecurityExpiration(matched[i]));
+            }
+
+            return string.Join(", ", parts);
+        }
+
+        private static bool SecurityMatchesExactFuturesRoot(Security sec, string prefix)
+        {
+            string root = GetFuturesLetterRoot(sec);
+            if (root.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (string expanded in ExpandPrefixAliases(prefix))
+            {
+                if (RootMatchesExpandedPrefix(root, expanded))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Корень только из SECID (Name / NameId). NameFull «Si-6.26» у S0M6 (SOFL) давал ложный корень Si.
+        /// </summary>
+        private static string GetFuturesLetterRoot(Security sec)
+        {
+            if (sec == null)
+            {
+                return string.Empty;
+            }
+
+            string[] candidates = { sec.Name, sec.NameId };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (string.IsNullOrWhiteSpace(candidates[i]))
+                {
+                    continue;
+                }
+
+                string tester = GetTesterTicker(candidates[i]);
+                string ticker = string.IsNullOrEmpty(tester)
+                    ? NormalizeTicker(candidates[i])
+                    : tester;
+                string root = ExtractLetterRoot(ticker);
+
+                if (root.Length > 0)
+                {
+                    return root;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string FormatMatchedFuturesRoots(List<Security> matched)
+        {
+            if (matched == null || matched.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var parts = new List<string>(matched.Count);
+            for (int i = 0; i < matched.Count; i++)
+            {
+                Security sec = matched[i];
+                if (sec != null)
+                {
+                    parts.Add((sec.Name ?? "?") + "→" + GetFuturesLetterRoot(sec));
+                }
+            }
+
+            return string.Join(", ", parts);
+        }
+
+        private static string FormatMatchedFuturesTickers(List<Security> matched)
+        {
+            if (matched == null || matched.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var names = new List<string>(matched.Count);
+            for (int i = 0; i < matched.Count; i++)
+            {
+                Security sec = matched[i];
+                if (sec != null && !string.IsNullOrWhiteSpace(sec.Name))
+                {
+                    names.Add(sec.Name);
+                }
+            }
+
+            return string.Join(", ", names);
         }
 
         private static int CompareByExpiration(Security a, Security b)
@@ -330,9 +594,42 @@ namespace OsEngine.Robots.Custom
             return cmp != 0 ? cmp : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
         }
 
+        private void AddActivatedSecurityIfNew(Security sec)
+        {
+            if (sec == null || string.IsNullOrWhiteSpace(sec.Name) || _screenerTab.SecuritiesNames == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab.SecuritiesNames.Count; i++)
+            {
+                ActivatedSecurity existing = _screenerTab.SecuritiesNames[i];
+                if (existing != null
+                    && string.Equals(existing.SecurityName, sec.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing.IsOn = true;
+                    return;
+                }
+            }
+
+            _screenerTab.SecuritiesNames.Add(new ActivatedSecurity
+            {
+                SecurityName = sec.Name,
+                SecurityClass = GetSecurityClassName(sec),
+                IsOn = true
+            });
+        }
+
         private void ClearScreenerSecuritiesAndTabs()
         {
-            _screenerTab.SecuritiesNames?.Clear();
+            if (_screenerTab.SecuritiesNames == null)
+            {
+                _screenerTab.SecuritiesNames = new List<ActivatedSecurity>();
+            }
+            else
+            {
+                _screenerTab.SecuritiesNames.Clear();
+            }
 
             if (_screenerTab.Tabs != null)
             {
@@ -365,6 +662,7 @@ namespace OsEngine.Robots.Custom
             _screenerTab.TryReLoadTabs();
 
             EnsureExistingScreenerTabsCandleInfrastructure();
+            EnsureScreenerEventsOn();
             _screenerTab.SaveSettings();
             TryInvokeScreenerRePaintSecuritiesGrid();
         }
@@ -597,7 +895,7 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                decimal volume = GetVolume(nearTab);
+                decimal volume = GetTradeVolume(nearTab);
                 if (volume <= 0m)
                 {
                     continue;
@@ -616,11 +914,12 @@ namespace OsEngine.Robots.Custom
             }
 
             SendNewLogMessage(
-                NameStrategyUniq + ": «Купить пару» — открыто пар: " + opened + " (ближний лонг, дальний шорт).",
+                NameStrategyUniq + ": «Купить пару» — открыто пар: " + opened
+                + " (ближний лонг, дальний шорт, по " + _positionsPerSide.ValueInt + " в сторону).",
                 LogMessageType.System);
         }
 
-        private void ExecuteAdjustPairs()
+        private void ArmAdjustPairsWaiting()
         {
             if (_hedgePairs.Count == 0)
             {
@@ -629,15 +928,120 @@ namespace OsEngine.Robots.Custom
 
             if (_hedgePairs.Count == 0)
             {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": нет пар — сначала «Подобрать фьючерсы» и «Купить пару».",
+                    LogMessageType.Error);
                 return;
             }
 
+            EnsureScreenerEventsOn();
+            EnsureScreenerCandleInfrastructure();
+
+            _adjustPairsPending = true;
+            _adjustProfitByPairPrefix.Clear();
+            _adjustCompletedPairPrefixes.Clear();
+
+            SendNewLogMessage(
+                NameStrategyUniq + ": «Скорректировать пару (Trail)» — ожидание локального максимума профита. "
+                + "Сделки по паре выполнятся, когда на закрытии свечи ноги в плюсе профит станет ниже, чем на пред. свече "
+                + "(пока текущий ≥ предыдущего — ждём; первая закрытая свеча только фиксирует базу).",
+                LogMessageType.System);
+        }
+
+        private void ExecuteAdjustAllPairsImmediately()
+        {
+            if (_hedgePairs.Count == 0)
+            {
+                RebuildPairsFromScreenerSecurities();
+            }
+
+            if (_hedgePairs.Count == 0)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": нет пар — сначала «Подобрать фьючерсы» и «Купить пару».",
+                    LogMessageType.Error);
+                return;
+            }
+
+            string botType = GetNameStrategyType();
             int adjusted = 0;
+            int skipped = 0;
+
+            for (int i = 0; i < _hedgePairs.Count; i++)
+            {
+                HedgePairState pair = _hedgePairs[i];
+
+                if (string.IsNullOrWhiteSpace(pair.Prefix))
+                {
+                    continue;
+                }
+
+                BotTabSimple nearTab = FindTabBySecurity(pair.NearSecurityName);
+                BotTabSimple farTab = FindTabBySecurity(pair.FarSecurityName);
+
+                if (nearTab == null || farTab == null)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                Position nearPos = GetFirstOpenPosition(nearTab, botType);
+                Position farPos = GetFirstOpenPosition(farTab, botType);
+
+                if (nearPos == null || farPos == null)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                if (!TryResolveProfitAndLossLegs(
+                        nearTab, farTab, nearPos, farPos,
+                        out BotTabSimple profitTab,
+                        out Position profitPos,
+                        out BotTabSimple lossTab,
+                        out Position lossPos))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                if (ExecuteAdjustForPair(pair, profitTab, profitPos, lossTab, lossPos))
+                {
+                    _adjustCompletedPairPrefixes.Add(pair.Prefix);
+                    adjusted++;
+                }
+            }
+
+            if (!HasOpenPairsWaitingForAdjust())
+            {
+                _adjustPairsPending = false;
+            }
+
+            SendNewLogMessage(
+                NameStrategyUniq + ": «Скорректировать пару (сразу)» — скорректировано пар: " + adjusted
+                + (skipped > 0 ? ", пропущено (нет обеих ног или вкладок): " + skipped : string.Empty) + ".",
+                LogMessageType.System);
+        }
+
+        private void TryProcessAdjustPairsOnCandle(BotTabSimple tab)
+        {
+            if (_hedgePairs.Count == 0)
+            {
+                RebuildPairsFromScreenerSecurities();
+            }
+
             string botType = GetNameStrategyType();
 
             for (int i = 0; i < _hedgePairs.Count; i++)
             {
                 HedgePairState pair = _hedgePairs[i];
+
+                if (string.IsNullOrWhiteSpace(pair.Prefix)
+                    || _adjustCompletedPairPrefixes.Contains(pair.Prefix))
+                {
+                    continue;
+                }
+
                 BotTabSimple nearTab = FindTabBySecurity(pair.NearSecurityName);
                 BotTabSimple farTab = FindTabBySecurity(pair.FarSecurityName);
 
@@ -651,56 +1055,221 @@ namespace OsEngine.Robots.Custom
 
                 if (nearPos == null && farPos == null)
                 {
+                    _adjustCompletedPairPrefixes.Add(pair.Prefix);
                     continue;
                 }
 
                 if (nearPos == null || farPos == null)
                 {
-                    SendNewLogMessage(
-                        NameStrategyUniq + " [" + pair.Prefix + "]: открыта одна нога — используйте «Продать всё».",
-                        LogMessageType.Error);
                     continue;
                 }
 
-                BotTabSimple profitTab;
-                BotTabSimple lossTab;
-                Position profitPos;
-                Position lossPos;
-
-                if (nearPos.ProfitPortfolioAbs >= farPos.ProfitPortfolioAbs)
+                if (!TryResolveProfitAndLossLegs(
+                        nearTab, farTab, nearPos, farPos,
+                        out BotTabSimple profitTab,
+                        out Position profitPos,
+                        out BotTabSimple lossTab,
+                        out Position lossPos))
                 {
-                    profitTab = nearTab;
-                    lossTab = farTab;
-                    profitPos = nearPos;
-                    lossPos = farPos;
-                }
-                else
-                {
-                    profitTab = farTab;
-                    lossTab = nearTab;
-                    profitPos = farPos;
-                    lossPos = nearPos;
+                    continue;
                 }
 
-                CloseOpenPosition(profitTab, profitPos, "SmartHedgeCloseProfit");
-                CloseOpenPosition(lossTab, lossPos, "SmartHedgeCloseLoss");
-
-                BotTabSimple secondTab = farTab;
-                decimal baseVol = pair.PairVolume > 0m ? pair.PairVolume : GetVolume(secondTab);
-                decimal addVol = RoundVolume(secondTab, baseVol / 3m);
-
-                if (addVol > 0m)
+                if (!ReferenceEquals(tab, profitTab))
                 {
-                    secondTab.BuyAtMarket(addVol, "SmartHedgeAddThird");
+                    continue;
                 }
 
-                adjusted++;
+                decimal currentProfit = profitPos.ProfitPortfolioAbs;
+
+                if (!_adjustProfitByPairPrefix.TryGetValue(pair.Prefix, out decimal previousProfit))
+                {
+                    _adjustProfitByPairPrefix[pair.Prefix] = currentProfit;
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + pair.Prefix + "]: Trail — база профита "
+                        + currentProfit.ToString("0.########") + " на «"
+                        + (profitTab.Connector?.SecurityName ?? "?") + "», ждём снижения на след. свечах.",
+                        LogMessageType.System);
+                    continue;
+                }
+
+                _adjustProfitByPairPrefix[pair.Prefix] = currentProfit;
+
+                if (currentProfit >= previousProfit)
+                {
+                    continue;
+                }
+
+                if (ExecuteAdjustForPair(pair, profitTab, profitPos, lossTab, lossPos))
+                {
+                    _adjustCompletedPairPrefixes.Add(pair.Prefix);
+                }
             }
 
+            if (!HasOpenPairsWaitingForAdjust())
+            {
+                _adjustPairsPending = false;
+            }
+        }
+
+        /// <summary>
+        /// Профитная нога — с большим P&amp;L (ProfitPortfolioAbs), убыточная — с меньшим.
+        /// </summary>
+        private static bool TryResolveProfitAndLossLegs(
+            BotTabSimple nearTab,
+            BotTabSimple farTab,
+            Position nearPos,
+            Position farPos,
+            out BotTabSimple profitTab,
+            out Position profitPos,
+            out BotTabSimple lossTab,
+            out Position lossPos)
+        {
+            profitTab = null;
+            profitPos = null;
+            lossTab = null;
+            lossPos = null;
+
+            if (nearTab == null || farTab == null || nearPos == null || farPos == null)
+            {
+                return false;
+            }
+
+            decimal nearProfit = nearPos.ProfitPortfolioAbs;
+            decimal farProfit = farPos.ProfitPortfolioAbs;
+
+            if (nearProfit > farProfit)
+            {
+                profitTab = nearTab;
+                profitPos = nearPos;
+                lossTab = farTab;
+                lossPos = farPos;
+            }
+            else if (farProfit > nearProfit)
+            {
+                profitTab = farTab;
+                profitPos = farPos;
+                lossTab = nearTab;
+                lossPos = nearPos;
+            }
+            else
+            {
+                profitTab = nearTab;
+                profitPos = nearPos;
+                lossTab = farTab;
+                lossPos = farPos;
+            }
+
+            return profitTab != null && lossTab != null && profitPos != null && lossPos != null;
+        }
+
+        private bool HasOpenPairsWaitingForAdjust()
+        {
+            string botType = GetNameStrategyType();
+
+            for (int i = 0; i < _hedgePairs.Count; i++)
+            {
+                HedgePairState pair = _hedgePairs[i];
+
+                if (string.IsNullOrWhiteSpace(pair.Prefix)
+                    || _adjustCompletedPairPrefixes.Contains(pair.Prefix))
+                {
+                    continue;
+                }
+
+                BotTabSimple nearTab = FindTabBySecurity(pair.NearSecurityName);
+                BotTabSimple farTab = FindTabBySecurity(pair.FarSecurityName);
+
+                if (nearTab == null || farTab == null)
+                {
+                    continue;
+                }
+
+                Position nearPos = GetFirstOpenPosition(nearTab, botType);
+                Position farPos = GetFirstOpenPosition(farTab, botType);
+
+                if (nearPos != null && farPos != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool ExecuteAdjustForPair(
+            HedgePairState pair,
+            BotTabSimple profitTab,
+            Position profitPos,
+            BotTabSimple lossTab,
+            Position lossPos)
+        {
+            string botType = GetNameStrategyType();
+            decimal sideVol = pair.PairVolume > 0m ? pair.PairVolume : GetTradeVolume(lossTab);
+            decimal profitBefore = profitPos.ProfitPortfolioAbs;
+            decimal lossBefore = lossPos.ProfitPortfolioAbs;
+            decimal lossOpenBefore = lossPos.OpenVolume;
+
+            CloseAllBotOpenPositionsOnTab(profitTab, botType, "SmartHedgeCloseProfit");
+
+            decimal addVol = GetAddVolumeForLossLeg(lossTab, sideVol);
+
+            if (addVol > 0m)
+            {
+                AddToOpenPosition(lossTab, lossPos, addVol, "SmartHedgeAddToLoss");
+            }
+
+            string profitName = profitTab.Connector?.SecurityName ?? "?";
+            string lossName = lossTab.Connector?.SecurityName ?? "?";
+            string lossSide = lossPos.Direction == Side.Buy ? "лонг" : "шорт";
             SendNewLogMessage(
-                NameStrategyUniq + ": «Скорректировать пару» — пар: " + adjusted
-                + " (закрыты обе ноги, на дальний контракт докупка 1/3).",
+                NameStrategyUniq + " [" + pair.Prefix + "]: коррекция — закрыта профитная «" + profitName
+                + "» (P/L " + profitBefore.ToString("0.########") + "), на убыточную «" + lossName + "» "
+                + lossSide + " +" + addVol.ToString("0.########") + " (P/L " + lossBefore.ToString("0.########")
+                + ", было " + lossOpenBefore.ToString("0.########") + " контр., ожидается "
+                + (lossOpenBefore + addVol).ToString("0.########") + ").",
                 LogMessageType.System);
+            return true;
+        }
+
+        private static void AddToOpenPosition(BotTabSimple tab, Position pos, decimal volume, string signal)
+        {
+            if (tab == null || pos == null || volume <= 0m || pos.State != PositionStateType.Open)
+            {
+                return;
+            }
+
+            if (pos.Direction == Side.Buy)
+            {
+                tab.BuyAtMarketToPosition(pos, volume, signal);
+            }
+            else
+            {
+                tab.SellAtMarketToPosition(pos, volume, signal);
+            }
+        }
+
+        private void CloseAllBotOpenPositionsOnTab(BotTabSimple tab, string botType, string signal)
+        {
+            if (tab?.PositionsOpenAll == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < tab.PositionsOpenAll.Count; i++)
+            {
+                Position pos = tab.PositionsOpenAll[i];
+                if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume <= 0m)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
+                {
+                    continue;
+                }
+
+                tab.CloseAtMarket(pos, pos.OpenVolume, signal);
+            }
         }
 
         private void CloseAllScreenerPositions(string signal)
@@ -736,16 +1305,6 @@ namespace OsEngine.Robots.Custom
                     tab.CloseAtMarket(pos, pos.OpenVolume, signal);
                 }
             }
-        }
-
-        private static void CloseOpenPosition(BotTabSimple tab, Position pos, string signal)
-        {
-            if (tab == null || pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0m)
-            {
-                return;
-            }
-
-            tab.CloseAtMarket(pos, pos.OpenVolume, signal);
         }
 
         private static Position GetFirstOpenPosition(BotTabSimple tab, string botType)
@@ -808,6 +1367,11 @@ namespace OsEngine.Robots.Custom
             for (int p = 0; p < prefixes.Count; p++)
             {
                 string prefix = prefixes[p];
+                if (prefix.Length < MinPrefixLengthForStartsWithMatch)
+                {
+                    continue;
+                }
+
                 List<Security> matched = new List<Security>();
 
                 for (int i = 0; i < _screenerTab.SecuritiesNames.Count; i++)
@@ -819,23 +1383,22 @@ namespace OsEngine.Robots.Custom
                     }
 
                     Security sec = FindSecurityByName(server, act.SecurityName);
-                    if (sec != null && SecurityMatchesPrefix(sec, prefix))
+                    if (sec != null && SecurityMatchesExactFuturesRoot(sec, prefix))
                     {
                         matched.Add(sec);
                     }
                 }
 
-                if (matched.Count < 2)
+                if (!TrySelectNearAndFarByExpiration(matched, out Security near, out Security far, out _))
                 {
                     continue;
                 }
 
-                matched.Sort(CompareByExpiration);
                 _hedgePairs.Add(new HedgePairState
                 {
                     Prefix = prefix,
-                    NearSecurityName = matched[0].Name,
-                    FarSecurityName = matched[1].Name
+                    NearSecurityName = near.Name,
+                    FarSecurityName = far.Name
                 });
             }
         }
@@ -859,7 +1422,40 @@ namespace OsEngine.Robots.Custom
             return null;
         }
 
-        private decimal GetVolume(BotTabSimple tab)
+        /// <summary>Объём одной ноги пары (кнопка «Купить пару»).</summary>
+        private decimal GetTradeVolume(BotTabSimple tab)
+        {
+            if (tab == null)
+            {
+                return 0m;
+            }
+
+            if (_volumeType.ValueString == "Contracts")
+            {
+                return RoundVolume(tab, _positionsPerSide.ValueInt);
+            }
+
+            return GetVolumeByMoneySettings(tab);
+        }
+
+        /// <summary>Докупка на убыточную ногу: 1 контракт при объёме пары 3 (1/3 от ноги).</summary>
+        private decimal GetAddVolumeForLossLeg(BotTabSimple tab, decimal sideVolume)
+        {
+            if (tab == null || sideVolume <= 0m)
+            {
+                return RoundVolume(tab, 1m);
+            }
+
+            decimal raw = sideVolume / 3m;
+            if (raw < 1m)
+            {
+                raw = 1m;
+            }
+
+            return RoundVolume(tab, raw);
+        }
+
+        private decimal GetVolumeByMoneySettings(BotTabSimple tab)
         {
             if (tab == null)
             {
@@ -911,6 +1507,11 @@ namespace OsEngine.Robots.Custom
 
             decimal money = portfolioValue * (_volume.ValueDecimal / 100m);
             return RoundVolume(tab, money / tab.PriceBestAsk / tab.Security.Lot);
+        }
+
+        private decimal GetVolume(BotTabSimple tab)
+        {
+            return GetTradeVolume(tab);
         }
 
         private static decimal RoundVolume(BotTabSimple tab, decimal volume)
@@ -1145,31 +1746,35 @@ namespace OsEngine.Robots.Custom
 
         private static bool SecurityMatchesPrefix(Security sec, string prefix)
         {
-            HashSet<string> tickers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string[] candidates = { sec.Name, sec.NameFull, sec.NameId };
+            return SecurityMatchesExactFuturesRoot(sec, prefix);
+        }
 
-            for (int c = 0; c < candidates.Length; c++)
+        private static bool RootMatchesExpandedPrefix(string root, string expandedPrefix)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrWhiteSpace(expandedPrefix))
             {
-                if (string.IsNullOrWhiteSpace(candidates[c]))
-                {
-                    continue;
-                }
-
-                string tester = GetTesterTicker(candidates[c]);
-                if (!string.IsNullOrEmpty(tester))
-                {
-                    tickers.Add(tester);
-                }
-
-                tickers.Add(NormalizeTicker(candidates[c]));
+                return false;
             }
 
-            foreach (string ticker in tickers)
+            expandedPrefix = expandedPrefix.Trim();
+
+            if (string.Equals(root, expandedPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                if (TickerMatchesPrefix(ticker, prefix))
-                {
-                    return true;
-                }
+                return true;
+            }
+
+            // Доллар Si: только корень «Si», без SILV/S0/SOFL (не StartsWith).
+            if (string.Equals(expandedPrefix, "Si", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            // BR → BRM и т.п.: корень длиннее префикса, та же серия FORTS.
+            if (expandedPrefix.Length >= MinPrefixLengthForStartsWithMatch
+                && root.Length > expandedPrefix.Length
+                && root.StartsWith(expandedPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
             }
 
             return false;
@@ -1177,7 +1782,13 @@ namespace OsEngine.Robots.Custom
 
         private static bool TickerMatchesPrefix(string ticker, string userPrefix)
         {
-            string root = ExtractLetterRoot(ticker);
+            string norm = NormalizeTicker(ticker);
+            if (string.IsNullOrEmpty(norm))
+            {
+                return false;
+            }
+
+            string root = ExtractLetterRoot(norm);
             if (root.Length == 0)
             {
                 return false;
@@ -1185,7 +1796,13 @@ namespace OsEngine.Robots.Custom
 
             foreach (string expanded in ExpandPrefixAliases(userPrefix))
             {
-                if (RootMatchesPrefix(root, expanded))
+                if (RootMatchesExpandedPrefix(root, expanded))
+                {
+                    return true;
+                }
+
+                if (expanded.Length >= 6
+                    && norm.StartsWith(expanded, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
@@ -1208,13 +1825,6 @@ namespace OsEngine.Robots.Custom
                     }
                 }
             }
-        }
-
-        private static bool RootMatchesPrefix(string root, string prefix)
-        {
-            return string.Equals(root, prefix, StringComparison.OrdinalIgnoreCase)
-                || (prefix.Length <= root.Length && root.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                || (root.Length <= prefix.Length && prefix.StartsWith(root, StringComparison.OrdinalIgnoreCase));
         }
 
         private static string ExtractLetterRoot(string ticker)

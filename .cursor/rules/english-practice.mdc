@@ -1,0 +1,27 @@
+---
+description: English corrections when the user writes in English
+alwaysApply: true
+---
+
+# English practice (Sergey)
+
+When the user writes **in English** (typed or via microphone / speech-to-text):
+
+1. Answer their question or task normally first.
+2. End the reply with a short **English note** section:
+   - **You wrote:** (quote or paraphrase their message)
+   - **More natural:** (corrected version)
+   - **Fixes:** brief bullet list (spelling, grammar, word choice)
+
+When the user writes **in Russian**, do **not** add English corrections unless they ask.
+
+## Patterns to remember (common for this user)
+
+- **tell + person:** *I tell you* — not *I tell to you*
+- **say + to + person:** *I said something to you*
+- **talk/write + to + person:** *I talk to you*, *I write to you* (chat text, including mic → text)
+- **do it this way** — include *it*: *do it this way*, not *do this way*
+- **whenever** — often better than *everything when* for recurring habits
+- Adjective vs adverb: *more natural* (not *more naturally*) before a noun phrase
+
+Keep the English note concise. Do not let it replace the main answer.
