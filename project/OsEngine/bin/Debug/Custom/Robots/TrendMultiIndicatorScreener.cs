@@ -59,6 +59,7 @@ If Volume indicator is enabled, current candle volume must be at least (previous
 
 Exit/Reverse:
 If a position exists and opposite signal appears, close and (if allowed) open opposite.
+Order execution: «Тип заявок (вход и выход)» — Лимит (default) or Рынок for entries, exits, reverse, schedule, portfolio insurance, stop-all.
 
 Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
@@ -133,6 +134,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _stopRobotAndSellAllButton;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
+        private StrategyParameterString _orderExecution;
         private StrategyParameterBool _useRandomPriceShift;
         private StrategyParameterDecimal _randomPriceShiftPercent;
         private readonly Random _randomPriceShiftRng = new Random();
@@ -423,6 +425,10 @@ namespace OsEngine.Robots.Custom
 
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
+            _orderExecution = CreateParameter(
+                "Тип заявок (вход и выход)",
+                "Лимит",
+                new[] { "Лимит", "Рынок" });
             _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
 
             const string samoindikatsiyaTab = "самоиндикация";
@@ -728,19 +734,20 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void ExecuteStopRobotAndSellAll()
         {
-            CloseAllBotPositionsAtMarket();
+            CloseAllBotPositions();
             _positionTrailingPeaks.Clear();
             _portfolioEquityPeak = 0m;
             _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
             _regime.ValueString = "Off";
 
             string full = NameStrategyUniq
-                + ": «Остановить робота и продать всё» — позиции закрыты по рынку, Regime=Off.";
+                + ": «Остановить робота и продать всё» — позиции закрыты ("
+                + _orderExecution.ValueString + "), Regime=Off.";
             SendNewLogMessage(full, LogMessageType.System);
             SendNewLogMessage(full, LogMessageType.User);
         }
 
-        private void CloseAllBotPositionsAtMarket()
+        private void CloseAllBotPositions()
         {
             if (_screenerTab?.Tabs == null)
             {
@@ -770,8 +777,128 @@ namespace OsEngine.Robots.Custom
                         continue;
                     }
 
-                    t.CloseAtMarket(pos, pos.OpenVolume);
+                    decimal slip = _slippage.ValueInt * (t.Security?.PriceStep ?? 0m);
+                    ExecuteClosePosition(t, pos, pos.OpenVolume, GetCloseLimitPrice(t, pos, slip));
                 }
+            }
+        }
+
+        private bool UseMarketOrderExecution()
+        {
+            return string.Equals(_orderExecution.ValueString, "Рынок", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private decimal GetOpenLongLimitPrice(BotTabSimple tab, decimal close, decimal slip)
+        {
+            return ApplyRandomPriceShift(close + slip, tab);
+        }
+
+        private decimal GetOpenShortLimitPrice(BotTabSimple tab, decimal close, decimal slip)
+        {
+            return ApplyRandomPriceShift(close - slip, tab);
+        }
+
+        private decimal GetCloseLimitPrice(BotTabSimple tab, Position pos, decimal slip)
+        {
+            decimal close = tab.CandlesAll != null && tab.CandlesAll.Count > 0
+                ? tab.CandlesAll[tab.CandlesAll.Count - 1].Close
+                : (pos.Direction == Side.Buy ? tab.PriceBestBid : tab.PriceBestAsk);
+
+            if (pos.Direction == Side.Buy)
+            {
+                return ApplyRandomPriceShift(close - slip, tab);
+            }
+
+            return ApplyRandomPriceShift(close + slip, tab);
+        }
+
+        private void ExecuteBuyOpen(BotTabSimple tab, decimal volume, decimal limitPrice, string signal = null)
+        {
+            if (UseMarketOrderExecution())
+            {
+                if (string.IsNullOrEmpty(signal))
+                {
+                    tab.BuyAtMarket(volume);
+                }
+                else
+                {
+                    tab.BuyAtMarket(volume, signal);
+                }
+
+                return;
+            }
+
+            decimal price = limitPrice;
+            if (string.IsNullOrEmpty(signal))
+            {
+                tab.BuyAtLimit(volume, price);
+            }
+            else
+            {
+                tab.BuyAtLimit(volume, price, signal);
+            }
+        }
+
+        private void ExecuteSellOpen(BotTabSimple tab, decimal volume, decimal limitPrice, string signal = null)
+        {
+            if (UseMarketOrderExecution())
+            {
+                if (string.IsNullOrEmpty(signal))
+                {
+                    tab.SellAtMarket(volume);
+                }
+                else
+                {
+                    tab.SellAtMarket(volume, signal);
+                }
+
+                return;
+            }
+
+            decimal price = limitPrice;
+            if (string.IsNullOrEmpty(signal))
+            {
+                tab.SellAtLimit(volume, price);
+            }
+            else
+            {
+                tab.SellAtLimit(volume, price, signal);
+            }
+        }
+
+        private void ExecuteClosePosition(
+            BotTabSimple tab,
+            Position pos,
+            decimal volume,
+            decimal limitPrice,
+            string signal = null)
+        {
+            if (pos == null || volume <= 0m)
+            {
+                return;
+            }
+
+            if (UseMarketOrderExecution())
+            {
+                if (string.IsNullOrEmpty(signal))
+                {
+                    tab.CloseAtMarket(pos, volume);
+                }
+                else
+                {
+                    tab.CloseAtMarket(pos, volume, signal);
+                }
+
+                return;
+            }
+
+            if (string.IsNullOrEmpty(signal))
+            {
+                tab.CloseAtLimit(pos, limitPrice, volume);
+            }
+            else
+            {
+                tab.CloseAtLimit(pos, limitPrice, volume, signal);
             }
         }
 
@@ -3811,7 +3938,7 @@ namespace OsEngine.Robots.Custom
             if (decisionTime != _lastScheduleEndCloseDecisionTime)
             {
                 _lastScheduleEndCloseDecisionTime = decisionTime;
-                _screenerTab.CloseAllPositionAtMarket();
+                CloseAllBotPositions();
                 _positionTrailingPeaks.Clear();
 
                 SendNewLogMessage(
@@ -3981,7 +4108,7 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            _screenerTab.CloseAllPositionAtMarket();
+            CloseAllBotPositions();
             _positionTrailingPeaks.Clear();
 
             SendNewLogMessage(
@@ -4023,7 +4150,7 @@ namespace OsEngine.Robots.Custom
             string key = GetPositionTrailingKey(tab, position);
             _positionTrailingPeaks[key] = entry;
 
-            if (!IsTesterLikeProgram(tab))
+            if (!IsTesterLikeProgram(tab) && UseMarketOrderExecution())
             {
                 decimal stop = ComputeTrailingStopFromPeak(position.Direction, entry, percent);
                 if (stop > 0m)
@@ -4078,21 +4205,30 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                if (IsTesterLikeProgram(tab))
-                {
-                    bool breached = pos.Direction == Side.Buy
-                        ? candle.Low <= stop
-                        : candle.High >= stop;
+                bool breached = pos.Direction == Side.Buy
+                    ? candle.Low <= stop
+                    : candle.High >= stop;
 
-                    if (breached)
-                    {
-                        tab.CloseAtMarket(pos, pos.OpenVolume, SignalPositionTrailingStop);
-                    }
-                }
-                else
+                if (!breached)
                 {
-                    tab.CloseAtTrailingStopMarket(pos, stop, SignalPositionTrailingStop);
+                    continue;
                 }
+
+                if (UseMarketOrderExecution())
+                {
+                    if (IsTesterLikeProgram(tab))
+                    {
+                        ExecuteClosePosition(tab, pos, pos.OpenVolume, 0m, SignalPositionTrailingStop);
+                    }
+
+                    continue;
+                }
+
+                decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
+                decimal closePrice = pos.Direction == Side.Buy
+                    ? ApplyRandomPriceShift(stop - slip, tab)
+                    : ApplyRandomPriceShift(stop + slip, tab);
+                ExecuteClosePosition(tab, pos, pos.OpenVolume, closePrice, SignalPositionTrailingStop);
             }
 
             PrunePositionTrailingPeaksForTab(tab, activeKeys);
@@ -6332,20 +6468,20 @@ namespace OsEngine.Robots.Custom
 
             if (bull && _regime.ValueString != "OnlyShort")
             {
-                tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab), openSignal);
+                ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip), openSignal);
             }
             else if (bear && _regime.ValueString != "OnlyLong")
             {
-                tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab), openSignal);
+                ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip), openSignal);
             }
 #else
             if (bull && _regime.ValueString != "OnlyShort")
             {
-                tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab));
+                ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip));
             }
             else if (bear && _regime.ValueString != "OnlyLong")
             {
-                tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab));
+                ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip));
             }
 #endif
         }
@@ -6367,54 +6503,62 @@ namespace OsEngine.Robots.Custom
 
             if (pos.Direction == Side.Buy && bear)
             {
-                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close - slip, tab), pos.OpenVolume);
+                ExecuteCloseOnSignalCandle(pos, tab, close, slip);
 
                 if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab), openSignal);
+                        ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip), openSignal);
                     }
                 }
             }
             else if (pos.Direction == Side.Sell && bull)
             {
-                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close + slip, tab), pos.OpenVolume);
+                ExecuteCloseOnSignalCandle(pos, tab, close, slip);
 
                 if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab), openSignal);
+                        ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip), openSignal);
                     }
                 }
             }
 #else
             if (pos.Direction == Side.Buy && bear)
             {
-                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close - slip, tab), pos.OpenVolume);
+                ExecuteCloseOnSignalCandle(pos, tab, close, slip);
 
                 if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.SellAtLimit(GetVolume(tab), ApplyRandomPriceShift(close - slip, tab));
+                        ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip));
                     }
                 }
             }
             else if (pos.Direction == Side.Sell && bull)
             {
-                tab.CloseAtLimit(pos, ApplyRandomPriceShift(close + slip, tab), pos.OpenVolume);
+                ExecuteCloseOnSignalCandle(pos, tab, close, slip);
 
                 if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
                 {
                     if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
                     {
-                        tab.BuyAtLimit(GetVolume(tab), ApplyRandomPriceShift(close + slip, tab));
+                        ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip));
                     }
                 }
             }
 #endif
+        }
+
+        private void ExecuteCloseOnSignalCandle(Position pos, BotTabSimple tab, decimal close, decimal slip)
+        {
+            decimal limitPrice = pos.Direction == Side.Buy
+                ? ApplyRandomPriceShift(close - slip, tab)
+                : ApplyRandomPriceShift(close + slip, tab);
+            ExecuteClosePosition(tab, pos, pos.OpenVolume, limitPrice);
         }
 
         /// <summary>

@@ -735,9 +735,14 @@ namespace OsEngine.Entity
                 else if (_parameters[i].Type == StrategyParameterType.Button)
                 {
                     DataGridViewButtonCell cell = new DataGridViewButtonCell();
+                    StrategyParameterButton param = (StrategyParameterButton)_parameters[i];
                     row.Cells[0].Value = "";
                     cell.Value = _parameters[i].Name;
-                    // StrategyParameterButton param = (StrategyParameterButton)_parameters[i];
+                    cell.ReadOnly = !param.IsEnabled;
+                    if (!param.IsEnabled)
+                    {
+                        cell.Style.ForeColor = System.Drawing.Color.Gray;
+                    }
 
                     row.Cells.Add(cell);
                 }
@@ -830,6 +835,11 @@ namespace OsEngine.Entity
             try
             {
                 StrategyParameterButton param = (StrategyParameterButton)_parameters[index];
+                if (!param.IsEnabled)
+                {
+                    return;
+                }
+
                 param.Click();
             }
             catch (Exception ex)

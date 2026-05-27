@@ -1381,6 +1381,19 @@ namespace OsEngine.Entity
         /// Event: click on button
         /// </summary>
         public event Action UserClickOnButtonEvent;
+
+        /// <summary>
+        /// When false, parameter UI disables the button (no click).
+        /// </summary>
+        public bool IsEnabled { get; private set; } = true;
+
+        /// <summary>
+        /// Enable or disable the button in the parameters table.
+        /// </summary>
+        public void SetEnabled(bool enabled)
+        {
+            IsEnabled = enabled;
+        }
     }
 
     /// <summary>

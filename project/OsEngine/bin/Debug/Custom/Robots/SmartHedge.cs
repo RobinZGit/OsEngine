@@ -73,6 +73,8 @@ namespace OsEngine.Robots.Custom
         private readonly HashSet<string> _adjustCompletedPairPrefixes =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        private bool _buyPairButtonEnabledState;
+
         public SmartHedge(string name, StartProgram startProgram)
             : base(name, startProgram)
         {
@@ -80,6 +82,7 @@ namespace OsEngine.Robots.Custom
             _screenerTab = TabsScreener[0];
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
             _screenerTab.NewTabCreateEvent += ScreenerTab_NewTabCreateEvent;
+            _screenerTab.NewTickEvent += ScreenerTab_NewTickEvent;
             EnsureScreenerEventsOn();
             RemoveCorruptScreenerTabSetFileIfNeeded();
 
@@ -98,6 +101,8 @@ namespace OsEngine.Robots.Custom
             _loadFuturesButton.UserClickOnButtonEvent += LoadFuturesButton_UserClickOnButtonEvent;
 
             _buyPairButton = CreateParameterButton("Купить пару", tradeTab);
+            _buyPairButton.SetEnabled(false);
+            _buyPairButtonEnabledState = false;
             _buyPairButton.UserClickOnButtonEvent += BuyPairButton_UserClickOnButtonEvent;
             _adjustPairTrailButton = CreateParameterButton("Скорректировать пару (Trail)", tradeTab);
             _adjustPairTrailButton.UserClickOnButtonEvent += AdjustPairTrailButton_UserClickOnButtonEvent;
@@ -156,12 +161,26 @@ namespace OsEngine.Robots.Custom
         {
             try
             {
+                if (!_buyPairButton.IsEnabled)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + ": «Купить пару» недоступна — дождитесь Bid и Ask на всех вкладках пары "
+                        + "(ближний и дальний после «Подобрать фьючерсы»).",
+                        LogMessageType.Error);
+                    return;
+                }
+
                 ExecuteBuyPairs();
             }
             catch (Exception ex)
             {
                 SendNewLogMessage(ex.ToString(), LogMessageType.Error);
             }
+        }
+
+        private void ScreenerTab_NewTickEvent(Trade trade, BotTabSimple tab)
+        {
+            UpdateBuyPairButtonEnabledState();
         }
 
         private void AdjustPairTrailButton_UserClickOnButtonEvent()
@@ -196,6 +215,73 @@ namespace OsEngine.Robots.Custom
             }
 
             tab.EventsIsOn = true;
+            UpdateBuyPairButtonEnabledState();
+        }
+
+        private void UpdateBuyPairButtonEnabledState()
+        {
+            if (_buyPairButton == null)
+            {
+                return;
+            }
+
+            bool ready = AreAllHedgePairTabsQuoted();
+            if (ready == _buyPairButtonEnabledState)
+            {
+                return;
+            }
+
+            _buyPairButtonEnabledState = ready;
+            _buyPairButton.SetEnabled(ready);
+            RepaintParameterGuiTables();
+        }
+
+        /// <summary>
+        /// Все вкладки ближнего и дальнего фьючерса по каждой паре: Trade + Bid + Ask.
+        /// </summary>
+        private bool AreAllHedgePairTabsQuoted()
+        {
+            if (_hedgePairs.Count == 0)
+            {
+                RebuildPairsFromScreenerSecurities();
+            }
+
+            if (_hedgePairs.Count == 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _hedgePairs.Count; i++)
+            {
+                HedgePairState pair = _hedgePairs[i];
+                BotTabSimple nearTab = FindTabBySecurity(pair.NearSecurityName);
+                BotTabSimple farTab = FindTabBySecurity(pair.FarSecurityName);
+
+                if (nearTab == null || farTab == null)
+                {
+                    return false;
+                }
+
+                if (!IsTabQuotedForPairTrade(nearTab) || !IsTabQuotedForPairTrade(farTab))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsTabQuotedForPairTrade(BotTabSimple tab)
+        {
+            if (tab?.Connector == null)
+            {
+                return false;
+            }
+
+            return tab.Connector.IsConnected
+                && tab.Connector.IsReadyToTrade
+                && tab.PriceBestAsk > 0m
+                && tab.PriceBestBid > 0m;
         }
 
         private void EnsureScreenerEventsOn()
@@ -367,6 +453,7 @@ namespace OsEngine.Robots.Custom
             }
 
             SendNewLogMessage(msg, LogMessageType.System);
+            UpdateBuyPairButtonEnabledState();
         }
 
         private bool TryPickTwoNearestFutures(
@@ -665,6 +752,7 @@ namespace OsEngine.Robots.Custom
             EnsureScreenerEventsOn();
             _screenerTab.SaveSettings();
             TryInvokeScreenerRePaintSecuritiesGrid();
+            UpdateBuyPairButtonEnabledState();
         }
 
         private void RemoveCorruptScreenerTabSetFileIfNeeded()
@@ -882,6 +970,7 @@ namespace OsEngine.Robots.Custom
             }
 
             int opened = 0;
+            int skipped = 0;
             string botType = GetNameStrategyType();
 
             for (int i = 0; i < _hedgePairs.Count; i++)
@@ -892,12 +981,23 @@ namespace OsEngine.Robots.Custom
 
                 if (nearTab == null || farTab == null)
                 {
+                    skipped++;
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + pair.Prefix + "]: пропуск — нет вкладки скринера (ближний="
+                        + (pair.NearSecurityName ?? "?") + " найден=" + (nearTab != null)
+                        + ", дальний=" + (pair.FarSecurityName ?? "?") + " найден=" + (farTab != null)
+                        + "). Сначала «Подобрать фьючерсы» и дождитесь загрузки всех вкладок.",
+                        LogMessageType.Error);
                     continue;
                 }
 
                 decimal volume = GetTradeVolume(nearTab);
                 if (volume <= 0m)
                 {
+                    skipped++;
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + pair.Prefix + "]: объём ноги = 0 — проверьте «Количество позиций в одну сторону».",
+                        LogMessageType.Error);
                     continue;
                 }
 
@@ -905,18 +1005,145 @@ namespace OsEngine.Robots.Custom
 
                 if (GetFirstOpenPosition(nearTab, botType) != null || GetFirstOpenPosition(farTab, botType) != null)
                 {
+                    skipped++;
                     continue;
                 }
 
-                nearTab.BuyAtMarket(volume, "SmartHedgeBuyNear");
-                farTab.SellAtMarket(volume, "SmartHedgeSellFar");
-                opened++;
+                if (TryOpenCalendarPair(pair, nearTab, farTab, volume))
+                {
+                    opened++;
+                }
+                else
+                {
+                    skipped++;
+                }
             }
 
             SendNewLogMessage(
                 NameStrategyUniq + ": «Купить пару» — открыто пар: " + opened
+                + (skipped > 0 ? ", пропущено/ошибка: " + skipped : string.Empty)
                 + " (ближний лонг, дальний шорт, по " + _positionsPerSide.ValueInt + " в сторону).",
                 LogMessageType.System);
+        }
+
+        /// <summary>Ближний Buy + дальний Sell; при сбое второй ноги пишем причину в лог робота.</summary>
+        private bool TryOpenCalendarPair(
+            HedgePairState pair,
+            BotTabSimple nearTab,
+            BotTabSimple farTab,
+            decimal volume)
+        {
+            WaitForTabTradeReady(nearTab, needAsk: true, maxWaitMs: 5000);
+            WaitForTabTradeReady(farTab, needAsk: false, maxWaitMs: 5000);
+
+            if (!TryDescribeTabTradeBlock(nearTab, needAsk: true, out string nearBlock))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + pair.Prefix + "]: ближняя нога не готова — " + nearBlock,
+                    LogMessageType.Error);
+                return false;
+            }
+
+            if (!TryDescribeTabTradeBlock(farTab, needAsk: false, out string farBlock))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + pair.Prefix + "]: дальняя нога не готова — " + farBlock,
+                    LogMessageType.Error);
+                return false;
+            }
+
+            Position buyPos = nearTab.BuyAtMarket(volume, "SmartHedgeBuyNear");
+            if (buyPos == null)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + pair.Prefix + "]: Buy на ближнем «"
+                    + (nearTab.Connector?.SecurityName ?? "?") + "» не отправлен (см. лог вкладки).",
+                    LogMessageType.Error);
+                return false;
+            }
+
+            Position sellPos = farTab.SellAtMarket(volume, "SmartHedgeSellFar");
+            if (sellPos == null)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + pair.Prefix + "]: Sell на дальнем «"
+                    + (farTab.Connector?.SecurityName ?? "?") + "» не отправлен — часто нет Bid или вкладка ещё не в Trade. "
+                    + "Открыт только лонг на ближнем. Повторите «Купить пару» после котировок на дальнем или закройте лонг вручную.",
+                    LogMessageType.Error);
+                return false;
+            }
+
+            SendNewLogMessage(
+                NameStrategyUniq + " [" + pair.Prefix + "]: пара открыта — Buy «"
+                + (nearTab.Connector?.SecurityName ?? "?") + "», Sell «"
+                + (farTab.Connector?.SecurityName ?? "?") + "», объём " + volume.ToString("0.########"),
+                LogMessageType.System);
+            return true;
+        }
+
+        private static void WaitForTabTradeReady(BotTabSimple tab, bool needAsk, int maxWaitMs)
+        {
+            if (tab?.Connector == null || maxWaitMs <= 0)
+            {
+                return;
+            }
+
+            DateTime deadline = DateTime.Now.AddMilliseconds(maxWaitMs);
+            while (DateTime.Now < deadline)
+            {
+                if (tab.Connector.IsConnected
+                    && tab.Connector.IsReadyToTrade
+                    && (needAsk ? tab.PriceBestAsk > 0m : tab.PriceBestBid > 0m))
+                {
+                    return;
+                }
+
+                Thread.Sleep(200);
+            }
+        }
+
+        private static bool TryDescribeTabTradeBlock(BotTabSimple tab, bool needAsk, out string reason)
+        {
+            reason = string.Empty;
+            if (tab == null)
+            {
+                reason = "вкладка не найдена";
+                return false;
+            }
+
+            if (tab.Connector == null)
+            {
+                reason = "нет коннектора";
+                return false;
+            }
+
+            string name = tab.Connector.SecurityName ?? tab.TabName;
+
+            if (!tab.Connector.IsConnected)
+            {
+                reason = name + ": нет подключения";
+                return false;
+            }
+
+            if (!tab.Connector.IsReadyToTrade)
+            {
+                reason = name + ": коннектор не в режиме Trade (дождитесь загрузки вкладки)";
+                return false;
+            }
+
+            if (needAsk && tab.PriceBestAsk <= 0m)
+            {
+                reason = name + ": нет Ask (котировки)";
+                return false;
+            }
+
+            if (!needAsk && tab.PriceBestBid <= 0m)
+            {
+                reason = name + ": нет Bid (котировки) — для шорта дальнего нужен Bid";
+                return false;
+            }
+
+            return true;
         }
 
         private void ArmAdjustPairsWaiting()
