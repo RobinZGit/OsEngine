@@ -824,7 +824,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Fake/эмулятор — CloseAtFake; лайв — CloseAtMarket; иначе агрессивный лимит.
+        /// Fake/эмулятор — OrderFakeExecute (без проверки IsReadyToTrade); лайв — CloseAtMarket; иначе агрессивный лимит.
         /// </summary>
         private bool TryExecuteEmergencyClosePosition(BotTabSimple tab, Position pos)
         {
@@ -837,16 +837,6 @@ namespace OsEngine.Robots.Custom
             pos.SignalTypeClose = SignalStopRobotAndSellAll;
             pos.ProfitOrderIsActive = false;
             pos.StopOrderIsActive = false;
-
-            if (tab.Connector != null
-                && (!tab.Connector.IsConnected || !tab.Connector.IsReadyToTrade))
-            {
-                SendNewLogMessage(
-                    NameStrategyUniq + " [" + security + "]: закрытие позиции #"
-                    + pos.Number + " — нет подключения или торговля недоступна.",
-                    LogMessageType.Error);
-                return false;
-            }
 
             decimal volume = pos.OpenVolume;
 
@@ -868,13 +858,31 @@ namespace OsEngine.Robots.Custom
                     time = DateTime.Now;
                 }
 
-                tab.CloseAtFake(pos, volume, price, time);
+                if (!TryExecuteFakeEmergencyClose(tab, pos, volume, price, time))
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + security + "]: fake-закрытие #"
+                        + pos.Number + " — не удалось создать заявку.",
+                        LogMessageType.Error);
+                    return false;
+                }
+
                 SendNewLogMessage(
                     NameStrategyUniq + " [" + security + "]: fake-закрытие #"
                     + pos.Number + " " + pos.Direction + " vol=" + volume.ToString(CultureInfo.InvariantCulture)
                     + " @ " + price.ToString(CultureInfo.InvariantCulture),
                     LogMessageType.System);
                 return true;
+            }
+
+            if (tab.Connector != null
+                && (!tab.Connector.IsConnected || !tab.Connector.IsReadyToTrade))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + security + "]: закрытие позиции #"
+                    + pos.Number + " — нет подключения или торговля недоступна.",
+                    LogMessageType.Error);
+                return false;
             }
 
             if (tab.Connector?.MarketOrdersIsSupport == true)
@@ -905,9 +913,89 @@ namespace OsEngine.Robots.Custom
             return true;
         }
 
-        private static bool TabUsesFakeExecution(BotTabSimple tab, Position pos)
+        /// <summary>
+        /// Fake-закрытие без проверки IsConnected/IsReadyToTrade (CloseAtFake в ядре их требует).
+        /// </summary>
+        private static bool TryExecuteFakeEmergencyClose(
+            BotTabSimple tab, Position pos, decimal volume, decimal price, DateTime time)
         {
-            if (tab?.EmulatorIsOn == true)
+            if (tab?.Security == null || tab._dealCreator == null || pos == null || volume <= 0m)
+            {
+                return false;
+            }
+
+            pos.ProfitOrderIsActive = false;
+            pos.StopOrderIsActive = false;
+
+            if (tab.Connector != null
+                && tab.Connector.IsConnected
+                && tab.Connector.IsReadyToTrade)
+            {
+                for (int i = 0; pos.CloseOrders != null && i < pos.CloseOrders.Count; i++)
+                {
+                    if (pos.CloseOrders[i].State == OrderStateType.Active)
+                    {
+                        tab.Connector.OrderCancel(pos.CloseOrders[i]);
+                    }
+                }
+
+                for (int i = 0; pos.OpenOrders != null && i < pos.OpenOrders.Count; i++)
+                {
+                    if (pos.OpenOrders[i].State == OrderStateType.Active)
+                    {
+                        tab.Connector.OrderCancel(pos.OpenOrders[i]);
+                    }
+                }
+            }
+
+            Side sideCloseOrder = pos.Direction == Side.Buy ? Side.Sell : Side.Buy;
+            price = tab.RoundPrice(price, tab.Security, sideCloseOrder);
+
+            if (pos.State == PositionStateType.Done && pos.OpenVolume == 0m)
+            {
+                return false;
+            }
+
+            pos.State = PositionStateType.Closing;
+
+            Order closeOrder = tab._dealCreator.CreateCloseOrderForDeal(
+                tab.Security,
+                pos,
+                price,
+                OrderPriceType.Limit,
+                new TimeSpan(1, 1, 1, 1),
+                tab.StartProgram,
+                tab.ManualPositionSupport.OrderTypeTime,
+                tab.Connector?.ServerFullName ?? string.Empty,
+                tab.ManualPositionSupport.LimitsMakerOnly);
+
+            if (closeOrder == null)
+            {
+                return false;
+            }
+
+            closeOrder.SecurityNameCode = pos.SecurityName;
+            closeOrder.SecurityClassCode = tab.Security.NameClass;
+            closeOrder.PortfolioNumber = pos.PortfolioName;
+
+            if (volume < pos.OpenVolume && closeOrder.Volume != volume)
+            {
+                closeOrder.Volume = volume;
+            }
+
+            pos.AddNewCloseOrder(closeOrder);
+            tab.OrderFakeExecute(closeOrder, time);
+            return true;
+        }
+
+        private bool TabUsesFakeExecution(BotTabSimple tab, Position pos)
+        {
+            if (_screenerTab?.EmulatorIsOn == true)
+            {
+                return true;
+            }
+
+            if (tab?.EmulatorIsOn == true || tab?.Connector?.EmulatorIsOn == true)
             {
                 return true;
             }
