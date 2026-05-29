@@ -49,7 +49,7 @@ Screener trend robot using multiple indicators simultaneously:
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
 По умолчанию включён только SMA; остальные Use* — выкл.
-У каждого индикатора — «№ И-группы» (целое, может быть отрицательным): по модулю номера строится одна И-группа (например 2 и −2 — одна группа); внутри группы условия связаны И. Отрицательный номер означает отрицание условия индикатора (NOT). Разные значения |номера| — разные группы; между группами ИЛИ.
+У каждого индикатора — «№ И-группы» (строка, числа через запятую; минус = NOT): индикатор входит во все перечисленные группы; по модулю номера строится ключ И-группы; внутри группы условия связаны И; между группами ИЛИ.
 
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
@@ -281,31 +281,30 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _macdSlowLen;
         private StrategyParameterInt _macdSignalLen;
 
-        private StrategyParameterInt _vwapAndGroup;
-        private StrategyParameterInt _atrAndGroup;
-        private StrategyParameterInt _macdAndGroup;
+        private StrategyParameterString _vwapAndGroup;
+        private StrategyParameterString _atrAndGroup;
+        private StrategyParameterString _macdAndGroup;
 
         /*
          * ---------------------------------------------------------------------------
          * ЛОГИКА «И-ГРУПП» И ОБЩЕГО «ИЛИ» МЕЖДУ ГРУППАМИ (сигналы IsBullSignal / IsBearSignal)
          * ---------------------------------------------------------------------------
          *
-         * У каждого индикатора задаётся целое «№ И-группы» (параметры *AndGroup), диапазон в т.ч.
-         * отрицательные значения. Ключ блока И — это |номер|: индикаторы с номерами G и −G попадают
-         * в одну и ту же группу (один блок для OR между группами).
+         * У каждого индикатора задаётся строка «№ И-группы» (параметры *AndGroup): числа через запятую.
+         * Индикатор может входить в несколько групп. Ключ блока И — |номер|. Отрицательное число
+         * в списке означает NOT для этой группы (например «1,-2» → группа 1 как есть, группа 2 с инверсией).
          *
          * Внутри блока с ключом |G| все условия связаны логическим И (AND). Для положительного номера
-         * группы берётся результат *Passes как есть; для отрицательного — инверсия (NOT): индикатор
-         * «должен не выполнять» своё обычное условие.
+         * берётся результат *Passes как есть; для отрицательного — инверсия (NOT).
          *
          * Разные |номер| — разные блоки. Блоки между собой — логическое ИЛИ (OR): общий сигнал true,
          * если хотя бы один блок целиком true (все его участники с учётом знака дали true).
          *
          * Примеры:
-         *  - SMA=1, RSI=1: как раньше — (SMA ∧ RSI).
-         *  - SMA=1, RSI=−1: одна группа |1| — (SMA ∧ ¬RSI).
-         *  - SMA=2, RSI=−2: та же группа |2| — (SMA ∧ ¬RSI); с Volume=1 получится (SMA₂∧¬RSI₂) ∨ (Volume₁).
-         *  - Номер 0 в настройках не используется как отдельный ключ: для совместимости трактуется как 1.
+         *  - SMA=«1», RSI=«1»: (SMA ∧ RSI).
+         *  - SMA=«1», RSI=«-1»: (SMA ∧ ¬RSI) в группе |1|.
+         *  - SMA=«1,2», Volume=«2»: SMA в группах 1 и 2; (…∧SMA₁) ∨ (SMA₂ ∧ Volume₂).
+         *  - Номер 0 трактуется как 1.
          *
          * Выключенный индикатор (Use* = false) в расчёт не попадает: для него не вызывается
          * AddGroupedIndicatorResult (методы *Passes возвращают null).
@@ -318,24 +317,24 @@ namespace OsEngine.Robots.Custom
          * группа полностью true — возвращается true; иначе false.
          * ---------------------------------------------------------------------------
          */
-        private StrategyParameterInt _smaAndGroup;
-        private StrategyParameterInt _rsiAndGroup;
-        private StrategyParameterInt _stochAndGroup;
-        private StrategyParameterInt _momAndGroup;
-        private StrategyParameterInt _bollAndGroup;
-        private StrategyParameterInt _linRegAndGroup;
-        private StrategyParameterInt _volumeAndGroup;
+        private StrategyParameterString _smaAndGroup;
+        private StrategyParameterString _rsiAndGroup;
+        private StrategyParameterString _stochAndGroup;
+        private StrategyParameterString _momAndGroup;
+        private StrategyParameterString _bollAndGroup;
+        private StrategyParameterString _linRegAndGroup;
+        private StrategyParameterString _volumeAndGroup;
 #if false // RZIgreensMinusReds
-        private StrategyParameterInt _rziAndGroup;
+        private StrategyParameterString _rziAndGroup;
 #endif
 #if false // AverageProfitPercentLong
-        private StrategyParameterInt _avgProfitPercentLongAndGroup;
+        private StrategyParameterString _avgProfitPercentLongAndGroup;
 #endif
 
 #if false // DiscreteMidBestPair
         private StrategyParameterInt _discreteMidBestPairLevels;
         private StrategyParameterInt _discreteEntryThreshold;
-        private StrategyParameterInt _discreteAndGroup;
+        private StrategyParameterString _discreteAndGroup;
 #endif
 
         // Non-trade periods (AlgoStart pattern)
@@ -617,22 +616,22 @@ namespace OsEngine.Robots.Custom
             _macdSlowLen = CreateParameter("MACD slow length", 26, 2, 300, 1);
             _macdSignalLen = CreateParameter("MACD signal length", 9, 2, 100, 1);
 
-            _smaAndGroup = CreateParameter("SMA: № И-группы", 1, -32, 32, 1);
-            _rsiAndGroup = CreateParameter("RSI: № И-группы", 1, -32, 32, 1);
-            _stochAndGroup = CreateParameter("Stochastic: № И-группы", 1, -32, 32, 1);
-            _momAndGroup = CreateParameter("Momentum: № И-группы", 1, -32, 32, 1);
-            _bollAndGroup = CreateParameter("Bollinger: № И-группы", 1, -32, 32, 1);
-            _linRegAndGroup = CreateParameter("LinReg: № И-группы", 1, -32, 32, 1);
-            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы", 1, -32, 32, 1);
+            _smaAndGroup = CreateParameter("SMA: № И-группы (через запятую)", "1");
+            _rsiAndGroup = CreateParameter("RSI: № И-группы (через запятую)", "1");
+            _stochAndGroup = CreateParameter("Stochastic: № И-группы (через запятую)", "1");
+            _momAndGroup = CreateParameter("Momentum: № И-группы (через запятую)", "1");
+            _bollAndGroup = CreateParameter("Bollinger: № И-группы (через запятую)", "1");
+            _linRegAndGroup = CreateParameter("LinReg: № И-группы (через запятую)", "1");
+            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы (через запятую)", "1");
 #if false // RZIgreensMinusReds
-            _rziAndGroup = CreateParameter("RZI: № И-группы", 1, -32, 32, 1);
+            _rziAndGroup = CreateParameter("RZI: № И-группы (через запятую)", "1");
 #endif
 #if false // AverageProfitPercentLong
-            _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы", 1, -32, 32, 1);
+            _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы (через запятую)", "1");
 #endif
-            _vwapAndGroup = CreateParameter("VWAP: № И-группы", 1, -32, 32, 1);
-            _atrAndGroup = CreateParameter("ATR: № И-группы", 1, -32, 32, 1);
-            _macdAndGroup = CreateParameter("MACD: № И-группы", 1, -32, 32, 1);
+            _vwapAndGroup = CreateParameter("VWAP: № И-группы (через запятую)", "1");
+            _atrAndGroup = CreateParameter("ATR: № И-группы (через запятую)", "1");
+            _macdAndGroup = CreateParameter("MACD: № И-группы (через запятую)", "1");
 
             _useRandomPriceShift = CreateParameter("Рандомный сдвиг цен", false);
             _randomPriceShiftPercent = CreateParameter("Рандомность движений, %", 0.1m, 0m, 50m, 0.01m);
@@ -641,7 +640,7 @@ namespace OsEngine.Robots.Custom
             // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
             _discreteMidBestPairLevels = CreateParameter("DiscreteMidBestPair levels", 32, 2, 256, 1);
             _discreteEntryThreshold = CreateParameter("Порог входа дискретизации", 1, 0, 256, 1);
-            _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы", 1, -32, 32, 1);
+            _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы (через запятую)", "1");
 #endif
 
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
@@ -4840,23 +4839,74 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Добавляет пару для формулы «(И внутри группы по |№|) ИЛИ между разными |№|».
-        /// Номер группы может быть отрицательным: тогда в список попадает то же |номер|, но с инвертированным pass (NOT).
-        /// Ноль как номер группы не используется как ключ: для совместимости приводится к 1.
+        /// Разбор «№ И-группы»: числа через запятую; 0 → 1; минус = NOT в этой группе.
+        /// </summary>
+        private static List<int> ParseIndicatorGroupNumbers(string raw)
+        {
+            List<int> result = new List<int>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                result.Add(1);
+                return result;
+            }
+
+            string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string part = parts[i].Trim();
+                if (part.Length == 0)
+                {
+                    continue;
+                }
+
+                if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)
+                    && !int.TryParse(part, NumberStyles.Integer, CultureInfo.CurrentCulture, out value))
+                {
+                    continue;
+                }
+
+                if (value == 0)
+                {
+                    value = 1;
+                }
+
+                result.Add(value);
+            }
+
+            if (result.Count == 0)
+            {
+                result.Add(1);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Добавляет результат индикатора во все группы из строки параметра (|g|, pass с учётом знака).
         /// Выключенный индикатор: passResult == null — запись не добавляется.
         /// </summary>
-        private static void AddGroupedIndicatorResult(List<(int group, bool pass)> items, StrategyParameterInt groupParam, bool? passResult)
+        private static void AddGroupedIndicatorResult(List<(int group, bool pass)> items, StrategyParameterString groupParam, bool? passResult)
         {
-            if (!passResult.HasValue)
+            if (!passResult.HasValue || groupParam == null)
+            {
                 return;
-            int raw = groupParam.ValueInt;
-            if (raw == 0)
-                raw = 1;
-            int groupKey = Math.Abs(raw);
+            }
+
+            List<int> groupNumbers = ParseIndicatorGroupNumbers(groupParam.ValueString);
             bool pass = passResult.Value;
-            if (raw < 0)
-                pass = !pass;
-            items.Add((groupKey, pass));
+
+            for (int i = 0; i < groupNumbers.Count; i++)
+            {
+                int raw = groupNumbers[i];
+                int groupKey = Math.Abs(raw);
+                bool groupPass = pass;
+                if (raw < 0)
+                {
+                    groupPass = !groupPass;
+                }
+
+                items.Add((groupKey, groupPass));
+            }
         }
 
         /// <summary>
