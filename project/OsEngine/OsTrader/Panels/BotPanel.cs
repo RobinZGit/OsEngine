@@ -1738,8 +1738,14 @@ position => position.State != PositionStateType.OpeningFail
                 {
                     return;
                 }
+                _riskManager.ClearJournals();
 
-                _riskManager.SetJournals(this.GetJournals());
+                List<Journal.Journal> journals = this.GetJournals();
+
+                for (int i2 = 0; journals != null && i2 < journals.Count; i2++)
+                {
+                    _riskManager.SetNewJournal(journals[i2]);
+                }
             }
             catch (Exception error)
             {
