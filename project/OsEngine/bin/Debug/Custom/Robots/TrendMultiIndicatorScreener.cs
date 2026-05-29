@@ -205,6 +205,9 @@ namespace OsEngine.Robots.Custom
         private string _prevRegimeForPortfolioTrailing;
         private DateTime _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
 
+        private readonly HashSet<string> _loggedStopNoticeKeys =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         // volume
         private StrategyParameterString _volumeType;
         private StrategyParameterDecimal _volume;
@@ -424,6 +427,10 @@ namespace OsEngine.Robots.Custom
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
             _screenerTab.NewTabCreateEvent += ScreenerTab_NewTabCreateEvent;
             _screenerTab.PositionOpeningSuccesEvent += ScreenerTab_PositionOpeningSuccesEvent;
+            _screenerTab.PositionStopActivateEvent += ScreenerTab_PositionStopActivateEvent;
+            _screenerTab.PositionClosingSuccesEvent += ScreenerTab_PositionClosingSuccesEvent;
+            _screenerTab.EventsIsOn = true;
+            EnsureScreenerChildTabsEventsOn();
 
             // basic
             _regime = CreateParameter("Regime", "Off", new[] { "Off", "On", "OnlyLong", "OnlyShort", "OnlyClosePosition" });
@@ -2734,6 +2741,11 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
+            if (_screenerTab != null && _screenerTab.EventsIsOn)
+            {
+                tab.EventsIsOn = true;
+            }
+
             Task.Run(async () =>
             {
                 try
@@ -4123,14 +4135,15 @@ namespace OsEngine.Robots.Custom
             CloseAllBotPositions();
             _positionTrailingPeaks.Clear();
 
-            SendNewLogMessage(
-                "Страховка портфеля: просадка "
+            string portfolioStopMsg =
+                NameStrategyUniq + " | *** СТОП (вкладка «Стопы»): страховка портфеля — закрыты все позиции *** | просадка "
                 + drawdownPercent.ToString(CultureInfo.InvariantCulture)
                 + "% от пика "
                 + _portfolioEquityPeak.ToString(CultureInfo.InvariantCulture)
                 + ", equity="
-                + currentValue.Value.ToString(CultureInfo.InvariantCulture),
-                LogMessageType.Signal);
+                + currentValue.Value.ToString(CultureInfo.InvariantCulture);
+
+            LogStopTabNoticeOnce("portfolio|" + decisionTime.Ticks, portfolioStopMsg);
 
             if (_portfolioTrailingSetOnlyCloseRegime.ValueBool)
             {
@@ -4231,6 +4244,11 @@ namespace OsEngine.Robots.Custom
                     if (IsTesterLikeProgram(tab))
                     {
                         ExecuteClosePosition(tab, pos, pos.OpenVolume, 0m, SignalPositionTrailingStop);
+                        LogPositionTrailingStopNotice(
+                            tab,
+                            pos,
+                            "трейлинг позиции — закрытие по пробою (тестер)",
+                            stop);
                     }
 
                     continue;
@@ -4241,9 +4259,136 @@ namespace OsEngine.Robots.Custom
                     ? ApplyRandomPriceShift(stop - slip, tab)
                     : ApplyRandomPriceShift(stop + slip, tab);
                 ExecuteClosePosition(tab, pos, pos.OpenVolume, closePrice, SignalPositionTrailingStop);
+                LogPositionTrailingStopNotice(
+                    tab,
+                    pos,
+                    "трейлинг позиции — закрытие по пробою (лимит)",
+                    stop);
             }
 
             PrunePositionTrailingPeaksForTab(tab, activeKeys);
+        }
+
+        private void ScreenerTab_PositionStopActivateEvent(Position position, BotTabSimple tab)
+        {
+            if (!_usePositionTrailing.ValueBool || !IsOurBotPosition(position))
+            {
+                return;
+            }
+
+            if (!IsPositionTrailingStopSignal(position))
+            {
+                return;
+            }
+
+            LogPositionTrailingStopNotice(
+                tab,
+                position,
+                "трейлинг позиции — сработал стоп-ордер",
+                position.StopOrderRedLine);
+        }
+
+        private void ScreenerTab_PositionClosingSuccesEvent(Position position, BotTabSimple tab)
+        {
+            if (!_usePositionTrailing.ValueBool || !IsOurBotPosition(position))
+            {
+                return;
+            }
+
+            if (!string.Equals(position.SignalTypeClose, SignalPositionTrailingStop, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            LogPositionTrailingStopNotice(
+                tab,
+                position,
+                "трейлинг позиции — позиция закрыта",
+                position.StopOrderRedLine > 0m ? position.StopOrderRedLine : position.EntryPrice);
+        }
+
+        private bool IsOurBotPosition(Position position)
+        {
+            if (position == null)
+            {
+                return false;
+            }
+
+            string botType = GetNameStrategyType();
+            return string.IsNullOrEmpty(position.NameBotClass)
+                || string.Equals(position.NameBotClass, botType, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsPositionTrailingStopSignal(Position position)
+        {
+            if (position == null)
+            {
+                return false;
+            }
+
+            return string.Equals(position.SignalTypeStop, SignalPositionTrailingStop, StringComparison.OrdinalIgnoreCase)
+                || (position.StopOrderIsActive && position.StopIsMarket);
+        }
+
+        private void LogPositionTrailingStopNotice(
+            BotTabSimple tab,
+            Position position,
+            string reason,
+            decimal stopLevel)
+        {
+            if (position == null)
+            {
+                return;
+            }
+
+            string security = tab?.Connector?.SecurityName ?? tab?.TabName ?? "?";
+            string side = position.Direction == Side.Buy ? "лонг" : "шорт";
+            string msg =
+                NameStrategyUniq + " | *** СТОП (вкладка «Стопы»): " + reason + " *** | "
+                + security + " | " + side
+                + " | vol=" + position.OpenVolume.ToString("0.########", CultureInfo.InvariantCulture)
+                + " | стоп="
+                + stopLevel.ToString("0.########", CultureInfo.InvariantCulture);
+
+            string dedupeKey = "ptrail|" + security + "|" + position.Number;
+            LogStopTabNoticeOnce(dedupeKey, msg);
+        }
+
+        private void EnsureScreenerChildTabsEventsOn()
+        {
+            if (_screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab != null && !tab.EventsIsOn)
+                {
+                    tab.EventsIsOn = true;
+                }
+            }
+        }
+
+        /// <summary>Заметное сообщение в лог (System + User + Signal), без повторов по dedupeKey.</summary>
+        private void LogStopTabNoticeOnce(string dedupeKey, string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)
+                || string.IsNullOrWhiteSpace(dedupeKey)
+                || !_loggedStopNoticeKeys.Add(dedupeKey))
+            {
+                return;
+            }
+
+            SendNewLogMessage(message, LogMessageType.System);
+            SendNewLogMessage(message, LogMessageType.User);
+            SendNewLogMessage(message, LogMessageType.Signal);
+
+            if (_loggedStopNoticeKeys.Count > 500)
+            {
+                _loggedStopNoticeKeys.Clear();
+            }
         }
 
         private void PrunePositionTrailingPeaksForTab(BotTabSimple tab, HashSet<string> activeKeysOnTab)
