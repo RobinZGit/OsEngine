@@ -60,6 +60,8 @@ If Volume indicator is enabled, current candle volume must be at least (previous
 Exit/Reverse:
 If a position exists and opposite signal appears, close and (if allowed) open opposite.
 Order execution: «Тип заявок (вход и выход)» — Лимит (default) or Рынок for entries, exits, reverse, schedule, portfolio insurance, stop-all.
+Timeframe multiplier («Умножение таймфрейма», default 1): 1 = logic on screener TF; N&gt;1 = aggregate every N base candles into one bar for signals, entries/exits, trailing, samoindikatsiya; indicators stay on base TF (values taken at the end of each aggregated bar).
+Higher-TF confirm («Подтверждать сигналы на старших ТФ», default empty): comma-separated integers ≥2 — each adds AND-check of all indicators on bars aggregated from that many base candles (e.g. «2,4» = primary TF plus 2× and 4× base aggregation).
 
 Filters (AlgoStart-style):
 - Non-trade periods (button opens calendar/time settings).
@@ -134,11 +136,16 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _stopRobotAndSellAllButton;
         private StrategyParameterInt _maxPositions;
         private StrategyParameterInt _slippage;
+        private StrategyParameterInt _timeFrameMultiplier;
+        private StrategyParameterString _confirmHigherTimeFrames;
         private StrategyParameterString _orderExecution;
         private StrategyParameterBool _useRandomPriceShift;
         private StrategyParameterDecimal _randomPriceShiftPercent;
         private readonly Random _randomPriceShiftRng = new Random();
         private StrategyParameterBool _invertEntryLogic;
+
+        /// <summary>Число базовых свечей в одном логическом баре при расчёте индикаторов для сигнала.</summary>
+        private int _signalAggregateBarSize = 1;
 
         /*
          * ---------------------------------------------------------------------------
@@ -425,6 +432,11 @@ namespace OsEngine.Robots.Custom
 
             _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
             _slippage = CreateParameter("Slippage (steps)", 0, 0, 20, 1);
+            _timeFrameMultiplier = CreateParameter("Умножение таймфрейма", 1, 1, 100, 1);
+            _confirmHigherTimeFrames = CreateParameter(
+                "Подтверждать сигналы на старших ТФ",
+                "",
+                "Prime");
             _orderExecution = CreateParameter(
                 "Тип заявок (вход и выход)",
                 "Лимит",
@@ -4547,26 +4559,33 @@ namespace OsEngine.Robots.Custom
             }
 
             TryManagePortfolioEquityTrailing(tab, decisionTime);
-            TryManagePositionTrailingStops(tab, candles);
 
-            int minBars = GetMinBarsForTradingLogic();
-            if (candles.Count < minBars)
+            if (!TryBuildLogicCandles(candles, out List<Candle> logicCandles, out bool isLogicBarClose)
+                || !isLogicBarClose)
             {
                 return;
             }
 
-            if (_tradePeriodsSettings.CanTradeThisTime(candles[^1].TimeStart) == false)
+            TryManagePositionTrailingStops(tab, logicCandles);
+
+            int minBars = GetMinBarsForTradingLogic();
+            if (logicCandles.Count < minBars || candles.Count < GetMinBaseBarsForTradingLogic())
+            {
+                return;
+            }
+
+            if (_tradePeriodsSettings.CanTradeThisTime(logicCandles[^1].TimeStart) == false)
             {
                 return;
             }
 
             if (_useSamoindikatsiya.ValueBool)
             {
-                SamoindikatsiyaTickBarCounter(candles[^1].TimeStart);
+                SamoindikatsiyaTickBarCounter(logicCandles[^1].TimeStart);
             }
 
 #if false // DiscreteMidBestPair
-            TryPlaceDiscreteStopAndProfit(tab, candles);
+            TryPlaceDiscreteStopAndProfit(tab, logicCandles);
 #endif
 
             List<Position> positions = tab.PositionsOpenAll;
@@ -4576,7 +4595,7 @@ namespace OsEngine.Robots.Custom
 
             if (haveOpenPos == false
                 && _checkVolatilityCluster.ValueBool
-                && CheckVolatilityCluster(candles[^1].TimeStart, tab) == false)
+                && CheckVolatilityCluster(logicCandles[^1].TimeStart, tab) == false)
             {
                 return;
             }
@@ -4586,15 +4605,15 @@ namespace OsEngine.Robots.Custom
 
             if (!haveOpenPos)
             {
-                if (!TryApplySamoindikatsiyaBeforeEntry(candles, tab, out bull, out bear))
+                if (!TryApplySamoindikatsiyaBeforeEntry(logicCandles, candles, tab, out bull, out bear))
                 {
                     return;
                 }
             }
             else
             {
-                bull = IsBullSignal(candles, tab);
-                bear = IsBearSignal(candles, tab);
+                bull = IsBullSignal(logicCandles, tab, candles);
+                bear = IsBearSignal(logicCandles, tab, candles);
 
                 if (IsEntryLogicInverted())
                 {
@@ -4621,7 +4640,7 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
-                TryOpenOnSignal(candles, tab, bull, bear);
+                TryOpenOnSignal(logicCandles, tab, bull, bear);
                 return;
             }
 
@@ -4630,7 +4649,7 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            TryCloseOrReverse(candles, tab, firstOpen, bull, bear);
+            TryCloseOrReverse(logicCandles, tab, firstOpen, bull, bear);
         }
 
         /// <summary>
@@ -4776,6 +4795,341 @@ namespace OsEngine.Robots.Custom
             return series.Values[candleIndex];
         }
 
+        private int GetTimeFrameMultiplier()
+        {
+            if (_timeFrameMultiplier == null)
+            {
+                return 1;
+            }
+
+            int mult = _timeFrameMultiplier.ValueInt;
+            return mult < 1 ? 1 : mult;
+        }
+
+        /// <summary>Индекс последней базовой свечи внутри агрегированного бара logicIndex.</summary>
+        private int ToIndicatorCandleIndex(int logicCandleIndex)
+        {
+            if (logicCandleIndex < 0)
+            {
+                return -1;
+            }
+
+            int mult = _signalAggregateBarSize;
+            if (mult <= 1)
+            {
+                return logicCandleIndex;
+            }
+
+            return (logicCandleIndex + 1) * mult - 1;
+        }
+
+        private T RunWithAggregateBarSize<T>(int aggregateBarSize, Func<T> action)
+        {
+            int prev = _signalAggregateBarSize;
+            _signalAggregateBarSize = aggregateBarSize < 1 ? 1 : aggregateBarSize;
+            try
+            {
+                return action();
+            }
+            finally
+            {
+                _signalAggregateBarSize = prev;
+            }
+        }
+
+        private void RunWithAggregateBarSize(int aggregateBarSize, Action action)
+        {
+            RunWithAggregateBarSize(aggregateBarSize, () =>
+            {
+                action();
+                return 0;
+            });
+        }
+
+        /// <summary>Целые ≥2 из «Подтверждать сигналы на старших ТФ» (уникальные, по возрастанию).</summary>
+        private List<int> ParseHigherTimeFrameConfirmations()
+        {
+            List<int> result = new List<int>();
+            string raw = _confirmHigherTimeFrames?.ValueString;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return result;
+            }
+
+            string[] parts = raw.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (!int.TryParse(parts[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)
+                    && !int.TryParse(parts[i].Trim(), out value))
+                {
+                    continue;
+                }
+
+                if (value < 2)
+                {
+                    continue;
+                }
+
+                if (!result.Contains(value))
+                {
+                    result.Add(value);
+                }
+            }
+
+            result.Sort();
+            return result;
+        }
+
+        private static List<Candle> TakeRawCandlesPrefix(List<Candle> rawCandles, int rawCount)
+        {
+            if (rawCandles == null || rawCandles.Count == 0 || rawCount <= 0)
+            {
+                return null;
+            }
+
+            if (rawCount >= rawCandles.Count)
+            {
+                return rawCandles;
+            }
+
+            return rawCandles.GetRange(0, rawCount);
+        }
+
+        private int GetRawCandleCountForPrimaryLogicIndex(int primaryLogicIndex)
+        {
+            int mult = GetTimeFrameMultiplier();
+            long rawCount = (long)(primaryLogicIndex + 1) * mult;
+            if (rawCount > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return (int)rawCount;
+        }
+
+        private bool IsSignalConfirmedOnHigherTimeFrames(
+            bool bull,
+            List<Candle> primaryLogicCandles,
+            BotTabSimple tab,
+            int primaryLogicIndex,
+            List<Candle> rawCandles,
+            bool forSamoindikatsiyaSimulation)
+        {
+            List<int> confirmations = ParseHigherTimeFrameConfirmations();
+            if (confirmations.Count == 0)
+            {
+                return true;
+            }
+
+            if (primaryLogicCandles == null || tab == null || rawCandles == null || rawCandles.Count == 0)
+            {
+                return false;
+            }
+
+            int rawCount = GetRawCandleCountForPrimaryLogicIndex(primaryLogicIndex);
+            if (rawCount > rawCandles.Count)
+            {
+                rawCount = rawCandles.Count;
+            }
+
+            List<Candle> rawPrefix = TakeRawCandlesPrefix(rawCandles, rawCount);
+            if (rawPrefix == null || rawPrefix.Count == 0)
+            {
+                return false;
+            }
+
+            int primaryMult = GetTimeFrameMultiplier();
+            int minLogicBars = GetMinBarsForTradingLogic();
+
+            for (int i = 0; i < confirmations.Count; i++)
+            {
+                int factor = confirmations[i];
+                if (factor == primaryMult)
+                {
+                    continue;
+                }
+
+                List<Candle> confirmLogic = AggregateCandlesByCount(rawPrefix, factor);
+                if (confirmLogic == null || confirmLogic.Count < minLogicBars)
+                {
+                    return false;
+                }
+
+                int confirmIdx = confirmLogic.Count - 1;
+                bool pass = bull
+                    ? IsBullSignalAt(confirmLogic, tab, confirmIdx, factor, forSamoindikatsiyaSimulation)
+                    : IsBearSignalAt(confirmLogic, tab, confirmIdx, factor, forSamoindikatsiyaSimulation);
+
+                if (!pass)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool IsBullSignalWithConfirmations(
+            List<Candle> primaryLogicCandles,
+            BotTabSimple tab,
+            int primaryLogicIndex,
+            List<Candle> rawCandles,
+            bool forSamoindikatsiyaSimulation)
+        {
+            if (primaryLogicCandles == null || tab == null || primaryLogicIndex < 0
+                || primaryLogicIndex >= primaryLogicCandles.Count)
+            {
+                return false;
+            }
+
+            if (!IsBullSignalAt(
+                    primaryLogicCandles,
+                    tab,
+                    primaryLogicIndex,
+                    GetTimeFrameMultiplier(),
+                    forSamoindikatsiyaSimulation))
+            {
+                return false;
+            }
+
+            return IsSignalConfirmedOnHigherTimeFrames(
+                true,
+                primaryLogicCandles,
+                tab,
+                primaryLogicIndex,
+                rawCandles,
+                forSamoindikatsiyaSimulation);
+        }
+
+        private bool IsBearSignalWithConfirmations(
+            List<Candle> primaryLogicCandles,
+            BotTabSimple tab,
+            int primaryLogicIndex,
+            List<Candle> rawCandles,
+            bool forSamoindikatsiyaSimulation)
+        {
+            if (primaryLogicCandles == null || tab == null || primaryLogicIndex < 0
+                || primaryLogicIndex >= primaryLogicCandles.Count)
+            {
+                return false;
+            }
+
+            if (!IsBearSignalAt(
+                    primaryLogicCandles,
+                    tab,
+                    primaryLogicIndex,
+                    GetTimeFrameMultiplier(),
+                    forSamoindikatsiyaSimulation))
+            {
+                return false;
+            }
+
+            return IsSignalConfirmedOnHigherTimeFrames(
+                false,
+                primaryLogicCandles,
+                tab,
+                primaryLogicIndex,
+                rawCandles,
+                forSamoindikatsiyaSimulation);
+        }
+
+        private decimal SeriesValueAtForLogicBar(Aindicator indicator, int seriesIndex, int logicCandleIndex)
+        {
+            return SeriesValueAt(indicator, seriesIndex, ToIndicatorCandleIndex(logicCandleIndex));
+        }
+
+        /// <summary>Склеивает каждые <paramref name="count"/> базовых свечей в одну (OHLCV).</summary>
+        private static List<Candle> AggregateCandlesByCount(List<Candle> source, int count)
+        {
+            if (source == null || source.Count == 0 || count <= 1)
+            {
+                return source;
+            }
+
+            int fullGroups = source.Count / count;
+            if (fullGroups <= 0)
+            {
+                return new List<Candle>();
+            }
+
+            List<Candle> result = new List<Candle>(fullGroups);
+            for (int g = 0; g < fullGroups; g++)
+            {
+                int start = g * count;
+                Candle first = source[start];
+                Candle last = source[start + count - 1];
+                Candle agg = new Candle
+                {
+                    TimeStart = first.TimeStart,
+                    Open = first.Open,
+                    Close = last.Close,
+                    High = first.High,
+                    Low = first.Low,
+                    Volume = 0m,
+                    OpenInterest = last.OpenInterest
+                };
+
+                for (int i = start; i < start + count; i++)
+                {
+                    Candle c = source[i];
+                    if (c.High > agg.High)
+                    {
+                        agg.High = c.High;
+                    }
+
+                    if (c.Low < agg.Low)
+                    {
+                        agg.Low = c.Low;
+                    }
+
+                    agg.Volume += c.Volume;
+                }
+
+                result.Add(agg);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Логические свечи для торговли и признак закрытия агрегированного бара (для mult=1 всегда true).
+        /// </summary>
+        private bool TryBuildLogicCandles(List<Candle> rawCandles, out List<Candle> logicCandles, out bool isLogicBarClose)
+        {
+            logicCandles = rawCandles;
+            isLogicBarClose = true;
+
+            if (rawCandles == null || rawCandles.Count == 0)
+            {
+                logicCandles = null;
+                isLogicBarClose = false;
+                return false;
+            }
+
+            int mult = GetTimeFrameMultiplier();
+            if (mult <= 1)
+            {
+                return true;
+            }
+
+            isLogicBarClose = rawCandles.Count % mult == 0;
+            logicCandles = AggregateCandlesByCount(rawCandles, mult);
+            return logicCandles != null && logicCandles.Count > 0;
+        }
+
+        private int GetMinBaseBarsForTradingLogic()
+        {
+            int minLogic = GetMinBarsForTradingLogic();
+            int maxAgg = GetTimeFrameMultiplier();
+            List<int> confirmations = ParseHigherTimeFrameConfirmations();
+            for (int i = 0; i < confirmations.Count; i++)
+            {
+                maxAgg = Math.Max(maxAgg, confirmations[i]);
+            }
+
+            return minLogic * maxAgg;
+        }
+
         /// <summary>
         /// Снимок настраиваемых параметров индикаторов (без И-групп) для одного шага самоиндикации.
         /// </summary>
@@ -4915,7 +5269,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            return candles.Count >= GetMinBarsForTradingLogic();
+            return candles.Count >= GetMinBaseBarsForTradingLogic();
         }
 
         /// <summary>
@@ -5144,8 +5498,8 @@ namespace OsEngine.Robots.Custom
                     }
                 }
 
-                bool bull = IsBullSignalAt(candles, tab, i, forSamoindikatsiyaSimulation: true);
-                bool bear = IsBearSignalAt(candles, tab, i, forSamoindikatsiyaSimulation: true);
+                bool bull = IsBullSignalWithConfirmations(candles, tab, i, tab.CandlesAll, forSamoindikatsiyaSimulation: true);
+                bool bear = IsBearSignalWithConfirmations(candles, tab, i, tab.CandlesAll, forSamoindikatsiyaSimulation: true);
 
                 if (virtualSide == Side.None)
                 {
@@ -5619,7 +5973,8 @@ namespace OsEngine.Robots.Custom
         /// Самоиндикация: перед входом — подбор параметров; сигналы пересчитываются после подбора.
         /// </summary>
         private bool TryApplySamoindikatsiyaBeforeEntry(
-            List<Candle> candles,
+            List<Candle> logicCandles,
+            List<Candle> rawCandles,
             BotTabSimple tab,
             out bool bull,
             out bool bear)
@@ -5627,24 +5982,30 @@ namespace OsEngine.Robots.Custom
             bull = false;
             bear = false;
 
-            if (candles == null || tab == null)
+            if (logicCandles == null || tab == null)
             {
                 return false;
             }
 
+            if (rawCandles == null)
+            {
+                rawCandles = tab.CandlesAll;
+            }
+
             if (!_useSamoindikatsiya.ValueBool)
             {
-                bull = IsBullSignal(candles, tab);
-                bear = IsBearSignal(candles, tab);
+                bull = IsBullSignal(logicCandles, tab, rawCandles);
+                bear = IsBearSignal(logicCandles, tab, rawCandles);
                 ApplyInvertEntryLogic(ref bull, ref bear);
                 return true;
             }
 
             EnsureSamoindikatsiyaEnabledAtLockForFirstEntry();
 
-            DateTime barTime = candles[^1].TimeStart;
+            DateTime barTime = logicCandles[^1].TimeStart;
             bool isRecalcCandle = IsSamoindikatsiyaRecalcCandle();
-            bool hasEntrySignal = IsBullSignal(candles, tab) || IsBearSignal(candles, tab);
+            bool hasEntrySignal = IsBullSignal(logicCandles, tab, rawCandles)
+                || IsBearSignal(logicCandles, tab, rawCandles);
 
             SamoindikatsiyaIndicatorSnapshot enabledAtLock = GetSamoindikatsiyaEnabledAtLock();
 
@@ -5653,14 +6014,14 @@ namespace OsEngine.Robots.Custom
                 && barTime != _samoindikatsiyaLastOptimizedBarTime
                 && enabledAtLock != null
                 && SamoindikatsiyaSnapshotHasEnabledIndicator(enabledAtLock)
-                && TryGetSamoindikatsiyaSimulationRange(candles.Count, out _, out _))
+                && TryGetSamoindikatsiyaSimulationRange(logicCandles.Count, out _, out _))
             {
-                OptimizeIndicatorParametersForSamoindikatsiya(candles, tab);
+                OptimizeIndicatorParametersForSamoindikatsiya(logicCandles, tab);
                 _samoindikatsiyaLastOptimizedBarTime = barTime;
             }
 
-            bull = IsBullSignal(candles, tab);
-            bear = IsBearSignal(candles, tab);
+            bull = IsBullSignal(logicCandles, tab, rawCandles);
+            bear = IsBearSignal(logicCandles, tab, rawCandles);
             ApplyInvertEntryLogic(ref bull, ref bear);
             return true;
         }
@@ -5682,29 +6043,33 @@ namespace OsEngine.Robots.Custom
             List<Candle> candles,
             BotTabSimple tab,
             int candleIndex,
+            int aggregateBarSize,
             bool forSamoindikatsiyaSimulation = false)
         {
-            decimal close = candles[candleIndex].Close;
-            var items = new List<(int group, bool pass)>();
+            return RunWithAggregateBarSize(aggregateBarSize, () =>
+            {
+                decimal close = candles[candleIndex].Close;
+                var items = new List<(int group, bool pass)>();
 
-            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
 #if false // RZIgreensMinusReds
-            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
 #endif
 #if false // AverageProfitPercentLong
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
 #endif
-            AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
-            AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
 
-            return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
+                return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
+            });
         }
 
         /// <summary>
@@ -5714,94 +6079,71 @@ namespace OsEngine.Robots.Custom
             List<Candle> candles,
             BotTabSimple tab,
             int candleIndex,
+            int aggregateBarSize,
             bool forSamoindikatsiyaSimulation = false)
         {
-            decimal close = candles[candleIndex].Close;
-            var items = new List<(int group, bool pass)>();
+            return RunWithAggregateBarSize(aggregateBarSize, () =>
+            {
+                decimal close = candles[candleIndex].Close;
+                var items = new List<(int group, bool pass)>();
 
-            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
 #if false // RZIgreensMinusReds
-            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
 #endif
 #if false // AverageProfitPercentLong
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
 #endif
-            AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
-            AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
 
-            return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
+                return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
+            });
         }
 
         /// <summary>
-        /// Лонг: собирает бычьи проверки всех включённых индикаторов с их «№ И-группы» и передаёт
-        /// в <see cref="CombineGroupedOrOfAnds"/> (см. комментарий к полям *_AndGroup выше).
+        /// Лонг: основной ТФ + подтверждения на старших ТФ (если заданы).
         /// </summary>
-        private bool IsBullSignal(List<Candle> candles, BotTabSimple tab)
+        private bool IsBullSignal(List<Candle> logicCandles, BotTabSimple tab, List<Candle> rawCandles = null)
         {
-            decimal close = candles[candles.Count - 1].Close;
-            var items = new List<(int group, bool pass)>();
+            if (logicCandles == null || logicCandles.Count == 0)
+            {
+                return false;
+            }
 
-            int idx = candles.Count - 1;
-            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, idx));
-#if false // DiscreteMidBestPair
-            AddGroupedIndicatorResult(items, _discreteAndGroup, BullDiscretePasses(candles, tab));
-#endif
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, idx));
-#if false // RZIgreensMinusReds
-            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, idx));
-#endif
-#if false // AverageProfitPercentLong
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, idx));
-#endif
-            AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, idx));
-            AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, idx));
-
-            return CombineGroupedOrOfAnds(items);
+            rawCandles = rawCandles ?? tab?.CandlesAll;
+            return IsBullSignalWithConfirmations(
+                logicCandles,
+                tab,
+                logicCandles.Count - 1,
+                rawCandles,
+                forSamoindikatsiyaSimulation: false);
         }
 
         /// <summary>
-        /// Шорт: та же схема И-групп / ИЛИ между группами, что и для лонга, но с медвежьими *Passes.
+        /// Шорт: основной ТФ + подтверждения на старших ТФ (если заданы).
         /// </summary>
-        private bool IsBearSignal(List<Candle> candles, BotTabSimple tab)
+        private bool IsBearSignal(List<Candle> logicCandles, BotTabSimple tab, List<Candle> rawCandles = null)
         {
-            decimal close = candles[candles.Count - 1].Close;
-            var items = new List<(int group, bool pass)>();
+            if (logicCandles == null || logicCandles.Count == 0)
+            {
+                return false;
+            }
 
-            int idx = candles.Count - 1;
-            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, idx));
-#if false // DiscreteMidBestPair
-            AddGroupedIndicatorResult(items, _discreteAndGroup, BearDiscretePasses(candles, tab));
-#endif
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, idx));
-#if false // RZIgreensMinusReds
-            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, idx));
-#endif
-#if false // AverageProfitPercentLong
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, idx));
-#endif
-            AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, idx));
-            AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, idx));
-            AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, idx));
-
-            return CombineGroupedOrOfAnds(items);
+            rawCandles = rawCandles ?? tab?.CandlesAll;
+            return IsBearSignalWithConfirmations(
+                logicCandles,
+                tab,
+                logicCandles.Count - 1,
+                rawCandles,
+                forSamoindikatsiyaSimulation: false);
         }
 
         /// <summary>
@@ -5814,7 +6156,7 @@ namespace OsEngine.Robots.Custom
             Aindicator sma = FindIndicator(tab, NumSma, "Sma");
             if (sma == null)
                 return false;
-            decimal v = SeriesValueAt(sma, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(sma, 0, candleIndex);
             return v != 0 && close > v;
         }
 
@@ -5828,7 +6170,7 @@ namespace OsEngine.Robots.Custom
             Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
             if (rsi == null)
                 return false;
-            decimal v = SeriesValueAt(rsi, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(rsi, 0, candleIndex);
             return v != 0 && v >= _rsiLongMin.ValueDecimal;
         }
 
@@ -5842,7 +6184,7 @@ namespace OsEngine.Robots.Custom
             Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
             if (st == null)
                 return false;
-            decimal k = SeriesValueAt(st, 0, candleIndex);
+            decimal k = SeriesValueAtForLogicBar(st, 0, candleIndex);
             return k != 0 && k >= _stochLongMin.ValueDecimal;
         }
 
@@ -5856,7 +6198,7 @@ namespace OsEngine.Robots.Custom
             Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
             if (mom == null)
                 return false;
-            decimal v = SeriesValueAt(mom, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(mom, 0, candleIndex);
             return v != 0 && v >= _momLongMin.ValueDecimal;
         }
 
@@ -5870,8 +6212,8 @@ namespace OsEngine.Robots.Custom
             Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
             if (boll == null || boll.DataSeries.Count < 2)
                 return false;
-            decimal up = SeriesValueAt(boll, 0, candleIndex);
-            decimal down = SeriesValueAt(boll, 1, candleIndex);
+            decimal up = SeriesValueAtForLogicBar(boll, 0, candleIndex);
+            decimal down = SeriesValueAtForLogicBar(boll, 1, candleIndex);
             if (up == 0 || down == 0)
                 return false;
             decimal mid = (up + down) / 2m;
@@ -5888,7 +6230,7 @@ namespace OsEngine.Robots.Custom
             Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
             if (lr == null)
                 return false;
-            decimal up = SeriesValueAt(lr, 0, candleIndex);
+            decimal up = SeriesValueAtForLogicBar(lr, 0, candleIndex);
             return up != 0 && close > up;
         }
 
@@ -5903,7 +6245,7 @@ namespace OsEngine.Robots.Custom
             Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
             if (rzi == null)
                 return false;
-            decimal v = SeriesValueAt(rzi, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(rzi, 0, candleIndex);
             return v > _rziSignalLevel.ValueInt;
         }
 #endif
@@ -5949,7 +6291,7 @@ namespace OsEngine.Robots.Custom
             Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
             if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
                 return false;
-            decimal v = SeriesValueAt(ap, 0, idx);
+            decimal v = SeriesValueAtForLogicBar(ap, 0, idx);
             return v > _avgProfitPercentLongBullMin.ValueDecimal;
         }
 #endif
@@ -5970,7 +6312,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal v = SeriesValueAt(vwap, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(vwap, 0, candleIndex);
             return v != 0 && close > v;
         }
 
@@ -5985,7 +6327,7 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// ATR вырос минимум на заданный % относительно значения lookback свечей назад.
         /// </summary>
-        private bool? AtrVolatilityFilterPasses(BotTabSimple tab, int candleIndex)
+        private bool? AtrVolatilityFilterPasses(BotTabSimple tab, int logicCandleIndex)
         {
             if (!_useAtr.ValueBool)
             {
@@ -5999,25 +6341,31 @@ namespace OsEngine.Robots.Custom
             }
 
             int lookBack = Math.Max(1, _atrGrowLookBack.ValueInt);
-            int idx = candleIndex;
 
-            if (idx < 0)
+            if (logicCandleIndex < 0)
             {
                 if (atr.DataSeries[0].Values == null || atr.DataSeries[0].Values.Count == 0)
                 {
                     return false;
                 }
 
-                idx = atr.DataSeries[0].Values.Count - 1;
+                logicCandleIndex = _signalAggregateBarSize <= 1
+                    ? atr.DataSeries[0].Values.Count - 1
+                    : (atr.DataSeries[0].Values.Count / _signalAggregateBarSize) - 1;
+
+                if (logicCandleIndex < 0)
+                {
+                    return false;
+                }
             }
 
-            if (idx < lookBack)
+            if (logicCandleIndex < lookBack)
             {
                 return false;
             }
 
-            decimal atrLast = SeriesValueAt(atr, 0, idx);
-            decimal atrPast = SeriesValueAt(atr, 0, idx - lookBack);
+            decimal atrLast = SeriesValueAtForLogicBar(atr, 0, logicCandleIndex);
+            decimal atrPast = SeriesValueAtForLogicBar(atr, 0, logicCandleIndex - lookBack);
 
             if (atrLast == 0 || atrPast == 0)
             {
@@ -6044,7 +6392,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal v = SeriesValueAt(vwap, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(vwap, 0, candleIndex);
             return v != 0 && close < v;
         }
 
@@ -6072,8 +6420,8 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal macdLine = SeriesValueAt(macd, 1, candleIndex);
-            decimal signalLine = SeriesValueAt(macd, 2, candleIndex);
+            decimal macdLine = SeriesValueAtForLogicBar(macd, 1, candleIndex);
+            decimal signalLine = SeriesValueAtForLogicBar(macd, 2, candleIndex);
             return macdLine != 0 && signalLine != 0 && macdLine > signalLine;
         }
 
@@ -6093,8 +6441,8 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal macdLine = SeriesValueAt(macd, 1, candleIndex);
-            decimal signalLine = SeriesValueAt(macd, 2, candleIndex);
+            decimal macdLine = SeriesValueAtForLogicBar(macd, 1, candleIndex);
+            decimal signalLine = SeriesValueAtForLogicBar(macd, 2, candleIndex);
             return macdLine != 0 && signalLine != 0 && macdLine < signalLine;
         }
 
@@ -6108,7 +6456,7 @@ namespace OsEngine.Robots.Custom
             Aindicator sma = FindIndicator(tab, NumSma, "Sma");
             if (sma == null)
                 return false;
-            decimal v = SeriesValueAt(sma, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(sma, 0, candleIndex);
             return v != 0 && close < v;
         }
 
@@ -6122,7 +6470,7 @@ namespace OsEngine.Robots.Custom
             Aindicator rsi = FindIndicator(tab, NumRsi, "Rsi");
             if (rsi == null)
                 return false;
-            decimal v = SeriesValueAt(rsi, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(rsi, 0, candleIndex);
             return v != 0 && v <= _rsiShortMax.ValueDecimal;
         }
 
@@ -6136,7 +6484,7 @@ namespace OsEngine.Robots.Custom
             Aindicator st = FindIndicator(tab, NumStoch, "Stochastic");
             if (st == null)
                 return false;
-            decimal k = SeriesValueAt(st, 0, candleIndex);
+            decimal k = SeriesValueAtForLogicBar(st, 0, candleIndex);
             return k != 0 && k <= _stochShortMax.ValueDecimal;
         }
 
@@ -6150,7 +6498,7 @@ namespace OsEngine.Robots.Custom
             Aindicator mom = FindIndicator(tab, NumMomentum, "Momentum");
             if (mom == null)
                 return false;
-            decimal v = SeriesValueAt(mom, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(mom, 0, candleIndex);
             return v != 0 && v <= _momShortMax.ValueDecimal;
         }
 
@@ -6164,8 +6512,8 @@ namespace OsEngine.Robots.Custom
             Aindicator boll = FindIndicator(tab, NumBollinger, "Bollinger");
             if (boll == null || boll.DataSeries.Count < 2)
                 return false;
-            decimal up = SeriesValueAt(boll, 0, candleIndex);
-            decimal down = SeriesValueAt(boll, 1, candleIndex);
+            decimal up = SeriesValueAtForLogicBar(boll, 0, candleIndex);
+            decimal down = SeriesValueAtForLogicBar(boll, 1, candleIndex);
             if (up == 0 || down == 0)
                 return false;
             decimal mid = (up + down) / 2m;
@@ -6182,7 +6530,7 @@ namespace OsEngine.Robots.Custom
             Aindicator lr = FindIndicator(tab, NumLinReg, "LinearRegressionChannelFast_Indicator");
             if (lr == null || lr.DataSeries.Count < 3)
                 return false;
-            decimal down = SeriesValueAt(lr, 2, candleIndex);
+            decimal down = SeriesValueAtForLogicBar(lr, 2, candleIndex);
             return down != 0 && close < down;
         }
 
@@ -6197,7 +6545,7 @@ namespace OsEngine.Robots.Custom
             Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
             if (rzi == null)
                 return false;
-            decimal v = SeriesValueAt(rzi, 0, candleIndex);
+            decimal v = SeriesValueAtForLogicBar(rzi, 0, candleIndex);
             decimal shortBound = -_rziSignalLevel.ValueInt;
             return v < shortBound;
         }
@@ -6244,7 +6592,7 @@ namespace OsEngine.Robots.Custom
             Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
             if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
                 return false;
-            decimal v = SeriesValueAt(ap, 0, idx);
+            decimal v = SeriesValueAtForLogicBar(ap, 0, idx);
             return v < _avgProfitPercentLongBearMax.ValueDecimal;
         }
 #endif
