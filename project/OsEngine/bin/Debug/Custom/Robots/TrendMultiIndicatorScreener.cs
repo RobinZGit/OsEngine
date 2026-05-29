@@ -48,7 +48,7 @@ Screener trend robot using multiple indicators simultaneously:
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
-По умолчанию включены: SMA, VWAP, ATR, Linear Regression; остальные Use* — выкл.
+По умолчанию включён только SMA; остальные Use* — выкл.
 У каждого индикатора — «№ И-группы» (целое, может быть отрицательным): по модулю номера строится одна И-группа (например 2 и −2 — одна группа); внутри группы условия связаны И. Отрицательный номер означает отрицание условия индикатора (NOT). Разные значения |номера| — разные группы; между группами ИЛИ.
 
 Entry:
@@ -528,16 +528,16 @@ namespace OsEngine.Robots.Custom
             _useStoch = CreateParameter("Use Stochastic", false);
             _useMomentum = CreateParameter("Use Momentum", false);
             _useBollinger = CreateParameter("Use Bollinger", false);
-            _useLinReg = CreateParameter("Use Linear Regression", true);
+            _useLinReg = CreateParameter("Use Linear Regression", false);
             _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
-            _useVwap = CreateParameter("Use VWAP", true);
+            _useVwap = CreateParameter("Use VWAP", false);
 #if false // RZIgreensMinusReds
             _useRzi = CreateParameter("Use RZIgreensMinusReds", false);
 #endif
 #if false // AverageProfitPercentLong
             _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
 #endif
-            _useAtr = CreateParameter("Use ATR", true);
+            _useAtr = CreateParameter("Use ATR", false);
             _useMacd = CreateParameter("Use MACD", false);
 
 #if false // DiscreteMidBestPair
@@ -3707,10 +3707,10 @@ namespace OsEngine.Robots.Custom
             _useStoch.ValueBool = false;
             _useMomentum.ValueBool = false;
             _useBollinger.ValueBool = false;
-            _useLinReg.ValueBool = true;
+            _useLinReg.ValueBool = false;
             _useVolumeIndicator.ValueBool = false;
-            _useVwap.ValueBool = true;
-            _useAtr.ValueBool = true;
+            _useVwap.ValueBool = false;
+            _useAtr.ValueBool = false;
             _useMacd.ValueBool = false;
 
             _smaLen.ValueInt = 100;
