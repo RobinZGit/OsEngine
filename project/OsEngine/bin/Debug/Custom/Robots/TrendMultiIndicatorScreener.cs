@@ -128,6 +128,7 @@ namespace OsEngine.Robots.Custom
 
         private const string SignalPositionTrailingStop = "TrendMultiTrailPosition";
         private const string SignalPortfolioTrailingStop = "TrendMultiTrailPortfolio";
+        private const string SignalStopRobotAndSellAll = "TrendMultiStopAll";
         private BotTabScreener _screenerTab;
 
         // basic
@@ -759,12 +760,14 @@ namespace OsEngine.Robots.Custom
             _regime.ValueString = "Off";
 
             string full = NameStrategyUniq
-                + ": «Остановить робота и продать всё» — позиции закрыты ("
-                + _orderExecution.ValueString + "), Regime=Off.";
+                + ": «Остановить робота и продать всё» — отправлено закрытие всех позиций по рынку, Regime=Off.";
             SendNewLogMessage(full, LogMessageType.System);
             SendNewLogMessage(full, LogMessageType.User);
         }
 
+        /// <summary>
+        /// Закрыть все открытые позиции робота на вкладках скринера (экстренно, не зависит от «Тип заявок»).
+        /// </summary>
         private void CloseAllBotPositions()
         {
             if (_screenerTab?.Tabs == null)
@@ -773,32 +776,191 @@ namespace OsEngine.Robots.Custom
             }
 
             string botType = GetNameStrategyType();
+            int closeAttempts = 0;
+            int skippedNotOurBot = 0;
 
             for (int i = 0; i < _screenerTab.Tabs.Count; i++)
             {
-                BotTabSimple t = _screenerTab.Tabs[i];
-                if (t?.PositionsOpenAll == null || t.PositionsOpenAll.Count == 0)
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab?.PositionsOpenAll == null || tab.PositionsOpenAll.Count == 0)
                 {
                     continue;
                 }
 
-                for (int p = 0; p < t.PositionsOpenAll.Count; p++)
+                for (int p = 0; p < tab.PositionsOpenAll.Count; p++)
                 {
-                    Position pos = t.PositionsOpenAll[p];
+                    Position pos = tab.PositionsOpenAll[p];
                     if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0m)
                     {
                         continue;
                     }
 
-                    if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != botType)
+                    if (!IsOurBotPosition(pos))
                     {
+                        skippedNotOurBot++;
                         continue;
                     }
 
-                    decimal slip = _slippage.ValueInt * (t.Security?.PriceStep ?? 0m);
-                    ExecuteClosePosition(t, pos, pos.OpenVolume, GetCloseLimitPrice(t, pos, slip));
+                    if (TryExecuteEmergencyClosePosition(tab, pos))
+                    {
+                        closeAttempts++;
+                    }
                 }
             }
+
+            if (closeAttempts > 0)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": экстренное закрытие — позиций: " + closeAttempts + ".",
+                    LogMessageType.System);
+            }
+            else
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + ": экстренное закрытие — открытых позиций робота не найдено"
+                    + (skippedNotOurBot > 0 ? " (пропущено чужих: " + skippedNotOurBot + ")." : "."),
+                    LogMessageType.System);
+            }
+        }
+
+        /// <summary>
+        /// Fake/эмулятор — CloseAtFake; лайв — CloseAtMarket; иначе агрессивный лимит.
+        /// </summary>
+        private bool TryExecuteEmergencyClosePosition(BotTabSimple tab, Position pos)
+        {
+            if (tab == null || pos == null || pos.OpenVolume <= 0m)
+            {
+                return false;
+            }
+
+            string security = tab.Connector?.SecurityName ?? tab.TabName ?? "?";
+            pos.SignalTypeClose = SignalStopRobotAndSellAll;
+            pos.ProfitOrderIsActive = false;
+            pos.StopOrderIsActive = false;
+
+            if (tab.Connector != null
+                && (!tab.Connector.IsConnected || !tab.Connector.IsReadyToTrade))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + security + "]: закрытие позиции #"
+                    + pos.Number + " — нет подключения или торговля недоступна.",
+                    LogMessageType.Error);
+                return false;
+            }
+
+            decimal volume = pos.OpenVolume;
+
+            if (TabUsesFakeExecution(tab, pos))
+            {
+                decimal price = GetEmergencyClosePrice(tab, pos);
+                if (price <= 0m)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " [" + security + "]: fake-закрытие #"
+                        + pos.Number + " — нет цены (Bid/Ask/свеча).",
+                        LogMessageType.Error);
+                    return false;
+                }
+
+                DateTime time = tab.TimeServerCurrent;
+                if (time == DateTime.MinValue)
+                {
+                    time = DateTime.Now;
+                }
+
+                tab.CloseAtFake(pos, volume, price, time);
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + security + "]: fake-закрытие #"
+                    + pos.Number + " " + pos.Direction + " vol=" + volume.ToString(CultureInfo.InvariantCulture)
+                    + " @ " + price.ToString(CultureInfo.InvariantCulture),
+                    LogMessageType.System);
+                return true;
+            }
+
+            if (tab.Connector?.MarketOrdersIsSupport == true)
+            {
+                tab.CloseAtMarket(pos, volume, SignalStopRobotAndSellAll);
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + security + "]: закрытие по рынку #"
+                    + pos.Number + " vol=" + volume.ToString(CultureInfo.InvariantCulture),
+                    LogMessageType.System);
+                return true;
+            }
+
+            decimal limitPrice = GetEmergencyClosePrice(tab, pos);
+            if (limitPrice <= 0m)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " [" + security + "]: лимит-закрытие #"
+                    + pos.Number + " — нет цены.",
+                    LogMessageType.Error);
+                return false;
+            }
+
+            tab.CloseAtLimit(pos, limitPrice, volume, SignalStopRobotAndSellAll);
+            SendNewLogMessage(
+                NameStrategyUniq + " [" + security + "]: агрессивный лимит #"
+                + pos.Number + " @ " + limitPrice.ToString(CultureInfo.InvariantCulture),
+                LogMessageType.System);
+            return true;
+        }
+
+        private static bool TabUsesFakeExecution(BotTabSimple tab, Position pos)
+        {
+            if (tab?.EmulatorIsOn == true)
+            {
+                return true;
+            }
+
+            if (pos?.SecurityName != null
+                && pos.SecurityName.EndsWith(" TestPaper", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (pos?.OpenOrders != null && pos.OpenOrders.Count > 0)
+            {
+                Order openOrder = pos.OpenOrders[0];
+                if (openOrder?.SecurityNameCode != null
+                    && openOrder.SecurityNameCode.EndsWith(" TestPaper", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private decimal GetEmergencyClosePrice(BotTabSimple tab, Position pos)
+        {
+            decimal slip = _slippage.ValueInt * (tab.Security?.PriceStep ?? 0m);
+
+            if (pos.Direction == Side.Buy)
+            {
+                if (tab.PriceBestBid > 0m)
+                {
+                    return ApplyRandomPriceShift(tab.PriceBestBid - slip, tab);
+                }
+            }
+            else
+            {
+                if (tab.PriceBestAsk > 0m)
+                {
+                    return ApplyRandomPriceShift(tab.PriceBestAsk + slip, tab);
+                }
+            }
+
+            if (tab.CandlesAll != null && tab.CandlesAll.Count > 0)
+            {
+                return GetCloseLimitPrice(tab, pos, slip);
+            }
+
+            if (pos.EntryPrice > 0m)
+            {
+                return pos.EntryPrice;
+            }
+
+            return 0m;
         }
 
         private bool UseMarketOrderExecution()
