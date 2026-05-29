@@ -543,8 +543,6 @@ namespace OsEngine.OsTrader
             }
             try
             {
-                _riskManager.ClearJournals();
-
                 if (_globalPositionViewer != null)
                 {
                     _globalPositionViewer.ClearJournalsArray();
@@ -553,6 +551,7 @@ namespace OsEngine.OsTrader
                 if (PanelsArray != null)
                 {
                     List<Journal.Journal> journalsAll = new List<Journal.Journal>();
+                    List<Journal.Journal> riskJournals = new List<Journal.Journal>();
 
                     for (int i = 0; i < PanelsArray.Count; i++)
                     {
@@ -560,7 +559,7 @@ namespace OsEngine.OsTrader
 
                         for (int i2 = 0; journalsCurrent != null && i2 < journalsCurrent.Count; i2++)
                         {
-                            _riskManager.SetNewJournal(journalsCurrent[i2]);
+                            riskJournals.Add(journalsCurrent[i2]);
 
                             if (_globalPositionViewer != null)
                             {
@@ -568,6 +567,8 @@ namespace OsEngine.OsTrader
                             }
                         }
                     }
+
+                    _riskManager.SetJournals(riskJournals);
 
                     if (_globalPositionViewer != null)
                     {
@@ -599,6 +600,10 @@ namespace OsEngine.OsTrader
 
                         _buyAtStopPosViewer.LoadTabToWatch(allTabs);
                     }
+                }
+                else
+                {
+                    _riskManager.SetJournals(null);
                 }
             }
             catch (Exception error)

@@ -140,7 +140,35 @@ namespace OsEngine.OsTrader.RiskManager
         /// </summary>
         public void ClearJournals()
         {
-            _journals = null;
+            lock (_journalsLocker)
+            {
+                _journals = null;
+            }
+        }
+
+        /// <summary>
+        /// Replace journals atomically (thread-safe).
+        /// </summary>
+        public void SetJournals(List<Journal.Journal> journals)
+        {
+            try
+            {
+                lock (_journalsLocker)
+                {
+                    if (journals == null || journals.Count == 0)
+                    {
+                        _journals = null;
+                    }
+                    else
+                    {
+                        _journals = new List<Journal.Journal>(journals);
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
         }
 
         /// <summary>
@@ -150,11 +178,14 @@ namespace OsEngine.OsTrader.RiskManager
         {
             try
             {
-                if (_journals == null)
+                lock (_journalsLocker)
                 {
-                    _journals = new List<Journal.Journal>();
+                    if (_journals == null)
+                    {
+                        _journals = new List<Journal.Journal>();
+                    }
+                    _journals.Add(newJournal);
                 }
-                _journals.Add(newJournal);
             }
             catch (Exception error)
             {
@@ -166,6 +197,8 @@ namespace OsEngine.OsTrader.RiskManager
         /// Risk manager journals
         /// </summary>
         private List<Journal.Journal> _journals;
+
+        private readonly object _journalsLocker = new object();
 
         /// <summary>
         /// Save
@@ -283,10 +316,21 @@ namespace OsEngine.OsTrader.RiskManager
                 }
 
                 decimal profit = 0;
+                Journal.Journal[] journalsSnapshot;
 
-                for (int i = 0; i < _journals.Count; i++)
+                lock (_journalsLocker)
                 {
-                    profit += _journals[i].GetProfitFromThatDayInPercent();
+                    if (_journals == null)
+                    {
+                        return;
+                    }
+
+                    journalsSnapshot = _journals.ToArray();
+                }
+
+                for (int i = 0; i < journalsSnapshot.Length; i++)
+                {
+                    profit += journalsSnapshot[i].GetProfitFromThatDayInPercent();
                 }
 
                 if (profit < -Math.Abs(MaxDrowDownToDayPersent))
