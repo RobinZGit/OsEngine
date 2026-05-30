@@ -710,6 +710,9 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        private const string PortfolioStopBaselineAmountParamName = "Сумма портфеля (база просадки)";
+        private const string PortfolioStopDrawdownDateParamName = "Дата просадки";
+
         /// <summary>
         /// Кнопка «Заполнить сумму портфеля»: текущая сумма портфеля и сегодняшняя дата в базу просадки.
         /// </summary>
@@ -719,32 +722,39 @@ namespace OsEngine.Robots.Custom
             {
                 BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
                 DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
+                DateTime currentDate = GetCalendarDateForTimeOnly(tab, referenceTime);
+
                 decimal? value = TryGetMonitoredPortfolioValue(tab);
-                if (!value.HasValue || value.Value <= 0m)
+                if (value.HasValue && value.Value > 0m)
                 {
-                    string modeHint = ShouldUseMoexTesterConnector()
-                        ? "тестер"
-                        : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
-                    SendNewLogMessage(
+                    ApplyPortfolioStopFieldsToParameters(value.Value, currentDate, setAmount: true);
+                    RefreshPortfolioStopParameterDialog();
+
+                    string msg =
                         NameStrategyUniq
-                        + " | Стопы: не удалось получить текущую сумму портфеля («Заполнить сумму портфеля», "
-                        + modeHint
-                        + "). Проверьте портфель скринера и подключение коннектора.",
-                        LogMessageType.Error);
+                        + " | Стопы: «Заполнить сумму портфеля» — база "
+                        + value.Value.ToString(CultureInfo.InvariantCulture)
+                        + ", дата "
+                        + FormatPortfolioStopDate(currentDate);
+                    SendNewLogMessage(msg, LogMessageType.System);
+                    SendNewLogMessage(msg, LogMessageType.User);
                     return;
                 }
 
-                DateTime currentDate = GetCalendarDateForTimeOnly(tab, referenceTime);
-                SetPortfolioStopBaseline(value.Value, currentDate);
+                ApplyPortfolioStopFieldsToParameters(0m, currentDate, setAmount: false);
+                RefreshPortfolioStopParameterDialog();
 
-                string msg =
+                string modeHint = ShouldUseMoexTesterConnector()
+                    ? "тестер"
+                    : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
+                SendNewLogMessage(
                     NameStrategyUniq
-                    + " | Стопы: «Заполнить сумму портфеля» — база "
-                    + value.Value.ToString(CultureInfo.InvariantCulture)
-                    + ", дата "
-                    + FormatPortfolioStopDate(currentDate);
-                SendNewLogMessage(msg, LogMessageType.System);
-                SendNewLogMessage(msg, LogMessageType.User);
+                    + " | Стопы: дата просадки установлена ("
+                    + FormatPortfolioStopDate(currentDate)
+                    + "), но не удалось получить сумму портфеля («Заполнить сумму портфеля», "
+                    + modeHint
+                    + "). Проверьте портфель скринера и подключение коннектора.",
+                    LogMessageType.Error);
             }
             catch (Exception ex)
             {
@@ -1497,6 +1507,90 @@ namespace OsEngine.Robots.Custom
             {
                 ParamGuiSettings.RePaintParameterTables();
             }
+        }
+
+        /// <summary>
+        /// Сразу перерисовать открытое окно параметров (PaintTable), без ожидания фонового цикла ~1 с.
+        /// </summary>
+        private void RepaintOpenParameterDialogImmediate()
+        {
+            if (!ParamGuiIsOpen)
+            {
+                return;
+            }
+
+            try
+            {
+                FieldInfo uiField = typeof(BotPanel).GetField(
+                    "_parametersUi",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                object uiObj = uiField?.GetValue(this);
+                if (uiObj == null)
+                {
+                    return;
+                }
+
+                FieldInfo tabsField = uiObj.GetType().GetField(
+                    "_tabs",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (!(tabsField?.GetValue(uiObj) is IList tabs))
+                {
+                    return;
+                }
+
+                for (int i = 0; i < tabs.Count; i++)
+                {
+                    MethodInfo paint = tabs[i]?.GetType().GetMethod(
+                        "PaintTable",
+                        BindingFlags.Instance | BindingFlags.Public);
+                    paint?.Invoke(tabs[i], null);
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private StrategyParameterDecimal ResolvePortfolioStopBaselineParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioStopBaselineAmountParamName);
+            return (fromList as StrategyParameterDecimal) ?? _portfolioStopBaselineAmount;
+        }
+
+        private StrategyParameterString ResolvePortfolioStopDrawdownDateParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioStopDrawdownDateParamName);
+            return (fromList as StrategyParameterString) ?? _portfolioStopDrawdownDate;
+        }
+
+        /// <summary>
+        /// Запись в параметры вкладки «Стопы» (объекты из Parameters — те же, что в окне настроек).
+        /// </summary>
+        private void ApplyPortfolioStopFieldsToParameters(decimal baseline, DateTime decisionDate, bool setAmount)
+        {
+            StrategyParameterString dateParam = ResolvePortfolioStopDrawdownDateParameter();
+            if (dateParam != null && decisionDate != DateTime.MinValue)
+            {
+                dateParam.ValueString = FormatPortfolioStopDate(decisionDate);
+            }
+
+            if (!setAmount)
+            {
+                return;
+            }
+
+            StrategyParameterDecimal amountParam = ResolvePortfolioStopBaselineParameter();
+            if (amountParam != null && baseline > 0m)
+            {
+                amountParam.ValueDecimal = baseline;
+            }
+        }
+
+        private void RefreshPortfolioStopParameterDialog()
+        {
+            RepaintParameterGuiTables();
+            RepaintOpenParameterDialogImmediate();
         }
 
         /// <summary>
@@ -4460,7 +4554,20 @@ namespace OsEngine.Robots.Custom
 
         private Portfolio TryResolvePortfolioForMonitoring(BotTabSimple tab)
         {
-            Portfolio portfolio = tab?.Connector?.Portfolio ?? tab?.Portfolio;
+            // Как вкладка «Portfolio» в OsTrader: server.Portfolios (не только Connector вкладки).
+            Portfolio portfolio = TryGetPortfolioFromConnectedServers();
+            if (portfolio != null)
+            {
+                return portfolio;
+            }
+
+            portfolio = GetFirstPortfolio();
+            if (portfolio != null)
+            {
+                return portfolio;
+            }
+
+            portfolio = tab?.Connector?.Portfolio ?? tab?.Portfolio;
             if (portfolio != null)
             {
                 return portfolio;
@@ -4480,22 +4587,130 @@ namespace OsEngine.Robots.Custom
             }
 
             IServer server = ResolvePortfolioMonitoringServer(tab);
-            string portfolioName = ResolvePortfolioMonitoringName(tab, server);
-            if (server != null && !string.IsNullOrWhiteSpace(portfolioName))
+            return TryPickPortfolioOnServer(server, ResolvePortfolioMonitoringName(tab, server));
+        }
+
+        /// <summary>
+        /// Портфель с подключённых серверов — тот же источник, что и вкладка «Portfolio» OsTrader.
+        /// </summary>
+        private Portfolio TryGetPortfolioFromConnectedServers()
+        {
+            string preferredName = _screenerTab?.PortfolioName;
+            IServer primaryServer = ResolvePortfolioMonitoringServer(null);
+            Portfolio primary = TryPickPortfolioOnServer(primaryServer, preferredName);
+            if (primary != null)
             {
-                portfolio = server.GetPortfolioForName(portfolioName);
-                if (portfolio != null)
+                return primary;
+            }
+
+            List<IServer> servers = ServerMaster.GetServers();
+            if (servers == null || servers.Count == 0)
+            {
+                return null;
+            }
+
+            Portfolio best = null;
+            decimal bestEquity = 0m;
+
+            for (int i = 0; i < servers.Count; i++)
+            {
+                IServer server = servers[i];
+                if (server == null || server.ServerType == ServerType.Optimizer)
+                {
+                    continue;
+                }
+
+                Portfolio candidate = TryPickPortfolioOnServer(server, preferredName);
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                decimal equity = GetPortfolioEquityForServerSelection(candidate);
+                if (equity > bestEquity)
+                {
+                    bestEquity = equity;
+                    best = candidate;
+                }
+            }
+
+            return best;
+        }
+
+        private static Portfolio TryPickPortfolioOnServer(IServer server, string preferredName)
+        {
+            if (server?.Portfolios == null || server.Portfolios.Count == 0)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(preferredName))
+            {
+                Portfolio exact = server.GetPortfolioForName(preferredName);
+                if (exact != null)
+                {
+                    return exact;
+                }
+            }
+
+            Portfolio best = null;
+            decimal bestEquity = 0m;
+
+            for (int i = 0; i < server.Portfolios.Count; i++)
+            {
+                Portfolio portfolio = server.Portfolios[i];
+                if (portfolio == null
+                    || string.Equals(portfolio.Number, "FinamVirtual", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                decimal equity = GetPortfolioEquityForServerSelection(portfolio);
+                if (equity > bestEquity)
+                {
+                    bestEquity = equity;
+                    best = portfolio;
+                }
+            }
+
+            if (best != null)
+            {
+                return best;
+            }
+
+            for (int i = 0; i < server.Portfolios.Count; i++)
+            {
+                Portfolio portfolio = server.Portfolios[i];
+                if (portfolio != null
+                    && !string.Equals(portfolio.Number, "FinamVirtual", StringComparison.OrdinalIgnoreCase))
                 {
                     return portfolio;
                 }
             }
 
-            if (server?.Portfolios != null && server.Portfolios.Count > 0)
+            return null;
+        }
+
+        /// <summary>Выбор «лучшего» портфеля на сервере (ValueCurrent, как на вкладке «Portfolio»).</summary>
+        private static decimal GetPortfolioEquityForServerSelection(Portfolio portfolio)
+        {
+            if (portfolio == null)
             {
-                return server.Portfolios[0];
+                return 0m;
             }
 
-            return null;
+            if (portfolio.ValueCurrent > 0m)
+            {
+                return portfolio.ValueCurrent;
+            }
+
+            if (portfolio.ValueBegin > 0m)
+            {
+                return portfolio.ValueBegin;
+            }
+
+            decimal? fromBoard = TryGetPrimeEquityFromPositionsOnBoard(portfolio);
+            return fromBoard ?? 0m;
         }
 
         /// <summary>
@@ -4622,13 +4837,19 @@ namespace OsEngine.Robots.Custom
         private decimal? TryGetMonitoredPortfolioValue(BotTabSimple tab)
         {
             Portfolio myPortfolio = TryResolvePortfolioForMonitoring(tab);
-            decimal? fromPortfolio = ExtractMonitoredPortfolioValue(myPortfolio);
-            if (fromPortfolio.HasValue && fromPortfolio.Value > 0m)
+            decimal equity = GetPortfolioDisplayEquity(myPortfolio);
+            if (equity > 0m)
             {
-                return fromPortfolio;
+                return equity;
             }
 
             return TryGetEquityFromLatestBotPosition(tab);
+        }
+
+        private decimal GetPortfolioDisplayEquity(Portfolio portfolio)
+        {
+            decimal? extracted = ExtractMonitoredPortfolioValue(portfolio);
+            return extracted.HasValue ? extracted.Value : 0m;
         }
 
         private decimal? ExtractMonitoredPortfolioValue(Portfolio portfolio)
@@ -4650,7 +4871,7 @@ namespace OsEngine.Robots.Custom
                     return portfolio.ValueBegin;
                 }
 
-                return null;
+                return TryGetPrimeEquityFromPositionsOnBoard(portfolio);
             }
 
             List<PositionOnBoard> positionOnBoard = portfolio.GetPositionOnBoard();
@@ -4677,6 +4898,39 @@ namespace OsEngine.Robots.Custom
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Если ValueCurrent/ValueBegin = 0, но на борде есть позиции (как на вкладке «Portfolio»).
+        /// </summary>
+        private static decimal? TryGetPrimeEquityFromPositionsOnBoard(Portfolio portfolio)
+        {
+            List<PositionOnBoard> positionOnBoard = portfolio?.GetPositionOnBoard();
+            if (positionOnBoard == null || positionOnBoard.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < positionOnBoard.Count; i++)
+            {
+                PositionOnBoard rub = positionOnBoard[i];
+                if (string.Equals(rub.SecurityNameCode, "rub", StringComparison.OrdinalIgnoreCase)
+                    && rub.ValueCurrent > 0m)
+                {
+                    return rub.ValueCurrent;
+                }
+            }
+
+            decimal maxValue = 0m;
+            for (int i = 0; i < positionOnBoard.Count; i++)
+            {
+                if (positionOnBoard[i].ValueCurrent > maxValue)
+                {
+                    maxValue = positionOnBoard[i].ValueCurrent;
+                }
+            }
+
+            return maxValue > 0m ? maxValue : null;
         }
 
         /// <summary>
@@ -4726,16 +4980,13 @@ namespace OsEngine.Robots.Custom
             return latestOpen.PortfolioValueOnOpenPosition + latestOpen.ProfitPortfolioAbs;
         }
 
-        private void SetPortfolioStopBaseline(decimal baseline, DateTime decisionDate)
+        private void SetPortfolioStopBaseline(decimal baseline, DateTime decisionDate, bool refreshParameterGui = false)
         {
-            if (_portfolioStopBaselineAmount != null && baseline > 0m)
-            {
-                _portfolioStopBaselineAmount.ValueDecimal = baseline;
-            }
+            ApplyPortfolioStopFieldsToParameters(baseline, decisionDate, setAmount: baseline > 0m);
 
-            if (_portfolioStopDrawdownDate != null)
+            if (refreshParameterGui)
             {
-                _portfolioStopDrawdownDate.ValueString = FormatPortfolioStopDate(decisionDate);
+                RefreshPortfolioStopParameterDialog();
             }
         }
 
