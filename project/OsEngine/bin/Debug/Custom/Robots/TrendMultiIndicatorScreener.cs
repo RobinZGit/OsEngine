@@ -50,7 +50,7 @@ Screener trend robot using multiple indicators simultaneously:
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
 По умолчанию включён только SMA; остальные Use* — выкл.
-У каждого индикатора — «№ И-группы» (строка, числа через запятую; минус = контртренд): индикатор входит во все перечисленные группы; по модулю номера строится ключ И-группы; внутри группы условия связаны И; между группами ИЛИ. Плюс — трендовая логика *Passes; минус — контртрендовая (для объёма/ATR совпадает с трендом).
+У каждого индикатора — «№ И-группы» (строка, числа через запятую; минус = NOT): индикатор входит во все перечисленные группы; по модулю номера строится ключ И-группы; внутри группы условия связаны И; между группами ИЛИ.
 
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
@@ -293,18 +293,18 @@ namespace OsEngine.Robots.Custom
          * ---------------------------------------------------------------------------
          *
          * У каждого индикатора задаётся строка «№ И-группы» (параметры *AndGroup): числа через запятую.
-         * Индикатор может входить в несколько групп. Ключ блока И — |номер|. Знак задаёт режим:
-         * положительный — трендовая логика (*Passes для текущей стороны bull/bear); отрицательный —
-         * контртрендовая (противоположная логика для той же стороны; для Volume/ATR совпадает с трендом).
+         * Индикатор может входить в несколько групп. Ключ блока И — |номер|. Отрицательное число
+         * в списке означает NOT для этой группы (например «1,-2» → группа 1 как есть, группа 2 с инверсией).
          *
-         * Внутри блока с ключом |G| все условия связаны логическим И (AND).
+         * Внутри блока с ключом |G| все условия связаны логическим И (AND). Для положительного номера
+         * берётся результат *Passes как есть; для отрицательного — инверсия (NOT).
          *
          * Разные |номер| — разные блоки. Блоки между собой — логическое ИЛИ (OR): общий сигнал true,
          * если хотя бы один блок целиком true (все его участники с учётом знака дали true).
          *
          * Примеры:
-         *  - SMA=«1», RSI=«1»: (SMA_trend ∧ RSI_trend).
-         *  - SMA=«1», Stoch=«-1»: (SMA_trend ∧ Stoch_counter) в группе |1|.
+         *  - SMA=«1», RSI=«1»: (SMA ∧ RSI).
+         *  - SMA=«1», RSI=«-1»: (SMA ∧ ¬RSI) в группе |1|.
          *  - SMA=«1,2», Volume=«2»: SMA в группах 1 и 2; (…∧SMA₁) ∨ (SMA₂ ∧ Volume₂).
          *  - Номер 0 трактуется как 1.
          *
@@ -314,9 +314,9 @@ namespace OsEngine.Robots.Custom
          * Если ни один индикатор не включён, список условий пуст — для совместимости с
          * прежним поведением возвращается true (нет активных фильтров).
          *
-         * Реализация: AddGroupedIndicatorResult кладёт (|g|, pass по тренду или контртренду);
-         * CombineGroupedOrOfAnds группирует по ключу и для каждой группы проверяет grp.All(x => x.pass);
-         * если хотя бы одна группа полностью true — возвращается true; иначе false.
+         * Реализация: AddGroupedIndicatorResult кладёт (|g|, pass или ¬pass); CombineGroupedOrOfAnds
+         * группирует по ключу и для каждой группы проверяет grp.All(x => x.pass); если хотя бы одна
+         * группа полностью true — возвращается true; иначе false.
          * ---------------------------------------------------------------------------
          */
         private StrategyParameterString _smaAndGroup;
@@ -618,22 +618,22 @@ namespace OsEngine.Robots.Custom
             _macdSlowLen = CreateParameter("MACD slow length", 26, 2, 300, 1);
             _macdSignalLen = CreateParameter("MACD signal length", 9, 2, 100, 1);
 
-            _smaAndGroup = CreateParameter("SMA: № И-группы (через запятую; минус = контртренд)", "1");
-            _rsiAndGroup = CreateParameter("RSI: № И-группы (через запятую; минус = контртренд)", "1");
-            _stochAndGroup = CreateParameter("Stochastic: № И-группы (через запятую; минус = контртренд)", "1");
-            _momAndGroup = CreateParameter("Momentum: № И-группы (через запятую; минус = контртренд)", "1");
-            _bollAndGroup = CreateParameter("Bollinger: № И-группы (через запятую; минус = контртренд)", "1");
-            _linRegAndGroup = CreateParameter("LinReg: № И-группы (через запятую; минус = контртренд)", "1");
-            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы (через запятую; минус = контртренд)", "1");
+            _smaAndGroup = CreateParameter("SMA: № И-группы (через запятую)", "1");
+            _rsiAndGroup = CreateParameter("RSI: № И-группы (через запятую)", "1");
+            _stochAndGroup = CreateParameter("Stochastic: № И-группы (через запятую)", "1");
+            _momAndGroup = CreateParameter("Momentum: № И-группы (через запятую)", "1");
+            _bollAndGroup = CreateParameter("Bollinger: № И-группы (через запятую)", "1");
+            _linRegAndGroup = CreateParameter("LinReg: № И-группы (через запятую)", "1");
+            _volumeAndGroup = CreateParameter("Volume ind.: № И-группы (через запятую)", "1");
 #if false // RZIgreensMinusReds
             _rziAndGroup = CreateParameter("RZI: № И-группы (через запятую)", "1");
 #endif
 #if false // AverageProfitPercentLong
             _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы (через запятую)", "1");
 #endif
-            _vwapAndGroup = CreateParameter("VWAP: № И-группы (через запятую; минус = контртренд)", "1");
-            _atrAndGroup = CreateParameter("ATR: № И-группы (через запятую; минус = контртренд)", "1");
-            _macdAndGroup = CreateParameter("MACD: № И-группы (через запятую; минус = контртренд)", "1");
+            _vwapAndGroup = CreateParameter("VWAP: № И-группы (через запятую)", "1");
+            _atrAndGroup = CreateParameter("ATR: № И-группы (через запятую)", "1");
+            _macdAndGroup = CreateParameter("MACD: № И-группы (через запятую)", "1");
 
             _useRandomPriceShift = CreateParameter("Рандомный сдвиг цен", false);
             _randomPriceShiftPercent = CreateParameter("Рандомность движений, %", 0.1m, 0m, 50m, 0.01m);
@@ -653,7 +653,7 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = контртренд, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
@@ -5246,7 +5246,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Разбор «№ И-группы»: числа через запятую; 0 → 1; знак сохраняется (+ тренд, − контртренд).
+        /// Разбор «№ И-группы»: числа через запятую; 0 → 1; минус = NOT в этой группе.
         /// </summary>
         private static List<int> ParseIndicatorGroupNumbers(string raw)
         {
@@ -5289,35 +5289,30 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Добавляет результат индикатора во все группы из строки параметра (|g|, pass по знаку).
-        /// Выключенный индикатор: trendPassResult == null — запись не добавляется.
-        /// counterTrendPassResult == null — контртренд совпадает с трендом (Volume, ATR).
+        /// Добавляет результат индикатора во все группы из строки параметра (|g|, pass с учётом знака).
+        /// Выключенный индикатор: passResult == null — запись не добавляется.
         /// </summary>
-        private static void AddGroupedIndicatorResult(
-            List<(int group, bool pass)> items,
-            StrategyParameterString groupParam,
-            bool? trendPassResult,
-            bool? counterTrendPassResult = null)
+        private static void AddGroupedIndicatorResult(List<(int group, bool pass)> items, StrategyParameterString groupParam, bool? passResult)
         {
-            if (!trendPassResult.HasValue || groupParam == null)
+            if (!passResult.HasValue || groupParam == null)
             {
                 return;
             }
 
-            bool? counterPass = counterTrendPassResult ?? trendPassResult;
             List<int> groupNumbers = ParseIndicatorGroupNumbers(groupParam.ValueString);
+            bool pass = passResult.Value;
 
             for (int i = 0; i < groupNumbers.Count; i++)
             {
                 int raw = groupNumbers[i];
                 int groupKey = Math.Abs(raw);
-                bool? passSource = raw < 0 ? counterPass : trendPassResult;
-                if (!passSource.HasValue)
+                bool groupPass = pass;
+                if (raw < 0)
                 {
-                    continue;
+                    groupPass = !groupPass;
                 }
 
-                items.Add((groupKey, passSource.Value));
+                items.Add((groupKey, groupPass));
             }
         }
 
@@ -6658,42 +6653,22 @@ namespace OsEngine.Robots.Custom
                 decimal close = candles[candleIndex].Close;
                 var items = new List<(int group, bool pass)>();
 
-                AddGroupedIndicatorResult(items, _smaAndGroup,
-                    BullSmaPasses(close, tab, candleIndex),
-                    BearSmaPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _rsiAndGroup,
-                    BullRsiPasses(close, tab, candleIndex),
-                    BearRsiPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _stochAndGroup,
-                    BullStochPasses(close, tab, candleIndex),
-                    BearStochPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _momAndGroup,
-                    BullMomentumPasses(close, tab, candleIndex),
-                    BearMomentumPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _bollAndGroup,
-                    BullBollingerPasses(close, tab, candleIndex),
-                    BearBollingerPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _linRegAndGroup,
-                    BullLinRegPasses(close, tab, candleIndex),
-                    BearLinRegPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
                 AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
 #if false // RZIgreensMinusReds
-                AddGroupedIndicatorResult(items, _rziAndGroup,
-                    BullRziPasses(close, tab, candleIndex),
-                    BearRziPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
 #endif
 #if false // AverageProfitPercentLong
-                AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup,
-                    BullAverageProfitPercentLongPasses(candles, tab, candleIndex),
-                    BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
 #endif
-                AddGroupedIndicatorResult(items, _vwapAndGroup,
-                    BullVwapPasses(close, tab, candleIndex),
-                    BearVwapPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
                 AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
-                AddGroupedIndicatorResult(items, _macdAndGroup,
-                    BullMacdPasses(tab, candleIndex),
-                    BearMacdPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
 
                 return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
             });
@@ -6714,42 +6689,22 @@ namespace OsEngine.Robots.Custom
                 decimal close = candles[candleIndex].Close;
                 var items = new List<(int group, bool pass)>();
 
-                AddGroupedIndicatorResult(items, _smaAndGroup,
-                    BearSmaPasses(close, tab, candleIndex),
-                    BullSmaPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _rsiAndGroup,
-                    BearRsiPasses(close, tab, candleIndex),
-                    BullRsiPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _stochAndGroup,
-                    BearStochPasses(close, tab, candleIndex),
-                    BullStochPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _momAndGroup,
-                    BearMomentumPasses(close, tab, candleIndex),
-                    BullMomentumPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _bollAndGroup,
-                    BearBollingerPasses(close, tab, candleIndex),
-                    BullBollingerPasses(close, tab, candleIndex));
-                AddGroupedIndicatorResult(items, _linRegAndGroup,
-                    BearLinRegPasses(close, tab, candleIndex),
-                    BullLinRegPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
                 AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
 #if false // RZIgreensMinusReds
-                AddGroupedIndicatorResult(items, _rziAndGroup,
-                    BearRziPasses(close, tab, candleIndex),
-                    BullRziPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
 #endif
 #if false // AverageProfitPercentLong
-                AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup,
-                    BearAverageProfitPercentLongPasses(candles, tab, candleIndex),
-                    BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
 #endif
-                AddGroupedIndicatorResult(items, _vwapAndGroup,
-                    BearVwapPasses(close, tab, candleIndex),
-                    BullVwapPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
                 AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
-                AddGroupedIndicatorResult(items, _macdAndGroup,
-                    BearMacdPasses(tab, candleIndex),
-                    BullMacdPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
 
                 return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
             });
