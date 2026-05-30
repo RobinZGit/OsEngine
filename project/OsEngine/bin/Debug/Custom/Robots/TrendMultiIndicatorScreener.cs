@@ -74,7 +74,7 @@ Filters (AlgoStart-style):
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
-Stops (tab «Стопы»): страховка портфеля — просадка от базовой «Сумма портфеля» (обновляется при первом входе в новый день); при срабатывании — закрыть всё, Regime=Off, обновить базу.
+Stops (tab «Стопы»): страховка портфеля — просадка от базовой «Сумма портфеля» (обновляется при первом входе в новый день; кнопка «Заполнить сумму портфеля»); при срабатывании — закрыть всё, Regime=Off, обновить базу.
 
 MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
 
@@ -199,6 +199,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _portfolioStopBaselineAmount;
         private StrategyParameterString _portfolioStopDrawdownDate;
         private StrategyParameterDecimal _portfolioStopDrawdownPercent;
+        private StrategyParameterButton _fillPortfolioStopBaselineButton;
 
         private DateTime _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
@@ -505,6 +506,8 @@ namespace OsEngine.Robots.Custom
                 50m,
                 0.1m,
                 stopsTab);
+            _fillPortfolioStopBaselineButton = CreateParameterButton("Заполнить сумму портфеля", stopsTab);
+            _fillPortfolioStopBaselineButton.UserClickOnButtonEvent += FillPortfolioStopBaselineButton_UserClickOnButtonEvent;
 
             const string moexFuturesTab = "MOEX фьючерсы";
             _moexFuturesTickerPrefixes = CreateParameter(
@@ -700,6 +703,48 @@ namespace OsEngine.Robots.Custom
             {
                 CloseParameterDialogIfOpen();
                 ExecuteStopRobotAndSellAll();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Кнопка «Заполнить сумму портфеля»: текущая сумма портфеля и сегодняшняя дата в базу просадки.
+        /// </summary>
+        private void FillPortfolioStopBaselineButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+                DateTime referenceTime = tab?.TimeServerCurrent ?? DateTime.Now;
+                if (referenceTime == DateTime.MinValue)
+                {
+                    referenceTime = DateTime.Now;
+                }
+
+                decimal? value = TryGetMonitoredPortfolioValue(tab);
+                if (!value.HasValue || value.Value <= 0m)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Стопы: не удалось получить текущую сумму портфеля («Заполнить сумму портфеля»).",
+                        LogMessageType.Error);
+                    return;
+                }
+
+                DateTime currentDate = GetCalendarDateForTimeOnly(tab, referenceTime);
+                SetPortfolioStopBaseline(value.Value, currentDate);
+
+                string msg =
+                    NameStrategyUniq
+                    + " | Стопы: «Заполнить сумму портфеля» — база "
+                    + value.Value.ToString(CultureInfo.InvariantCulture)
+                    + ", дата "
+                    + FormatPortfolioStopDate(currentDate);
+                SendNewLogMessage(msg, LogMessageType.System);
+                SendNewLogMessage(msg, LogMessageType.User);
             }
             catch (Exception ex)
             {
@@ -4444,6 +4489,16 @@ namespace OsEngine.Robots.Custom
             if (server != null && !string.IsNullOrWhiteSpace(portfolioName))
             {
                 return server.GetPortfolioForName(portfolioName);
+            }
+
+            return null;
+        }
+
+        private BotTabSimple TryGetPortfolioMonitoringReferenceTab()
+        {
+            if (_screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
+            {
+                return _screenerTab.Tabs[0];
             }
 
             return null;
