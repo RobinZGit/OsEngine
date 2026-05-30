@@ -42,6 +42,7 @@ Screener trend robot using multiple indicators simultaneously:
 - Bollinger
 - Linear Regression Curve
 - Volume (объём текущей свечи vs предыдущая; минимальный рост в %)
+- Volume TOD (опционально): объём vs среднее в то же время прошлых торговых дней (intraday)
 - VWAP (close выше/ниже линии; сброс по календарному дню)
 - MACD (линия MACD выше/ниже сигнальной; по умолчанию выкл.)
 - RZIgreensMinusReds, Average Profit Percent Long — в исходниках отключены (#if false), код не удалён.
@@ -57,6 +58,7 @@ Open Long / Short when the grouped formula is satisfied for bull/bear checks (se
 «Инверсия логики (покупка ↔ продажа)»: если включена — по сигналу бычьей формулы открывается продажа, по медвежьей — покупка (то же при закрытии и реверсе).
 
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
+Optional «Volume: сравнение с тем же временем прошлых дней»: curVol / avg(same TimeStart time on last N trading days) ≥ min ratio.
 
 Exit/Reverse:
 If a position exists and opposite signal appears, close and (if allowed) open opposite.
@@ -72,7 +74,7 @@ Filters (AlgoStart-style):
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
-Stops (tab «Стопы»): трейлинг позиции — в OsTrader встроенный CloseAtTrailingStopMarket по пику цены; в тестере — проверка High/Low свечи. Страховка портфеля — при просадке equity от пика закрыть все позиции скринера (опционально Regime → OnlyClosePosition).
+Stops (tab «Стопы»): страховка портфеля — просадка от базовой «Сумма портфеля» (обновляется при первом входе в новый день); при срабатывании — закрыть всё, Regime=Off, обновить базу.
 
 MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
 
@@ -127,8 +129,7 @@ namespace OsEngine.Robots.Custom
         private const string AreaPrime = "Prime";
         private const string AreaSecond = "Second";
 
-        private const string SignalPositionTrailingStop = "TrendMultiTrailPosition";
-        private const string SignalPortfolioTrailingStop = "TrendMultiTrailPortfolio";
+        private const string SignalPortfolioDrawdownStop = "TrendMultiPortfolioDrawdown";
         private const string SignalStopRobotAndSellAll = "TrendMultiStopAll";
         private BotTabScreener _screenerTab;
 
@@ -193,19 +194,13 @@ namespace OsEngine.Robots.Custom
 
         private bool _samoindikatsiyaFirstEntryBaselineCaptured;
 
-        // стопы (трейлинг позиции + страховка портфеля)
-        private StrategyParameterBool _usePositionTrailing;
-        private StrategyParameterDecimal _positionTrailingPercent;
-        private StrategyParameterBool _usePortfolioTrailing;
-        private StrategyParameterDecimal _portfolioTrailingDrawdownPercent;
-        private StrategyParameterBool _portfolioTrailingSetOnlyCloseRegime;
+        // стопы (страховка портфеля)
+        private StrategyParameterBool _usePortfolioStop;
+        private StrategyParameterDecimal _portfolioStopBaselineAmount;
+        private StrategyParameterString _portfolioStopDrawdownDate;
+        private StrategyParameterDecimal _portfolioStopDrawdownPercent;
 
-        private readonly Dictionary<string, decimal> _positionTrailingPeaks =
-            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-
-        private decimal _portfolioEquityPeak;
-        private string _prevRegimeForPortfolioTrailing;
-        private DateTime _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
+        private DateTime _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
         private readonly HashSet<string> _loggedStopNoticeKeys =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -260,6 +255,9 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _linRegDev;
 
         private StrategyParameterDecimal _volumeIndicatorMinGrowthPercent;
+        private StrategyParameterBool _useVolumeTodCompare;
+        private StrategyParameterInt _volumeTodPastDays;
+        private StrategyParameterDecimal _volumeTodMinRelativeRatio;
 
 #if false // RZIgreensMinusReds
         private StrategyParameterInt _rziLen;
@@ -428,8 +426,6 @@ namespace OsEngine.Robots.Custom
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
             _screenerTab.NewTabCreateEvent += ScreenerTab_NewTabCreateEvent;
             _screenerTab.PositionOpeningSuccesEvent += ScreenerTab_PositionOpeningSuccesEvent;
-            _screenerTab.PositionStopActivateEvent += ScreenerTab_PositionStopActivateEvent;
-            _screenerTab.PositionClosingSuccesEvent += ScreenerTab_PositionClosingSuccesEvent;
             _screenerTab.EventsIsOn = true;
             EnsureScreenerChildTabsEventsOn();
 
@@ -493,25 +489,21 @@ namespace OsEngine.Robots.Custom
                 scheduleTab);
 
             const string stopsTab = "Стопы";
-            _usePositionTrailing = CreateParameter("Трейлинг позиции", true, stopsTab);
-            _positionTrailingPercent = CreateParameter(
-                "Трейлинг позиции, % от пика",
-                1m,
-                0.1m,
-                50m,
-                0.1m,
+            _usePortfolioStop = CreateParameter("Страховка портфеля (просадка от базы)", true, stopsTab);
+            _portfolioStopBaselineAmount = CreateParameter(
+                "Сумма портфеля (база просадки)",
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
                 stopsTab);
-            _usePortfolioTrailing = CreateParameter("Страховка портфеля (просадка от пика)", true, stopsTab);
-            _portfolioTrailingDrawdownPercent = CreateParameter(
-                "Просадка портфеля от пика, %",
+            _portfolioStopDrawdownDate = CreateParameter("Дата просадки", "", stopsTab);
+            _portfolioStopDrawdownPercent = CreateParameter(
+                "Просадка портфеля от базы, %",
                 5m,
                 0.1m,
                 50m,
                 0.1m,
-                stopsTab);
-            _portfolioTrailingSetOnlyCloseRegime = CreateParameter(
-                "После страховки: OnlyClosePosition",
-                true,
                 stopsTab);
 
             const string moexFuturesTab = "MOEX фьючерсы";
@@ -593,6 +585,16 @@ namespace OsEngine.Robots.Custom
             _linRegDev = CreateParameter("LinReg deviation", 2m, 1m, 4m, 0.1m);
 
             _volumeIndicatorMinGrowthPercent = CreateParameter("Volume vs prev candle min growth %", 5m, 0m, 500m, 0.5m);
+            _useVolumeTodCompare = CreateParameter(
+                "Volume: сравнение с тем же временем прошлых дней",
+                false);
+            _volumeTodPastDays = CreateParameter("Volume TOD: число прошлых торг. дней", 10, 1, 60, 1);
+            _volumeTodMinRelativeRatio = CreateParameter(
+                "Volume TOD: мин. отношение к среднему",
+                0.8m,
+                0.1m,
+                5m,
+                0.05m);
 
 #if false // RZIgreensMinusReds
             // RZIgreensMinusReds (script Custom/Indicators/Scripts/RZIgreensMinusReds.cs)
@@ -755,9 +757,7 @@ namespace OsEngine.Robots.Custom
         private void ExecuteStopRobotAndSellAll()
         {
             CloseAllBotPositions();
-            _positionTrailingPeaks.Clear();
-            _portfolioEquityPeak = 0m;
-            _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
+            _lastPortfolioStopDecisionTime = DateTime.MinValue;
             _regime.ValueString = "Off";
 
             string full = NameStrategyUniq
@@ -4369,7 +4369,7 @@ namespace OsEngine.Robots.Custom
             {
                 _lastScheduleEndCloseDecisionTime = decisionTime;
                 CloseAllBotPositions();
-                _positionTrailingPeaks.Clear();
+                _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
                 SendNewLogMessage(
                     "Расписание: окончание работы "
@@ -4390,46 +4390,63 @@ namespace OsEngine.Robots.Custom
                     || tab.StartProgram == StartProgram.IsOsOptimizer);
         }
 
-        private static string GetPositionTrailingKey(BotTabSimple tab, Position position)
+        private static string FormatPortfolioStopDate(DateTime date)
         {
-            return tab.TabName + "|" + position.Number;
+            return date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
         }
 
-        private decimal GetPositionTrailingPercent()
+        private bool TryParsePortfolioStopDrawdownDate(BotTabSimple tab, DateTime candleTime, out DateTime parsedDate)
         {
-            if (!_usePositionTrailing.ValueBool)
+            parsedDate = DateTime.MinValue;
+            if (_portfolioStopDrawdownDate == null
+                || string.IsNullOrWhiteSpace(_portfolioStopDrawdownDate.ValueString))
             {
-                return 0m;
+                return false;
             }
 
-            return _positionTrailingPercent.ValueDecimal;
+            if (TryParseFlexibleDateTime(tab, candleTime, _portfolioStopDrawdownDate.ValueString, out DateTime parsed))
+            {
+                parsedDate = parsed.Date;
+                return true;
+            }
+
+            return false;
         }
 
-        private static decimal ComputeTrailingStopFromPeak(Side direction, decimal peak, decimal percent)
+        private Portfolio TryResolvePortfolioForMonitoring(BotTabSimple tab)
         {
-            if (peak <= 0m || percent <= 0m)
+            Portfolio portfolio = tab?.Portfolio ?? tab?.Connector?.Portfolio;
+            if (portfolio != null)
             {
-                return 0m;
+                return portfolio;
             }
 
-            decimal factor = percent / 100m;
-            return direction == Side.Buy
-                ? peak * (1m - factor)
-                : peak * (1m + factor);
-        }
+            if (_screenerTab?.Tabs != null)
+            {
+                for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+                {
+                    BotTabSimple childTab = _screenerTab.Tabs[i];
+                    portfolio = childTab?.Portfolio ?? childTab?.Connector?.Portfolio;
+                    if (portfolio != null)
+                    {
+                        return portfolio;
+                    }
+                }
+            }
 
-        private static void UpdateTrailingPeakFromCandle(ref decimal peak, Side direction, Candle candle, decimal entryPrice)
-        {
-            if (direction == Side.Buy)
+            IServer server = tab?.Connector?.MyServer;
+            if (server == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
             {
-                decimal candidate = Math.Max(candle.High, entryPrice);
-                peak = peak <= 0m ? candidate : Math.Max(peak, candidate);
+                server = _screenerTab.Tabs[0]?.Connector?.MyServer;
             }
-            else
+
+            string portfolioName = _screenerTab?.PortfolioName ?? tab?.Connector?.PortfolioName;
+            if (server != null && !string.IsNullOrWhiteSpace(portfolioName))
             {
-                decimal candidate = Math.Min(candle.Low, entryPrice);
-                peak = peak <= 0m ? candidate : Math.Min(peak, candidate);
+                return server.GetPortfolioForName(portfolioName);
             }
+
+            return null;
         }
 
         /// <summary>
@@ -4437,12 +4454,7 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private decimal? TryGetMonitoredPortfolioValue(BotTabSimple tab)
         {
-            if (tab == null)
-            {
-                return null;
-            }
-
-            Portfolio myPortfolio = tab.Portfolio;
+            Portfolio myPortfolio = TryResolvePortfolioForMonitoring(tab);
             if (myPortfolio == null)
             {
                 return null;
@@ -4470,49 +4482,79 @@ namespace OsEngine.Robots.Custom
             return null;
         }
 
-        private void UpdatePortfolioTrailingOnRegimeChange(BotTabSimple tab)
+        private void SetPortfolioStopBaseline(decimal baseline, DateTime decisionDate)
         {
-            string regime = _regime.ValueString ?? "Off";
-
-            if (_prevRegimeForPortfolioTrailing == regime)
+            if (_portfolioStopBaselineAmount != null && baseline > 0m)
             {
-                return;
+                _portfolioStopBaselineAmount.ValueDecimal = baseline;
             }
 
-            if (regime == "Off")
+            if (_portfolioStopDrawdownDate != null)
             {
-                _portfolioEquityPeak = 0m;
-                _lastPortfolioTrailingDecisionTime = DateTime.MinValue;
-                _positionTrailingPeaks.Clear();
+                _portfolioStopDrawdownDate.ValueString = FormatPortfolioStopDate(decisionDate);
             }
-            else if (_prevRegimeForPortfolioTrailing == "Off" || string.IsNullOrEmpty(_prevRegimeForPortfolioTrailing))
-            {
-                decimal? value = TryGetMonitoredPortfolioValue(tab);
-                _portfolioEquityPeak = value ?? 0m;
-            }
-
-            _prevRegimeForPortfolioTrailing = regime;
         }
 
-        private void TryManagePortfolioEquityTrailing(BotTabSimple tab, DateTime decisionTime)
+        /// <summary>
+        /// При первом входе в новый календарный день (дата просадки &lt; текущей) — зафиксировать базу портфеля.
+        /// </summary>
+        private void TryRefreshPortfolioStopBaselineOnFirstEntry(BotTabSimple tab, Position position, DateTime decisionTime)
         {
-            if (!_usePortfolioTrailing.ValueBool)
+            if (!_usePortfolioStop.ValueBool
+                || position == null
+                || tab == null
+                || position.State != PositionStateType.Open
+                || !IsOurBotPosition(position))
             {
                 return;
             }
 
-            decimal drawdownPercent = _portfolioTrailingDrawdownPercent.ValueDecimal;
+            DateTime currentDate = GetCalendarDateForTimeOnly(tab, decisionTime);
+            DateTime storedDate = DateTime.MinValue;
+            if (TryParsePortfolioStopDrawdownDate(tab, decisionTime, out DateTime parsedStored))
+            {
+                storedDate = parsedStored;
+            }
+
+            if (storedDate >= currentDate)
+            {
+                return;
+            }
+
+            decimal? value = TryGetMonitoredPortfolioValue(tab);
+            if (!value.HasValue || value.Value <= 0m)
+            {
+                return;
+            }
+
+            SetPortfolioStopBaseline(value.Value, currentDate);
+            SendNewLogMessage(
+                NameStrategyUniq + " | Стопы: база портфеля "
+                + value.Value.ToString(CultureInfo.InvariantCulture)
+                + ", дата "
+                + FormatPortfolioStopDate(currentDate),
+                LogMessageType.System);
+        }
+
+        private void TryManagePortfolioDrawdownStop(BotTabSimple tab, DateTime decisionTime)
+        {
+            if (!_usePortfolioStop.ValueBool)
+            {
+                return;
+            }
+
+            decimal drawdownPercent = _portfolioStopDrawdownPercent.ValueDecimal;
             if (drawdownPercent <= 0m)
             {
                 return;
             }
 
-            if (decisionTime == _lastPortfolioTrailingDecisionTime)
+            if (decisionTime == _lastPortfolioStopDecisionTime)
             {
                 return;
             }
 
-            _lastPortfolioTrailingDecisionTime = decisionTime;
+            _lastPortfolioStopDecisionTime = decisionTime;
 
             decimal? currentValue = TryGetMonitoredPortfolioValue(tab);
             if (!currentValue.HasValue || currentValue.Value <= 0m)
@@ -4520,197 +4562,67 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (_portfolioEquityPeak <= 0m)
+            decimal baseline = _portfolioStopBaselineAmount?.ValueDecimal ?? 0m;
+            if (baseline <= 0m)
             {
-                _portfolioEquityPeak = currentValue.Value;
                 return;
             }
 
-            if (currentValue.Value > _portfolioEquityPeak)
-            {
-                _portfolioEquityPeak = currentValue.Value;
-                return;
-            }
-
-            decimal floor = _portfolioEquityPeak * (1m - drawdownPercent / 100m);
+            decimal floor = baseline * (1m - drawdownPercent / 100m);
             if (currentValue.Value > floor)
             {
                 return;
             }
 
             CloseAllBotPositions();
-            _positionTrailingPeaks.Clear();
+            _regime.ValueString = "Off";
+            _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
-            string portfolioStopMsg =
-                NameStrategyUniq + " | *** СТОП (вкладка «Стопы»): страховка портфеля — закрыты все позиции *** | просадка "
-                + drawdownPercent.ToString(CultureInfo.InvariantCulture)
-                + "% от пика "
-                + _portfolioEquityPeak.ToString(CultureInfo.InvariantCulture)
-                + ", equity="
-                + currentValue.Value.ToString(CultureInfo.InvariantCulture);
-
-            LogStopTabNoticeOnce("portfolio|" + decisionTime.Ticks, portfolioStopMsg);
-
-            if (_portfolioTrailingSetOnlyCloseRegime.ValueBool)
+            DateTime currentDate = GetCalendarDateForTimeOnly(tab, decisionTime);
+            decimal? afterCloseValue = TryGetMonitoredPortfolioValue(tab);
+            if (afterCloseValue.HasValue && afterCloseValue.Value > 0m)
             {
-                _regime.ValueString = "OnlyClosePosition";
+                SetPortfolioStopBaseline(afterCloseValue.Value, currentDate);
+            }
+            else
+            {
+                SetPortfolioStopBaseline(currentValue.Value, currentDate);
             }
 
-            _portfolioEquityPeak = currentValue.Value;
+            string portfolioStopHeadline =
+                NameStrategyUniq
+                + ": *** СТОП «Стопы» — просадка портфеля "
+                + drawdownPercent.ToString(CultureInfo.InvariantCulture)
+                + "% от базы — закрыты все позиции, Regime=Off ***";
+
+            string portfolioStopMsg =
+                NameStrategyUniq + " | страховка портфеля | база="
+                + baseline.ToString(CultureInfo.InvariantCulture)
+                + ", equity="
+                + currentValue.Value.ToString(CultureInfo.InvariantCulture)
+                + ", порог="
+                + floor.ToString(CultureInfo.InvariantCulture)
+                + ", новая база="
+                + (_portfolioStopBaselineAmount?.ValueDecimal ?? 0m).ToString(CultureInfo.InvariantCulture)
+                + ", дата="
+                + FormatPortfolioStopDate(currentDate);
+
+            LogPortfolioDrawdownStopNotice("portfolio|" + decisionTime.Ticks, portfolioStopHeadline, portfolioStopMsg);
         }
 
         private void ScreenerTab_PositionOpeningSuccesEvent(Position position, BotTabSimple tab)
         {
-            decimal percent = GetPositionTrailingPercent();
-            if (percent <= 0m || position == null || tab == null || position.State != PositionStateType.Open)
+            if (position == null || tab == null)
             {
                 return;
             }
 
-            decimal entry = position.EntryPrice;
-            if (entry <= 0m)
-            {
-                entry = tab.PriceBestAsk > 0 ? tab.PriceBestAsk : tab.PriceBestBid;
-            }
+            DateTime candleTime = tab.CandlesAll != null && tab.CandlesAll.Count > 0
+                ? tab.CandlesAll[tab.CandlesAll.Count - 1].TimeStart
+                : DateTime.Now;
+            DateTime decisionTime = GetDecisionTime(tab, candleTime);
 
-            if (entry <= 0m)
-            {
-                return;
-            }
-
-            string key = GetPositionTrailingKey(tab, position);
-            _positionTrailingPeaks[key] = entry;
-
-            if (!IsTesterLikeProgram(tab) && UseMarketOrderExecution())
-            {
-                decimal stop = ComputeTrailingStopFromPeak(position.Direction, entry, percent);
-                if (stop > 0m)
-                {
-                    tab.CloseAtTrailingStopMarket(position, stop, SignalPositionTrailingStop);
-                }
-            }
-        }
-
-        private void TryManagePositionTrailingStops(BotTabSimple tab, List<Candle> candles)
-        {
-            decimal percent = GetPositionTrailingPercent();
-            if (percent <= 0m || tab == null || candles == null || candles.Count == 0)
-            {
-                return;
-            }
-
-            List<Position> positions = tab.PositionsOpenAll;
-            if (positions == null || positions.Count == 0)
-            {
-                PrunePositionTrailingPeaksForTab(tab, null);
-                return;
-            }
-
-            Candle candle = candles[^1];
-            HashSet<string> activeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            for (int i = 0; i < positions.Count; i++)
-            {
-                Position pos = positions[i];
-                if (pos.State != PositionStateType.Open)
-                {
-                    continue;
-                }
-
-                string key = GetPositionTrailingKey(tab, pos);
-                activeKeys.Add(key);
-
-                decimal entry = pos.EntryPrice > 0 ? pos.EntryPrice : candle.Close;
-                if (!_positionTrailingPeaks.TryGetValue(key, out decimal peak))
-                {
-                    peak = entry;
-                    _positionTrailingPeaks[key] = peak;
-                }
-
-                UpdateTrailingPeakFromCandle(ref peak, pos.Direction, candle, entry);
-                _positionTrailingPeaks[key] = peak;
-
-                decimal stop = ComputeTrailingStopFromPeak(pos.Direction, peak, percent);
-                if (stop <= 0m)
-                {
-                    continue;
-                }
-
-                bool breached = pos.Direction == Side.Buy
-                    ? candle.Low <= stop
-                    : candle.High >= stop;
-
-                if (!breached)
-                {
-                    continue;
-                }
-
-                if (UseMarketOrderExecution())
-                {
-                    if (IsTesterLikeProgram(tab))
-                    {
-                        ExecuteClosePosition(tab, pos, pos.OpenVolume, 0m, SignalPositionTrailingStop);
-                        LogPositionTrailingStopNotice(
-                            tab,
-                            pos,
-                            "трейлинг позиции — закрытие по пробою (тестер)",
-                            stop);
-                    }
-
-                    continue;
-                }
-
-                decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
-                decimal closePrice = pos.Direction == Side.Buy
-                    ? ApplyRandomPriceShift(stop - slip, tab)
-                    : ApplyRandomPriceShift(stop + slip, tab);
-                ExecuteClosePosition(tab, pos, pos.OpenVolume, closePrice, SignalPositionTrailingStop);
-                LogPositionTrailingStopNotice(
-                    tab,
-                    pos,
-                    "трейлинг позиции — закрытие по пробою (лимит)",
-                    stop);
-            }
-
-            PrunePositionTrailingPeaksForTab(tab, activeKeys);
-        }
-
-        private void ScreenerTab_PositionStopActivateEvent(Position position, BotTabSimple tab)
-        {
-            if (!_usePositionTrailing.ValueBool || !IsOurBotPosition(position))
-            {
-                return;
-            }
-
-            if (!IsPositionTrailingStopSignal(position))
-            {
-                return;
-            }
-
-            LogPositionTrailingStopNotice(
-                tab,
-                position,
-                "трейлинг позиции — сработал стоп-ордер",
-                position.StopOrderRedLine);
-        }
-
-        private void ScreenerTab_PositionClosingSuccesEvent(Position position, BotTabSimple tab)
-        {
-            if (!_usePositionTrailing.ValueBool || !IsOurBotPosition(position))
-            {
-                return;
-            }
-
-            if (!string.Equals(position.SignalTypeClose, SignalPositionTrailingStop, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            LogPositionTrailingStopNotice(
-                tab,
-                position,
-                "трейлинг позиции — позиция закрыта",
-                position.StopOrderRedLine > 0m ? position.StopOrderRedLine : position.EntryPrice);
+            TryRefreshPortfolioStopBaselineOnFirstEntry(tab, position, decisionTime);
         }
 
         private bool IsOurBotPosition(Position position)
@@ -4723,41 +4635,6 @@ namespace OsEngine.Robots.Custom
             string botType = GetNameStrategyType();
             return string.IsNullOrEmpty(position.NameBotClass)
                 || string.Equals(position.NameBotClass, botType, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsPositionTrailingStopSignal(Position position)
-        {
-            if (position == null)
-            {
-                return false;
-            }
-
-            return string.Equals(position.SignalTypeStop, SignalPositionTrailingStop, StringComparison.OrdinalIgnoreCase)
-                || (position.StopOrderIsActive && position.StopIsMarket);
-        }
-
-        private void LogPositionTrailingStopNotice(
-            BotTabSimple tab,
-            Position position,
-            string reason,
-            decimal stopLevel)
-        {
-            if (position == null)
-            {
-                return;
-            }
-
-            string security = tab?.Connector?.SecurityName ?? tab?.TabName ?? "?";
-            string side = position.Direction == Side.Buy ? "лонг" : "шорт";
-            string msg =
-                NameStrategyUniq + " | *** СТОП (вкладка «Стопы»): " + reason + " *** | "
-                + security + " | " + side
-                + " | vol=" + position.OpenVolume.ToString("0.########", CultureInfo.InvariantCulture)
-                + " | стоп="
-                + stopLevel.ToString("0.########", CultureInfo.InvariantCulture);
-
-            string dedupeKey = "ptrail|" + security + "|" + position.Number;
-            LogStopTabNoticeOnce(dedupeKey, msg);
         }
 
         private void EnsureScreenerChildTabsEventsOn()
@@ -4777,58 +4654,33 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        /// <summary>Заметное сообщение в лог (System + User + Signal), без повторов по dedupeKey.</summary>
-        private void LogStopTabNoticeOnce(string dedupeKey, string message)
+        /// <summary>
+        /// Страховка портфеля: заголовок + детали в System/User/Signal и Error (заметнее в логе OsEngine).
+        /// </summary>
+        private void LogPortfolioDrawdownStopNotice(string dedupeKey, string headline, string details)
         {
-            if (string.IsNullOrWhiteSpace(message)
-                || string.IsNullOrWhiteSpace(dedupeKey)
+            if (string.IsNullOrWhiteSpace(dedupeKey)
+                || string.IsNullOrWhiteSpace(headline)
                 || !_loggedStopNoticeKeys.Add(dedupeKey))
             {
                 return;
             }
 
-            SendNewLogMessage(message, LogMessageType.System);
-            SendNewLogMessage(message, LogMessageType.User);
-            SendNewLogMessage(message, LogMessageType.Signal);
+            SendNewLogMessage(headline, LogMessageType.System);
+            SendNewLogMessage(headline, LogMessageType.User);
+            SendNewLogMessage(headline, LogMessageType.Signal);
+            SendNewLogMessage(headline, LogMessageType.Error);
+
+            if (!string.IsNullOrWhiteSpace(details))
+            {
+                SendNewLogMessage(details, LogMessageType.System);
+                SendNewLogMessage(details, LogMessageType.User);
+                SendNewLogMessage(details, LogMessageType.Error);
+            }
 
             if (_loggedStopNoticeKeys.Count > 500)
             {
                 _loggedStopNoticeKeys.Clear();
-            }
-        }
-
-        private void PrunePositionTrailingPeaksForTab(BotTabSimple tab, HashSet<string> activeKeysOnTab)
-        {
-            if (_positionTrailingPeaks.Count == 0 || tab == null)
-            {
-                return;
-            }
-
-            string prefix = tab.TabName + "|";
-            List<string> stale = null;
-
-            foreach (string key in _positionTrailingPeaks.Keys)
-            {
-                if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (activeKeysOnTab == null || !activeKeysOnTab.Contains(key))
-                {
-                    stale ??= new List<string>();
-                    stale.Add(key);
-                }
-            }
-
-            if (stale == null)
-            {
-                return;
-            }
-
-            for (int i = 0; i < stale.Count; i++)
-            {
-                _positionTrailingPeaks.Remove(stale[i]);
             }
         }
 
@@ -5092,7 +4944,6 @@ namespace OsEngine.Robots.Custom
             TryEnsureRobotIndicatorsOnTabIfNeeded(tab);
 
             DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
-            UpdatePortfolioTrailingOnRegimeChange(tab);
 
             if (_regime.ValueString == "Off")
             {
@@ -5109,15 +4960,13 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            TryManagePortfolioEquityTrailing(tab, decisionTime);
+            TryManagePortfolioDrawdownStop(tab, decisionTime);
 
             if (!TryBuildLogicCandles(candles, out List<Candle> logicCandles, out bool isLogicBarClose)
                 || !isLogicBarClose)
             {
                 return;
             }
-
-            TryManagePositionTrailingStops(tab, logicCandles);
 
             int minBars = GetMinBarsForTradingLogic();
             if (logicCandles.Count < minBars || candles.Count < GetMinBaseBarsForTradingLogic())
@@ -6670,7 +6519,12 @@ namespace OsEngine.Robots.Custom
                 AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
                 AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
 
-                return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
+                if (!CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation))
+                {
+                    return false;
+                }
+
+                return !VolumeTodFilterBlocksSignal(candles, candleIndex);
             });
         }
 
@@ -6706,7 +6560,12 @@ namespace OsEngine.Robots.Custom
                 AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
                 AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
 
-                return CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation);
+                if (!CombineGroupedOrOfAnds(items, emptyMeansPass: !forSamoindikatsiyaSimulation))
+                {
+                    return false;
+                }
+
+                return !VolumeTodFilterBlocksSignal(candles, candleIndex);
             });
         }
 
@@ -7229,6 +7088,95 @@ namespace OsEngine.Robots.Custom
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Intraday: curVol / средний объём баров с тем же TimeOfDay на прошлых торговых днях.
+        /// </summary>
+        private bool VolumeTodIntradayOk(List<Candle> logicCandles, int candleIndex)
+        {
+            if (logicCandles == null || logicCandles.Count == 0)
+            {
+                return false;
+            }
+
+            int idx = candleIndex >= 0 ? candleIndex : logicCandles.Count - 1;
+            if (idx < 0)
+            {
+                return false;
+            }
+
+            Candle cur = logicCandles[idx];
+            decimal curVol = cur.Volume;
+            if (curVol <= 0m)
+            {
+                return false;
+            }
+
+            TimeSpan slotTime = cur.TimeStart.TimeOfDay;
+            DateTime curDate = cur.TimeStart.Date;
+            int needDays = Math.Max(1, _volumeTodPastDays.ValueInt);
+            decimal minRatio = _volumeTodMinRelativeRatio.ValueDecimal;
+            if (minRatio <= 0m)
+            {
+                minRatio = 0.1m;
+            }
+
+            List<decimal> pastVolumes = new List<decimal>(needDays);
+            HashSet<DateTime> usedDates = new HashSet<DateTime>();
+
+            for (int i = idx - 1; i >= 0 && pastVolumes.Count < needDays; i--)
+            {
+                Candle c = logicCandles[i];
+                if (c.TimeStart.Date == curDate)
+                {
+                    continue;
+                }
+
+                if (c.TimeStart.TimeOfDay != slotTime)
+                {
+                    continue;
+                }
+
+                if (!usedDates.Add(c.TimeStart.Date))
+                {
+                    continue;
+                }
+
+                pastVolumes.Add(c.Volume);
+            }
+
+            if (pastVolumes.Count == 0)
+            {
+                return false;
+            }
+
+            decimal sum = 0m;
+            for (int i = 0; i < pastVolumes.Count; i++)
+            {
+                sum += pastVolumes[i];
+            }
+
+            decimal avg = sum / pastVolumes.Count;
+            if (avg <= 0m)
+            {
+                return curVol > 0m;
+            }
+
+            return curVol / avg >= minRatio;
+        }
+
+        /// <summary>
+        /// Глобальный фильтр ликвидности: при включённом TOD блокирует bull/bear сигнал.
+        /// </summary>
+        private bool VolumeTodFilterBlocksSignal(List<Candle> logicCandles, int candleIndex)
+        {
+            if (!_useVolumeTodCompare.ValueBool)
+            {
+                return false;
+            }
+
+            return !VolumeTodIntradayOk(logicCandles, candleIndex);
         }
 
         /// <summary>
