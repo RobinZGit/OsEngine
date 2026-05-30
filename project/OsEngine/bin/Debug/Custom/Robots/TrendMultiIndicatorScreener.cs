@@ -490,7 +490,7 @@ namespace OsEngine.Robots.Custom
                 scheduleTab);
 
             const string stopsTab = "Стопы";
-            _usePortfolioStop = CreateParameter("Страховка портфеля (просадка от базы)", true, stopsTab);
+            _usePortfolioStop = CreateParameter("Страховка портфеля (просадка от базы)", false, stopsTab);
             _portfolioStopBaselineAmount = CreateParameter(
                 "Сумма портфеля (база просадки)",
                 0m,
@@ -501,7 +501,7 @@ namespace OsEngine.Robots.Custom
             _portfolioStopDrawdownDate = CreateParameter("Дата просадки", "", stopsTab);
             _portfolioStopDrawdownPercent = CreateParameter(
                 "Просадка портфеля от базы, %",
-                5m,
+                0.5m,
                 0.1m,
                 50m,
                 0.1m,
@@ -718,18 +718,18 @@ namespace OsEngine.Robots.Custom
             try
             {
                 BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
-                DateTime referenceTime = tab?.TimeServerCurrent ?? DateTime.Now;
-                if (referenceTime == DateTime.MinValue)
-                {
-                    referenceTime = DateTime.Now;
-                }
-
+                DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
                 decimal? value = TryGetMonitoredPortfolioValue(tab);
                 if (!value.HasValue || value.Value <= 0m)
                 {
+                    string modeHint = ShouldUseMoexTesterConnector()
+                        ? "тестер"
+                        : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
                     SendNewLogMessage(
                         NameStrategyUniq
-                        + " | Стопы: не удалось получить текущую сумму портфеля («Заполнить сумму портфеля»).",
+                        + " | Стопы: не удалось получить текущую сумму портфеля («Заполнить сумму портфеля», "
+                        + modeHint
+                        + "). Проверьте портфель скринера и подключение коннектора.",
                         LogMessageType.Error);
                     return;
                 }
@@ -4460,7 +4460,7 @@ namespace OsEngine.Robots.Custom
 
         private Portfolio TryResolvePortfolioForMonitoring(BotTabSimple tab)
         {
-            Portfolio portfolio = tab?.Portfolio ?? tab?.Connector?.Portfolio;
+            Portfolio portfolio = tab?.Connector?.Portfolio ?? tab?.Portfolio;
             if (portfolio != null)
             {
                 return portfolio;
@@ -4471,7 +4471,7 @@ namespace OsEngine.Robots.Custom
                 for (int i = 0; i < _screenerTab.Tabs.Count; i++)
                 {
                     BotTabSimple childTab = _screenerTab.Tabs[i];
-                    portfolio = childTab?.Portfolio ?? childTab?.Connector?.Portfolio;
+                    portfolio = childTab?.Connector?.Portfolio ?? childTab?.Portfolio;
                     if (portfolio != null)
                     {
                         return portfolio;
@@ -4479,29 +4479,141 @@ namespace OsEngine.Robots.Custom
                 }
             }
 
-            IServer server = tab?.Connector?.MyServer;
-            if (server == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
-            {
-                server = _screenerTab.Tabs[0]?.Connector?.MyServer;
-            }
-
-            string portfolioName = _screenerTab?.PortfolioName ?? tab?.Connector?.PortfolioName;
+            IServer server = ResolvePortfolioMonitoringServer(tab);
+            string portfolioName = ResolvePortfolioMonitoringName(tab, server);
             if (server != null && !string.IsNullOrWhiteSpace(portfolioName))
             {
-                return server.GetPortfolioForName(portfolioName);
+                portfolio = server.GetPortfolioForName(portfolioName);
+                if (portfolio != null)
+                {
+                    return portfolio;
+                }
+            }
+
+            if (server?.Portfolios != null && server.Portfolios.Count > 0)
+            {
+                return server.Portfolios[0];
             }
 
             return null;
         }
 
-        private BotTabSimple TryGetPortfolioMonitoringReferenceTab()
+        /// <summary>
+        /// Коннектор для мониторинга портфеля: вкладка → скринер → Tester/TInvest.
+        /// </summary>
+        private IServer ResolvePortfolioMonitoringServer(BotTabSimple tab)
         {
-            if (_screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
+            IServer server = tab?.Connector?.MyServer;
+            if (server != null)
             {
-                return _screenerTab.Tabs[0];
+                return server;
             }
 
-            return null;
+            if (_screenerTab?.Tabs != null)
+            {
+                for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+                {
+                    server = _screenerTab.Tabs[i]?.Connector?.MyServer;
+                    if (server != null)
+                    {
+                        return server;
+                    }
+                }
+            }
+
+            if (ShouldUseMoexTesterConnector())
+            {
+                return FindTesterLikeServer();
+            }
+
+            return FindServerForScreener() ?? FindTInvestServer();
+        }
+
+        /// <summary>
+        /// Имя портфеля: настройки скринера, вкладка, иначе первый доступный (Tester: GodMode).
+        /// </summary>
+        private string ResolvePortfolioMonitoringName(BotTabSimple tab, IServer server)
+        {
+            if (server != null)
+            {
+                if (!string.IsNullOrWhiteSpace(_screenerTab?.PortfolioName))
+                {
+                    Portfolio byScreener = server.GetPortfolioForName(_screenerTab.PortfolioName);
+                    if (byScreener != null)
+                    {
+                        return byScreener.Number;
+                    }
+                }
+
+                string tabPortfolioName = tab?.Connector?.PortfolioName;
+                if (!string.IsNullOrWhiteSpace(tabPortfolioName))
+                {
+                    Portfolio byTab = server.GetPortfolioForName(tabPortfolioName);
+                    if (byTab != null)
+                    {
+                        return byTab.Number;
+                    }
+                }
+
+                if (server.Portfolios != null && server.Portfolios.Count > 0)
+                {
+                    return server.Portfolios[0].Number;
+                }
+            }
+
+            if (ShouldUseMoexTesterConnector())
+            {
+                return "GodMode";
+            }
+
+            return _screenerTab?.PortfolioName ?? tab?.Connector?.PortfolioName;
+        }
+
+        private BotTabSimple TryGetPortfolioMonitoringReferenceTab()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab?.Connector?.Portfolio != null || tab?.Portfolio != null)
+                {
+                    return tab;
+                }
+            }
+
+            return _screenerTab.Tabs[0];
+        }
+
+        private DateTime ResolvePortfolioMonitoringReferenceTime(BotTabSimple tab)
+        {
+            if (tab != null)
+            {
+                DateTime serverTime = tab.TimeServerCurrent;
+                if (serverTime != DateTime.MinValue)
+                {
+                    return serverTime;
+                }
+
+                if (tab.CandlesAll != null && tab.CandlesAll.Count > 0)
+                {
+                    return tab.CandlesAll[tab.CandlesAll.Count - 1].TimeStart;
+                }
+            }
+
+            if (ShouldUseMoexTesterConnector())
+            {
+                IServer server = ResolvePortfolioMonitoringServer(tab);
+                if (server is TesterServer tester && tester.ServerTime != DateTime.MinValue)
+                {
+                    return tester.ServerTime;
+                }
+            }
+
+            return DateTime.Now;
         }
 
         /// <summary>
@@ -4510,31 +4622,108 @@ namespace OsEngine.Robots.Custom
         private decimal? TryGetMonitoredPortfolioValue(BotTabSimple tab)
         {
             Portfolio myPortfolio = TryResolvePortfolioForMonitoring(tab);
-            if (myPortfolio == null)
+            decimal? fromPortfolio = ExtractMonitoredPortfolioValue(myPortfolio);
+            if (fromPortfolio.HasValue && fromPortfolio.Value > 0m)
+            {
+                return fromPortfolio;
+            }
+
+            return TryGetEquityFromLatestBotPosition(tab);
+        }
+
+        private decimal? ExtractMonitoredPortfolioValue(Portfolio portfolio)
+        {
+            if (portfolio == null)
             {
                 return null;
             }
 
-            if (_tradeAssetInPortfolio.ValueString == "Prime")
+            if (string.Equals(_tradeAssetInPortfolio.ValueString, "Prime", StringComparison.OrdinalIgnoreCase))
             {
-                return myPortfolio.ValueCurrent;
-            }
-
-            List<PositionOnBoard> positionOnBoard = myPortfolio.GetPositionOnBoard();
-            if (positionOnBoard == null)
-            {
-                return null;
-            }
-
-            for (int i = 0; i < positionOnBoard.Count; i++)
-            {
-                if (positionOnBoard[i].SecurityNameCode == _tradeAssetInPortfolio.ValueString)
+                if (portfolio.ValueCurrent > 0m)
                 {
-                    return positionOnBoard[i].ValueCurrent;
+                    return portfolio.ValueCurrent;
+                }
+
+                if (portfolio.ValueBegin > 0m)
+                {
+                    return portfolio.ValueBegin;
+                }
+
+                return null;
+            }
+
+            List<PositionOnBoard> positionOnBoard = portfolio.GetPositionOnBoard();
+            if (positionOnBoard != null)
+            {
+                for (int i = 0; i < positionOnBoard.Count; i++)
+                {
+                    if (positionOnBoard[i].SecurityNameCode == _tradeAssetInPortfolio.ValueString
+                        && positionOnBoard[i].ValueCurrent > 0m)
+                    {
+                        return positionOnBoard[i].ValueCurrent;
+                    }
                 }
             }
 
+            if (portfolio.ValueCurrent > 0m)
+            {
+                return portfolio.ValueCurrent;
+            }
+
+            if (portfolio.ValueBegin > 0m)
+            {
+                return portfolio.ValueBegin;
+            }
+
             return null;
+        }
+
+        /// <summary>
+        /// Фейк/лайв: если портфель коннектора недоступен — equity по последней открытой позиции робота.
+        /// </summary>
+        private decimal? TryGetEquityFromLatestBotPosition(BotTabSimple tab)
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return null;
+            }
+
+            Position latestOpen = null;
+            DateTime latestOpenTime = DateTime.MinValue;
+
+            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            {
+                BotTabSimple childTab = _screenerTab.Tabs[t];
+                List<Position> openPositions = childTab?.PositionsOpenAll;
+                if (openPositions == null || openPositions.Count == 0)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < openPositions.Count; i++)
+                {
+                    Position pos = openPositions[i];
+                    if (!IsOurBotPosition(pos)
+                        || pos.PortfolioValueOnOpenPosition <= 0m)
+                    {
+                        continue;
+                    }
+
+                    if (pos.TimeOpen >= latestOpenTime)
+                    {
+                        latestOpenTime = pos.TimeOpen;
+                        latestOpen = pos;
+                    }
+                }
+            }
+
+            if (latestOpen == null)
+            {
+                return null;
+            }
+
+            return latestOpen.PortfolioValueOnOpenPosition + latestOpen.ProfitPortfolioAbs;
         }
 
         private void SetPortfolioStopBaseline(decimal baseline, DateTime decisionDate)
