@@ -29,6 +29,7 @@ using OsEngine.Market.Servers.Tester;
 using OsEngine.Charts.CandleChart;
 using OsEngine.OsTrader.Panels;
 using OsEngine.OsTrader.Panels.Tab;
+using OsEngine.OsTrader.Panels.Tab.Internal;
 
 /*
 Description
@@ -572,7 +573,7 @@ namespace OsEngine.Robots.Custom
             _rsiShortMax = CreateParameter("RSI short max", 45m, 0, 100, 1m);
 
             // Stochastic
-            _stochP1 = CreateParameter("Stoch P1", 5, 2, 100, 1);
+            _stochP1 = CreateParameter("Stoch P1", 14, 2, 100, 1);
             _stochP2 = CreateParameter("Stoch P2", 3, 1, 50, 1);
             _stochP3 = CreateParameter("Stoch P3", 3, 1, 50, 1);
             _stochLongMin = CreateParameter("Stoch long min", 55m, 0, 100, 1m);
@@ -858,11 +859,12 @@ namespace OsEngine.Robots.Custom
                     time = DateTime.Now;
                 }
 
-                if (!TryExecuteFakeEmergencyClose(tab, pos, volume, price, time))
+                string fakeCloseFailReason;
+                if (!TryExecuteFakeEmergencyClose(tab, pos, volume, price, time, out fakeCloseFailReason))
                 {
                     SendNewLogMessage(
                         NameStrategyUniq + " [" + security + "]: fake-закрытие #"
-                        + pos.Number + " — не удалось создать заявку.",
+                        + pos.Number + " — " + (fakeCloseFailReason ?? "не удалось создать заявку."),
                         LogMessageType.Error);
                     return false;
                 }
@@ -916,12 +918,27 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Fake-закрытие без проверки IsConnected/IsReadyToTrade (CloseAtFake в ядре их требует).
         /// </summary>
-        private static bool TryExecuteFakeEmergencyClose(
-            BotTabSimple tab, Position pos, decimal volume, decimal price, DateTime time)
+        private bool TryExecuteFakeEmergencyClose(
+            BotTabSimple tab, Position pos, decimal volume, decimal price, DateTime time, out string failReason)
         {
-            if (tab?.Security == null || tab._dealCreator == null || pos == null || volume <= 0m)
+            failReason = null;
+
+            if (tab == null || pos == null || volume <= 0m)
             {
+                failReason = "нет вкладки, позиции или объёма";
                 return false;
+            }
+
+            Security security = ResolveEmergencyTabSecurity(tab, pos);
+            if (security == null)
+            {
+                failReason = "инструмент (Security) недоступен на вкладке";
+                return false;
+            }
+
+            if (tab._dealCreator == null)
+            {
+                tab._dealCreator = new PositionCreator();
             }
 
             pos.ProfitOrderIsActive = false;
@@ -949,33 +966,48 @@ namespace OsEngine.Robots.Custom
             }
 
             Side sideCloseOrder = pos.Direction == Side.Buy ? Side.Sell : Side.Buy;
-            price = tab.RoundPrice(price, tab.Security, sideCloseOrder);
+
+            try
+            {
+                price = tab.RoundPrice(price, security, sideCloseOrder);
+            }
+            catch
+            {
+                // RoundPrice в ядре использует tab.Security; при его отсутствии оставляем цену как есть
+            }
 
             if (pos.State == PositionStateType.Done && pos.OpenVolume == 0m)
             {
+                failReason = "позиция уже закрыта";
                 return false;
             }
 
             pos.State = PositionStateType.Closing;
 
+            OrderTypeTime orderTypeTime = tab.ManualPositionSupport?.OrderTypeTime ?? OrderTypeTime.Specified;
+            bool limitsMakerOnly = tab.ManualPositionSupport?.LimitsMakerOnly ?? false;
+
             Order closeOrder = tab._dealCreator.CreateCloseOrderForDeal(
-                tab.Security,
+                security,
                 pos,
                 price,
                 OrderPriceType.Limit,
                 new TimeSpan(1, 1, 1, 1),
                 tab.StartProgram,
-                tab.ManualPositionSupport.OrderTypeTime,
+                orderTypeTime,
                 tab.Connector?.ServerFullName ?? string.Empty,
-                tab.ManualPositionSupport.LimitsMakerOnly);
+                limitsMakerOnly);
 
             if (closeOrder == null)
             {
+                failReason = "CreateCloseOrderForDeal вернул null (объём позиции 0?)";
                 return false;
             }
 
-            closeOrder.SecurityNameCode = pos.SecurityName;
-            closeOrder.SecurityClassCode = tab.Security.NameClass;
+            closeOrder.SecurityNameCode = pos.SecurityName ?? security.Name;
+            closeOrder.SecurityClassCode = !string.IsNullOrWhiteSpace(security.NameClass)
+                ? security.NameClass
+                : (tab.Connector?.SecurityClass ?? string.Empty);
             closeOrder.PortfolioNumber = pos.PortfolioName;
 
             if (volume < pos.OpenVolume && closeOrder.Volume != volume)
@@ -986,6 +1018,131 @@ namespace OsEngine.Robots.Custom
             pos.AddNewCloseOrder(closeOrder);
             tab.OrderFakeExecute(closeOrder, time);
             return true;
+        }
+
+        /// <summary>
+        /// Восстановить Security для экстренного fake-закрытия, когда tab.Security == null (коннектор не готов).
+        /// </summary>
+        private Security ResolveEmergencyTabSecurity(BotTabSimple tab, Position pos)
+        {
+            if (tab == null)
+            {
+                return null;
+            }
+
+            Security security = tab.Security;
+            if (security != null)
+            {
+                return security;
+            }
+
+            security = tab.Connector?.Security;
+            if (security != null)
+            {
+                tab.Security = security;
+                return security;
+            }
+
+            string secName = pos?.SecurityName ?? tab.Connector?.SecurityName ?? tab.TabName;
+            string secClass = tab.Connector?.SecurityClass;
+
+            if (string.IsNullOrWhiteSpace(secClass))
+            {
+                secClass = TryGetSecurityClassFromPosition(pos);
+            }
+
+            if (string.IsNullOrWhiteSpace(secClass) && _screenerTab?.SecuritiesNames != null)
+            {
+                for (int i = 0; i < _screenerTab.SecuritiesNames.Count; i++)
+                {
+                    ActivatedSecurity act = _screenerTab.SecuritiesNames[i];
+                    if (act == null || string.IsNullOrWhiteSpace(act.SecurityName))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(act.SecurityName, secName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        secClass = act.SecurityClass;
+                        break;
+                    }
+                }
+            }
+
+            IServer server = tab.Connector?.MyServer;
+            if (server != null && !string.IsNullOrWhiteSpace(secName))
+            {
+                security = server.GetSecurityForName(secName, secClass ?? string.Empty);
+                if (security != null)
+                {
+                    tab.Security = security;
+                    return security;
+                }
+
+                if (server.Securities != null)
+                {
+                    for (int i = 0; i < server.Securities.Count; i++)
+                    {
+                        Security candidate = server.Securities[i];
+                        if (candidate == null || string.IsNullOrWhiteSpace(candidate.Name))
+                        {
+                            continue;
+                        }
+
+                        if (!string.Equals(candidate.Name, secName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        tab.Security = candidate;
+                        return candidate;
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(secName))
+            {
+                return null;
+            }
+
+            security = new Security
+            {
+                Name = secName,
+                NameClass = secClass ?? string.Empty,
+                PriceStep = 0m
+            };
+
+            tab.Security = security;
+            return security;
+        }
+
+        private static string TryGetSecurityClassFromPosition(Position pos)
+        {
+            if (pos?.OpenOrders != null)
+            {
+                for (int i = 0; i < pos.OpenOrders.Count; i++)
+                {
+                    Order order = pos.OpenOrders[i];
+                    if (!string.IsNullOrWhiteSpace(order?.SecurityClassCode))
+                    {
+                        return order.SecurityClassCode;
+                    }
+                }
+            }
+
+            if (pos?.CloseOrders != null)
+            {
+                for (int i = 0; i < pos.CloseOrders.Count; i++)
+                {
+                    Order order = pos.CloseOrders[i];
+                    if (!string.IsNullOrWhiteSpace(order?.SecurityClassCode))
+                    {
+                        return order.SecurityClassCode;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private bool TabUsesFakeExecution(BotTabSimple tab, Position pos)
@@ -3990,7 +4147,7 @@ namespace OsEngine.Robots.Custom
             _rsiLen.ValueInt = 14;
             _rsiLongMin.ValueDecimal = 55m;
             _rsiShortMax.ValueDecimal = 45m;
-            _stochP1.ValueInt = 5;
+            _stochP1.ValueInt = 14;
             _stochP2.ValueInt = 3;
             _stochP3.ValueInt = 3;
             _stochLongMin.ValueDecimal = 55m;
