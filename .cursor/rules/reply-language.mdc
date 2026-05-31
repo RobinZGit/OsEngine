@@ -1,0 +1,36 @@
+---
+description: Every reply in English and Russian — always, all modes
+alwaysApply: true
+---
+
+# Bilingual replies (Sergey)
+
+**Every assistant message** — in **all modes** (Agent, Ask, Plan, Debug) — must include the **full answer twice**:
+
+1. **## English** — complete answer in English
+2. **## Русский** — the same complete answer in Russian (not a shorter summary)
+
+## Order when the user writes in English
+
+1. **English corrections** block first (see `english-practice.mdc`) — in **both** English and Russian
+2. Then **## English** + **## Русский** with the full answer
+
+## Order when the user writes in Russian
+
+1. **## English** then **## Русский** (no English-corrections block unless they mixed English or asked)
+
+## Scope
+
+- Applies to explanations, Q&A, status, commit/PR text **shown to the user**, reviews, and refusals.
+- Code, identifiers, log strings, and parameter names in the product stay as the task requires; only **user-facing prose** is duplicated.
+
+## Do not
+
+- Reply in a single language only.
+- Put the Russian section as a one-line summary — it must mirror the English section in depth.
+
+## Self-check before send
+
+- [ ] Both sections present?
+- [ ] Same facts and recommendations in both?
+- [ ] If user wrote in English → corrections block included?

@@ -1,27 +1,35 @@
 ---
-description: English corrections when the user writes in English
+description: English corrections (EN + RU) when the user writes in English
 alwaysApply: true
 ---
 
 # English practice (Sergey)
 
-When the user writes **in English** (typed or via microphone / speech-to-text):
+When the user writes **in English** (typed or speech-to-text), add a corrections block **before** the bilingual answer (`reply-language.mdc`).
 
-1. Answer their question or task normally first.
-2. End the reply with a short **English note** section:
-   - **You wrote:** (quote or paraphrase their message)
-   - **More natural:** (corrected version)
-   - **Fixes:** brief bullet list (spelling, grammar, word choice)
+## Format — always both languages
 
-When the user writes **in Russian**, do **not** add English corrections unless they ask.
+### English corrections
 
-## Patterns to remember (common for this user)
+- **You wrote:** (quote or short paraphrase)
+- **More natural:** (corrected version)
+- **Fixes:** brief bullets (spelling, grammar, word choice)
 
-- **tell + person:** *I tell you* — not *I tell to you*
-- **say + to + person:** *I said something to you*
-- **talk/write + to + person:** *I talk to you*, *I write to you* (chat text, including mic → text)
-- **do it this way** — include *it*: *do it this way*, not *do this way*
-- **whenever** — often better than *everything when* for recurring habits
-- Adjective vs adverb: *more natural* (not *more naturally*) before a noun phrase
+### Исправление английского
 
-Keep the English note concise. Do not let it replace the main answer.
+- **Вы написали:** (цитата или пересказ)
+- **Естественнее:** (исправленный вариант)
+- **Замечания:** краткие пункты (орфография, грамматика, лексика)
+
+Keep corrections concise; they must **not** replace the main bilingual answer.
+
+When the user writes **only in Russian**, skip this block unless they explicitly ask for English feedback or mixed substantial English in the message.
+
+## Common patterns (this user)
+
+- *tell you* — not *tell to you*
+- *said something to you* — *say + to + person*
+- *talk/write to you*
+- *do it this way* — include *it*
+- *whenever* — often better than *everything when*
+- *more natural* (adjective) before a noun phrase — not *more naturally*

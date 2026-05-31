@@ -74,11 +74,11 @@ Filters (AlgoStart-style):
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
-Stops (tab «Стопы»): страховка портфеля — просадка от базовой «Сумма портфеля» (обновляется при первом входе в новый день; кнопка «Заполнить сумму портфеля»); при срабатывании — закрыть всё, обновить базу; опция «Отключать робота при срабатывании стопа» (по умолчанию вкл. → Regime=Off, иначе робот продолжает работу).
+Stops (tab «Стопы»): страховка портфеля; фейковый режим и фейковая сумма; опция возобновления торгов при превышении фейковой суммой базы просадки на 0,1%.
 
 MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
 
-MOEX futures: префиксы корня, класс Futures (TInvest) или TestClass (тестер), без фильтра экспирации в тестере.
+MOEX futures: префиксы корня, класс Futures (TInvest) или TestClass (тестер); две кнопки — короткий и расширенный список в одно поле; «Обновить фьючерсы» без изменений.
 
 MOEX stocks: тикеры (точное имя), класс Stock rub (TInvest) или TestClass (тестер).
 */
@@ -130,6 +130,11 @@ namespace OsEngine.Robots.Custom
         private const string AreaSecond = "Second";
 
         private const string SignalPortfolioDrawdownStop = "TrendMultiPortfolioDrawdown";
+        private const decimal ResumeTradingFakeOverBaselinePercent = 0.1m;
+        private const string SignalProfitCollection = "TrendMultiProfitCollection";
+        private const string DefaultMoneyMarketFundPrefix = "TMON";
+        private static readonly string[] MoneyMarketFundPrefixOptions = { "TMON", "LQDT", "SBMM" };
+        private const decimal DefaultBuyMoneyMarketFundPortfolioThreshold = 999_999_999m;
         private const string SignalStopRobotAndSellAll = "TrendMultiStopAll";
         private BotTabScreener _screenerTab;
 
@@ -199,12 +204,35 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _portfolioStopBaselineAmount;
         private StrategyParameterString _portfolioStopDrawdownDate;
         private StrategyParameterDecimal _portfolioStopDrawdownPercent;
-        private StrategyParameterBool _portfolioStopDisableRobotOnTrigger;
+        private StrategyParameterBool _usePortfolioTakeProfit;
+        private StrategyParameterDecimal _portfolioTakeProfitPercent;
+        private StrategyParameterBool _fakeMode;
+        private StrategyParameterDecimal _fakePortfolioAmount;
+        private StrategyParameterBool _resumeTradingWhenFakeExceedsDrawdownBaseline;
+        private StrategyParameterBool _portfolioStopEnableFakeModeOnTrigger;
+        private StrategyParameterBool _portfolioTakeProfitEnableFakeModeOnTrigger;
         private StrategyParameterButton _fillPortfolioStopBaselineButton;
+
+        // сбор прибыли (денежный фонд)
+        private StrategyParameterString _moneyMarketFundPrefix;
+        private StrategyParameterDecimal _buyMoneyMarketFundWhenPortfolioExceeds;
 
         private DateTime _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
+        private sealed class FakePortfolioVirtualPosition
+        {
+            public Side Direction;
+            public decimal EntryPrice;
+            public decimal Volume;
+        }
+
+        private readonly Dictionary<string, FakePortfolioVirtualPosition> _fakePortfolioVirtualPositions =
+            new Dictionary<string, FakePortfolioVirtualPosition>(StringComparer.OrdinalIgnoreCase);
+
         private readonly HashSet<string> _loggedStopNoticeKeys =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private readonly HashSet<string> _loggedProfitCollectionNoticeKeys =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // volume
@@ -370,6 +398,7 @@ namespace OsEngine.Robots.Custom
 
         private StrategyParameterString _moexFuturesTickerPrefixes;
         private StrategyParameterButton _moexFuturesResetPrefixesButton;
+        private StrategyParameterButton _moexFuturesExtendedResetPrefixesButton;
         private StrategyParameterButton _moexFuturesLoadButton;
         private StrategyParameterString _moexStockTickerPrefixes;
         private StrategyParameterButton _moexStockResetPrefixesButton;
@@ -377,6 +406,18 @@ namespace OsEngine.Robots.Custom
 
         private const string DefaultMoexFuturesTickerPrefixes =
             "Si,USDRUBF,Eu,EURRUBF,CNY,MX,MM,IMOEXF,RI,BR,BRM,CL,NG,NGM,GD,GLDRUBF,SV,PT,PD,CU,SR,GZ,LK,RN,NK,GN,TT,VB,SN,SG,RL";
+
+        /// <summary>
+        /// ~100 корней FORTS MOEX, упорядочены по убыванию типичной ликвидности (валюта/индексы → сырьё → акции).
+        /// </summary>
+        private const string DefaultMyFuturesExtendedTickerPrefixes =
+            "Si,USDRUBF,Eu,EURRUBF,CNY,CNYRUBF,CR,MX,MM,IMOEXF,MIX,RI,RVI,"
+            + "BR,BRM,NG,NGM,GD,GLDRUBF,GL,SV,PT,PD,"
+            + "SR,GZ,LK,RN,TT,VB,NK,SN,SG,GN,ME,AF,CH,MG,MT,NM,HY,FE,PH,PI,RL,TN,YD,HS,RT,PL,"
+            + "BYN,KZT,TRY,AMD,AZN,CHF,GBP,JPY,CAD,AUD,HKD,INR,UAH,UZS,KGS,TJS,"
+            + "CU,AH,CA,ZN,NI,CO,"
+            + "SA,WH,KC,CC,CT,SB,"
+            + "AK,TR,BM,BS,CI,MTL,POSI,RASP,SF,FLOT,SVCB,AL,KV,GK,KM,HZ,SP,MC,DM,CB,LN,FS,SC,TB,FL,IR,UP";
 
         private const string DefaultMoexStockTickerPrefixes =
             "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
@@ -428,6 +469,7 @@ namespace OsEngine.Robots.Custom
             _screenerTab.CandleFinishedEvent += ScreenerTab_CandleFinishedEvent;
             _screenerTab.NewTabCreateEvent += ScreenerTab_NewTabCreateEvent;
             _screenerTab.PositionOpeningSuccesEvent += ScreenerTab_PositionOpeningSuccesEvent;
+            _screenerTab.PositionClosingSuccesEvent += ScreenerTab_PositionClosingSuccesEvent;
             _screenerTab.EventsIsOn = true;
             EnsureScreenerChildTabsEventsOn();
 
@@ -491,7 +533,7 @@ namespace OsEngine.Robots.Custom
                 scheduleTab);
 
             const string stopsTab = "Стопы";
-            _usePortfolioStop = CreateParameter("Страховка портфеля (просадка от базы)", false, stopsTab);
+            _usePortfolioStop = CreateParameter("Stop loss портфеля (просадка от базы)", false, stopsTab);
             _portfolioStopBaselineAmount = CreateParameter(
                 "Сумма портфеля (база просадки)",
                 0m,
@@ -502,17 +544,55 @@ namespace OsEngine.Robots.Custom
             _portfolioStopDrawdownDate = CreateParameter("Дата просадки", "", stopsTab);
             _portfolioStopDrawdownPercent = CreateParameter(
                 "Просадка портфеля от базы, %",
-                0.5m,
+                1m,
                 0.1m,
                 50m,
                 0.1m,
                 stopsTab);
-            _portfolioStopDisableRobotOnTrigger = CreateParameter(
-                "Отключать робота при срабатывании стопа",
+            _portfolioStopEnableFakeModeOnTrigger = CreateParameter(
+                "Переводить робота в фейковый режим при срабатывании стопа",
                 true,
+                stopsTab);
+            _usePortfolioTakeProfit = CreateParameter("Take profit портфеля (рост от базы)", false, stopsTab);
+            _portfolioTakeProfitPercent = CreateParameter(
+                "Take profit портфеля от базы, %",
+                7m,
+                0.1m,
+                500m,
+                0.1m,
+                stopsTab);
+            _portfolioTakeProfitEnableFakeModeOnTrigger = CreateParameter(
+                "Переводить робота в фейковый режим при срабатывании профита",
+                true,
+                stopsTab);
+            _fakeMode = CreateParameter("Фейковый режим", false, stopsTab);
+            _fakePortfolioAmount = CreateParameter(
+                "Фейковая сумма портфеля",
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                stopsTab);
+            _resumeTradingWhenFakeExceedsDrawdownBaseline = CreateParameter(
+                "Возобновлять торги при достижении предыдущего реального значения",
+                false,
                 stopsTab);
             _fillPortfolioStopBaselineButton = CreateParameterButton("Заполнить сумму портфеля", stopsTab);
             _fillPortfolioStopBaselineButton.UserClickOnButtonEvent += FillPortfolioStopBaselineButton_UserClickOnButtonEvent;
+
+            const string profitCollectionTab = "Сбор прибыли";
+            _moneyMarketFundPrefix = CreateParameter(
+                "Закупать фонд денежного рынка, префикс (TMON, LQDT, SBMM)",
+                DefaultMoneyMarketFundPrefix,
+                MoneyMarketFundPrefixOptions,
+                profitCollectionTab);
+            _buyMoneyMarketFundWhenPortfolioExceeds = CreateParameter(
+                "Закупать денежный фонд при превышении суммы портfеля",
+                DefaultBuyMoneyMarketFundPortfolioThreshold,
+                0m,
+                1_000_000_000_000m,
+                2,
+                profitCollectionTab);
 
             const string moexFuturesTab = "MOEX фьючерсы";
             _moexFuturesTickerPrefixes = CreateParameter(
@@ -521,6 +601,11 @@ namespace OsEngine.Robots.Custom
                 moexFuturesTab);
             _moexFuturesResetPrefixesButton = CreateParameterButton("Установить префиксы фьючерсов по умолчанию", moexFuturesTab);
             _moexFuturesResetPrefixesButton.UserClickOnButtonEvent += MoexFuturesResetPrefixesButton_UserClickOnButtonEvent;
+            _moexFuturesExtendedResetPrefixesButton = CreateParameterButton(
+                "Установить расширенный список префиксов фьючерсов по умолчанию",
+                moexFuturesTab);
+            _moexFuturesExtendedResetPrefixesButton.UserClickOnButtonEvent +=
+                MoexFuturesExtendedResetPrefixesButton_UserClickOnButtonEvent;
             _moexFuturesLoadButton = CreateParameterButton("Обновить фьючерсы", moexFuturesTab);
             _moexFuturesLoadButton.UserClickOnButtonEvent += MoexFuturesLoadButton_UserClickOnButtonEvent;
 
@@ -716,6 +801,8 @@ namespace OsEngine.Robots.Custom
         }
 
         private const string PortfolioStopBaselineAmountParamName = "Сумма портфеля (база просадки)";
+        private const string FakeModeParamName = "Фейковый режим";
+        private const string FakePortfolioAmountParamName = "Фейковая сумма портфеля";
         private const string PortfolioStopDrawdownDateParamName = "Дата просадки";
 
         /// <summary>
@@ -1299,6 +1386,13 @@ namespace OsEngine.Robots.Custom
 
         private void ExecuteBuyOpen(BotTabSimple tab, decimal volume, decimal limitPrice, string signal = null)
         {
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                ApplyFakePortfolioOpen(tab, Side.Buy, volume, limitPrice);
+                RefreshPortfolioStopParameterDialog();
+                return;
+            }
+
             if (UseMarketOrderExecution())
             {
                 if (string.IsNullOrEmpty(signal))
@@ -1326,6 +1420,13 @@ namespace OsEngine.Robots.Custom
 
         private void ExecuteSellOpen(BotTabSimple tab, decimal volume, decimal limitPrice, string signal = null)
         {
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                ApplyFakePortfolioOpen(tab, Side.Sell, volume, limitPrice);
+                RefreshPortfolioStopParameterDialog();
+                return;
+            }
+
             if (UseMarketOrderExecution())
             {
                 if (string.IsNullOrEmpty(signal))
@@ -1360,6 +1461,17 @@ namespace OsEngine.Robots.Custom
         {
             if (pos == null || volume <= 0m)
             {
+                return;
+            }
+
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                if (TryGetFakeVirtualPosition(tab, out FakePortfolioVirtualPosition virtualPosition))
+                {
+                    ApplyFakePortfolioClose(tab, virtualPosition, limitPrice);
+                    RefreshPortfolioStopParameterDialog();
+                }
+
                 return;
             }
 
@@ -1487,11 +1599,24 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void MoexFuturesResetPrefixesButton_UserClickOnButtonEvent()
         {
-            _moexFuturesTickerPrefixes.ValueString = DefaultMoexFuturesTickerPrefixes;
+            ApplyMoexFuturesPrefixString(
+                DefaultMoexFuturesTickerPrefixes,
+                "Префиксы корня фьючерсов установлены по умолчанию (подбор бумаг не выполнялся).");
+        }
+
+        private void MoexFuturesExtendedResetPrefixesButton_UserClickOnButtonEvent()
+        {
+            ApplyMoexFuturesPrefixString(
+                DefaultMyFuturesExtendedTickerPrefixes,
+                "Расширенный список префиксов фьючерсов установлен по умолчанию (~100 корней, подбор бумаг не выполнялся).");
+        }
+
+        private void ApplyMoexFuturesPrefixString(string prefixes, string logMessage)
+        {
+            _moexFuturesTickerPrefixes.ValueString = prefixes;
             RepaintParameterGuiTables();
-            SendNewLogMessage(
-                "Префиксы корня фьючерсов установлены по умолчанию (подбор бумаг не выполнялся).",
-                LogMessageType.System);
+            RepaintOpenParameterDialogImmediate();
+            SendNewLogMessage(logMessage, LogMessageType.System);
         }
 
         /// <summary>
@@ -1574,19 +1699,33 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void ApplyPortfolioStopFieldsToParameters(decimal baseline, DateTime decisionDate, bool setAmount)
         {
-            StrategyParameterString dateParam = ResolvePortfolioStopDrawdownDateParameter();
-            if (dateParam != null && decisionDate != DateTime.MinValue)
+            if (decisionDate != DateTime.MinValue)
             {
-                dateParam.ValueString = FormatPortfolioStopDate(decisionDate);
+                string dateStr = FormatPortfolioStopDate(decisionDate);
+                if (_portfolioStopDrawdownDate != null)
+                {
+                    _portfolioStopDrawdownDate.ValueString = dateStr;
+                }
+
+                StrategyParameterString dateParam = ResolvePortfolioStopDrawdownDateParameter();
+                if (dateParam != null)
+                {
+                    dateParam.ValueString = dateStr;
+                }
             }
 
-            if (!setAmount)
+            if (!setAmount || baseline <= 0m)
             {
                 return;
             }
 
+            if (_portfolioStopBaselineAmount != null)
+            {
+                _portfolioStopBaselineAmount.ValueDecimal = baseline;
+            }
+
             StrategyParameterDecimal amountParam = ResolvePortfolioStopBaselineParameter();
-            if (amountParam != null && baseline > 0m)
+            if (amountParam != null)
             {
                 amountParam.ValueDecimal = baseline;
             }
@@ -1596,6 +1735,706 @@ namespace OsEngine.Robots.Custom
         {
             RepaintParameterGuiTables();
             RepaintOpenParameterDialogImmediate();
+        }
+
+        private StrategyParameterBool ResolveFakeModeParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == FakeModeParamName);
+            return (fromList as StrategyParameterBool) ?? _fakeMode;
+        }
+
+        private bool IsRealTradingBlockedByFakeMode()
+        {
+            StrategyParameterBool fakeModeParam = ResolveFakeModeParameter();
+            return fakeModeParam != null && fakeModeParam.ValueBool;
+        }
+
+        private void SetFakeMode(bool enabled, bool refreshParameterGui = false)
+        {
+            if (_fakeMode != null)
+            {
+                _fakeMode.ValueBool = enabled;
+            }
+
+            StrategyParameterBool fakeModeParam = ResolveFakeModeParameter();
+            if (fakeModeParam != null)
+            {
+                fakeModeParam.ValueBool = enabled;
+            }
+
+            BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+            if (enabled)
+            {
+                if (GetFakePortfolioAmount() <= 0m)
+                {
+                    SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+                }
+            }
+            else
+            {
+                _fakePortfolioVirtualPositions.Clear();
+                SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+            }
+
+            if (refreshParameterGui)
+            {
+                RefreshPortfolioStopParameterDialog();
+            }
+        }
+
+        private StrategyParameterDecimal ResolveFakePortfolioAmountParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == FakePortfolioAmountParamName);
+            return (fromList as StrategyParameterDecimal) ?? _fakePortfolioAmount;
+        }
+
+        private decimal GetFakePortfolioAmount()
+        {
+            StrategyParameterDecimal amountParam = ResolveFakePortfolioAmountParameter();
+            return amountParam?.ValueDecimal ?? 0m;
+        }
+
+        private void SetFakePortfolioAmount(decimal amount, bool refreshParameterGui = false)
+        {
+            if (amount < 0m)
+            {
+                amount = 0m;
+            }
+
+            if (_fakePortfolioAmount != null)
+            {
+                _fakePortfolioAmount.ValueDecimal = amount;
+            }
+
+            StrategyParameterDecimal amountParam = ResolveFakePortfolioAmountParameter();
+            if (amountParam != null)
+            {
+                amountParam.ValueDecimal = amount;
+            }
+
+            if (refreshParameterGui)
+            {
+                RefreshPortfolioStopParameterDialog();
+            }
+        }
+
+        private void SyncFakePortfolioAmountFromRealPortfolio(BotTabSimple tab, bool refreshParameterGui = false)
+        {
+            decimal? realValue = TryGetRealMonitoredPortfolioValue(tab);
+            if (realValue.HasValue && realValue.Value > 0m)
+            {
+                SetFakePortfolioAmount(realValue.Value, refreshParameterGui);
+            }
+        }
+
+        private string GetFakePortfolioTabKey(BotTabSimple tab)
+        {
+            if (tab == null)
+            {
+                return string.Empty;
+            }
+
+            return tab.Connector?.SecurityName ?? tab.TabName ?? tab.GetHashCode().ToString(CultureInfo.InvariantCulture);
+        }
+
+        private BotTabSimple FindScreenerTabByFakeKey(string tabKey)
+        {
+            if (_screenerTab?.Tabs == null || string.IsNullOrWhiteSpace(tabKey))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple childTab = _screenerTab.Tabs[i];
+                if (childTab != null && string.Equals(GetFakePortfolioTabKey(childTab), tabKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return childTab;
+                }
+            }
+
+            return null;
+        }
+
+        private bool TryGetFakeVirtualPosition(BotTabSimple tab, out FakePortfolioVirtualPosition virtualPosition)
+        {
+            virtualPosition = null;
+            string tabKey = GetFakePortfolioTabKey(tab);
+            if (string.IsNullOrWhiteSpace(tabKey))
+            {
+                return false;
+            }
+
+            return _fakePortfolioVirtualPositions.TryGetValue(tabKey, out virtualPosition);
+        }
+
+        private int GetScreenerOpenTradeSlotsCount()
+        {
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                return _fakePortfolioVirtualPositions.Count;
+            }
+
+            return _screenerTab?.PositionsOpenAll?.Count ?? 0;
+        }
+
+        private decimal GetMarkPriceForFakePortfolio(BotTabSimple tab, Side direction)
+        {
+            if (tab == null)
+            {
+                return 0m;
+            }
+
+            if (UseMarketOrderExecution())
+            {
+                if (direction == Side.Buy && tab.PriceBestAsk > 0m)
+                {
+                    return tab.PriceBestAsk;
+                }
+
+                if (direction == Side.Sell && tab.PriceBestBid > 0m)
+                {
+                    return tab.PriceBestBid;
+                }
+            }
+
+            if (tab.CandlesAll != null && tab.CandlesAll.Count > 0)
+            {
+                return tab.CandlesAll[tab.CandlesAll.Count - 1].Close;
+            }
+
+            if (tab.PriceBestBid > 0m && tab.PriceBestAsk > 0m)
+            {
+                return (tab.PriceBestBid + tab.PriceBestAsk) / 2m;
+            }
+
+            return tab.PriceBestBid > 0m ? tab.PriceBestBid : tab.PriceBestAsk;
+        }
+
+        private decimal CalculateFakePortfolioProfitAbs(
+            BotTabSimple tab,
+            Side direction,
+            decimal entryPrice,
+            decimal exitPrice,
+            decimal volume)
+        {
+            if (tab?.Security == null || volume <= 0m || entryPrice <= 0m || exitPrice <= 0m)
+            {
+                return 0m;
+            }
+
+            Security security = tab.Security;
+            decimal profitOperationAbs = direction == Side.Buy
+                ? exitPrice - entryPrice
+                : entryPrice - exitPrice;
+
+            decimal priceStep = security.PriceStep > 0m ? security.PriceStep : 0m;
+            decimal priceStepCost = security.PriceStepCost > 0m ? security.PriceStepCost : 1m;
+            decimal lots = security.Lot > 0m ? security.Lot : 1m;
+
+            IServerPermission permission = StartProgram == StartProgram.IsOsTrader && tab.Connector != null
+                ? ServerMaster.GetServerPermission(tab.Connector.ServerType)
+                : null;
+            bool isLotServer = permission != null && permission.IsUseLotToCalculateProfit;
+
+            if (isLotServer)
+            {
+                if (priceStep != 0m)
+                {
+                    return (profitOperationAbs / priceStep) * priceStepCost * volume * lots;
+                }
+
+                return profitOperationAbs * priceStepCost * volume * lots;
+            }
+
+            if (priceStep != 0m)
+            {
+                return (profitOperationAbs / priceStep) * priceStepCost * volume;
+            }
+
+            return profitOperationAbs * priceStepCost * volume;
+        }
+
+        private decimal CalculateFakePortfolioUnrealizedProfitAbs(BotTabSimple tab, FakePortfolioVirtualPosition virtualPosition)
+        {
+            if (virtualPosition == null)
+            {
+                return 0m;
+            }
+
+            Side closeSide = virtualPosition.Direction == Side.Buy ? Side.Sell : Side.Buy;
+            decimal markPrice = GetMarkPriceForFakePortfolio(tab, closeSide);
+            if (markPrice <= 0m)
+            {
+                return 0m;
+            }
+
+            return CalculateFakePortfolioProfitAbs(
+                tab,
+                virtualPosition.Direction,
+                virtualPosition.EntryPrice,
+                markPrice,
+                virtualPosition.Volume);
+        }
+
+        private decimal? TryGetFakePortfolioEffectiveEquity(BotTabSimple tab)
+        {
+            decimal amount = GetFakePortfolioAmount();
+            if (amount <= 0m)
+            {
+                return null;
+            }
+
+            decimal unrealized = 0m;
+            foreach (KeyValuePair<string, FakePortfolioVirtualPosition> pair in _fakePortfolioVirtualPositions)
+            {
+                BotTabSimple childTab = FindScreenerTabByFakeKey(pair.Key) ?? tab;
+                unrealized += CalculateFakePortfolioUnrealizedProfitAbs(childTab, pair.Value);
+            }
+
+            return amount + unrealized;
+        }
+
+        private void ApplyFakePortfolioOpen(BotTabSimple tab, Side direction, decimal volume, decimal entryPrice)
+        {
+            if (tab == null || volume <= 0m || entryPrice <= 0m)
+            {
+                return;
+            }
+
+            string tabKey = GetFakePortfolioTabKey(tab);
+            if (string.IsNullOrWhiteSpace(tabKey))
+            {
+                return;
+            }
+
+            _fakePortfolioVirtualPositions[tabKey] = new FakePortfolioVirtualPosition
+            {
+                Direction = direction,
+                EntryPrice = entryPrice,
+                Volume = volume,
+            };
+
+            SendNewLogMessage(
+                NameStrategyUniq + " | фейковый вход "
+                + (direction == Side.Buy ? "Long" : "Short")
+                + " [" + tabKey + "], vol="
+                + volume.ToString(CultureInfo.InvariantCulture)
+                + ", price="
+                + entryPrice.ToString(CultureInfo.InvariantCulture)
+                + ", фейковая сумма="
+                + GetFakePortfolioAmount().ToString(CultureInfo.InvariantCulture),
+                LogMessageType.System);
+
+            TryCollectProfitToMoneyMarketFund(tab);
+        }
+
+        private void ApplyFakePortfolioClose(
+            BotTabSimple tab,
+            FakePortfolioVirtualPosition virtualPosition,
+            decimal exitPrice,
+            string reason = null)
+        {
+            if (tab == null || virtualPosition == null || exitPrice <= 0m)
+            {
+                return;
+            }
+
+            decimal profit = CalculateFakePortfolioProfitAbs(
+                tab,
+                virtualPosition.Direction,
+                virtualPosition.EntryPrice,
+                exitPrice,
+                virtualPosition.Volume);
+            decimal newAmount = GetFakePortfolioAmount() + profit;
+            SetFakePortfolioAmount(newAmount);
+
+            string tabKey = GetFakePortfolioTabKey(tab);
+            if (!string.IsNullOrWhiteSpace(tabKey))
+            {
+                _fakePortfolioVirtualPositions.Remove(tabKey);
+            }
+
+            SendNewLogMessage(
+                NameStrategyUniq + " | фейковый выход "
+                + (virtualPosition.Direction == Side.Buy ? "Long" : "Short")
+                + " [" + tabKey + "], price="
+                + exitPrice.ToString(CultureInfo.InvariantCulture)
+                + ", PnL="
+                + profit.ToString(CultureInfo.InvariantCulture)
+                + ", фейковая сумма="
+                + newAmount.ToString(CultureInfo.InvariantCulture)
+                + (string.IsNullOrWhiteSpace(reason) ? "" : ", " + reason),
+                LogMessageType.System);
+
+            TryCollectProfitToMoneyMarketFund(tab);
+        }
+
+        private void RealizeAllFakeVirtualPositionsAtMarkPrices(string reason)
+        {
+            if (_fakePortfolioVirtualPositions.Count == 0)
+            {
+                return;
+            }
+
+            List<string> keys = _fakePortfolioVirtualPositions.Keys.ToList();
+            for (int i = 0; i < keys.Count; i++)
+            {
+                string tabKey = keys[i];
+                if (!_fakePortfolioVirtualPositions.TryGetValue(tabKey, out FakePortfolioVirtualPosition virtualPosition))
+                {
+                    continue;
+                }
+
+                BotTabSimple childTab = FindScreenerTabByFakeKey(tabKey);
+                if (childTab == null)
+                {
+                    continue;
+                }
+
+                Side closeSide = virtualPosition.Direction == Side.Buy ? Side.Sell : Side.Buy;
+                decimal markPrice = GetMarkPriceForFakePortfolio(childTab, closeSide);
+                if (markPrice <= 0m)
+                {
+                    markPrice = virtualPosition.EntryPrice;
+                }
+
+                ApplyFakePortfolioClose(childTab, virtualPosition, markPrice, reason);
+            }
+        }
+
+        private decimal? TryGetPortfolioPrimeAssetForVolume(BotTabSimple tab)
+        {
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                decimal? fakeEquity = TryGetFakePortfolioEffectiveEquity(tab);
+                if (fakeEquity.HasValue && fakeEquity.Value > 0m)
+                {
+                    return fakeEquity;
+                }
+            }
+
+            decimal? realValue = TryGetRealMonitoredPortfolioValue(tab);
+            return realValue;
+        }
+
+        #region Сбор прибыли (денежный фонд)
+
+        private static string NormalizeMoneyMarketFundPrefix(string prefix)
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                return string.Empty;
+            }
+
+            return prefix.Trim().TrimEnd('@');
+        }
+
+        private static bool SecurityNameMatchesMoneyMarketFundPrefix(string securityName, string prefix)
+        {
+            string normalizedPrefix = NormalizeMoneyMarketFundPrefix(prefix);
+            if (string.IsNullOrWhiteSpace(securityName) || string.IsNullOrWhiteSpace(normalizedPrefix))
+            {
+                return false;
+            }
+
+            if (!securityName.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (securityName.Length == normalizedPrefix.Length)
+            {
+                return true;
+            }
+
+            char next = securityName[normalizedPrefix.Length];
+            return next == '@' || next == '-' || next == '.' || !char.IsLetterOrDigit(next);
+        }
+
+        private static bool SecurityMatchesMoneyMarketFundPrefix(Security security, string prefix)
+        {
+            if (security == null)
+            {
+                return false;
+            }
+
+            return SecurityNameMatchesMoneyMarketFundPrefix(security.Name, prefix)
+                || SecurityNameMatchesMoneyMarketFundPrefix(security.NameId, prefix);
+        }
+
+        private string GetSelectedMoneyMarketFundPrefix()
+        {
+            return NormalizeMoneyMarketFundPrefix(_moneyMarketFundPrefix?.ValueString);
+        }
+
+        private BotTabSimple TryResolveMoneyMarketFundTab(BotTabSimple referenceTab, string prefix)
+        {
+            string normalizedPrefix = NormalizeMoneyMarketFundPrefix(prefix);
+            if (_screenerTab?.Tabs == null || string.IsNullOrWhiteSpace(normalizedPrefix))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab == null)
+                {
+                    continue;
+                }
+
+                if (SecurityNameMatchesMoneyMarketFundPrefix(tab.Connector?.SecurityName, normalizedPrefix)
+                    || SecurityMatchesMoneyMarketFundPrefix(tab.Security, normalizedPrefix))
+                {
+                    return tab;
+                }
+            }
+
+            BotTabSimple refTab = referenceTab ?? TryGetPortfolioMonitoringReferenceTab();
+            if (refTab?.Connector?.MyServer?.Securities == null)
+            {
+                return null;
+            }
+
+            List<Security> securities = refTab.Connector.MyServer.Securities;
+            Security matchedSecurity = null;
+            for (int s = 0; s < securities.Count; s++)
+            {
+                Security security = securities[s];
+                if (SecurityMatchesMoneyMarketFundPrefix(security, normalizedPrefix))
+                {
+                    matchedSecurity = security;
+                    break;
+                }
+            }
+
+            if (matchedSecurity == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab?.Connector == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(tab.Connector.SecurityName, matchedSecurity.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return tab;
+                }
+            }
+
+            return null;
+        }
+
+        private decimal CalculateMoneyMarketFundBuyVolume(BotTabSimple fundTab, decimal rubAmount)
+        {
+            if (fundTab == null || rubAmount <= 0m)
+            {
+                return 0m;
+            }
+
+            decimal contractPrice = fundTab.PriceBestAsk;
+            if (contractPrice <= 0m
+                && fundTab.CandlesAll != null
+                && fundTab.CandlesAll.Count > 0)
+            {
+                contractPrice = fundTab.CandlesAll[fundTab.CandlesAll.Count - 1].Close;
+            }
+
+            if (contractPrice <= 0m)
+            {
+                return 0m;
+            }
+
+            decimal volume = rubAmount / contractPrice;
+
+            if (StartProgram == StartProgram.IsOsTrader)
+            {
+                IServerPermission serverPermission = fundTab.Connector != null
+                    ? ServerMaster.GetServerPermission(fundTab.Connector.ServerType)
+                    : null;
+
+                if (serverPermission != null
+                    && serverPermission.IsUseLotToCalculateProfit
+                    && fundTab.Security?.Lot != 0
+                    && fundTab.Security.Lot > 1)
+                {
+                    volume = rubAmount / (contractPrice * fundTab.Security.Lot);
+                }
+
+                volume = Math.Floor(volume);
+            }
+            else
+            {
+                volume = Math.Round(volume, 6);
+            }
+
+            return volume > 0m ? volume : 0m;
+        }
+
+        /// <summary>
+        /// После сделки: если сумма портfеля выше порога — закупить фонд (TMON и т.п.) на разницу (логика как TmonRebalancer).
+        /// </summary>
+        private void TryCollectProfitToMoneyMarketFund(BotTabSimple referenceTab)
+        {
+            if (_regime.ValueString == "Off")
+            {
+                return;
+            }
+
+            decimal threshold = _buyMoneyMarketFundWhenPortfolioExceeds?.ValueDecimal
+                ?? DefaultBuyMoneyMarketFundPortfolioThreshold;
+            if (threshold <= 0m)
+            {
+                return;
+            }
+
+            BotTabSimple portfolioTab = referenceTab ?? TryGetPortfolioMonitoringReferenceTab();
+            decimal? portfolioValue = TryGetMonitoredPortfolioValue(portfolioTab);
+            if (!portfolioValue.HasValue || portfolioValue.Value <= threshold)
+            {
+                return;
+            }
+
+            decimal excessRub = portfolioValue.Value - threshold;
+            if (excessRub <= 0m)
+            {
+                return;
+            }
+
+            string prefix = GetSelectedMoneyMarketFundPrefix();
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                return;
+            }
+
+            BotTabSimple fundTab = TryResolveMoneyMarketFundTab(portfolioTab, prefix);
+            if (fundTab == null)
+            {
+                string missingKey = "fundTab|" + prefix;
+                if (_loggedProfitCollectionNoticeKeys.Add(missingKey))
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Сбор прибыли: вкладка фонда с префиксом «"
+                        + prefix
+                        + "» не найдена в скринере — добавьте бумагу (TMON@, LQDT@, SBMM@) на тот же коннектор.",
+                        LogMessageType.Error);
+                }
+
+                return;
+            }
+
+            if (StartProgram == StartProgram.IsOsTrader)
+            {
+                if (fundTab.IsConnected == false || fundTab.IsReadyToTrade == false)
+                {
+                    return;
+                }
+            }
+
+            decimal price = fundTab.PriceBestAsk;
+            if (price <= 0m
+                && fundTab.CandlesAll != null
+                && fundTab.CandlesAll.Count > 0)
+            {
+                price = fundTab.CandlesAll[fundTab.CandlesAll.Count - 1].Close;
+            }
+
+            if (price <= 0m)
+            {
+                return;
+            }
+
+            decimal volume = CalculateMoneyMarketFundBuyVolume(fundTab, excessRub);
+            if (volume <= 0m)
+            {
+                return;
+            }
+
+            if (fundTab.PositionOpenLong != null && fundTab.PositionOpenLong.Count > 0)
+            {
+                fundTab.BuyAtLimitToPosition(fundTab.PositionOpenLong[0], price, volume);
+            }
+            else
+            {
+                fundTab.BuyAtLimit(volume, price, SignalProfitCollection);
+            }
+
+            string portfolioMode = IsRealTradingBlockedByFakeMode() ? "фейк" : "реал";
+            SendNewLogMessage(
+                NameStrategyUniq
+                + " | Сбор прибыли: покупка "
+                + prefix
+                + " vol="
+                + volume.ToString(CultureInfo.InvariantCulture)
+                + " @ "
+                + price.ToString(CultureInfo.InvariantCulture)
+                + " (портfель="
+                + portfolioValue.Value.ToString(CultureInfo.InvariantCulture)
+                + ", порог="
+                + threshold.ToString(CultureInfo.InvariantCulture)
+                + ", излишек="
+                + excessRub.ToString(CultureInfo.InvariantCulture)
+                + ", режим="
+                + portfolioMode
+                + ")",
+                LogMessageType.System);
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Если включено — при превышении фейковой суммы (с нереализованным PnL) над «Сумма портfеля (база просадки)»
+        /// более чем на 0,1% выключает фейковый режим и возобновляет реальную торговлю.
+        /// </summary>
+        private void TryResumeRealTradingWhenFakeExceedsDrawdownBaseline(BotTabSimple tab)
+        {
+            if (!_resumeTradingWhenFakeExceedsDrawdownBaseline.ValueBool
+                || !IsRealTradingBlockedByFakeMode())
+            {
+                return;
+            }
+
+            StrategyParameterDecimal baselineParam = ResolvePortfolioStopBaselineParameter();
+            decimal baseline = baselineParam?.ValueDecimal ?? 0m;
+            if (baseline <= 0m)
+            {
+                return;
+            }
+
+            decimal? fakeEquity = TryGetFakePortfolioEffectiveEquity(tab);
+            if (!fakeEquity.HasValue || fakeEquity.Value <= 0m)
+            {
+                return;
+            }
+
+            decimal threshold = baseline * (1m + ResumeTradingFakeOverBaselinePercent / 100m);
+            if (fakeEquity.Value <= threshold)
+            {
+                return;
+            }
+
+            SetFakeMode(false, refreshParameterGui: true);
+
+            string msg =
+                NameStrategyUniq
+                + " | Стопы: фейковая сумма "
+                + fakeEquity.Value.ToString(CultureInfo.InvariantCulture)
+                + " превысила базу просадки "
+                + baseline.ToString(CultureInfo.InvariantCulture)
+                + " более чем на "
+                + ResumeTradingFakeOverBaselinePercent.ToString(CultureInfo.InvariantCulture)
+                + "% (порог="
+                + threshold.ToString(CultureInfo.InvariantCulture)
+                + ") — фейковый режим выключен, торговля возобновлена.";
+            SendNewLogMessage(msg, LogMessageType.System);
+            SendNewLogMessage(msg, LogMessageType.User);
         }
 
         /// <summary>
@@ -4841,6 +5680,23 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private decimal? TryGetMonitoredPortfolioValue(BotTabSimple tab)
         {
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                decimal? fakeEquity = TryGetFakePortfolioEffectiveEquity(tab);
+                if (fakeEquity.HasValue && fakeEquity.Value > 0m)
+                {
+                    return fakeEquity;
+                }
+            }
+
+            return TryGetRealMonitoredPortfolioValue(tab);
+        }
+
+        /// <summary>
+        /// Реальная сумма портфеля (без учёта фейковой симуляции).
+        /// </summary>
+        private decimal? TryGetRealMonitoredPortfolioValue(BotTabSimple tab)
+        {
             Portfolio myPortfolio = TryResolvePortfolioForMonitoring(tab);
             decimal equity = GetPortfolioDisplayEquity(myPortfolio);
             if (equity > 0m)
@@ -5001,6 +5857,7 @@ namespace OsEngine.Robots.Custom
         private void TryRefreshPortfolioStopBaselineOnFirstEntry(BotTabSimple tab, Position position, DateTime decisionTime)
         {
             if (!_usePortfolioStop.ValueBool
+                && !_usePortfolioTakeProfit.ValueBool
                 || position == null
                 || tab == null
                 || position.State != PositionStateType.Open
@@ -5038,13 +5895,22 @@ namespace OsEngine.Robots.Custom
 
         private bool TryManagePortfolioDrawdownStop(BotTabSimple tab, DateTime decisionTime)
         {
-            if (!_usePortfolioStop.ValueBool)
+            return TryManagePortfolioProtectionStops(tab, decisionTime);
+        }
+
+        private bool TryManagePortfolioProtectionStops(BotTabSimple tab, DateTime decisionTime)
+        {
+            bool stopEnabled = _usePortfolioStop.ValueBool;
+            bool takeProfitEnabled = _usePortfolioTakeProfit.ValueBool;
+            if (!stopEnabled && !takeProfitEnabled)
             {
                 return false;
             }
 
-            decimal drawdownPercent = _portfolioStopDrawdownPercent.ValueDecimal;
-            if (drawdownPercent <= 0m)
+            decimal drawdownPercent = stopEnabled ? _portfolioStopDrawdownPercent.ValueDecimal : 0m;
+            decimal takeProfitPercent = takeProfitEnabled ? _portfolioTakeProfitPercent.ValueDecimal : 0m;
+            if ((!stopEnabled || drawdownPercent <= 0m)
+                && (!takeProfitEnabled || takeProfitPercent <= 0m))
             {
                 return false;
             }
@@ -5068,60 +5934,112 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal floor = baseline * (1m - drawdownPercent / 100m);
-            if (currentValue.Value > floor)
+            if (stopEnabled && drawdownPercent > 0m)
             {
-                return false;
+                decimal floor = baseline * (1m - drawdownPercent / 100m);
+                if (currentValue.Value <= floor)
+                {
+                    return ExecutePortfolioProtectionTrigger(
+                        tab,
+                        decisionTime,
+                        baseline,
+                        currentValue.Value,
+                        isTakeProfit: false,
+                        thresholdPercent: drawdownPercent,
+                        triggerLevel: floor);
+                }
             }
 
-            bool disableRobot = _portfolioStopDisableRobotOnTrigger.ValueBool;
+            if (takeProfitEnabled && takeProfitPercent > 0m)
+            {
+                decimal ceiling = baseline * (1m + takeProfitPercent / 100m);
+                if (currentValue.Value >= ceiling)
+                {
+                    return ExecutePortfolioProtectionTrigger(
+                        tab,
+                        decisionTime,
+                        baseline,
+                        currentValue.Value,
+                        isTakeProfit: true,
+                        thresholdPercent: takeProfitPercent,
+                        triggerLevel: ceiling);
+                }
+            }
+
+            return false;
+        }
+
+        private bool ExecutePortfolioProtectionTrigger(
+            BotTabSimple tab,
+            DateTime decisionTime,
+            decimal baseline,
+            decimal currentValue,
+            bool isTakeProfit,
+            decimal thresholdPercent,
+            decimal triggerLevel)
+        {
+            bool enableFakeModeOnTrigger = isTakeProfit
+                ? _portfolioTakeProfitEnableFakeModeOnTrigger.ValueBool
+                : _portfolioStopEnableFakeModeOnTrigger.ValueBool;
 
             CloseAllBotPositions();
-            if (disableRobot)
+            if (IsRealTradingBlockedByFakeMode())
             {
-                _regime.ValueString = "Off";
+                RealizeAllFakeVirtualPositionsAtMarkPrices("portfolio protection");
             }
 
             _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
             DateTime currentDate = GetCalendarDateForTimeOnly(tab, decisionTime);
             decimal? afterCloseValue = TryGetMonitoredPortfolioValue(tab);
-            if (afterCloseValue.HasValue && afterCloseValue.Value > 0m)
+            decimal newBaseline = afterCloseValue.HasValue && afterCloseValue.Value > 0m
+                ? afterCloseValue.Value
+                : currentValue;
+            SetPortfolioStopBaseline(newBaseline, currentDate);
+
+            if (enableFakeModeOnTrigger)
             {
-                SetPortfolioStopBaseline(afterCloseValue.Value, currentDate);
-            }
-            else
-            {
-                SetPortfolioStopBaseline(currentValue.Value, currentDate);
+                SetFakeMode(true);
             }
 
-            string regimeNote = disableRobot
-                ? "Regime=Off"
-                : "робот продолжает работу (Regime без изменений)";
+            RefreshPortfolioStopParameterDialog();
 
+            string regimeNote = enableFakeModeOnTrigger
+                ? "фейковый режим=вкл., Regime без изменений"
+                : "торговля по сигналам без изменений (фейковый режим выкл.)";
+
+            string stopKind = isTakeProfit ? "take profit" : "просадка портфеля";
             string portfolioStopHeadline =
                 NameStrategyUniq
-                + ": *** СТОП «Стопы» — просадка портфеля "
-                + drawdownPercent.ToString(CultureInfo.InvariantCulture)
+                + ": *** СТОП «Стопы» — "
+                + stopKind
+                + " "
+                + thresholdPercent.ToString(CultureInfo.InvariantCulture)
                 + "% от базы — закрыты все позиции, "
                 + regimeNote
                 + " ***";
 
+            string levelLabel = isTakeProfit ? "порог take profit" : "порог просадки";
             string portfolioStopMsg =
-                NameStrategyUniq + " | страховка портфеля | база="
+                NameStrategyUniq + " | страховка портфеля | "
+                + (isTakeProfit ? "take profit" : "просадка")
+                + " | база="
                 + baseline.ToString(CultureInfo.InvariantCulture)
                 + ", equity="
-                + currentValue.Value.ToString(CultureInfo.InvariantCulture)
-                + ", порог="
-                + floor.ToString(CultureInfo.InvariantCulture)
+                + currentValue.ToString(CultureInfo.InvariantCulture)
+                + ", "
+                + levelLabel
+                + "="
+                + triggerLevel.ToString(CultureInfo.InvariantCulture)
                 + ", новая база="
                 + (_portfolioStopBaselineAmount?.ValueDecimal ?? 0m).ToString(CultureInfo.InvariantCulture)
                 + ", дата="
                 + FormatPortfolioStopDate(currentDate)
-                + ", отключить робота="
-                + (disableRobot ? "да" : "нет");
+                + ", фейковый режим="
+                + (enableFakeModeOnTrigger ? "вкл." : "без изменений");
 
-            LogPortfolioDrawdownStopNotice("portfolio|" + decisionTime.Ticks, portfolioStopHeadline, portfolioStopMsg);
+            string dedupeKey = (isTakeProfit ? "takeprofit|" : "portfolio|") + decisionTime.Ticks;
+            LogPortfolioDrawdownStopNotice(dedupeKey, portfolioStopHeadline, portfolioStopMsg);
             return true;
         }
 
@@ -5138,6 +6056,62 @@ namespace OsEngine.Robots.Custom
             DateTime decisionTime = GetDecisionTime(tab, candleTime);
 
             TryRefreshPortfolioStopBaselineOnFirstEntry(tab, position, decisionTime);
+
+            if (!IsOurBotPosition(position) || IsMoneyMarketFundTradeTab(tab))
+            {
+                return;
+            }
+
+            if (string.Equals(position.SignalTypeOpen, SignalProfitCollection, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            TryCollectProfitToMoneyMarketFund(tab);
+        }
+
+        private void ScreenerTab_PositionClosingSuccesEvent(Position position, BotTabSimple tab)
+        {
+            if (position == null || tab == null || !IsOurBotPosition(position))
+            {
+                return;
+            }
+
+            if (IsMoneyMarketFundTradeTab(tab)
+                || string.Equals(position.SignalTypeOpen, SignalProfitCollection, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            TryCollectProfitToMoneyMarketFund(tab);
+        }
+
+        private bool IsMoneyMarketFundTradeTab(BotTabSimple tab)
+        {
+            if (tab == null)
+            {
+                return false;
+            }
+
+            string selectedPrefix = GetSelectedMoneyMarketFundPrefix();
+            if (!string.IsNullOrWhiteSpace(selectedPrefix)
+                && (SecurityNameMatchesMoneyMarketFundPrefix(tab.Connector?.SecurityName, selectedPrefix)
+                    || SecurityMatchesMoneyMarketFundPrefix(tab.Security, selectedPrefix)))
+            {
+                return true;
+            }
+
+            for (int i = 0; i < MoneyMarketFundPrefixOptions.Length; i++)
+            {
+                string prefix = MoneyMarketFundPrefixOptions[i];
+                if (SecurityNameMatchesMoneyMarketFundPrefix(tab.Connector?.SecurityName, prefix)
+                    || SecurityMatchesMoneyMarketFundPrefix(tab.Security, prefix))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool IsOurBotPosition(Position position)
@@ -5475,6 +6449,15 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
+            if (!IsRealTradingBlockedByFakeMode())
+            {
+                SyncFakePortfolioAmountFromRealPortfolio(tab);
+            }
+            else
+            {
+                TryResumeRealTradingWhenFakeExceedsDrawdownBaseline(tab);
+            }
+
             TryManagePortfolioDrawdownStop(tab, decisionTime);
 
             if (_regime.ValueString == "Off")
@@ -5510,8 +6493,14 @@ namespace OsEngine.Robots.Custom
 
             List<Position> positions = tab.PositionsOpenAll;
 
-            bool haveOpenPos = positions != null && positions.Count > 0 && positions.Any(p => p.State == PositionStateType.Open);
-            Position firstOpen = haveOpenPos ? positions.FirstOrDefault(p => p.State == PositionStateType.Open) : null;
+            FakePortfolioVirtualPosition fakeOpen = null;
+            bool haveFakeOpen = IsRealTradingBlockedByFakeMode()
+                && TryGetFakeVirtualPosition(tab, out fakeOpen);
+            bool haveOpenPos = haveFakeOpen
+                || (positions != null && positions.Count > 0 && positions.Any(p => p.State == PositionStateType.Open));
+            Position firstOpen = haveFakeOpen
+                ? null
+                : (haveOpenPos ? positions.FirstOrDefault(p => p.State == PositionStateType.Open) : null);
 
             if (haveOpenPos == false
                 && _checkVolatilityCluster.ValueBool
@@ -5555,12 +6544,18 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
-                if (_screenerTab.PositionsOpenAll.Count >= _maxPositions.ValueInt)
+                if (GetScreenerOpenTradeSlotsCount() >= _maxPositions.ValueInt)
                 {
                     return;
                 }
 
                 TryOpenOnSignal(logicCandles, tab, bull, bear);
+                return;
+            }
+
+            if (fakeOpen != null)
+            {
+                TryCloseOrReverseFake(logicCandles, tab, fakeOpen, bull, bear);
                 return;
             }
 
@@ -7905,6 +8900,63 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// Закрытие или реверс виртуальной позиции в фейковом режиме.
+        /// </summary>
+        private void TryCloseOrReverseFake(
+            List<Candle> candles,
+            BotTabSimple tab,
+            FakePortfolioVirtualPosition virtualPosition,
+            bool bull,
+            bool bear)
+        {
+            if (virtualPosition == null)
+            {
+                return;
+            }
+
+            decimal close = candles[candles.Count - 1].Close;
+            decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
+
+            if (virtualPosition.Direction == Side.Buy && bear)
+            {
+                ExecuteFakeCloseOnSignalCandle(tab, virtualPosition, close, slip);
+
+                if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
+                {
+                    if (GetScreenerOpenTradeSlotsCount() < _maxPositions.ValueInt)
+                    {
+                        ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip));
+                    }
+                }
+            }
+            else if (virtualPosition.Direction == Side.Sell && bull)
+            {
+                ExecuteFakeCloseOnSignalCandle(tab, virtualPosition, close, slip);
+
+                if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
+                {
+                    if (GetScreenerOpenTradeSlotsCount() < _maxPositions.ValueInt)
+                    {
+                        ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip));
+                    }
+                }
+            }
+        }
+
+        private void ExecuteFakeCloseOnSignalCandle(
+            BotTabSimple tab,
+            FakePortfolioVirtualPosition virtualPosition,
+            decimal close,
+            decimal slip)
+        {
+            decimal limitPrice = virtualPosition.Direction == Side.Buy
+                ? ApplyRandomPriceShift(close - slip, tab)
+                : ApplyRandomPriceShift(close + slip, tab);
+            ApplyFakePortfolioClose(tab, virtualPosition, limitPrice);
+            RefreshPortfolioStopParameterDialog();
+        }
+
+        /// <summary>
         /// Закрытие или реверс позиции при противоположном сигнале.
         /// </summary>
         private void TryCloseOrReverse(List<Candle> candles, BotTabSimple tab, Position pos, bool bull, bool bear)
@@ -8016,43 +9068,20 @@ namespace OsEngine.Robots.Custom
             }
             else if (_volumeType.ValueString == "Deposit percent")
             {
-                Portfolio myPortfolio = tab.Portfolio;
-
-                if (myPortfolio == null)
+                decimal? portfolioAsset = TryGetPortfolioPrimeAssetForVolume(tab);
+                if (!portfolioAsset.HasValue || portfolioAsset.Value <= 0m)
                 {
+                    if (!IsRealTradingBlockedByFakeMode())
+                    {
+                        SendNewLogMessage(
+                            "Can`t found portfolio " + _tradeAssetInPortfolio.ValueString,
+                            LogMessageType.Error);
+                    }
+
                     return 0;
                 }
 
-                decimal portfolioPrimeAsset = 0;
-
-                if (_tradeAssetInPortfolio.ValueString == "Prime")
-                {
-                    portfolioPrimeAsset = myPortfolio.ValueCurrent;
-                }
-                else
-                {
-                    List<PositionOnBoard> positionOnBoard = myPortfolio.GetPositionOnBoard();
-
-                    if (positionOnBoard == null)
-                    {
-                        return 0;
-                    }
-
-                    for (int i = 0; i < positionOnBoard.Count; i++)
-                    {
-                        if (positionOnBoard[i].SecurityNameCode == _tradeAssetInPortfolio.ValueString)
-                        {
-                            portfolioPrimeAsset = positionOnBoard[i].ValueCurrent;
-                            break;
-                        }
-                    }
-                }
-
-                if (portfolioPrimeAsset == 0)
-                {
-                    SendNewLogMessage("Can`t found portfolio " + _tradeAssetInPortfolio.ValueString, LogMessageType.Error);
-                    return 0;
-                }
+                decimal portfolioPrimeAsset = portfolioAsset.Value;
 
                 decimal moneyOnPosition = portfolioPrimeAsset * (_volume.ValueDecimal / 100);
 
