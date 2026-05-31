@@ -74,7 +74,7 @@ Filters (AlgoStart-style):
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
-Stops (tab «Стопы»): страховка портфеля — просадка от базовой «Сумма портфеля» (обновляется при первом входе в новый день; кнопка «Заполнить сумму портфеля»); при срабатывании — закрыть всё, Regime=Off, обновить базу.
+Stops (tab «Стопы»): страховка портфеля — просадка от базовой «Сумма портфеля» (обновляется при первом входе в новый день; кнопка «Заполнить сумму портфеля»); при срабатывании — закрыть всё, обновить базу; опция «Отключать робота при срабатывании стопа» (по умолчанию вкл. → Regime=Off, иначе робот продолжает работу).
 
 MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
 
@@ -199,6 +199,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _portfolioStopBaselineAmount;
         private StrategyParameterString _portfolioStopDrawdownDate;
         private StrategyParameterDecimal _portfolioStopDrawdownPercent;
+        private StrategyParameterBool _portfolioStopDisableRobotOnTrigger;
         private StrategyParameterButton _fillPortfolioStopBaselineButton;
 
         private DateTime _lastPortfolioStopDecisionTime = DateTime.MinValue;
@@ -505,6 +506,10 @@ namespace OsEngine.Robots.Custom
                 0.1m,
                 50m,
                 0.1m,
+                stopsTab);
+            _portfolioStopDisableRobotOnTrigger = CreateParameter(
+                "Отключать робота при срабатывании стопа",
+                true,
                 stopsTab);
             _fillPortfolioStopBaselineButton = CreateParameterButton("Заполнить сумму портфеля", stopsTab);
             _fillPortfolioStopBaselineButton.UserClickOnButtonEvent += FillPortfolioStopBaselineButton_UserClickOnButtonEvent;
@@ -5031,22 +5036,22 @@ namespace OsEngine.Robots.Custom
                 LogMessageType.System);
         }
 
-        private void TryManagePortfolioDrawdownStop(BotTabSimple tab, DateTime decisionTime)
+        private bool TryManagePortfolioDrawdownStop(BotTabSimple tab, DateTime decisionTime)
         {
             if (!_usePortfolioStop.ValueBool)
             {
-                return;
+                return false;
             }
 
             decimal drawdownPercent = _portfolioStopDrawdownPercent.ValueDecimal;
             if (drawdownPercent <= 0m)
             {
-                return;
+                return false;
             }
 
             if (decisionTime == _lastPortfolioStopDecisionTime)
             {
-                return;
+                return false;
             }
 
             _lastPortfolioStopDecisionTime = decisionTime;
@@ -5054,23 +5059,29 @@ namespace OsEngine.Robots.Custom
             decimal? currentValue = TryGetMonitoredPortfolioValue(tab);
             if (!currentValue.HasValue || currentValue.Value <= 0m)
             {
-                return;
+                return false;
             }
 
             decimal baseline = _portfolioStopBaselineAmount?.ValueDecimal ?? 0m;
             if (baseline <= 0m)
             {
-                return;
+                return false;
             }
 
             decimal floor = baseline * (1m - drawdownPercent / 100m);
             if (currentValue.Value > floor)
             {
-                return;
+                return false;
             }
 
+            bool disableRobot = _portfolioStopDisableRobotOnTrigger.ValueBool;
+
             CloseAllBotPositions();
-            _regime.ValueString = "Off";
+            if (disableRobot)
+            {
+                _regime.ValueString = "Off";
+            }
+
             _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
             DateTime currentDate = GetCalendarDateForTimeOnly(tab, decisionTime);
@@ -5084,11 +5095,17 @@ namespace OsEngine.Robots.Custom
                 SetPortfolioStopBaseline(currentValue.Value, currentDate);
             }
 
+            string regimeNote = disableRobot
+                ? "Regime=Off"
+                : "робот продолжает работу (Regime без изменений)";
+
             string portfolioStopHeadline =
                 NameStrategyUniq
                 + ": *** СТОП «Стопы» — просадка портфеля "
                 + drawdownPercent.ToString(CultureInfo.InvariantCulture)
-                + "% от базы — закрыты все позиции, Regime=Off ***";
+                + "% от базы — закрыты все позиции, "
+                + regimeNote
+                + " ***";
 
             string portfolioStopMsg =
                 NameStrategyUniq + " | страховка портфеля | база="
@@ -5100,9 +5117,12 @@ namespace OsEngine.Robots.Custom
                 + ", новая база="
                 + (_portfolioStopBaselineAmount?.ValueDecimal ?? 0m).ToString(CultureInfo.InvariantCulture)
                 + ", дата="
-                + FormatPortfolioStopDate(currentDate);
+                + FormatPortfolioStopDate(currentDate)
+                + ", отключить робота="
+                + (disableRobot ? "да" : "нет");
 
             LogPortfolioDrawdownStopNotice("portfolio|" + decisionTime.Ticks, portfolioStopHeadline, portfolioStopMsg);
+            return true;
         }
 
         private void ScreenerTab_PositionOpeningSuccesEvent(Position position, BotTabSimple tab)
@@ -5456,6 +5476,11 @@ namespace OsEngine.Robots.Custom
             }
 
             TryManagePortfolioDrawdownStop(tab, decisionTime);
+
+            if (_regime.ValueString == "Off")
+            {
+                return;
+            }
 
             if (!TryBuildLogicCandles(candles, out List<Candle> logicCandles, out bool isLogicBarClose)
                 || !isLogicBarClose)
