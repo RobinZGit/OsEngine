@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
@@ -1062,6 +1063,7 @@ namespace OsEngine.Charts.CandleChart
         {
             try
             {
+                nameArea = GetPreferredChartArea(indicator, nameArea);
                 indicator.NameArea = nameArea;
 
                 if (indicator.GetType().BaseType.Name == "Aindicator")
@@ -1104,6 +1106,22 @@ namespace OsEngine.Charts.CandleChart
                 SendErrorMessage(error);
                 return null;
             }
+        }
+
+        private static string GetPreferredChartArea(IIndicator indicator, string requestedArea)
+        {
+            if (indicator == null)
+            {
+                return requestedArea;
+            }
+
+            IndicatorAttribute attribute = indicator.GetType().GetCustomAttribute<IndicatorAttribute>();
+            if (attribute != null && !string.IsNullOrWhiteSpace(attribute.ChartArea))
+            {
+                return attribute.ChartArea;
+            }
+
+            return requestedArea;
         }
 
         private void LoadIndicatorOnChart(IIndicator indicator)
