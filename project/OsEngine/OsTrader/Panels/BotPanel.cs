@@ -2785,6 +2785,36 @@ position => position.State != PositionStateType.OpeningFail
 
         private Dictionary<string, ParamDesign> _parameterDesigns = new Dictionary<string, ParamDesign>();
 
+        /// <summary>
+        /// Tooltips for parameters (shown on hover in the parameter window).
+        /// Key: parameter name; for buttons — button label.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> ParameterToolTips => _parameterToolTips;
+
+        private readonly Dictionary<string, string> _parameterToolTips = new Dictionary<string, string>();
+
+        /// <summary>
+        /// Set tooltip text for a parameter row (name column and value column).
+        /// </summary>
+        /// <param name="parameterName">Parameter name; for StrategyParameterButton use button label.</param>
+        /// <param name="toolTipText">Hint text (multi-line allowed with Environment.NewLine).</param>
+        public void SetToolTipParameter(string parameterName, string toolTipText)
+        {
+            if (string.IsNullOrWhiteSpace(parameterName))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(toolTipText))
+            {
+                _parameterToolTips.Remove(parameterName);
+            }
+            else
+            {
+                _parameterToolTips[parameterName] = toolTipText;
+            }
+        }
+
         /// <summary>	
         ///  repaint Parameter tables (it is not recommended to call often, recommended >100 ms)
         /// </summary>

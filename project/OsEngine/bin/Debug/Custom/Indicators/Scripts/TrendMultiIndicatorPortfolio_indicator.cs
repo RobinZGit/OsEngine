@@ -1,6 +1,7 @@
 /*
  * Trend Multi-Indicator Portfolio — custom indicator (logic aligned with TrendMultiIndicatorScreener).
- * One portfolio series per |И-группа|: AND inside group, minus = NOT; trend entry/exit like the robot.
+ * One portfolio series per |И-группа|: AND inside group, minus = NOT.
+ * Each bull/bear signal: entry (stack units); opposite signal exits one unit only if position exists.
  */
 
 using System;
@@ -100,7 +101,8 @@ namespace OsEngine.Indicators
         private sealed class GroupPortfolioState
         {
             public decimal Portfolio;
-            public int Position; // 0 flat, 1 long, -1 short
+            public int LongUnits;
+            public int ShortUnits;
         }
 
         public override void OnStateChange(IndicatorState state)
@@ -112,7 +114,9 @@ namespace OsEngine.Indicators
 
             NameArea = ChartAreaName;
 
-            _invertEntryLogic = CreateParameterBool("Инверсия логики (покупка ↔ продажа)", false);
+            _invertEntryLogic = CreateParameterBool(
+                "Инверсия логики (покупка и продажа меняются местами)",
+                false);
 
             _useSma = CreateParameterBool("Use SMA", true);
             _useRsi = CreateParameterBool("Use RSI", false);
@@ -260,6 +264,12 @@ namespace OsEngine.Indicators
             }
         }
 
+        /// <summary>Пересборка серий портфеля после синхронизации параметров с роботом.</summary>
+        public void RebuildGroupSeriesFromRobot()
+        {
+            RebuildGroupSeries();
+        }
+
         private void RebuildGroupSeries()
         {
             _groupIds.Clear();
@@ -267,16 +277,55 @@ namespace OsEngine.Indicators
             _groupStates.Clear();
 
             SortedSet<int> ids = new SortedSet<int>();
-            CollectGroupIds(ids, _smaAndGroup);
-            CollectGroupIds(ids, _rsiAndGroup);
-            CollectGroupIds(ids, _stochAndGroup);
-            CollectGroupIds(ids, _momAndGroup);
-            CollectGroupIds(ids, _bollAndGroup);
-            CollectGroupIds(ids, _linRegAndGroup);
-            CollectGroupIds(ids, _volumeAndGroup);
-            CollectGroupIds(ids, _vwapAndGroup);
-            CollectGroupIds(ids, _atrAndGroup);
-            CollectGroupIds(ids, _macdAndGroup);
+            if (_useSma.ValueBool)
+            {
+                CollectGroupIds(ids, _smaAndGroup);
+            }
+
+            if (_useRsi.ValueBool)
+            {
+                CollectGroupIds(ids, _rsiAndGroup);
+            }
+
+            if (_useStoch.ValueBool)
+            {
+                CollectGroupIds(ids, _stochAndGroup);
+            }
+
+            if (_useMomentum.ValueBool)
+            {
+                CollectGroupIds(ids, _momAndGroup);
+            }
+
+            if (_useBollinger.ValueBool)
+            {
+                CollectGroupIds(ids, _bollAndGroup);
+            }
+
+            if (_useLinReg.ValueBool)
+            {
+                CollectGroupIds(ids, _linRegAndGroup);
+            }
+
+            if (_useVolumeIndicator.ValueBool)
+            {
+                CollectGroupIds(ids, _volumeAndGroup);
+            }
+
+            if (_useVwap.ValueBool)
+            {
+                CollectGroupIds(ids, _vwapAndGroup);
+            }
+
+            if (_useAtr.ValueBool)
+            {
+                CollectGroupIds(ids, _atrAndGroup);
+            }
+
+            if (_useMacd.ValueBool)
+            {
+                CollectGroupIds(ids, _macdAndGroup);
+            }
 
             if (ids.Count == 0)
             {
@@ -337,7 +386,7 @@ namespace OsEngine.Indicators
                 int groupId = _groupIds[g];
                 bool bull = IsBullSignalForGroup(candles, groupId, index);
                 bool bear = IsBearSignalForGroup(candles, groupId, index);
-                ApplyInvertEntryLogic(ref bull, ref bear);
+                ApplyEntryExitSignalTransforms(ref bull, ref bear);
 
                 GroupPortfolioState state = _groupStates[groupId];
                 ApplyTrendLogic(state, bull, bear, close);
@@ -363,11 +412,14 @@ namespace OsEngine.Indicators
             {
                 GroupPortfolioState state = _groupStates[groupId];
                 state.Portfolio = 0m;
-                state.Position = 0;
+                state.LongUnits = 0;
+                state.ShortUnits = 0;
             }
         }
 
-        /// <summary>Трендовая логика как у робота: вход по сигналу, выход/реверс при противоположном.</summary>
+        /// <summary>
+        /// Вход по каждому сигналу (можно наращивать «штуки»). Выход противоположным сигналом — только если есть что закрыть.
+        /// </summary>
         private static void ApplyTrendLogic(GroupPortfolioState state, bool bull, bool bear, decimal price)
         {
             if (price <= 0m)
@@ -375,41 +427,34 @@ namespace OsEngine.Indicators
                 return;
             }
 
-            if (state.Position == 0)
+            if (bear)
             {
-                if (bull)
-                {
-                    state.Portfolio -= price;
-                    state.Position = 1;
-                }
-                else if (bear)
+                if (state.LongUnits > 0)
                 {
                     state.Portfolio += price;
-                    state.Position = -1;
+                    state.LongUnits--;
                 }
 
-                return;
+                state.Portfolio += price;
+                state.ShortUnits++;
             }
 
-            if (state.Position == 1 && bear)
+            if (bull)
             {
-                state.Portfolio += price;
-                state.Portfolio += price;
-                state.Position = -1;
-                return;
-            }
+                if (state.ShortUnits > 0)
+                {
+                    state.Portfolio -= price;
+                    state.ShortUnits--;
+                }
 
-            if (state.Position == -1 && bull)
-            {
                 state.Portfolio -= price;
-                state.Portfolio -= price;
-                state.Position = 1;
+                state.LongUnits++;
             }
         }
 
-        private void ApplyInvertEntryLogic(ref bool bull, ref bool bear)
+        private void ApplyEntryExitSignalTransforms(ref bool bull, ref bool bear)
         {
-            if (!_invertEntryLogic.ValueBool)
+            if (_invertEntryLogic == null || !_invertEntryLogic.ValueBool)
             {
                 return;
             }

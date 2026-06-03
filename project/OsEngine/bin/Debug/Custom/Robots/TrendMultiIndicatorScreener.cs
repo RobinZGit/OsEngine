@@ -55,7 +55,8 @@ Each indicator has an enable/disable parameter. Disabled indicators are not crea
 
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
-«Инверсия логики (покупка ↔ продажа)»: если включена — по сигналу бычьей формулы открывается продажа, по медвежьей — покупка (то же при закрытии и реверсе).
+«Проверять успешность стратегии» (по умолчанию выкл.): на график — TrendMultiIndicatorPortfolio_indicator (Second), параметры как у робота; доп. фильтр только на вход — у каждой активной И-группы серия портфеля растёт 3 свечи подряд; выход/реверс без этой проверки.
+«Инверсия логики (покупка и продажа меняются местами)»: бычий → short, медвежий → long (вход, выход, реверс).
 
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
 Optional «Volume: сравнение с тем же временем прошлых дней»: curVol / avg(same TimeStart time on last N trading days) ≥ min ratio.
@@ -112,6 +113,11 @@ namespace OsEngine.Robots.Custom
         private const int NumVwap = 11;
         private const int NumAtr = 12;
         private const int NumMacd = 13;
+        private const int NumPortfolioIndicator = 14;
+
+        private const string PortfolioIndicatorType = "TrendMultiIndicatorPortfolio_indicator";
+        private const string PortfolioSeriesNamePrefix = "Портфель |";
+        private const int PortfolioSuccessRisingBars = 3;
 
         private const string VwapIndicatorType = "VWAP";
 
@@ -146,6 +152,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _randomPriceShiftPercent;
         private readonly Random _randomPriceShiftRng = new Random();
         private StrategyParameterBool _invertEntryLogic;
+        private StrategyParameterBool _checkStrategySuccess;
 
         /// <summary>Отложенная установка индикаторов после MOEX reload (чарты вкладок ещё не готовы).</summary>
         private int _moexIndicatorsAttachPassId;
@@ -170,6 +177,8 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _portfolioStopEnableFakeModeOnTrigger;
         private StrategyParameterBool _portfolioTakeProfitEnableFakeModeOnTrigger;
         private StrategyParameterButton _fillPortfolioStopBaselineButton;
+        private StrategyParameterButton _enablePortfolioStopsAndRecoveryButton;
+        private StrategyParameterButton _disablePortfolioStopsAndRecoveryButton;
         private StrategyParameterInt _timeExitCandles;
         private StrategyParameterBool _usePortfolioPeakDrawdownStop;
         private StrategyParameterDecimal _portfolioPeakDrawdownPercent;
@@ -214,6 +223,9 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private decimal _fakeModeRecoveryTargetAmount;
 
+        /// <summary>
+        /// Портфель (equity) в свечу срабатывания stop loss / просадки от пика — «дно» для частичного возобновления.
+        /// </summary>
         private sealed class FakePortfolioVirtualPosition
         {
             public Side Direction;
@@ -477,7 +489,10 @@ namespace OsEngine.Robots.Custom
                 "Тип заявок (вход и выход)",
                 "Лимит",
                 new[] { "Лимит", "Рынок" });
-            _invertEntryLogic = CreateParameter("Инверсия логики (покупка ↔ продажа)", false);
+            _invertEntryLogic = CreateParameter(
+                "Инверсия логики (покупка и продажа меняются местами)",
+                false);
+            _checkStrategySuccess = CreateParameter("Проверять успешность стратегии", false);
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
@@ -569,7 +584,13 @@ namespace OsEngine.Robots.Custom
                 2,
                 stopsTab);
             _fillPortfolioStopBaselineButton = CreateParameterButton("Заполнить сумму портфеля", stopsTab);
-            _fillPortfolioStopBaselineButton.UserClickOnButtonEvent += FillPortfolioStopBaselineButton_UserClickOnButtonEvent;
+            _enablePortfolioStopsAndRecoveryButton = CreateParameterButton(
+                "Включить стопы и возобновление",
+                stopsTab);
+            _disablePortfolioStopsAndRecoveryButton = CreateParameterButton(
+                "Отключить стопы и восстановление",
+                stopsTab);
+            WireStopsTabButtons();
 
             const string profitCollectionTab = "Сбор прибыли";
             _moneyMarketFundPrefix = CreateParameter(
@@ -731,6 +752,8 @@ namespace OsEngine.Robots.Custom
             _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы (через запятую)", "1");
 #endif
 
+            RegisterParameterHints();
+
             ParametrsChangeByUser += TrendMultiIndicatorScreener_ParametrsChangeByUser;
 
             // create only enabled indicators
@@ -798,91 +821,274 @@ namespace OsEngine.Robots.Custom
         /// <summary>
         /// Кнопка «Заполнить сумму портфеля»: база и фейковая сумма (одинаково), фейковый режим=выкл., дата.
         /// </summary>
-        private void FillPortfolioStopBaselineButton_UserClickOnButtonEvent()
+        private const string FillPortfolioStopBaselineButtonName = "Заполнить сумму портфеля";
+        private const string EnablePortfolioStopsAndRecoveryButtonName = "Включить стопы и возобновление";
+        private const string DisablePortfolioStopsAndRecoveryButtonName = "Отключить стопы и восстановление";
+
+        private const string PortfolioStopLossEnableParamName = "Stop loss портфеля (просадка от базы)";
+        private const string PortfolioTakeProfitEnableParamName = "Take profit портфеля (рост от базы)";
+        private const string ResumeTradingWhenFakeExceedsBaselineParamName =
+            "Возобновлять торги при достижении предыдущего реального значения";
+        /// <summary>
+        /// Подписка на кнопки вкладки «Стопы» (объекты из Parameters — те же, что в окне настроек).
+        /// </summary>
+        private void WireStopsTabButtons()
+        {
+            WireStopsTabButton(
+                FillPortfolioStopBaselineButtonName,
+                FillPortfolioStopBaselineButton_UserClickOnButtonEvent);
+            WireStopsTabButton(
+                EnablePortfolioStopsAndRecoveryButtonName,
+                EnablePortfolioStopsAndRecoveryButton_UserClickOnButtonEvent);
+            WireStopsTabButton(
+                DisablePortfolioStopsAndRecoveryButtonName,
+                DisablePortfolioStopsAndRecoveryButton_UserClickOnButtonEvent);
+        }
+
+        private void WireStopsTabButton(string buttonName, Action handler)
+        {
+            if (Parameters == null || string.IsNullOrEmpty(buttonName) || handler == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < Parameters.Count; i++)
+            {
+                if (Parameters[i] is not StrategyParameterButton button
+                    || !string.Equals(button.Name, buttonName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                button.UserClickOnButtonEvent -= handler;
+                button.UserClickOnButtonEvent += handler;
+            }
+        }
+
+        private void EnablePortfolioStopsAndRecoveryButton_UserClickOnButtonEvent()
         {
             try
             {
-                BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
-                DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
-                DateTime currentDate = GetCalendarDateForTimeOnly(tab, referenceTime);
+                // Сначала база/фейк/пик (как «Заполнить сумму портфеля»), затем вкл. флагов — иначе фейковая сумма могла не попасть в UI.
+                bool portfolioFilled = TryApplyFillPortfolioStopBaseline(
+                    EnablePortfolioStopsAndRecoveryButtonName,
+                    logButtonPress: false);
+                ApplyPortfolioStopsAndRecoveryPreset(enabled: true);
+                ApplyFakePortfolioAmountFromStopsFill(force: true, refreshParameterGui: true);
 
-                // Must work in all modes: live, tester, and фейковый режим 1.
-                // Поэтому берём monitored equity (реальная или фейковая), а затем fallback на tester equity.
-                decimal? value = TryGetMonitoredPortfolioValue(tab);
-                if (!value.HasValue || value.Value <= 0m)
-                {
-                    value = TryGetTesterPortfolioEquity(tab);
-                }
-                if (value.HasValue && value.Value > 0m)
-                {
-                    decimal baselineToSet = value.Value;
-                    if (_usePortfolioTakeProfit.ValueBool && _portfolioTakeProfitPercent.ValueDecimal > 0m)
-                    {
-                        decimal? currentPortfolio = TryGetMonitoredPortfolioValue(tab);
-                        if (!currentPortfolio.HasValue || currentPortfolio.Value <= 0m)
-                        {
-                            currentPortfolio = TryGetTesterPortfolioEquity(tab);
-                        }
-
-                        if (currentPortfolio.HasValue && currentPortfolio.Value > 0m)
-                        {
-                            decimal ceiling = baselineToSet
-                                * (1m + _portfolioTakeProfitPercent.ValueDecimal / 100m);
-                            if (currentPortfolio.Value >= ceiling)
-                            {
-                                baselineToSet = currentPortfolio.Value;
-                                SendNewLogMessage(
-                                    NameStrategyUniq
-                                    + " | Стопы: база поднята до текущего портфеля "
-                                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
-                                    + " — иначе take profit сработал бы сразу (портфель уже выше порога).",
-                                    LogMessageType.User);
-                            }
-                        }
-                    }
-
-                    SetFakeMode(false, refreshParameterGui: false);
-                    ApplyPortfolioStopFieldsToParameters(baselineToSet, currentDate, setAmount: true);
-                    SetFakePortfolioAmount(baselineToSet, refreshParameterGui: false);
-                    _portfolioTakeProfitNeedsPullback = false;
-                    ResetPortfolioPeak(baselineToSet);
-                    RefreshPortfolioStopParameterDialog();
-                    RepaintParameterGuiTables();
-
-                    string msg =
-                        NameStrategyUniq
-                        + " | Стопы: «Заполнить сумму портфеля» — база "
-                        + baselineToSet.ToString(CultureInfo.InvariantCulture)
-                        + ", фейковая сумма "
-                        + baselineToSet.ToString(CultureInfo.InvariantCulture)
-                        + ", фейковый режим=выкл., дата "
-                        + FormatPortfolioStopDate(currentDate);
-                    SendNewLogMessage(msg, LogMessageType.System);
-                    SendNewLogMessage(msg, LogMessageType.User);
-                    return;
-                }
-
-                ApplyPortfolioStopFieldsToParameters(0m, currentDate, setAmount: false);
-                ResetPortfolioPeak(0m);
-                RefreshPortfolioStopParameterDialog();
-                RepaintParameterGuiTables();
-
-                string modeHint = ShouldUseMoexTesterConnector()
-                    ? "тестер (проверьте «Initial deposit» / начальный депозит на вкладке Portfolio тестера)"
-                    : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
-                SendNewLogMessage(
+                string msg =
                     NameStrategyUniq
-                    + " | Стопы: дата просадки установлена ("
-                    + FormatPortfolioStopDate(currentDate)
-                    + "), но не удалось получить сумму портфеля («Заполнить сумму портфеля», "
-                    + modeHint
-                    + "). Проверьте портфель скринера и подключение коннектора.",
-                    LogMessageType.Error);
+                    + " | Стопы: включены stop loss, take profit, возобновление торгов.";
+                if (portfolioFilled)
+                {
+                    msg += " Заполнены база, фейковая сумма, пик и дата (как «Заполнить сумму портфеля»).";
+                }
+                else
+                {
+                    msg += " Сумму портфеля заполнить не удалось — см. сообщение об ошибке выше.";
+                }
+
+                SendNewLogMessage(msg, LogMessageType.User);
             }
             catch (Exception ex)
             {
                 SendNewLogMessage(ex.ToString(), LogMessageType.Error);
             }
+        }
+
+        private void DisablePortfolioStopsAndRecoveryButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ApplyPortfolioStopsAndRecoveryPreset(enabled: false);
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Стопы: выключены stop loss, take profit, возобновление торгов.",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void ApplyPortfolioStopsAndRecoveryPreset(bool enabled)
+        {
+            SetStrategyParameterBoolValue(_usePortfolioStop, enabled);
+            SetStrategyParameterBoolValue(
+                ResolveStrategyParameterBool(PortfolioStopLossEnableParamName),
+                enabled);
+            SetStrategyParameterBoolValue(_usePortfolioTakeProfit, enabled);
+            SetStrategyParameterBoolValue(
+                ResolveStrategyParameterBool(PortfolioTakeProfitEnableParamName),
+                enabled);
+            SetStrategyParameterBoolValue(_resumeTradingWhenFakeExceedsDrawdownBaseline, enabled);
+            SetStrategyParameterBoolValue(
+                ResolveStrategyParameterBool(ResumeTradingWhenFakeExceedsBaselineParamName),
+                enabled);
+
+            if (enabled)
+            {
+                ApplyFakePortfolioAmountFromStopsFill(force: true, refreshParameterGui: false);
+            }
+
+            SaveParametersIgnoringRecentLoadCooldown();
+            RequestParameterGuiRepaintOnce();
+        }
+
+        /// <summary>
+        /// Фейковая сумма = тот же источник, что «Заполнить сумму портфеля» (база или реал./тест).
+        /// </summary>
+        private void ApplyFakePortfolioAmountFromStopsFill(bool force = false, bool refreshParameterGui = false)
+        {
+            if (!force)
+            {
+                decimal currentFake = GetFakePortfolioAmount();
+                if (currentFake > 0m)
+                {
+                    return;
+                }
+            }
+
+            BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+            decimal? value = TryGetPortfolioValueForStopsBaselineFill(tab);
+            if (!value.HasValue || value.Value <= 0m)
+            {
+                StrategyParameterDecimal baselineParam = ResolvePortfolioStopBaselineParameter();
+                if (baselineParam != null && baselineParam.ValueDecimal > 0m)
+                {
+                    value = baselineParam.ValueDecimal;
+                }
+            }
+
+            if (!value.HasValue || value.Value <= 0m)
+            {
+                return;
+            }
+
+            SetFakePortfolioAmount(value.Value, refreshParameterGui, silent: false);
+        }
+
+        private StrategyParameterBool ResolveStrategyParameterBool(string paramName)
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == paramName);
+            return fromList as StrategyParameterBool;
+        }
+
+        private static void SetStrategyParameterBoolValue(StrategyParameterBool param, bool value)
+        {
+            if (param == null)
+            {
+                return;
+            }
+
+            param.ValueBool = value;
+        }
+
+        private void FillPortfolioStopBaselineButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                TryApplyFillPortfolioStopBaseline(FillPortfolioStopBaselineButtonName, logButtonPress: true);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Логика «Заполнить сумму портфеля»: база, фейковая сумма, пик, дата, выкл. фейковый режим 1.
+        /// </summary>
+        /// <returns>true, если сумма портфеля получена и записана.</returns>
+        private bool TryApplyFillPortfolioStopBaseline(string invokedByButtonName, bool logButtonPress)
+        {
+            if (logButtonPress && !string.IsNullOrWhiteSpace(invokedByButtonName))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Стопы: нажата «" + invokedByButtonName + "»…",
+                    LogMessageType.User);
+            }
+
+            BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+            DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
+            DateTime currentDate = GetCalendarDateForTimeOnly(tab, referenceTime);
+
+            decimal? value = TryGetPortfolioValueForStopsBaselineFill(tab);
+            if (value.HasValue && value.Value > 0m)
+            {
+                decimal baselineToSet = value.Value;
+                if (_usePortfolioTakeProfit.ValueBool && _portfolioTakeProfitPercent.ValueDecimal > 0m)
+                {
+                    decimal? currentPortfolio = TryGetPortfolioValueForStopsBaselineFill(tab);
+
+                    if (currentPortfolio.HasValue && currentPortfolio.Value > 0m)
+                    {
+                        decimal ceiling = baselineToSet
+                            * (1m + _portfolioTakeProfitPercent.ValueDecimal / 100m);
+                        if (currentPortfolio.Value >= ceiling)
+                        {
+                            baselineToSet = currentPortfolio.Value;
+                            SendNewLogMessage(
+                                NameStrategyUniq
+                                + " | Стопы: база поднята до текущего портфеля "
+                                + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                                + " — иначе take profit сработал бы сразу (портфель уже выше порога).",
+                                LogMessageType.User);
+                        }
+                    }
+                }
+
+                ApplyPortfolioStopFieldsToParameters(baselineToSet, currentDate, setAmount: true, silentDecimals: false);
+                SetFakePortfolioAmount(baselineToSet, refreshParameterGui: false, silent: false);
+                SetPortfolioPeakValue(baselineToSet, silent: false);
+                SetFakeMode(false, refreshParameterGui: false, syncPortfolioAmountFromReal: false);
+                _portfolioTakeProfitNeedsPullback = false;
+                SaveParametersIgnoringRecentLoadCooldown();
+                RequestParameterGuiRepaintOnce();
+
+                string actionLabel = string.IsNullOrWhiteSpace(invokedByButtonName)
+                    ? "Заполнить сумму портфеля"
+                    : invokedByButtonName;
+                string msg =
+                    NameStrategyUniq
+                    + " | Стопы: «"
+                    + actionLabel
+                    + "» — база "
+                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                    + ", фейковая сумма "
+                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                    + ", пик "
+                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                    + ", фейковый режим=выкл., дата "
+                    + FormatPortfolioStopDate(currentDate);
+                SendNewLogMessage(msg, LogMessageType.System);
+                SendNewLogMessage(msg, LogMessageType.User);
+                return true;
+            }
+
+            ApplyPortfolioStopFieldsToParameters(0m, currentDate, setAmount: false, silentDecimals: false);
+            SetPortfolioPeakValue(0m, silent: false);
+            SaveParametersIgnoringRecentLoadCooldown();
+            RequestParameterGuiRepaintOnce();
+
+            string modeHint = ShouldReadPortfolioFromTesterServer(tab)
+                ? "тестер (Portfolio сервера тестера: Initial deposit / начальный депозит > 0)"
+                : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
+            string failLabel = string.IsNullOrWhiteSpace(invokedByButtonName)
+                ? FillPortfolioStopBaselineButtonName
+                : invokedByButtonName;
+            SendNewLogMessage(
+                NameStrategyUniq
+                + " | Стопы: «"
+                + failLabel
+                + "» — дата просадки="
+                + FormatPortfolioStopDate(currentDate)
+                + ", но сумма портфеля не получена ("
+                + modeHint
+                + ").",
+                LogMessageType.Error);
+            return false;
         }
 
         /// <summary>
@@ -1670,6 +1876,33 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        /// <summary>
+        /// Один запрос перерисовки окна параметров (два подряд RePaintParameterTables отменяют друг друга).
+        /// </summary>
+        private void RequestParameterGuiRepaintOnce()
+        {
+            if (!ParamGuiIsOpen || ParamGuiSettings == null)
+            {
+                return;
+            }
+
+            RepaintParameterGuiTables();
+        }
+
+        private static readonly FieldInfo LastParamLoadTimeField = typeof(BotPanel).GetField(
+            "_lastParamLoadTime",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        private void SaveParametersIgnoringRecentLoadCooldown()
+        {
+            if (LastParamLoadTimeField != null)
+            {
+                LastParamLoadTimeField.SetValue(this, DateTime.MinValue);
+            }
+
+            SaveParameters();
+        }
+
         private StrategyParameterDecimal ResolvePortfolioStopBaselineParameter()
         {
             IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioStopBaselineAmountParamName);
@@ -1683,9 +1916,36 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// Полная сумма портфеля (ValueCurrent/ValueBegin), без подстановки rub/борда — для стопов в тестере.
+        /// </summary>
+        private static decimal? TryGetFullPortfolioEquityFromPortfolioObject(Portfolio portfolio)
+        {
+            if (portfolio == null)
+            {
+                return null;
+            }
+
+            if (portfolio.ValueCurrent > 0m)
+            {
+                return portfolio.ValueCurrent;
+            }
+
+            if (portfolio.ValueBegin > 0m)
+            {
+                return portfolio.ValueBegin;
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Запись в параметры вкладки «Стопы» (объекты из Parameters — те же, что в окне настроек).
         /// </summary>
-        private void ApplyPortfolioStopFieldsToParameters(decimal baseline, DateTime decisionDate, bool setAmount)
+        private void ApplyPortfolioStopFieldsToParameters(
+            decimal baseline,
+            DateTime decisionDate,
+            bool setAmount,
+            bool silentDecimals = false)
         {
             if (decisionDate != DateTime.MinValue)
             {
@@ -1707,16 +1967,102 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (_portfolioStopBaselineAmount != null)
+            SetStrategyParameterDecimalValue(_portfolioStopBaselineAmount, baseline, silentDecimals);
+            SetStrategyParameterDecimalValue(ResolvePortfolioStopBaselineParameter(), baseline, silentDecimals);
+        }
+
+        private static void SetStrategyParameterDecimalValue(
+            StrategyParameterDecimal param,
+            decimal value,
+            bool silent)
+        {
+            if (param == null)
             {
-                _portfolioStopBaselineAmount.ValueDecimal = baseline;
+                return;
             }
 
-            StrategyParameterDecimal amountParam = ResolvePortfolioStopBaselineParameter();
-            if (amountParam != null)
+            if (silent && SilentParameterDecimalValueField != null)
             {
-                amountParam.ValueDecimal = baseline;
+                SilentParameterDecimalValueField.SetValue(param, value);
+                return;
             }
+
+            param.ValueDecimal = value;
+        }
+
+        /// <summary>
+        /// Тестер: IsTester, коннектор Tester на вкладке или сервер Tester в ServerMaster.
+        /// </summary>
+        private bool ShouldReadPortfolioFromTesterServer(BotTabSimple tab = null)
+        {
+            if (ShouldUseMoexTesterConnector())
+            {
+                return true;
+            }
+
+            if (tab?.Connector?.ServerType == ServerType.Tester)
+            {
+                return true;
+            }
+
+            if (_screenerTab?.Tabs != null)
+            {
+                for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+                {
+                    if (_screenerTab.Tabs[i]?.Connector?.ServerType == ServerType.Tester)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return FindTesterLikeServer() != null;
+        }
+
+        /// <summary>
+        /// Сумма для кнопки «Заполнить сумму портфеля»: в тестере — GodMode/StartPortfolio, иначе monitored equity.
+        /// </summary>
+        private decimal? TryGetPortfolioValueForStopsBaselineFill(BotTabSimple tab)
+        {
+            if (ShouldReadPortfolioFromTesterServer(tab))
+            {
+                decimal? fromTester = TryGetTesterPortfolioEquity(tab);
+                if (fromTester.HasValue && fromTester.Value > 0m)
+                {
+                    return fromTester;
+                }
+
+                Portfolio connectorPortfolio = tab?.Connector?.Portfolio ?? tab?.Portfolio;
+                decimal? fromConnector = TryGetFullPortfolioEquityFromPortfolioObject(connectorPortfolio);
+                if (fromConnector.HasValue)
+                {
+                    return fromConnector;
+                }
+            }
+
+            // Для заполнения базы/фейковой суммы — сначала реальный/тестовый портфель, не симуляция фейка.
+            decimal? realMonitored = TryGetRealMonitoredPortfolioValue(tab);
+            if (realMonitored.HasValue && realMonitored.Value > 0m)
+            {
+                return realMonitored;
+            }
+
+            if (IsRealTradingBlockedByFakeMode())
+            {
+                decimal? fakeEquity = TryGetFakePortfolioEffectiveEquity(tab);
+                if (fakeEquity.HasValue && fakeEquity.Value > 0m)
+                {
+                    return fakeEquity;
+                }
+            }
+
+            decimal? testerFallback = TryGetTesterPortfolioEquity(tab);
+            if (testerFallback.HasValue && testerFallback.Value > 0m)
+            {
+                return testerFallback;
+            }
+
+            return TryGetEquityFromLatestBotPosition(tab);
         }
 
         /// <summary>
@@ -1744,7 +2090,11 @@ namespace OsEngine.Robots.Custom
             return fakeModeParam != null && fakeModeParam.ValueBool;
         }
 
-        private void SetFakeMode(bool enabled, decimal recoveryTargetAmount = 0m, bool refreshParameterGui = false)
+        private void SetFakeMode(
+            bool enabled,
+            decimal recoveryTargetAmount = 0m,
+            bool refreshParameterGui = false,
+            bool syncPortfolioAmountFromReal = true)
         {
             bool wasFake = IsRealTradingBlockedByFakeMode();
 
@@ -1780,15 +2130,22 @@ namespace OsEngine.Robots.Custom
                         LogMessageType.System);
                 }
 
-                SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
-                EnsureFakePortfolioAmountAlignedWithReal(tab, refreshParameterGui: false);
+                if (syncPortfolioAmountFromReal)
+                {
+                    SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+                    EnsureFakePortfolioAmountAlignedWithReal(tab, refreshParameterGui: false);
+                }
             }
             else
             {
                 _fakeModeRecoveryTargetAmount = 0m;
                 _fakePortfolioVirtualPositions.Clear();
                 // When we exit fake execution, keep shadow portfolio (it mirrors real trading).
-                SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+                if (syncPortfolioAmountFromReal)
+                {
+                    SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+                }
+
                 _loggedFakeModeBlocksRealOrders = false;
             }
 
@@ -1852,23 +2209,15 @@ namespace OsEngine.Robots.Custom
             return amountParam?.ValueDecimal ?? 0m;
         }
 
-        private void SetFakePortfolioAmount(decimal amount, bool refreshParameterGui = false)
+        private void SetFakePortfolioAmount(decimal amount, bool refreshParameterGui = false, bool silent = false)
         {
             if (amount < 0m)
             {
                 amount = 0m;
             }
 
-            if (_fakePortfolioAmount != null)
-            {
-                _fakePortfolioAmount.ValueDecimal = amount;
-            }
-
-            StrategyParameterDecimal amountParam = ResolveFakePortfolioAmountParameter();
-            if (amountParam != null)
-            {
-                amountParam.ValueDecimal = amount;
-            }
+            SetStrategyParameterDecimalValue(_fakePortfolioAmount, amount, silent);
+            SetStrategyParameterDecimalValue(ResolveFakePortfolioAmountParameter(), amount, silent);
 
             if (refreshParameterGui)
             {
@@ -3023,8 +3372,8 @@ namespace OsEngine.Robots.Custom
         #endregion
 
         /// <summary>
-        /// Если включено — при достижении фейковой суммой (с нереализованным PnL) цели возобновления
-        /// (база до стопа/профита или реального портфеля) с допуском 0,1% выключает фейковый режим.
+        /// Если включено — при достижении фейковой суммой цели возобновления выключает фейковый режим.
+        /// Фейковая сумма ≥ база до стопа (+0,1%) или ≥ реальный портфель (−0,1%).
         /// </summary>
         private void TryResumeRealTradingWhenFakeExceedsDrawdownBaseline(BotTabSimple tab)
         {
@@ -3042,22 +3391,10 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            decimal recoveryTarget = _fakeModeRecoveryTargetAmount;
+            decimal recoveryTarget = ResolveFakeModeRecoveryTargetAmount(tab);
             if (recoveryTarget <= 0m)
             {
-                StrategyParameterDecimal baselineParam = ResolvePortfolioStopBaselineParameter();
-                recoveryTarget = baselineParam?.ValueDecimal ?? 0m;
-            }
-
-            if (recoveryTarget <= 0m)
-            {
-                decimal? realFallback = TryGetRealMonitoredPortfolioValue(tab);
-                if (!realFallback.HasValue || realFallback.Value <= 0m)
-                {
-                    return;
-                }
-
-                recoveryTarget = realFallback.Value;
+                return;
             }
 
             decimal targetThreshold = recoveryTarget * (1m + ResumeTradingFakeOverBaselinePercent / 100m);
@@ -3076,12 +3413,12 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            SetFakeMode(false, refreshParameterGui: true);
-
             string reason = meetsRecoveryTarget
                 ? "цель возобновления " + recoveryTarget.ToString(CultureInfo.InvariantCulture)
                   + " (порог=" + targetThreshold.ToString(CultureInfo.InvariantCulture) + ")"
                 : "реальный портфель " + realPortfolio.Value.ToString(CultureInfo.InvariantCulture);
+
+            SetFakeMode(false, refreshParameterGui: true);
 
             string msg =
                 NameStrategyUniq
@@ -3092,6 +3429,27 @@ namespace OsEngine.Robots.Custom
                 + " — фейковый режим выключен, торговля возобновлена.";
             SendNewLogMessage(msg, LogMessageType.System);
             SendNewLogMessage(msg, LogMessageType.User);
+        }
+
+        private decimal ResolveFakeModeRecoveryTargetAmount(BotTabSimple tab)
+        {
+            decimal recoveryTarget = _fakeModeRecoveryTargetAmount;
+            if (recoveryTarget <= 0m)
+            {
+                StrategyParameterDecimal baselineParam = ResolvePortfolioStopBaselineParameter();
+                recoveryTarget = baselineParam?.ValueDecimal ?? 0m;
+            }
+
+            if (recoveryTarget <= 0m)
+            {
+                decimal? realFallback = TryGetRealMonitoredPortfolioValue(tab);
+                if (realFallback.HasValue && realFallback.Value > 0m)
+                {
+                    recoveryTarget = realFallback.Value;
+                }
+            }
+
+            return recoveryTarget;
         }
 
         private void TryResumeRealTradingIfFakeMode(BotTabSimple tab)
@@ -5059,7 +5417,17 @@ namespace OsEngine.Robots.Custom
                 Aindicator existing = FindIndicator(tab, ind.Num, ind.Type);
                 if (existing != null)
                 {
-                    ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
+                    if (ind.Type == PortfolioIndicatorType)
+                    {
+                        ApplyPortfolioIndicatorParamsFromRobot(existing);
+                        TryRebuildPortfolioIndicatorSeries(existing);
+                        existing.Reload();
+                    }
+                    else
+                    {
+                        ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
+                    }
+
                     return true;
                 }
 
@@ -5094,6 +5462,14 @@ namespace OsEngine.Robots.Custom
                 }
 
                 created.CanDelete = ind.CanDelete;
+
+                if (ind.Type == PortfolioIndicatorType)
+                {
+                    ApplyPortfolioIndicatorParamsFromRobot(created);
+                    TryRebuildPortfolioIndicatorSeries(created);
+                    created.Reload();
+                }
+
                 created.Save();
                 return true;
             }
@@ -5759,6 +6135,13 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
+            WireStopsTabButtons();
+            RegisterParameterHints();
+            if (ParamGuiIsOpen)
+            {
+                RequestParameterGuiRepaintOnce();
+            }
+
             SyncIndicators();
             RefreshAllTabsIndicatorsSafely();
         }
@@ -5816,12 +6199,40 @@ namespace OsEngine.Robots.Custom
             _macdSignalLen.ValueInt = 9;
         }
 
-        /// <summary>
-        /// Инверсия входа/выхода по параметру «Инверсия логики (покупка ↔ продажа)».
-        /// </summary>
-        private bool IsEntryLogicInverted()
+        private const string InvertEntryLogicSwapParamName =
+            "Инверсия логики (покупка и продажа меняются местами)";
+
+        private static bool IsInvertEntryLogicSwapParameterName(string name)
         {
-            return _invertEntryLogic.ValueBool;
+            return name == InvertEntryLogicSwapParamName
+                   || name == "Инверсия логики сигналов"
+                   || name == "Инверсия логики (покупка ↔ продажа)";
+        }
+
+        private StrategyParameterBool ResolveInvertEntryLogicSwapParameter()
+        {
+            if (Parameters != null)
+            {
+                for (int i = 0; i < Parameters.Count; i++)
+                {
+                    if (Parameters[i] is StrategyParameterBool param
+                        && IsInvertEntryLogicSwapParameterName(param.Name))
+                    {
+                        return param;
+                    }
+                }
+            }
+
+            return _invertEntryLogic;
+        }
+
+        /// <summary>
+        /// Покупка ↔ продажа по параметру «Инверсия логики (покупка и продажа меняются местами)».
+        /// </summary>
+        private bool IsEntryLogicSwapEnabled()
+        {
+            StrategyParameterBool param = ResolveInvertEntryLogicSwapParameter();
+            return param != null && param.ValueBool;
         }
 
         /// <summary>
@@ -6063,6 +6474,21 @@ namespace OsEngine.Robots.Custom
 
         private Portfolio TryResolvePortfolioForMonitoring(BotTabSimple tab)
         {
+            if (ShouldReadPortfolioFromTesterServer(tab))
+            {
+                IServer testerServer = ResolvePortfolioMonitoringServer(tab) ?? FindTesterLikeServer();
+                if (testerServer != null)
+                {
+                    Portfolio testerPortfolio = TryPickPortfolioOnServer(
+                        testerServer,
+                        ResolvePortfolioMonitoringName(tab, testerServer));
+                    if (testerPortfolio != null)
+                    {
+                        return testerPortfolio;
+                    }
+                }
+            }
+
             // Как вкладка «Portfolio» в OsTrader: server.Portfolios (не только Connector вкладки).
             Portfolio portfolio = TryGetPortfolioFromConnectedServers();
             if (portfolio != null)
@@ -6362,6 +6788,15 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private decimal? TryGetRealMonitoredPortfolioValue(BotTabSimple tab)
         {
+            if (ShouldReadPortfolioFromTesterServer(tab))
+            {
+                decimal? testerEquity = TryGetTesterPortfolioEquity(tab);
+                if (testerEquity.HasValue && testerEquity.Value > 0m)
+                {
+                    return testerEquity;
+                }
+            }
+
             Portfolio myPortfolio = TryResolvePortfolioForMonitoring(tab);
             decimal equity = GetPortfolioDisplayEquity(myPortfolio);
             if (equity > 0m)
@@ -6369,10 +6804,10 @@ namespace OsEngine.Robots.Custom
                 return equity;
             }
 
-            decimal? testerEquity = TryGetTesterPortfolioEquity(tab);
-            if (testerEquity.HasValue && testerEquity.Value > 0m)
+            decimal? testerFallback = TryGetTesterPortfolioEquity(tab);
+            if (testerFallback.HasValue && testerFallback.Value > 0m)
             {
-                return testerEquity;
+                return testerFallback;
             }
 
             return TryGetEquityFromLatestBotPosition(tab);
@@ -6386,6 +6821,21 @@ namespace OsEngine.Robots.Custom
             // In tester/optimizer we must be able to read Initial deposit even before any trades.
             // Do not rely on a single server reference; scan tester-like servers too.
 
+            if (tab?.Connector?.MyServer is TesterServer tabTester)
+            {
+                Portfolio connectorPortfolio = tab.Connector.Portfolio ?? tab.Portfolio;
+                decimal? fromConnector = TryGetFullPortfolioEquityFromPortfolioObject(connectorPortfolio);
+                if (fromConnector.HasValue)
+                {
+                    return fromConnector;
+                }
+
+                if (tabTester.StartPortfolio > 0m)
+                {
+                    return tabTester.StartPortfolio;
+                }
+            }
+
             IServer server = ResolvePortfolioMonitoringServer(tab) ?? FindTesterLikeServer();
 
             if (server != null)
@@ -6394,16 +6844,10 @@ namespace OsEngine.Robots.Custom
                 Portfolio portfolio = TryPickPortfolioOnServer(server, portfolioName);
                 if (portfolio != null)
                 {
-                    decimal fromPortfolio = GetPortfolioDisplayEquity(portfolio);
-                    if (fromPortfolio > 0m)
+                    decimal? fromPortfolio = TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
+                    if (fromPortfolio.HasValue)
                     {
                         return fromPortfolio;
-                    }
-
-                    decimal? fromBoard = TryGetPrimeEquityFromPositionsOnBoard(portfolio);
-                    if (fromBoard.HasValue && fromBoard.Value > 0m)
-                    {
-                        return fromBoard;
                     }
                 }
 
@@ -6623,7 +7067,7 @@ namespace OsEngine.Robots.Custom
             MaybeSavePortfolioPeak(force: true);
         }
 
-        private void SetPortfolioPeakValue(decimal value)
+        private void SetPortfolioPeakValue(decimal value, bool silent = true)
         {
             if (_portfolioPeakValue == null)
             {
@@ -6640,14 +7084,13 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            // Update silently to avoid saving the whole Parametrs.txt on every candle in tester.
-            if (SilentParameterDecimalValueField != null)
+            SetStrategyParameterDecimalValue(_portfolioPeakValue, value, silent);
+
+            IIStrategyParameter peakFromList = Parameters?.Find(p => p.Name == "Пик портфеля");
+            if (peakFromList is StrategyParameterDecimal peakParam
+                && !ReferenceEquals(peakParam, _portfolioPeakValue))
             {
-                SilentParameterDecimalValueField.SetValue(_portfolioPeakValue, value);
-            }
-            else
-            {
-                _portfolioPeakValue.ValueDecimal = value;
+                SetStrategyParameterDecimalValue(peakParam, value, silent);
             }
 
             _portfolioPeakDirty = true;
@@ -6753,7 +7196,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal? currentMonitored = TryGetMonitoredPortfolioValue(tab);
+            decimal? currentMonitored = TryGetPortfolioValueForStopsBaselineFill(tab);
             if (!currentMonitored.HasValue || currentMonitored.Value <= 0m)
             {
                 return false;
@@ -6796,7 +7239,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal? currentValue = TryGetRealMonitoredPortfolioValue(tab);
+            decimal? currentValue = TryGetPortfolioValueForStopsBaselineFill(tab);
             if (!currentValue.HasValue || currentValue.Value <= 0m)
             {
                 return false;
@@ -6869,7 +7312,7 @@ namespace OsEngine.Robots.Custom
             _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
             DateTime currentDate = GetCalendarDateForTimeOnly(tab, decisionTime);
-            decimal? afterCloseValue = TryGetRealMonitoredPortfolioValue(tab);
+            decimal? afterCloseValue = TryGetPortfolioValueForStopsBaselineFill(tab);
             decimal newBaseline = afterCloseValue.HasValue && afterCloseValue.Value > 0m
                 ? afterCloseValue.Value
                 : currentValue;
@@ -6949,7 +7392,7 @@ namespace OsEngine.Robots.Custom
             _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
             // After protection, reset peak to current equity (or 0 if unknown) to avoid immediate re-trigger loops.
-            decimal? afterClose = TryGetMonitoredPortfolioValue(tab);
+            decimal? afterClose = TryGetPortfolioValueForStopsBaselineFill(tab);
             decimal newPeak = afterClose.HasValue && afterClose.Value > 0m ? afterClose.Value : currentValue;
             SetPortfolioPeakValue(newPeak);
             MaybeSavePortfolioPeak(force: true);
@@ -7288,6 +7731,62 @@ namespace OsEngine.Robots.Custom
                 AreaPrime,
                 _useDiscreteMidBestPair.ValueBool);
 #endif
+
+            SyncPortfolioIndicator();
+        }
+
+        /// <summary>
+        /// Индикатор портфеля по И-группам (Second): зеркалит включённые индикаторы и их параметры робота.
+        /// </summary>
+        private void SyncPortfolioIndicator()
+        {
+            IndicatorOnTabs existing = _screenerTab._indicators.FirstOrDefault(i => i.Num == NumPortfolioIndicator);
+
+            if (_checkStrategySuccess.ValueBool)
+            {
+                if (existing == null)
+                {
+                    var ind = new IndicatorOnTabs
+                    {
+                        Num = NumPortfolioIndicator,
+                        Type = PortfolioIndicatorType,
+                        NameArea = AreaSecond,
+                        Parameters = new List<string>(),
+                        CanDelete = false
+                    };
+                    _screenerTab._indicators.Add(ind);
+                }
+                else
+                {
+                    existing.Type = PortfolioIndicatorType;
+                    existing.NameArea = AreaSecond;
+                    existing.Parameters = new List<string>();
+                    existing.CanDelete = false;
+                }
+            }
+            else if (existing != null)
+            {
+                _screenerTab._indicators.Remove(existing);
+                string expectedName = NumPortfolioIndicator + PortfolioIndicatorType + _screenerTab.TabName;
+
+                for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+                {
+                    BotTabSimple tab = _screenerTab.Tabs[t];
+                    if (tab?.Indicators == null || tab.Indicators.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    for (int i = 0; i < tab.Indicators.Count; i++)
+                    {
+                        if (tab.Indicators[i] != null && tab.Indicators[i].Name == expectedName)
+                        {
+                            tab.DeleteCandleIndicator(tab.Indicators[i]);
+                            i--;
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -7403,6 +7902,11 @@ namespace OsEngine.Robots.Custom
             if (_useMacd.ValueBool)
             {
                 min = Math.Max(min, Math.Max(_macdSlowLen.ValueInt, _macdFastLen.ValueInt) + _macdSignalLen.ValueInt + 2);
+            }
+
+            if (_checkStrategySuccess.ValueBool)
+            {
+                min = Math.Max(min, PortfolioSuccessRisingBars);
             }
 
             return min;
@@ -7523,13 +8027,13 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            bool bull = IsBullSignal(candles, tab);
-            bool bear = IsBearSignal(candles, tab);
-            ApplyInvertEntryLogic(ref bull, ref bear);
-
             if (!haveOpenPos)
             {
-                if (!bull && !bear)
+                bool bullEntry = IsBullSignal(candles, tab, checkPortfolioSuccess: true);
+                bool bearEntry = IsBearSignal(candles, tab, checkPortfolioSuccess: true);
+                ApplyEntryExitSignalTransforms(ref bullEntry, ref bearEntry);
+
+                if (!bullEntry && !bearEntry)
                 {
                     return;
                 }
@@ -7544,19 +8048,23 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
-                TryOpenOnSignal(candles, tab, bull, bear);
+                TryOpenOnSignal(candles, tab, bullEntry, bearEntry);
                 TryResumeRealTradingIfFakeMode(tab);
                 return;
             }
 
+            bool bullExit = IsBullSignal(candles, tab, checkPortfolioSuccess: false);
+            bool bearExit = IsBearSignal(candles, tab, checkPortfolioSuccess: false);
+            ApplyEntryExitSignalTransforms(ref bullExit, ref bearExit);
+
             if (fakeOpen != null)
             {
-                if (!bull && !bear)
+                if (!bullExit && !bearExit)
                 {
                     return;
                 }
 
-                TryCloseOrReverseFake(candles, tab, fakeOpen, bull, bear);
+                TryCloseOrReverseFake(candles, tab, fakeOpen, bullExit, bearExit);
                 TryResumeRealTradingIfFakeMode(tab);
                 return;
             }
@@ -7566,12 +8074,12 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (!bull && !bear)
+            if (!bullExit && !bearExit)
             {
                 return;
             }
 
-            TryCloseOrReverse(candles, tab, firstOpen, bull, bear);
+            TryCloseOrReverse(candles, tab, firstOpen, bullExit, bearExit);
             TryResumeRealTradingIfFakeMode(tab);
         }
 
@@ -7658,6 +8166,210 @@ namespace OsEngine.Robots.Custom
             }
 
             return result;
+        }
+
+        /// <summary>И-группы (|№|) включённых в работе индикаторов.</summary>
+        private HashSet<int> GetActiveIndicatorGroupIds()
+        {
+            var ids = new HashSet<int>();
+
+            void AddFrom(StrategyParameterString groupParam, bool enabled)
+            {
+                if (!enabled || groupParam == null)
+                {
+                    return;
+                }
+
+                List<int> parsed = ParseIndicatorGroupNumbers(groupParam.ValueString);
+                for (int i = 0; i < parsed.Count; i++)
+                {
+                    ids.Add(Math.Abs(parsed[i]));
+                }
+            }
+
+            AddFrom(_smaAndGroup, _useSma.ValueBool);
+            AddFrom(_rsiAndGroup, _useRsi.ValueBool);
+            AddFrom(_stochAndGroup, _useStoch.ValueBool);
+            AddFrom(_momAndGroup, _useMomentum.ValueBool);
+            AddFrom(_bollAndGroup, _useBollinger.ValueBool);
+            AddFrom(_linRegAndGroup, _useLinReg.ValueBool);
+            AddFrom(_volumeAndGroup, _useVolumeIndicator.ValueBool);
+            AddFrom(_vwapAndGroup, _useVwap.ValueBool);
+            AddFrom(_atrAndGroup, _useAtr.ValueBool);
+            AddFrom(_macdAndGroup, _useMacd.ValueBool);
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Копирует в индикатор портфеля параметры робота (Use*, длины, пороги, И-группы).
+        /// </summary>
+        private void ApplyPortfolioIndicatorParamsFromRobot(Aindicator indicator)
+        {
+            if (indicator?.Parameters == null)
+            {
+                return;
+            }
+
+            SetIndicatorParamBool(indicator, InvertEntryLogicSwapParamName, IsEntryLogicSwapEnabled());
+            SetIndicatorParamBool(indicator, "Use SMA", _useSma.ValueBool);
+            SetIndicatorParamBool(indicator, "Use RSI", _useRsi.ValueBool);
+            SetIndicatorParamBool(indicator, "Use Stochastic", _useStoch.ValueBool);
+            SetIndicatorParamBool(indicator, "Use Momentum", _useMomentum.ValueBool);
+            SetIndicatorParamBool(indicator, "Use Bollinger", _useBollinger.ValueBool);
+            SetIndicatorParamBool(indicator, "Use Linear Regression", _useLinReg.ValueBool);
+            SetIndicatorParamBool(indicator, "Use Volume indicator", _useVolumeIndicator.ValueBool);
+            SetIndicatorParamBool(indicator, "Use VWAP", _useVwap.ValueBool);
+            SetIndicatorParamBool(indicator, "Use ATR", _useAtr.ValueBool);
+            SetIndicatorParamBool(indicator, "Use MACD", _useMacd.ValueBool);
+
+            SetIndicatorParamInt(indicator, "SMA length", _smaLen.ValueInt);
+            SetIndicatorParamInt(indicator, "RSI length", _rsiLen.ValueInt);
+            SetIndicatorParamDecimal(indicator, "RSI long min", _rsiLongMin.ValueDecimal);
+            SetIndicatorParamDecimal(indicator, "RSI short max", _rsiShortMax.ValueDecimal);
+            SetIndicatorParamInt(indicator, "Stoch P1", _stochP1.ValueInt);
+            SetIndicatorParamInt(indicator, "Stoch P2", _stochP2.ValueInt);
+            SetIndicatorParamInt(indicator, "Stoch P3", _stochP3.ValueInt);
+            SetIndicatorParamDecimal(indicator, "Stoch long min", _stochLongMin.ValueDecimal);
+            SetIndicatorParamDecimal(indicator, "Stoch short max", _stochShortMax.ValueDecimal);
+            SetIndicatorParamInt(indicator, "Momentum length", _momLen.ValueInt);
+            SetIndicatorParamDecimal(indicator, "Momentum long min", _momLongMin.ValueDecimal);
+            SetIndicatorParamDecimal(indicator, "Momentum short max", _momShortMax.ValueDecimal);
+            SetIndicatorParamInt(indicator, "Bollinger length", _bollLen.ValueInt);
+            SetIndicatorParamDecimal(indicator, "Bollinger deviation", _bollDev.ValueDecimal);
+            SetIndicatorParamInt(indicator, "LinReg length", _linRegLen.ValueInt);
+            SetIndicatorParamDecimal(indicator, "LinReg deviation", _linRegDev.ValueDecimal);
+            SetIndicatorParamDecimal(indicator, "Volume vs prev candle min growth %", _volumeIndicatorMinGrowthPercent.ValueDecimal);
+            SetIndicatorParamBool(indicator, "Volume: сравнение с тем же временем прошлых дней", _useVolumeTodCompare.ValueBool);
+            SetIndicatorParamInt(indicator, "Volume TOD: число прошлых торг. дней", _volumeTodPastDays.ValueInt);
+            SetIndicatorParamDecimal(indicator, "Volume TOD: мин. отношение к среднему", _volumeTodMinRelativeRatio.ValueDecimal);
+            SetIndicatorParamInt(indicator, "ATR length", _atrLen.ValueInt);
+            SetIndicatorParamDecimal(indicator, "ATR min grow % vs lookback", _atrGrowPercent.ValueDecimal);
+            SetIndicatorParamInt(indicator, "ATR grow lookback (candles)", _atrGrowLookBack.ValueInt);
+            SetIndicatorParamInt(indicator, "MACD fast length", _macdFastLen.ValueInt);
+            SetIndicatorParamInt(indicator, "MACD slow length", _macdSlowLen.ValueInt);
+            SetIndicatorParamInt(indicator, "MACD signal length", _macdSignalLen.ValueInt);
+
+            SetIndicatorParamString(indicator, "SMA: № И-группы (через запятую)", _smaAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "RSI: № И-группы (через запятую)", _rsiAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "Stochastic: № И-группы (через запятую)", _stochAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "Momentum: № И-группы (через запятую)", _momAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "Bollinger: № И-группы (через запятую)", _bollAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "LinReg: № И-группы (через запятую)", _linRegAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "Volume ind.: № И-группы (через запятую)", _volumeAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "VWAP: № И-группы (через запятую)", _vwapAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "ATR: № И-группы (через запятую)", _atrAndGroup.ValueString);
+            SetIndicatorParamString(indicator, "MACD: № И-группы (через запятую)", _macdAndGroup.ValueString);
+        }
+
+        private static void SetIndicatorParamBool(Aindicator indicator, string name, bool value)
+        {
+            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
+            if (param is IndicatorParameterBool b)
+            {
+                b.ValueBool = value;
+            }
+        }
+
+        private static void SetIndicatorParamInt(Aindicator indicator, string name, int value)
+        {
+            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
+            if (param is IndicatorParameterInt i)
+            {
+                i.ValueInt = value;
+            }
+        }
+
+        private static void SetIndicatorParamDecimal(Aindicator indicator, string name, decimal value)
+        {
+            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
+            if (param is IndicatorParameterDecimal d)
+            {
+                d.ValueDecimal = value;
+            }
+        }
+
+        private static void SetIndicatorParamString(Aindicator indicator, string name, string value)
+        {
+            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
+            if (param is IndicatorParameterString s)
+            {
+                s.ValueString = value;
+            }
+        }
+
+        private static void TryRebuildPortfolioIndicatorSeries(Aindicator indicator)
+        {
+            if (indicator == null)
+            {
+                return;
+            }
+
+            MethodInfo method = indicator.GetType().GetMethod(
+                "RebuildGroupSeriesFromRobot",
+                BindingFlags.Public | BindingFlags.Instance);
+            method?.Invoke(indicator, null);
+        }
+
+        /// <summary>
+        /// Серия портфеля по группе: последние 3 значения строго растут (старшая свеча &lt; следующая).
+        /// </summary>
+        private static bool IsPortfolioSeriesRisingLastBars(Aindicator portfolio, int groupId, int candleIndex)
+        {
+            if (portfolio?.DataSeries == null)
+            {
+                return false;
+            }
+
+            string seriesName = PortfolioSeriesNamePrefix + groupId + "|";
+            IndicatorDataSeries series = portfolio.DataSeries.Find(s => s.Name == seriesName);
+            if (series?.Values == null || candleIndex < PortfolioSuccessRisingBars - 1)
+            {
+                return false;
+            }
+
+            if (series.Values.Count <= candleIndex)
+            {
+                return false;
+            }
+
+            decimal v2 = series.Values[candleIndex - 2];
+            decimal v1 = series.Values[candleIndex - 1];
+            decimal v0 = series.Values[candleIndex];
+            return v2 < v1 && v1 < v0;
+        }
+
+        /// <summary>
+        /// При «Проверять успешность стратегии» (только вход): все активные И-группы — рост портфеля за 3 свечи.
+        /// </summary>
+        private bool IsPortfolioStrategySuccessful(BotTabSimple tab, int candleIndex)
+        {
+            if (!_checkStrategySuccess.ValueBool)
+            {
+                return true;
+            }
+
+            Aindicator portfolio = FindIndicator(tab, NumPortfolioIndicator, PortfolioIndicatorType);
+            if (portfolio == null)
+            {
+                return false;
+            }
+
+            HashSet<int> groupIds = GetActiveIndicatorGroupIds();
+            if (groupIds.Count == 0)
+            {
+                return true;
+            }
+
+            foreach (int groupId in groupIds)
+            {
+                if (!IsPortfolioSeriesRisingLastBars(portfolio, groupId, candleIndex))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -7852,6 +8564,17 @@ namespace OsEngine.Robots.Custom
                         _macdSignalLen.ValueInt.ToString()
                     });
             }
+
+            if (_checkStrategySuccess.ValueBool)
+            {
+                Aindicator portfolio = FindIndicator(tab, NumPortfolioIndicator, PortfolioIndicatorType);
+                if (portfolio != null)
+                {
+                    ApplyPortfolioIndicatorParamsFromRobot(portfolio);
+                    TryRebuildPortfolioIndicatorSeries(portfolio);
+                    portfolio.Reload();
+                }
+            }
         }
 
         private void ApplyIndicatorParamsToTab(BotTabSimple tab, int num, string type, List<string> parameterValues)
@@ -7902,20 +8625,22 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-
-
-        private void ApplyInvertEntryLogic(ref bool bull, ref bool bear)
+        /// Swap покупка↔продажа по параметру «Инверсия логики (покупка и продажа меняются местами)».
+        /// </summary>
+        private void ApplyEntryExitSignalTransforms(ref bool bull, ref bool bear)
         {
-            if (IsEntryLogicInverted())
+            if (!IsEntryLogicSwapEnabled())
             {
-                bool tmp = bull;
-                bull = bear;
-                bear = tmp;
+                return;
             }
+
+            bool tmp = bull;
+            bull = bear;
+            bear = tmp;
         }
 
         /// <summary>Бычий сигнал на свече candleIndex.</summary>
-        private bool IsBullSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex)
+        private bool IsBullSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex, bool checkPortfolioSuccess)
         {
             decimal close = candles[candleIndex].Close;
             var items = new List<(int group, bool pass)>();
@@ -7942,11 +8667,16 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
+            if (checkPortfolioSuccess && !IsPortfolioStrategySuccessful(tab, candleIndex))
+            {
+                return false;
+            }
+
             return !VolumeTodFilterBlocksSignal(candles, candleIndex);
         }
 
         /// <summary>Медвежий сигнал на свече candleIndex.</summary>
-        private bool IsBearSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex)
+        private bool IsBearSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex, bool checkPortfolioSuccess)
         {
             decimal close = candles[candleIndex].Close;
             var items = new List<(int group, bool pass)>();
@@ -7973,29 +8703,34 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
+            if (checkPortfolioSuccess && !IsPortfolioStrategySuccessful(tab, candleIndex))
+            {
+                return false;
+            }
+
             return !VolumeTodFilterBlocksSignal(candles, candleIndex);
         }
 
         /// <summary>Бычий сигнал на последней свече.</summary>
-        private bool IsBullSignal(List<Candle> candles, BotTabSimple tab)
+        private bool IsBullSignal(List<Candle> candles, BotTabSimple tab, bool checkPortfolioSuccess)
         {
             if (candles == null || candles.Count == 0 || tab == null)
             {
                 return false;
             }
 
-            return IsBullSignalAt(candles, tab, candles.Count - 1);
+            return IsBullSignalAt(candles, tab, candles.Count - 1, checkPortfolioSuccess);
         }
 
         /// <summary>Медвежий сигнал на последней свече.</summary>
-        private bool IsBearSignal(List<Candle> candles, BotTabSimple tab)
+        private bool IsBearSignal(List<Candle> candles, BotTabSimple tab, bool checkPortfolioSuccess)
         {
             if (candles == null || candles.Count == 0 || tab == null)
             {
                 return false;
             }
 
-            return IsBearSignalAt(candles, tab, candles.Count - 1);
+            return IsBearSignalAt(candles, tab, candles.Count - 1, checkPortfolioSuccess);
         }
 
         /// <summary>
@@ -9102,6 +9837,190 @@ namespace OsEngine.Robots.Custom
 
             decimal minVolume = tab.Security.Lot > 0m ? tab.Security.Lot : 1m;
             return minVolume;
+        }
+
+        private const string HintIndicatorGroup =
+            "Номера И-групп через запятую (например: 1, 2 или -3). "
+            + "Один индикатор может входить в несколько групп. "
+            + "Внутри группы |№| все его условия связаны И; между разными |№| — ИЛИ. "
+            + "Минус перед номером — инверсия (NOT) результата в этой группе.";
+
+        private bool _parameterHintsRegistrationLogged;
+        private bool _parameterHintsUnsupportedLogged;
+
+        /// <summary>
+        /// Подсказки при наведении на строки параметров (reflection — совместимость со старым OsEngine.dll).
+        /// </summary>
+        private void RegisterParameterHints()
+        {
+            if (ParamGuiSettings == null)
+            {
+                return;
+            }
+
+            MethodInfo setToolTip = typeof(ParamGuiSettings).GetMethod(
+                "SetToolTipParameter",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(string), typeof(string) },
+                null);
+
+            if (setToolTip == null)
+            {
+                if (!_parameterHintsUnsupportedLogged)
+                {
+                    _parameterHintsUnsupportedLogged = true;
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Подсказки параметров недоступны: нужна пересборка OsEngine (SetToolTipParameter).",
+                        LogMessageType.System);
+                }
+
+                return;
+            }
+
+            void Hint(string name, string text) => setToolTip.Invoke(ParamGuiSettings, new object[] { name, text });
+
+            Hint("Regime",
+                "Режим торговли робота.\n"
+                + "Off — логика не торгует.\n"
+                + "On — покупки и продажи по сигналам.\n"
+                + "OnlyLong / OnlyShort — только одна сторона.\n"
+                + "OnlyClosePosition — только закрытие открытых позиций, без новых входов.");
+            Hint("Остановить робота и продать всё",
+                "Экстренная остановка: закрывает все позиции скринера по рынку и переводит Regime в Off.");
+            Hint("Max positions (all tabs)",
+                "Максимум одновременно открытых позиций по всем вкладкам скринера (суммарный лимит слотов).");
+            Hint("Slippage (steps)",
+                "Допустимое проскальзывание в шагах цены при выставлении лимитных заявок.");
+            Hint("Тип заявок (вход и выход)",
+                "Способ исполнения заявок: Лимит (по цене с учётом проскальзывания) или Рынок. "
+                + "Применяется к входу, выходу, реверсу, расписанию, стопам портфеля и «продать всё».");
+            Hint("Инверсия логики (покупка и продажа меняются местами)",
+                "Если включено: покупка и продажа меняются местами — бычий сигнал → продажа, медвежий → покупка "
+                + "(то же при закрытии и реверсе).");
+            Hint("Проверять успешность стратегии",
+                "Если включено: на график — индикатор портфеля по И-группам (Second), параметры как у робота. "
+                + "Доп. фильтр только на вход: у каждой активной И-группы серия «Портфель |№|» растёт 3 свечи подряд. "
+                + "Выход и реверс — по обычным сигналам, без проверки портфельного индикатора.");
+            Hint("Проверка кластера волатильности",
+                "Если включено: новые позиции только на вкладках выбранного кластера волатильности.");
+            Hint("Volatility cluster to trade",
+                "Кластер 1–3 для нового входа. Работает с «Проверка кластера волатильности».");
+            Hint("Volatility cluster lookBack", "Число свечей для расчёта кластеров волатильности.");
+            Hint("Show last clusters", "Вывести в лог последнее распределение вкладок по кластерам.");
+            Hint("Non trade periods", "Календарь периодов, когда новые сделки не открываются.");
+            Hint("Дата-время начала работы (dd.MM.yyyy, dd.MM.yyyy HH:mm, yyyy-MM-dd, HH:mm; пусто = выкл.)",
+                "До этого момента робот не торгует. Пусто — выкл. Форматы: дата, дата+время, только время.");
+            Hint("Дата-время окончания работы (dd.MM.yyyy, dd.MM.yyyy HH:mm, yyyy-MM-dd, HH:mm; пусто = выкл.)",
+                "После этого момента — закрытие всех позиций по рынку и остановка. Пусто — выкл.");
+            Hint("Stop loss портфеля (просадка от базы)",
+                "Страховка: при просадке реального портфеля от базы — закрытие и опционально фейковый режим.");
+            Hint("Сумма портфеля (база просадки)",
+                "База для stop loss / take profit портфеля. Кнопка «Заполнить сумму портфеля» или вручную.");
+            Hint("Дата просадки", "Дата последнего срабатывания стопа портфеля (робот).");
+            Hint("Stop loss портфеля от базы, %", "Просадка от базы в % для срабатывания защиты.");
+            Hint("Переводить робота в фейковый режим 1 при срабатывании стопа",
+                "После stop loss портфеля включить «Фейковый режим 1».");
+            Hint("Take profit портфеля (рост от базы)", "Фиксация прибыли портфеля от базы.");
+            Hint("Take profit портфеля от базы, %", "Рост от базы в % для take profit.");
+            Hint("Переводить робота в фейковый режим 1 при срабатывании профита",
+                "После take profit включить «Фейковый режим 1».");
+            Hint("Фейковый режим 1",
+                "Виртуальные сделки без реальных заявок; shadow-портфель. Стопы — вкладка «Стопы».");
+            Hint("Фейковая сумма портфеля", "Сумма виртуального портфеля в фейковом режиме.");
+            Hint("Возобновлять торги при достижении предыдущего реального значения",
+                "Фейковая сумма ≥ база до стопа (+0,1%) или ≥ реальный портфель (−0,1%) — снова реальная торговля.");
+            Hint("Выход по времени, свечей",
+                "Закрыть позицию после N свечей, если не в прибыли. 0 — выкл.");
+            Hint("Просадка от пика", "Стоп от максимума отслеживаемого портфеля.");
+            Hint("Просадка от пика, %", "Просадка от пика в %.");
+            Hint("Пик портфеля", "Зафиксированный максимум для стопа «Просадка от пика».");
+            Hint("Заполнить сумму портфеля",
+                "Подставить текущую сумму в базу и фейковую сумму, выкл. фейковый режим. "
+                + "В тестере — GodMode / Initial deposit на вкладке Portfolio сервера тестера.");
+            Hint("Включить стопы и возобновление",
+                "Сначала как «Заполнить сумму портфеля» (база, фейковая сумма, пик, дата), затем вкл. stop loss, take profit, "
+                + "«Возобновлять торги…».");
+            Hint("Отключить стопы и восстановление",
+                "Выкл.: stop loss, take profit и «Возобновлять торги…».");
+            Hint("Закупать фонд денежного рынка, префикс (TMON, LQDT, SBMM, Не закупать)",
+                "Покупка ETF при превышении порога портфеля. «Не закупать» — выкл.");
+            Hint("Порог суммы портфеля (закупка фонда только на превышение)",
+                "Закупка только на сумму превышения над порогом.");
+            Hint("Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
+                "Корни тикеров фьючерсов для «Обновить фьючерсы».");
+            Hint("Установить префиксы фьючерсов по умолчанию", "Стандартный список префиксов фьючерсов.");
+            Hint("Установить расширенный список префиксов фьючерсов по умолчанию", "Расширенный список префиксов.");
+            Hint("Обновить фьючерсы", "Перезагрузить вкладки по префиксам фьючерсов MOEX.");
+            Hint("Тикеры акций (через запятую; T-Инвестиции, точное совпадение с Ticker)",
+                "Тикеры акций для «Обновить акции».");
+            Hint("Установить тикеры акций по умолчанию", "Стандартный список тикеров акций.");
+            Hint("Обновить акции", "Перезагрузить вкладки по тикерам акций.");
+            Hint("Volume type", "Объём: контракты, валюта контракта или % депозита актива.");
+            Hint("Volume", "Размер позиции в единицах «Volume type».");
+            Hint("Asset in portfolio", "Актив портфеля для % депозита (обычно Prime).");
+            Hint("Установить параметры индикаторов по умолчанию",
+                "Сброс параметров индикаторов к значениям из кода робота.");
+            Hint("Use SMA", "SMA на графике и в сигналах: long — close выше, short — ниже.");
+            Hint("Use RSI", "RSI: long ≥ long min, short ≤ short max.");
+            Hint("Use Stochastic", "Стохастик по порогам %K.");
+            Hint("Use Momentum", "Momentum по порогам long/short.");
+            Hint("Use Bollinger", "Bollinger: сигнал от положения close относительно полос.");
+            Hint("Use Linear Regression", "Канал линейной регрессии для long/short.");
+            Hint("Use Volume indicator", "Фильтр роста объёма свечи и опционально TOD.");
+            Hint("Use VWAP", "Long — close выше VWAP, short — ниже.");
+            Hint("Use ATR", "Рост ATR на % относительно lookback свечей назад.");
+            Hint("Use MACD", "MACD: линия относительно сигнальной.");
+            Hint("SMA length", "Период SMA.");
+            Hint("RSI length", "Период RSI.");
+            Hint("RSI long min", "Минимум RSI для long.");
+            Hint("RSI short max", "Максимум RSI для short.");
+            Hint("Stoch P1", "Период %K.");
+            Hint("Stoch P2", "Сглаживание %K.");
+            Hint("Stoch P3", "Период %D.");
+            Hint("Stoch long min", "Минимум %K для long.");
+            Hint("Stoch short max", "Максимум %K для short.");
+            Hint("Momentum length", "Период Momentum.");
+            Hint("Momentum long min", "Минимум Momentum для long.");
+            Hint("Momentum short max", "Максимум Momentum для short.");
+            Hint("Bollinger length", "Период Bollinger.");
+            Hint("Bollinger deviation", "Множитель σ для полос.");
+            Hint("LinReg length", "Длина канала LinReg.");
+            Hint("LinReg deviation", "Отклонение границ канала, %.");
+            Hint("Volume vs prev candle min growth %",
+                "Мин. рост объёма к предыдущей свече, %.");
+            Hint("Volume: сравнение с тем же временем прошлых дней",
+                "Сравнение объёма с тем же временем за N торговых дней.");
+            Hint("Volume TOD: число прошлых торг. дней", "Число дней для TOD-сравнения объёма.");
+            Hint("Volume TOD: мин. отношение к среднему", "Мин. отношение объёма к среднему TOD.");
+            Hint("ATR length", "Период ATR.");
+            Hint("ATR min grow % vs lookback", "Мин. рост ATR в % к значению N свечей назад.");
+            Hint("ATR grow lookback", "Смещение в свечах для сравнения ATR.");
+            Hint("MACD fast length", "Быстрая EMA MACD.");
+            Hint("MACD slow length", "Медленная EMA MACD.");
+            Hint("MACD signal length", "Сигнальная линия MACD.");
+            Hint("SMA: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("RSI: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("Stochastic: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("Momentum: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("Bollinger: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("LinReg: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("Volume ind.: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("VWAP: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("ATR: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("MACD: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("Рандомный сдвиг цен", "Случайный сдвиг цен свечей в тестере (не для лайва).");
+            Hint("Рандомность движений, %", "Амплитуда случайного сдвига, %.");
+
+            if (!_parameterHintsRegistrationLogged)
+            {
+                _parameterHintsRegistrationLogged = true;
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Подсказки параметров зарегистрированы (наведите курсор на строку в окне параметров).",
+                    LogMessageType.System);
+            }
         }
 
         #endregion

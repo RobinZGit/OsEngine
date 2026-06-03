@@ -641,6 +641,7 @@ namespace OsEngine.Entity
             _grid.RowPostPaint += _grid_RowPostPaint;
             _grid.CellFormatting += _grid_CellFormatting;
             _grid.CellPainting += _grid_CellPainting;
+            _grid.ShowCellToolTips = true;
 
             _host.Child = _grid;
         }
@@ -804,7 +805,31 @@ namespace OsEngine.Entity
                     row.Cells.Add(cell2);
                 }
 
+                ApplyParameterToolTip(row, _parameters[i]);
                 _grid.Rows.Add(row);
+            }
+        }
+
+        private void ApplyParameterToolTip(DataGridViewRow row, IIStrategyParameter parameter)
+        {
+            if (row == null
+                || parameter == null
+                || _parametersGuiSettings == null
+                || _parametersGuiSettings.ParameterToolTips.Count == 0)
+            {
+                return;
+            }
+
+            string key = parameter.Name;
+            if (!_parametersGuiSettings.ParameterToolTips.TryGetValue(key, out string toolTip)
+                || string.IsNullOrWhiteSpace(toolTip))
+            {
+                return;
+            }
+
+            for (int c = 0; c < row.Cells.Count; c++)
+            {
+                row.Cells[c].ToolTipText = toolTip;
             }
         }
 

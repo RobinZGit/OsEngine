@@ -68,7 +68,13 @@ namespace OsEngine.OsTrader.RiskManager
 
                     for (int i = 0; i < RiskManagersToCheck.Count; i++)
                     {
-                        RiskManagersToCheck[i].CheckJournals();
+                        RiskManager manager = RiskManagersToCheck[i];
+                        if (manager == null)
+                        {
+                            continue;
+                        }
+
+                        manager.CheckJournals();
                     }
 
                     if (!MainWindow.ProccesIsWorked)
@@ -286,7 +292,13 @@ namespace OsEngine.OsTrader.RiskManager
 
                 for (int i = 0; i < _journals.Count; i++)
                 {
-                    profit += _journals[i].GetProfitFromThatDayInPercent();
+                    Journal.Journal journal = _journals[i];
+                    if (journal == null)
+                    {
+                        continue;
+                    }
+
+                    profit += journal.GetProfitFromThatDayInPercent();
                 }
 
                 if (profit < -Math.Abs(MaxDrowDownToDayPersent))
