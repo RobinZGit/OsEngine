@@ -1,7 +1,12 @@
 /*
- * Trend Multi-Indicator Portfolio — custom indicator (logic aligned with TrendMultiIndicatorScreener).
- * One portfolio series per |И-группа|: AND inside group, minus = NOT.
+ * Trend Multi-Indicator Portfolio — standalone chart indicator (signal logic aligned with TrendMultiIndicatorScreener).
+ * Not wired into the screener robot; add manually from Custom indicators on a tab chart.
+ *
+ * Built-in filters: SMA, RSI, Stochastic, Momentum, Bollinger, LinReg, Volume, VWAP, ATR, MACD, ZigZag.
+ * One portfolio series per |И-группа|: AND inside group, minus = NOT in group string.
  * Each bull/bear signal: entry (stack units); opposite signal exits one unit only if position exists.
+ *
+ * ZigZag: uptrend = last swing is a low after the last high (long); downtrend = high after low (short).
  */
 
 using System;
@@ -32,6 +37,7 @@ namespace OsEngine.Indicators
         private IndicatorParameterBool _useVwap;
         private IndicatorParameterBool _useAtr;
         private IndicatorParameterBool _useMacd;
+        private IndicatorParameterBool _useZigZag;
         private IndicatorParameterBool _invertEntryLogic;
 
         // --- lengths / thresholds (same defaults as TrendMultiIndicatorScreener) ---
@@ -61,6 +67,7 @@ namespace OsEngine.Indicators
         private IndicatorParameterInt _macdFastLen;
         private IndicatorParameterInt _macdSlowLen;
         private IndicatorParameterInt _macdSignalLen;
+        private IndicatorParameterInt _zigZagLen;
 
         // --- И-группы (по умолчанию у каждого индикатора свой номер) ---
         private IndicatorParameterString _smaAndGroup;
@@ -73,6 +80,7 @@ namespace OsEngine.Indicators
         private IndicatorParameterString _vwapAndGroup;
         private IndicatorParameterString _atrAndGroup;
         private IndicatorParameterString _macdAndGroup;
+        private IndicatorParameterString _zigZagAndGroup;
 
         // --- embedded indicators ---
         private Aindicator _sma;
@@ -85,6 +93,10 @@ namespace OsEngine.Indicators
         private Aindicator _vwap;
         private Aindicator _atr;
         private Aindicator _macd;
+        private Aindicator _zigZag;
+
+        private const int ZigZagSeriesHighsIndex = 2;
+        private const int ZigZagSeriesLowsIndex = 3;
 
         private readonly List<int> _groupIds = new List<int>();
         private readonly Dictionary<int, IndicatorDataSeries> _portfolioSeriesByGroup = new Dictionary<int, IndicatorDataSeries>();
@@ -128,6 +140,7 @@ namespace OsEngine.Indicators
             _useVwap = CreateParameterBool("Use VWAP", false);
             _useAtr = CreateParameterBool("Use ATR", false);
             _useMacd = CreateParameterBool("Use MACD", false);
+            _useZigZag = CreateParameterBool("Use ZigZag", false);
 
             _smaLen = CreateParameterInt("SMA length", 100);
             _rsiLen = CreateParameterInt("RSI length", 14);
@@ -155,6 +168,7 @@ namespace OsEngine.Indicators
             _macdFastLen = CreateParameterInt("MACD fast length", 12);
             _macdSlowLen = CreateParameterInt("MACD slow length", 26);
             _macdSignalLen = CreateParameterInt("MACD signal length", 9);
+            _zigZagLen = CreateParameterInt("ZigZag length", 14);
 
             _smaAndGroup = CreateParameterString("SMA: № И-группы (через запятую)", "1");
             _rsiAndGroup = CreateParameterString("RSI: № И-группы (через запятую)", "2");
@@ -166,6 +180,7 @@ namespace OsEngine.Indicators
             _vwapAndGroup = CreateParameterString("VWAP: № И-группы (через запятую)", "8");
             _atrAndGroup = CreateParameterString("ATR: № И-группы (через запятую)", "9");
             _macdAndGroup = CreateParameterString("MACD: № И-группы (через запятую)", "10");
+            _zigZagAndGroup = CreateParameterString("ZigZag: № И-группы (через запятую)", "11");
 
             CreateEmbeddedIndicators();
             RebuildGroupSeries();
@@ -223,6 +238,10 @@ namespace OsEngine.Indicators
             BindChildIntParameter(_macd, 1, _macdSlowLen);
             BindChildIntParameter(_macd, 2, _macdSignalLen);
             ProcessIndicator("MACD", _macd);
+
+            _zigZag = IndicatorsFactory.CreateIndicatorByName("ZigZag", Name + "ZigZag", false);
+            BindChildIntParameter(_zigZag, 0, _zigZagLen);
+            ProcessIndicator("ZigZag", _zigZag);
         }
 
         private static void BindChildIntParameter(Aindicator indicator, int index, IndicatorParameterInt source)
@@ -325,6 +344,11 @@ namespace OsEngine.Indicators
             if (_useMacd.ValueBool)
             {
                 CollectGroupIds(ids, _macdAndGroup);
+            }
+
+            if (_useZigZag.ValueBool)
+            {
+                CollectGroupIds(ids, _zigZagAndGroup);
             }
 
             if (ids.Count == 0)
@@ -477,6 +501,7 @@ namespace OsEngine.Indicators
             AddGroupedIndicatorResultForGroup(items, groupId, _vwapAndGroup, BullVwapPasses(candles, candleIndex));
             AddGroupedIndicatorResultForGroup(items, groupId, _atrAndGroup, BullAtrPasses(candleIndex));
             AddGroupedIndicatorResultForGroup(items, groupId, _macdAndGroup, BullMacdPasses(candleIndex));
+            AddGroupedIndicatorResultForGroup(items, groupId, _zigZagAndGroup, BullZigZagPasses(candleIndex));
 
             if (items.Count == 0)
             {
@@ -504,6 +529,7 @@ namespace OsEngine.Indicators
             AddGroupedIndicatorResultForGroup(items, groupId, _vwapAndGroup, BearVwapPasses(candles, candleIndex));
             AddGroupedIndicatorResultForGroup(items, groupId, _atrAndGroup, BearAtrPasses(candleIndex));
             AddGroupedIndicatorResultForGroup(items, groupId, _macdAndGroup, BearMacdPasses(candleIndex));
+            AddGroupedIndicatorResultForGroup(items, groupId, _zigZagAndGroup, BearZigZagPasses(candleIndex));
 
             if (items.Count == 0)
             {
@@ -861,6 +887,89 @@ namespace OsEngine.Indicators
             decimal macdLine = SeriesValueAt(_macd, 1, candleIndex);
             decimal signalLine = SeriesValueAt(_macd, 2, candleIndex);
             return macdLine != 0 && signalLine != 0 && macdLine < signalLine;
+        }
+
+        /// <summary>ZigZag: восходящая нога (последний свинг — low после high).</summary>
+        private bool? BullZigZagPasses(int candleIndex)
+        {
+            if (!_useZigZag.ValueBool)
+            {
+                return null;
+            }
+
+            return ZigZagDirectionPasses(candleIndex, wantUptrend: true);
+        }
+
+        /// <summary>ZigZag: нисходящая нога (последний свинг — high после low).</summary>
+        private bool? BearZigZagPasses(int candleIndex)
+        {
+            if (!_useZigZag.ValueBool)
+            {
+                return null;
+            }
+
+            return ZigZagDirectionPasses(candleIndex, wantUptrend: false);
+        }
+
+        private bool? ZigZagDirectionPasses(int candleIndex, bool wantUptrend)
+        {
+            if (_zigZag?.DataSeries == null || _zigZag.DataSeries.Count <= ZigZagSeriesLowsIndex)
+            {
+                return false;
+            }
+
+            List<decimal> zzHigh = _zigZag.DataSeries[ZigZagSeriesHighsIndex].Values;
+            List<decimal> zzLow = _zigZag.DataSeries[ZigZagSeriesLowsIndex].Values;
+
+            if (zzHigh == null || zzLow == null || zzHigh.Count == 0 || zzLow.Count == 0)
+            {
+                return false;
+            }
+
+            if (candleIndex < 0)
+            {
+                candleIndex = Math.Min(zzHigh.Count, zzLow.Count) - 1;
+            }
+
+            if (candleIndex < _zigZagLen.ValueInt * 2)
+            {
+                return false;
+            }
+
+            bool uptrend = ZigZagIsUptrendAt(zzLow, zzHigh, candleIndex);
+            return uptrend == wantUptrend;
+        }
+
+        private static bool ZigZagIsUptrendAt(List<decimal> zzLow, List<decimal> zzHigh, int candleIndex)
+        {
+            int indexLow = -1;
+            int indexHigh = -1;
+            int end = Math.Min(candleIndex, Math.Min(zzLow.Count, zzHigh.Count) - 1);
+
+            for (int i = end; i >= 0; i--)
+            {
+                if (indexLow < 0 && i < zzLow.Count && zzLow[i] != 0)
+                {
+                    indexLow = i;
+                }
+
+                if (indexHigh < 0 && i < zzHigh.Count && zzHigh[i] != 0)
+                {
+                    indexHigh = i;
+                }
+
+                if (indexLow >= 0 && indexHigh >= 0)
+                {
+                    break;
+                }
+            }
+
+            if (indexLow < 0 || indexHigh < 0)
+            {
+                return false;
+            }
+
+            return indexLow > indexHigh;
         }
 
         private bool VolumeIndicatorGrowthOk(List<Candle> candles, int candleIndex)

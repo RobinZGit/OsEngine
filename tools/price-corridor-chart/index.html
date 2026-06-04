@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Коридор фиксированной высоты — SBER (демо)</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e8eef4;
+      --muted: #8b9cb3;
+      --price: #4fc3f7;
+      --upper: #81c784;
+      --lower: #e57373;
+      --grid: #2a3548;
+      --accent: #ffb74d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.25rem;
+      gap: 1rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      max-width: 52rem;
+      text-align: center;
+      line-height: 1.45;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 0.75rem 1.25rem;
+      background: var(--panel);
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      border: 1px solid var(--grid);
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    input[type="number"] {
+      width: 8rem;
+      padding: 0.45rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--grid);
+      background: #0d1117;
+      color: var(--text);
+      font-size: 1rem;
+    }
+
+    button {
+      padding: 0.55rem 1.1rem;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #1a1208;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+
+    button:hover { filter: brightness(1.08); }
+
+    button.secondary {
+      background: var(--grid);
+      color: var(--text);
+    }
+
+    .chart-wrap {
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 10px;
+      padding: 0.75rem;
+      max-width: 100%;
+    }
+
+    canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.5rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 14px;
+      height: 3px;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+      border-radius: 1px;
+    }
+
+    .legend .price::before { background: var(--price); }
+    .legend .upper::before { background: var(--upper); }
+    .legend .lower::before { background: var(--lower); }
+  </style>
+</head>
+<body>
+  <h1>График закрытия и коридор постоянной толщины</h1>
+  <p class="subtitle">
+    Демо: синтетические цены закрытия в стиле SBER (~250–290 ₽, 120 свечей).
+    Коридор: верхняя и нижняя линии на равном расстоянии от каждой цены;
+    вертикальная толщина между ними всегда равна заданной абсолютной величине (в рублях).
+  </p>
+
+  <div class="controls">
+    <label>
+      Высота коридора (абсолютная, ₽)
+      <input type="number" id="corridorHeight" value="2" min="0.01" max="500" step="0.01" />
+    </label>
+    <button type="button" id="btnDraw">Построить коридор</button>
+    <button type="button" id="btnRegen" class="secondary">Новый случайный график</button>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="chart" width="960" height="420"></canvas>
+    <div class="legend">
+      <span class="price">Цена закрытия</span>
+      <span class="upper">Верхняя граница коридора</span>
+      <span class="lower">Нижняя граница коридора</span>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById("chart");
+      const ctx = canvas.getContext("2d");
+      const inputHeight = document.getElementById("corridorHeight");
+      const btnDraw = document.getElementById("btnDraw");
+      const btnRegen = document.getElementById("btnRegen");
+
+      const padding = { top: 28, right: 24, bottom: 40, left: 56 };
+      let closes = [];
+      let showCorridor = false;
+
+      /** Псевдо-SBER: случайное блуждание вокруг ~270 ₽ */
+      function generateSberLikeCloses(count) {
+        const out = [];
+        let p = 268 + (Math.random() - 0.5) * 8;
+        for (let i = 0; i < count; i++) {
+          p += (Math.random() - 0.48) * 1.2;
+          p = Math.max(240, Math.min(310, p));
+          out.push(Math.round(p * 100) / 100);
+        }
+        return out;
+      }
+
+      function priceToY(price, minP, maxP, plotH) {
+        const span = maxP - minP || 1;
+        const t = (price - minP) / span;
+        return padding.top + plotH * (1 - t);
+      }
+
+      function getPlotMetrics() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const plotW = w - padding.left - padding.right;
+        const plotH = h - padding.top - padding.bottom;
+
+        let minP = Infinity;
+        let maxP = -Infinity;
+        const half = showCorridor ? Number(inputHeight.value) / 2 : 0;
+        for (let i = 0; i < closes.length; i++) {
+          minP = Math.min(minP, closes[i] - half);
+          maxP = Math.max(maxP, closes[i] + half);
+        }
+        const margin = (maxP - minP) * 0.06 || 1;
+        minP -= margin;
+        maxP += margin;
+
+        return { w, h, plotW, plotH, minP, maxP };
+      }
+
+      function xAt(i, plotW, n) {
+        if (n <= 1) return padding.left + plotW / 2;
+        return padding.left + (i / (n - 1)) * plotW;
+      }
+
+      function drawGrid(minP, maxP, plotW, plotH) {
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--grid").trim();
+        ctx.lineWidth = 1;
+        const steps = 6;
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+        ctx.font = "11px Segoe UI, sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          const price = minP + t * (maxP - minP);
+          const y = priceToY(price, minP, maxP, plotH);
+          ctx.beginPath();
+          ctx.moveTo(padding.left, y);
+          ctx.lineTo(padding.left + plotW, y);
+          ctx.stroke();
+          ctx.fillText(price.toFixed(2), padding.left - 8, y);
+        }
+      }
+
+      function drawSeries(points, color, lineWidth, withPoints) {
+        if (points.length === 0) return;
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.stroke();
+
+        if (withPoints) {
+          for (const pt of points) {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      function draw() {
+        const n = closes.length;
+        const { plotW, plotH, minP, maxP } = getPlotMetrics();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid(minP, maxP, plotW, plotH);
+
+        const pricePts = [];
+        const upperPts = [];
+        const lowerPts = [];
+        const half = Number(inputHeight.value) / 2;
+
+        for (let i = 0; i < n; i++) {
+          const x = xAt(i, plotW, n);
+          const yClose = priceToY(closes[i], minP, maxP, plotH);
+          pricePts.push({ x, y: yClose });
+          if (showCorridor) {
+            upperPts.push({ x, y: priceToY(closes[i] + half, minP, maxP, plotH) });
+            lowerPts.push({ x, y: priceToY(closes[i] - half, minP, maxP, plotH) });
+          }
+        }
+
+        if (showCorridor) {
+          const upperColor = getComputedStyle(document.documentElement).getPropertyValue("--upper").trim();
+          const lowerColor = getComputedStyle(document.documentElement).getPropertyValue("--lower").trim();
+          drawSeries(lowerPts, lowerColor, 1.5, false);
+          drawSeries(upperPts, upperColor, 1.5, false);
+        }
+
+        const priceColor = getComputedStyle(document.documentElement).getPropertyValue("--price").trim();
+        drawSeries(pricePts, priceColor, 2, true);
+
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+        ctx.font = "11px Segoe UI, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText("Свеча (индекс)", padding.left + plotW / 2, canvas.height - padding.bottom + 10);
+
+        if (showCorridor) {
+          ctx.textAlign = "left";
+          ctx.fillText(
+            "Толщина коридора: " + Number(inputHeight.value).toFixed(2) + " ₽ (±" + half.toFixed(2) + " от close)",
+            padding.left,
+            8
+          );
+        }
+      }
+
+      function regen() {
+        closes = generateSberLikeCloses(120);
+        showCorridor = false;
+        draw();
+      }
+
+      btnDraw.addEventListener("click", function () {
+        const h = Number(inputHeight.value);
+        if (!Number.isFinite(h) || h <= 0) {
+          alert("Введите положительную абсолютную высоту коридора (₽).");
+          return;
+        }
+        showCorridor = true;
+        draw();
+      });
+
+      btnRegen.addEventListener("click", regen);
+
+      inputHeight.addEventListener("change", function () {
+        if (showCorridor) draw();
+      });
+
+      regen();
+    })();
+  </script>
+</body>
+</html>

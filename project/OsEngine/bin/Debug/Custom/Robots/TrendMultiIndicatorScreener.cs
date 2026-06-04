@@ -45,6 +45,7 @@ Screener trend robot using multiple indicators simultaneously:
 - Volume TOD (опционально): объём vs среднее в то же время прошлых торговых дней (intraday)
 - VWAP (close выше/ниже линии; сброс по календарному дню)
 - MACD (линия MACD выше/ниже сигнальной; по умолчанию выкл.)
+- ZigZag (направление: последний свинг — low после high = long, high после low = short; по умолчанию выкл.)
 - RZIgreensMinusReds, Average Profit Percent Long — в исходниках отключены (#if false), код не удалён.
 - ATR (фильтр роста волатильности: ATR вырос на % за lookback свечей)
 - DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
@@ -55,7 +56,6 @@ Each indicator has an enable/disable parameter. Disabled indicators are not crea
 
 Entry:
 Open Long / Short when the grouped formula is satisfied for bull/bear checks (see indicator pass methods).
-«Проверять успешность стратегии» (по умолчанию выкл.): на график — TrendMultiIndicatorPortfolio_indicator (Second), параметры как у робота; доп. фильтр только на вход — у каждой активной И-группы серия портфеля растёт 3 свечи подряд; выход/реверс без этой проверки.
 «Инверсия логики (покупка и продажа меняются местами)»: бычий → short, медвежий → long (вход, выход, реверс).
 
 If Volume indicator is enabled, current candle volume must be at least (previous volume × (1 + min growth % / 100)).
@@ -71,7 +71,9 @@ Filters (AlgoStart-style):
 
 Schedule (tab «Расписание»): «Дата-время начала/окончания работы» — пустая строка = выкл.; до начала торговля не идёт; после окончания — закрытие всех позиций скринера по рынку и остановка логики. Форматы: дата, дата+время, только время (дата = календарный день decision time).
 
-Stops (tab «Стопы»): страховка портфеля; фейковый режим и фейковая сумма; опция возобновления торгов при превышении фейковой суммой базы просадки на 0,1%.
+Stops (tab «Стопы»): страховка портфеля; при срабатывании — закрытие всех позиций; фейковый режим и фейковая сумма; опция возобновления торгов при превышении фейковой суммой базы просадки на 0,1%.
+
+TMON / LQDT / SBMM: вкладки фондов денежного рынка исключены из сигнальной торговли (вход/выход/реверс); закупка только через «Сбор прибыли».
 
 MOEX futures / stocks: в OsTrader — бумаги с уже выбранного TInvest и портфеля скринера (коннектор, портфель, ТФ не меняются); в тестере — бумаги из сета Tester.
 
@@ -113,11 +115,7 @@ namespace OsEngine.Robots.Custom
         private const int NumVwap = 11;
         private const int NumAtr = 12;
         private const int NumMacd = 13;
-        private const int NumPortfolioIndicator = 14;
-
-        private const string PortfolioIndicatorType = "TrendMultiIndicatorPortfolio_indicator";
-        private const string PortfolioSeriesNamePrefix = "Портфель |";
-        private const int PortfolioSuccessRisingBars = 3;
+        private const int NumZigZag = 15;
 
         private const string VwapIndicatorType = "VWAP";
 
@@ -134,9 +132,12 @@ namespace OsEngine.Robots.Custom
         private const string SignalPortfolioDrawdownStop = "TrendMultiPortfolioDrawdown";
         private const decimal ResumeTradingFakeOverBaselinePercent = 0.1m;
         private const string SignalProfitCollection = "TrendMultiProfitCollection";
-        private const string DefaultMoneyMarketFundPrefix = "TMON";
+        private const string DefaultMoneyMarketFundPrefix = "Не закупать";
         private const string MoneyMarketFundDoNotBuyOption = "Не закупать";
+        private const string MoneyMarketFundPrefixParamName =
+            "Закупать фонд денежного рынка, префикс (TMON, LQDT, SBMM, Не закупать)";
         private static readonly string[] MoneyMarketFundPrefixOptions = { "TMON", "LQDT", "SBMM", MoneyMarketFundDoNotBuyOption };
+        private static readonly string[] MoneyMarketFundSecurityPrefixes = { "TMON", "LQDT", "SBMM" };
         private const decimal DefaultBuyMoneyMarketFundPortfolioThreshold = 999_999_999m;
         private const string SignalStopRobotAndSellAll = "TrendMultiStopAll";
         private BotTabScreener _screenerTab;
@@ -152,7 +153,6 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _randomPriceShiftPercent;
         private readonly Random _randomPriceShiftRng = new Random();
         private StrategyParameterBool _invertEntryLogic;
-        private StrategyParameterBool _checkStrategySuccess;
 
         /// <summary>Отложенная установка индикаторов после MOEX reload (чарты вкладок ещё не готовы).</summary>
         private int _moexIndicatorsAttachPassId;
@@ -265,6 +265,7 @@ namespace OsEngine.Robots.Custom
 #endif
         private StrategyParameterBool _useAtr;
         private StrategyParameterBool _useMacd;
+        private StrategyParameterBool _useZigZag;
 #if false // DiscreteMidBestPair
         private StrategyParameterBool _useDiscreteMidBestPair;
 #endif
@@ -319,9 +320,12 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _macdSlowLen;
         private StrategyParameterInt _macdSignalLen;
 
+        private StrategyParameterInt _zigZagLen;
+
         private StrategyParameterString _vwapAndGroup;
         private StrategyParameterString _atrAndGroup;
         private StrategyParameterString _macdAndGroup;
+        private StrategyParameterString _zigZagAndGroup;
 
         /*
          * ---------------------------------------------------------------------------
@@ -445,6 +449,34 @@ namespace OsEngine.Robots.Custom
             public string SecuritiesClass;
         }
 
+        /// <summary>Снимок «Сопровождение позиции» (BotManualControl) перед пересозданием вкладок MOEX.</summary>
+        private struct MoexManualPositionSupportSnapshot
+        {
+            public bool HasData;
+            public bool StopIsOn;
+            public decimal StopDistance;
+            public decimal StopSlippage;
+            public bool ProfitIsOn;
+            public decimal ProfitDistance;
+            public decimal ProfitSlippage;
+            public TimeSpan SecondToOpen;
+            public TimeSpan SecondToClose;
+            public bool DoubleExitIsOn;
+            public bool SecondToOpenIsOn;
+            public bool SecondToCloseIsOn;
+            public bool SetbackToOpenIsOn;
+            public decimal SetbackToOpenPosition;
+            public bool SetbackToCloseIsOn;
+            public decimal SetbackToClosePosition;
+            public decimal DoubleExitSlippage;
+            public OrderPriceType TypeDoubleExitOrder;
+            public ManualControlValuesType ValuesType;
+            public OrderTypeTime OrderTypeTime;
+            public bool LimitsMakerOnly;
+        }
+
+        private MoexManualPositionSupportSnapshot _moexManualPositionSupportTemplate;
+
         public TrendMultiIndicatorScreener(string name, StartProgram startProgram)
             : base(name, startProgram)
         {
@@ -492,7 +524,6 @@ namespace OsEngine.Robots.Custom
             _invertEntryLogic = CreateParameter(
                 "Инверсия логики (покупка и продажа меняются местами)",
                 false);
-            _checkStrategySuccess = CreateParameter("Проверять успешность стратегии", false);
 
             _checkVolatilityCluster = CreateParameter("Проверка кластера волатильности", false);
             _clusterToTrade = CreateParameter("Volatility cluster to trade", 2, 1, 3, 1);
@@ -656,6 +687,7 @@ namespace OsEngine.Robots.Custom
 #endif
             _useAtr = CreateParameter("Use ATR", false);
             _useMacd = CreateParameter("Use MACD", false);
+            _useZigZag = CreateParameter("Use ZigZag", false);
 
 #if false // DiscreteMidBestPair
             _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
@@ -725,6 +757,8 @@ namespace OsEngine.Robots.Custom
             _macdSlowLen = CreateParameter("MACD slow length", 26, 2, 300, 1);
             _macdSignalLen = CreateParameter("MACD signal length", 9, 2, 100, 1);
 
+            _zigZagLen = CreateParameter("ZigZag length", 14, 2, 200, 1);
+
             _smaAndGroup = CreateParameter("SMA: № И-группы (через запятую)", "1");
             _rsiAndGroup = CreateParameter("RSI: № И-группы (через запятую)", "1");
             _stochAndGroup = CreateParameter("Stochastic: № И-группы (через запятую)", "1");
@@ -741,6 +775,7 @@ namespace OsEngine.Robots.Custom
             _vwapAndGroup = CreateParameter("VWAP: № И-группы (через запятую)", "1");
             _atrAndGroup = CreateParameter("ATR: № И-группы (через запятую)", "1");
             _macdAndGroup = CreateParameter("MACD: № И-группы (через запятую)", "1");
+            _zigZagAndGroup = CreateParameter("ZigZag: № И-группы (через запятую)", "1");
 
             _useRandomPriceShift = CreateParameter("Рандомный сдвиг цен", false);
             _randomPriceShiftPercent = CreateParameter("Рандомность движений, %", 0.1m, 0m, 50m, 0.01m);
@@ -762,12 +797,14 @@ namespace OsEngine.Robots.Custom
 #if false // DiscreteMidBestPair
             Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
 #else
-            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
+            Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD/ZigZag; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
 #endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
 
             LoadShadowVirtualPositionsFromDisk();
+
+            TryEnsureSelectedMoneyMarketFundInScreener(logResult: false);
         }
 
         /// <summary>
@@ -829,6 +866,7 @@ namespace OsEngine.Robots.Custom
         private const string PortfolioTakeProfitEnableParamName = "Take profit портфеля (рост от базы)";
         private const string ResumeTradingWhenFakeExceedsBaselineParamName =
             "Возобновлять торги при достижении предыдущего реального значения";
+
         /// <summary>
         /// Подписка на кнопки вкладки «Стопы» (объекты из Parameters — те же, что в окне настроек).
         /// </summary>
@@ -1162,7 +1200,6 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            string botType = GetNameStrategyType();
             int closeAttempts = 0;
             int skippedNotOurBot = 0;
 
@@ -1625,6 +1662,11 @@ namespace OsEngine.Robots.Custom
 
         private void ExecuteBuyOpen(BotTabSimple tab, decimal volume, decimal limitPrice, string signal = null)
         {
+            if (IsMoneyMarketFundTradeTab(tab))
+            {
+                return;
+            }
+
             if (IsRealTradingBlockedByFakeMode())
             {
                 ApplyFakePortfolioOpen(tab, Side.Buy, volume, limitPrice);
@@ -1659,6 +1701,11 @@ namespace OsEngine.Robots.Custom
 
         private void ExecuteSellOpen(BotTabSimple tab, decimal volume, decimal limitPrice, string signal = null)
         {
+            if (IsMoneyMarketFundTradeTab(tab))
+            {
+                return;
+            }
+
             if (IsRealTradingBlockedByFakeMode())
             {
                 ApplyFakePortfolioOpen(tab, Side.Sell, volume, limitPrice);
@@ -2462,10 +2509,55 @@ namespace OsEngine.Robots.Custom
         {
             if (IsRealTradingBlockedByFakeMode())
             {
-                return _fakePortfolioVirtualPositions.Count;
+                int count = 0;
+                foreach (KeyValuePair<string, FakePortfolioVirtualPosition> pair in _fakePortfolioVirtualPositions)
+                {
+                    BotTabSimple childTab = FindScreenerTabByFakeKey(pair.Key);
+                    if (childTab != null && IsMoneyMarketFundTradeTab(childTab))
+                    {
+                        continue;
+                    }
+
+                    count++;
+                }
+
+                return count;
             }
 
-            return _screenerTab?.PositionsOpenAll?.Count ?? 0;
+            if (_screenerTab?.Tabs == null)
+            {
+                return 0;
+            }
+
+            int openCount = 0;
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                if (tab == null || IsMoneyMarketFundTradeTab(tab))
+                {
+                    continue;
+                }
+
+                List<Position> positions = tab.PositionsOpenAll;
+                if (positions == null)
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < positions.Count; p++)
+                {
+                    Position pos = positions[p];
+                    if (pos != null
+                        && pos.State == PositionStateType.Open
+                        && pos.OpenVolume > 0m
+                        && IsOurBotPosition(pos))
+                    {
+                        openCount++;
+                    }
+                }
+            }
+
+            return openCount;
         }
 
         private decimal GetMarkPriceForFakePortfolio(BotTabSimple tab, Side direction)
@@ -2776,7 +2868,7 @@ namespace OsEngine.Robots.Custom
 
         private void ApplyFakePortfolioOpen(BotTabSimple tab, Side direction, decimal volume, decimal entryPrice)
         {
-            if (tab == null || volume <= 0m || entryPrice <= 0m)
+            if (tab == null || volume <= 0m || entryPrice <= 0m || IsMoneyMarketFundTradeTab(tab))
             {
                 return;
             }
@@ -3083,25 +3175,7 @@ namespace OsEngine.Robots.Custom
                 }
             }
 
-            BotTabSimple refTab = referenceTab ?? TryGetPortfolioMonitoringReferenceTab();
-            if (refTab?.Connector?.MyServer?.Securities == null)
-            {
-                return null;
-            }
-
-            List<Security> securities = refTab.Connector.MyServer.Securities;
-            Security matchedSecurity = null;
-            for (int s = 0; s < securities.Count; s++)
-            {
-                Security security = securities[s];
-                if (SecurityMatchesMoneyMarketFundPrefix(security, normalizedPrefix))
-                {
-                    matchedSecurity = security;
-                    break;
-                }
-            }
-
-            if (matchedSecurity == null)
+            if (!TryFindMoneyMarketFundSecurity(normalizedPrefix, out Security matchedSecurity, out _))
             {
                 return null;
             }
@@ -3121,6 +3195,208 @@ namespace OsEngine.Robots.Custom
             }
 
             return null;
+        }
+
+        private IServer TryResolveMoneyMarketFundServer()
+        {
+            BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
+            if (refTab?.Connector?.MyServer != null)
+            {
+                return refTab.Connector.MyServer;
+            }
+
+            if (ShouldUseMoexTesterConnector())
+            {
+                return FindTesterLikeServer();
+            }
+
+            return ResolveMoexLiveServer();
+        }
+
+        private bool TryFindMoneyMarketFundSecurity(string prefix, out Security matchedSecurity, out string errorReason)
+        {
+            matchedSecurity = null;
+            errorReason = null;
+
+            string normalizedPrefix = NormalizeMoneyMarketFundPrefix(prefix);
+            if (string.IsNullOrWhiteSpace(normalizedPrefix))
+            {
+                errorReason = "пустой префикс фонда";
+                return false;
+            }
+
+            IServer server = TryResolveMoneyMarketFundServer();
+            if (server?.Securities == null || server.Securities.Count == 0)
+            {
+                errorReason = "нет списка бумаг у коннектора скринера";
+                return false;
+            }
+
+            string preferredName = normalizedPrefix + "@";
+            Security preferred = null;
+            Security firstMatch = null;
+            List<Security> securities = server.Securities;
+
+            for (int s = 0; s < securities.Count; s++)
+            {
+                Security security = securities[s];
+                if (!SecurityMatchesMoneyMarketFundPrefix(security, normalizedPrefix))
+                {
+                    continue;
+                }
+
+                if (string.Equals(security.Name, preferredName, StringComparison.OrdinalIgnoreCase))
+                {
+                    preferred = security;
+                    break;
+                }
+
+                if (firstMatch == null)
+                {
+                    firstMatch = security;
+                }
+            }
+
+            matchedSecurity = preferred ?? firstMatch;
+            if (matchedSecurity == null)
+            {
+                errorReason = "бумага с префиксом «" + normalizedPrefix + "» не найдена на коннекторе";
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool IsMoneyMarketFundSecurityListedInScreener(string securityName)
+        {
+            if (string.IsNullOrWhiteSpace(securityName) || _screenerTab?.SecuritiesNames == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _screenerTab.SecuritiesNames.Count; i++)
+            {
+                ActivatedSecurity existing = _screenerTab.SecuritiesNames[i];
+                if (existing != null
+                    && string.Equals(existing.SecurityName, securityName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void AddMoneyMarketFundSecurityToScreener(Security security)
+        {
+            if (security == null || string.IsNullOrWhiteSpace(security.Name) || _screenerTab?.SecuritiesNames == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab.SecuritiesNames.Count; i++)
+            {
+                ActivatedSecurity existing = _screenerTab.SecuritiesNames[i];
+                if (existing != null
+                    && string.Equals(existing.SecurityName, security.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing.IsOn = true;
+                    return;
+                }
+            }
+
+            _screenerTab.SecuritiesNames.Add(new ActivatedSecurity
+            {
+                SecurityName = security.Name,
+                SecurityClass = GetSecurityClassName(security),
+                IsOn = true
+            });
+        }
+
+        /// <summary>
+        /// Добавляет выбранный фонд (TMON/LQDT/SBMM) во вкладки скринера, если его ещё нет.
+        /// </summary>
+        private bool TryEnsureMoneyMarketFundTabInScreener(string prefix, bool logResult)
+        {
+            string normalizedPrefix = NormalizeMoneyMarketFundPrefix(prefix);
+            if (IsMoneyMarketFundPurchaseDisabled(normalizedPrefix) || _screenerTab == null)
+            {
+                return true;
+            }
+
+            if (TryResolveMoneyMarketFundTab(null, normalizedPrefix) != null)
+            {
+                return true;
+            }
+
+            if (!TryFindMoneyMarketFundSecurity(normalizedPrefix, out Security fundSecurity, out string findError))
+            {
+                if (logResult)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Сбор прибыли: не удалось добавить фонд «"
+                        + normalizedPrefix
+                        + "» в скринер — "
+                        + (findError ?? "бумага не найдена")
+                        + ".",
+                        LogMessageType.Error);
+                }
+
+                return false;
+            }
+
+            if (!IsMoneyMarketFundSecurityListedInScreener(fundSecurity.Name))
+            {
+                AddMoneyMarketFundSecurityToScreener(fundSecurity);
+            }
+
+            EnsureScreenerCandleInfrastructure();
+
+            if (!ShouldUseMoexTesterConnector())
+            {
+                IServer server = TryResolveMoneyMarketFundServer();
+                WaitForMoexServerReady(server, 3000);
+            }
+
+            _screenerTab.NeedToReloadTabs = true;
+            _screenerTab.TryReLoadTabs();
+            Thread.Sleep(MoexStockTabReloadDelayMs);
+            TryInvokeScreenerRePaintSecuritiesGrid();
+            _screenerTab.SaveSettings();
+            ScheduleMoexIndicatorsAttach(attempt: 0);
+
+            BotTabSimple fundTab = TryResolveMoneyMarketFundTab(null, normalizedPrefix);
+            if (fundTab != null)
+            {
+                _loggedProfitCollectionNoticeKeys.Remove("fundTab|" + normalizedPrefix);
+
+                if (logResult)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Сбор прибыли: в скринер добавлена бумага "
+                        + fundSecurity.Name
+                        + " (фонд «"
+                        + normalizedPrefix
+                        + "»).",
+                        LogMessageType.System);
+                }
+
+                return true;
+            }
+
+            if (logResult)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Сбор прибыли: бумага "
+                    + fundSecurity.Name
+                    + " добавлена в список скринера, но вкладка ещё не создана — проверьте портфель и коннектор.",
+                    LogMessageType.Error);
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -3285,6 +3561,12 @@ namespace OsEngine.Robots.Custom
             BotTabSimple fundTab = TryResolveMoneyMarketFundTab(portfolioTab, prefix);
             if (fundTab == null)
             {
+                TryEnsureMoneyMarketFundTabInScreener(prefix, logResult: false);
+                fundTab = TryResolveMoneyMarketFundTab(portfolioTab, prefix);
+            }
+
+            if (fundTab == null)
+            {
                 string missingKey = "fundTab|" + prefix;
                 if (_loggedProfitCollectionNoticeKeys.Add(missingKey))
                 {
@@ -3292,7 +3574,8 @@ namespace OsEngine.Robots.Custom
                         NameStrategyUniq
                         + " | Сбор прибыли: вкладка фонда с префиксом «"
                         + prefix
-                        + "» не найдена в скринере — добавьте бумагу (TMON@, LQDT@, SBMM@) на тот же коннектор.",
+                        + "» не найдена в скринере — добавьте бумагу (TMON@, LQDT@, SBMM@) на тот же коннектор "
+                        + "или выберите «Не закупать».",
                         LogMessageType.Error);
                 }
 
@@ -3577,6 +3860,8 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
+                CaptureMoexManualPositionSupportTemplate();
+
                 int clearedSecurities = isFutures
                     ? ClearAllScreenerSecuritiesAndTabs()
                     : ClearMoexStockSecuritiesForReload();
@@ -3734,6 +4019,7 @@ namespace OsEngine.Robots.Custom
                 string reloadNote = isFutures
                     ? ApplyMoexScreenerReload()
                     : ApplyMoexStockScreenerReloadStaggered(pendingStockSecurities);
+                RestoreMoexScreenerTradingSupportAfterReload();
                 int tabsAfter = _screenerTab.Tabs?.Count ?? 0;
                 int tabsCreated = Math.Max(0, tabsAfter - tabsBefore);
 
@@ -5047,6 +5333,137 @@ namespace OsEngine.Robots.Custom
             RestoreScreenerIndicators(indicatorSnapshot);
             ScheduleMoexIndicatorsAttach(attempt: 0);
             TryInvokeScreenerRePaintSecuritiesGrid();
+            RestoreMoexScreenerTradingSupportAfterReload();
+        }
+
+        private void CaptureMoexManualPositionSupportTemplate()
+        {
+            _moexManualPositionSupportTemplate = default;
+
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return;
+            }
+
+            BotManualControl source = null;
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[i];
+                BotManualControl control = tab?.ManualPositionSupport;
+                if (control == null)
+                {
+                    continue;
+                }
+
+                if (control.StopIsOn || control.ProfitIsOn)
+                {
+                    source = control;
+                    break;
+                }
+
+                source ??= control;
+            }
+
+            if (source == null)
+            {
+                return;
+            }
+
+            _moexManualPositionSupportTemplate = new MoexManualPositionSupportSnapshot
+            {
+                HasData = true,
+                StopIsOn = source.StopIsOn,
+                StopDistance = source.StopDistance,
+                StopSlippage = source.StopSlippage,
+                ProfitIsOn = source.ProfitIsOn,
+                ProfitDistance = source.ProfitDistance,
+                ProfitSlippage = source.ProfitSlippage,
+                SecondToOpen = source.SecondToOpen,
+                SecondToClose = source.SecondToClose,
+                DoubleExitIsOn = source.DoubleExitIsOn,
+                SecondToOpenIsOn = source.SecondToOpenIsOn,
+                SecondToCloseIsOn = source.SecondToCloseIsOn,
+                SetbackToOpenIsOn = source.SetbackToOpenIsOn,
+                SetbackToOpenPosition = source.SetbackToOpenPosition,
+                SetbackToCloseIsOn = source.SetbackToCloseIsOn,
+                SetbackToClosePosition = source.SetbackToClosePosition,
+                DoubleExitSlippage = source.DoubleExitSlippage,
+                TypeDoubleExitOrder = source.TypeDoubleExitOrder,
+                ValuesType = source.ValuesType,
+                OrderTypeTime = source.OrderTypeTime,
+                LimitsMakerOnly = source.LimitsMakerOnly
+            };
+        }
+
+        private void ApplyMoexManualPositionSupportTemplate(BotTabSimple tab)
+        {
+            if (tab?.ManualPositionSupport == null || !_moexManualPositionSupportTemplate.HasData)
+            {
+                return;
+            }
+
+            MoexManualPositionSupportSnapshot template = _moexManualPositionSupportTemplate;
+            BotManualControl control = tab.ManualPositionSupport;
+            control.SecondToClose = template.SecondToClose;
+            control.SecondToOpen = template.SecondToOpen;
+            control.DoubleExitIsOn = template.DoubleExitIsOn;
+            control.DoubleExitSlippage = template.DoubleExitSlippage;
+            control.ProfitDistance = template.ProfitDistance;
+            control.ProfitIsOn = template.ProfitIsOn;
+            control.ProfitSlippage = template.ProfitSlippage;
+            control.SecondToCloseIsOn = template.SecondToCloseIsOn;
+            control.SecondToOpenIsOn = template.SecondToOpenIsOn;
+            control.SetbackToCloseIsOn = template.SetbackToCloseIsOn;
+            control.SetbackToClosePosition = template.SetbackToClosePosition;
+            control.SetbackToOpenIsOn = template.SetbackToOpenIsOn;
+            control.SetbackToOpenPosition = template.SetbackToOpenPosition;
+            control.StopDistance = template.StopDistance;
+            control.StopIsOn = template.StopIsOn;
+            control.StopSlippage = template.StopSlippage;
+            control.TypeDoubleExitOrder = template.TypeDoubleExitOrder;
+            control.ValuesType = template.ValuesType;
+            control.OrderTypeTime = template.OrderTypeTime;
+            control.LimitsMakerOnly = template.LimitsMakerOnly;
+            control.Save();
+        }
+
+        private void ApplyMoexManualPositionSupportTemplateToAllTabs()
+        {
+            if (!_moexManualPositionSupportTemplate.HasData || _screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+            {
+                ApplyMoexManualPositionSupportTemplate(_screenerTab.Tabs[i]);
+            }
+        }
+
+        /// <summary>
+        /// После MOEX reload: сопровождение позиций на вкладках и журналы в риск-менеджере робота.
+        /// </summary>
+        private void RestoreMoexScreenerTradingSupportAfterReload()
+        {
+            if (_moexManualPositionSupportTemplate.HasData)
+            {
+                ApplyMoexManualPositionSupportTemplateToAllTabs();
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | MOEX reload: сопровождение позиций восстановлено (стоп="
+                    + (_moexManualPositionSupportTemplate.StopIsOn ? "вкл." : "выкл.")
+                    + ", профит="
+                    + (_moexManualPositionSupportTemplate.ProfitIsOn ? "вкл." : "выкл.")
+                    + ").",
+                    LogMessageType.System);
+            }
+
+            UpdateJournalsInRiskManager();
+
+            if (StartProgram == StartProgram.IsOsTrader)
+            {
+                BotManualControl.Activate();
+            }
         }
 
         /// <summary>Копия списка индикаторов скринера (для временного снятия на MOEX reload).</summary>
@@ -5157,6 +5574,9 @@ namespace OsEngine.Robots.Custom
             {
                 tab.EventsIsOn = true;
             }
+
+            ApplyMoexManualPositionSupportTemplate(tab);
+            UpdateJournalsInRiskManager();
 
             Task.Run(async () =>
             {
@@ -5417,17 +5837,7 @@ namespace OsEngine.Robots.Custom
                 Aindicator existing = FindIndicator(tab, ind.Num, ind.Type);
                 if (existing != null)
                 {
-                    if (ind.Type == PortfolioIndicatorType)
-                    {
-                        ApplyPortfolioIndicatorParamsFromRobot(existing);
-                        TryRebuildPortfolioIndicatorSeries(existing);
-                        existing.Reload();
-                    }
-                    else
-                    {
-                        ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
-                    }
-
+                    ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
                     return true;
                 }
 
@@ -5462,14 +5872,6 @@ namespace OsEngine.Robots.Custom
                 }
 
                 created.CanDelete = ind.CanDelete;
-
-                if (ind.Type == PortfolioIndicatorType)
-                {
-                    ApplyPortfolioIndicatorParamsFromRobot(created);
-                    TryRebuildPortfolioIndicatorSeries(created);
-                    created.Reload();
-                }
-
                 created.Save();
                 return true;
             }
@@ -5550,6 +5952,7 @@ namespace OsEngine.Robots.Custom
 
                     if (tabsCount > 0)
                     {
+                        RestoreMoexScreenerTradingSupportAfterReload();
                         string ok = NameStrategyUniq + ": догрузка вкладок скринера завершена (" + tabsCount + ").";
                         SendNewLogMessage(ok, LogMessageType.System);
                     }
@@ -6144,6 +6547,18 @@ namespace OsEngine.Robots.Custom
 
             SyncIndicators();
             RefreshAllTabsIndicatorsSafely();
+            TryEnsureSelectedMoneyMarketFundInScreener(logResult: true);
+        }
+
+        private void TryEnsureSelectedMoneyMarketFundInScreener(bool logResult)
+        {
+            string prefix = GetSelectedMoneyMarketFundPrefix();
+            if (IsMoneyMarketFundPurchaseDisabled(prefix))
+            {
+                return;
+            }
+
+            TryEnsureMoneyMarketFundTabInScreener(prefix, logResult);
         }
 
         private void ResetIndicatorParametersToDefaultButton_UserClickOnButtonEvent()
@@ -6173,6 +6588,7 @@ namespace OsEngine.Robots.Custom
             _useVwap.ValueBool = false;
             _useAtr.ValueBool = false;
             _useMacd.ValueBool = false;
+            _useZigZag.ValueBool = false;
 
             _smaLen.ValueInt = 100;
             _rsiLen.ValueInt = 14;
@@ -6197,6 +6613,7 @@ namespace OsEngine.Robots.Custom
             _macdFastLen.ValueInt = 12;
             _macdSlowLen.ValueInt = 26;
             _macdSignalLen.ValueInt = 9;
+            _zigZagLen.ValueInt = 14;
         }
 
         private const string InvertEntryLogicSwapParamName =
@@ -7517,6 +7934,9 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        /// <summary>
+        /// TMON / LQDT / SBMM — только «Сбор прибыли», без входа/выхода/реверса по сигналам.
+        /// </summary>
         private bool IsMoneyMarketFundTradeTab(BotTabSimple tab)
         {
             if (tab == null)
@@ -7524,21 +7944,9 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            if (TryGetActiveMoneyMarketFundPrefix(out string selectedPrefix)
-                && (SecurityNameMatchesMoneyMarketFundPrefix(tab.Connector?.SecurityName, selectedPrefix)
-                    || SecurityMatchesMoneyMarketFundPrefix(tab.Security, selectedPrefix)))
+            for (int i = 0; i < MoneyMarketFundSecurityPrefixes.Length; i++)
             {
-                return true;
-            }
-
-            for (int i = 0; i < MoneyMarketFundPrefixOptions.Length; i++)
-            {
-                string prefix = MoneyMarketFundPrefixOptions[i];
-                if (IsMoneyMarketFundPurchaseDisabled(prefix))
-                {
-                    continue;
-                }
-
+                string prefix = MoneyMarketFundSecurityPrefixes[i];
                 if (SecurityNameMatchesMoneyMarketFundPrefix(tab.Connector?.SecurityName, prefix)
                     || SecurityMatchesMoneyMarketFundPrefix(tab.Security, prefix))
                 {
@@ -7723,6 +8131,13 @@ namespace OsEngine.Robots.Custom
                 AreaSecond,
                 _useMacd.ValueBool);
 
+            EnsureIndicator(
+                NumZigZag,
+                "ZigZag",
+                new List<string> { _zigZagLen.ValueInt.ToString() },
+                AreaPrime,
+                _useZigZag.ValueBool);
+
 #if false // DiscreteMidBestPair
             EnsureIndicator(
                 NumDiscreteMidBestPair,
@@ -7732,58 +8147,50 @@ namespace OsEngine.Robots.Custom
                 _useDiscreteMidBestPair.ValueBool);
 #endif
 
-            SyncPortfolioIndicator();
+            RemoveLegacyPortfolioIndicatorFromScreener();
         }
 
-        /// <summary>
-        /// Индикатор портфеля по И-группам (Second): зеркалит включённые индикаторы и их параметры робота.
-        /// </summary>
-        private void SyncPortfolioIndicator()
-        {
-            IndicatorOnTabs existing = _screenerTab._indicators.FirstOrDefault(i => i.Num == NumPortfolioIndicator);
+        private const string LegacyPortfolioIndicatorType = "TrendMultiIndicatorPortfolio_indicator";
 
-            if (_checkStrategySuccess.ValueBool)
+        /// <summary>
+        /// Удаляет устаревший индикатор портфеля (бывш. «Проверять успешность стратегии») со скринера и вкладок.
+        /// </summary>
+        private void RemoveLegacyPortfolioIndicatorFromScreener()
+        {
+            if (_screenerTab?._indicators != null)
             {
-                if (existing == null)
+                for (int i = _screenerTab._indicators.Count - 1; i >= 0; i--)
                 {
-                    var ind = new IndicatorOnTabs
+                    IndicatorOnTabs ind = _screenerTab._indicators[i];
+                    if (ind != null
+                        && string.Equals(ind.Type, LegacyPortfolioIndicatorType, StringComparison.Ordinal))
                     {
-                        Num = NumPortfolioIndicator,
-                        Type = PortfolioIndicatorType,
-                        NameArea = AreaSecond,
-                        Parameters = new List<string>(),
-                        CanDelete = false
-                    };
-                    _screenerTab._indicators.Add(ind);
-                }
-                else
-                {
-                    existing.Type = PortfolioIndicatorType;
-                    existing.NameArea = AreaSecond;
-                    existing.Parameters = new List<string>();
-                    existing.CanDelete = false;
+                        _screenerTab._indicators.RemoveAt(i);
+                    }
                 }
             }
-            else if (existing != null)
+
+            if (_screenerTab?.Tabs == null)
             {
-                _screenerTab._indicators.Remove(existing);
-                string expectedName = NumPortfolioIndicator + PortfolioIndicatorType + _screenerTab.TabName;
+                return;
+            }
 
-                for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[t];
+                if (tab?.Indicators == null || tab.Indicators.Count == 0)
                 {
-                    BotTabSimple tab = _screenerTab.Tabs[t];
-                    if (tab?.Indicators == null || tab.Indicators.Count == 0)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    for (int i = 0; i < tab.Indicators.Count; i++)
+                for (int i = 0; i < tab.Indicators.Count; i++)
+                {
+                    IIndicator chartInd = tab.Indicators[i];
+                    if (chartInd?.Name != null
+                        && chartInd.Name.IndexOf(LegacyPortfolioIndicatorType, StringComparison.Ordinal) >= 0)
                     {
-                        if (tab.Indicators[i] != null && tab.Indicators[i].Name == expectedName)
-                        {
-                            tab.DeleteCandleIndicator(tab.Indicators[i]);
-                            i--;
-                        }
+                        tab.DeleteCandleIndicator(chartInd);
+                        i--;
                     }
                 }
             }
@@ -7904,9 +8311,9 @@ namespace OsEngine.Robots.Custom
                 min = Math.Max(min, Math.Max(_macdSlowLen.ValueInt, _macdFastLen.ValueInt) + _macdSignalLen.ValueInt + 2);
             }
 
-            if (_checkStrategySuccess.ValueBool)
+            if (_useZigZag.ValueBool)
             {
-                min = Math.Max(min, PortfolioSuccessRisingBars);
+                min = Math.Max(min, _zigZagLen.ValueInt * 2 + 2);
             }
 
             return min;
@@ -7963,6 +8370,11 @@ namespace OsEngine.Robots.Custom
             }
 
             if (_regime.ValueString == "Off")
+            {
+                return;
+            }
+
+            if (IsMoneyMarketFundTradeTab(tab))
             {
                 return;
             }
@@ -8029,8 +8441,8 @@ namespace OsEngine.Robots.Custom
 
             if (!haveOpenPos)
             {
-                bool bullEntry = IsBullSignal(candles, tab, checkPortfolioSuccess: true);
-                bool bearEntry = IsBearSignal(candles, tab, checkPortfolioSuccess: true);
+                bool bullEntry = IsBullSignal(candles, tab);
+                bool bearEntry = IsBearSignal(candles, tab);
                 ApplyEntryExitSignalTransforms(ref bullEntry, ref bearEntry);
 
                 if (!bullEntry && !bearEntry)
@@ -8053,8 +8465,8 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            bool bullExit = IsBullSignal(candles, tab, checkPortfolioSuccess: false);
-            bool bearExit = IsBearSignal(candles, tab, checkPortfolioSuccess: false);
+            bool bullExit = IsBullSignal(candles, tab);
+            bool bearExit = IsBearSignal(candles, tab);
             ApplyEntryExitSignalTransforms(ref bullExit, ref bearExit);
 
             if (fakeOpen != null)
@@ -8197,179 +8609,9 @@ namespace OsEngine.Robots.Custom
             AddFrom(_vwapAndGroup, _useVwap.ValueBool);
             AddFrom(_atrAndGroup, _useAtr.ValueBool);
             AddFrom(_macdAndGroup, _useMacd.ValueBool);
+            AddFrom(_zigZagAndGroup, _useZigZag.ValueBool);
 
             return ids;
-        }
-
-        /// <summary>
-        /// Копирует в индикатор портфеля параметры робота (Use*, длины, пороги, И-группы).
-        /// </summary>
-        private void ApplyPortfolioIndicatorParamsFromRobot(Aindicator indicator)
-        {
-            if (indicator?.Parameters == null)
-            {
-                return;
-            }
-
-            SetIndicatorParamBool(indicator, InvertEntryLogicSwapParamName, IsEntryLogicSwapEnabled());
-            SetIndicatorParamBool(indicator, "Use SMA", _useSma.ValueBool);
-            SetIndicatorParamBool(indicator, "Use RSI", _useRsi.ValueBool);
-            SetIndicatorParamBool(indicator, "Use Stochastic", _useStoch.ValueBool);
-            SetIndicatorParamBool(indicator, "Use Momentum", _useMomentum.ValueBool);
-            SetIndicatorParamBool(indicator, "Use Bollinger", _useBollinger.ValueBool);
-            SetIndicatorParamBool(indicator, "Use Linear Regression", _useLinReg.ValueBool);
-            SetIndicatorParamBool(indicator, "Use Volume indicator", _useVolumeIndicator.ValueBool);
-            SetIndicatorParamBool(indicator, "Use VWAP", _useVwap.ValueBool);
-            SetIndicatorParamBool(indicator, "Use ATR", _useAtr.ValueBool);
-            SetIndicatorParamBool(indicator, "Use MACD", _useMacd.ValueBool);
-
-            SetIndicatorParamInt(indicator, "SMA length", _smaLen.ValueInt);
-            SetIndicatorParamInt(indicator, "RSI length", _rsiLen.ValueInt);
-            SetIndicatorParamDecimal(indicator, "RSI long min", _rsiLongMin.ValueDecimal);
-            SetIndicatorParamDecimal(indicator, "RSI short max", _rsiShortMax.ValueDecimal);
-            SetIndicatorParamInt(indicator, "Stoch P1", _stochP1.ValueInt);
-            SetIndicatorParamInt(indicator, "Stoch P2", _stochP2.ValueInt);
-            SetIndicatorParamInt(indicator, "Stoch P3", _stochP3.ValueInt);
-            SetIndicatorParamDecimal(indicator, "Stoch long min", _stochLongMin.ValueDecimal);
-            SetIndicatorParamDecimal(indicator, "Stoch short max", _stochShortMax.ValueDecimal);
-            SetIndicatorParamInt(indicator, "Momentum length", _momLen.ValueInt);
-            SetIndicatorParamDecimal(indicator, "Momentum long min", _momLongMin.ValueDecimal);
-            SetIndicatorParamDecimal(indicator, "Momentum short max", _momShortMax.ValueDecimal);
-            SetIndicatorParamInt(indicator, "Bollinger length", _bollLen.ValueInt);
-            SetIndicatorParamDecimal(indicator, "Bollinger deviation", _bollDev.ValueDecimal);
-            SetIndicatorParamInt(indicator, "LinReg length", _linRegLen.ValueInt);
-            SetIndicatorParamDecimal(indicator, "LinReg deviation", _linRegDev.ValueDecimal);
-            SetIndicatorParamDecimal(indicator, "Volume vs prev candle min growth %", _volumeIndicatorMinGrowthPercent.ValueDecimal);
-            SetIndicatorParamBool(indicator, "Volume: сравнение с тем же временем прошлых дней", _useVolumeTodCompare.ValueBool);
-            SetIndicatorParamInt(indicator, "Volume TOD: число прошлых торг. дней", _volumeTodPastDays.ValueInt);
-            SetIndicatorParamDecimal(indicator, "Volume TOD: мин. отношение к среднему", _volumeTodMinRelativeRatio.ValueDecimal);
-            SetIndicatorParamInt(indicator, "ATR length", _atrLen.ValueInt);
-            SetIndicatorParamDecimal(indicator, "ATR min grow % vs lookback", _atrGrowPercent.ValueDecimal);
-            SetIndicatorParamInt(indicator, "ATR grow lookback (candles)", _atrGrowLookBack.ValueInt);
-            SetIndicatorParamInt(indicator, "MACD fast length", _macdFastLen.ValueInt);
-            SetIndicatorParamInt(indicator, "MACD slow length", _macdSlowLen.ValueInt);
-            SetIndicatorParamInt(indicator, "MACD signal length", _macdSignalLen.ValueInt);
-
-            SetIndicatorParamString(indicator, "SMA: № И-группы (через запятую)", _smaAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "RSI: № И-группы (через запятую)", _rsiAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "Stochastic: № И-группы (через запятую)", _stochAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "Momentum: № И-группы (через запятую)", _momAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "Bollinger: № И-группы (через запятую)", _bollAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "LinReg: № И-группы (через запятую)", _linRegAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "Volume ind.: № И-группы (через запятую)", _volumeAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "VWAP: № И-группы (через запятую)", _vwapAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "ATR: № И-группы (через запятую)", _atrAndGroup.ValueString);
-            SetIndicatorParamString(indicator, "MACD: № И-группы (через запятую)", _macdAndGroup.ValueString);
-        }
-
-        private static void SetIndicatorParamBool(Aindicator indicator, string name, bool value)
-        {
-            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
-            if (param is IndicatorParameterBool b)
-            {
-                b.ValueBool = value;
-            }
-        }
-
-        private static void SetIndicatorParamInt(Aindicator indicator, string name, int value)
-        {
-            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
-            if (param is IndicatorParameterInt i)
-            {
-                i.ValueInt = value;
-            }
-        }
-
-        private static void SetIndicatorParamDecimal(Aindicator indicator, string name, decimal value)
-        {
-            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
-            if (param is IndicatorParameterDecimal d)
-            {
-                d.ValueDecimal = value;
-            }
-        }
-
-        private static void SetIndicatorParamString(Aindicator indicator, string name, string value)
-        {
-            IndicatorParameter param = indicator.Parameters.Find(p => p.Name == name);
-            if (param is IndicatorParameterString s)
-            {
-                s.ValueString = value;
-            }
-        }
-
-        private static void TryRebuildPortfolioIndicatorSeries(Aindicator indicator)
-        {
-            if (indicator == null)
-            {
-                return;
-            }
-
-            MethodInfo method = indicator.GetType().GetMethod(
-                "RebuildGroupSeriesFromRobot",
-                BindingFlags.Public | BindingFlags.Instance);
-            method?.Invoke(indicator, null);
-        }
-
-        /// <summary>
-        /// Серия портфеля по группе: последние 3 значения строго растут (старшая свеча &lt; следующая).
-        /// </summary>
-        private static bool IsPortfolioSeriesRisingLastBars(Aindicator portfolio, int groupId, int candleIndex)
-        {
-            if (portfolio?.DataSeries == null)
-            {
-                return false;
-            }
-
-            string seriesName = PortfolioSeriesNamePrefix + groupId + "|";
-            IndicatorDataSeries series = portfolio.DataSeries.Find(s => s.Name == seriesName);
-            if (series?.Values == null || candleIndex < PortfolioSuccessRisingBars - 1)
-            {
-                return false;
-            }
-
-            if (series.Values.Count <= candleIndex)
-            {
-                return false;
-            }
-
-            decimal v2 = series.Values[candleIndex - 2];
-            decimal v1 = series.Values[candleIndex - 1];
-            decimal v0 = series.Values[candleIndex];
-            return v2 < v1 && v1 < v0;
-        }
-
-        /// <summary>
-        /// При «Проверять успешность стратегии» (только вход): все активные И-группы — рост портфеля за 3 свечи.
-        /// </summary>
-        private bool IsPortfolioStrategySuccessful(BotTabSimple tab, int candleIndex)
-        {
-            if (!_checkStrategySuccess.ValueBool)
-            {
-                return true;
-            }
-
-            Aindicator portfolio = FindIndicator(tab, NumPortfolioIndicator, PortfolioIndicatorType);
-            if (portfolio == null)
-            {
-                return false;
-            }
-
-            HashSet<int> groupIds = GetActiveIndicatorGroupIds();
-            if (groupIds.Count == 0)
-            {
-                return true;
-            }
-
-            foreach (int groupId in groupIds)
-            {
-                if (!IsPortfolioSeriesRisingLastBars(portfolio, groupId, candleIndex))
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
 
         /// <summary>
@@ -8565,15 +8807,9 @@ namespace OsEngine.Robots.Custom
                     });
             }
 
-            if (_checkStrategySuccess.ValueBool)
+            if (_useZigZag.ValueBool)
             {
-                Aindicator portfolio = FindIndicator(tab, NumPortfolioIndicator, PortfolioIndicatorType);
-                if (portfolio != null)
-                {
-                    ApplyPortfolioIndicatorParamsFromRobot(portfolio);
-                    TryRebuildPortfolioIndicatorSeries(portfolio);
-                    portfolio.Reload();
-                }
+                ApplyIndicatorParamsToTab(tab, NumZigZag, "ZigZag", new List<string> { _zigZagLen.ValueInt.ToString() });
             }
         }
 
@@ -8640,7 +8876,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>Бычий сигнал на свече candleIndex.</summary>
-        private bool IsBullSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex, bool checkPortfolioSuccess)
+        private bool IsBullSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex)
         {
             decimal close = candles[candleIndex].Close;
             var items = new List<(int group, bool pass)>();
@@ -8661,13 +8897,9 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
             AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
+            AddGroupedIndicatorResult(items, _zigZagAndGroup, BullZigZagPasses(tab, candleIndex));
 
             if (!CombineGroupedOrOfAnds(items))
-            {
-                return false;
-            }
-
-            if (checkPortfolioSuccess && !IsPortfolioStrategySuccessful(tab, candleIndex))
             {
                 return false;
             }
@@ -8676,7 +8908,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>Медвежий сигнал на свече candleIndex.</summary>
-        private bool IsBearSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex, bool checkPortfolioSuccess)
+        private bool IsBearSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex)
         {
             decimal close = candles[candleIndex].Close;
             var items = new List<(int group, bool pass)>();
@@ -8697,13 +8929,9 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
             AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
+            AddGroupedIndicatorResult(items, _zigZagAndGroup, BearZigZagPasses(tab, candleIndex));
 
             if (!CombineGroupedOrOfAnds(items))
-            {
-                return false;
-            }
-
-            if (checkPortfolioSuccess && !IsPortfolioStrategySuccessful(tab, candleIndex))
             {
                 return false;
             }
@@ -8712,25 +8940,25 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>Бычий сигнал на последней свече.</summary>
-        private bool IsBullSignal(List<Candle> candles, BotTabSimple tab, bool checkPortfolioSuccess)
+        private bool IsBullSignal(List<Candle> candles, BotTabSimple tab)
         {
             if (candles == null || candles.Count == 0 || tab == null)
             {
                 return false;
             }
 
-            return IsBullSignalAt(candles, tab, candles.Count - 1, checkPortfolioSuccess);
+            return IsBullSignalAt(candles, tab, candles.Count - 1);
         }
 
         /// <summary>Медвежий сигнал на последней свече.</summary>
-        private bool IsBearSignal(List<Candle> candles, BotTabSimple tab, bool checkPortfolioSuccess)
+        private bool IsBearSignal(List<Candle> candles, BotTabSimple tab)
         {
             if (candles == null || candles.Count == 0 || tab == null)
             {
                 return false;
             }
 
-            return IsBearSignalAt(candles, tab, candles.Count - 1, checkPortfolioSuccess);
+            return IsBearSignalAt(candles, tab, candles.Count - 1);
         }
 
         /// <summary>
@@ -9029,6 +9257,100 @@ namespace OsEngine.Robots.Custom
             decimal macdLine = SeriesValueAt(macd, 1, candleIndex);
             decimal signalLine = SeriesValueAt(macd, 2, candleIndex);
             return macdLine != 0 && signalLine != 0 && macdLine < signalLine;
+        }
+
+        /// <summary>
+        /// ZigZag: восходящее направление (последний свинг — low после high).
+        /// </summary>
+        private bool? BullZigZagPasses(BotTabSimple tab, int candleIndex = -1)
+        {
+            if (!_useZigZag.ValueBool)
+            {
+                return null;
+            }
+
+            return ZigZagDirectionPasses(tab, candleIndex, wantUptrend: true);
+        }
+
+        /// <summary>
+        /// ZigZag: нисходящее направление (последний свинг — high после low).
+        /// </summary>
+        private bool? BearZigZagPasses(BotTabSimple tab, int candleIndex = -1)
+        {
+            if (!_useZigZag.ValueBool)
+            {
+                return null;
+            }
+
+            return ZigZagDirectionPasses(tab, candleIndex, wantUptrend: false);
+        }
+
+        private const int ZigZagSeriesHighsIndex = 2;
+        private const int ZigZagSeriesLowsIndex = 3;
+
+        /// <summary>
+        /// Направление ZigZag на свече: true — восходящий тренд (как StrategyZigZagWithMACDAndCCI).
+        /// </summary>
+        private bool? ZigZagDirectionPasses(BotTabSimple tab, int candleIndex, bool wantUptrend)
+        {
+            Aindicator zigZag = FindIndicator(tab, NumZigZag, "ZigZag");
+            if (zigZag == null || zigZag.DataSeries == null || zigZag.DataSeries.Count <= ZigZagSeriesLowsIndex)
+            {
+                return false;
+            }
+
+            List<decimal> zzHigh = zigZag.DataSeries[ZigZagSeriesHighsIndex].Values;
+            List<decimal> zzLow = zigZag.DataSeries[ZigZagSeriesLowsIndex].Values;
+
+            if (zzHigh == null || zzLow == null || zzHigh.Count == 0 || zzLow.Count == 0)
+            {
+                return false;
+            }
+
+            if (candleIndex < 0)
+            {
+                candleIndex = Math.Min(zzHigh.Count, zzLow.Count) - 1;
+            }
+
+            if (candleIndex < _zigZagLen.ValueInt * 2)
+            {
+                return false;
+            }
+
+            bool uptrend = ZigZagIsUptrendAt(zzLow, zzHigh, candleIndex);
+            return uptrend == wantUptrend;
+        }
+
+        private static bool ZigZagIsUptrendAt(List<decimal> zzLow, List<decimal> zzHigh, int candleIndex)
+        {
+            int indexLow = -1;
+            int indexHigh = -1;
+            int end = Math.Min(candleIndex, Math.Min(zzLow.Count, zzHigh.Count) - 1);
+
+            for (int i = end; i >= 0; i--)
+            {
+                if (indexLow < 0 && i < zzLow.Count && zzLow[i] != 0)
+                {
+                    indexLow = i;
+                }
+
+                if (indexHigh < 0 && i < zzHigh.Count && zzHigh[i] != 0)
+                {
+                    indexHigh = i;
+                }
+
+                if (indexLow >= 0 && indexHigh >= 0)
+                {
+                    break;
+                }
+            }
+
+            if (indexLow < 0 || indexHigh < 0)
+            {
+                return false;
+            }
+
+            return indexLow > indexHigh;
         }
 
         /// <summary>
@@ -9600,7 +9922,7 @@ namespace OsEngine.Robots.Custom
 
                 if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
                 {
-                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
+                    if (GetScreenerOpenTradeSlotsCount() < _maxPositions.ValueInt)
                     {
                         ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip), openSignal);
                     }
@@ -9612,7 +9934,7 @@ namespace OsEngine.Robots.Custom
 
                 if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
                 {
-                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
+                    if (GetScreenerOpenTradeSlotsCount() < _maxPositions.ValueInt)
                     {
                         ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip), openSignal);
                     }
@@ -9625,7 +9947,7 @@ namespace OsEngine.Robots.Custom
 
                 if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
                 {
-                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
+                    if (GetScreenerOpenTradeSlotsCount() < _maxPositions.ValueInt)
                     {
                         ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip));
                     }
@@ -9637,7 +9959,7 @@ namespace OsEngine.Robots.Custom
 
                 if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
                 {
-                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
+                    if (GetScreenerOpenTradeSlotsCount() < _maxPositions.ValueInt)
                     {
                         ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip));
                     }
@@ -9899,10 +10221,6 @@ namespace OsEngine.Robots.Custom
             Hint("Инверсия логики (покупка и продажа меняются местами)",
                 "Если включено: покупка и продажа меняются местами — бычий сигнал → продажа, медвежий → покупка "
                 + "(то же при закрытии и реверсе).");
-            Hint("Проверять успешность стратегии",
-                "Если включено: на график — индикатор портфеля по И-группам (Second), параметры как у робота. "
-                + "Доп. фильтр только на вход: у каждой активной И-группы серия «Портфель |№|» растёт 3 свечи подряд. "
-                + "Выход и реверс — по обычным сигналам, без проверки портфельного индикатора.");
             Hint("Проверка кластера волатильности",
                 "Если включено: новые позиции только на вкладках выбранного кластера волатильности.");
             Hint("Volatility cluster to trade",
@@ -9945,7 +10263,9 @@ namespace OsEngine.Robots.Custom
             Hint("Отключить стопы и восстановление",
                 "Выкл.: stop loss, take profit и «Возобновлять торги…».");
             Hint("Закупать фонд денежного рынка, префикс (TMON, LQDT, SBMM, Не закупать)",
-                "Покупка ETF при превышении порога портфеля. «Не закупать» — выкл.");
+                "Покупка ETF при превышении порога портфеля. По умолчанию «Не закупать». "
+                + "При выборе TMON/LQDT/SBMM робот добавит бумагу в скринер, если её там ещё нет. "
+                + "Вкладки фондов не участвуют в сигнальной торговле (вход/выход/реверс).");
             Hint("Порог суммы портфеля (закупка фонда только на превышение)",
                 "Закупка только на сумму превышения над порогом.");
             Hint("Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
@@ -9972,6 +10292,7 @@ namespace OsEngine.Robots.Custom
             Hint("Use VWAP", "Long — close выше VWAP, short — ниже.");
             Hint("Use ATR", "Рост ATR на % относительно lookback свечей назад.");
             Hint("Use MACD", "MACD: линия относительно сигнальной.");
+            Hint("Use ZigZag", "ZigZag: long — восходящий тренд (последний свинг low), short — нисходящий.");
             Hint("SMA length", "Период SMA.");
             Hint("RSI length", "Период RSI.");
             Hint("RSI long min", "Минимум RSI для long.");
@@ -10000,6 +10321,7 @@ namespace OsEngine.Robots.Custom
             Hint("MACD fast length", "Быстрая EMA MACD.");
             Hint("MACD slow length", "Медленная EMA MACD.");
             Hint("MACD signal length", "Сигнальная линия MACD.");
+            Hint("ZigZag length", "Период ZigZag (Length).");
             Hint("SMA: № И-группы (через запятую)", HintIndicatorGroup);
             Hint("RSI: № И-группы (через запятую)", HintIndicatorGroup);
             Hint("Stochastic: № И-группы (через запятую)", HintIndicatorGroup);
@@ -10010,6 +10332,7 @@ namespace OsEngine.Robots.Custom
             Hint("VWAP: № И-группы (через запятую)", HintIndicatorGroup);
             Hint("ATR: № И-группы (через запятую)", HintIndicatorGroup);
             Hint("MACD: № И-группы (через запятую)", HintIndicatorGroup);
+            Hint("ZigZag: № И-группы (через запятую)", HintIndicatorGroup);
             Hint("Рандомный сдвиг цен", "Случайный сдвиг цен свечей в тестере (не для лайва).");
             Hint("Рандомность движений, %", "Амплитуда случайного сдвига, %.");
 

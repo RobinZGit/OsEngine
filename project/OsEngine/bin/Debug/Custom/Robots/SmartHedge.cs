@@ -101,8 +101,8 @@ namespace OsEngine.Robots.Custom
             _loadFuturesButton.UserClickOnButtonEvent += LoadFuturesButton_UserClickOnButtonEvent;
 
             _buyPairButton = CreateParameterButton("Купить пару", tradeTab);
-            _buyPairButton.SetEnabled(false);
             _buyPairButtonEnabledState = false;
+            TrySetStrategyParameterButtonEnabled(_buyPairButton, false);
             _buyPairButton.UserClickOnButtonEvent += BuyPairButton_UserClickOnButtonEvent;
             _adjustPairTrailButton = CreateParameterButton("Скорректировать пару (Trail)", tradeTab);
             _adjustPairTrailButton.UserClickOnButtonEvent += AdjustPairTrailButton_UserClickOnButtonEvent;
@@ -161,7 +161,7 @@ namespace OsEngine.Robots.Custom
         {
             try
             {
-                if (!_buyPairButton.IsEnabled)
+                if (!_buyPairButtonEnabledState)
                 {
                     SendNewLogMessage(
                         NameStrategyUniq + ": «Купить пару» недоступна — дождитесь Bid и Ask на всех вкладках пары "
@@ -232,8 +232,37 @@ namespace OsEngine.Robots.Custom
             }
 
             _buyPairButtonEnabledState = ready;
-            _buyPairButton.SetEnabled(ready);
+            TrySetStrategyParameterButtonEnabled(_buyPairButton, ready);
             RepaintParameterGuiTables();
+        }
+
+        private static bool TrySetStrategyParameterButtonEnabled(StrategyParameterButton button, bool enabled)
+        {
+            if (button == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                MethodInfo setEnabled = typeof(StrategyParameterButton).GetMethod(
+                    "SetEnabled",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new[] { typeof(bool) },
+                    null);
+                if (setEnabled != null)
+                {
+                    setEnabled.Invoke(button, new object[] { enabled });
+                    return true;
+                }
+            }
+            catch
+            {
+                // Старая OsEngine.dll без SetEnabled — достаточно _buyPairButtonEnabledState в обработчике клика.
+            }
+
+            return false;
         }
 
         /// <summary>
