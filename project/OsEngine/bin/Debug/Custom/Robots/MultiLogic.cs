@@ -232,6 +232,15 @@ namespace OsEngine.Robots.Custom
         private int _moexIndicatorsAttachPassId;
 
         private const int MoexIndicatorsAttachMaxAttempts = 25;
+        /// <summary>Интервал свечей между повторными попытками attach, если индикаторы ещё не на вкладке.</summary>
+        private const int RobotIndicatorsEnsureRetryCandleInterval = 25;
+        /// <summary>Синхронизация кэша ensure-индикаторов (CandleFinishedEvent может идти с нескольких вкладок параллельно).</summary>
+        private readonly object _robotIndicatorsEnsureLock = new object();
+        /// <summary>Вкладки, на которых все robot-индикаторы уже найдены (быстрый выход из TryEnsure).</summary>
+        private readonly HashSet<string> _robotIndicatorsReadyTabKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Последняя свеча, на которой пробовали attach индикаторов на вкладке (антиспам в тестере).</summary>
+        private readonly Dictionary<string, int> _robotIndicatorsEnsureLastAttemptCandle =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Пауза между вкладками при «Обновить акции» — снижает гонку ClearJournalsArray в GlobalPositionViewer.</summary>
         private const int MoexStockTabReloadDelayMs = 700;
@@ -306,6 +315,7 @@ namespace OsEngine.Robots.Custom
 
         private bool _loggedTradingModeDiagnostics;
         private string _lastVolumeCalcFailureReason;
+        private bool _loggedMaxPositionsLimit;
 
         /// <summary>Строковые параметры «Логика 1» … «Логика 10».</summary>
         private StrategyParameterString _logic1;
@@ -747,10 +757,17 @@ namespace OsEngine.Robots.Custom
             double ratio = (double)(currentAmount / initialAmount);
             double compoundAnnual = (Math.Pow(ratio, 1d / elapsedYears) - 1d) * 100d;
 
-            _referenceCurrentAnnualPercent.ValueDecimal =
-                Math.Round(simpleAnnual, 2, MidpointRounding.AwayFromZero);
-            _referenceCurrentAnnualPercentWithCap.ValueDecimal =
-                Math.Round((decimal)compoundAnnual, 2, MidpointRounding.AwayFromZero);
+            decimal roundedSimple = Math.Round(simpleAnnual, 2, MidpointRounding.AwayFromZero);
+            decimal roundedCompound = Math.Round((decimal)compoundAnnual, 2, MidpointRounding.AwayFromZero);
+            if (_referenceCurrentAnnualPercent.ValueDecimal != roundedSimple)
+            {
+                _referenceCurrentAnnualPercent.ValueDecimal = roundedSimple;
+            }
+
+            if (_referenceCurrentAnnualPercentWithCap.ValueDecimal != roundedCompound)
+            {
+                _referenceCurrentAnnualPercentWithCap.ValueDecimal = roundedCompound;
+            }
         }
 
         private BotTabSimple TryGetReferenceMonitoringTab()
@@ -1421,7 +1438,19 @@ namespace OsEngine.Robots.Custom
                 EnsureLogicIndicator(item.Key, item.Value.type, item.Value.parameters, item.Value.area);
             }
 
+            InvalidateRobotIndicatorsReadyCache();
+
             return desired.Count;
+        }
+
+        /// <summary>Сброс кэша «индикаторы на вкладке готовы» после синхронизации набора индикаторов.</summary>
+        private void InvalidateRobotIndicatorsReadyCache()
+        {
+            lock (_robotIndicatorsEnsureLock)
+            {
+                _robotIndicatorsReadyTabKeys.Clear();
+                _robotIndicatorsEnsureLastAttemptCandle.Clear();
+            }
         }
 
         /// <summary>Runtime-состояние одного слота «Логика N» для торговли на свече.</summary>
@@ -1574,6 +1603,12 @@ namespace OsEngine.Robots.Custom
             if (_screenerTab != null && _screenerTab.EventsIsOn)
             {
                 tab.EventsIsOn = true;
+            }
+
+            // В тестере индикаторы ставятся при «Принять» (SyncAllLogicIndicators); фоновый attach ломает UI-поток.
+            if (StartProgram == StartProgram.IsTester)
+            {
+                return;
             }
 
             Task.Run(async () =>
@@ -2076,7 +2111,34 @@ namespace OsEngine.Robots.Custom
         {
             for (int slot = 1; slot <= LogicSlotCount; slot++)
             {
-                RecalculateLogicPortfolioUnrealized(slot);
+                _logicPortfolios[slot].Unrealized = 0m;
+            }
+
+            string botType = GetNameStrategyType();
+            if (_screenerTab?.Tabs == null)
+            {
+                return;
+            }
+
+            for (int t = 0; t < _screenerTab.Tabs.Count; t++)
+            {
+                BotTabSimple tab = _screenerTab.Tabs[t];
+                if (tab?.PositionsOpenAll == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < tab.PositionsOpenAll.Count; i++)
+                {
+                    Position pos = tab.PositionsOpenAll[i];
+                    if (!IsOurMultiLogicOpenPosition(pos, botType)
+                        || !TryParseLogicSlotFromSignal(pos.SignalTypeOpen, out int posSlot))
+                    {
+                        continue;
+                    }
+
+                    _logicPortfolios[posSlot].Unrealized += CalculateLogicPortfolioUnrealizedAbs(tab, pos);
+                }
             }
         }
 
@@ -2225,11 +2287,14 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         /// <param name="candleTime">Время закрытой свечи вкладки.</param>
         /// <param name="atCandleStart">true — начало обработки свечи; false — после торговли на этой свече.</param>
+        /// <remarks>Вызывающий код должен заранее обновить unrealized через RecalculateAllLogicPortfolioUnrealized.</remarks>
         private void RefreshStopperTechEquityDisplay(DateTime candleTime, bool atCandleStart)
         {
-            RecalculateAllLogicPortfolioUnrealized();
             decimal currentEquity = GetCombinedLogicPortfolioEquity();
-            _portfolioStopperCurrentEquity.ValueDecimal = currentEquity;
+            if (_portfolioStopperCurrentEquity.ValueDecimal != currentEquity)
+            {
+                _portfolioStopperCurrentEquity.ValueDecimal = currentEquity;
+            }
 
             if (atCandleStart)
             {
@@ -2246,8 +2311,11 @@ namespace OsEngine.Robots.Custom
                 int lookback = Math.Max(1, _portfolioStopperLookbackCandles.ValueInt);
                 if (_stopperEquityHistory.Count > lookback)
                 {
-                    _portfolioStopperReferenceEquity.ValueDecimal =
-                        _stopperEquityHistory[_stopperEquityHistory.Count - 1 - lookback].Equity;
+                    decimal refEquity = _stopperEquityHistory[_stopperEquityHistory.Count - 1 - lookback].Equity;
+                    if (_portfolioStopperReferenceEquity.ValueDecimal != refEquity)
+                    {
+                        _portfolioStopperReferenceEquity.ValueDecimal = refEquity;
+                    }
                 }
             }
         }
@@ -2308,6 +2376,10 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         /// <param name="candles">Список свечей вкладки.</param>
         /// <param name="tab">Вкладка инструмента.</param>
+        /// <summary>
+        /// Обработчик закрытия свечи: в тестере — облегчённый путь (без attach индикаторов на UI);
+        /// в лайве — полный цикл портфеля, stopper, ensure-индикаторов.
+        /// </summary>
         private void ScreenerTab_CandleFinishedEvent(List<Candle> candles, BotTabSimple tab)
         {
             if (candles == null || candles.Count == 0 || tab == null)
@@ -2315,15 +2387,83 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            TryEnsureRobotIndicatorsOnTabIfNeeded(tab);
-
             int candleIndex = candles.Count - 1;
             DateTime candleTime = candles[candleIndex].TimeStart;
 
-            RefreshLogicPortfoliosOnCandle(tab, candles, candleIndex);
-            RefreshStopperTechEquityDisplay(candleTime, atCandleStart: true);
+            if (StartProgram == StartProgram.IsTester)
+            {
+                ScreenerTab_CandleFinishedEventInTester(candles, tab, candleIndex, candleTime);
+                return;
+            }
 
-            bool stopperTriggered = TryManagePortfolioStopperProtection(tab, candleTime);
+            ScreenerTab_CandleFinishedEventFull(candles, tab, candleIndex, candleTime);
+        }
+
+        /// <summary>
+        /// Тестер: только торговля и редкое обновление справочного % годовых — без attach индикаторов и тяжёлого портфельного UI.
+        /// </summary>
+        private void ScreenerTab_CandleFinishedEventInTester(
+            List<Candle> candles,
+            BotTabSimple tab,
+            int candleIndex,
+            DateTime candleTime)
+        {
+            if (NeedsLogicPortfolioTrackingOnCandle())
+            {
+                RecalculateAllLogicPortfolioUnrealized();
+
+                if (_metaLogicEnabled.ValueBool)
+                {
+                    RefreshLogicPortfoliosOnCandle(tab, candles, candleIndex);
+                }
+
+                if (IsPortfolioStopperActive())
+                {
+                    RefreshStopperTechEquityDisplay(candleTime, atCandleStart: true);
+                    if (TryManagePortfolioStopperProtection(tab, candleTime))
+                    {
+                        MaybeRefreshReferenceAnnualYieldThrottled(candleTime, tab, candleIndex);
+                        return;
+                    }
+                }
+            }
+
+            if (_regime.ValueString != "Off" && candles.Count >= GetMinBarsForTrading())
+            {
+                ProcessLogicTradingOnCandle(candles, tab, candleIndex);
+                if (NeedsLogicPortfolioTrackingOnCandle())
+                {
+                    RecalculateAllLogicPortfolioUnrealized();
+                }
+            }
+
+            if (NeedsLogicPortfolioTrackingOnCandle() && IsPortfolioStopperActive())
+            {
+                RefreshStopperTechEquityDisplay(candleTime, atCandleStart: false);
+            }
+
+            MaybeRefreshReferenceAnnualYieldThrottled(candleTime, tab, candleIndex);
+        }
+
+        /// <summary>Лайв / оптимизатор: полный цикл портфеля, stopper, ensure-индикаторов.</summary>
+        private void ScreenerTab_CandleFinishedEventFull(
+            List<Candle> candles,
+            BotTabSimple tab,
+            int candleIndex,
+            DateTime candleTime)
+        {
+            TryEnsureRobotIndicatorsOnTabIfNeeded(tab, candleIndex);
+
+            RecalculateAllLogicPortfolioUnrealized();
+
+            RefreshLogicPortfoliosOnCandle(tab, candles, candleIndex);
+            if (IsPortfolioStopperActive())
+            {
+                RefreshStopperTechEquityDisplay(candleTime, atCandleStart: true);
+            }
+
+            bool stopperTriggered = IsPortfolioStopperActive()
+                && TryManagePortfolioStopperProtection(tab, candleTime);
 
             if (stopperTriggered)
             {
@@ -2335,11 +2475,48 @@ namespace OsEngine.Robots.Custom
             if (_regime.ValueString != "Off" && candles.Count >= GetMinBarsForTrading())
             {
                 ProcessLogicTradingOnCandle(candles, tab, candleIndex);
+                RecalculateAllLogicPortfolioUnrealized();
             }
 
-            RefreshStopperTechEquityDisplay(candleTime, atCandleStart: false);
+            if (IsPortfolioStopperActive())
+            {
+                RefreshStopperTechEquityDisplay(candleTime, atCandleStart: false);
+            }
+
             RefreshReferenceAnnualYieldDisplay(candleTime, tab);
             MaybeSaveLogicPortfolios(force: false);
+        }
+
+        /// <summary>Нужен ли пересчёт L1…L10 на свече (металогика, stopper или справочный % годовых).</summary>
+        private bool NeedsLogicPortfolioTrackingOnCandle()
+        {
+            if (_metaLogicEnabled.ValueBool || IsPortfolioStopperActive())
+            {
+                return true;
+            }
+
+            return (_referenceInitialPortfolioAmount?.ValueDecimal ?? 0m) > 0m;
+        }
+
+        private bool IsPortfolioStopperActive()
+        {
+            return _usePortfolioStopLoss.ValueBool || _usePortfolioTakeProfit.ValueBool;
+        }
+
+        /// <summary>Справочный % годовых в тестере — не каждую свечу (меньше нагрузки на UI параметров).</summary>
+        private void MaybeRefreshReferenceAnnualYieldThrottled(DateTime candleTime, BotTabSimple tab, int candleIndex)
+        {
+            if ((_referenceInitialPortfolioAmount?.ValueDecimal ?? 0m) <= 0m)
+            {
+                return;
+            }
+
+            if (candleIndex > 0 && candleIndex % 20 != 0)
+            {
+                return;
+            }
+
+            RefreshReferenceAnnualYieldDisplay(candleTime, tab);
         }
 
         /// <summary>
@@ -2455,14 +2632,17 @@ namespace OsEngine.Robots.Custom
             int freeSlots = maxPositions - openCount;
             if (freeSlots <= 0)
             {
-                SendNewLogMessage(
-                    NameStrategyUniq
-                    + " | "
-                    + tab.Connector?.SecurityName
-                    + ": лимит Max positions ("
-                    + maxPositions
-                    + ") — входы пропущены.",
-                    LogMessageType.System);
+                if (!_loggedMaxPositionsLimit)
+                {
+                    _loggedMaxPositionsLimit = true;
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | лимит Max positions ("
+                        + maxPositions
+                        + ") — дальнейшие входы пропускаются (сообщение однократно).",
+                        LogMessageType.System);
+                }
+
                 return;
             }
 
@@ -4061,7 +4241,6 @@ namespace OsEngine.Robots.Custom
             for (int slot = 1; slot <= LogicSlotCount; slot++)
             {
                 decimal prevEquity = _logicPortfolios[slot].Equity;
-                RecalculateLogicPortfolioUnrealized(slot);
                 decimal newEquity = _logicPortfolios[slot].Equity;
                 decimal delta = newEquity - prevEquity;
 
@@ -7682,16 +7861,43 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>Догрузить индикаторы на одной вкладке, если после MOEX reload они не созданы.</summary>
-        private void TryEnsureRobotIndicatorsOnTabIfNeeded(BotTabSimple tab)
+        private void TryEnsureRobotIndicatorsOnTabIfNeeded(BotTabSimple tab, int candleIndex = -1)
         {
             if (tab == null || _screenerTab?._indicators == null || !IsTabChartReadyForIndicators(tab))
             {
                 return;
             }
 
-            if (!TabIsMissingAnyRobotIndicator(tab))
+            string tabKey = tab.TabName;
+            if (string.IsNullOrEmpty(tabKey))
             {
                 return;
+            }
+
+            lock (_robotIndicatorsEnsureLock)
+            {
+                if (_robotIndicatorsReadyTabKeys.Contains(tabKey))
+                {
+                    return;
+                }
+
+                if (!TabIsMissingAnyRobotIndicator(tab))
+                {
+                    _robotIndicatorsReadyTabKeys.Add(tabKey);
+                    return;
+                }
+
+                if (candleIndex >= 0
+                    && _robotIndicatorsEnsureLastAttemptCandle.TryGetValue(tabKey, out int lastAttemptCandle)
+                    && candleIndex - lastAttemptCandle < RobotIndicatorsEnsureRetryCandleInterval)
+                {
+                    return;
+                }
+
+                if (candleIndex >= 0)
+                {
+                    _robotIndicatorsEnsureLastAttemptCandle[tabKey] = candleIndex;
+                }
             }
 
             for (int i = 0; i < _screenerTab._indicators.Count; i++)
@@ -7705,6 +7911,14 @@ namespace OsEngine.Robots.Custom
                 if (FindIndicatorOnTab(tab, ind.Num, ind.Type) == null)
                 {
                     TryAttachRobotIndicatorOnTab(tab, ind);
+                }
+            }
+
+            if (!TabIsMissingAnyRobotIndicator(tab))
+            {
+                lock (_robotIndicatorsEnsureLock)
+                {
+                    _robotIndicatorsReadyTabKeys.Add(tabKey);
                 }
             }
         }
