@@ -75,9 +75,13 @@ namespace OsEngine.Robots.Custom
         private const string LogicLineFormatHint =
             "В начале (необязательно): Disabled(true) или Disabled(false) — отключение логики.\n"
             + "Формат: <Индикатор>(параметры) Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)\n"
-            + "Disabled(…) — только в самом начале строки, до AND/OR, без скобок вокруг.\n"
-            + "AND/OR: (фрагмент1) AND (фрагмент2). Примеры:\n"
+            + "Disabled(…) — только в самом начале строки, до AND/OR/&&/||, без скобок вокруг.\n"
+            + "Составная логика: AND/OR или &&/||; NOT/! перед фрагментом инвертирует Op/Cl (не Buy/Sell).\n"
+            + "В Op[…] и Cl[…]: ! / NOT, && / AND, || / OR (как в JavaScript). Примеры:\n"
             + "  Disabled(true) SMA(100) Op[Ab] Cl[Bl]\n"
+            + "  NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]\n"
+            + "  LinReg(50;Dev=2) Op[!AbUp||AbLo] Cl[BlLo]\n"
+            + "  (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])\n"
             + "  SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend)\n"
             + "  Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])";
 
@@ -1972,7 +1976,7 @@ namespace OsEngine.Robots.Custom
             Hint(
                 MetaLogicEnabledParamName,
                 "Если включено — на входе Volume делится между логиками с Op пропорционально PnlSMA "
-                + "(по кривой портфеля каждой логики); отрицательный PnlSMA переворачивает Buy/Sell. "
+                + "(pnlSmaAvg = mean(E_i − E_start) по кривой портфеля логики); отрицательный PnlSMA переворачивает Buy/Sell. "
                 + "При нехватке Max positions приоритет у логик с большим PnlSMA. "
                 + "Если выключено — каждая логика входит отдельно, Volume поровну, приоритет L1…L10.");
             Hint(
@@ -3306,7 +3310,7 @@ namespace OsEngine.Robots.Custom
             return side == Side.Buy ? Side.Sell : Side.Buy;
         }
 
-        /// <summary>Вес PnlSMA логики для мета-распределения Volume (last, иначе avg).</summary>
+        /// <summary>Вес PnlSMA логики для мета-распределения Volume (приведённое среднее по окну).</summary>
         private bool TryGetLogicPnlSmaAllocationWeight(int slot, out decimal weight)
         {
             weight = 0m;
@@ -3337,19 +3341,13 @@ namespace OsEngine.Robots.Custom
             int index = runtime.History.Count - 1;
             MetaIndicatorEquityCalculator.CalculateAt(runtime.History, index, cfg, meta);
 
-            if (meta.PnlSmaLast.HasValue)
+            if (!meta.PnlSmaAvg.HasValue)
             {
-                weight = meta.PnlSmaLast.Value;
-                return true;
+                return false;
             }
 
-            if (meta.PnlSmaAvg.HasValue)
-            {
-                weight = meta.PnlSmaAvg.Value;
-                return true;
-            }
-
-            return false;
+            weight = meta.PnlSmaAvg.Value;
+            return true;
         }
 
         /// <summary>PnlSMA для приоритета Max positions (выше — раньше в очереди на вход).</summary>
@@ -3905,9 +3903,9 @@ namespace OsEngine.Robots.Custom
             public decimal? LinRegDown;
             public decimal? MacdLine;
             public decimal? MacdSignal;
-            /// <summary>Средний профит на свечу (PnlSMA avg).</summary>
+            /// <summary>Приведённое среднее PnlSMA: mean(E_i − E_start) по окну.</summary>
             public decimal? PnlSmaAvg;
-            /// <summary>Последний профит на свечу (PnlSMA last).</summary>
+            /// <summary>Последняя приведённая точка: E_end − E_start окна.</summary>
             public decimal? PnlSmaLast;
         }
 
@@ -5757,7 +5755,7 @@ namespace OsEngine.Robots.Custom
             }
 
             /// <summary>
-            /// PnlSMA: первая точка окна = 0, далее delta equity; avg = профит за окно / длина, last = delta последней свечи.
+            /// PnlSMA (приведённая SMA): avg = mean(E_i − E_start) по окну; last = E_end − E_start.
             /// </summary>
             private static void TryPnlSma(
                 IReadOnlyList<LogicPortfolioPoint> history,
@@ -5765,18 +5763,21 @@ namespace OsEngine.Robots.Custom
                 int length,
                 MetaIndicatorValues target)
             {
-                if (index >= 1)
-                {
-                    target.PnlSmaLast = history[index].Equity - history[index - 1].Equity;
-                }
-
-                if (index < length - 1)
+                if (history == null || target == null || index < length - 1 || length <= 0)
                 {
                     return;
                 }
 
                 int start = index - length + 1;
-                target.PnlSmaAvg = (history[index].Equity - history[start].Equity) / length;
+                decimal equityStart = history[start].Equity;
+                decimal sumAdjusted = 0m;
+                for (int i = start; i <= index; i++)
+                {
+                    sumAdjusted += history[i].Equity - equityStart;
+                }
+
+                target.PnlSmaAvg = sumAdjusted / length;
+                target.PnlSmaLast = history[index].Equity - equityStart;
             }
 
             private static decimal? TrySma(IReadOnlyList<LogicPortfolioPoint> history, int index, int length)
@@ -9078,6 +9079,8 @@ namespace OsEngine.Robots.Custom
         Atr,
         /// <summary>Relative Strength Index.</summary>
         Rsi,
+        /// <summary>Commodity Channel Index (отклонение от типичной цены).</summary>
+        Cci,
         /// <summary>MACD.</summary>
         Macd,
         /// <summary>Linear Regression Channel.</summary>
@@ -9124,6 +9127,8 @@ namespace OsEngine.Robots.Custom
         public string Comment = "";
         /// <summary>Исходный текст фрагмента до разбора тегов.</summary>
         public string RawFragment = "";
+        /// <summary>NOT/! перед индикатором: инвертировать результат Op и Cl для этого атома.</summary>
+        public bool InvertSignals;
 
         /// <summary>Имя типа индикатора для CreateCandleIndicator.</summary>
         public string IndicatorTypeName => LogicLineParser.GetIndicatorTypeName(Kind);
@@ -9225,6 +9230,20 @@ namespace OsEngine.Robots.Custom
         }
     }
 
+    /// <summary>Узел инверсии NOT: true, если внутреннее подвыражение ложно (и наоборот).</summary>
+    public sealed class LogicNotNode : LogicExpressionNode
+    {
+        /// <summary>Подвыражение (атом, AND/OR или вложенный NOT).</summary>
+        public LogicExpressionNode Inner;
+
+        /// <summary>Создаёт узел NOT.</summary>
+        /// <param name="inner">Операнд.</param>
+        public LogicNotNode(LogicExpressionNode inner)
+        {
+            Inner = inner;
+        }
+    }
+
     /// <summary>Результат парсинга одной строки «Логика N».</summary>
     public sealed class LogicParseResult
     {
@@ -9253,7 +9272,7 @@ namespace OsEngine.Robots.Custom
     }
 
     /// <summary>
-    /// Парсер строк логики MultiLogic: Disabled, AND/OR, атомы индикаторов, Op/Cl, SL/TP, Note.
+    /// Парсер строк логики MultiLogic: Disabled, NOT, AND/OR, атомы индикаторов, Op/Cl, SL/TP, Note.
     /// </summary>
     public sealed class LogicLineParser
     {
@@ -9499,23 +9518,30 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine(" обновляется при запуске робота и по кнопке Help; ручные правки перезаписываются)");
             sb.AppendLine();
             AppendResourceHelp(sb);
-            sb.AppendLine("0) Отключение логики (только в самом начале строки, до AND/OR):");
+            sb.AppendLine("0) Отключение логики (только в самом начале строки, до AND/OR/&&/||):");
             sb.AppendLine("   Disabled(true)   — логика отключена, индикаторы не создаются");
             sb.AppendLine("   Disabled(false)  — явно включена (то же, что без префикса)");
             sb.AppendLine("   Disable(true/false) — синоним Disabled");
             sb.AppendLine("   Без префикса Disabled — логика включена.");
-            sb.AppendLine("   Нельзя внутри скобок фрагмента или после AND/OR — только в начале, без внешних скобок.");
+            sb.AppendLine("   Нельзя внутри скобок фрагмента или после AND/OR/&&/|| — только в начале, без внешних скобок.");
             sb.AppendLine("   Примеры:");
             sb.AppendLine("     Disabled(true) SMA(100) Op[Ab] Cl[Bl]");
             sb.AppendLine("     Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
             sb.AppendLine();
             sb.AppendLine("1) Составная логика (скобки обязательны вокруг каждого фрагмента):");
             sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
             sb.AppendLine("   (SMA(100) Op[Ab]) OR (SMA(100) Side[S] Op[Bl] Cl[Ab])");
-            sb.AppendLine("   Сначала разбираются OR, затем AND, затем атомы.");
+            sb.AppendLine("   (SMA(100) Op[Ab]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("   NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]  — инверсия Op/Cl атома (не Buy↔Sell)");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine("   Приоритет между фрагментами: || / OR, затем && / AND, затем NOT / !, затем атом.");
+            sb.AppendLine("   Подробно — раздел «1a) Логические операторы» ниже.");
             sb.AppendLine();
+            AppendLogicOperatorsHelp(sb);
             sb.AppendLine("2) Один атом (скобки необязательны):");
             sb.AppendLine("   <Индикатор>(параметры) [Side:L|S] Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)");
+            sb.AppendLine("   NOT / ! / NOT- перед именем индикатора — инверсия Op/Cl (true↔false), Side не меняется.");
             sb.AppendLine("   Note(…) — только для человека, на исполнение и график не влияет. Лучше в конце строки.");
             sb.AppendLine("   (Парсер также понимает устаревшие теги Коммент(…) и Cm(…).)");
             sb.AppendLine();
@@ -9526,8 +9552,10 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):");
             sb.AppendLine("   Ab — close выше линии; Bl — close ниже; GrOk — ATR вырос (фильтр);");
             sb.AppendLine("   K>=55 / K<=45 — стохастик; K>=Lmin / K<=Smax — пороги из параметров;");
+            sb.AppendLine("   CCI>=100 / CCI<=-100 — CCI (пороги Lmin/Smax в строке);");
             sb.AppendLine("   Macd>Sig / Macd<Sig — линия MACD выше/ниже сигнальной;");
             sb.AppendLine("   AbUp / BlUp — close выше/ниже верхней линии LinReg; Cl[-] — отдельного Cl нет (ATR: на выходе всё равно Op[GrOk]).");
+            sb.AppendLine("   Составные Op/Cl с !, NOT, &&, || — см. раздел «1a) Логические операторы».");
             sb.AppendLine();
             sb.AppendLine("5) SL / TP (необязательно, в той же строке):");
             sb.AppendLine("   SL[2%] TP[6%]  — процент от входа; SL[1.5ATR]; TP[2R] (R — кратность к расстоянию SL).");
@@ -9549,12 +9577,13 @@ namespace OsEngine.Robots.Custom
             AppendAtrHelp(sb);
             AppendLinRegHelp(sb);
             AppendMacdHelp(sb);
+            AppendCciHelp(sb);
             sb.AppendLine("================================================================================");
             sb.AppendLine("8) Торговля (Regime = On)");
             sb.AppendLine("================================================================================");
             sb.AppendLine("   На каждой закрытой свече каждой вкладки скринера проверяются все не-Disabled логики.");
-            sb.AppendLine("   Вход: срабатывает составное выражение по Op[…] (AND/OR как в строке).");
-            sb.AppendLine("   Выход: по Cl[…]; Cl[-] — атом не задаёт направленный выход (фильтр ATR на выходе = Op[GrOk]).");
+            sb.AppendLine("   Вход: срабатывает составное выражение по Op[…] (||/OR, &&/AND, NOT/! между фрагментами).");
+            sb.AppendLine("   Выход: по Cl[…] (те же операторы внутри Cl[…] и NOT у атома); Cl[-] — атом не задаёт направленный выход.");
             sb.AppendLine("   Side[S] — шорт (Sell), иначе лонг (Buy). Позиция: сигнал MultiLogic_L1 … MultiLogic_L10.");
             sb.AppendLine("   Volume — общий объём; при нескольких входах на одной свече делится поровну между логиками.");
             sb.AppendLine("   Max positions (all tabs) — лимит открытых позиций робота на скринере.");
@@ -9562,6 +9591,67 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   SL/TP: на закрытии свечи проверяется close vs уровни из SL[…]/TP[…] строки логики позиции.");
             sb.AppendLine("   Пробой SL — закрытие с сигналом …_SL; пробой TP — …_TP; иначе выход по Cl[…].");
             return sb.ToString();
+        }
+
+        /// <summary>Полное описание NOT, &&, || между фрагментами и внутри Op/Cl.</summary>
+        private static void AppendLogicOperatorsHelp(StringBuilder sb)
+        {
+            sb.AppendLine("1a) Логические операторы (NOT, &&, || — в стиле JavaScript)");
+            sb.AppendLine("--------------------------------------------------------------------------------");
+            sb.AppendLine();
+            sb.AppendLine("A) Между фрагментами (скобочные атомы в одной строке «Логика N»):");
+            sb.AppendLine("   OR  — слово OR с пробелами, или оператор ||");
+            sb.AppendLine("   AND — слово AND с пробелами, или оператор &&");
+            sb.AppendLine("   NOT — префикс NOT, NOT- или ! перед фрагментом (атом или (подвыражение))");
+            sb.AppendLine("   Приоритет (как в JS): сначала ||, затем &&, затем NOT/!, затем атом.");
+            sb.AppendLine("   Скобки (…) группируют подвыражение: NOT ((A) && (B)).");
+            sb.AppendLine();
+            sb.AppendLine("   Примеры между фрагментами:");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("     NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
+            sb.AppendLine("     !LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]          — то же, что NOT");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine();
+            sb.AppendLine("B) NOT у всего атома (перед именем индикатора, после Side/SL/TP/Note):");
+            sb.AppendLine("   NOT / ! / NOT- перед SMA, LinReg, Stoch… инвертирует логический результат Op и Cl");
+            sb.AppendLine("   (true↔false). Side[S]/Side[L] и Buy/Sell НЕ меняются — только «сработало / не сработало».");
+            sb.AppendLine("   Пример: NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
+            sb.AppendLine("   → если AbUp без NOT был бы true — вход по этому атому блокируется (ни Buy, ни Sell);");
+            sb.AppendLine("   → если AbUp без NOT был бы false — условие Op становится true (вход возможен, сторона как в Side).");
+            sb.AppendLine("   Cl инвертируется так же: Cl сработал ↔ Cl не сработал. Это не шорт вместо лонга.");
+            sb.AppendLine("   Переворот Buy↔Sell — только Side[S] в строке или металогика (отрицательный PnlSMA), не NOT.");
+            sb.AppendLine("   Можно комбинировать с NOT между фрагментами: NOT (NOT LinReg(...) Op[AbUp]) — двойное отрицание.");
+            sb.AppendLine();
+            sb.AppendLine("C) Внутри Op[…] и Cl[…] (только сигналы ЭТОГО индикатора атома):");
+            sb.AppendLine("   ! или NOT перед кодом сигнала — отрицание одного условия");
+            sb.AppendLine("   && или AND — оба условия должны выполниться");
+            sb.AppendLine("   || или OR  — достаточно одного условия");
+            sb.AppendLine("   Приоритет внутри Op/Cl: ||, затем &&, затем !/NOT, затем код сигнала.");
+            sb.AppendLine("   Скобки внутри Op/Cl: Op[(AbUp||AbLo) && !BlLo].");
+            sb.AppendLine();
+            sb.AppendLine("   Примеры внутри Op/Cl (LinReg):");
+            sb.AppendLine("     Op[AbUp]                  — close выше верхней линии");
+            sb.AppendLine("     Op[!AbUp]  Op[NOT AbUp]   — close НЕ выше верхней");
+            sb.AppendLine("     Op[AbUp && AbLo]         — выше верхней И выше нижней (сильный тренд в канале)");
+            sb.AppendLine("     Op[AbUp || AbLo]          — выше верхней ИЛИ выше нижней");
+            sb.AppendLine("     Op[(AbUp||AbLo) && !BlUp] — (выше верхней или нижней) и не ниже верхней");
+            sb.AppendLine("     Cl[BlLo]  Cl[!BlLo]       — выход по обычному или инвертированному BlLo");
+            sb.AppendLine();
+            sb.AppendLine("   Примеры (Stoch): Op[K>=55 && K<=80]  Cl[K<=45 || K>=90]");
+            sb.AppendLine("   Примеры (CCI):  Op[CCI>=100]  Cl[CCI<=-100]  Op[!CCI>=100]");
+            sb.AppendLine();
+            sb.AppendLine("D) Что НЕ смешивается:");
+            sb.AppendLine("   Внутри одного Op[…] нельзя ссылаться на другой индикатор (MACD>Sig только в атоме MACD).");
+            sb.AppendLine("   Disabled(…) — только в самом начале строки логики, не внутри Op/Cl.");
+            sb.AppendLine("   SL/TP не поддерживают &&/|| — только один уровень SL[…] TP[…] на атом.");
+            sb.AppendLine();
+            sb.AppendLine("E) Таблица записи (эквиваленты):");
+            sb.AppendLine("   ИЛИ между фрагментами     OR          ||");
+            sb.AppendLine("   И между фрагментами       AND         &&");
+            sb.AppendLine("   НЕ фрагмент               NOT  NOT-  !");
+            sb.AppendLine("   НЕ сигнал в Op/Cl         NOT AbUp    !AbUp");
+            sb.AppendLine();
         }
 
         /// <summary>Алиас BuildDefaultHelpText() для обратной совместимости.</summary>
@@ -9615,8 +9705,8 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  (если на вкладке графика нет соответствующего индикатора) и пишет значения в файл");
             sb.AppendLine("  портфеля (v2, поле meta) и Engine\\{имя}_MetaAggregate.txt для общепортфельных.");
             sb.AppendLine("  JSON-снимок v2 включает meta в истории портфелей и блок AggregateMetaPortfolio.");
-            sb.AppendLine("  PnlSMA (Приведённая SMA): средний профит на свечу (pnlSmaAvg) и последний (pnlSmaLast);");
-            sb.AppendLine("  по умолчанию включён только общепортфельный PnlSMA, остальные мета-индикаторы — выкл.");
+            sb.AppendLine("  PnlSMA (Приведённая SMA): pnlSmaAvg = mean(E_i − E_start) по окну; pnlSmaLast = E_end − E_start;");
+            sb.AppendLine("  металогика использует pnlSmaAvg; по умолчанию включён только общепортфельный PnlSMA.");
             sb.AppendLine();
             sb.AppendLine("Вкладка «Stopper» (общепортфельная страховка по сумме L1…L10):");
             sb.AppendLine("  Equity = сумма кривых портфелей всех логик (realized + unrealized MultiLogic_Ln).");
@@ -9726,6 +9816,29 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine();
         }
 
+        /// <summary>Добавляет в справку раздел по CCI (Commodity Channel Index).</summary>
+        private static void AppendCciHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- CCI (Commodity Channel Index) ---");
+            sb.AppendLine("Имя в строке: CCI");
+            sb.AppendLine("Параметры индикатора (на график):");
+            sb.AppendLine("  CCI(20)                     — длина 20, источник Typical (H+L+C)/3");
+            sb.AppendLine("  CCI(L=20)                   — то же, явно");
+            sb.AppendLine("  CCI(L=20,Src=Typical)       — длина и точка свечи (Typical, Close, Open, High, Low, Median)");
+            sb.AppendLine("  CCI(20;Src=Close)           — через точку с запятой");
+            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
+            sb.AppendLine("  ;Lmin=100;Smax=-100  или  ;L=100;S=-100  — классические уровни перекупленности/перепроданности");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[CCI>=100] / Op[CCI>=Lmin]  — CCI выше порога (лонг от силы / контртренд — по смыслу стратегии)");
+            sb.AppendLine("  Cl[CCI<=-100] / Cl[CCI<=Smax] — CCI ниже порога (выход)");
+            sb.AppendLine("  Op[CCI<=-100] Side[S]         — шорт при CCI ниже −100 (контртренд)");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Контртренд: CCI(20;Lmin=100;Smax=-100) Side[S] Op[CCI>=100] Cl[CCI<=-100] Note(CCI-fade-short)");
+            sb.AppendLine("  С фильтром:  (SMA(100) Op[Ab] Cl[Bl]) AND (CCI(20;Lmin=-100;Smax=-200) Op[CCI<=-100] Cl[CCI>=0] Note(pullback))");
+            sb.AppendLine("  Не включён в логики по умолчанию и не входит в металогики (только строки «Логика 1…10»).");
+            sb.AppendLine();
+        }
+
         /// <summary>Имя класса индикатора OsEngine для CreateCandleIndicator.</summary>
         public static string GetIndicatorTypeName(LogicIndicatorKind kind)
         {
@@ -9735,6 +9848,7 @@ namespace OsEngine.Robots.Custom
                 case LogicIndicatorKind.Stoch: return "Stochastic";
                 case LogicIndicatorKind.Atr: return "ATR";
                 case LogicIndicatorKind.Rsi: return "Rsi";
+                case LogicIndicatorKind.Cci: return "CCI";
                 case LogicIndicatorKind.Macd: return "MACD";
                 case LogicIndicatorKind.LinReg: return "LinearRegressionChannelFast_Indicator";
                 case LogicIndicatorKind.Bollinger: return "Bollinger";
@@ -9794,6 +9908,12 @@ namespace OsEngine.Robots.Custom
                     {
                         atom.GetIntParam("L", 14).ToString(CultureInfo.InvariantCulture),
                         "Close"
+                    };
+                case LogicIndicatorKind.Cci:
+                    return new List<string>
+                    {
+                        atom.GetIntParam("L", 20).ToString(CultureInfo.InvariantCulture),
+                        ResolveCciCandlePoint(atom.GetParam("Src", "Typical"))
                     };
                 case LogicIndicatorKind.Macd:
                     return new List<string>
@@ -9860,6 +9980,12 @@ namespace OsEngine.Robots.Custom
             {
                 CollectAtomsRecursive(combine.Left, target);
                 CollectAtomsRecursive(combine.Right, target);
+                return;
+            }
+
+            if (node is LogicNotNode notNode)
+            {
+                CollectAtomsRecursive(notNode.Inner, target);
             }
         }
 
@@ -9885,7 +10011,7 @@ namespace OsEngine.Robots.Custom
         /// <summary>Разбирает выражение верхнего уровня с оператором OR (низший приоритет).</summary>
         private LogicExpressionNode ParseExpression(string input)
         {
-            List<string> orParts = SplitAtTopLevelOperator(input, "OR");
+            List<string> orParts = SplitAtTopLevelLogicOperators(input, LogicCombineOp.Or);
             if (orParts.Count > 1)
             {
                 LogicExpressionNode node = ParseAndExpression(orParts[0]);
@@ -9903,23 +10029,100 @@ namespace OsEngine.Robots.Custom
         /// <summary>Разбирает фрагмент с оператором AND (средний приоритет).</summary>
         private LogicExpressionNode ParseAndExpression(string input)
         {
-            List<string> andParts = SplitAtTopLevelOperator(input, "AND");
+            List<string> andParts = SplitAtTopLevelLogicOperators(input, LogicCombineOp.And);
             if (andParts.Count > 1)
             {
-                LogicExpressionNode node = ParseAtomWrapper(andParts[0]);
+                LogicExpressionNode node = ParseNotExpression(andParts[0]);
                 for (int i = 1; i < andParts.Count; i++)
                 {
-                    node = new LogicCombineNode(LogicCombineOp.And, node, ParseAtomWrapper(andParts[i]));
+                    node = new LogicCombineNode(LogicCombineOp.And, node, ParseNotExpression(andParts[i]));
                 }
 
                 return node;
             }
 
-            return ParseAtomWrapper(input);
+            return ParseNotExpression(input);
+        }
+
+        /// <summary>Разбирает префикс NOT / ! перед атомом или скобочным подвыражением.</summary>
+        private LogicExpressionNode ParseNotExpression(string input)
+        {
+            string fragment = input?.Trim() ?? "";
+            int notCount = 0;
+            while (TryExtractLeadingNot(ref fragment))
+            {
+                notCount++;
+            }
+
+            LogicExpressionNode node = ParsePrimary(fragment);
+            for (int i = 0; i < notCount; i++)
+            {
+                node = new LogicNotNode(node);
+            }
+
+            return node;
+        }
+
+        /// <summary>Атом или подвыражение в круглых скобках (&&/||/AND/OR внутри).</summary>
+        private LogicExpressionNode ParsePrimary(string input)
+        {
+            string fragment = input?.Trim() ?? "";
+            if (fragment.Length >= 2
+                && fragment[0] == '('
+                && TryExtractOuterParentheses(fragment, out string inner)
+                && ContainsTopLevelLogicOperators(inner))
+            {
+                return ParseExpression(inner.Trim());
+            }
+
+            return ParseAtomNode(fragment);
+        }
+
+        /// <summary>true, если во фрагменте есть AND/OR/&&/|| верхнего уровня.</summary>
+        private static bool ContainsTopLevelLogicOperators(string input)
+        {
+            return SplitAtTopLevelLogicOperators(input, LogicCombineOp.And).Count > 1
+                || SplitAtTopLevelLogicOperators(input, LogicCombineOp.Or).Count > 1;
+        }
+
+        /// <summary>true, если в Op[…]/Cl[…] есть NOT/!, &&/|| или AND/OR.</summary>
+        public static bool SignalExpressionHasOperators(string signalCode)
+        {
+            string input = signalCode?.Trim() ?? "";
+            if (input.Length == 0)
+            {
+                return false;
+            }
+
+            string probe = input;
+            if (TryExtractLeadingNot(ref probe))
+            {
+                return true;
+            }
+
+            return ContainsTopLevelLogicOperators(input);
+        }
+
+        /// <summary>Делит Op/Cl-строку по AND/&& или OR/|| верхнего уровня.</summary>
+        public static List<string> SplitSignalExpressionAtTopLevel(string input, LogicCombineOp op)
+        {
+            return SplitAtTopLevelLogicOperators(input, op);
+        }
+
+        /// <summary>Снимает ведущий NOT / NOT- / ! из Op/Cl-фрагмента.</summary>
+        public static bool TryStripSignalLeadingNot(ref string input)
+        {
+            return TryExtractLeadingNot(ref input);
+        }
+
+        /// <summary>Снимает внешние скобки (…) вокруг Op/Cl-фрагмента.</summary>
+        public static bool TryExtractSignalOuterParentheses(string input, out string inner)
+        {
+            return TryExtractOuterParentheses(input, out inner);
         }
 
         /// <summary>Снимает внешние скобки фрагмента и разбирает один атом.</summary>
-        private LogicAtomNode ParseAtomWrapper(string input)
+        private LogicAtomNode ParseAtomNode(string input)
         {
             string fragment = input?.Trim() ?? "";
             if (fragment.Length >= 2 && fragment[0] == '(' && TryExtractOuterParentheses(fragment, out string inner))
@@ -9931,8 +10134,42 @@ namespace OsEngine.Robots.Custom
             return new LogicAtomNode(atom);
         }
 
+        /// <summary>Снимает один ведущий NOT / NOT- / ! (регистронезависимо).</summary>
+        private static bool TryExtractLeadingNot(ref string input)
+        {
+            input = input?.Trim() ?? "";
+            if (input.Length >= 1 && input[0] == '!')
+            {
+                input = input.Substring(1).TrimStart();
+                return true;
+            }
+
+            if (input.Length < 3)
+            {
+                return false;
+            }
+
+            if (!StartsWithIgnoreCaseAt(input, 0, "NOT", out int nameLen))
+            {
+                return false;
+            }
+
+            if (input.Length > nameLen && char.IsLetter(input[nameLen]))
+            {
+                return false;
+            }
+
+            input = input.Substring(nameLen).TrimStart();
+            if (input.StartsWith("-", StringComparison.Ordinal))
+            {
+                input = input.Substring(1).TrimStart();
+            }
+
+            return true;
+        }
+
         /// <summary>
-        /// Разбирает один атом: Note, SL, TP, Side, Cl, Op, затем заголовок индикатора и параметры.
+        /// Разбирает один атом: Note, SL, TP, Side, Cl, Op, NOT/! у индикатора, затем заголовок и параметры.
         /// </summary>
         private LogicAtom ParseAtom(string input)
         {
@@ -9956,6 +10193,11 @@ namespace OsEngine.Robots.Custom
             if (string.IsNullOrEmpty(work))
             {
                 throw new InvalidOperationException("Не найден индикатор в: " + input);
+            }
+
+            while (TryExtractLeadingNot(ref work))
+            {
+                atom.InvertSignals = !atom.InvertSignals;
             }
 
             ParseIndicatorHeader(work, atom);
@@ -10009,6 +10251,12 @@ namespace OsEngine.Robots.Custom
                     EnsureDefault(atom, "L", "14");
                     EnsureDefault(atom, "Lmin", "55");
                     EnsureDefault(atom, "Smax", "45");
+                    break;
+                case LogicIndicatorKind.Cci:
+                    EnsureDefault(atom, "L", "20");
+                    EnsureDefault(atom, "Src", "Typical");
+                    EnsureDefault(atom, "Lmin", "100");
+                    EnsureDefault(atom, "Smax", "-100");
                     break;
                 case LogicIndicatorKind.Macd:
                     EnsureDefault(atom, "Fast", "12");
@@ -10075,6 +10323,7 @@ namespace OsEngine.Robots.Custom
                 case "STOCHASTIC": return LogicIndicatorKind.Stoch;
                 case "ATR": return LogicIndicatorKind.Atr;
                 case "RSI": return LogicIndicatorKind.Rsi;
+                case "CCI": return LogicIndicatorKind.Cci;
                 case "MACD": return LogicIndicatorKind.Macd;
                 case "LINREG":
                 case "LR":
@@ -10235,6 +10484,7 @@ namespace OsEngine.Robots.Custom
             {
                 case LogicIndicatorKind.Sma:
                 case LogicIndicatorKind.Rsi:
+                case LogicIndicatorKind.Cci:
                 case LogicIndicatorKind.Momentum:
                 case LogicIndicatorKind.Atr:
                 case LogicIndicatorKind.Bollinger:
@@ -10250,6 +10500,10 @@ namespace OsEngine.Robots.Custom
                     else if (index == 1 && atom.Kind == LogicIndicatorKind.LinReg)
                     {
                         atom.Params["Dev"] = token;
+                    }
+                    else if (index == 1 && atom.Kind == LogicIndicatorKind.Cci)
+                    {
+                        atom.Params["Src"] = token;
                     }
 
                     break;
@@ -10284,6 +10538,44 @@ namespace OsEngine.Robots.Custom
 
                     break;
             }
+        }
+
+        /// <summary>Нормализует Src атома CCI к допустимой точке свечи OsEngine CCI.</summary>
+        private static string ResolveCciCandlePoint(string src)
+        {
+            if (string.IsNullOrWhiteSpace(src))
+            {
+                return "Typical";
+            }
+
+            string normalized = src.Trim();
+            char first = char.ToUpperInvariant(normalized[0]);
+            if (first == 'C')
+            {
+                return "Close";
+            }
+
+            if (first == 'O')
+            {
+                return "Open";
+            }
+
+            if (first == 'H')
+            {
+                return "High";
+            }
+
+            if (first == 'L')
+            {
+                return "Low";
+            }
+
+            if (first == 'M')
+            {
+                return "Median";
+            }
+
+            return "Typical";
         }
 
         /// <summary>Нормализует ключ параметра (L, P1, Gr, Lmin…).</summary>
@@ -10438,9 +10730,9 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Делит строку по оператору AND или OR на части верхнего уровня (вне скобок индикаторов).
+        /// Делит строку по AND/&& или OR/|| на части верхнего уровня (вне скобок индикаторов и Op/Cl).
         /// </summary>
-        private static List<string> SplitAtTopLevelOperator(string input, string op)
+        private static List<string> SplitAtTopLevelLogicOperators(string input, LogicCombineOp op)
         {
             var parts = new List<string>();
             if (string.IsNullOrWhiteSpace(input))
@@ -10451,7 +10743,6 @@ namespace OsEngine.Robots.Custom
             int depthParen = 0;
             int depthBracket = 0;
             int lastSplit = 0;
-            string token = " " + op + " ";
 
             for (int i = 0; i < input.Length; i++)
             {
@@ -10472,19 +10763,74 @@ namespace OsEngine.Robots.Custom
                 {
                     depthBracket--;
                 }
-                else if (depthParen == 0 && depthBracket == 0 && i + token.Length <= input.Length)
+                else if (depthParen == 0 && depthBracket == 0
+                         && TryMatchLogicOperator(input, i, op, out int tokenLength))
                 {
-                    if (string.Compare(input, i, token, 0, token.Length, StringComparison.OrdinalIgnoreCase) == 0)
-                    {
-                        parts.Add(input.Substring(lastSplit, i - lastSplit).Trim());
-                        lastSplit = i + token.Length;
-                        i = lastSplit - 1;
-                    }
+                    parts.Add(input.Substring(lastSplit, i - lastSplit).Trim());
+                    lastSplit = i + tokenLength;
+                    i = lastSplit - 1;
                 }
             }
 
             parts.Add(input.Substring(lastSplit).Trim());
             return parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+        }
+
+        private static bool TryMatchLogicOperator(string input, int index, LogicCombineOp op, out int length)
+        {
+            length = 0;
+            if (op == LogicCombineOp.Or)
+            {
+                if (index + 1 < input.Length && input[index] == '|' && input[index + 1] == '|')
+                {
+                    length = 2;
+                    return true;
+                }
+
+                return TryMatchLogicWordOperator(input, index, "OR", out length);
+            }
+
+            if (index + 1 < input.Length && input[index] == '&' && input[index + 1] == '&')
+            {
+                length = 2;
+                return true;
+            }
+
+            return TryMatchLogicWordOperator(input, index, "AND", out length);
+        }
+
+        private static bool TryMatchLogicWordOperator(string input, int index, string word, out int length)
+        {
+            length = 0;
+            if (index > 0 && !char.IsWhiteSpace(input[index - 1]))
+            {
+                return false;
+            }
+
+            if (!StartsWithIgnoreCaseAt(input, index, word, out int wordLen))
+            {
+                return false;
+            }
+
+            int end = index + wordLen;
+            if (end < input.Length && !char.IsWhiteSpace(input[end]))
+            {
+                return false;
+            }
+
+            length = wordLen;
+            return true;
+        }
+
+        /// <summary>
+        /// Делит строку по оператору AND или OR на части верхнего уровня (вне скобок индикаторов).
+        /// </summary>
+        private static List<string> SplitAtTopLevelOperator(string input, string op)
+        {
+            LogicCombineOp combineOp = string.Equals(op, "OR", StringComparison.OrdinalIgnoreCase)
+                ? LogicCombineOp.Or
+                : LogicCombineOp.And;
+            return SplitAtTopLevelLogicOperators(input, combineOp);
         }
 
         /// <summary>Проверяет, что вся строка — одна пара внешних скобок (…).</summary>
@@ -11036,6 +11382,11 @@ namespace OsEngine.Robots.Custom
                 return combine.Op == LogicCombineOp.And ? left && right : left || right;
             }
 
+            if (node is LogicNotNode notNode)
+            {
+                return !Evaluate(notNode.Inner, tab, candles, candleIndex, forClose, findIndicator);
+            }
+
             return false;
         }
 
@@ -11064,6 +11415,12 @@ namespace OsEngine.Robots.Custom
                 return combine.Op == LogicCombineOp.And
                     ? CombineCloseAnd(left, right)
                     : CombineCloseOr(left, right);
+            }
+
+            if (node is LogicNotNode notNode)
+            {
+                bool? inner = EvaluateCloseNode(notNode.Inner, tab, candles, candleIndex, findIndicator);
+                return inner.HasValue ? (bool?)!inner.Value : null;
             }
 
             return false;
@@ -11146,7 +11503,35 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            return LogicSignalEvaluator.Evaluate(signal, atom, indicator, candles, tab, candleIndex);
+            return InvertAtomSignalResult(
+                atom,
+                LogicSignalEvaluator.Evaluate(signal, atom, indicator, candles, tab, candleIndex));
+        }
+
+        private static bool? InvertAtomSignalResult(LogicAtom atom, bool? value)
+        {
+            if (!value.HasValue)
+            {
+                return null;
+            }
+
+            bool result = value.Value;
+            if (atom != null && atom.InvertSignals)
+            {
+                result = !result;
+            }
+
+            return result;
+        }
+
+        private static bool InvertAtomSignalResult(LogicAtom atom, bool value)
+        {
+            if (atom != null && atom.InvertSignals)
+            {
+                return !value;
+            }
+
+            return value;
         }
 
         /// <summary>Cl[-]: для ATR-фильтра на выходе оставляем Op[GrOk] (как в TrendMultiIndicator).</summary>
@@ -11162,10 +11547,13 @@ namespace OsEngine.Robots.Custom
                 return true;
             }
 
-            string open = atom.OpenSignal.Trim().Replace(" ", "").ToUpperInvariant();
-            return open == "GROK"
+            string open = atom.OpenSignal?.Replace(" ", "").ToUpperInvariant() ?? "";
+            return open.Contains("GROK")
                 || open.Contains("@")
-                || open.StartsWith("+", StringComparison.Ordinal);
+                || open.Contains("+")
+                || open.Contains("&&")
+                || open.Contains("||")
+                || open.Contains("!");
         }
 
         /// <summary>Оценка одного атома: выбор Op или Cl и вызов LogicSignalEvaluator.</summary>
@@ -11199,7 +11587,9 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            return LogicSignalEvaluator.Evaluate(signal, atom, indicator, candles, tab, candleIndex);
+            return InvertAtomSignalResult(
+                atom,
+                LogicSignalEvaluator.Evaluate(signal, atom, indicator, candles, tab, candleIndex));
         }
 
         /// <summary>true, если Cl[-] / пусто / none — атом не участвует в выходе.</summary>
@@ -11242,6 +11632,8 @@ namespace OsEngine.Robots.Custom
                     return atom.GetIntParam("L", 14) + atom.GetIntParam("Lb", 5);
                 case LogicIndicatorKind.Rsi:
                     return atom.GetIntParam("L", 14);
+                case LogicIndicatorKind.Cci:
+                    return atom.GetIntParam("L", 20) + 1;
                 case LogicIndicatorKind.Macd:
                     return atom.GetIntParam("Slow", 26) + atom.GetIntParam("Signal", 9);
                 case LogicIndicatorKind.LinReg:
@@ -11282,7 +11674,117 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            string signal = NormalizeSignal(signalCode);
+            string work = signalCode.Trim();
+            while (work.Length >= 2
+                   && work[0] == '('
+                   && LogicLineParser.TryExtractSignalOuterParentheses(work, out string unwrapped))
+            {
+                work = unwrapped.Trim();
+            }
+
+            if (LogicLineParser.SignalExpressionHasOperators(work))
+            {
+                return EvaluateSignalExpression(work, atom, indicator, candles, tab, candleIndex);
+            }
+
+            return EvaluateSingleSignal(NormalizeSignal(work), atom, indicator, candles, tab, candleIndex);
+        }
+
+        /// <summary>Составное Op/Cl: ||, &&, NOT/! (приоритет как в JS).</summary>
+        private static bool EvaluateSignalExpression(
+            string signalCode,
+            LogicAtom atom,
+            Aindicator indicator,
+            List<Candle> candles,
+            BotTabSimple tab,
+            int candleIndex)
+        {
+            List<string> orParts = LogicLineParser.SplitSignalExpressionAtTopLevel(signalCode, LogicCombineOp.Or);
+            if (orParts.Count > 1)
+            {
+                for (int i = 0; i < orParts.Count; i++)
+                {
+                    if (EvaluateSignalAndExpression(orParts[i], atom, indicator, candles, tab, candleIndex))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            return EvaluateSignalAndExpression(signalCode, atom, indicator, candles, tab, candleIndex);
+        }
+
+        private static bool EvaluateSignalAndExpression(
+            string signalCode,
+            LogicAtom atom,
+            Aindicator indicator,
+            List<Candle> candles,
+            BotTabSimple tab,
+            int candleIndex)
+        {
+            List<string> andParts = LogicLineParser.SplitSignalExpressionAtTopLevel(signalCode, LogicCombineOp.And);
+            if (andParts.Count > 1)
+            {
+                for (int i = 0; i < andParts.Count; i++)
+                {
+                    if (!EvaluateSignalNotExpression(andParts[i], atom, indicator, candles, tab, candleIndex))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            return EvaluateSignalNotExpression(signalCode, atom, indicator, candles, tab, candleIndex);
+        }
+
+        private static bool EvaluateSignalNotExpression(
+            string signalCode,
+            LogicAtom atom,
+            Aindicator indicator,
+            List<Candle> candles,
+            BotTabSimple tab,
+            int candleIndex)
+        {
+            string fragment = signalCode?.Trim() ?? "";
+            bool invert = false;
+            while (LogicLineParser.TryStripSignalLeadingNot(ref fragment))
+            {
+                invert = !invert;
+            }
+
+            while (fragment.Length >= 2
+                   && fragment[0] == '('
+                   && LogicLineParser.TryExtractSignalOuterParentheses(fragment, out string inner))
+            {
+                fragment = inner.Trim();
+            }
+
+            bool result;
+            if (LogicLineParser.SignalExpressionHasOperators(fragment))
+            {
+                result = EvaluateSignalExpression(fragment, atom, indicator, candles, tab, candleIndex);
+            }
+            else
+            {
+                result = EvaluateSingleSignal(NormalizeSignal(fragment), atom, indicator, candles, tab, candleIndex);
+            }
+
+            return invert ? !result : result;
+        }
+
+        /// <summary>Один код сигнала после нормализации (без &&/||/NOT).</summary>
+        private static bool EvaluateSingleSignal(
+            string signal,
+            LogicAtom atom,
+            Aindicator indicator,
+            List<Candle> candles,
+            BotTabSimple tab,
+            int candleIndex)
+        {
             if (signal.Length == 0 || signal == "-" || signal == "NONE")
             {
                 return false;
@@ -11329,7 +11831,7 @@ namespace OsEngine.Robots.Custom
             return signalCode.Trim().Replace(" ", "").ToUpperInvariant();
         }
 
-        /// <summary>Проверяет пороговые сигналы K>=, RSI>=, MOM>= и обратные.</summary>
+        /// <summary>Проверяет пороговые сигналы K>=, RSI>=, CCI>=, MOM>= и обратные.</summary>
         private static bool EvaluateThresholdSignal(
             string signal,
             LogicAtom atom,
@@ -11353,6 +11855,21 @@ namespace OsEngine.Robots.Custom
             }
 
             if (TryCompareIndicatorThreshold(signal, "RSI<=", atom, "Smax", 45m, indicator, 0, candleIndex, greaterOrEqual: false))
+            {
+                return true;
+            }
+
+            if (TryCompareIndicatorThreshold(signal, "CCI>=", atom, "Lmin", 100m, indicator, 0, candleIndex, greaterOrEqual: true))
+            {
+                return true;
+            }
+
+            if (TryCompareIndicatorThreshold(signal, "CCI<=", atom, "Smax", -100m, indicator, 0, candleIndex, greaterOrEqual: false))
+            {
+                return true;
+            }
+
+            if (TryCompareIndicatorThreshold(signal, "CCI<", atom, "Smax", -100m, indicator, 0, candleIndex, greaterOrEqual: false))
             {
                 return true;
             }
