@@ -196,6 +196,12 @@ namespace OsEngine.Robots.Custom
 
         private DateTime _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
+        /// <summary>Барьер «общей свечи» скринера: стопы/фейковая сумма — один раз после всех вкладок.</summary>
+        private readonly object _aggregatedCandleLock = new object();
+        private DateTime _aggregatedCandleBarrierTime = DateTime.MinValue;
+        private readonly HashSet<string> _aggregatedCandleCompletedTabKeys =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>После take profit ждём откат ниже порога, чтобы не срабатывать снова на той же сумме.</summary>
         private bool _portfolioTakeProfitNeedsPullback;
 
@@ -2106,6 +2112,11 @@ namespace OsEngine.Robots.Custom
 
             if (silent && SilentParameterDecimalValueField != null)
             {
+                if (param.ValueDecimal == value)
+                {
+                    return;
+                }
+
                 SilentParameterDecimalValueField.SetValue(param, value);
                 return;
             }
@@ -2348,7 +2359,10 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void SyncFakePortfolioAmountFromRealPortfolio(BotTabSimple tab, bool refreshParameterGui = false)
+        private void SyncFakePortfolioAmountFromRealPortfolio(
+            BotTabSimple tab,
+            bool refreshParameterGui = false,
+            bool silent = false)
         {
             decimal? realValue = TryGetRealMonitoredPortfolioValue(tab);
             if (!realValue.HasValue || realValue.Value <= 0m)
@@ -2358,14 +2372,17 @@ namespace OsEngine.Robots.Custom
 
             if (realValue.HasValue && realValue.Value > 0m)
             {
-                SetFakePortfolioAmount(realValue.Value, refreshParameterGui);
+                SetFakePortfolioAmount(realValue.Value, refreshParameterGui, silent);
             }
         }
 
         /// <summary>
         /// Сбрасывает устаревшую «фейковую сумму» из прошлого теста, если она сильно выше реального портфеля.
         /// </summary>
-        private void EnsureFakePortfolioAmountAlignedWithReal(BotTabSimple tab, bool refreshParameterGui = false)
+        private void EnsureFakePortfolioAmountAlignedWithReal(
+            BotTabSimple tab,
+            bool refreshParameterGui = false,
+            bool silent = false)
         {
             if (!IsRealTradingBlockedByFakeMode())
             {
@@ -2393,7 +2410,7 @@ namespace OsEngine.Robots.Custom
             }
 
             decimal previousFake = fakeAmount;
-            SetFakePortfolioAmount(real, refreshParameterGui);
+            SetFakePortfolioAmount(real, refreshParameterGui, silent);
 
             SendNewLogMessage(
                 NameStrategyUniq
@@ -7996,6 +8013,86 @@ namespace OsEngine.Robots.Custom
 
         #region Торговая логика (сигналы, вход, выход)
 
+        private static string GetAggregatedCandleTabKey(BotTabSimple tab)
+        {
+            if (!string.IsNullOrEmpty(tab?.TabName))
+            {
+                return tab.TabName;
+            }
+
+            return tab?.Connector?.SecurityName ?? "";
+        }
+
+        /// <summary>После последней вкладки на candleTime — один sync фейка, пик и проверка стопов.</summary>
+        private bool TryFlushAggregatedCandleStopsIfComplete(
+            BotTabSimple tab,
+            DateTime candleTime,
+            DateTime decisionTime)
+        {
+            string tabKey = GetAggregatedCandleTabKey(tab);
+            bool shouldFlush;
+
+            lock (_aggregatedCandleLock)
+            {
+                if (_aggregatedCandleBarrierTime != candleTime)
+                {
+                    _aggregatedCandleBarrierTime = candleTime;
+                    _aggregatedCandleCompletedTabKeys.Clear();
+                }
+
+                if (!string.IsNullOrEmpty(tabKey))
+                {
+                    _aggregatedCandleCompletedTabKeys.Add(tabKey);
+                }
+
+                int totalTabs = _screenerTab?.Tabs?.Count ?? 0;
+                if (totalTabs > 0 && _aggregatedCandleCompletedTabKeys.Count < totalTabs)
+                {
+                    shouldFlush = false;
+                }
+                else
+                {
+                    _aggregatedCandleCompletedTabKeys.Clear();
+                    shouldFlush = true;
+                }
+            }
+
+            if (!shouldFlush)
+            {
+                return false;
+            }
+
+            FlushAggregatedCandleStops(decisionTime);
+            return true;
+        }
+
+        /// <summary>Суммы на вкладке «Стопы»: один раз на «общую свечу», без SaveParameters на каждой бумаге.</summary>
+        private void FlushAggregatedCandleStops(DateTime decisionTime)
+        {
+            BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
+            if (refTab == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
+            {
+                refTab = _screenerTab.Tabs[0];
+            }
+
+            if (refTab == null)
+            {
+                return;
+            }
+
+            if (!IsRealTradingBlockedByFakeMode())
+            {
+                SyncFakePortfolioAmountFromRealPortfolio(refTab, refreshParameterGui: false, silent: true);
+            }
+            else
+            {
+                EnsureFakePortfolioAmountAlignedWithReal(refTab, refreshParameterGui: false, silent: true);
+                TryResumeRealTradingWhenFakeExceedsDrawdownBaseline(refTab);
+            }
+
+            TryManagePortfolioDrawdownStop(refTab, decisionTime);
+        }
+
         private void ScreenerTab_CandleFinishedEvent(List<Candle> candles, BotTabSimple tab)
         {
             if (candles == null || candles.Count == 0)
@@ -8003,6 +8100,24 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
+            DateTime candleTime = candles[^1].TimeStart;
+
+            try
+            {
+                ScreenerTab_CandleFinishedEventCore(candles, tab);
+            }
+            finally
+            {
+                if (_regime.ValueString != "Off")
+                {
+                    DateTime decisionTime = GetDecisionTime(tab, candleTime);
+                    TryFlushAggregatedCandleStopsIfComplete(tab, candleTime, decisionTime);
+                }
+            }
+        }
+
+        private void ScreenerTab_CandleFinishedEventCore(List<Candle> candles, BotTabSimple tab)
+        {
             TryEnsureRobotIndicatorsOnTabIfNeeded(tab);
 
             DateTime decisionTime = GetDecisionTime(tab, candles[^1].TimeStart);
@@ -8023,26 +8138,6 @@ namespace OsEngine.Robots.Custom
             }
 
             LogTradingModeDiagnosticsOnce(tab);
-
-            if (!IsRealTradingBlockedByFakeMode())
-            {
-                SyncFakePortfolioAmountFromRealPortfolio(tab);
-            }
-            else
-            {
-                EnsureFakePortfolioAmountAlignedWithReal(tab);
-                TryResumeRealTradingWhenFakeExceedsDrawdownBaseline(tab);
-            }
-
-            if (TryManagePortfolioDrawdownStop(tab, decisionTime))
-            {
-                return;
-            }
-
-            if (_regime.ValueString == "Off")
-            {
-                return;
-            }
 
             if (candles == null || candles.Count == 0)
             {
