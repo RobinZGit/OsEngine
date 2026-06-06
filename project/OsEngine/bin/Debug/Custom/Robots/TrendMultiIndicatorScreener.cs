@@ -196,6 +196,12 @@ namespace OsEngine.Robots.Custom
 
         private DateTime _lastPortfolioStopDecisionTime = DateTime.MinValue;
 
+        /// <summary>SaveParameters без SyncIndicators / RefreshAllTabsIndicatorsSafely (стопы, фейк, пик и т.п.).</summary>
+        private int _suppressIndicatorResyncDepth;
+
+        /// <summary>Отпечаток параметров индикаторов после последнего SyncIndicators + RefreshAllTabsIndicatorsSafely.</summary>
+        private string _lastSyncedIndicatorParamsFingerprint;
+
         /// <summary>Барьер «общей свечи» скринера: стопы/фейковая сумма — один раз после всех вкладок.</summary>
         private readonly object _aggregatedCandleLock = new object();
         private DateTime _aggregatedCandleBarrierTime = DateTime.MinValue;
@@ -727,6 +733,7 @@ namespace OsEngine.Robots.Custom
 
             // create only enabled indicators
             SyncIndicators();
+            MarkIndicatorParamsSynced();
 
             Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
 
@@ -927,7 +934,7 @@ namespace OsEngine.Robots.Custom
                 targetWithCapitalization,
                 silent: false);
 
-            SaveParametersIgnoringRecentLoadCooldown();
+            SaveParametersWithoutIndicatorResync();
             RequestParameterGuiRepaintOnce();
 
             string msg =
@@ -1061,7 +1068,7 @@ namespace OsEngine.Robots.Custom
                 ApplyFakePortfolioAmountFromStopsFill(force: true, refreshParameterGui: false);
             }
 
-            SaveParametersIgnoringRecentLoadCooldown();
+            SaveParametersWithoutIndicatorResync();
             RequestParameterGuiRepaintOnce();
         }
 
@@ -1173,7 +1180,7 @@ namespace OsEngine.Robots.Custom
                 SetPortfolioPeakValue(baselineToSet, silent: false);
                 SetFakeMode(false, refreshParameterGui: false, syncPortfolioAmountFromReal: false);
                 _portfolioTakeProfitNeedsPullback = false;
-                SaveParametersIgnoringRecentLoadCooldown();
+                SaveParametersWithoutIndicatorResync();
                 RequestParameterGuiRepaintOnce();
 
                 string actionLabel = string.IsNullOrWhiteSpace(invokedByButtonName)
@@ -1198,7 +1205,7 @@ namespace OsEngine.Robots.Custom
 
             ApplyPortfolioStopFieldsToParameters(0m, currentDate, setAmount: false, silentDecimals: false);
             SetPortfolioPeakValue(0m, silent: false);
-            SaveParametersIgnoringRecentLoadCooldown();
+            SaveParametersWithoutIndicatorResync();
             RequestParameterGuiRepaintOnce();
 
             string modeHint = ShouldReadPortfolioFromTesterServer(tab)
@@ -2030,6 +2037,20 @@ namespace OsEngine.Robots.Custom
             }
 
             SaveParameters();
+        }
+
+        /// <summary>SaveParameters для тех. полей — без SyncIndicators на UI.</summary>
+        private void SaveParametersWithoutIndicatorResync()
+        {
+            _suppressIndicatorResyncDepth++;
+            try
+            {
+                SaveParametersIgnoringRecentLoadCooldown();
+            }
+            finally
+            {
+                _suppressIndicatorResyncDepth--;
+            }
         }
 
         private StrategyParameterDecimal ResolvePortfolioStopBaselineParameter()
@@ -6271,7 +6292,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// При изменении параметров: SyncIndicators, обновление параметров на вкладках.
+        /// При изменении параметров: переподключение кнопок; SyncIndicators только если менялись параметры индикаторов.
         /// </summary>
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
@@ -6283,8 +6304,133 @@ namespace OsEngine.Robots.Custom
                 RequestParameterGuiRepaintOnce();
             }
 
+            TrySyncIndicatorsOnParameterChange();
+        }
+
+        private bool ShouldResyncIndicatorsOnParameterChange()
+        {
+            return _suppressIndicatorResyncDepth <= 0;
+        }
+
+        private string BuildIndicatorParamsFingerprint()
+        {
+            var sb = new StringBuilder(2048);
+
+            AppendIndicatorFingerprintBool(sb, _checkStrategySuccess.ValueBool);
+            AppendIndicatorFingerprintBool(sb, IsEntryLogicSwapEnabled());
+
+            AppendIndicatorFingerprintBool(sb, _useSma.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _smaLen.ValueInt);
+            AppendIndicatorFingerprintString(sb, _smaAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useRsi.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _rsiLen.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _rsiLongMin.ValueDecimal);
+            AppendIndicatorFingerprintDecimal(sb, _rsiShortMax.ValueDecimal);
+            AppendIndicatorFingerprintString(sb, _rsiAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useStoch.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _stochP1.ValueInt);
+            AppendIndicatorFingerprintInt(sb, _stochP2.ValueInt);
+            AppendIndicatorFingerprintInt(sb, _stochP3.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _stochLongMin.ValueDecimal);
+            AppendIndicatorFingerprintDecimal(sb, _stochShortMax.ValueDecimal);
+            AppendIndicatorFingerprintString(sb, _stochAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useMomentum.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _momLen.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _momLongMin.ValueDecimal);
+            AppendIndicatorFingerprintDecimal(sb, _momShortMax.ValueDecimal);
+            AppendIndicatorFingerprintString(sb, _momAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useBollinger.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _bollLen.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _bollDev.ValueDecimal);
+            AppendIndicatorFingerprintString(sb, _bollAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useLinReg.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _linRegLen.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _linRegDev.ValueDecimal);
+            AppendIndicatorFingerprintString(sb, _linRegAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useVolumeIndicator.ValueBool);
+            AppendIndicatorFingerprintDecimal(sb, _volumeIndicatorMinGrowthPercent.ValueDecimal);
+            AppendIndicatorFingerprintBool(sb, _useVolumeTodCompare.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _volumeTodPastDays.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _volumeTodMinRelativeRatio.ValueDecimal);
+            AppendIndicatorFingerprintString(sb, _volumeAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useVwap.ValueBool);
+            AppendIndicatorFingerprintString(sb, _vwapAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useAtr.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _atrLen.ValueInt);
+            AppendIndicatorFingerprintDecimal(sb, _atrGrowPercent.ValueDecimal);
+            AppendIndicatorFingerprintInt(sb, _atrGrowLookBack.ValueInt);
+            AppendIndicatorFingerprintString(sb, _atrAndGroup.ValueString);
+
+            AppendIndicatorFingerprintBool(sb, _useMacd.ValueBool);
+            AppendIndicatorFingerprintInt(sb, _macdFastLen.ValueInt);
+            AppendIndicatorFingerprintInt(sb, _macdSlowLen.ValueInt);
+            AppendIndicatorFingerprintInt(sb, _macdSignalLen.ValueInt);
+            AppendIndicatorFingerprintString(sb, _macdAndGroup.ValueString);
+
+            return sb.ToString();
+        }
+
+        private static void AppendIndicatorFingerprintBool(StringBuilder sb, bool value)
+        {
+            sb.Append(value ? '1' : '0').Append('\u001f');
+        }
+
+        private static void AppendIndicatorFingerprintInt(StringBuilder sb, int value)
+        {
+            sb.Append(value).Append('\u001f');
+        }
+
+        private static void AppendIndicatorFingerprintDecimal(StringBuilder sb, decimal value)
+        {
+            sb.Append(value.ToString(CultureInfo.InvariantCulture)).Append('\u001f');
+        }
+
+        private static void AppendIndicatorFingerprintString(StringBuilder sb, string value)
+        {
+            sb.Append(value ?? "").Append('\u001f');
+        }
+
+        private bool HaveIndicatorParamsChangedSinceLastSync()
+        {
+            if (string.IsNullOrEmpty(_lastSyncedIndicatorParamsFingerprint))
+            {
+                return true;
+            }
+
+            return !string.Equals(
+                BuildIndicatorParamsFingerprint(),
+                _lastSyncedIndicatorParamsFingerprint,
+                StringComparison.Ordinal);
+        }
+
+        private void MarkIndicatorParamsSynced()
+        {
+            _lastSyncedIndicatorParamsFingerprint = BuildIndicatorParamsFingerprint();
+        }
+
+        private void TrySyncIndicatorsOnParameterChange()
+        {
+            if (!ShouldResyncIndicatorsOnParameterChange())
+            {
+                return;
+            }
+
+            if (!HaveIndicatorParamsChangedSinceLastSync())
+            {
+                return;
+            }
+
             SyncIndicators();
             RefreshAllTabsIndicatorsSafely();
+            MarkIndicatorParamsSynced();
         }
 
         private void ResetIndicatorParametersToDefaultButton_UserClickOnButtonEvent()
@@ -7259,7 +7405,7 @@ namespace OsEngine.Robots.Custom
             }
 
             _portfolioPeakLastSaveTime = now;
-            SaveParameters();
+            SaveParametersWithoutIndicatorResync();
             _portfolioPeakDirty = false;
         }
 
