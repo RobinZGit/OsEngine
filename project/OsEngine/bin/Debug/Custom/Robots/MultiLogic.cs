@@ -90,6 +90,8 @@ namespace OsEngine.Robots.Custom
         private const string LogicsHelpButtonName = "Help";
         /// <summary>Имя кнопки сброса логик и установки строки TrendMultiIndicator в «Логика 1».</summary>
         private const string LogicsSetDefaultButtonName = "Установить логики по умолчанию";
+        /// <summary>Кнопка «Установить разнообразные логики-примеры» на вкладке «Логики».</summary>
+        private const string LogicsSetSampleDiverseButtonName = "Установить разнообразные логики-примеры";
         /// <summary>Кнопка экспорта JSON-снимка настроек, портфелей логик и позиций.</summary>
         private const string SaveSnapshotButtonName = "Сохранить настройки и результаты";
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -102,6 +104,13 @@ namespace OsEngine.Robots.Custom
         private const int MetaIndicatorSerializedFieldCount = 11;
         /// <summary>Краткое имя мета-индикатора «Приведённая SMA» (средний и последний профит).</summary>
         private const string MetaIndicatorPnlSmaAbbrev = "PnlSMA";
+        /// <summary>Параметр включения PnlSMA на вкладке «Металогики» (используется в мета-логике).</summary>
+        private const string PortfolioPnlSmaEnableParamName =
+            "Общепортфельный Средний и последний профит (PnlSMA): включить";
+        /// <summary>Длина окна PnlSMA на вкладке «Металогики».</summary>
+        private const string PortfolioPnlSmaLenParamName = "Общепортфельный PnlSMA: длина";
+        /// <summary>Последний параметр активного блока мета-логики — под ним рисуется разделитель.</summary>
+        private const string MetaLogicsActiveBlockSeparatorUnderParamName = PortfolioPnlSmaLenParamName;
         /// <summary>Суффикс файла портфеля логики на диске: Engine\{NameStrategyUniq}_LogicPortfolio_L1.txt</summary>
         private const string LogicPortfolioFileSuffix = "_LogicPortfolio_L";
         /// <summary>Интервал сброса портфелей логик на диск (сек).</summary>
@@ -131,16 +140,40 @@ namespace OsEngine.Robots.Custom
         private const long ResourceEstimateSnapshotDiskHeadroomBytes = 5L * 1024 * 1024;
 
         /// <summary>
-        /// «Логика 1» по умолчанию — как TrendMultiIndicatorScreener при заводских настройках:
-        /// включены SMA(100), Stoch(14-3-3), LinReg(50;Dev=2), ATR(14;Gr=3%;Lb=5), MACD(12,26,9);
-        /// все в одной И-группе «1» → связка AND; лонг по Op, выход по Cl.
+        /// «Логика 1» по умолчанию — как TrendMultiIndicatorScreener (лонг): SMA, Stoch, LinReg, ATR, MACD через AND.
+        /// «Логика 2» — зеркальный шорт (медвежий IsBearSignal); общие индикаторы на графике не дублируются.
         /// </summary>
         private const string DefaultLogic1TrendMultiIndicator =
             "(SMA(100) Op[Ab] Cl[Bl]) AND "
             + "(Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45]) AND "
             + "(LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
-            + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(TrendMultiIndicator-default))";
+            + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(TrendMultiIndicator-default-long))";
+
+        /// <summary>
+        /// «Логика 2» по умолчанию — шорт как у TrendMultiIndicatorScreener (IsBearSignal / OnlyShort-сторона).
+        /// </summary>
+        private const string DefaultLogic2TrendMultiIndicatorShort =
+            "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+            + "(Stoch(14-3-3;Lmin=55;Smax=45) Op[K<=45] Cl[K>=55]) AND "
+            + "(LinReg(50;Dev=2) Op[BlLo] Cl[AbUp]) AND "
+            + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+            + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(TrendMultiIndicator-default-short))";
+
+        /// <summary>
+        /// Примеры для кнопки «разнообразные логики»: 3 лонга, 3 шорт-тренда, 2 контртрендовых шорта; часть со SL/TP.
+        /// </summary>
+        private static readonly string[] SampleDiverseLogicStrings =
+        {
+            "SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend-SMA100)",
+            "MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] SL[2.5%] TP[7%] Note(trend-MACD)",
+            "LinReg(50;Dev=2) Op[AbUp] Cl[BlLo] SL[2ATR] TP[2R] Note(trend-LinReg-breakout)",
+            "SMA(100) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[6%] Note(trend-short-SMA100)",
+            "MACD(12,26,9) Side[S] Op[Macd<Sig] Cl[Macd>Sig] SL[2.5%] TP[7%] Note(trend-short-MACD)",
+            "LinReg(50;Dev=2) Side[S] Op[BlLo] Cl[AbUp] SL[2ATR] TP[2R] Note(trend-short-LinReg)",
+            "Stoch(14-3-3;Lmin=75;Smax=25) Side[S] Op[K<=25] Cl[K>=75] SL[2%] TP[4%] Note(counter-Stoch-fade)",
+            "Bollinger(20;Dev=2) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[5%] Note(counter-Boll-mid-short)"
+        };
 
         /// <summary>Вкладка скринера: по одной подвкладке на каждый инструмент.</summary>
         private BotTabScreener _screenerTab;
@@ -156,10 +189,28 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>Кнопка «Установить логики по умолчанию» на вкладке «Логики».</summary>
         private StrategyParameterButton _setDefaultLogicsButton;
+        /// <summary>Кнопка «Установить разнообразные логики-примеры» на вкладке «Логики».</summary>
+        private StrategyParameterButton _setSampleDiverseLogicsButton;
         /// <summary>Кнопка экспорта JSON-снимка (первая вкладка параметров).</summary>
         private StrategyParameterButton _saveSnapshotButton;
         /// <summary>Кнопка импорта JSON-снимка.</summary>
         private StrategyParameterButton _loadSnapshotButton;
+
+        private const string ReferenceInitialPortfolioAmountParamName = "Начальная сумма портфеля (справочно)";
+        private const string ReferenceLaunchDateParamName = "Дата запуска (справочно)";
+        private const string ReferenceCurrentAnnualPercentParamName = "Текущий процент годовых (справочно)";
+        private const string ReferenceCurrentAnnualPercentWithCapParamName =
+            "Текущий процент годовых с капитализацией (справочно)";
+        private const string FillReferencePortfolioBaselineButtonName =
+            "Заполнить начальную сумму и дату портфеля";
+
+        /// <summary>База для справочного расчёта % годовых (первая вкладка).</summary>
+        private StrategyParameterDecimal _referenceInitialPortfolioAmount;
+        private StrategyParameterString _referenceLaunchDate;
+        private StrategyParameterDecimal _referenceCurrentAnnualPercent;
+        private StrategyParameterDecimal _referenceCurrentAnnualPercentWithCap;
+        private StrategyParameterButton _fillReferencePortfolioBaselineButton;
+
         /// <summary>Портфели эффективности по слотам логики 1…10.</summary>
         private readonly LogicPortfolioRuntime[] _logicPortfolios = new LogicPortfolioRuntime[LogicSlotCount + 1];
         /// <summary>Общая equity L1…L10 и мета-индикаторы по сумме портфелей.</summary>
@@ -268,6 +319,9 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _logic9;
         private StrategyParameterString _logic10;
 
+        /// <summary>Объединяет несколько подряд ValueChange в один TryParse (например, «Принять» после пресета логик).</summary>
+        private int _logicParseCoalesceToken;
+
         private StrategyParameterBool _metaLogicEnabled;
         private StrategyParameterButton _metaLogicEnableButton;
 
@@ -306,32 +360,6 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _portfolioStopperCurrentEquity;
         private StrategyParameterInt _portfolioStopperLookbackCandles;
         private StrategyParameterButton _updateStopperPortfolioBaselineButton;
-
-        /// <summary>Индикаторы по кривой портфеля каждой логики L1…L10 (индекс = номер логики).</summary>
-        private readonly StrategyParameterBool[] _lpUseSma = new StrategyParameterBool[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpSmaLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterString[] _lpSmaSource = new StrategyParameterString[LogicSlotCount + 1];
-        private readonly StrategyParameterBool[] _lpUseStoch = new StrategyParameterBool[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpStochP1 = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpStochP2 = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpStochP3 = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterDecimal[] _lpStochLongMin = new StrategyParameterDecimal[LogicSlotCount + 1];
-        private readonly StrategyParameterDecimal[] _lpStochShortMax = new StrategyParameterDecimal[LogicSlotCount + 1];
-        private readonly StrategyParameterBool[] _lpUseAtr = new StrategyParameterBool[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpAtrLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterDecimal[] _lpAtrGrowPercent = new StrategyParameterDecimal[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpAtrGrowLookBack = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterBool[] _lpUseLinReg = new StrategyParameterBool[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpLinRegLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterDecimal[] _lpLinRegDev = new StrategyParameterDecimal[LogicSlotCount + 1];
-        private readonly StrategyParameterBool[] _lpUseMacd = new StrategyParameterBool[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpMacdFastLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpMacdSlowLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpMacdSignalLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterBool[] _lpUseAdjSma = new StrategyParameterBool[LogicSlotCount + 1];
-        private readonly StrategyParameterInt[] _lpAdjSmaLen = new StrategyParameterInt[LogicSlotCount + 1];
-        private readonly StrategyParameterString[] _lpPrevIndicatorVolumeCalc =
-            new StrategyParameterString[LogicSlotCount + 1];
 
         /// <summary>
         /// Конструктор робота: создаёт скринер, параметры, подписки на события и первичный разбор логик.
@@ -373,14 +401,39 @@ namespace OsEngine.Robots.Custom
             _volume = CreateParameter("Volume", 20, 1.0m, 50, 4);
             _tradeAssetInPortfolio = CreateParameter("Asset in portfolio", "Prime");
 
+            _referenceInitialPortfolioAmount = CreateParameter(
+                ReferenceInitialPortfolioAmountParamName,
+                0m,
+                0m,
+                1_000_000_000_000m,
+                0.01m);
+            _referenceLaunchDate = CreateParameter(ReferenceLaunchDateParamName, "");
+            _fillReferencePortfolioBaselineButton = CreateParameterButton(FillReferencePortfolioBaselineButtonName);
+            _fillReferencePortfolioBaselineButton.UserClickOnButtonEvent +=
+                FillReferencePortfolioBaselineButton_UserClickOnButtonEvent;
+            _referenceCurrentAnnualPercent = CreateParameter(
+                ReferenceCurrentAnnualPercentParamName,
+                0m,
+                -1_000_000m,
+                1_000_000m,
+                0.01m);
+            _referenceCurrentAnnualPercentWithCap = CreateParameter(
+                ReferenceCurrentAnnualPercentWithCapParamName,
+                0m,
+                -1_000_000m,
+                1_000_000m,
+                0.01m);
+
             _logicHelpButton = CreateParameterButton(LogicsHelpButtonName, LogicsTabName);
             _logicHelpButton.UserClickOnButtonEvent += LogicHelpButton_UserClickOnButtonEvent;
 
             _setDefaultLogicsButton = CreateParameterButton(LogicsSetDefaultButtonName, LogicsTabName);
             _setDefaultLogicsButton.UserClickOnButtonEvent += SetDefaultLogicsButton_UserClickOnButtonEvent;
+            _setSampleDiverseLogicsButton = CreateParameterButton(LogicsSetSampleDiverseButtonName, LogicsTabName);
+            _setSampleDiverseLogicsButton.UserClickOnButtonEvent += SetSampleDiverseLogicsButton_UserClickOnButtonEvent;
 
             _logic1 = CreateParameter("Логика 1", DefaultLogic1TrendMultiIndicator, LogicsTabName);
-            _logic2 = CreateParameter("Логика 2", "", LogicsTabName);
+            _logic2 = CreateParameter("Логика 2", DefaultLogic2TrendMultiIndicatorShort, LogicsTabName);
             _logic3 = CreateParameter("Логика 3", "", LogicsTabName);
             _logic4 = CreateParameter("Логика 4", "", LogicsTabName);
             _logic5 = CreateParameter("Логика 5", "", LogicsTabName);
@@ -393,6 +446,15 @@ namespace OsEngine.Robots.Custom
             _metaLogicEnabled = CreateParameter(MetaLogicEnabledParamName, false, MetaLogicsTabName);
             _metaLogicEnableButton = CreateParameterButton(MetaLogicEnableButtonName, MetaLogicsTabName);
             _metaLogicEnableButton.UserClickOnButtonEvent += MetaLogicEnableButton_UserClickOnButtonEvent;
+
+            _usePortfolioAdjSma = CreateParameter(PortfolioPnlSmaEnableParamName, true, MetaLogicsTabName);
+            _portfolioAdjSmaLen = CreateParameter(
+                PortfolioPnlSmaLenParamName,
+                100,
+                2,
+                500,
+                1,
+                MetaLogicsTabName);
 
             _usePortfolioSma = CreateParameter("Общепортфельный SMA: включить", false, MetaLogicsTabName);
             _portfolioSmaLen = CreateParameter("Общепортфельный SMA: длина", 100, 5, 300, 1, MetaLogicsTabName);
@@ -435,23 +497,11 @@ namespace OsEngine.Robots.Custom
             _portfolioMacdSlowLen = CreateParameter("Общепортфельный MACD: slow", 26, 2, 300, 1, MetaLogicsTabName);
             _portfolioMacdSignalLen = CreateParameter("Общепортфельный MACD: signal", 9, 2, 100, 1, MetaLogicsTabName);
 
-            _usePortfolioAdjSma = CreateParameter(
-                "Общепортфельный Средний и последний профит (" + MetaIndicatorPnlSmaAbbrev + "): включить",
-                true,
-                MetaLogicsTabName);
-            _portfolioAdjSmaLen = CreateParameter(
-                "Общепортфельный " + MetaIndicatorPnlSmaAbbrev + ": длина",
-                100,
-                2,
-                500,
-                1,
-                MetaLogicsTabName);
             _portfolioPrevIndicatorVolumeCalc = CreateParameter(
                 "Предыдущий индикатор. Расчёт объёма позиций",
                 "",
                 MetaLogicsTabName);
 
-            CreateLogicPortfolioPerSlotIndicatorParameters();
             CreateStopperParameters();
 
             const string moexFuturesTab = "MOEX фьючерсы";
@@ -502,9 +552,41 @@ namespace OsEngine.Robots.Custom
             WireStopperTabButtons();
             WireMoexTabButtons();
             WireSnapshotButtons();
+            WireReferenceYieldButtons();
             RegisterParameterHints();
             _stopperReferenceBaselineLocked = _portfolioStopperReferenceEquity.ValueDecimal != 0m;
-            TryParseAndApplyAllLogicSlots(logToUser: false);
+            CoalescedTryParseAndApplyAllLogicSlots();
+        }
+
+        /// <summary>
+        /// Откладывает перечитывание всех слотов логики: при «Принять» после пресета не парсим 10 раз подряд.
+        /// </summary>
+        private async void CoalescedTryParseAndApplyAllLogicSlots()
+        {
+            int token = Interlocked.Increment(ref _logicParseCoalesceToken);
+
+            try
+            {
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (token != _logicParseCoalesceToken)
+            {
+                return;
+            }
+
+            try
+            {
+                RunOnUiThread(() => TryParseAndApplyAllLogicSlots(logToUser: false));
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
         }
 
         /// <summary>Переподписывает обработчики кнопок на вкладке «Логики» (после пересоздания UI параметров).</summary>
@@ -512,6 +594,7 @@ namespace OsEngine.Robots.Custom
         {
             WireLogicTabButton(LogicsHelpButtonName, LogicHelpButton_UserClickOnButtonEvent);
             WireLogicTabButton(LogicsSetDefaultButtonName, SetDefaultLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(LogicsSetSampleDiverseButtonName, SetSampleDiverseLogicsButton_UserClickOnButtonEvent);
         }
 
         /// <summary>Переподписывает кнопки вкладки «Металогики».</summary>
@@ -543,6 +626,249 @@ namespace OsEngine.Robots.Custom
         {
             WireLogicTabButton(SaveSnapshotButtonName, SaveSnapshotButton_UserClickOnButtonEvent);
             WireLogicTabButton(LoadSnapshotButtonName, LoadSnapshotButton_UserClickOnButtonEvent);
+        }
+
+        /// <summary>Переподписывает кнопку справочной базы % годовых на первой вкладке.</summary>
+        private void WireReferenceYieldButtons()
+        {
+            WireLogicTabButton(
+                FillReferencePortfolioBaselineButtonName,
+                FillReferencePortfolioBaselineButton_UserClickOnButtonEvent);
+        }
+
+        private void FillReferencePortfolioBaselineButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                TryApplyFillReferencePortfolioBaseline(logButtonPress: true);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Заполняет справочные «Начальная сумма» и «Дата запуска» текущей суммой реального портфеля и календарной датой.
+        /// </summary>
+        private bool TryApplyFillReferencePortfolioBaseline(bool logButtonPress)
+        {
+            if (logButtonPress)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | «" + FillReferencePortfolioBaselineButtonName + "»…",
+                    LogMessageType.User);
+            }
+
+            BotTabSimple tab = TryGetReferenceMonitoringTab();
+            if (tab == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
+            {
+                tab = _screenerTab.Tabs[0];
+            }
+
+            decimal? portfolioAmount = TryGetRealPortfolioAmountForReference(tab);
+            if (!portfolioAmount.HasValue || portfolioAmount.Value <= 0m)
+            {
+                string err = NameStrategyUniq
+                    + " | Справочный % годовых: не удалось получить сумму реального портфеля (> 0). "
+                    + "Подключите коннектор/портфель или проверьте депозит в тестере.";
+                SendNewLogMessage(err, LogMessageType.Error);
+                SendNewLogMessage(err, LogMessageType.User);
+                return false;
+            }
+
+            DateTime candleTime = GetStopperReferenceCandleTime();
+            DateTime currentDate = GetReferenceCalendarDate(tab, candleTime);
+            decimal roundedAmount = Math.Round(portfolioAmount.Value, 2, MidpointRounding.AwayFromZero);
+
+            _referenceInitialPortfolioAmount.ValueDecimal = roundedAmount;
+            _referenceLaunchDate.ValueString = FormatReferenceLaunchDate(currentDate);
+
+            SaveParameters();
+            RequestParameterGuiRepaintOnce();
+            RefreshReferenceAnnualYieldDisplay(candleTime, tab);
+
+            string msg = NameStrategyUniq
+                + " | «"
+                + FillReferencePortfolioBaselineButtonName
+                + "» — начальная сумма "
+                + roundedAmount.ToString(CultureInfo.InvariantCulture)
+                + ", дата "
+                + FormatReferenceLaunchDate(currentDate)
+                + ".";
+            SendNewLogMessage(msg, LogMessageType.System);
+            SendNewLogMessage(msg, LogMessageType.User);
+            return true;
+        }
+
+        /// <summary>
+        /// Пересчитывает справочные % годовых: (текущий портфель − начальный) / начальный / годы;
+        /// с капитализацией — (текущий/начальный)^(1/годы) − 1. Портфель — реальный (лайв/тестер), не L1…L10.
+        /// </summary>
+        private void RefreshReferenceAnnualYieldDisplay(DateTime candleTime, BotTabSimple tab)
+        {
+            if (_referenceCurrentAnnualPercent == null || _referenceCurrentAnnualPercentWithCap == null)
+            {
+                return;
+            }
+
+            decimal initialAmount = _referenceInitialPortfolioAmount?.ValueDecimal ?? 0m;
+            if (initialAmount <= 0m
+                || _referenceLaunchDate == null
+                || string.IsNullOrWhiteSpace(_referenceLaunchDate.ValueString)
+                || !TryParseReferenceLaunchDate(tab, candleTime, out DateTime startDate))
+            {
+                _referenceCurrentAnnualPercent.ValueDecimal = 0m;
+                _referenceCurrentAnnualPercentWithCap.ValueDecimal = 0m;
+                return;
+            }
+
+            decimal? currentPortfolio = TryGetRealPortfolioAmountForReference(tab);
+            if (!currentPortfolio.HasValue || currentPortfolio.Value <= 0m)
+            {
+                _referenceCurrentAnnualPercent.ValueDecimal = 0m;
+                _referenceCurrentAnnualPercentWithCap.ValueDecimal = 0m;
+                return;
+            }
+
+            DateTime endDate = GetReferenceCalendarDate(tab, candleTime);
+            double elapsedDays = Math.Max(0d, (endDate - startDate.Date).TotalDays);
+            if (elapsedDays < 1d)
+            {
+                _referenceCurrentAnnualPercent.ValueDecimal = 0m;
+                _referenceCurrentAnnualPercentWithCap.ValueDecimal = 0m;
+                return;
+            }
+
+            double elapsedYears = elapsedDays / 365d;
+            decimal currentAmount = currentPortfolio.Value;
+            decimal profitFraction = (currentAmount - initialAmount) / initialAmount;
+            decimal simpleAnnual = profitFraction / (decimal)elapsedYears * 100m;
+            double ratio = (double)(currentAmount / initialAmount);
+            double compoundAnnual = (Math.Pow(ratio, 1d / elapsedYears) - 1d) * 100d;
+
+            _referenceCurrentAnnualPercent.ValueDecimal =
+                Math.Round(simpleAnnual, 2, MidpointRounding.AwayFromZero);
+            _referenceCurrentAnnualPercentWithCap.ValueDecimal =
+                Math.Round((decimal)compoundAnnual, 2, MidpointRounding.AwayFromZero);
+        }
+
+        private BotTabSimple TryGetReferenceMonitoringTab()
+        {
+            if (_screenerTab?.Tabs == null || _screenerTab.Tabs.Count == 0)
+            {
+                return null;
+            }
+
+            return _screenerTab.Tabs[0];
+        }
+
+        private static DateTime GetReferenceCalendarDate(BotTabSimple tab, DateTime candleTime)
+        {
+            if (tab != null && tab.TimeServerCurrent != DateTime.MinValue)
+            {
+                return tab.TimeServerCurrent.Date;
+            }
+
+            return candleTime.Date;
+        }
+
+        private static string FormatReferenceLaunchDate(DateTime date)
+        {
+            return date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        }
+
+        private bool TryParseReferenceLaunchDate(BotTabSimple tab, DateTime candleTime, out DateTime parsedDate)
+        {
+            parsedDate = DateTime.MinValue;
+            if (_referenceLaunchDate == null || string.IsNullOrWhiteSpace(_referenceLaunchDate.ValueString))
+            {
+                return false;
+            }
+
+            if (!TryParseFlexibleReferenceDateTime(tab, candleTime, _referenceLaunchDate.ValueString, out DateTime parsed))
+            {
+                return false;
+            }
+
+            parsedDate = parsed.Date;
+            return true;
+        }
+
+        /// <summary>Парсинг даты запуска: dd.MM.yyyy, ISO, HH:mm (дата — календарный день свечи).</summary>
+        private static bool TryParseFlexibleReferenceDateTime(
+            BotTabSimple tab,
+            DateTime candleTime,
+            string rawSource,
+            out DateTime parsed)
+        {
+            parsed = default;
+            if (string.IsNullOrWhiteSpace(rawSource))
+            {
+                return false;
+            }
+
+            string raw = rawSource.Trim();
+            if (!ContainsDigitInString(raw))
+            {
+                return false;
+            }
+
+            DateTime referenceDate = GetReferenceCalendarDate(tab, candleTime);
+            string[] formatsFull =
+            {
+                "dd.MM.yyyy HH:mm:ss",
+                "dd.MM.yyyy HH:mm",
+                "dd.MM.yyyy",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd",
+                "HH:mm:ss",
+                "HH:mm"
+            };
+
+            foreach (string fmt in formatsFull)
+            {
+                if (DateTime.TryParseExact(raw, fmt, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime exact))
+                {
+                    parsed = fmt.StartsWith("HH", StringComparison.Ordinal)
+                        ? referenceDate.Add(exact.TimeOfDay)
+                        : exact;
+                    return true;
+                }
+            }
+
+            if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime loose))
+            {
+                parsed = loose;
+                return true;
+            }
+
+            if (DateTime.TryParse(raw, new CultureInfo("ru-RU"), DateTimeStyles.None, out DateTime looseRu))
+            {
+                parsed = looseRu;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsDigitInString(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (char.IsDigit(value[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -648,21 +974,19 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Обработчик «Установить логики по умолчанию»: очищает «Логика 2…10», в «Логика 1» — строка TrendMultiIndicator.
+        /// Обработчик «Установить логики по умолчанию»: L1 — лонг TrendMultiIndicator, L2 — шорт, L3…10 — пусто.
         /// </summary>
         private void SetDefaultLogicsButton_UserClickOnButtonEvent()
         {
             try
             {
                 ApplyDefaultLogicStrings();
-                TryParseAndApplyAllLogicSlots(logToUser: true);
-                RepaintParameterGuiTables();
 
                 string msg = NameStrategyUniq
-                    + " | Логики по умолчанию: «Логика 1» = TrendMultiIndicator (SMA+Stoch+LinReg+ATR+MACD, AND); "
-                    + "«Логика 2…10» очищены.";
+                    + " | Логики по умолчанию: «Логика 1» = TrendMultiIndicator лонг, "
+                    + "«Логика 2» = TrendMultiIndicator шорт (SMA+Stoch+LinReg+ATR+MACD, AND); "
+                    + "«Логика 3…10» очищены. Применение на графике — по «Принять».";
                 SendNewLogMessage(msg, LogMessageType.System);
-                SendNewLogMessage(msg, LogMessageType.User);
             }
             catch (Exception ex)
             {
@@ -671,20 +995,193 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Записывает заводскую строку в «Логика 1» и очищает «Логика 2» … «Логика 10».
+        /// Записывает заводские строки в «Логика 1» (лонг) и «Логика 2» (шорт), очищает «Логика 3» … «Логика 10».
+        /// Если окно параметров открыто — только ячейки таблицы (как ручной ввод), без парсинга и SaveParameters.
         /// </summary>
         private void ApplyDefaultLogicStrings()
         {
-            _logic1.ValueString = DefaultLogic1TrendMultiIndicator;
-            _logic2.ValueString = "";
-            _logic3.ValueString = "";
-            _logic4.ValueString = "";
-            _logic5.ValueString = "";
-            _logic6.ValueString = "";
-            _logic7.ValueString = "";
-            _logic8.ValueString = "";
-            _logic9.ValueString = "";
-            _logic10.ValueString = "";
+            string[] slotValues = new string[LogicSlotCount];
+            slotValues[0] = DefaultLogic1TrendMultiIndicator;
+            slotValues[1] = DefaultLogic2TrendMultiIndicatorShort;
+            ApplyLogicSlotStrings(slotValues);
+        }
+
+        /// <summary>
+        /// Обработчик «Установить разнообразные логики-примеры»: очищает все слоты, в «Логика 1…8» — восемь примеров.
+        /// </summary>
+        private void SetSampleDiverseLogicsButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ApplySampleDiverseLogicStrings();
+
+                string msg = NameStrategyUniq
+                    + " | Примеры логик: очищены «Логика 1…10»; в «Логика 1…8» — 3 лонга (SMA, MACD, LinReg), "
+                    + "3 шорт-тренда (SMA, MACD, LinReg), 2 контртрендовых шорта (Stoch, Bollinger); "
+                    + "SL/TP или ATR/R. Применение на графике — по «Принять».";
+                SendNewLogMessage(msg, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>Очищает «Логика 1…10» и записывает SampleDiverseLogicStrings в «Логика 1…8».</summary>
+        private void ApplySampleDiverseLogicStrings()
+        {
+            string[] slotValues = new string[LogicSlotCount];
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                int sampleIndex = slot - 1;
+                slotValues[slot - 1] = sampleIndex >= 0 && sampleIndex < SampleDiverseLogicStrings.Length
+                    ? SampleDiverseLogicStrings[sampleIndex]
+                    : "";
+            }
+
+            ApplyLogicSlotStrings(slotValues);
+        }
+
+        /// <summary>
+        /// Записывает строки слотов логики: в открытом окне параметров — только в таблицу (до «Принять»),
+        /// иначе — в ValueString и перерисовка, как у кнопок префиксов MOEX.
+        /// </summary>
+        private void ApplyLogicSlotStrings(string[] slotValues)
+        {
+            if (slotValues == null || slotValues.Length == 0)
+            {
+                return;
+            }
+
+            if (ParamGuiIsOpen && TryApplyLogicSlotStringsToOpenParameterGui(slotValues))
+            {
+                return;
+            }
+
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                StrategyParameterString param = ResolveLogicParameter(slot);
+                if (param == null)
+                {
+                    continue;
+                }
+
+                string value = slot - 1 < slotValues.Length ? slotValues[slot - 1] ?? "" : "";
+                param.ValueString = value;
+            }
+
+            RequestParameterGuiRepaintOnce();
+        }
+
+        /// <summary>
+        /// Обновляет ячейки «Логика 1…10» в открытом окне параметров, не трогая объекты параметров.
+        /// </summary>
+        private bool TryApplyLogicSlotStringsToOpenParameterGui(string[] slotValues)
+        {
+            if (!ParamGuiIsOpen || slotValues == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                FieldInfo uiField = typeof(BotPanel).GetField(
+                    "_parametersUi",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                object uiObj = uiField?.GetValue(this);
+                if (uiObj == null)
+                {
+                    return false;
+                }
+
+                FieldInfo tabsField = uiObj.GetType().GetField(
+                    "_tabs",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (tabsField?.GetValue(uiObj) is not IList tabs)
+                {
+                    return false;
+                }
+
+                FieldInfo gridField = typeof(ParamTabPainter).GetField(
+                    "_grid",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo paramsField = typeof(ParamTabPainter).GetField(
+                    "_parameters",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (gridField == null || paramsField == null)
+                {
+                    return false;
+                }
+
+                bool anyUpdated = false;
+
+                for (int t = 0; t < tabs.Count; t++)
+                {
+                    object tab = tabs[t];
+                    if (tab == null)
+                    {
+                        continue;
+                    }
+
+                    if (gridField.GetValue(tab) is not System.Windows.Forms.DataGridView grid
+                        || paramsField.GetValue(tab) is not List<IIStrategyParameter> parameters)
+                    {
+                        continue;
+                    }
+
+                    void UpdateGridCells()
+                    {
+                        for (int i = 0; i < parameters.Count; i++)
+                        {
+                            if (parameters[i].Type != StrategyParameterType.String)
+                            {
+                                continue;
+                            }
+
+                            int slotIndex = ResolveLogicSlotIndexFromParameterName(parameters[i].Name);
+                            if (slotIndex < 1 || i >= grid.Rows.Count || grid.Rows[i].Cells.Count <= 1)
+                            {
+                                continue;
+                            }
+
+                            string value = slotIndex - 1 < slotValues.Length
+                                ? slotValues[slotIndex - 1] ?? ""
+                                : "";
+                            grid.Rows[i].Cells[1].Value = value;
+                            anyUpdated = true;
+                        }
+                    }
+
+                    if (grid.InvokeRequired)
+                    {
+                        grid.Invoke(new Action(UpdateGridCells));
+                    }
+                    else
+                    {
+                        UpdateGridCells();
+                    }
+                }
+
+                return anyUpdated;
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                return false;
+            }
+        }
+
+        private static int ResolveLogicSlotIndexFromParameterName(string parameterName)
+        {
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                if (string.Equals(parameterName, "Логика " + slot, StringComparison.Ordinal))
+                {
+                    return slot;
+                }
+            }
+
+            return -1;
         }
 
         /// <summary>Обновляет таблицы параметров в UI после программной смены ValueString.</summary>
@@ -694,6 +1191,19 @@ namespace OsEngine.Robots.Custom
             {
                 ParamGuiSettings.RePaintParameterTables();
             }
+        }
+
+        /// <summary>
+        /// Один запрос перерисовки окна параметров (два подряд RePaintParameterTables отменяют друг друга).
+        /// </summary>
+        private void RequestParameterGuiRepaintOnce()
+        {
+            if (!ParamGuiIsOpen || ParamGuiSettings == null)
+            {
+                return;
+            }
+
+            RepaintParameterGuiTables();
         }
 
         /// <summary>Возвращает параметр «Логика N» по номеру слота 1…10.</summary>
@@ -1142,6 +1652,21 @@ namespace OsEngine.Robots.Custom
                 "От какой суммы на счёте считать процент при Volume type = Deposit percent.\n"
                 + "Prime — вся стоимость портфеля (обычно правильный выбор).\n"
                 + "rub или другой код — только баланс этого актива на борде (например, свободные деньги).");
+            Hint(
+                ReferenceInitialPortfolioAmountParamName,
+                "Справочно: база для расчёта % годовых — сумма реального портфеля (лайв/тестер) на момент запуска.");
+            Hint(
+                ReferenceLaunchDateParamName,
+                "Справочно: дата начала отсчёта (dd.MM.yyyy). Заполняется кнопкой или вручную.");
+            Hint(
+                FillReferencePortfolioBaselineButtonName,
+                "Записать текущую сумму реального портфеля и сегодняшнюю дату в справочные поля выше.");
+            Hint(
+                ReferenceCurrentAnnualPercentParamName,
+                "Справочно: (текущий портфель − начальный) / начальный / годы × 100%; обновляется в конце каждой свечи.");
+            Hint(
+                ReferenceCurrentAnnualPercentWithCapParamName,
+                "Справочно: ((текущий/начальный)^(1/годы) − 1) × 100%; обновляется в конце каждой свечи.");
             Hint(SaveSnapshotButtonName,
                 "Сохранить JSON: все параметры робота, строки «Логика 1…10», портфели логик и открытые позиции. "
                 + "Файл выбирается в диалоге.");
@@ -1152,8 +1677,11 @@ namespace OsEngine.Robots.Custom
                 "Открыть Custom\\Robots\\MultiLogic_LogicHelp.txt — полная справка; "
                 + "файл автоматически обновляется при запуске робота и по этой кнопке.");
             Hint(LogicsSetDefaultButtonName,
-                "Очистить «Логика 2…10» и записать в «Логика 1» строку как у TrendMultiIndicatorScreener "
-                + "(SMA, Stoch, LinReg, ATR, MACD — все через AND, заводские параметры).");
+                "Записать в «Логика 1» лонг и в «Логика 2» шорт как у TrendMultiIndicatorScreener "
+                + "(SMA, Stoch, LinReg, ATR, MACD — AND, заводские параметры); «Логика 3…10» очистить.");
+            Hint(LogicsSetSampleDiverseButtonName,
+                "Очистить «Логика 1…10» и записать в «Логика 1…8» примеры: 3 лонга, 3 шорт-тренда (Side[S]), "
+                + "2 контртрендовых шорта (Stoch, Bollinger), со SL/TP или ATR/R. «Логика 9…10» — пусто.");
             string logicSlotHintSuffix =
                 "\n\nОдинаковый индикатор с теми же параметрами в разных логиках — один экземпляр на графике. "
                 + "Regime=On: вход по Op, выход по Cl. Volume делится поровну между сработавшими логиками на свече.";
@@ -1178,6 +1706,13 @@ namespace OsEngine.Robots.Custom
             Hint(
                 MetaLogicEnableButtonName,
                 "Устанавливает «" + MetaLogicEnabledParamName + "» = true и сохраняет параметры.");
+            Hint(
+                PortfolioPnlSmaEnableParamName,
+                MetaIndicatorPnlSmaAbbrev
+                + ": используется в мета-логике (Volume и Max positions); также пишется в файлы L1…L10 и _MetaAggregate.");
+            Hint(
+                PortfolioPnlSmaLenParamName,
+                "Окно " + MetaIndicatorPnlSmaAbbrev + " для мета-логики и всех портфельных серий.");
 
             Hint("Общепортфельный stop-loss: включён",
                 "Stopper: просадка суммарной equity L1…L10 от ref (lookback свечей). По умолчанию выкл.");
@@ -1201,45 +1736,34 @@ namespace OsEngine.Robots.Custom
                 "Записывает текущую equity L1…L10 в «Предыдущая сумма портфеля» и фиксирует базу SL/TP.");
 
             Hint("Общепортфельный SMA: включить",
-                "Металогики: если включено — позже SMA считается по общей кривой портфеля логик; "
-                + "если выключено — индикатор не используется. Пока только параметры, без расчёта.");
-            Hint("Общепортфельный SMA: длина", "Период SMA по серии equity портфелей (когда расчёт будет включён).");
+                "Справочно: SMA по портфельной серии equity; значения — в файлах портфелей и _MetaAggregate.txt.");
+            Hint("Общепортфельный SMA: длина", "Период SMA по всем портфельным сериям (L1…L10 и общая).");
             Hint("Общепортфельный SMA: источник", "Источник цены для SMA (для портфельной серии — зарезервировано под расширение).");
             Hint("Общепортфельный Stoch: включить",
-                "Металогики: Stochastic по портфельной серии; выкл. — не считается.");
+                "Справочно: Stochastic по портфельной серии; выкл. — не считается.");
             Hint("Общепортфельный Stoch: P1", "Период %K (Stochastic по портфелю).");
             Hint("Общепортфельный Stoch: P2", "Сглаживание %K.");
             Hint("Общепортфельный Stoch: P3", "Сглаживание %D.");
             Hint("Общепортфельный Stoch: long min", "Порог %K для бычьего фильтра (зарезервировано).");
             Hint("Общепортфельный Stoch: short max", "Порог %K для медвежьего фильтра (зарезервировано).");
             Hint("Общепортфельный ATR: включить",
-                "Металогики: ATR по портфельной серии (волатильность equity); выкл. — не считается.");
+                "Справочно: ATR по портфельной серии (волатильность equity); выкл. — не считается.");
             Hint("Общепортфельный ATR: длина", "Период ATR по портфельной серии.");
             Hint("Общепортфельный ATR: min grow % vs lookback",
                 "Мин. рост ATR в % относительно значения lookback свечей назад (как фильтр GrOk).");
             Hint("Общепортфельный ATR: grow lookback (candles)", "Lookback для фильтра роста ATR портфеля.");
             Hint("Общепортфельный LinReg: включить",
-                "Металогики: канал линейной регрессии по портфельной серии; выкл. — не считается.");
+                "Справочно: канал линейной регрессии по портфельной серии; выкл. — не считается.");
             Hint("Общепортфельный LinReg: длина", "Длина окна LinReg по equity портфелей.");
             Hint("Общепортфельный LinReg: deviation", "Ширина канала LinReg (deviation).");
             Hint("Общепортфельный MACD: включить",
-                "Металогики: MACD по портфельной серии; выкл. — не считается.");
+                "Справочно: MACD по портфельной серии; выкл. — не считается.");
             Hint("Общепортфельный MACD: fast", "Быстрая EMA MACD по портфелю.");
             Hint("Общепортфельный MACD: slow", "Медленная EMA MACD по портфелю.");
             Hint("Общепортфельный MACD: signal", "Сигнальная линия MACD по портфелю.");
             Hint(
-                "Общепортфельный Средний и последний профит (" + MetaIndicatorPnlSmaAbbrev + "): включить",
-                MetaIndicatorPnlSmaAbbrev
-                + ": средний профит на свечу и последний профит по серии equity (приведённая SMA); "
-                + "значения пишутся в файл портфеля (поля pnlSmaAvg, pnlSmaLast).");
-            Hint(
-                "Общепортфельный " + MetaIndicatorPnlSmaAbbrev + ": длина",
-                "Окно " + MetaIndicatorPnlSmaAbbrev + " в точках истории портфеля (отдельно от SMA).");
-            Hint(
                 "Предыдущий индикатор. Расчёт объёма позиций",
                 "Зарезервировано: связь с предыдущим мета-индикатором при расчёте объёма (пока без логики).");
-
-            RegisterLogicPortfolioPerSlotParameterHints(Hint);
 
             Hint(
                 "Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
@@ -1256,6 +1780,8 @@ namespace OsEngine.Robots.Custom
             Hint("Установить тикеры акций по умолчанию", "Заполнить строку типовым списком ликвидных акций MOEX. Подбор бумаг не выполняется.");
             Hint("Обновить акции", "Очистить скринер и добавить акции MOEX по списку тикеров (T-Инвестиции или Tester).");
 
+            RegisterMetaLogicsTabVisualSeparators();
+
             if (!_parameterHintsRegistrationLogged)
             {
                 _parameterHintsRegistrationLogged = true;
@@ -1264,6 +1790,22 @@ namespace OsEngine.Robots.Custom
                     + " | Подсказки параметров зарегистрированы (наведите курсор на строку в окне параметров).",
                     LogMessageType.System);
             }
+        }
+
+        /// <summary>
+        /// Разделитель на вкладке «Металогики»: активный блок (мета-логика + PnlSMA) / справочные индикаторы.
+        /// </summary>
+        private void RegisterMetaLogicsTabVisualSeparators()
+        {
+            if (ParamGuiSettings == null)
+            {
+                return;
+            }
+
+            ParamGuiSettings.SetBorderUnderParameter(
+                MetaLogicsActiveBlockSeparatorUnderParamName,
+                System.Drawing.Color.LightGray,
+                2);
         }
 
         /// <summary>Возвращает типовое имя класса робота для OsEngine («MultiLogic»).</summary>
@@ -1773,6 +2315,8 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
+            TryEnsureRobotIndicatorsOnTabIfNeeded(tab);
+
             int candleIndex = candles.Count - 1;
             DateTime candleTime = candles[candleIndex].TimeStart;
 
@@ -1783,6 +2327,7 @@ namespace OsEngine.Robots.Custom
 
             if (stopperTriggered)
             {
+                RefreshReferenceAnnualYieldDisplay(candleTime, tab);
                 MaybeSaveLogicPortfolios(force: false);
                 return;
             }
@@ -1793,6 +2338,7 @@ namespace OsEngine.Robots.Custom
             }
 
             RefreshStopperTechEquityDisplay(candleTime, atCandleStart: false);
+            RefreshReferenceAnnualYieldDisplay(candleTime, tab);
             MaybeSaveLogicPortfolios(force: false);
         }
 
@@ -2243,10 +2789,12 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            int pnlLen = _lpUseAdjSma[slot].ValueBool
-                ? _lpAdjSmaLen[slot].ValueInt
-                : _portfolioAdjSmaLen.ValueInt;
-            pnlLen = Math.Max(2, pnlLen);
+            int pnlLen = Math.Max(2, _portfolioAdjSmaLen.ValueInt);
+
+            if (!_usePortfolioAdjSma.ValueBool)
+            {
+                return false;
+            }
 
             var cfg = new MetaIndicatorConfig
             {
@@ -2513,6 +3061,49 @@ namespace OsEngine.Robots.Custom
             return TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
         }
 
+        /// <summary>
+        /// Общая сумма реального портфеля для справочного % годовых (лайв ValueCurrent или тестер), не equity L1…L10.
+        /// </summary>
+        private decimal? TryGetRealPortfolioAmountForReference(BotTabSimple tab)
+        {
+            if (ShouldReadPortfolioFromTesterServer(tab))
+            {
+                decimal? fromTester = TryGetTesterPortfolioEquity(tab);
+                if (fromTester.HasValue && fromTester.Value > 0m)
+                {
+                    return fromTester;
+                }
+
+                Portfolio connectorPortfolio = tab?.Connector?.Portfolio ?? tab?.Portfolio;
+                decimal? fromConnector = TryGetFullPortfolioEquityFromPortfolioObject(connectorPortfolio);
+                if (fromConnector.HasValue && fromConnector.Value > 0m)
+                {
+                    return fromConnector;
+                }
+            }
+
+            decimal? realMonitored = TryGetRealMonitoredPortfolioValue(tab);
+            if (realMonitored.HasValue && realMonitored.Value > 0m)
+            {
+                return realMonitored;
+            }
+
+            decimal? testerFallback = TryGetTesterPortfolioEquity(tab);
+            if (testerFallback.HasValue && testerFallback.Value > 0m)
+            {
+                return testerFallback;
+            }
+
+            return null;
+        }
+
+        private static bool ShouldReadPortfolioFromTesterServer(BotTabSimple tab)
+        {
+            return tab != null
+                && (tab.StartProgram == StartProgram.IsTester
+                    || tab.StartProgram == StartProgram.IsOsOptimizer);
+        }
+
         private static decimal? TryGetFullPortfolioEquityFromPortfolioObject(Portfolio portfolio)
         {
             if (portfolio == null)
@@ -2769,117 +3360,6 @@ namespace OsEngine.Robots.Custom
                 LogMessageType.System);
         }
 
-        #region MetaLogics: параметры индикаторов ЛП1…ЛП10
-
-        private void CreateLogicPortfolioPerSlotIndicatorParameters()
-        {
-            for (int slot = 1; slot <= LogicSlotCount; slot++)
-            {
-                string lp = "ЛП" + slot.ToString(CultureInfo.InvariantCulture);
-
-                _lpUseSma[slot] = CreateParameter(lp + " SMA: включить", false, MetaLogicsTabName);
-                _lpSmaLen[slot] = CreateParameter(lp + " SMA: длина", 100, 5, 300, 1, MetaLogicsTabName);
-                _lpSmaSource[slot] = CreateParameter(
-                    lp + " SMA: источник",
-                    "Close",
-                    new[] { "Close", "Open", "High", "Low" },
-                    MetaLogicsTabName);
-
-                _lpUseStoch[slot] = CreateParameter(lp + " Stoch: включить", false, MetaLogicsTabName);
-                _lpStochP1[slot] = CreateParameter(lp + " Stoch: P1", 14, 2, 100, 1, MetaLogicsTabName);
-                _lpStochP2[slot] = CreateParameter(lp + " Stoch: P2", 3, 1, 50, 1, MetaLogicsTabName);
-                _lpStochP3[slot] = CreateParameter(lp + " Stoch: P3", 3, 1, 50, 1, MetaLogicsTabName);
-                _lpStochLongMin[slot] = CreateParameter(lp + " Stoch: long min", 55m, 0m, 100m, 1m, MetaLogicsTabName);
-                _lpStochShortMax[slot] = CreateParameter(lp + " Stoch: short max", 45m, 0m, 100m, 1m, MetaLogicsTabName);
-
-                _lpUseAtr[slot] = CreateParameter(lp + " ATR: включить", false, MetaLogicsTabName);
-                _lpAtrLen[slot] = CreateParameter(lp + " ATR: длина", 14, 2, 200, 1, MetaLogicsTabName);
-                _lpAtrGrowPercent[slot] = CreateParameter(
-                    lp + " ATR: min grow % vs lookback",
-                    3m,
-                    0m,
-                    100m,
-                    0.1m,
-                    MetaLogicsTabName);
-                _lpAtrGrowLookBack[slot] = CreateParameter(
-                    lp + " ATR: grow lookback (candles)",
-                    5,
-                    1,
-                    100,
-                    1,
-                    MetaLogicsTabName);
-
-                _lpUseLinReg[slot] = CreateParameter(lp + " LinReg: включить", false, MetaLogicsTabName);
-                _lpLinRegLen[slot] = CreateParameter(lp + " LinReg: длина", 50, 5, 300, 1, MetaLogicsTabName);
-                _lpLinRegDev[slot] = CreateParameter(lp + " LinReg: отклонение", 2m, 0.1m, 10m, 0.1m, MetaLogicsTabName);
-
-                _lpUseMacd[slot] = CreateParameter(lp + " MACD: включить", false, MetaLogicsTabName);
-                _lpMacdFastLen[slot] = CreateParameter(lp + " MACD: fast", 12, 2, 100, 1, MetaLogicsTabName);
-                _lpMacdSlowLen[slot] = CreateParameter(lp + " MACD: slow", 26, 2, 200, 1, MetaLogicsTabName);
-                _lpMacdSignalLen[slot] = CreateParameter(lp + " MACD: signal", 9, 2, 100, 1, MetaLogicsTabName);
-
-                _lpUseAdjSma[slot] = CreateParameter(
-                    lp + " Средний и последний профит (" + MetaIndicatorPnlSmaAbbrev + "): включить",
-                    false,
-                    MetaLogicsTabName);
-                _lpAdjSmaLen[slot] = CreateParameter(
-                    lp + " " + MetaIndicatorPnlSmaAbbrev + ": длина",
-                    100,
-                    2,
-                    500,
-                    1,
-                    MetaLogicsTabName);
-                _lpPrevIndicatorVolumeCalc[slot] = CreateParameter(
-                    lp + " Предыдущий индикатор. Расчёт объёма позиций",
-                    "",
-                    MetaLogicsTabName);
-            }
-        }
-
-        private void RegisterLogicPortfolioPerSlotParameterHints(Action<string, string> hint)
-        {
-            for (int slot = 1; slot <= LogicSlotCount; slot++)
-            {
-                string lp = "ЛП" + slot.ToString(CultureInfo.InvariantCulture);
-                string slotNote = " по кривой портфеля логики L" + slot.ToString(CultureInfo.InvariantCulture) + ".";
-
-                hint(lp + " SMA: включить", "SMA" + slotNote);
-                hint(lp + " SMA: длина", "Период SMA" + slotNote);
-                hint(lp + " SMA: источник", "Источник SMA" + slotNote);
-
-                hint(lp + " Stoch: включить", "Stochastic" + slotNote);
-                hint(lp + " Stoch: P1", "Период %K" + slotNote);
-                hint(lp + " Stoch: P2", "Сглаживание %K" + slotNote);
-                hint(lp + " Stoch: P3", "Сглаживание %D" + slotNote);
-                hint(lp + " Stoch: long min", "Порог long (%K)" + slotNote);
-                hint(lp + " Stoch: short max", "Порог short (%K)" + slotNote);
-
-                hint(lp + " ATR: включить", "ATR" + slotNote);
-                hint(lp + " ATR: длина", "Период ATR" + slotNote);
-                hint(lp + " ATR: min grow % vs lookback", "Мин. рост ATR, %" + slotNote);
-                hint(lp + " ATR: grow lookback (candles)", "Lookback для роста ATR" + slotNote);
-
-                hint(lp + " LinReg: включить", "Linear regression channel" + slotNote);
-                hint(lp + " LinReg: длина", "Период LinReg" + slotNote);
-                hint(lp + " LinReg: отклонение", "Множитель отклонения канала" + slotNote);
-
-                hint(lp + " MACD: включить", "MACD" + slotNote);
-                hint(lp + " MACD: fast", "Быстрая EMA MACD" + slotNote);
-                hint(lp + " MACD: slow", "Медленная EMA MACD" + slotNote);
-                hint(lp + " MACD: signal", "Сигнальная линия MACD" + slotNote);
-
-                hint(
-                    lp + " Средний и последний профит (" + MetaIndicatorPnlSmaAbbrev + "): включить",
-                    MetaIndicatorPnlSmaAbbrev + slotNote + " Средний и последний профит в файле (pnlSmaAvg, pnlSmaLast).");
-                hint(lp + " " + MetaIndicatorPnlSmaAbbrev + ": длина", "Окно " + MetaIndicatorPnlSmaAbbrev + slotNote);
-                hint(
-                    lp + " Предыдущий индикатор. Расчёт объёма позиций",
-                    "Зарезервировано для расчёта объёма по предыдущему мета-индикатору" + slotNote);
-            }
-        }
-
-        #endregion
-
         #region Logic portfolio per slot + JSON snapshot export/import
 
         private sealed class MetaIndicatorValues
@@ -3100,6 +3580,7 @@ namespace OsEngine.Robots.Custom
             path = null;
             try
             {
+                string selectedPath = null;
                 RunOnUiThread(() =>
                 {
                     var dialog = new SaveFileDialog
@@ -3111,9 +3592,10 @@ namespace OsEngine.Robots.Custom
                     };
                     if (dialog.ShowDialog() == true)
                     {
-                        path = dialog.FileName;
+                        selectedPath = dialog.FileName;
                     }
                 });
+                path = selectedPath;
                 return !string.IsNullOrWhiteSpace(path);
             }
             catch (Exception ex)
@@ -3128,6 +3610,7 @@ namespace OsEngine.Robots.Custom
             path = null;
             try
             {
+                string selectedPath = null;
                 RunOnUiThread(() =>
                 {
                     var dialog = new OpenFileDialog
@@ -3137,9 +3620,10 @@ namespace OsEngine.Robots.Custom
                     };
                     if (dialog.ShowDialog() == true)
                     {
-                        path = dialog.FileName;
+                        selectedPath = dialog.FileName;
                     }
                 });
+                path = selectedPath;
                 return !string.IsNullOrWhiteSpace(path);
             }
             catch (Exception ex)
@@ -4093,31 +4577,7 @@ namespace OsEngine.Robots.Custom
 
         private MetaIndicatorConfig BuildLpMetaIndicatorConfig(int slot)
         {
-            if (slot < 1 || slot > LogicSlotCount)
-            {
-                return new MetaIndicatorConfig();
-            }
-
-            return new MetaIndicatorConfig
-            {
-                UseSma = _lpUseSma[slot].ValueBool,
-                SmaLen = _lpSmaLen[slot].ValueInt,
-                UseStoch = _lpUseStoch[slot].ValueBool,
-                StochP1 = _lpStochP1[slot].ValueInt,
-                StochP2 = _lpStochP2[slot].ValueInt,
-                StochP3 = _lpStochP3[slot].ValueInt,
-                UseAtr = _lpUseAtr[slot].ValueBool,
-                AtrLen = _lpAtrLen[slot].ValueInt,
-                UseLinReg = _lpUseLinReg[slot].ValueBool,
-                LinRegLen = _lpLinRegLen[slot].ValueInt,
-                LinRegDev = _lpLinRegDev[slot].ValueDecimal,
-                UseMacd = _lpUseMacd[slot].ValueBool,
-                MacdFastLen = _lpMacdFastLen[slot].ValueInt,
-                MacdSlowLen = _lpMacdSlowLen[slot].ValueInt,
-                MacdSignalLen = _lpMacdSignalLen[slot].ValueInt,
-                UsePnlSma = _lpUseAdjSma[slot].ValueBool,
-                PnlSmaLen = _lpAdjSmaLen[slot].ValueInt
-            };
+            return BuildAggregateMetaIndicatorConfig();
         }
 
         private MetaIndicatorConfig BuildAggregateMetaIndicatorConfig()
@@ -5312,25 +5772,32 @@ namespace OsEngine.Robots.Custom
             return false;
         }
 
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto, BestFitMapping = false)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetDiskFreeSpaceEx(
+            string lpDirectoryName,
+            out ulong lpFreeBytesAvailable,
+            out ulong lpTotalNumberOfBytes,
+            out ulong lpTotalNumberOfFreeBytes);
+
         private static bool TryGetFreeDiskBytesForEngine(out long freeBytes)
         {
             freeBytes = 0L;
             try
             {
                 string engineDirectory = Path.GetFullPath("Engine");
-                string root = Path.GetPathRoot(engineDirectory);
-                if (string.IsNullOrWhiteSpace(root))
+                if (!GetDiskFreeSpaceEx(
+                        engineDirectory,
+                        out ulong freeAvailable,
+                        out _,
+                        out _))
                 {
                     return false;
                 }
 
-                DriveInfo drive = new DriveInfo(root);
-                if (!drive.IsReady)
-                {
-                    return false;
-                }
-
-                freeBytes = drive.AvailableFreeSpace;
+                freeBytes = freeAvailable > (ulong)long.MaxValue
+                    ? long.MaxValue
+                    : (long)freeAvailable;
                 return freeBytes > 0L;
             }
             catch
@@ -8501,6 +8968,9 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("    портфели, открытые позиции); файл выбираете сами.");
             sb.AppendLine("  «Загрузить настройки и результаты» — подставить всё из JSON (биржевые заявки");
             sb.AppendLine("    по позициям не выставляются).");
+            sb.AppendLine("  Справочный % годовых (внизу вкладки): «Заполнить начальную сумму и дату портфеля»");
+            sb.AppendLine("    — текущий реальный портфель (лайв/тестер) и дата; далее в конце каждой свечи");
+            sb.AppendLine("    пересчёт линейного % и % с капитализацией (не сумма L1…L10).");
             sb.AppendLine();
             sb.AppendLine("Контроль ресурсов ПК (только предупреждение в лог, торговлю не блокирует):");
             sb.AppendLine("  Сравнивается свободная RAM и место на диске (каталог Engine\\) с оценкой нагрузки:");
@@ -8514,16 +8984,16 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  уменьшите число активных логик, вкладок скринера или объём истории портфелей.");
             sb.AppendLine();
             sb.AppendLine("Вкладка «Металогики» (сразу после «Логики»):");
-            sb.AppendLine("  «Металогика включена» + кнопка «Включить металогику» — вверху вкладки.");
+            sb.AppendLine("  Вверху — «Металогика включена», кнопка «Включить металогику», PnlSMA (вкл. и длина);");
+            sb.AppendLine("  под PnlSMA — разделитель; ниже — справочные SMA, Stoch, ATR, LinReg, MACD (запись в файлы).");
             sb.AppendLine("  Если металогика включена: Volume на входе делится только между логиками с Op");
             sb.AppendLine("  пропорционально |PnlSMA| (по портфелю логики); знак PnlSMA переворачивает Buy/Sell.");
             sb.AppendLine("  Сумма объёмов новых входов на свече не превышает Volume (первая вкладка).");
             sb.AppendLine("  Max positions: при нехватке слотов — приоритет логик с большим PnlSMA.");
             sb.AppendLine("  Если металогика выключена — как раньше: каждая логика отдельно, Volume поровну, L1…L10.");
-            sb.AppendLine("  Общепортфельные SMA, Stoch, ATR, LinReg, MACD — параметры расчёта по кривым");
-            sb.AppendLine("  equity логик L1…L10. У каждого индикатора переключатель «…: включить».");
-            sb.AppendLine("  Отдельно для каждой логики: «ЛП1 Stoch», «ЛП2 SMA», … «ЛП10 MACD» — свои");
-            sb.AppendLine("  включить и параметры по кривой портфеля только этой логики (L1 = ЛП1, …).");
+            sb.AppendLine("  Общепортфельные SMA, Stoch, ATR, LinReg, MACD, PnlSMA — один набор параметров;");
+            sb.AppendLine("  расчёт по кривой equity каждой логики L1…L10 и по сумме (файлы _LogicPortfolio_Ln, _MetaAggregate).");
+            sb.AppendLine("  Отдельных «ЛП1…ЛП10» в параметрах нет — настройки общие для всех портфельных серий.");
             sb.AppendLine("  При включённом мета-индикаторе робот считает его по серии equity портфеля");
             sb.AppendLine("  (если на вкладке графика нет соответствующего индикатора) и пишет значения в файл");
             sb.AppendLine("  портфеля (v2, поле meta) и Engine\\{имя}_MetaAggregate.txt для общепортфельных.");
