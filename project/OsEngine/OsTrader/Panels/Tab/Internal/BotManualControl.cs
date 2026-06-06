@@ -9,9 +9,11 @@ using OsEngine.Logging;
 using OsEngine.Market;
 using OsEngine.Market.Servers;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OsEngine.OsTrader.Panels.Tab.Internal
@@ -37,6 +39,9 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
         private static string _tabsAddLocker = "tabsLocker";
 
         private static string _activatorLocker = "activatorLocker";
+
+        private static readonly ConcurrentDictionary<string, object> SaveFileLocks =
+            new ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Activate stream to view deals
@@ -236,37 +241,58 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
                     Directory.CreateDirectory(dir);
                 }
 
-                using (StreamWriter writer = new StreamWriter(path, false))
+                object fileLock = SaveFileLocks.GetOrAdd(path, _ => new object());
+                lock (fileLock)
                 {
-                    CultureInfo myCultureInfo = new CultureInfo("ru-RU");
-                    writer.WriteLine(StopIsOn);
-                    writer.WriteLine(StopDistance.ToString(myCultureInfo));
-                    writer.WriteLine(StopSlippage.ToString(myCultureInfo));
-                    writer.WriteLine(ProfitIsOn.ToString(myCultureInfo));
-                    writer.WriteLine(ProfitDistance.ToString(myCultureInfo));
-                    writer.WriteLine(ProfitSlippage.ToString(myCultureInfo));
-                    writer.WriteLine(SecondToOpen.ToString());
-                    writer.WriteLine(SecondToClose.ToString());
-
-                    writer.WriteLine(DoubleExitIsOn);
-
-                    writer.WriteLine(SecondToOpenIsOn);
-                    writer.WriteLine(SecondToCloseIsOn);
-
-                    writer.WriteLine(SetbackToOpenIsOn);
-                    writer.WriteLine(SetbackToOpenPosition);
-                    writer.WriteLine(SetbackToCloseIsOn);
-                    writer.WriteLine(SetbackToClosePosition);
-                    writer.WriteLine(DoubleExitSlippage);
-                    writer.WriteLine(TypeDoubleExitOrder);
-                    writer.WriteLine(ValuesType);
-                    writer.WriteLine(OrderTypeTime);
-                    writer.WriteLine(LimitsMakerOnly);
+                    const int maxAttempts = 6;
+                    for (int attempt = 0; attempt < maxAttempts; attempt++)
+                    {
+                        try
+                        {
+                            WriteStrategSettingsFile(path);
+                            return;
+                        }
+                        catch (IOException) when (attempt < maxAttempts - 1)
+                        {
+                            Thread.Sleep(40 * (attempt + 1));
+                        }
+                    }
                 }
             }
             catch (Exception error)
             {
                 SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void WriteStrategSettingsFile(string path)
+        {
+            using (StreamWriter writer = new StreamWriter(path, false))
+            {
+                CultureInfo myCultureInfo = new CultureInfo("ru-RU");
+                writer.WriteLine(StopIsOn);
+                writer.WriteLine(StopDistance.ToString(myCultureInfo));
+                writer.WriteLine(StopSlippage.ToString(myCultureInfo));
+                writer.WriteLine(ProfitIsOn.ToString(myCultureInfo));
+                writer.WriteLine(ProfitDistance.ToString(myCultureInfo));
+                writer.WriteLine(ProfitSlippage.ToString(myCultureInfo));
+                writer.WriteLine(SecondToOpen.ToString());
+                writer.WriteLine(SecondToClose.ToString());
+
+                writer.WriteLine(DoubleExitIsOn);
+
+                writer.WriteLine(SecondToOpenIsOn);
+                writer.WriteLine(SecondToCloseIsOn);
+
+                writer.WriteLine(SetbackToOpenIsOn);
+                writer.WriteLine(SetbackToOpenPosition);
+                writer.WriteLine(SetbackToCloseIsOn);
+                writer.WriteLine(SetbackToClosePosition);
+                writer.WriteLine(DoubleExitSlippage);
+                writer.WriteLine(TypeDoubleExitOrder);
+                writer.WriteLine(ValuesType);
+                writer.WriteLine(OrderTypeTime);
+                writer.WriteLine(LimitsMakerOnly);
             }
         }
 

@@ -1,18 +1,17 @@
 /*
- * Trend Multi-Indicator Portfolio — standalone chart indicator (signal logic aligned with TrendMultiIndicatorScreener).
- * Not wired into the screener robot; add manually from Custom indicators on a tab chart.
+ * Trend Multi-Indicator Portfolio LS — Long/Short split (no И-groups).
+ * All enabled filters participate in one AND: bull = all bull passes, bear = all bear passes.
  *
- * Built-in filters: SMA, RSI, Stochastic, Momentum, Bollinger, LinReg, Volume, VWAP, ATR, MACD, ZigZag.
- * One portfolio series per |И-группа|: AND inside group, minus = NOT in group string.
- * Each bull/bear signal: entry (stack units); opposite signal exits one unit only if position exists.
- *
- * ZigZag: uptrend = last swing is a low after the last high (long); downtrend = high after low (short).
+ * Output series:
+ *  1) Portfolio Long   — synthetic P&amp;L from long signals only
+ *  2) SMA Portfolio Long — SMA of series 1
+ *  3) Portfolio Short  — synthetic P&amp;L from short signals only
+ *  4) SMA Portfolio Short — SMA of series 3
  */
 
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Globalization;
 using System.Linq;
 using OsEngine.Entity;
 
@@ -20,8 +19,8 @@ namespace OsEngine.Indicators
 {
     // One-arg [Indicator] only: script compiler uses OsEngine.dll; second arg needs rebuilt OsEngine.
     // Until rebuild: select area "Second" in the chart indicator dialog (right column).
-    [Indicator("TrendMultiIndicatorPortfolio_indicator")]
-    public class TrendMultiIndicatorPortfolio_indicator : Aindicator
+    [Indicator("TrendMultiIndicatorPortfolio_indicator_LS")]
+    public class TrendMultiIndicatorPortfolio_indicator_LS : Aindicator
     {
         private const string ChartAreaName = "Second";
         private const string VwapIndicatorType = "VWAP";
@@ -38,8 +37,6 @@ namespace OsEngine.Indicators
         private IndicatorParameterBool _useAtr;
         private IndicatorParameterBool _useMacd;
         private IndicatorParameterBool _useZigZag;
-        private IndicatorParameterBool _invertEntryLogicLong;
-        private IndicatorParameterBool _invertEntryLogicShort;
 
         // --- lengths / thresholds (same defaults as TrendMultiIndicatorScreener) ---
         private IndicatorParameterInt _smaLen;
@@ -69,19 +66,7 @@ namespace OsEngine.Indicators
         private IndicatorParameterInt _macdSlowLen;
         private IndicatorParameterInt _macdSignalLen;
         private IndicatorParameterInt _zigZagLen;
-
-        // --- И-группы (по умолчанию у каждого индикатора свой номер) ---
-        private IndicatorParameterString _smaAndGroup;
-        private IndicatorParameterString _rsiAndGroup;
-        private IndicatorParameterString _stochAndGroup;
-        private IndicatorParameterString _momAndGroup;
-        private IndicatorParameterString _bollAndGroup;
-        private IndicatorParameterString _linRegAndGroup;
-        private IndicatorParameterString _volumeAndGroup;
-        private IndicatorParameterString _vwapAndGroup;
-        private IndicatorParameterString _atrAndGroup;
-        private IndicatorParameterString _macdAndGroup;
-        private IndicatorParameterString _zigZagAndGroup;
+        private IndicatorParameterInt _portfolioSmaLen;
 
         // --- embedded indicators ---
         private Aindicator _sma;
@@ -99,23 +84,18 @@ namespace OsEngine.Indicators
         private const int ZigZagSeriesHighsIndex = 2;
         private const int ZigZagSeriesLowsIndex = 3;
 
-        private readonly List<int> _groupIds = new List<int>();
-        private readonly Dictionary<int, IndicatorDataSeries> _portfolioSeriesByGroup = new Dictionary<int, IndicatorDataSeries>();
-        private readonly Dictionary<int, GroupPortfolioState> _groupStates = new Dictionary<int, GroupPortfolioState>();
+        private IndicatorDataSeries _portfolioLongSeries;
+        private IndicatorDataSeries _smaPortfolioLongSeries;
+        private IndicatorDataSeries _portfolioShortSeries;
+        private IndicatorDataSeries _smaPortfolioShortSeries;
 
-        private static readonly Color[] GroupSeriesColors =
-        {
-            Color.DodgerBlue, Color.Orange, Color.MediumSeaGreen, Color.MediumVioletRed,
-            Color.Goldenrod, Color.Teal, Color.SlateBlue, Color.Chocolate,
-            Color.Crimson, Color.DarkCyan, Color.DarkOrange, Color.DimGray,
-            Color.DeepPink, Color.Olive, Color.Navy, Color.Maroon
-        };
+        private readonly SidePortfolioState _longState = new SidePortfolioState();
+        private readonly SidePortfolioState _shortState = new SidePortfolioState();
 
-        private sealed class GroupPortfolioState
+        private sealed class SidePortfolioState
         {
             public decimal Portfolio;
-            public int LongUnits;
-            public int ShortUnits;
+            public int Units;
         }
 
         public override void OnStateChange(IndicatorState state)
@@ -126,9 +106,6 @@ namespace OsEngine.Indicators
             }
 
             NameArea = ChartAreaName;
-
-            _invertEntryLogicLong = CreateParameterBool("Инверсия логики long", false);
-            _invertEntryLogicShort = CreateParameterBool("Инверсия логики short", false);
 
             _useSma = CreateParameterBool("Use SMA", true);
             _useRsi = CreateParameterBool("Use RSI", false);
@@ -169,21 +146,37 @@ namespace OsEngine.Indicators
             _macdSlowLen = CreateParameterInt("MACD slow length", 26);
             _macdSignalLen = CreateParameterInt("MACD signal length", 9);
             _zigZagLen = CreateParameterInt("ZigZag length", 14);
+            _portfolioSmaLen = CreateParameterInt("Portfolio SMA length", 20);
 
-            _smaAndGroup = CreateParameterString("SMA: № И-группы (через запятую)", "1");
-            _rsiAndGroup = CreateParameterString("RSI: № И-группы (через запятую)", "2");
-            _stochAndGroup = CreateParameterString("Stochastic: № И-группы (через запятую)", "3");
-            _momAndGroup = CreateParameterString("Momentum: № И-группы (через запятую)", "4");
-            _bollAndGroup = CreateParameterString("Bollinger: № И-группы (через запятую)", "5");
-            _linRegAndGroup = CreateParameterString("LinReg: № И-группы (через запятую)", "6");
-            _volumeAndGroup = CreateParameterString("Volume ind.: № И-группы (через запятую)", "7");
-            _vwapAndGroup = CreateParameterString("VWAP: № И-группы (через запятую)", "8");
-            _atrAndGroup = CreateParameterString("ATR: № И-группы (через запятую)", "9");
-            _macdAndGroup = CreateParameterString("MACD: № И-группы (через запятую)", "10");
-            _zigZagAndGroup = CreateParameterString("ZigZag: № И-группы (через запятую)", "11");
+            _portfolioLongSeries = CreateSeries(
+                "Portfolio Long",
+                Color.DodgerBlue,
+                IndicatorChartPaintType.Line,
+                true);
+            _portfolioLongSeries.CanReBuildHistoricalValues = true;
+
+            _smaPortfolioLongSeries = CreateSeries(
+                "SMA Portfolio Long",
+                Color.DeepSkyBlue,
+                IndicatorChartPaintType.Line,
+                true);
+            _smaPortfolioLongSeries.CanReBuildHistoricalValues = true;
+
+            _portfolioShortSeries = CreateSeries(
+                "Portfolio Short",
+                Color.OrangeRed,
+                IndicatorChartPaintType.Line,
+                true);
+            _portfolioShortSeries.CanReBuildHistoricalValues = true;
+
+            _smaPortfolioShortSeries = CreateSeries(
+                "SMA Portfolio Short",
+                Color.Gold,
+                IndicatorChartPaintType.Line,
+                true);
+            _smaPortfolioShortSeries.CanReBuildHistoricalValues = true;
 
             CreateEmbeddedIndicators();
-            RebuildGroupSeries();
         }
 
         private void CreateEmbeddedIndicators()
@@ -283,112 +276,6 @@ namespace OsEngine.Indicators
             }
         }
 
-        /// <summary>Пересборка серий портфеля после синхронизации параметров с роботом.</summary>
-        public void RebuildGroupSeriesFromRobot()
-        {
-            RebuildGroupSeries();
-        }
-
-        private void RebuildGroupSeries()
-        {
-            _groupIds.Clear();
-            _portfolioSeriesByGroup.Clear();
-            _groupStates.Clear();
-
-            SortedSet<int> ids = new SortedSet<int>();
-            if (_useSma.ValueBool)
-            {
-                CollectGroupIds(ids, _smaAndGroup);
-            }
-
-            if (_useRsi.ValueBool)
-            {
-                CollectGroupIds(ids, _rsiAndGroup);
-            }
-
-            if (_useStoch.ValueBool)
-            {
-                CollectGroupIds(ids, _stochAndGroup);
-            }
-
-            if (_useMomentum.ValueBool)
-            {
-                CollectGroupIds(ids, _momAndGroup);
-            }
-
-            if (_useBollinger.ValueBool)
-            {
-                CollectGroupIds(ids, _bollAndGroup);
-            }
-
-            if (_useLinReg.ValueBool)
-            {
-                CollectGroupIds(ids, _linRegAndGroup);
-            }
-
-            if (_useVolumeIndicator.ValueBool)
-            {
-                CollectGroupIds(ids, _volumeAndGroup);
-            }
-
-            if (_useVwap.ValueBool)
-            {
-                CollectGroupIds(ids, _vwapAndGroup);
-            }
-
-            if (_useAtr.ValueBool)
-            {
-                CollectGroupIds(ids, _atrAndGroup);
-            }
-
-            if (_useMacd.ValueBool)
-            {
-                CollectGroupIds(ids, _macdAndGroup);
-            }
-
-            if (_useZigZag.ValueBool)
-            {
-                CollectGroupIds(ids, _zigZagAndGroup);
-            }
-
-            if (ids.Count == 0)
-            {
-                ids.Add(1);
-            }
-
-            int colorIndex = 0;
-            foreach (int groupId in ids)
-            {
-                _groupIds.Add(groupId);
-                Color color = GroupSeriesColors[colorIndex % GroupSeriesColors.Length];
-                colorIndex++;
-
-                IndicatorDataSeries series = CreateSeries(
-                    "Портфель |" + groupId + "|",
-                    color,
-                    IndicatorChartPaintType.Line,
-                    true);
-                series.CanReBuildHistoricalValues = true;
-
-                _portfolioSeriesByGroup[groupId] = series;
-                _groupStates[groupId] = new GroupPortfolioState();
-            }
-        }
-
-        private static void CollectGroupIds(SortedSet<int> ids, IndicatorParameterString groupParam)
-        {
-            if (groupParam == null)
-            {
-                return;
-            }
-
-            List<int> parsed = ParseIndicatorGroupNumbers(groupParam.ValueString);
-            for (int i = 0; i < parsed.Count; i++)
-            {
-                ids.Add(Math.Abs(parsed[i]));
-            }
-        }
-
         public override void OnProcess(List<Candle> candles, int index)
         {
             if (candles == null || index < 0 || index >= candles.Count)
@@ -400,119 +287,141 @@ namespace OsEngine.Indicators
 
             if (index == 0)
             {
-                ResetAllGroupStates();
+                ResetSideStates();
             }
 
             decimal close = candles[index].Close;
 
-            for (int g = 0; g < _groupIds.Count; g++)
-            {
-                int groupId = _groupIds[g];
-                bool bull = IsBullSignalForGroup(candles, groupId, index);
-                bool bear = IsBearSignalForGroup(candles, groupId, index);
-                ApplyEntryExitSignalTransforms(ref bull, ref bear);
+            bool bull = IsBullSignal(candles, index);
+            bool bear = IsBearSignal(candles, index);
 
-                GroupPortfolioState state = _groupStates[groupId];
-                ApplyTrendLogic(state, bull, bear, close);
-                _portfolioSeriesByGroup[groupId].Values[index] = state.Portfolio;
-            }
+            ApplyLongPortfolioLogic(_longState, bull, bear, close);
+            ApplyShortPortfolioLogic(_shortState, bull, bear, close);
+
+            _portfolioLongSeries.Values[index] = _longState.Portfolio;
+            _portfolioShortSeries.Values[index] = _shortState.Portfolio;
+            _smaPortfolioLongSeries.Values[index] = ComputeSmaOfSeries(_portfolioLongSeries, index, _portfolioSmaLen.ValueInt);
+            _smaPortfolioShortSeries.Values[index] = ComputeSmaOfSeries(_portfolioShortSeries, index, _portfolioSmaLen.ValueInt);
         }
 
         private void EnsureSeriesLength(int index)
         {
-            foreach (int groupId in _groupIds)
-            {
-                IndicatorDataSeries series = _portfolioSeriesByGroup[groupId];
-                while (series.Values.Count <= index)
-                {
-                    series.Values.Add(0m);
-                }
-            }
+            EnsureOneSeriesLength(_portfolioLongSeries, index);
+            EnsureOneSeriesLength(_smaPortfolioLongSeries, index);
+            EnsureOneSeriesLength(_portfolioShortSeries, index);
+            EnsureOneSeriesLength(_smaPortfolioShortSeries, index);
         }
 
-        private void ResetAllGroupStates()
+        private static void EnsureOneSeriesLength(IndicatorDataSeries series, int index)
         {
-            foreach (int groupId in _groupIds)
+            if (series?.Values == null)
             {
-                GroupPortfolioState state = _groupStates[groupId];
-                state.Portfolio = 0m;
-                state.LongUnits = 0;
-                state.ShortUnits = 0;
+                return;
+            }
+
+            while (series.Values.Count <= index)
+            {
+                series.Values.Add(0m);
             }
         }
 
-        /// <summary>
-        /// Вход по каждому сигналу (можно наращивать «штуки»). Выход противоположным сигналом — только если есть что закрыть.
-        /// </summary>
-        private static void ApplyTrendLogic(GroupPortfolioState state, bool bull, bool bear, decimal price)
+        private void ResetSideStates()
+        {
+            _longState.Portfolio = 0m;
+            _longState.Units = 0;
+            _shortState.Portfolio = 0m;
+            _shortState.Units = 0;
+        }
+
+        /// <summary>Long-портфель: bull открывает/наращивает long, bear закрывает long-юниты.</summary>
+        private static void ApplyLongPortfolioLogic(SidePortfolioState state, bool bull, bool bear, decimal price)
         {
             if (price <= 0m)
             {
                 return;
             }
 
-            if (bear)
+            if (bear && state.Units > 0)
             {
-                if (state.LongUnits > 0)
-                {
-                    state.Portfolio += price;
-                    state.LongUnits--;
-                }
-
                 state.Portfolio += price;
-                state.ShortUnits++;
+                state.Units--;
             }
 
             if (bull)
             {
-                if (state.ShortUnits > 0)
-                {
-                    state.Portfolio -= price;
-                    state.ShortUnits--;
-                }
-
                 state.Portfolio -= price;
-                state.LongUnits++;
+                state.Units++;
             }
         }
 
-        private void ApplyEntryExitSignalTransforms(ref bool bull, ref bool bear)
+        /// <summary>Short-портфель: bear открывает/наращивает short, bull закрывает short-юниты.</summary>
+        private static void ApplyShortPortfolioLogic(SidePortfolioState state, bool bull, bool bear, decimal price)
         {
-            bool rawBull = bull;
-            bool rawBear = bear;
-            bool invertLong = _invertEntryLogicLong != null && _invertEntryLogicLong.ValueBool;
-            bool invertShort = _invertEntryLogicShort != null && _invertEntryLogicShort.ValueBool;
-
-            if (!invertLong && !invertShort)
+            if (price <= 0m)
             {
                 return;
             }
 
-            bull = (rawBull && !invertLong) || (rawBear && invertShort);
-            bear = (rawBear && !invertShort) || (rawBull && invertLong);
+            if (bull && state.Units > 0)
+            {
+                state.Portfolio -= price;
+                state.Units--;
+            }
+
+            if (bear)
+            {
+                state.Portfolio += price;
+                state.Units++;
+            }
         }
 
-        private bool IsBullSignalForGroup(List<Candle> candles, int groupId, int candleIndex)
+        private static decimal ComputeSmaOfSeries(IndicatorDataSeries series, int index, int period)
         {
-            var items = new List<(int group, bool pass)>();
-            AddGroupedIndicatorResultForGroup(items, groupId, _smaAndGroup, BullSmaPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _rsiAndGroup, BullRsiPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _stochAndGroup, BullStochPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _momAndGroup, BullMomentumPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _bollAndGroup, BullBollingerPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _linRegAndGroup, BullLinRegPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _volumeAndGroup, BullVolumePasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _vwapAndGroup, BullVwapPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _atrAndGroup, BullAtrPasses(candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _macdAndGroup, BullMacdPasses(candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _zigZagAndGroup, BullZigZagPasses(candleIndex));
+            if (series?.Values == null || index < 0)
+            {
+                return 0m;
+            }
 
-            if (items.Count == 0)
+            int len = Math.Max(1, period);
+            int start = Math.Max(0, index - len + 1);
+            decimal sum = 0m;
+            int count = 0;
+
+            for (int i = start; i <= index; i++)
+            {
+                if (i >= series.Values.Count)
+                {
+                    break;
+                }
+
+                sum += series.Values[i];
+                count++;
+            }
+
+            return count > 0 ? sum / count : 0m;
+        }
+
+        private bool IsBullSignal(List<Candle> candles, int candleIndex)
+        {
+            var passes = new List<bool>();
+            AddEnabledIndicatorPass(passes, BullSmaPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullRsiPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullStochPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullMomentumPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullBollingerPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullLinRegPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullVolumePasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullVwapPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BullAtrPasses(candleIndex));
+            AddEnabledIndicatorPass(passes, BullMacdPasses(candleIndex));
+            AddEnabledIndicatorPass(passes, BullZigZagPasses(candleIndex));
+
+            if (passes.Count == 0)
             {
                 return false;
             }
 
-            if (!items.All(x => x.pass))
+            if (!passes.All(x => x))
             {
                 return false;
             }
@@ -520,27 +429,27 @@ namespace OsEngine.Indicators
             return !VolumeTodFilterBlocksSignal(candles, candleIndex);
         }
 
-        private bool IsBearSignalForGroup(List<Candle> candles, int groupId, int candleIndex)
+        private bool IsBearSignal(List<Candle> candles, int candleIndex)
         {
-            var items = new List<(int group, bool pass)>();
-            AddGroupedIndicatorResultForGroup(items, groupId, _smaAndGroup, BearSmaPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _rsiAndGroup, BearRsiPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _stochAndGroup, BearStochPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _momAndGroup, BearMomentumPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _bollAndGroup, BearBollingerPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _linRegAndGroup, BearLinRegPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _volumeAndGroup, BearVolumePasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _vwapAndGroup, BearVwapPasses(candles, candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _atrAndGroup, BearAtrPasses(candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _macdAndGroup, BearMacdPasses(candleIndex));
-            AddGroupedIndicatorResultForGroup(items, groupId, _zigZagAndGroup, BearZigZagPasses(candleIndex));
+            var passes = new List<bool>();
+            AddEnabledIndicatorPass(passes, BearSmaPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearRsiPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearStochPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearMomentumPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearBollingerPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearLinRegPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearVolumePasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearVwapPasses(candles, candleIndex));
+            AddEnabledIndicatorPass(passes, BearAtrPasses(candleIndex));
+            AddEnabledIndicatorPass(passes, BearMacdPasses(candleIndex));
+            AddEnabledIndicatorPass(passes, BearZigZagPasses(candleIndex));
 
-            if (items.Count == 0)
+            if (passes.Count == 0)
             {
                 return false;
             }
 
-            if (!items.All(x => x.pass))
+            if (!passes.All(x => x))
             {
                 return false;
             }
@@ -548,77 +457,14 @@ namespace OsEngine.Indicators
             return !VolumeTodFilterBlocksSignal(candles, candleIndex);
         }
 
-        private static void AddGroupedIndicatorResultForGroup(
-            List<(int group, bool pass)> items,
-            int targetGroupId,
-            IndicatorParameterString groupParam,
-            bool? passResult)
+        private static void AddEnabledIndicatorPass(List<bool> passes, bool? passResult)
         {
-            if (!passResult.HasValue || groupParam == null)
+            if (!passResult.HasValue)
             {
                 return;
             }
 
-            List<int> groupNumbers = ParseIndicatorGroupNumbers(groupParam.ValueString);
-            bool pass = passResult.Value;
-
-            for (int i = 0; i < groupNumbers.Count; i++)
-            {
-                int raw = groupNumbers[i];
-                int groupKey = Math.Abs(raw);
-                if (groupKey != targetGroupId)
-                {
-                    continue;
-                }
-
-                bool groupPass = pass;
-                if (raw < 0)
-                {
-                    groupPass = !groupPass;
-                }
-
-                items.Add((groupKey, groupPass));
-            }
-        }
-
-        private static List<int> ParseIndicatorGroupNumbers(string raw)
-        {
-            List<int> result = new List<int>();
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                result.Add(1);
-                return result;
-            }
-
-            string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
-            {
-                string part = parts[i].Trim();
-                if (part.Length == 0)
-                {
-                    continue;
-                }
-
-                if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)
-                    && !int.TryParse(part, NumberStyles.Integer, CultureInfo.CurrentCulture, out value))
-                {
-                    continue;
-                }
-
-                if (value == 0)
-                {
-                    value = 1;
-                }
-
-                result.Add(value);
-            }
-
-            if (result.Count == 0)
-            {
-                result.Add(1);
-            }
-
-            return result;
+            passes.Add(passResult.Value);
         }
 
         private static decimal SeriesValueAt(Aindicator indicator, int seriesIndex, int candleIndex)

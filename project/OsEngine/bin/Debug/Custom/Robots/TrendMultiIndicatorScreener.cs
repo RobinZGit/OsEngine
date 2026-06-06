@@ -45,9 +45,7 @@ Screener trend robot using multiple indicators simultaneously:
 - Volume TOD (опционально): объём vs среднее в то же время прошлых торговых дней (intraday)
 - VWAP (close выше/ниже линии; сброс по календарному дню)
 - MACD (линия MACD выше/ниже сигнальной; по умолчанию выкл.)
-- RZIgreensMinusReds, Average Profit Percent Long — в исходниках отключены (#if false), код не удалён.
 - ATR (фильтр роста волатильности: ATR вырос на % за lookback свечей)
-- DiscreteMidBestPair — в исходниках отключён (#if false в теле класса), код не удалён.
 
 Each indicator has an enable/disable parameter. Disabled indicators are not created on screener tabs.
 По умолчанию включён только SMA; остальные Use* — выкл.
@@ -88,9 +86,6 @@ namespace OsEngine.Robots.Custom
     /// </summary>
     public class TrendMultiIndicatorScreener : BotPanel
     {
-        // DiscreteMidBestPair, RZIgreensMinusReds, Average Profit Percent Long: связанный код в «#if false … #endif» (не удалён).
-        // Чтобы снова включить индикатор — замените false на true во всех таких директивах в этом файле.
-
         private const int NumSma = 1;
         private const int NumRsi = 2;
         private const int NumStoch = 3;
@@ -99,16 +94,6 @@ namespace OsEngine.Robots.Custom
         private const int NumLinReg = 6;
         private const int NumVolumeIndicator = 9;
 
-#if false // RZIgreensMinusReds
-        private const int NumRzi = 7;
-#endif
-
-#if false // AverageProfitPercentLong
-        /// <summary>Как в атрибуте [Indicator("...")] у скрипта AverageProfitPercentLong.</summary>
-        private const string AverageProfitPercentLongIndicatorType = "Average Profit Percent Long";
-
-        private const int NumAverageProfitPercentLong = 10;
-#endif
 
         private const int NumVwap = 11;
         private const int NumAtr = 12;
@@ -121,12 +106,6 @@ namespace OsEngine.Robots.Custom
 
         private const string VwapIndicatorType = "VWAP";
 
-#if false // DiscreteMidBestPair: код сохранён, отключён (замените false на true для включения)
-        private const int NumDiscreteMidBestPair = 8;
-
-        /// <summary>Маркер входа для постановки SL/TP по дискретной сетке (см. TryPlaceDiscreteStopAndProfit).</summary>
-        private const string SignalOpenWithDiscreteSlTp = "TrendMultiDiscreteSlTp";
-#endif
 
         private const string AreaPrime = "Prime";
         private const string AreaSecond = "Second";
@@ -183,6 +162,15 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _usePortfolioPeakDrawdownStop;
         private StrategyParameterDecimal _portfolioPeakDrawdownPercent;
         private StrategyParameterDecimal _portfolioPeakValue;
+
+        // расчёты (целевые суммы портфеля)
+        private StrategyParameterDecimal _calculationsTargetAnnualPercent;
+        private StrategyParameterDecimal _calculationsInitialPortfolioAmount;
+        private StrategyParameterString _calculationsStartDate;
+        private StrategyParameterButton _calculationsCalculateButton;
+        private StrategyParameterDecimal _calculationsCurrentPortfolioAmount;
+        private StrategyParameterDecimal _calculationsAccumulatedTargetAmount;
+        private StrategyParameterDecimal _calculationsAccumulatedTargetWithCapitalization;
 
         private bool _portfolioPeakDirty;
         private DateTime _portfolioPeakLastSaveTime = DateTime.MinValue;
@@ -257,17 +245,8 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _useLinReg;
         private StrategyParameterBool _useVolumeIndicator;
         private StrategyParameterBool _useVwap;
-#if false // RZIgreensMinusReds
-        private StrategyParameterBool _useRzi;
-#endif
-#if false // AverageProfitPercentLong
-        private StrategyParameterBool _useAverageProfitPercentLong;
-#endif
         private StrategyParameterBool _useAtr;
         private StrategyParameterBool _useMacd;
-#if false // DiscreteMidBestPair
-        private StrategyParameterBool _useDiscreteMidBestPair;
-#endif
 
         // indicator params
         private StrategyParameterInt _smaLen;
@@ -297,19 +276,6 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _volumeTodPastDays;
         private StrategyParameterDecimal _volumeTodMinRelativeRatio;
 
-#if false // RZIgreensMinusReds
-        private StrategyParameterInt _rziLen;
-        private StrategyParameterInt _rziStep;
-        private StrategyParameterInt _rziSignalLevel;
-#endif
-
-#if false // AverageProfitPercentLong
-        private StrategyParameterInt _avgProfitPercentLongPeriod;
-        private StrategyParameterInt _avgProfitPercentLongPairs;
-        private StrategyParameterBool _avgProfitPercentLongAsPercent;
-        private StrategyParameterDecimal _avgProfitPercentLongBullMin;
-        private StrategyParameterDecimal _avgProfitPercentLongBearMax;
-#endif
 
         private StrategyParameterInt _atrLen;
         private StrategyParameterDecimal _atrGrowPercent;
@@ -362,18 +328,7 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _bollAndGroup;
         private StrategyParameterString _linRegAndGroup;
         private StrategyParameterString _volumeAndGroup;
-#if false // RZIgreensMinusReds
-        private StrategyParameterString _rziAndGroup;
-#endif
-#if false // AverageProfitPercentLong
-        private StrategyParameterString _avgProfitPercentLongAndGroup;
-#endif
 
-#if false // DiscreteMidBestPair
-        private StrategyParameterInt _discreteMidBestPairLevels;
-        private StrategyParameterInt _discreteEntryThreshold;
-        private StrategyParameterString _discreteAndGroup;
-#endif
 
         // Non-trade periods (AlgoStart pattern)
         private NonTradePeriods _tradePeriodsSettings;
@@ -606,6 +561,50 @@ namespace OsEngine.Robots.Custom
                 2,
                 profitCollectionTab);
 
+            const string calculationsTab = "Расчёты";
+            _calculationsTargetAnnualPercent = CreateParameter(
+                "Целевой процент годовых",
+                20m,
+                0m,
+                1000m,
+                0.1m,
+                calculationsTab);
+            _calculationsInitialPortfolioAmount = CreateParameter(
+                "Начальная сумма портфеля",
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                calculationsTab);
+            _calculationsStartDate = CreateParameter(
+                "Дата начала расчётов",
+                CalculationsStartDatePlaceholder,
+                calculationsTab);
+            _calculationsCalculateButton = CreateParameterButton("Рассчитать", calculationsTab);
+            _calculationsCalculateButton.UserClickOnButtonEvent += CalculationsCalculateButton_UserClickOnButtonEvent;
+            _calculationsCurrentPortfolioAmount = CreateParameter(
+                "Текущая сумма портфеля",
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                calculationsTab);
+            _calculationsAccumulatedTargetAmount = CreateParameter(
+                "Накопленная целевая сумма",
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                calculationsTab);
+            _calculationsAccumulatedTargetWithCapitalization = CreateParameter(
+                "Накопленная целевая сумма с капитализацией",
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                calculationsTab);
+            WireCalculationsTabButtons();
+
             const string moexFuturesTab = "MOEX фьючерсы";
             _moexFuturesTickerPrefixes = CreateParameter(
                 "Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
@@ -642,24 +641,15 @@ namespace OsEngine.Robots.Custom
             // toggles
             _useSma = CreateParameter("Use SMA", true);
             _useRsi = CreateParameter("Use RSI", false);
-            _useStoch = CreateParameter("Use Stochastic", false);
+            _useStoch = CreateParameter("Use Stochastic", true);
             _useMomentum = CreateParameter("Use Momentum", false);
             _useBollinger = CreateParameter("Use Bollinger", false);
-            _useLinReg = CreateParameter("Use Linear Regression", false);
+            _useLinReg = CreateParameter("Use Linear Regression", true);
             _useVolumeIndicator = CreateParameter("Use Volume indicator", false);
             _useVwap = CreateParameter("Use VWAP", false);
-#if false // RZIgreensMinusReds
-            _useRzi = CreateParameter("Use RZIgreensMinusReds", false);
-#endif
-#if false // AverageProfitPercentLong
-            _useAverageProfitPercentLong = CreateParameter("Use Average Profit Percent Long", false);
-#endif
-            _useAtr = CreateParameter("Use ATR", false);
-            _useMacd = CreateParameter("Use MACD", false);
+            _useAtr = CreateParameter("Use ATR", true);
+            _useMacd = CreateParameter("Use MACD", true);
 
-#if false // DiscreteMidBestPair
-            _useDiscreteMidBestPair = CreateParameter("Use DiscreteMidBestPair", false);
-#endif
 
             // SMA
             _smaLen = CreateParameter("SMA length", 100, 5, 300, 1);
@@ -701,21 +691,6 @@ namespace OsEngine.Robots.Custom
                 5m,
                 0.05m);
 
-#if false // RZIgreensMinusReds
-            // RZIgreensMinusReds (script Custom/Indicators/Scripts/RZIgreensMinusReds.cs)
-            _rziLen = CreateParameter("RZI lookback candles", 20, 5, 500, 1);
-            _rziStep = CreateParameter("RZI step in loop", 1, 1, 20, 1);
-            _rziSignalLevel = CreateParameter("RZI signal level (long if >N, short if <-N)", 3, 0, 200, 1);
-#endif
-
-#if false // AverageProfitPercentLong
-            // Average Profit Percent Long (Custom/Indicators/Scripts/AverageProfitPercentLong.cs)
-            _avgProfitPercentLongPeriod = CreateParameter("Avg Profit % Long period (candles)", 50, 2, 500, 1);
-            _avgProfitPercentLongPairs = CreateParameter("Avg Profit % Long random pairs", 100, 1, 2000, 1);
-            _avgProfitPercentLongAsPercent = CreateParameter("Avg Profit % Long: % from pair mid price", true);
-            _avgProfitPercentLongBullMin = CreateParameter("Avg Profit % Long long: value >", 0m, -1000000m, 1000000m, 0.0001m);
-            _avgProfitPercentLongBearMax = CreateParameter("Avg Profit % Long short: value <", 0m, -1000000m, 1000000m, 0.0001m);
-#endif
 
             _atrLen = CreateParameter("ATR length", 14, 2, 200, 1);
             _atrGrowPercent = CreateParameter("ATR min grow % vs lookback", 3m, 0m, 100m, 0.1m);
@@ -732,12 +707,6 @@ namespace OsEngine.Robots.Custom
             _bollAndGroup = CreateParameter("Bollinger: № И-группы (через запятую)", "1");
             _linRegAndGroup = CreateParameter("LinReg: № И-группы (через запятую)", "1");
             _volumeAndGroup = CreateParameter("Volume ind.: № И-группы (через запятую)", "1");
-#if false // RZIgreensMinusReds
-            _rziAndGroup = CreateParameter("RZI: № И-группы (через запятую)", "1");
-#endif
-#if false // AverageProfitPercentLong
-            _avgProfitPercentLongAndGroup = CreateParameter("Avg Profit % Long: № И-группы (через запятую)", "1");
-#endif
             _vwapAndGroup = CreateParameter("VWAP: № И-группы (через запятую)", "1");
             _atrAndGroup = CreateParameter("ATR: № И-группы (через запятую)", "1");
             _macdAndGroup = CreateParameter("MACD: № И-группы (через запятую)", "1");
@@ -745,12 +714,6 @@ namespace OsEngine.Robots.Custom
             _useRandomPriceShift = CreateParameter("Рандомный сдвиг цен", false);
             _randomPriceShiftPercent = CreateParameter("Рандомность движений, %", 0.1m, 0m, 50m, 0.01m);
 
-#if false // DiscreteMidBestPair
-            // DiscreteMidBestPair (Custom/Indicators/Scripts/DiscreteMidBestPair.cs)
-            _discreteMidBestPairLevels = CreateParameter("DiscreteMidBestPair levels", 32, 2, 256, 1);
-            _discreteEntryThreshold = CreateParameter("Порог входа дискретизации", 1, 0, 256, 1);
-            _discreteAndGroup = CreateParameter("DiscreteMidBestPair: № И-группы (через запятую)", "1");
-#endif
 
             RegisterParameterHints();
 
@@ -759,11 +722,7 @@ namespace OsEngine.Robots.Custom
             // create only enabled indicators
             SyncIndicators();
 
-#if false // DiscreteMidBestPair
-            Description = "Trend screener with SMA/RSI/Stoch/Momentum/Bollinger/LinReg/RZI/DiscreteMidBestPair, non-trade periods, volatility clusters.";
-#else
             Description = "Trend screener: SMA/RSI/Stoch/Momentum/Bollinger/LinReg/Volume/VWAP/ATR/MACD; И-группы по |№|, минус = NOT, ИЛИ между |№|; инверсия входа; non-trade periods, volatility clusters.";
-#endif
 
             DeleteEvent += TrendMultiIndicatorScreener_DeleteEvent;
 
@@ -825,6 +784,16 @@ namespace OsEngine.Robots.Custom
         private const string EnablePortfolioStopsAndRecoveryButtonName = "Включить стопы и возобновление";
         private const string DisablePortfolioStopsAndRecoveryButtonName = "Отключить стопы и восстановление";
 
+        private const string CalculationsCalculateButtonName = "Рассчитать";
+        private const string CalculationsStartDatePlaceholder = "01.01.2500";
+        private const string CalculationsTargetAnnualPercentParamName = "Целевой процент годовых";
+        private const string CalculationsInitialPortfolioAmountParamName = "Начальная сумма портфеля";
+        private const string CalculationsStartDateParamName = "Дата начала расчётов";
+        private const string CalculationsCurrentPortfolioAmountParamName = "Текущая сумма портфеля";
+        private const string CalculationsAccumulatedTargetAmountParamName = "Накопленная целевая сумма";
+        private const string CalculationsAccumulatedTargetWithCapitalizationParamName =
+            "Накопленная целевая сумма с капитализацией";
+
         private const string PortfolioStopLossEnableParamName = "Stop loss портфеля (просадка от базы)";
         private const string PortfolioTakeProfitEnableParamName = "Take profit портфеля (рост от базы)";
         private const string ResumeTradingWhenFakeExceedsBaselineParamName =
@@ -847,6 +816,21 @@ namespace OsEngine.Robots.Custom
 
         private void WireStopsTabButton(string buttonName, Action handler)
         {
+            WireParameterTabButton(buttonName, handler);
+        }
+
+        /// <summary>
+        /// Подписка на кнопки вкладки «Расчёты».
+        /// </summary>
+        private void WireCalculationsTabButtons()
+        {
+            WireParameterTabButton(
+                CalculationsCalculateButtonName,
+                CalculationsCalculateButton_UserClickOnButtonEvent);
+        }
+
+        private void WireParameterTabButton(string buttonName, Action handler)
+        {
             if (Parameters == null || string.IsNullOrEmpty(buttonName) || handler == null)
             {
                 return;
@@ -863,6 +847,145 @@ namespace OsEngine.Robots.Custom
                 button.UserClickOnButtonEvent -= handler;
                 button.UserClickOnButtonEvent += handler;
             }
+        }
+
+        private void CalculationsCalculateButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                TryApplyCalculations(CalculationsCalculateButtonName, logButtonPress: true);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Кнопка «Рассчитать»: текущий портфель и целевые суммы от начальной суммы, даты и % годовых.
+        /// </summary>
+        private bool TryApplyCalculations(string invokedByButtonName, bool logButtonPress)
+        {
+            if (logButtonPress && !string.IsNullOrWhiteSpace(invokedByButtonName))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Расчёты: нажата «" + invokedByButtonName + "»…",
+                    LogMessageType.User);
+            }
+
+            decimal initialAmount = _calculationsInitialPortfolioAmount?.ValueDecimal ?? 0m;
+            BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+            DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
+
+            if (initialAmount <= 0m
+                || !TryParseCalculationsStartDate(tab, referenceTime, out DateTime startDate))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Расчёты: заполните начальную сумму портфеля (> 0) и дату начала расчётов "
+                    + "(формат dd.MM.yyyy, не "
+                    + CalculationsStartDatePlaceholder
+                    + ").",
+                    LogMessageType.Error);
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Расчёты: заполните начальную сумму портфеля (> 0) и дату начала расчётов "
+                    + "(формат dd.MM.yyyy, не "
+                    + CalculationsStartDatePlaceholder
+                    + ").",
+                    LogMessageType.User);
+                return false;
+            }
+
+            DateTime endDate = GetCalendarDateForTimeOnly(tab, referenceTime);
+            double elapsedDays = Math.Max(0d, (endDate - startDate).TotalDays);
+            double elapsedYears = elapsedDays / 365d;
+
+            decimal annualPercent = _calculationsTargetAnnualPercent?.ValueDecimal ?? 0m;
+            decimal rateFraction = annualPercent / 100m;
+            decimal targetSimple = initialAmount * (1m + rateFraction * (decimal)elapsedYears);
+            double compoundFactor = Math.Pow(1d + (double)rateFraction, elapsedYears);
+            decimal targetWithCapitalization = initialAmount * (decimal)compoundFactor;
+
+            targetSimple = Math.Round(targetSimple, 2, MidpointRounding.AwayFromZero);
+            targetWithCapitalization = Math.Round(targetWithCapitalization, 2, MidpointRounding.AwayFromZero);
+
+            decimal? currentPortfolio = TryGetPortfolioValueForStopsBaselineFill(tab);
+            decimal currentAmount = currentPortfolio ?? 0m;
+            currentAmount = Math.Round(currentAmount, 2, MidpointRounding.AwayFromZero);
+
+            SetStrategyParameterDecimalValue(_calculationsCurrentPortfolioAmount, currentAmount, silent: false);
+            SetStrategyParameterDecimalValue(_calculationsAccumulatedTargetAmount, targetSimple, silent: false);
+            SetStrategyParameterDecimalValue(
+                _calculationsAccumulatedTargetWithCapitalization,
+                targetWithCapitalization,
+                silent: false);
+
+            SaveParametersIgnoringRecentLoadCooldown();
+            RequestParameterGuiRepaintOnce();
+
+            string msg =
+                NameStrategyUniq
+                + " | Расчёты: «"
+                + (string.IsNullOrWhiteSpace(invokedByButtonName)
+                    ? CalculationsCalculateButtonName
+                    : invokedByButtonName)
+                + "» — начало "
+                + FormatPortfolioStopDate(startDate)
+                + ", текущая дата "
+                + FormatPortfolioStopDate(endDate)
+                + ", дней "
+                + elapsedDays.ToString("0", CultureInfo.InvariantCulture)
+                + ", % годовых "
+                + annualPercent.ToString(CultureInfo.InvariantCulture)
+                + ", текущий портфель "
+                + currentAmount.ToString(CultureInfo.InvariantCulture)
+                + ", цель "
+                + targetSimple.ToString(CultureInfo.InvariantCulture)
+                + ", цель с капитализацией "
+                + targetWithCapitalization.ToString(CultureInfo.InvariantCulture)
+                + ".";
+
+            if (!currentPortfolio.HasValue || currentPortfolio.Value <= 0m)
+            {
+                string modeHint = ShouldReadPortfolioFromTesterServer(tab)
+                    ? "тестер (Portfolio сервера тестера: Initial deposit / начальный депозит > 0)"
+                    : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
+                msg += " Текущая сумма портфеля не получена (" + modeHint + ").";
+            }
+
+            SendNewLogMessage(msg, LogMessageType.System);
+            SendNewLogMessage(msg, LogMessageType.User);
+            return true;
+        }
+
+        private bool TryParseCalculationsStartDate(BotTabSimple tab, DateTime candleTime, out DateTime parsedDate)
+        {
+            parsedDate = DateTime.MinValue;
+            if (_calculationsStartDate == null
+                || string.IsNullOrWhiteSpace(_calculationsStartDate.ValueString))
+            {
+                return false;
+            }
+
+            string raw = _calculationsStartDate.ValueString.Trim();
+            if (string.Equals(raw, CalculationsStartDatePlaceholder, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!TryParseFlexibleDateTime(tab, candleTime, raw, out DateTime parsed))
+            {
+                return false;
+            }
+
+            parsedDate = parsed.Date;
+            if (parsedDate.Year >= 2500)
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private void EnablePortfolioStopsAndRecoveryButton_UserClickOnButtonEvent()
@@ -6136,6 +6259,7 @@ namespace OsEngine.Robots.Custom
         private void TrendMultiIndicatorScreener_ParametrsChangeByUser()
         {
             WireStopsTabButtons();
+            WireCalculationsTabButtons();
             RegisterParameterHints();
             if (ParamGuiIsOpen)
             {
@@ -6165,14 +6289,14 @@ namespace OsEngine.Robots.Custom
         {
             _useSma.ValueBool = true;
             _useRsi.ValueBool = false;
-            _useStoch.ValueBool = false;
+            _useStoch.ValueBool = true;
             _useMomentum.ValueBool = false;
             _useBollinger.ValueBool = false;
-            _useLinReg.ValueBool = false;
+            _useLinReg.ValueBool = true;
             _useVolumeIndicator.ValueBool = false;
             _useVwap.ValueBool = false;
-            _useAtr.ValueBool = false;
-            _useMacd.ValueBool = false;
+            _useAtr.ValueBool = true;
+            _useMacd.ValueBool = true;
 
             _smaLen.ValueInt = 100;
             _rsiLen.ValueInt = 14;
@@ -7662,19 +7786,6 @@ namespace OsEngine.Robots.Custom
                 AreaPrime,
                 _useLinReg.ValueBool);
 
-#if false // RZIgreensMinusReds
-            EnsureIndicator(
-                NumRzi,
-                "RZIgreensMinusReds",
-                new List<string>
-                {
-                    _rziLen.ValueInt.ToString(),
-                    _rziStep.ValueInt.ToString(),
-                    "Close"
-                },
-                AreaSecond,
-                _useRzi.ValueBool);
-#endif
 
             EnsureIndicator(
                 NumVolumeIndicator,
@@ -7683,19 +7794,6 @@ namespace OsEngine.Robots.Custom
                 AreaSecond,
                 _useVolumeIndicator.ValueBool);
 
-#if false // AverageProfitPercentLong
-            EnsureIndicator(
-                NumAverageProfitPercentLong,
-                AverageProfitPercentLongIndicatorType,
-                new List<string>
-                {
-                    _avgProfitPercentLongPeriod.ValueInt.ToString(),
-                    _avgProfitPercentLongPairs.ValueInt.ToString(),
-                    _avgProfitPercentLongAsPercent.ValueBool.ToString()
-                },
-                AreaSecond,
-                _useAverageProfitPercentLong.ValueBool);
-#endif
 
             EnsureIndicator(
                 NumVwap,
@@ -7723,14 +7821,6 @@ namespace OsEngine.Robots.Custom
                 AreaSecond,
                 _useMacd.ValueBool);
 
-#if false // DiscreteMidBestPair
-            EnsureIndicator(
-                NumDiscreteMidBestPair,
-                "DiscreteMidBestPair",
-                new List<string> { _discreteMidBestPairLevels.ValueInt.ToString() },
-                AreaPrime,
-                _useDiscreteMidBestPair.ValueBool);
-#endif
 
             SyncPortfolioIndicator();
         }
@@ -7875,19 +7965,6 @@ namespace OsEngine.Robots.Custom
                 min = Math.Max(min, _linRegLen.ValueInt + 2);
             }
 
-#if false // RZIgreensMinusReds
-            if (_useRzi.ValueBool)
-            {
-                min = Math.Max(min, _rziLen.ValueInt + 2);
-            }
-#endif
-
-#if false // AverageProfitPercentLong
-            if (_useAverageProfitPercentLong.ValueBool)
-            {
-                min = Math.Max(min, _avgProfitPercentLongPeriod.ValueInt + 2);
-            }
-#endif
 
             if (_useVwap.ValueBool)
             {
@@ -7983,9 +8060,6 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-#if false // DiscreteMidBestPair
-            TryPlaceDiscreteStopAndProfit(tab, candles);
-#endif
 
             List<Position> positions = tab.PositionsOpenAll;
 
@@ -8652,12 +8726,6 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
-#if false // RZIgreensMinusReds
-            AddGroupedIndicatorResult(items, _rziAndGroup, BullRziPasses(close, tab, candleIndex));
-#endif
-#if false // AverageProfitPercentLong
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BullAverageProfitPercentLongPasses(candles, tab, candleIndex));
-#endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
             AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
@@ -8688,12 +8756,6 @@ namespace OsEngine.Robots.Custom
             AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
-#if false // RZIgreensMinusReds
-            AddGroupedIndicatorResult(items, _rziAndGroup, BearRziPasses(close, tab, candleIndex));
-#endif
-#if false // AverageProfitPercentLong
-            AddGroupedIndicatorResult(items, _avgProfitPercentLongAndGroup, BearAverageProfitPercentLongPasses(candles, tab, candleIndex));
-#endif
             AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
             AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
             AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
@@ -8821,37 +8883,6 @@ namespace OsEngine.Robots.Custom
             return up != 0 && close > up;
         }
 
-#if false // RZIgreensMinusReds
-        /// <summary>
-        /// RZI > уровня сигнала.
-        /// </summary>
-        private bool? BullRziPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
-        {
-            if (!_useRzi.ValueBool)
-                return null;
-            Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
-            if (rzi == null)
-                return false;
-            decimal v = SeriesValueAt(rzi, 0, candleIndex);
-            return v > _rziSignalLevel.ValueInt;
-        }
-#endif
-
-#if false // DiscreteMidBestPair
-        private bool? BullDiscretePasses(List<Candle> candles, BotTabSimple tab)
-        {
-            if (!_useDiscreteMidBestPair.ValueBool)
-                return null;
-            Aindicator dmb = FindIndicator(tab, NumDiscreteMidBestPair, "DiscreteMidBestPair");
-            if (dmb == null || dmb.DataSeries.Count < 2)
-                return false;
-            decimal first = dmb.DataSeries[0].Last;
-            decimal second = dmb.DataSeries[1].Last;
-            decimal diff = second - first;
-            int thr = _discreteEntryThreshold.ValueInt;
-            return diff > 0 && diff >= thr;
-        }
-#endif
 
         /// <summary>
         /// Рост объёма свечи vs предыдущая.
@@ -8863,25 +8894,6 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab, candleIndex);
         }
 
-#if false // AverageProfitPercentLong
-        /// <summary>
-        /// Avg Profit % Long > bull min.
-        /// </summary>
-        private bool? BullAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
-        {
-            if (!_useAverageProfitPercentLong.ValueBool)
-                return null;
-            int period = Math.Max(2, _avgProfitPercentLongPeriod.ValueInt);
-            int idx = candleIndex >= 0 ? candleIndex : candles.Count - 1;
-            if (candles == null || idx < period - 1)
-                return false;
-            Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
-            if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
-                return false;
-            decimal v = SeriesValueAt(ap, 0, idx);
-            return v > _avgProfitPercentLongBullMin.ValueDecimal;
-        }
-#endif
 
         /// <summary>
         /// VWAP: close выше линии (лонг).
@@ -9119,38 +9131,6 @@ namespace OsEngine.Robots.Custom
             return down != 0 && close < down;
         }
 
-#if false // RZIgreensMinusReds
-        /// <summary>
-        /// RZI < −уровня.
-        /// </summary>
-        private bool? BearRziPasses(decimal close, BotTabSimple tab, int candleIndex = -1)
-        {
-            if (!_useRzi.ValueBool)
-                return null;
-            Aindicator rzi = FindIndicator(tab, NumRzi, "RZIgreensMinusReds");
-            if (rzi == null)
-                return false;
-            decimal v = SeriesValueAt(rzi, 0, candleIndex);
-            decimal shortBound = -_rziSignalLevel.ValueInt;
-            return v < shortBound;
-        }
-#endif
-
-#if false // DiscreteMidBestPair
-        private bool? BearDiscretePasses(List<Candle> candles, BotTabSimple tab)
-        {
-            if (!_useDiscreteMidBestPair.ValueBool)
-                return null;
-            Aindicator dmb = FindIndicator(tab, NumDiscreteMidBestPair, "DiscreteMidBestPair");
-            if (dmb == null || dmb.DataSeries.Count < 2)
-                return false;
-            decimal first = dmb.DataSeries[0].Last;
-            decimal second = dmb.DataSeries[1].Last;
-            decimal diff = second - first;
-            int thr = _discreteEntryThreshold.ValueInt;
-            return diff < 0 && -diff > thr;
-        }
-#endif
 
         /// <summary>
         /// Рост объёма (то же условие, что для лонга).
@@ -9162,25 +9142,6 @@ namespace OsEngine.Robots.Custom
             return VolumeIndicatorGrowthOk(candles, tab, candleIndex);
         }
 
-#if false // AverageProfitPercentLong
-        /// <summary>
-        /// Avg Profit % Long < bear max.
-        /// </summary>
-        private bool? BearAverageProfitPercentLongPasses(List<Candle> candles, BotTabSimple tab, int candleIndex = -1)
-        {
-            if (!_useAverageProfitPercentLong.ValueBool)
-                return null;
-            int period = Math.Max(2, _avgProfitPercentLongPeriod.ValueInt);
-            int idx = candleIndex >= 0 ? candleIndex : candles.Count - 1;
-            if (candles == null || idx < period - 1)
-                return false;
-            Aindicator ap = FindIndicator(tab, NumAverageProfitPercentLong, AverageProfitPercentLongIndicatorType);
-            if (ap == null || ap.DataSeries == null || ap.DataSeries.Count < 1)
-                return false;
-            decimal v = SeriesValueAt(ap, 0, idx);
-            return v < _avgProfitPercentLongBearMax.ValueDecimal;
-        }
-#endif
 
         /// <summary>
         /// Поиск индикатора на вкладке по номеру+типу+TabName или по имени типа.
@@ -9333,121 +9294,6 @@ namespace OsEngine.Robots.Custom
             return curVol >= minRequired;
         }
 
-#if false // DiscreteMidBestPair
-        private string DiscreteOpenSignal()
-        {
-            return _useDiscreteMidBestPair.ValueBool ? SignalOpenWithDiscreteSlTp : "";
-        }
-
-        /// <summary>
-        /// Ширина одного дискретного диапазона в цене (как в DiscreteMidBestPair): (maxMid−minMid)/(levels−1) по всем свечам окна.
-        /// </summary>
-        private bool TryComputeDiscreteRangeStep(List<Candle> candles, out decimal rangeStep)
-        {
-            rangeStep = 0;
-            if (candles == null || candles.Count == 0)
-                return false;
-
-            int levels = _discreteMidBestPairLevels.ValueInt;
-            if (levels < 2)
-                levels = 2;
-
-            decimal minMid = decimal.MaxValue;
-            decimal maxMid = decimal.MinValue;
-            for (int i = 0; i < candles.Count; i++)
-            {
-                Candle c = candles[i];
-                decimal mid = (c.Open + c.Close) * 0.5m;
-                if (mid < minMid) minMid = mid;
-                if (mid > maxMid) maxMid = mid;
-            }
-
-            if (minMid == maxMid)
-                return false;
-
-            rangeStep = (maxMid - minMid) / (levels - 1);
-            return rangeStep > 0;
-        }
-
-        /// <summary>
-        /// SL: на один диапазон ниже входа (лонг) или выше (шорт). TP: цена одного диапазона × (уровень1 − уровень2) от индикатора, в цене: entry − rangeStep×(first−second) (линия активации тейка).
-        /// </summary>
-        private void TryPlaceDiscreteStopAndProfit(BotTabSimple tab, List<Candle> candles)
-        {
-            if (!_useDiscreteMidBestPair.ValueBool
-                || tab == null
-                || candles == null
-                || candles.Count == 0)
-            {
-                return;
-            }
-
-            if (!TryComputeDiscreteRangeStep(candles, out decimal rangeStep))
-                return;
-
-            Aindicator dmb = FindIndicator(tab, NumDiscreteMidBestPair, "DiscreteMidBestPair");
-            if (dmb == null || dmb.DataSeries.Count < 2)
-                return;
-
-            decimal first = dmb.DataSeries[0].Last;
-            decimal second = dmb.DataSeries[1].Last;
-            decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
-
-            List<Position> open = tab.PositionsOpenAll;
-            if (open == null || open.Count == 0)
-                return;
-
-            for (int i = 0; i < open.Count; i++)
-            {
-                Position pos = open[i];
-                if (pos == null || pos.State != PositionStateType.Open || pos.OpenVolume == 0)
-                    continue;
-                if (pos.SignalTypeOpen != SignalOpenWithDiscreteSlTp)
-                    continue;
-                if (!string.IsNullOrEmpty(pos.NameBotClass) && pos.NameBotClass != GetNameStrategyType())
-                    continue;
-                if (pos.StopOrderIsActive && pos.ProfitOrderIsActive)
-                    continue;
-
-                decimal entry = pos.EntryPrice;
-                decimal diffLevels = first - second;
-                decimal profitRedLine = entry - rangeStep * diffLevels;
-
-                if (pos.Direction == Side.Buy)
-                {
-                    if (!pos.StopOrderIsActive)
-                    {
-                        decimal stopRed = tab.RoundPrice(entry - rangeStep, tab.Security, Side.Sell);
-                        decimal stopOrd = tab.RoundPrice(stopRed - slip, tab.Security, Side.Sell);
-                        tab.CloseAtStop(pos, stopRed, stopOrd);
-                    }
-
-                    if (!pos.ProfitOrderIsActive && diffLevels != 0)
-                    {
-                        decimal pr = tab.RoundPrice(profitRedLine, tab.Security, Side.Sell);
-                        decimal po = tab.RoundPrice(pr - slip, tab.Security, Side.Sell);
-                        tab.CloseAtProfit(pos, pr, po);
-                    }
-                }
-                else if (pos.Direction == Side.Sell)
-                {
-                    if (!pos.StopOrderIsActive)
-                    {
-                        decimal stopRed = tab.RoundPrice(entry + rangeStep, tab.Security, Side.Buy);
-                        decimal stopOrd = tab.RoundPrice(stopRed + slip, tab.Security, Side.Buy);
-                        tab.CloseAtStop(pos, stopRed, stopOrd);
-                    }
-
-                    if (!pos.ProfitOrderIsActive && diffLevels != 0)
-                    {
-                        decimal pr = tab.RoundPrice(profitRedLine, tab.Security, Side.Buy);
-                        decimal po = tab.RoundPrice(pr + slip, tab.Security, Side.Buy);
-                        tab.CloseAtProfit(pos, pr, po);
-                    }
-                }
-            }
-        }
-#endif
 
         /// <summary>
         /// Случайный сдвиг цены заявки в пределах ±«Рандомность движений, %» (после проскальзывания).
@@ -9500,18 +9346,6 @@ namespace OsEngine.Robots.Custom
 
             decimal close = candles[candles.Count - 1].Close;
             decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
-#if false // DiscreteMidBestPair
-            string openSignal = DiscreteOpenSignal();
-
-            if (bull && _regime.ValueString != "OnlyShort")
-            {
-                ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip), openSignal);
-            }
-            else if (bear && _regime.ValueString != "OnlyLong")
-            {
-                ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip), openSignal);
-            }
-#else
             if (bull && _regime.ValueString != "OnlyShort")
             {
                 ExecuteBuyOpen(tab, volume, GetOpenLongLimitPrice(tab, close, slip));
@@ -9520,7 +9354,6 @@ namespace OsEngine.Robots.Custom
             {
                 ExecuteSellOpen(tab, volume, GetOpenShortLimitPrice(tab, close, slip));
             }
-#endif
         }
 
         /// <summary>
@@ -9591,34 +9424,6 @@ namespace OsEngine.Robots.Custom
 
             decimal close = candles[candles.Count - 1].Close;
             decimal slip = _slippage.ValueInt * tab.Security.PriceStep;
-#if false // DiscreteMidBestPair
-            string openSignal = DiscreteOpenSignal();
-
-            if (pos.Direction == Side.Buy && bear)
-            {
-                ExecuteCloseOnSignalCandle(pos, tab, close, slip);
-
-                if (_regime.ValueString != "OnlyLong" && _regime.ValueString != "OnlyClosePosition")
-                {
-                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
-                    {
-                        ExecuteSellOpen(tab, GetVolume(tab), GetOpenShortLimitPrice(tab, close, slip), openSignal);
-                    }
-                }
-            }
-            else if (pos.Direction == Side.Sell && bull)
-            {
-                ExecuteCloseOnSignalCandle(pos, tab, close, slip);
-
-                if (_regime.ValueString != "OnlyShort" && _regime.ValueString != "OnlyClosePosition")
-                {
-                    if (_screenerTab.PositionsOpenAll.Count < _maxPositions.ValueInt)
-                    {
-                        ExecuteBuyOpen(tab, GetVolume(tab), GetOpenLongLimitPrice(tab, close, slip), openSignal);
-                    }
-                }
-            }
-#else
             if (pos.Direction == Side.Buy && bear)
             {
                 ExecuteCloseOnSignalCandle(pos, tab, close, slip);
@@ -9643,7 +9448,6 @@ namespace OsEngine.Robots.Custom
                     }
                 }
             }
-#endif
         }
 
         private void ExecuteCloseOnSignalCandle(Position pos, BotTabSimple tab, decimal close, decimal slip)
@@ -9948,6 +9752,23 @@ namespace OsEngine.Robots.Custom
                 "Покупка ETF при превышении порога портфеля. «Не закупать» — выкл.");
             Hint("Порог суммы портфеля (закупка фонда только на превышение)",
                 "Закупка только на сумму превышения над порогом.");
+            Hint(CalculationsTargetAnnualPercentParamName,
+                "Целевая доходность в % годовых для расчёта накопленных сумм.");
+            Hint(CalculationsInitialPortfolioAmountParamName,
+                "Стартовая сумма портфеля — вводится вручную. 0 = расчёт не выполняется.");
+            Hint(CalculationsStartDateParamName,
+                "Дата начала расчёта целевых сумм (dd.MM.yyyy). По умолчанию "
+                + CalculationsStartDatePlaceholder
+                + " — подсказка формата, замените на реальную дату.");
+            Hint(CalculationsCalculateButtonName,
+                "Заполнить текущую сумму портфеля и рассчитать накопленные целевые суммы "
+                + "(простой процент и с капитализацией) от начальной суммы и даты.");
+            Hint(CalculationsCurrentPortfolioAmountParamName,
+                "Текущая сумма портфеля — заполняется кнопкой «Рассчитать».");
+            Hint(CalculationsAccumulatedTargetAmountParamName,
+                "Целевая сумма без капитализации: начальная × (1 + %/100 × дней/365).");
+            Hint(CalculationsAccumulatedTargetWithCapitalizationParamName,
+                "Целевая сумма с капитализацией: начальная × (1 + %/100)^(дней/365).");
             Hint("Префиксы корня тикера (T-Инвестиции; ROSN, LKOH; CNY — также CR, CNYRUBF)",
                 "Корни тикеров фьючерсов для «Обновить фьючерсы».");
             Hint("Установить префиксы фьючерсов по умолчанию", "Стандартный список префиксов фьючерсов.");
@@ -9959,7 +9780,10 @@ namespace OsEngine.Robots.Custom
             Hint("Обновить акции", "Перезагрузить вкладки по тикерам акций.");
             Hint("Volume type", "Объём: контракты, валюта контракта или % депозита актива.");
             Hint("Volume", "Размер позиции в единицах «Volume type».");
-            Hint("Asset in portfolio", "Актив портфеля для % депозита (обычно Prime).");
+            Hint("Asset in portfolio",
+                "От какой суммы на счёте считать процент при Volume type = Deposit percent.\n"
+                + "Prime — вся стоимость портфеля (ValueCurrent); используется также для стопов, «Расчётов» и мониторинга.\n"
+                + "rub или другой код — только баланс этого актива на борде (например, свободный кэш, не весь счёт).");
             Hint("Установить параметры индикаторов по умолчанию",
                 "Сброс параметров индикаторов к значениям из кода робота.");
             Hint("Use SMA", "SMA на графике и в сигналах: long — close выше, short — ниже.");
