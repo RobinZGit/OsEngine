@@ -212,7 +212,7 @@ namespace OsEngine.Robots.Custom
         private const string DefaultLogic2LongStochNotLinRegCci =
             DefaultLogicRegimePrefix
             + "(SMA(100) Op[Ab] Cl[Bl]) AND "
-            + "(Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45]) AND "
+            + "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND "
             + "(NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
             + "(NOT CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND "
@@ -230,7 +230,7 @@ namespace OsEngine.Robots.Custom
         private const string DefaultLogic4ShortStochNotLinRegCci =
             DefaultLogicRegimePrefix
             + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
-            + "(NOT Stoch(14-3-3;Lmin=55;Smax=45) Op[K<=45] Cl[K>=55]) AND "
+            + "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND "
             + "(NOT LinReg(50;Dev=2) Op[BlLo] Cl[AbUp]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
             + "(NOT CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND "
@@ -15522,10 +15522,10 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("     Regime MatchSide + SMA Ab, LinReg AbUp, CCI>=100, MACD>Sig; NOT Stoch.");
             sb.AppendLine();
             sb.AppendLine("   L2 — lon-bokovik (лонг, боковик):");
-            sb.AppendLine("     Regime MatchSide + SMA Ab, Stoch K>=55, MACD>Sig; NOT LinReg AbUp и NOT CCI>=100.");
+            sb.AppendLine("     Regime MatchSide + SMA Ab, Stoch K>=90 (Lmin=90;Smax=10), Cl K<=10, MACD>Sig; NOT LinReg AbUp и NOT CCI>=100.");
             sb.AppendLine();
             sb.AppendLine("   L3 — short-trend: Regime MatchSide + зеркало L1 (Side[S], BlLo/AbUp, CCI<=-100).");
-            sb.AppendLine("   L4 — short-bokovik: Regime MatchSide + зеркало L2 (Side[S]); Stoch K<=45, NOT LinReg/CCI.");
+            sb.AppendLine("   L4 — short-bokovik: Regime MatchSide + зеркало L2 (Side[S]); Stoch K<=10, Cl K>=90, NOT LinReg/CCI.");
             sb.AppendLine();
             sb.AppendLine("   На графике при Regime=On одновременно могут работать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры.");
             sb.AppendLine("   SL/TP в строках по умолчанию не заданы (выход по Cl[…] индикаторов).");
