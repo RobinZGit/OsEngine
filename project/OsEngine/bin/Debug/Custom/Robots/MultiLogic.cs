@@ -37,18 +37,45 @@ using Newtonsoft.Json;
 Description
 
 Подготовительный скринер для сравнения нескольких торговых логик.
-Строка логики — Note(…), справка: Custom\Robots\MultiLogic_LogicHelp.txt (кнопка Help; файл обновляется автоматически).
+Строка логики — Note(…), справка: Custom\Robots\MultiLogic_LogicHelp.html (кнопка Help; файл обновляется автоматически).
 Парсинг строк «Логика 1…10», общие индикаторы, торговля по сигналам Op/Cl (Regime=On).
 */
 
 namespace OsEngine.Robots.Custom
 {
+    /*
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * MultiLogic.cs — один файл, четыре логических блока (см. баннеры ниже)
+     *  БЛОК 1  MultiLogic (partial)     — движок робота, торговля, Stopper, MOEX…
+     *  БЛОК 4  MultiLogic (partial)     — HTML-отчёт результатов (Engine\\*_Report.html)
+     *  БЛОК 2  LogicLineParser + типы  — разбор строк «Логика 1…10», AST, индикаторы
+     *  БЛОК 3  MultiLogicHelpBuilder   — текст/HTML справки (MultiLogic_LogicHelp.html)
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     */
+
+    /*
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * БЛОК 1 — ГЛАВНЫЙ ДВИЖОК И ТОРГОВАЯ ЛОГИКА
+     * Конструктор, параметры, скринер, Stopper, металогика, портфели, MOEX, индикаторы.
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     */
+
     /// <summary>
     /// Скринер MultiLogic: до 10 независимых торговых логик в строковых параметрах,
     /// общий пул индикаторов без дублей, вход/выход по Op/Cl на закрытии свечи.
     /// </summary>
-    public class MultiLogic : BotPanel
+    public partial class MultiLogic : BotPanel
     {
+        #region БЛОК 1 — ГЛАВНЫЙ ДВИЖОК И ТОРГОВАЯ ЛОГИКА
+
         /// <summary>Сигнал экстренного закрытия всех позиций робота (кнопка «Остановить робота и продать всё»).</summary>
         private const string SignalStopRobotAndSellAll = "MultiLogicStopAll";
         /// <summary>Имя вкладки параметров со строками «Логика 1…10» и кнопкой Help.</summary>
@@ -61,6 +88,21 @@ namespace OsEngine.Robots.Custom
         private const string SignalPortfolioStopperSl = "MultiLogicPortfolioStopSL";
         private const string SignalPortfolioStopperTp = "MultiLogicPortfolioStopTP";
         private const string UpdateStopperPortfolioBaselineButtonName = "Обновить сумму портфеля SL/TP";
+        /// <summary>«Как основной TF» — Stopper на общей свече страницы 1; Min1…Min15 — страница 2 (монитор).</summary>
+        private const string StopperMonitorTimeFrameSameAsMain = "Как основной TF";
+        private const string StopperMonitorTimeFrameLegacyOff = "Off";
+        private const string StopperMonitorTimeFrameParamName = "Stopper: таймфрейм монитора";
+        private const string StopperMonitorSecurityParamName = "Stopper: бумага монитора";
+        private static readonly string[] StopperMonitorTimeFrameChoices =
+        {
+            StopperMonitorTimeFrameSameAsMain,
+            "Min1",
+            "Min2",
+            "Min3",
+            "Min5",
+            "Min10",
+            "Min15"
+        };
         /// <summary>Главный переключатель режима металогики (распределение Volume по PnlSMA).</summary>
         private const string MetaLogicEnabledParamName = "Металогика включена";
         /// <summary>Кнопка быстрого включения металогики.</summary>
@@ -69,10 +111,10 @@ namespace OsEngine.Robots.Custom
         private const string MetaLogicInversionParamName = "Инверсия (покупка ↔ продажа)";
 
         /// <summary>Относительный путь к файлу справки (от каталога bin); перезаписывается из кода робота.</summary>
-        private const string LogicHelpFileRelativePath = @"Custom\Robots\MultiLogic_LogicHelp.txt";
+        private const string LogicHelpFileRelativePath = @"Custom\Robots\MultiLogic_LogicHelp.html";
 
         /// <summary>
-        /// Краткая подсказка в параметрах. Полная справка — MultiLogic_LogicHelp.txt (кнопка Help, автообновление).
+        /// Краткая подсказка в параметрах. Полная справка — MultiLogic_LogicHelp.html (кнопка Help, автообновление).
         /// </summary>
         private const string LogicLineFormatHint =
             "В начале (необязательно): Disabled(true/false) и Regime(…) — режим наклона LinReg.\n"
@@ -99,6 +141,12 @@ namespace OsEngine.Robots.Custom
         private const string LogicsSetDefaultButtonName = "Установить логики по умолчанию";
         /// <summary>Кнопка «Установить разнообразные логики-примеры» на вкладке «Логики».</summary>
         private const string LogicsSetSampleDiverseButtonName = "Установить разнообразные логики-примеры";
+        /// <summary>Кнопка экспорта строк «Логика 1…10» в JSON на вкладке «Логики».</summary>
+        private const string ExportLogicsButtonName = "Выгрузить логику";
+        /// <summary>Кнопка импорта строк «Логика 1…10» из JSON на вкладке «Логики».</summary>
+        private const string ImportLogicsButtonName = "Загрузить логику";
+        /// <summary>Версия формата JSON-файла только со строками логик.</summary>
+        private const string MultiLogicLogicFileFormatVersion = "1";
         /// <summary>Кнопка экспорта JSON-снимка настроек, портфелей логик и позиций.</summary>
         private const string SaveSnapshotButtonName = "Сохранить настройки и результаты";
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -147,11 +195,14 @@ namespace OsEngine.Robots.Custom
         private const long ResourceEstimateSnapshotDiskHeadroomBytes = 5L * 1024 * 1024;
 
         /// <summary>
-        /// «Логика 1…4» по умолчанию — четыре варианта TrendMultiIndicator + CCI (NOT для разделения тренд/боковик).
-        /// Без префикса Regime(…): торговля не блокируется по наклону LinReg.
+        /// «Логика 1…4» по умолчанию — TrendMultiIndicator + CCI; на всех четырёх Regime(…;SlopeLb=3;Entry=MatchSide).
         /// </summary>
+        private const string DefaultLogicRegimePrefix =
+            "Regime(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
+
         private const string DefaultLogic1LongTrendNotStoch =
-            "(SMA(100) Op[Ab] Cl[Bl]) AND "
+            DefaultLogicRegimePrefix
+            + "(SMA(100) Op[Ab] Cl[Bl]) AND "
             + "(NOT Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45]) AND "
             + "(LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -159,7 +210,8 @@ namespace OsEngine.Robots.Custom
             + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(lon-trend))";
 
         private const string DefaultLogic2LongStochNotLinRegCci =
-            "(SMA(100) Op[Ab] Cl[Bl]) AND "
+            DefaultLogicRegimePrefix
+            + "(SMA(100) Op[Ab] Cl[Bl]) AND "
             + "(Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45]) AND "
             + "(NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -167,7 +219,8 @@ namespace OsEngine.Robots.Custom
             + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(lon-bokovik))";
 
         private const string DefaultLogic3ShortTrendNotStoch =
-            "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+            DefaultLogicRegimePrefix
+            + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
             + "(NOT Stoch(14-3-3;Lmin=55;Smax=45) Op[K<=45] Cl[K>=55]) AND "
             + "(LinReg(50;Dev=2) Op[BlLo] Cl[AbUp]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -175,7 +228,8 @@ namespace OsEngine.Robots.Custom
             + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-trend))";
 
         private const string DefaultLogic4ShortStochNotLinRegCci =
-            "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+            DefaultLogicRegimePrefix
+            + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
             + "(NOT Stoch(14-3-3;Lmin=55;Smax=45) Op[K<=45] Cl[K>=55]) AND "
             + "(NOT LinReg(50;Dev=2) Op[BlLo] Cl[AbUp]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -197,8 +251,14 @@ namespace OsEngine.Robots.Custom
             "Bollinger(20;Dev=2) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[5%] Note(counter-Boll-mid-short)"
         };
 
-        /// <summary>Вкладка скринера: по одной подвкладке на каждый инструмент.</summary>
+        /// <summary>Основной скринер (страница 1): торговые бумаги и логики.</summary>
         private BotTabScreener _screenerTab;
+        /// <summary>Скринер-монитор Stopper (страница 2): одна ликвидная бумага на малом TF.</summary>
+        private BotTabScreener _stopMonitorScreenerTab;
+        /// <summary>Подписка CandleFinished на странице 2 для Stopper.</summary>
+        private bool _stopMonitorScreenerEventsWired;
+        /// <summary>Последний TF монитора, применённый к странице 2 (для принудительного пересоздания вкладок).</summary>
+        private TimeFrame? _stopMonitorAppliedTimeFrame;
         /// <summary>Единственный экземпляр парсера строк логики (AND/OR, Disabled, Op/Cl).</summary>
         private readonly LogicLineParser _logicLineParser = new LogicLineParser();
         /// <summary>Кэш разобранных логик по индексу слота (1…10); используется при торговле на свече.</summary>
@@ -213,6 +273,10 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _setDefaultLogicsButton;
         /// <summary>Кнопка «Установить разнообразные логики-примеры» на вкладке «Логики».</summary>
         private StrategyParameterButton _setSampleDiverseLogicsButton;
+        /// <summary>Кнопка «Выгрузить логику» на вкладке «Логики».</summary>
+        private StrategyParameterButton _exportLogicsButton;
+        /// <summary>Кнопка «Загрузить логику» на вкладке «Логики».</summary>
+        private StrategyParameterButton _importLogicsButton;
         /// <summary>Кнопка экспорта JSON-снимка (первая вкладка параметров).</summary>
         private StrategyParameterButton _saveSnapshotButton;
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -343,6 +407,8 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _tradeAssetInPortfolio;
 
         private bool _loggedTradingModeDiagnostics;
+        /// <summary>Однократное сообщение: attach индикаторов только на UI-потоке.</summary>
+        private bool _loggedRobotIndicatorsUiThreadAttach;
         private string _lastVolumeCalcFailureReason;
         private bool _loggedMaxPositionsLimit;
 
@@ -369,6 +435,12 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>MOEX «Обновить фьючерсы/акции» — один reload за раз.</summary>
         private int _moexReloadInProgress;
+
+        /// <summary>Однократное сообщение: металогика включена, но PnlSMA ещё не готов — работает обычная логика.</summary>
+        private bool _loggedMetaLogicWarmupPending;
+
+        /// <summary>Однократная запись в HTML-журнал: PnlSMA готов, металогика активна.</summary>
+        private bool _htmlReportMetaLogicReadyLogged;
 
         private StrategyParameterBool _metaLogicEnabled;
         private StrategyParameterBool _metaLogicInversion;
@@ -408,6 +480,8 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterDecimal _portfolioStopperReferenceEquity;
         private StrategyParameterDecimal _portfolioStopperCurrentEquity;
         private StrategyParameterInt _portfolioStopperLookbackCandles;
+        private StrategyParameterString _stopperMonitorTimeFrame;
+        private StrategyParameterString _stopperMonitorSecurity;
         private StrategyParameterButton _updateStopperPortfolioBaselineButton;
 
         /// <summary>
@@ -444,13 +518,13 @@ namespace OsEngine.Robots.Custom
             _openHtmlReportMainTabButton = CreateParameterButton(OpenHtmlReportMainTabButtonName);
             _openHtmlReportMainTabButton.UserClickOnButtonEvent += HtmlReportOpenButton_UserClickOnButtonEvent;
 
-            _maxPositions = CreateParameter("Max positions (all tabs)", 20, 0, 200, 1);
+            _maxPositions = CreateParameter("Max positions (all tabs)", 40, 0, 200, 1);
 
             _volumeType = CreateParameter(
                 "Volume type",
                 "Deposit percent",
                 new[] { "Contracts", "Contract currency", "Deposit percent" });
-            _volume = CreateParameter("Volume", 20, 1.0m, 50, 4);
+            _volume = CreateParameter("Volume", 10, 1.0m, 50, 4);
             _tradeAssetInPortfolio = CreateParameter("Asset in portfolio", "Prime");
 
             _referenceInitialPortfolioAmount = CreateParameter(
@@ -483,6 +557,10 @@ namespace OsEngine.Robots.Custom
             _setDefaultLogicsButton.UserClickOnButtonEvent += SetDefaultLogicsButton_UserClickOnButtonEvent;
             _setSampleDiverseLogicsButton = CreateParameterButton(LogicsSetSampleDiverseButtonName, LogicsTabName);
             _setSampleDiverseLogicsButton.UserClickOnButtonEvent += SetSampleDiverseLogicsButton_UserClickOnButtonEvent;
+            _exportLogicsButton = CreateParameterButton(ExportLogicsButtonName, LogicsTabName);
+            _exportLogicsButton.UserClickOnButtonEvent += ExportLogicsButton_UserClickOnButtonEvent;
+            _importLogicsButton = CreateParameterButton(ImportLogicsButtonName, LogicsTabName);
+            _importLogicsButton.UserClickOnButtonEvent += ImportLogicsButton_UserClickOnButtonEvent;
 
             _logic1 = CreateParameter("Логика 1", DefaultLogic1LongTrendNotStoch, LogicsTabName);
             _logic2 = CreateParameter("Логика 2", DefaultLogic2LongStochNotLinRegCci, LogicsTabName);
@@ -503,7 +581,7 @@ namespace OsEngine.Robots.Custom
             _usePortfolioAdjSma = CreateParameter(PortfolioPnlSmaEnableParamName, true, MetaLogicsTabName);
             _portfolioAdjSmaLen = CreateParameter(
                 PortfolioPnlSmaLenParamName,
-                100,
+                24,
                 2,
                 500,
                 1,
@@ -596,6 +674,7 @@ namespace OsEngine.Robots.Custom
             _stopperReferenceBaselineLocked = _portfolioStopperReferenceEquity.ValueDecimal != 0m;
             CheckAndWarnMultiLogicResources(force: true);
             LogRegimeStateOnStartup();
+            SyncStopMonitorScreenerPage(logToUser: false);
         }
 
         /// <summary>Один раз при старте — откуда взялся Regime (файл или default Off).</summary>
@@ -625,6 +704,7 @@ namespace OsEngine.Robots.Custom
             WireHtmlReportButtons();
             RegisterParameterHints();
             _stopperReferenceBaselineLocked = _portfolioStopperReferenceEquity.ValueDecimal != 0m;
+            SyncStopMonitorScreenerPage(logToUser: false);
             if (ShouldResyncLogicIndicatorsOnParameterChange()
                 && HaveLogicSlotStringsChangedSinceLastSync())
             {
@@ -671,6 +751,8 @@ namespace OsEngine.Robots.Custom
             WireLogicTabButton(LogicsHelpButtonName, LogicHelpButton_UserClickOnButtonEvent);
             WireLogicTabButton(LogicsSetDefaultButtonName, SetDefaultLogicsButton_UserClickOnButtonEvent);
             WireLogicTabButton(LogicsSetSampleDiverseButtonName, SetSampleDiverseLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(ExportLogicsButtonName, ExportLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(ImportLogicsButtonName, ImportLogicsButton_UserClickOnButtonEvent);
         }
 
         /// <summary>Переподписывает кнопки вкладки «Металогики».</summary>
@@ -1001,8 +1083,8 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Записывает MultiLogic_LogicHelp.txt, если содержимое устарело или файла нет.
-        /// Сравнение по полному тексту — правки в BuildDefaultHelpText подхватываются без ручного удаления.
+        /// Записывает MultiLogic_LogicHelp.html, если содержимое устарело или файла нет.
+        /// Сравнение по полному тексту — правки в BuildDefaultHelpHtml подхватываются без ручного удаления.
         /// </summary>
         /// <param name="logToUser">Дублировать сообщение об обновлении в пользовательский лог.</param>
         /// <returns>true, если файл создан или перезаписан.</returns>
@@ -1015,7 +1097,7 @@ namespace OsEngine.Robots.Custom
                 Directory.CreateDirectory(directory);
             }
 
-            string content = LogicLineParser.BuildDefaultHelpText();
+            string content = LogicLineParser.BuildDefaultHelpHtml();
             if (File.Exists(path))
             {
                 try
@@ -1051,7 +1133,7 @@ namespace OsEngine.Robots.Custom
         {
             try
             {
-                OpenLogicHelpTextFile();
+                OpenLogicHelpHtmlFile();
             }
             catch (Exception ex)
             {
@@ -1059,15 +1141,15 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        /// <summary>Актуализирует файл справки и открывает его в программе по умолчанию.</summary>
-        private void OpenLogicHelpTextFile()
+        /// <summary>Актуализирует HTML-справку и открывает её в браузере по умолчанию.</summary>
+        private void OpenLogicHelpHtmlFile()
         {
             EnsureLogicHelpFileUpToDate(logToUser: true);
 
             string path = GetLogicHelpFilePath();
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             SendNewLogMessage(
-                NameStrategyUniq + " | Справка по логикам: " + path + " (автообновление из MultiLogic.cs).",
+                NameStrategyUniq + " | Справка по логикам (HTML): " + path + " (автообновление из MultiLogic.cs).",
                 LogMessageType.User);
         }
 
@@ -1081,8 +1163,8 @@ namespace OsEngine.Robots.Custom
                 ApplyDefaultLogicStrings();
 
                 string msg = NameStrategyUniq
-                    + " | Логики по умолчанию: L1 lon-trend, L2 lon-bokovik (Stoch), L3 short-trend, L4 short-bokovik; "
-                    + "без Regime(…); L5…10 пусто. Применение — «Принять».";
+                    + " | Логики по умолчанию: L1 lon-trend, L2 lon-bokovik, L3 short-trend, L4 short-bokovik; "
+                    + "L1…L4 Regime(…;SlopeLb=3;Entry=MatchSide;OnFlip=Close); L5…10 пусто. «Принять».";
                 SendNewLogMessage(msg, LogMessageType.System);
             }
             catch (Exception ex)
@@ -1860,7 +1942,7 @@ namespace OsEngine.Robots.Custom
                 tab.EventsIsOn = true;
             }
 
-            // В тестере индикаторы ставятся при «Принять» (SyncAllLogicIndicators); фоновый attach ломает UI-поток.
+            // В тестере индикаторы ставятся при «Принять» (SyncAllLogicIndicators); attach с фона ломает UI.
             if (StartProgram == StartProgram.IsTester)
             {
                 return;
@@ -1871,9 +1953,7 @@ namespace OsEngine.Robots.Custom
                 try
                 {
                     await Task.Delay(800).ConfigureAwait(false);
-                    RunOnUiThread(
-                        () => TryEnsureRobotIndicatorsOnTabIfNeeded(tab),
-                        preferAsync: true);
+                    ScheduleEnsureRobotIndicatorsOnTabIfNeeded(tab);
                 }
                 catch
                 {
@@ -1977,14 +2057,20 @@ namespace OsEngine.Robots.Custom
                 "Загрузить JSON-снимок: заменить параметры, строки логик, портфели и сохранить позиции из файла "
                 + "(биржевые позиции не открываются автоматически).");
             Hint(LogicsHelpButtonName,
-                "Открыть Custom\\Robots\\MultiLogic_LogicHelp.txt — полная справка; "
+                "Открыть Custom\\Robots\\MultiLogic_LogicHelp.html — полная справка (светлая HTML-страница); "
                 + "файл автоматически обновляется при запуске робота и по этой кнопке.");
             Hint(LogicsSetDefaultButtonName,
-                "Записать в «Логика 1…4» четыре строки TrendMultiIndicator+CCI (L1/L3 — тренд, L2/L4 — боковик через NOT); "
-                + "без Regime(…); «Логика 5…10» очистить. См. Help → раздел «6a) Стандартные логики».");
+                "Записать в «Логика 1…4» TrendMultiIndicator+CCI с Regime(LinReg;SlopeLb=3;Entry=MatchSide;OnFlip=Close) "
+                + "на всех четырёх; «Логика 5…10» очистить. См. Help → «6a) Стандартные логики».");
             Hint(LogicsSetSampleDiverseButtonName,
                 "Очистить «Логика 1…10» и записать в «Логика 1…8» примеры: 3 лонга, 3 шорт-тренда (Side[S]), "
                 + "2 контртрендовых шорта (Stoch, Bollinger), со SL/TP или ATR/R. «Логика 9…10» — пусто.");
+            Hint(ExportLogicsButtonName,
+                "Сохранить строки «Логика 1…10» в JSON-файл (только логики, без параметров и портфелей). "
+                + "Если окно параметров открыто — берутся текущие значения из таблицы.");
+            Hint(ImportLogicsButtonName,
+                "Загрузить строки «Логика 1…10» из JSON-файла того же формата или из полного JSON-снимка "
+                + "(используется только блок logicLines). После загрузки — «Принять» или перезапуск парсинга.");
             string logicSlotHintSuffix =
                 "\n\nОдинаковый индикатор с теми же параметрами в разных логиках — один экземпляр на графике. "
                 + "Regime=On: вход по Op, выход по Cl. Volume делится поровну между сработавшими логиками на свече.";
@@ -2002,13 +2088,12 @@ namespace OsEngine.Robots.Custom
 
             Hint(
                 MetaLogicEnabledParamName,
-                "Если включено — на входе Volume делится между логиками с Op пропорционально PnlSMA "
-                + "(pnlSmaAvg = mean(E_i − E_start) по кривой портфеля логики); отрицательный PnlSMA переворачивает Buy/Sell. "
-                + "При нехватке Max positions приоритет у логик с большим PnlSMA. "
-                + "Если выключено — каждая логика входит отдельно, Volume поровну, приоритет L1…L10.");
+                "Если включено — после накопления окна PnlSMA (см. «Общепортфельный PnlSMA: длина») Volume на входе "
+                + "делится между логиками с Op пропорционально |PnlSMA|; до готовности — как без металогики (Volume поровну, L1…L10). "
+                + "Отрицательный PnlSMA переворачивает Buy/Sell. При нехватке Max positions — приоритет по PnlSMA.");
             Hint(
                 MetaLogicInversionParamName,
-                "Только при включённой «" + MetaLogicEnabledParamName + "»: на всех входах Buy↔Sell относительно Side логики; "
+                "Только когда металогика уже действует (PnlSMA готов): на всех входах Buy↔Sell относительно Side логики; "
                 + "Regime(Entry/OnFlip) тоже по фактической стороне. Отрицательный PnlSMA не переворачивает дополнительно. "
                 + "Cl/SL/TP — те же условия; закрытие по открытой позиции. По умолчанию выкл.");
             Hint(
@@ -2039,7 +2124,16 @@ namespace OsEngine.Robots.Custom
             Hint("Текущая сумма портфеля (техн.)",
                 "Equity L1…L10; перезаписывается в начале и после торговли на каждой закрытой свече вкладки.");
             Hint("Предыдущая сумма портфеля: lookback (свечей)",
-                "Если база = 0 — ref из N свечей назад (по умолчанию 5). Кнопка SL/TP или срабатывание фиксируют базу.");
+                "Если база = 0 — ref из N свечей назад (по умолчанию 5). Кнопка SL/TP или срабатывание фиксируют базу. "
+                + "При Min1…Min15 — N = свечи монитора (страница 2), не страницы 1.");
+            Hint(
+                StopperMonitorTimeFrameParamName,
+                "«Как основной TF» — Stopper на «общей свече» страницы 1; вкладка «2» удаляется. "
+                + "Min1…Min15 — страница 2 скринера с бумагой-монитором; SL/TP по её CandleFinished.");
+            Hint(
+                StopperMonitorSecurityParamName,
+                "Бумага на странице 2 (по умолчанию SBER). Нужна только как «часы» для частой проверки портфеля; "
+                + "PnL берётся с реального портфеля / L1…L10, не с цены этой бумаги.");
             Hint(UpdateStopperPortfolioBaselineButtonName,
                 "Записывает текущий портфель (тестер/лайв) или equity L1…L10 в «Предыдущая сумма портфеля» и фиксирует базу SL/TP.");
 
@@ -2329,6 +2423,15 @@ namespace OsEngine.Robots.Custom
                 5000,
                 1,
                 StopperTabName);
+            _stopperMonitorTimeFrame = CreateParameter(
+                StopperMonitorTimeFrameParamName,
+                StopperMonitorTimeFrameSameAsMain,
+                StopperMonitorTimeFrameChoices,
+                StopperTabName);
+            _stopperMonitorSecurity = CreateParameter(
+                StopperMonitorSecurityParamName,
+                "SBER",
+                StopperTabName);
             _updateStopperPortfolioBaselineButton = CreateParameterButton(
                 UpdateStopperPortfolioBaselineButtonName,
                 StopperTabName);
@@ -2609,6 +2712,764 @@ namespace OsEngine.Robots.Custom
             return false;
         }
 
+        private bool IsStopMonitorSameAsMainTimeFrame()
+        {
+            string raw = _stopperMonitorTimeFrame?.ValueString ?? StopperMonitorTimeFrameSameAsMain;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return true;
+            }
+
+            return string.Equals(raw, StopperMonitorTimeFrameSameAsMain, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, StopperMonitorTimeFrameLegacyOff, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void MigrateLegacyStopperMonitorTimeFrameParamIfNeeded()
+        {
+            if (_stopperMonitorTimeFrame == null)
+            {
+                return;
+            }
+
+            if (!string.Equals(
+                    _stopperMonitorTimeFrame.ValueString,
+                    StopperMonitorTimeFrameLegacyOff,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _stopperMonitorTimeFrame.ValueString = StopperMonitorTimeFrameSameAsMain;
+        }
+
+        private bool IsStopMonitorScreenerActive()
+        {
+            if (IsStopMonitorSameAsMainTimeFrame())
+            {
+                return false;
+            }
+
+            return TryParseStopperMonitorTimeFrame(out _)
+                && !string.IsNullOrWhiteSpace(_stopperMonitorSecurity?.ValueString);
+        }
+
+        private bool TryParseStopperMonitorTimeFrame(out TimeFrame timeFrame)
+        {
+            timeFrame = TimeFrame.Min1;
+            if (IsStopMonitorSameAsMainTimeFrame())
+            {
+                return false;
+            }
+
+            string raw = (_stopperMonitorTimeFrame?.ValueString ?? "").Trim();
+            if (string.IsNullOrEmpty(raw))
+            {
+                return false;
+            }
+
+            return Enum.TryParse(raw, true, out timeFrame);
+        }
+
+        private bool IsStopMonitorInstrumentTab(BotTabSimple tab)
+        {
+            if (tab == null || _stopMonitorScreenerTab?.Tabs == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _stopMonitorScreenerTab.Tabs.Count; i++)
+            {
+                if (ReferenceEquals(_stopMonitorScreenerTab.Tabs[i], tab))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Страница 2 скринера: при включённом «Stopper: таймфрейм монитора» — одна бумага (SBER по умолчанию) и проверка SL/TP портфеля.
+        /// </summary>
+        private void SyncStopMonitorScreenerPage(bool logToUser)
+        {
+            if (_screenerTab == null)
+            {
+                return;
+            }
+
+            MigrateLegacyStopperMonitorTimeFrameParamIfNeeded();
+
+            if (!IsStopMonitorScreenerActive())
+            {
+                DestroyStopMonitorScreenerPage();
+                if (logToUser)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Stopper-монитор: «"
+                        + StopperMonitorTimeFrameSameAsMain
+                        + "» — страница 2 скринера удалена, SL/TP на общей свече страницы 1.",
+                        LogMessageType.User);
+                }
+                return;
+            }
+
+            EnsureStopMonitorScreenerPageExists();
+            if (_stopMonitorScreenerTab == null)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Stopper-монитор: не удалось создать страницу 2 скринера.",
+                    LogMessageType.Error);
+                return;
+            }
+
+            if (!TryParseStopperMonitorTimeFrame(out TimeFrame monitorTimeFrame))
+            {
+                return;
+            }
+
+            string securityName = (_stopperMonitorSecurity?.ValueString ?? "").Trim();
+            if (string.IsNullOrEmpty(securityName))
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Stopper-монитор: задайте «" + StopperMonitorSecurityParamName + "».",
+                    LogMessageType.Error);
+                return;
+            }
+
+            CopyMainScreenerConnectionToStopMonitor(monitorTimeFrame);
+
+            if (_stopMonitorAppliedTimeFrame.HasValue && _stopMonitorAppliedTimeFrame.Value != monitorTimeFrame)
+            {
+                ClearStopMonitorScreenerSecuritiesAndTabs();
+            }
+
+            ConfigureStopMonitorScreenerSecurity(securityName);
+            ReloadStopMonitorScreenerTabs(monitorTimeFrame);
+            _stopMonitorAppliedTimeFrame = monitorTimeFrame;
+            WireStopMonitorScreenerEvents(wire: true);
+
+            string msg = NameStrategyUniq
+                + " | Stopper-монитор (страница 2): "
+                + securityName
+                + ", TF="
+                + monitorTimeFrame;
+            if (_stopMonitorScreenerTab.Tabs != null && _stopMonitorScreenerTab.Tabs.Count > 0)
+            {
+                msg += ", Connector.TF="
+                    + (_stopMonitorScreenerTab.Tabs[0].Connector?.TimeFrame.ToString() ?? "?");
+            }
+
+            msg += " — проверка SL/TP портфеля по CandleFinished этой вкладки (не страница 1).";
+            SendNewLogMessage(msg, LogMessageType.System);
+            if (logToUser)
+            {
+                SendNewLogMessage(msg, LogMessageType.User);
+            }
+        }
+
+        private void CopyMainScreenerConnectionToStopMonitor(TimeFrame monitorTimeFrame)
+        {
+            _stopMonitorScreenerTab.PortfolioName = _screenerTab.PortfolioName;
+            _stopMonitorScreenerTab.SecuritiesClass = _screenerTab.SecuritiesClass;
+            _stopMonitorScreenerTab.ServerType = _screenerTab.ServerType;
+            _stopMonitorScreenerTab.ServerName = _screenerTab.ServerName;
+            _stopMonitorScreenerTab.EmulatorIsOn = _screenerTab.EmulatorIsOn;
+            _stopMonitorScreenerTab.CandleMarketDataType = _screenerTab.CandleMarketDataType;
+            _stopMonitorScreenerTab.CandleCreateMethodType = _screenerTab.CandleCreateMethodType;
+            _stopMonitorScreenerTab.CommissionType = _screenerTab.CommissionType;
+            _stopMonitorScreenerTab.CommissionValue = _screenerTab.CommissionValue;
+            ApplyStopMonitorScreenerTimeFrame(monitorTimeFrame, reconnectTabs: false);
+        }
+
+        /// <summary>
+        /// TF страницы 2 = параметр «Stopper: таймфрейм монитора», не TF страницы 1.
+        /// Синхронизирует screener.TimeFrame, CandleSeriesRealization и коннекторы вкладок.
+        /// </summary>
+        private void ApplyStopMonitorScreenerTimeFrame(TimeFrame monitorTimeFrame, bool reconnectTabs)
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            SyncStopMonitorScreenerCandleSeriesTimeFrame(_stopMonitorScreenerTab, monitorTimeFrame);
+
+            if (reconnectTabs && _stopMonitorScreenerTab.Tabs != null)
+            {
+                for (int i = 0; i < _stopMonitorScreenerTab.Tabs.Count; i++)
+                {
+                    ApplyStopMonitorTimeFrameToTab(_stopMonitorScreenerTab.Tabs[i], monitorTimeFrame);
+                }
+            }
+
+            _stopMonitorScreenerTab.SaveSettings();
+        }
+
+        /// <summary>
+        /// Поле BotTabScreener.TimeFrame и CandleSeriesRealization должны совпадать: иначе TryCreateTab/UpdateTabSettings
+        /// копируют серию с TF страницы 1 (например Min30) поверх выбранного Min5.
+        /// </summary>
+        private static void SyncStopMonitorScreenerCandleSeriesTimeFrame(BotTabScreener screener, TimeFrame timeFrame)
+        {
+            if (screener == null)
+            {
+                return;
+            }
+
+            screener.TimeFrame = timeFrame;
+            SyncCandleSeriesRealizationTimeFrame(screener.CandleSeriesRealization, timeFrame);
+        }
+
+        private static void SyncCandleSeriesRealizationTimeFrame(ACandlesSeriesRealization series, TimeFrame timeFrame)
+        {
+            if (series == null)
+            {
+                return;
+            }
+
+            if (series is Simple simple)
+            {
+                simple.TimeFrame = timeFrame;
+            }
+            else if (series is HeikenAshi heikenAshi)
+            {
+                heikenAshi.TimeFrame = timeFrame;
+            }
+            else if (series is TimeShiftCandle timeShiftCandle)
+            {
+                timeShiftCandle.TimeFrame = timeFrame;
+            }
+
+            for (int i = 0; i < series.Parameters.Count; i++)
+            {
+                ICandleSeriesParameter param = series.Parameters[i];
+                if (param.SysName == "TimeFrame"
+                    && param.Type == CandlesParameterType.StringCollection)
+                {
+                    ((CandlesParameterString)param).ValueString = timeFrame.ToString();
+                }
+            }
+
+            series.OnStateChange(CandleSeriesState.ParametersChange);
+        }
+
+        private static void ApplyStopMonitorTimeFrameToTab(BotTabSimple tab, TimeFrame monitorTimeFrame)
+        {
+            if (tab?.Connector == null)
+            {
+                return;
+            }
+
+            try
+            {
+                tab.Connector.TimeFrame = monitorTimeFrame;
+                SyncCandleSeriesRealizationTimeFrame(tab.Connector.TimeFrameBuilder?.CandleSeriesRealization, monitorTimeFrame);
+                tab.TimeFrameBuilder?.Save();
+                tab.Connector.Save();
+                tab.Connector.ReconnectHard();
+            }
+            catch
+            {
+                // ignore reconnect errors during Stopper monitor sync
+            }
+        }
+
+        /// <summary>
+        /// Вторая страница скринера (оранжевая «2») создаётся только при Min1…Min15; иначе вкладка удаляется из робота.
+        /// </summary>
+        private void EnsureStopMonitorScreenerPageExists()
+        {
+            if (_stopMonitorScreenerTab != null)
+            {
+                List<IIBotTab> tabs = GetTabs();
+                if (tabs != null && tabs.Contains(_stopMonitorScreenerTab))
+                {
+                    return;
+                }
+            }
+
+            TryResolveStopMonitorScreenerTabReference();
+            if (_stopMonitorScreenerTab != null)
+            {
+                List<IIBotTab> tabs = GetTabs();
+                if (tabs != null && tabs.Contains(_stopMonitorScreenerTab))
+                {
+                    return;
+                }
+            }
+
+            _stopMonitorScreenerTab = null;
+            PrepareStopMonitorScreenerPersistedArtifactsBeforeCreate();
+            TabCreate(BotTabType.Screener);
+            if (TabsScreener == null || TabsScreener.Count == 0)
+            {
+                return;
+            }
+
+            _stopMonitorScreenerTab = TabsScreener[TabsScreener.Count - 1];
+            ClearStopMonitorScreenerTradingIndicators();
+            RemoveCorruptStopMonitorScreenerTabSetFileIfNeeded();
+        }
+
+        /// <summary>
+        /// Полное отключение монитора: бумаги, persisted-файлы, вкладка «2» в панели робота.
+        /// </summary>
+        private void DestroyStopMonitorScreenerPage()
+        {
+            WireStopMonitorScreenerEvents(wire: false);
+            TryResolveStopMonitorScreenerTabReference();
+
+            if (_stopMonitorScreenerTab == null)
+            {
+                _stopMonitorAppliedTimeFrame = null;
+                return;
+            }
+
+            ClearStopMonitorScreenerSecuritiesAndTabs(forceReloadUi: true);
+            DeleteStopMonitorScreenerPersistedSettings();
+            RemoveStopMonitorScreenerBotTab();
+            _stopMonitorScreenerTab = null;
+            _stopMonitorAppliedTimeFrame = null;
+        }
+
+        private void TryResolveStopMonitorScreenerTabReference()
+        {
+            if (_stopMonitorScreenerTab != null || TabsScreener == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < TabsScreener.Count; i++)
+            {
+                if (!ReferenceEquals(TabsScreener[i], _screenerTab))
+                {
+                    _stopMonitorScreenerTab = TabsScreener[i];
+                    return;
+                }
+            }
+        }
+
+        private void RemoveStopMonitorScreenerBotTab()
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            List<IIBotTab> tabs = GetTabs();
+            int index = tabs?.IndexOf(_stopMonitorScreenerTab) ?? -1;
+            if (index < 0)
+            {
+                try
+                {
+                    _stopMonitorScreenerTab.StopPaint();
+                    _stopMonitorScreenerTab.Delete();
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                return;
+            }
+
+            if (ActiveTab == null && tabs.Count > 0)
+            {
+                ActiveTab = tabs[0];
+            }
+
+            try
+            {
+                TabDelete(index);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Stopper-монитор: удаление страницы 2 — " + ex.Message,
+                    LogMessageType.System);
+                try
+                {
+                    _stopMonitorScreenerTab.StopPaint();
+                    _stopMonitorScreenerTab.Delete();
+                    tabs.RemoveAt(index);
+                }
+                catch
+                {
+                    // ignore fallback errors
+                }
+            }
+        }
+
+        private void DeleteStopMonitorScreenerPersistedSettings()
+        {
+            string tabName = _stopMonitorScreenerTab?.TabName ?? GetStopMonitorScreenerTabNameCandidate();
+            if (string.IsNullOrWhiteSpace(tabName))
+            {
+                return;
+            }
+
+            string[] suffixes =
+            {
+                "ScreenerSet.txt",
+                "ScreenerTabSet.txt",
+                "ScreenerIndicators.txt"
+            };
+
+            for (int i = 0; i < suffixes.Length; i++)
+            {
+                try
+                {
+                    string path = Path.Combine("Engine", tabName + suffixes[i]);
+                    if (File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " | Stopper-монитор: " + suffixes[i] + " — " + ex.Message,
+                        LogMessageType.System);
+                }
+            }
+        }
+
+        private void ConfigureStopMonitorScreenerSecurity(string securityName)
+        {
+            if (_stopMonitorScreenerTab.SecuritiesNames == null)
+            {
+                return;
+            }
+
+            string secClass = string.IsNullOrWhiteSpace(_screenerTab.SecuritiesClass)
+                ? "TQBR"
+                : _screenerTab.SecuritiesClass;
+
+            ClearStopMonitorScreenerSecuritiesAndTabs();
+
+            _stopMonitorScreenerTab.SecuritiesNames.Add(new ActivatedSecurity
+            {
+                SecurityName = securityName,
+                SecurityClass = secClass,
+                IsOn = true
+            });
+            _stopMonitorScreenerTab.SaveSettings();
+        }
+
+        private void ClearStopMonitorScreenerSecuritiesAndTabs(bool forceReloadUi = false)
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            ClearStopMonitorScreenerTradingIndicators();
+
+            if (_stopMonitorScreenerTab.SecuritiesNames != null)
+            {
+                _stopMonitorScreenerTab.SecuritiesNames.Clear();
+            }
+
+            if (_stopMonitorScreenerTab.Tabs != null)
+            {
+                for (int i = _stopMonitorScreenerTab.Tabs.Count - 1; i >= 0; i--)
+                {
+                    BotTabSimple tab = _stopMonitorScreenerTab.Tabs[i];
+                    if (tab == null)
+                    {
+                        _stopMonitorScreenerTab.Tabs.RemoveAt(i);
+                        continue;
+                    }
+
+                    StripTabCandleIndicatorsQuiet(tab);
+                    DeleteStopMonitorTabPersistedChartFiles(tab);
+                    tab.Clear();
+                    tab.Delete();
+                    _stopMonitorScreenerTab.Tabs.RemoveAt(i);
+                }
+            }
+
+            ClearStopMonitorScreenerPersistedTabListFile();
+            _stopMonitorScreenerTab.NeedToReloadTabs = true;
+            if (forceReloadUi)
+            {
+                _stopMonitorScreenerTab.TryReLoadTabs();
+            }
+
+            _stopMonitorScreenerTab.SaveSettings();
+        }
+
+        /// <summary>
+        /// Страница 2 — только «часы» Stopper; индикаторы логик не ставим (иначе ReloadIndicatorsOnTabs → NRE на чарте).
+        /// </summary>
+        private void ClearStopMonitorScreenerTradingIndicators()
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            if (_stopMonitorScreenerTab._indicators != null)
+            {
+                _stopMonitorScreenerTab._indicators.Clear();
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _stopMonitorScreenerTab.TabName + "ScreenerIndicators.txt");
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Stopper-монитор: не удалось удалить ScreenerIndicators.txt — " + ex.Message,
+                    LogMessageType.System);
+            }
+        }
+
+        /// <summary>До второго TabCreate — убрать сохранённые индикаторы tab1, иначе ctor BotTabScreener вызовет ReloadIndicatorsOnTabs.</summary>
+        private void PrepareStopMonitorScreenerPersistedArtifactsBeforeCreate()
+        {
+            try
+            {
+                string path = Path.Combine("Engine", GetStopMonitorScreenerTabNameCandidate() + "ScreenerIndicators.txt");
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Stopper-монитор: подготовка tab1 — " + ex.Message,
+                    LogMessageType.System);
+            }
+        }
+
+        private string GetStopMonitorScreenerTabNameCandidate()
+        {
+            return NameStrategyUniq + "tab1";
+        }
+
+        private static void StripTabCandleIndicatorsQuiet(BotTabSimple tab)
+        {
+            if (tab?.Indicators == null)
+            {
+                return;
+            }
+
+            for (int i = tab.Indicators.Count - 1; i >= 0; i--)
+            {
+                if (tab.Indicators[i] is Aindicator indicator)
+                {
+                    try
+                    {
+                        tab.DeleteCandleIndicator(indicator);
+                    }
+                    catch
+                    {
+                        // ignore cleanup errors on monitor tab
+                    }
+                }
+            }
+        }
+
+        private void DeleteStopMonitorTabPersistedChartFiles(BotTabSimple tab)
+        {
+            if (tab == null || string.IsNullOrWhiteSpace(tab.TabName))
+            {
+                return;
+            }
+
+            try
+            {
+                string chartPath = Path.Combine("Engine", tab.TabName + "_Engine.txt");
+                if (File.Exists(chartPath))
+                {
+                    File.Delete(chartPath);
+                }
+
+                string connectorPath = Path.Combine("Engine", tab.TabName + ".txt");
+                if (File.Exists(connectorPath))
+                {
+                    File.Delete(connectorPath);
+                }
+
+                string timeFrameBuilderPath = Path.Combine("Engine", tab.TabName + "TimeFrameBuilder.txt");
+                if (File.Exists(timeFrameBuilderPath))
+                {
+                    File.Delete(timeFrameBuilderPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(
+                    NameStrategyUniq + " | Stopper-монитор: " + tab.TabName + " persisted files — " + ex.Message,
+                    LogMessageType.System);
+            }
+        }
+
+        /// <summary>
+        /// Перезагрузка вкладок страницы 2 без индикаторов логик и без TryLoadTabs (старые tab*.txt тянут TF основного скринера).
+        /// </summary>
+        private void ReloadStopMonitorScreenerTabs(TimeFrame monitorTimeFrame)
+        {
+            EnsureStopMonitorScreenerCandleInfrastructure(monitorTimeFrame);
+            ClearStopMonitorScreenerTradingIndicators();
+            ApplyStopMonitorScreenerTimeFrame(monitorTimeFrame, reconnectTabs: false);
+            _stopMonitorScreenerTab.NeedToReloadTabs = true;
+            _stopMonitorScreenerTab.TryReLoadTabs();
+            ApplyStopMonitorScreenerTimeFrame(monitorTimeFrame, reconnectTabs: true);
+        }
+
+        private void WireStopMonitorScreenerEvents(bool wire)
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            if (wire)
+            {
+                if (_stopMonitorScreenerEventsWired)
+                {
+                    return;
+                }
+
+                _stopMonitorScreenerTab.CandleFinishedEvent += StopMonitorScreener_CandleFinishedEvent;
+                _stopMonitorScreenerTab.EventsIsOn = true;
+                _stopMonitorScreenerEventsWired = true;
+                return;
+            }
+
+            if (!_stopMonitorScreenerEventsWired)
+            {
+                return;
+            }
+
+            _stopMonitorScreenerTab.CandleFinishedEvent -= StopMonitorScreener_CandleFinishedEvent;
+            _stopMonitorScreenerEventsWired = false;
+        }
+
+        /// <summary>CandleFinished страницы 2 — только общепортфельный Stopper (SL/TP), без торговли по логикам.</summary>
+        private void StopMonitorScreener_CandleFinishedEvent(List<Candle> candles, BotTabSimple tab)
+        {
+            if (!IsStopMonitorScreenerActive()
+                || !IsPortfolioStopperActive()
+                || candles == null
+                || candles.Count == 0
+                || tab == null
+                || !IsStopMonitorInstrumentTab(tab))
+            {
+                return;
+            }
+
+            DateTime candleTime = candles[candles.Count - 1].TimeStart;
+            RecalculateAllLogicPortfolioUnrealized();
+
+            BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
+            if (refTab == null)
+            {
+                refTab = tab;
+            }
+
+            RefreshStopperTechEquityDisplayAggregated(refTab, candleTime);
+            if (TryManagePortfolioStopperProtection(refTab, candleTime))
+            {
+                MaybeRefreshReferenceAnnualYieldAfterAggregatedCandle(candleTime, refTab, force: true);
+                MaybeSaveLogicPortfolios(force: true);
+                RecordHtmlReportEquitySnapshot(candleTime);
+                MaybeWriteHtmlReport(force: true);
+            }
+        }
+
+        private void EnsureStopMonitorScreenerCandleInfrastructure(TimeFrame monitorTimeFrame)
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            SyncStopMonitorScreenerCandleSeriesTimeFrame(_stopMonitorScreenerTab, monitorTimeFrame);
+
+            if (_stopMonitorScreenerTab.CandleSeriesRealization == null)
+            {
+                string seriesType = string.IsNullOrWhiteSpace(_stopMonitorScreenerTab.CandleCreateMethodType)
+                    ? "Simple"
+                    : _stopMonitorScreenerTab.CandleCreateMethodType;
+                _stopMonitorScreenerTab.CandleSeriesRealization =
+                    CandleFactory.CreateCandleSeriesRealization(seriesType);
+                _stopMonitorScreenerTab.CandleSeriesRealization?.Init(StartProgram);
+                SyncStopMonitorScreenerCandleSeriesTimeFrame(_stopMonitorScreenerTab, monitorTimeFrame);
+            }
+
+            if (_stopMonitorScreenerTab.CandleSeriesRealization == null
+                || _stopMonitorScreenerTab.Tabs == null)
+            {
+                return;
+            }
+
+            string screenerSeriesState = _stopMonitorScreenerTab.CandleSeriesRealization.GetSaveString();
+            for (int i = 0; i < _stopMonitorScreenerTab.Tabs.Count; i++)
+            {
+                EnsureTabCandleSeriesRealization(_stopMonitorScreenerTab.Tabs[i], screenerSeriesState);
+                ApplyStopMonitorTimeFrameToTab(_stopMonitorScreenerTab.Tabs[i], monitorTimeFrame);
+            }
+        }
+
+        private void RemoveCorruptStopMonitorScreenerTabSetFileIfNeeded()
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _stopMonitorScreenerTab.TabName + "ScreenerTabSet.txt");
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                string content = File.ReadAllText(path, Encoding.UTF8).Trim();
+                if (string.IsNullOrEmpty(content) || content == "#")
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private void ClearStopMonitorScreenerPersistedTabListFile()
+        {
+            if (_stopMonitorScreenerTab == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string path = Path.Combine("Engine", _stopMonitorScreenerTab.TabName + "ScreenerTabSet.txt");
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
         private void AppendStopperEquitySnapshot(DateTime candleTime, decimal equity)
         {
             if (_stopperEquityHistory.Count > 0
@@ -2718,6 +3579,11 @@ namespace OsEngine.Robots.Custom
 
                 RecalculateAllLogicPortfolioUnrealized();
 
+                if (_metaLogicEnabled.ValueBool)
+                {
+                    AppendMetaLogicWarmupPortfolioPoints(candleTime);
+                }
+
                 BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
                 if (refTab == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
                 {
@@ -2726,17 +3592,20 @@ namespace OsEngine.Robots.Custom
 
                 if (IsPortfolioStopperActive())
                 {
-                    RefreshStopperTechEquityDisplayAggregated(refTab, candleTime);
-                    if (TryManagePortfolioStopperProtection(refTab, candleTime))
+                    if (!IsStopMonitorScreenerActive())
                     {
-                        MaybeRefreshReferenceAnnualYieldAfterAggregatedCandle(
-                            candleTime,
-                            refTab,
-                            force: true);
-                        MaybeSaveLogicPortfolios(force: false);
-                        RecordHtmlReportEquitySnapshot(candleTime);
-                        MaybeWriteHtmlReport(force: false);
-                        return;
+                        RefreshStopperTechEquityDisplayAggregated(refTab, candleTime);
+                        if (TryManagePortfolioStopperProtection(refTab, candleTime))
+                        {
+                            MaybeRefreshReferenceAnnualYieldAfterAggregatedCandle(
+                                candleTime,
+                                refTab,
+                                force: true);
+                            MaybeSaveLogicPortfolios(force: false);
+                            RecordHtmlReportEquitySnapshot(candleTime);
+                            MaybeWriteHtmlReport(force: false);
+                            return;
+                        }
                     }
                 }
 
@@ -2786,6 +3655,20 @@ namespace OsEngine.Robots.Custom
             string closeSignal = isTakeProfit ? SignalPortfolioStopperTp : SignalPortfolioStopperSl;
             CloseAllBotPositions(closeSignal);
             MaybeSaveLogicPortfolios(force: true);
+
+            StrategyParameterBool stopRobotParamPreview = isTakeProfit
+                ? ResolveStopRobotAfterPortfolioTakeProfitParameter()
+                : ResolveStopRobotAfterPortfolioStopLossParameter();
+            bool stopRobotPreview = stopRobotParamPreview != null && stopRobotParamPreview.ValueBool;
+            RecordHtmlReportStopperTrigger(
+                candleTime,
+                isTakeProfit,
+                referenceEquity,
+                currentEquity,
+                thresholdPercent,
+                triggerLevel,
+                stopRobotPreview);
+
             MaybeWriteHtmlReport(force: true);
 
             decimal postCloseEquity = TryGetStopperMonitoredEquity(tab);
@@ -2893,14 +3776,14 @@ namespace OsEngine.Robots.Custom
             TryFlushAggregatedCandlePortfolioDisplayIfComplete(tab, candleTime, candleIndex);
         }
 
-        /// <summary>Лайв / оптимизатор: полный цикл портфеля, stopper, ensure-индикаторов.</summary>
+        /// <summary>Лайв / оптимизатор: портфель, stopper; индикаторы — отложенно на UI (не с потока свечи).</summary>
         private void ScreenerTab_CandleFinishedEventFull(
             List<Candle> candles,
             BotTabSimple tab,
             int candleIndex,
             DateTime candleTime)
         {
-            TryEnsureRobotIndicatorsOnTabIfNeeded(tab, candleIndex);
+            ScheduleEnsureRobotIndicatorsOnTabIfNeeded(tab, candleIndex);
 
             RefreshLogicPortfoliosOnCandle(tab, candles, candleIndex);
 
@@ -2930,8 +3813,8 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>
         /// Торговый цикл на одной свече: SL/TP, выходы по Cl, входы по Op.
-        /// Volume: поровну или по PnlSMA (если «Металогика включена»).
-        /// Max positions: металогика — приоритет по убыванию PnlSMA; иначе L1…L10.
+        /// Volume: поровну или по PnlSMA (когда металогика включена и PnlSMA готов).
+        /// Max positions: металогика — приоритет по PnlSMA; иначе L1…L10.
         /// </summary>
         /// <param name="candles">Свечи вкладки.</param>
         /// <param name="tab">Вкладка инструмента.</param>
@@ -3040,7 +3923,20 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (_metaLogicEnabled.ValueBool)
+            bool metaLogicTradingActive = IsMetaLogicTradingActive();
+            if (_metaLogicEnabled.ValueBool && !metaLogicTradingActive && !_loggedMetaLogicWarmupPending)
+            {
+                _loggedMetaLogicWarmupPending = true;
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Металогика включена, но PnlSMA ещё не готов (нужно "
+                    + Math.Max(2, _portfolioAdjSmaLen.ValueInt)
+                    + " точек истории на каждую активную логику) — до готовности входы как без металогики "
+                    + "(Volume поровну, приоритет L1…L10).",
+                    LogMessageType.System);
+            }
+
+            if (metaLogicTradingActive)
             {
                 SortEntryCandidatesByPnlSmaDescending(entryCandidates);
             }
@@ -3092,16 +3988,28 @@ namespace OsEngine.Robots.Custom
                     + ": не хватает слотов позиций — пропущены логики "
                     + string.Join(", ", skipped)
                     + " ("
-                    + (_metaLogicEnabled.ValueBool
+                    + (metaLogicTradingActive
                         ? "приоритет по PnlSMA, убывание"
                         : "приоритет по номеру логики")
                     + ").",
                     LogMessageType.System);
             }
 
-            if (_metaLogicEnabled.ValueBool)
+            if (metaLogicTradingActive)
             {
-                OpenEntryCandidatesByMetaLogicPnlSma(tab, entryCandidates, totalVolume, entriesToOpen);
+                if (!_htmlReportMetaLogicReadyLogged)
+                {
+                    _htmlReportMetaLogicReadyLogged = true;
+                    RecordHtmlReportMetaLogicReady(tab, candles[candleIndex].TimeStart);
+                }
+
+                OpenEntryCandidatesByMetaLogicPnlSma(
+                    tab,
+                    entryCandidates,
+                    totalVolume,
+                    entriesToOpen,
+                    candles[candleIndex].TimeStart,
+                    freeSlots);
                 return;
             }
 
@@ -3111,12 +4019,39 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
+            var plainLines = new List<HtmlReportMetaLogicAllocationLine>();
             for (int i = 0; i < entriesToOpen; i++)
             {
                 int slotIndex = entryCandidates[i];
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
+                TryGetLogicPnlSmaMetrics(slotIndex, out decimal? pnlAvg, out decimal? pnlLast);
+                plainLines.Add(new HtmlReportMetaLogicAllocationLine
+                {
+                    Rank = i + 1,
+                    Slot = slotIndex,
+                    LogicNote = GetLogicSlotHumanNote(slotIndex),
+                    PnlSmaAvg = pnlAvg,
+                    PnlSmaLast = pnlLast,
+                    AbsWeightSharePct = entriesToOpen > 0 ? 100m / entriesToOpen : 0m,
+                    Volume = volumePerLogic,
+                    Side = runtime.EntrySide.ToString(),
+                    Opened = true
+                });
                 TryOpenLogicPosition(tab, slotIndex, volumePerLogic, runtime.EntrySide);
             }
+
+            RecordHtmlReportMetaLogicJournalEntry(
+                tab,
+                candles[candleIndex].TimeStart,
+                _metaLogicEnabled.ValueBool ? "warmup" : "plain",
+                entryCandidates,
+                entriesToOpen,
+                totalVolume,
+                freeSlots,
+                plainLines,
+                _metaLogicEnabled.ValueBool
+                    ? "Прогрев: Volume поровну, приоритет L1…L10 (PnlSMA ещё не готов)."
+                    : "Металогика выкл.: Volume поровну, приоритет L1…L10.");
         }
 
         /// <summary>
@@ -3323,13 +4258,16 @@ namespace OsEngine.Robots.Custom
             BotTabSimple tab,
             List<int> entryCandidates,
             decimal totalVolume,
-            int entriesToOpen)
+            int entriesToOpen,
+            DateTime candleTime,
+            int freeSlots)
         {
             if (tab == null || entryCandidates == null || entriesToOpen <= 0 || totalVolume <= 0m)
             {
                 return;
             }
 
+            var journalLines = new List<HtmlReportMetaLogicAllocationLine>();
             var weights = new decimal[entriesToOpen];
             decimal sumAbs = 0m;
             for (int i = 0; i < entriesToOpen; i++)
@@ -3345,6 +4283,7 @@ namespace OsEngine.Robots.Custom
                 sumAbs += Math.Abs(weight);
             }
 
+            int openedCount = 0;
             if (sumAbs <= 0m)
             {
                 decimal fallbackVolume = RoundVolume(tab, totalVolume / entriesToOpen);
@@ -3352,13 +4291,39 @@ namespace OsEngine.Robots.Custom
                 {
                     int slotIndex = entryCandidates[i];
                     LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-                    TryOpenLogicPosition(
-                        tab,
-                        slotIndex,
-                        fallbackVolume,
-                        ResolveMetaOpenSide(runtime, weights[i]));
+                    Side entrySide = ResolveMetaOpenSide(runtime, weights[i]);
+                    bool opened = fallbackVolume > 0m;
+                    if (opened)
+                    {
+                        TryOpenLogicPosition(tab, slotIndex, fallbackVolume, entrySide);
+                        openedCount++;
+                    }
+
+                    TryGetLogicPnlSmaMetrics(slotIndex, out decimal? pnlAvg, out decimal? pnlLast);
+                    journalLines.Add(new HtmlReportMetaLogicAllocationLine
+                    {
+                        Rank = i + 1,
+                        Slot = slotIndex,
+                        LogicNote = GetLogicSlotHumanNote(slotIndex),
+                        PnlSmaAvg = pnlAvg,
+                        PnlSmaLast = pnlLast,
+                        AbsWeightSharePct = entriesToOpen > 0 ? 100m / entriesToOpen : 0m,
+                        Volume = opened ? fallbackVolume : 0m,
+                        Side = entrySide.ToString(),
+                        Opened = opened
+                    });
                 }
 
+                RecordHtmlReportMetaLogicJournalEntry(
+                    tab,
+                    candleTime,
+                    "meta",
+                    entryCandidates,
+                    openedCount,
+                    totalVolume,
+                    freeSlots,
+                    journalLines,
+                    "Металогика: fallback — равные доли (|PnlSMA| = 0).");
                 return;
             }
 
@@ -3373,19 +4338,132 @@ namespace OsEngine.Robots.Custom
                     : RoundVolume(tab, shareVolume);
                 allocated += volume;
 
-                if (volume <= 0m)
+                Side entrySide = ResolveMetaOpenSide(runtime, weights[i]);
+                bool opened = volume > 0m;
+                if (opened)
                 {
-                    continue;
+                    TryOpenLogicPosition(tab, slotIndex, volume, entrySide);
+                    openedCount++;
                 }
 
-                Side entrySide = ResolveMetaOpenSide(runtime, weights[i]);
-                TryOpenLogicPosition(tab, slotIndex, volume, entrySide);
+                TryGetLogicPnlSmaMetrics(slotIndex, out decimal? pnlAvg, out decimal? pnlLast);
+                journalLines.Add(new HtmlReportMetaLogicAllocationLine
+                {
+                    Rank = i + 1,
+                    Slot = slotIndex,
+                    LogicNote = GetLogicSlotHumanNote(slotIndex),
+                    PnlSmaAvg = pnlAvg,
+                    PnlSmaLast = pnlLast,
+                    AbsWeightSharePct = sumAbs > 0m ? Math.Abs(weights[i]) / sumAbs * 100m : 0m,
+                    Volume = opened ? volume : 0m,
+                    Side = entrySide.ToString(),
+                    Opened = opened
+                });
             }
+
+            for (int i = entriesToOpen; i < entryCandidates.Count; i++)
+            {
+                int slotIndex = entryCandidates[i];
+                TryGetLogicPnlSmaMetrics(slotIndex, out decimal? pnlAvg, out decimal? pnlLast);
+                journalLines.Add(new HtmlReportMetaLogicAllocationLine
+                {
+                    Rank = i + 1,
+                    Slot = slotIndex,
+                    LogicNote = GetLogicSlotHumanNote(slotIndex),
+                    PnlSmaAvg = pnlAvg,
+                    PnlSmaLast = pnlLast,
+                    Skipped = true
+                });
+            }
+
+            RecordHtmlReportMetaLogicJournalEntry(
+                tab,
+                candleTime,
+                "meta",
+                entryCandidates,
+                openedCount,
+                totalVolume,
+                freeSlots,
+                journalLines,
+                "Металогика: Volume по |PnlSMA|, сторона по знаку PnlSMA / инверсии.");
         }
 
         private bool IsMetaLogicInversionActive()
         {
-            return _metaLogicEnabled.ValueBool && _metaLogicInversion.ValueBool;
+            return IsMetaLogicTradingActive() && _metaLogicInversion.ValueBool;
+        }
+
+        /// <summary>
+        /// Металогика реально применяется к входам только когда PnlSMA посчитан по каждой активной логике.
+        /// До этого — обычная логика (Volume поровну, приоритет L1…L10).
+        /// </summary>
+        private bool IsMetaLogicTradingActive()
+        {
+            if (!_metaLogicEnabled.ValueBool || !_usePortfolioAdjSma.ValueBool)
+            {
+                return false;
+            }
+
+            int pnlLen = Math.Max(2, _portfolioAdjSmaLen.ValueInt);
+            bool hasActiveLogic = false;
+
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
+                if (runtime == null
+                    || !runtime.IsActive
+                    || runtime.ParseResult?.Root == null
+                    || runtime.ParseResult.IsDisabled)
+                {
+                    continue;
+                }
+
+                hasActiveLogic = true;
+                if (_logicPortfolios[slot].History.Count < pnlLen)
+                {
+                    return false;
+                }
+
+                if (!TryGetLogicPnlSmaAllocationWeight(slot, out _))
+                {
+                    return false;
+                }
+            }
+
+            return hasActiveLogic;
+        }
+
+        /// <summary>
+        /// По одной точке equity на активную логику за агрегированную свечу — накопление окна PnlSMA при включённой металогике.
+        /// </summary>
+        private void AppendMetaLogicWarmupPortfolioPoints(DateTime candleTime)
+        {
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
+                if (runtime == null
+                    || !runtime.IsActive
+                    || runtime.ParseResult?.Root == null
+                    || runtime.ParseResult.IsDisabled)
+                {
+                    continue;
+                }
+
+                LogicPortfolioRuntime portfolio = _logicPortfolios[slot];
+                if (portfolio.LastCandleTime == candleTime)
+                {
+                    continue;
+                }
+
+                AppendLogicPortfolioPoint(
+                    slot,
+                    "candle",
+                    0m,
+                    "",
+                    "meta-equity",
+                    candleTime);
+                _logicPortfoliosDirty = true;
+            }
         }
 
         /// <summary>Buy/Sell на входе при металогике: глобальная инверсия или знак PnlSMA.</summary>
@@ -3459,6 +4537,59 @@ namespace OsEngine.Robots.Custom
 
             weight = meta.PnlSmaAvg.Value;
             return true;
+        }
+
+        private bool TryGetLogicPnlSmaMetrics(int slot, out decimal? avg, out decimal? last)
+        {
+            avg = null;
+            last = null;
+            if (!TryGetLogicPnlSmaAllocationWeight(slot, out decimal weight))
+            {
+                return false;
+            }
+
+            avg = weight;
+            LogicPortfolioRuntime runtime = _logicPortfolios[slot];
+            if (runtime.History.Count == 0)
+            {
+                return true;
+            }
+
+            int pnlLen = Math.Max(2, _portfolioAdjSmaLen.ValueInt);
+            var cfg = new MetaIndicatorConfig
+            {
+                UsePnlSma = true,
+                PnlSmaLen = pnlLen
+            };
+            var meta = new MetaIndicatorValues();
+            MetaIndicatorEquityCalculator.CalculateAt(runtime.History, runtime.History.Count - 1, cfg, meta);
+            last = meta.PnlSmaLast;
+            return true;
+        }
+
+        private string GetLogicSlotHumanNote(int slotIndex)
+        {
+            if (slotIndex < 1 || slotIndex > LogicSlotCount)
+            {
+                return "";
+            }
+
+            LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
+            if (runtime?.ParseResult?.Root == null)
+            {
+                return "";
+            }
+
+            List<LogicAtom> atoms = LogicLineParser.GetExpressionAtoms(runtime.ParseResult.Root);
+            for (int i = 0; i < atoms.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(atoms[i].Comment))
+                {
+                    return atoms[i].Comment.Trim();
+                }
+            }
+
+            return "";
         }
 
         /// <summary>PnlSMA для приоритета Max positions (выше — раньше в очереди на вход).</summary>
@@ -3936,7 +5067,7 @@ namespace OsEngine.Robots.Custom
             string executionMode = StartProgram == StartProgram.IsTester ? "тестер"
                 : StartProgram == StartProgram.IsOsOptimizer ? "оптимизатор"
                 : (_screenerTab?.EmulatorIsOn == true || tab?.EmulatorIsOn == true || tab?.Connector?.EmulatorIsOn == true
-                    ? "эмулятор (OsEngine)"
+                    ? "фейк OsEngine (EmulatorIsOn)"
                     : "лайв");
 
             string msg =
@@ -3946,7 +5077,8 @@ namespace OsEngine.Robots.Custom
                 + ", режим="
                 + executionMode
                 + ", портфель="
-                + (realPortfolio.HasValue ? realPortfolio.Value.ToString(CultureInfo.InvariantCulture) : "—");
+                + (realPortfolio.HasValue ? realPortfolio.Value.ToString(CultureInfo.InvariantCulture) : "—")
+                + ", индикаторы робота=UI-поток (не поток свечи/коннектора)";
 
             if (StartProgram == StartProgram.IsOsTrader && tab?.Connector != null)
             {
@@ -3954,8 +5086,13 @@ namespace OsEngine.Robots.Custom
                     + (tab.Connector.IsConnected ? "подключён" : "нет")
                     + ", торговля="
                     + (tab.Connector.IsReadyToTrade ? "готова" : "не готова")
-                    + ", эмулятор скринера="
-                    + (_screenerTab?.EmulatorIsOn == true ? "вкл." : "выкл.");
+                    + ", эмулятор OsEngine (EmulatorIsOn)="
+                    + (_screenerTab?.EmulatorIsOn == true
+                        || tab?.EmulatorIsOn == true
+                        || tab?.Connector?.EmulatorIsOn == true
+                        ? "вкл."
+                        : "выкл.")
+                    + " (заявки через ядро OsEngine, не «Фейковый режим 1» робота)";
             }
 
             SendNewLogMessage(msg, LogMessageType.System);
@@ -4160,6 +5297,16 @@ namespace OsEngine.Robots.Custom
             public MultiLogicPositionSnapshotDto[] OpenPositions = Array.Empty<MultiLogicPositionSnapshotDto>();
         }
 
+        /// <summary>JSON-файл только со строками «Логика 1…10» (кнопки «Выгрузить/Загрузить логику»).</summary>
+        private sealed class MultiLogicLogicExportFile
+        {
+            public string FormatVersion = MultiLogicLogicFileFormatVersion;
+            public string RobotType = "MultiLogic";
+            public string StrategyName = "";
+            public DateTime ExportedAtUtc;
+            public string[] LogicLines = Array.Empty<string>();
+        }
+
         private sealed class LogicPortfolioSnapshotDto
         {
             public int Slot;
@@ -4284,6 +5431,170 @@ namespace OsEngine.Robots.Custom
             catch (Exception ex)
             {
                 SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void ExportLogicsButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                if (!TryPromptSaveLogicFile(out string path))
+                {
+                    return;
+                }
+
+                ApplyPrefixesFromOpenParameterDialog();
+                MultiLogicLogicExportFile exportFile = BuildMultiLogicLogicExportFile();
+                string json = JsonConvert.SerializeObject(exportFile, Formatting.Indented);
+                File.WriteAllText(path, json, new UTF8Encoding(false));
+
+                string msg = NameStrategyUniq + " | Логики выгружены в файл: " + path;
+                SendNewLogMessage(msg, LogMessageType.User);
+                SendNewLogMessage(msg, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void ImportLogicsButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                if (!TryPromptOpenLogicFile(out string path))
+                {
+                    return;
+                }
+
+                string json = File.ReadAllText(path, Encoding.UTF8);
+                if (!TryParseLogicLinesFromJson(json, out string[] logicLines, out string error))
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " | Загрузка логики: " + (error ?? "неизвестная ошибка."),
+                        LogMessageType.Error);
+                    return;
+                }
+
+                ApplyLogicSlotStrings(logicLines);
+                SaveParametersWithoutLogicIndicatorResync();
+                RequestParameterGuiRepaintOnce();
+                RunOnUiThread(
+                    () => TryParseAndApplyAllLogicSlots(logToUser: true),
+                    preferAsync: true);
+
+                string msg = NameStrategyUniq + " | Логики загружены из файла: " + path;
+                SendNewLogMessage(msg, LogMessageType.User);
+                SendNewLogMessage(msg, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private MultiLogicLogicExportFile BuildMultiLogicLogicExportFile()
+        {
+            return new MultiLogicLogicExportFile
+            {
+                StrategyName = NameStrategyUniq,
+                ExportedAtUtc = DateTime.UtcNow,
+                LogicLines = CaptureLogicLines()
+            };
+        }
+
+        private bool TryParseLogicLinesFromJson(string json, out string[] logicLines, out string error)
+        {
+            logicLines = null;
+            error = null;
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                error = "пустой файл";
+                return false;
+            }
+
+            MultiLogicLogicExportFile exportFile = JsonConvert.DeserializeObject<MultiLogicLogicExportFile>(json);
+            if (exportFile?.LogicLines != null && exportFile.LogicLines.Length == LogicSlotCount)
+            {
+                if (!string.IsNullOrWhiteSpace(exportFile.FormatVersion)
+                    && !string.Equals(exportFile.FormatVersion, MultiLogicLogicFileFormatVersion, StringComparison.Ordinal))
+                {
+                    error = "неподдерживаемая версия " + exportFile.FormatVersion;
+                    return false;
+                }
+
+                logicLines = exportFile.LogicLines;
+                return true;
+            }
+
+            MultiLogicSnapshotFile snapshot = JsonConvert.DeserializeObject<MultiLogicSnapshotFile>(json);
+            if (snapshot?.LogicLines != null && snapshot.LogicLines.Length == LogicSlotCount)
+            {
+                logicLines = snapshot.LogicLines;
+                return true;
+            }
+
+            error = "файл не содержит ровно " + LogicSlotCount + " строк logicLines («Логика 1…10»)";
+            return false;
+        }
+
+        private bool TryPromptSaveLogicFile(out string path)
+        {
+            path = null;
+            try
+            {
+                string selectedPath = null;
+                RunOnUiThread(() =>
+                {
+                    var dialog = new SaveFileDialog
+                    {
+                        Filter = "MultiLogic logics (*.json)|*.json|All files (*.*)|*.*",
+                        FileName = NameStrategyUniq + "_MultiLogicLogics.json",
+                        DefaultExt = ".json",
+                        InitialDirectory = AppDomain.CurrentDomain.BaseDirectory
+                    };
+                    if (dialog.ShowDialog() == true)
+                    {
+                        selectedPath = dialog.FileName;
+                    }
+                });
+                path = selectedPath;
+                return !string.IsNullOrWhiteSpace(path);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                return false;
+            }
+        }
+
+        private bool TryPromptOpenLogicFile(out string path)
+        {
+            path = null;
+            try
+            {
+                string selectedPath = null;
+                RunOnUiThread(() =>
+                {
+                    var dialog = new OpenFileDialog
+                    {
+                        Filter =
+                            "MultiLogic logics (*.json)|*.json|MultiLogic snapshot (*.json)|*.json|All files (*.*)|*.*",
+                        InitialDirectory = AppDomain.CurrentDomain.BaseDirectory
+                    };
+                    if (dialog.ShowDialog() == true)
+                    {
+                        selectedPath = dialog.FileName;
+                    }
+                });
+                path = selectedPath;
+                return !string.IsNullOrWhiteSpace(path);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                return false;
             }
         }
 
@@ -8255,22 +9566,10 @@ namespace OsEngine.Robots.Custom
                         return;
                     }
 
-                    SafeReloadLogicIndicatorsOnAllTabsQuiet(logSummary: attempt == 0 || attempt == MoexIndicatorsAttachMaxAttempts);
-
-                    if (!MoexIndicatorsAttachStillNeeded())
-                    {
-                        return;
-                    }
-
-                    if (attempt < MoexIndicatorsAttachMaxAttempts)
-                    {
-                        ScheduleMoexIndicatorsAttach(attempt + 1);
-                        return;
-                    }
-
-                    SendNewLogMessage(
-                        NameStrategyUniq + ": индикаторы не установлены полностью — " + BuildMoexIndicatorsAttachDiagnostic(),
-                        LogMessageType.Error);
+                    bool logSummary = attempt == 0 || attempt == MoexIndicatorsAttachMaxAttempts;
+                    SafeReloadLogicIndicatorsOnAllTabsQuiet(
+                        logSummary,
+                        onUiComplete: () => ContinueMoexIndicatorsAttachAfterUiPass(passId, attempt));
                 }
                 catch (Exception ex)
                 {
@@ -8281,20 +9580,55 @@ namespace OsEngine.Robots.Custom
             });
         }
 
-        /// <summary>
-        /// Установка индикаторов робота на все готовые вкладки (без ReloadIndicatorsOnTabs / SynchFirstTab из ядра).
-        /// </summary>
-        private int SafeReloadLogicIndicatorsOnAllTabsQuiet(bool logSummary = true)
+        private void ContinueMoexIndicatorsAttachAfterUiPass(int passId, int attempt)
         {
-            System.Windows.Threading.Dispatcher dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher != null && !dispatcher.CheckAccess())
+            if (passId != _moexIndicatorsAttachPassId || _screenerTab == null)
             {
-                int attached = 0;
-                dispatcher.Invoke(() => attached = SafeReloadLogicIndicatorsOnAllTabsQuietImpl(logSummary));
-                return attached;
+                return;
             }
 
-            return SafeReloadLogicIndicatorsOnAllTabsQuietImpl(logSummary);
+            if (!MoexIndicatorsAttachStillNeeded())
+            {
+                return;
+            }
+
+            if (attempt < MoexIndicatorsAttachMaxAttempts)
+            {
+                ScheduleMoexIndicatorsAttach(attempt + 1);
+                return;
+            }
+
+            SendNewLogMessage(
+                NameStrategyUniq + ": индикаторы не установлены полностью — " + BuildMoexIndicatorsAttachDiagnostic(),
+                LogMessageType.Error);
+        }
+
+        /// <summary>
+        /// Установка индикаторов робота на все готовые вкладки (без ReloadIndicatorsOnTabs / SynchFirstTab из ядра).
+        /// Если вызов не с UI — ставит работу в очередь BeginInvoke (не блокирует поток свечи/фона).
+        /// </summary>
+        private void SafeReloadLogicIndicatorsOnAllTabsQuiet(bool logSummary = true, Action onUiComplete = null)
+        {
+            void work()
+            {
+                try
+                {
+                    SafeReloadLogicIndicatorsOnAllTabsQuietImpl(logSummary);
+                }
+                finally
+                {
+                    onUiComplete?.Invoke();
+                }
+            }
+
+            System.Windows.Threading.Dispatcher dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess())
+            {
+                work();
+                return;
+            }
+
+            RunOnUiThread(work, preferAsync: true);
         }
 
         private int SafeReloadLogicIndicatorsOnAllTabsQuietImpl(bool logSummary)
@@ -8468,10 +9802,38 @@ namespace OsEngine.Robots.Custom
             return string.Join("; ", parts);
         }
 
-        /// <summary>Догрузить индикаторы на одной вкладке, если после MOEX reload они не созданы.</summary>
+        /// <summary>
+        /// Догрузка индикаторов робота на UI-потоке (не с потока свечи / коннектора).
+        /// В тестере attach только при «Принять» (SyncAllLogicIndicators).
+        /// </summary>
+        private void ScheduleEnsureRobotIndicatorsOnTabIfNeeded(BotTabSimple tab, int candleIndex = -1)
+        {
+            if (tab == null || StartProgram == StartProgram.IsTester)
+            {
+                return;
+            }
+
+            if (!_loggedRobotIndicatorsUiThreadAttach)
+            {
+                _loggedRobotIndicatorsUiThreadAttach = true;
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Robot indicators: attach на UI-потоке (BeginInvoke), не с потока свечи/коннектора.",
+                    LogMessageType.System);
+            }
+
+            RunOnUiThread(
+                () => TryEnsureRobotIndicatorsOnTabIfNeeded(tab, candleIndex),
+                preferAsync: true);
+        }
+
+        /// <summary>Догрузить индикаторы на одной вкладке, если после MOEX reload они не созданы (вызывать с UI).</summary>
         private void TryEnsureRobotIndicatorsOnTabIfNeeded(BotTabSimple tab, int candleIndex = -1)
         {
-            if (tab == null || _screenerTab?._indicators == null || !IsTabChartReadyForIndicators(tab))
+            if (tab == null
+                || _screenerTab?._indicators == null
+                || IsStopMonitorInstrumentTab(tab)
+                || !IsTabChartReadyForIndicators(tab))
             {
                 return;
             }
@@ -8564,7 +9926,7 @@ namespace OsEngine.Robots.Custom
         /// <summary>Создать/обновить индикатор на одной вкладке; false — пропуск без вызова ядра на неготовый чарт.</summary>
         private bool TryAttachRobotIndicatorOnTab(BotTabSimple tab, IndicatorOnTabs ind)
         {
-            if (tab == null || ind == null || !IsTabChartReadyForIndicators(tab))
+            if (tab == null || ind == null || IsStopMonitorInstrumentTab(tab) || !IsTabChartReadyForIndicators(tab))
             {
                 return false;
             }
@@ -9254,7 +10616,39 @@ namespace OsEngine.Robots.Custom
         #endregion
 
 
-        #region HTML report
+        public IReadOnlyList<string> GetConfiguredLogicNames()
+        {
+            return new[]
+            {
+                _logic1?.ValueString ?? "",
+                _logic2?.ValueString ?? "",
+                _logic3?.ValueString ?? "",
+                _logic4?.ValueString ?? "",
+                _logic5?.ValueString ?? "",
+                _logic6?.ValueString ?? "",
+                _logic7?.ValueString ?? "",
+                _logic8?.ValueString ?? "",
+                _logic9?.ValueString ?? "",
+                _logic10?.ValueString ?? "",
+            };
+        }
+
+        #endregion
+    }
+
+    /*
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * БЛОК 4 — HTML-ОТЧЁТ ПО РЕЗУЛЬТАТАМ ТЕСТИРОВАНИЯ / ЛАЙВА
+     * Файл Engine\{имя робота}_Report.html · графики equity, металогика, сделки.
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     */
+    public partial class MultiLogic
+    {
+        #region БЛОК 4 — HTML-ОТЧЁТ (_Report.html)
 
         private const string HtmlReportTabName = "Отчёт";
         private const string HtmlReportEnableParamName = "HTML-отчёт: включить";
@@ -9267,8 +10661,10 @@ namespace OsEngine.Robots.Custom
         private const int HtmlReportMinIntervalSeconds = 30;
         private const int HtmlReportRecentEventsCap = 200;
         private const int HtmlReportClosedTradesCap = 500;
+        private const int HtmlReportMetaLogicJournalCap = 300;
         private const int HtmlReportEquitySnapshotsCap = 2500;
-        private const string HtmlReportFormatVersion = "1";
+        private const int HtmlReportStopperEventsCap = 100;
+        private const string HtmlReportFormatVersion = "2";
 
         private StrategyParameterBool _htmlReportEnabled;
         private StrategyParameterInt _htmlReportIntervalSec;
@@ -9294,9 +10690,28 @@ namespace OsEngine.Robots.Custom
                 new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             public readonly List<HtmlReportRecentEvent> RecentEvents = new List<HtmlReportRecentEvent>();
             public readonly List<HtmlReportClosedTrade> ClosedTrades = new List<HtmlReportClosedTrade>();
+            public readonly List<HtmlReportMetaLogicJournalEntry> MetaLogicJournal =
+                new List<HtmlReportMetaLogicJournalEntry>();
             public readonly List<HtmlReportEquitySnapshot> EquitySnapshots = new List<HtmlReportEquitySnapshot>();
+            public readonly List<HtmlReportStopperEvent> StopperEvents = new List<HtmlReportStopperEvent>();
             public readonly List<HtmlReportModeSegment> ModeHistory = new List<HtmlReportModeSegment>();
             public string ActiveModeId = "";
+        }
+
+        private sealed class HtmlReportStopperEvent
+        {
+            public DateTime CandleTime;
+            public DateTime EventTimeUtc;
+            public string Kind = "";
+            public decimal ReferenceEquity;
+            public decimal CurrentEquity;
+            public decimal ThresholdPercent;
+            public decimal TriggerLevel;
+            public decimal PostCloseEquity;
+            public bool RegimeStopped;
+            public string ExecutionModeId = "";
+            public string ExecutionModeLabel = "";
+            public string Summary = "";
         }
 
         private sealed class HtmlReportInstrumentStats
@@ -9360,6 +10775,36 @@ namespace OsEngine.Robots.Custom
             public string Note = "";
             public string CloseReason = "";
             public string DurationLabel = "";
+        }
+
+        private sealed class HtmlReportMetaLogicAllocationLine
+        {
+            public int Rank;
+            public int Slot;
+            public string LogicNote = "";
+            public decimal? PnlSmaAvg;
+            public decimal? PnlSmaLast;
+            public decimal AbsWeightSharePct;
+            public decimal Volume;
+            public string Side = "";
+            public bool Opened;
+            public bool Skipped;
+        }
+
+        private sealed class HtmlReportMetaLogicJournalEntry
+        {
+            public DateTime CandleTime;
+            public DateTime EventTimeUtc;
+            public string TabKey = "";
+            /// <summary>meta — PnlSMA; warmup — мета вкл., окно не готово; plain — мета выкл.; ready — PnlSMA стал готов.</summary>
+            public string Mode = "";
+            public int CandidatesTotal;
+            public int EntriesOpened;
+            public decimal TotalVolume;
+            public int FreeSlots;
+            public string Summary = "";
+            public readonly List<HtmlReportMetaLogicAllocationLine> Lines =
+                new List<HtmlReportMetaLogicAllocationLine>();
         }
 
         private sealed class HtmlReportModeSegment
@@ -9651,6 +11096,84 @@ namespace OsEngine.Robots.Custom
             _htmlReportDirty = true;
         }
 
+        private void RecordHtmlReportStopperTrigger(
+            DateTime candleTime,
+            bool isTakeProfit,
+            decimal referenceEquity,
+            decimal currentEquity,
+            decimal thresholdPercent,
+            decimal triggerLevel,
+            bool regimeStopped)
+        {
+            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
+            {
+                return;
+            }
+
+            TouchHtmlReportExecutionMode(null);
+            HtmlReportExecutionMode mode = ResolveHtmlReportExecutionMode(null);
+            string kind = isTakeProfit ? "portfolio_take_profit" : "portfolio_stop_loss";
+            string kindLabel = isTakeProfit ? "Take-profit" : "Stop-loss";
+            decimal postCloseEquity = TryGetStopperMonitoredEquity(TryGetPortfolioMonitoringReferenceTab());
+            if (postCloseEquity <= 0m)
+            {
+                RecalculateAllLogicPortfolioUnrealized();
+                postCloseEquity = GetCombinedLogicPortfolioEquity();
+            }
+
+            string summary = kindLabel
+                + " "
+                + thresholdPercent.ToString(CultureInfo.InvariantCulture)
+                + "% | ref="
+                + referenceEquity.ToString(CultureInfo.InvariantCulture)
+                + ", equity="
+                + currentEquity.ToString(CultureInfo.InvariantCulture)
+                + ", порог="
+                + triggerLevel.ToString(CultureInfo.InvariantCulture)
+                + ", ref→"
+                + postCloseEquity.ToString(CultureInfo.InvariantCulture)
+                + (regimeStopped ? ", Regime=Off" : "");
+
+            _htmlReportRuntime.StopperEvents.Add(new HtmlReportStopperEvent
+            {
+                CandleTime = candleTime,
+                EventTimeUtc = DateTime.UtcNow,
+                Kind = kind,
+                ReferenceEquity = referenceEquity,
+                CurrentEquity = currentEquity,
+                ThresholdPercent = thresholdPercent,
+                TriggerLevel = triggerLevel,
+                PostCloseEquity = postCloseEquity,
+                RegimeStopped = regimeStopped,
+                ExecutionModeId = mode.ModeId,
+                ExecutionModeLabel = mode.ModeLabel,
+                Summary = summary
+            });
+
+            if (_htmlReportRuntime.StopperEvents.Count > HtmlReportStopperEventsCap)
+            {
+                int remove = _htmlReportRuntime.StopperEvents.Count - HtmlReportStopperEventsCap;
+                _htmlReportRuntime.StopperEvents.RemoveRange(0, remove);
+            }
+
+            _htmlReportRuntime.RecentEvents.Add(new HtmlReportRecentEvent
+            {
+                Seq = 0,
+                CandleTime = candleTime,
+                EventTimeUtc = DateTime.UtcNow,
+                Event = kind,
+                TabKey = "—",
+                LogicSlot = 0,
+                Delta = currentEquity - referenceEquity,
+                EquityTotal = currentEquity,
+                Note = summary,
+                ExecutionModeId = mode.ModeId,
+                ExecutionModeLabel = mode.ModeLabel
+            });
+            TrimHtmlReportRecentEvents(_htmlReportRuntime.RecentEvents);
+            _htmlReportDirty = true;
+        }
+
         private static void TrimHtmlReportRecentEvents(List<HtmlReportRecentEvent> events)
         {
             if (events.Count <= HtmlReportRecentEventsCap)
@@ -9716,14 +11239,22 @@ namespace OsEngine.Robots.Custom
                 return "RegimeFlip";
             }
 
-            if (n.IndexOf("_SL", StringComparison.OrdinalIgnoreCase) >= 0
-                || string.Equals(n, SignalPortfolioStopperSl, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(n, SignalPortfolioStopperSl, StringComparison.OrdinalIgnoreCase))
+            {
+                return "PortfolioStopSL";
+            }
+
+            if (string.Equals(n, SignalPortfolioStopperTp, StringComparison.OrdinalIgnoreCase))
+            {
+                return "PortfolioStopTP";
+            }
+
+            if (n.IndexOf("_SL", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return "StopLoss";
             }
 
-            if (n.IndexOf("_TP", StringComparison.OrdinalIgnoreCase) >= 0
-                || string.Equals(n, SignalPortfolioStopperTp, StringComparison.OrdinalIgnoreCase))
+            if (n.IndexOf("_TP", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return "TakeProfit";
             }
@@ -9867,7 +11398,8 @@ namespace OsEngine.Robots.Custom
                     opensTotal = rt.OpensTotal,
                     closesTotal = rt.ClosesTotal,
                     openPositionsCount = CountScreenerOpenPositions(),
-                    activeLogicSlots = CountActiveLogicSlots()
+                    activeLogicSlots = CountActiveLogicSlots(),
+                    stopperTriggersTotal = rt.StopperEvents.Count
                 },
                 equitySeries = new
                 {
@@ -9915,6 +11447,21 @@ namespace OsEngine.Robots.Custom
                         })
                 },
                 closeReasons = rt.CloseReasons,
+                stopperEvents = rt.StopperEvents.Select(s => new
+                {
+                    candleTime = s.CandleTime.ToString("O", CultureInfo.InvariantCulture),
+                    eventUtc = s.EventTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+                    kind = s.Kind,
+                    referenceEquity = s.ReferenceEquity,
+                    currentEquity = s.CurrentEquity,
+                    thresholdPercent = s.ThresholdPercent,
+                    triggerLevel = s.TriggerLevel,
+                    postCloseEquity = s.PostCloseEquity,
+                    regimeStopped = s.RegimeStopped,
+                    executionModeId = s.ExecutionModeId,
+                    executionModeLabel = s.ExecutionModeLabel,
+                    summary = s.Summary
+                }),
                 closedTrades = rt.ClosedTrades.Select(t => new
                 {
                     tabKey = t.TabKey,
@@ -9950,6 +11497,32 @@ namespace OsEngine.Robots.Custom
                     e.Note,
                     executionModeId = e.ExecutionModeId,
                     executionModeLabel = e.ExecutionModeLabel
+                }),
+                metaLogic = BuildHtmlReportMetaLogicSnapshot(),
+                metaLogicJournal = rt.MetaLogicJournal.Select(j => new
+                {
+                    candleTime = j.CandleTime.ToString("O", CultureInfo.InvariantCulture),
+                    eventUtc = j.EventTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+                    tabKey = j.TabKey,
+                    mode = j.Mode,
+                    candidatesTotal = j.CandidatesTotal,
+                    entriesOpened = j.EntriesOpened,
+                    totalVolume = j.TotalVolume,
+                    freeSlots = j.FreeSlots,
+                    summary = j.Summary,
+                    lines = j.Lines.Select(l => new
+                    {
+                        l.Rank,
+                        slot = l.Slot,
+                        logicNote = l.LogicNote,
+                        pnlSmaAvg = l.PnlSmaAvg,
+                        pnlSmaLast = l.PnlSmaLast,
+                        weightSharePct = l.AbsWeightSharePct,
+                        volume = l.Volume,
+                        side = l.Side,
+                        opened = l.Opened,
+                        skipped = l.Skipped
+                    })
                 })
             };
 
@@ -9978,6 +11551,12 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("<div id=\"mode-badges\"></div>");
             sb.AppendLine("</header>");
             sb.AppendLine("<section class=\"kpi\" id=\"kpi\"></section>");
+            sb.AppendLine("<section><h2>Общепортфельный Stopper (SL / TP)</h2>");
+            sb.AppendLine("<p class=\"sub\">Срабатывания общепортфельного stop-loss и take-profit — <strong>жирным</strong> в таблице ниже.</p>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"stopper-events\"><thead><tr><th>Время</th><th>Режим</th><th>Тип</th><th>Ref</th><th>Equity</th><th>%</th><th>Порог</th><th>Ref после</th><th>Regime Off</th><th>Описание</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<section><h2>Металогика — текущее состояние</h2><div id=\"meta-logic-status\" class=\"sub\"></div>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"meta-logic-priority\"><thead><tr><th>#</th><th>L</th><th>Note</th><th>PnlSMA avg</th><th>PnlSMA last</th><th>Equity</th><th>Hist</th><th>Готов</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<section><h2>Журнал металогики (входы и распределение Volume)</h2><div class=\"tbl-wrap\"><table id=\"meta-logic-journal\"><thead><tr><th>Время</th><th>Tab</th><th>Режим</th><th>Канд.</th><th>Открыто</th><th>Volume</th><th>Слоты</th><th>Детали (L / PnlSMA / % / Vol / Side)</th></tr></thead><tbody></tbody></table></div></section>");
             sb.AppendLine("<section><h2>Equity (сумма L1…L10)</h2><div id=\"equity-chart\" class=\"chart\"></div></section>");
             sb.AppendLine("<section><h2>Открытые и закрытые позиции (от времени)</h2>");
             sb.AppendLine("<p class=\"sub chart-legend\"><span class=\"lg-open\">● открытые (текущие)</span> · <span class=\"lg-close\">● закрытые (накопл.)</span></p>");
@@ -10044,6 +11623,198 @@ namespace OsEngine.Robots.Custom
             return dict;
         }
 
+        private object BuildHtmlReportMetaLogicSnapshot()
+        {
+            bool enabled = _metaLogicEnabled?.ValueBool ?? false;
+            bool pnlSmaEnabled = _usePortfolioAdjSma?.ValueBool ?? false;
+            int pnlLen = Math.Max(2, _portfolioAdjSmaLen?.ValueInt ?? 0);
+            bool tradingActive = IsMetaLogicTradingActive();
+
+            var ranked = new List<(int slot, decimal score, decimal? avg, decimal? last)>();
+            var slotRows = new List<object>();
+
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
+                bool active = runtime != null
+                    && runtime.IsActive
+                    && runtime.ParseResult?.Root != null
+                    && !runtime.ParseResult.IsDisabled;
+                TryGetLogicPnlSmaMetrics(slot, out decimal? avg, out decimal? last);
+                bool slotReady = active
+                    && pnlSmaEnabled
+                    && _logicPortfolios[slot].History.Count >= pnlLen
+                    && avg.HasValue;
+                decimal score = avg ?? decimal.MinValue;
+                if (active)
+                {
+                    ranked.Add((slot, score, avg, last));
+                }
+
+                slotRows.Add(new
+                {
+                    slot,
+                    active,
+                    logicNote = GetLogicSlotHumanNote(slot),
+                    side = active ? runtime.EntrySide.ToString() : "",
+                    pnlSmaAvg = avg,
+                    pnlSmaLast = last,
+                    equity = _logicPortfolios[slot].Equity,
+                    realized = _logicPortfolios[slot].Realized,
+                    unrealized = _logicPortfolios[slot].Unrealized,
+                    historyPoints = _logicPortfolios[slot].History.Count,
+                    pnlReady = slotReady
+                });
+            }
+
+            ranked.Sort((a, b) =>
+            {
+                int cmp = b.score.CompareTo(a.score);
+                return cmp != 0 ? cmp : a.slot.CompareTo(b.slot);
+            });
+
+            var priorityOrder = new List<object>();
+            for (int i = 0; i < ranked.Count; i++)
+            {
+                priorityOrder.Add(new
+                {
+                    rank = i + 1,
+                    slot = ranked[i].slot,
+                    logicNote = GetLogicSlotHumanNote(ranked[i].slot),
+                    pnlSmaAvg = ranked[i].avg,
+                    pnlSmaLast = ranked[i].last,
+                    priorityScore = ranked[i].score == decimal.MinValue ? (decimal?)null : ranked[i].score
+                });
+            }
+
+            string statusLabel;
+            if (!enabled)
+            {
+                statusLabel = "Металогика выключена — Volume поровну, приоритет L1…L10.";
+            }
+            else if (!pnlSmaEnabled)
+            {
+                statusLabel = "Металогика включена, но PnlSMA выключен — действует обычная логика.";
+            }
+            else if (!tradingActive)
+            {
+                statusLabel = "Прогрев: нужно "
+                    + pnlLen
+                    + " точек истории на каждую активную логику — пока обычная логика.";
+            }
+            else
+            {
+                statusLabel = "Металогика активна — Volume по |PnlSMA|, приоритет Max positions по PnlSMA.";
+            }
+
+            return new
+            {
+                enabled,
+                inversion = _metaLogicInversion?.ValueBool ?? false,
+                inversionActive = IsMetaLogicInversionActive(),
+                pnlSmaEnabled,
+                pnlSmaLen = pnlLen,
+                tradingActive,
+                warmupPending = enabled && pnlSmaEnabled && !tradingActive,
+                statusLabel,
+                priorityOrder,
+                slots = slotRows
+            };
+        }
+
+        private void RecordHtmlReportMetaLogicReady(BotTabSimple tab, DateTime candleTime)
+        {
+            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
+            {
+                return;
+            }
+
+            var lines = new List<HtmlReportMetaLogicAllocationLine>();
+            int rank = 0;
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
+                if (runtime == null
+                    || !runtime.IsActive
+                    || runtime.ParseResult?.Root == null
+                    || runtime.ParseResult.IsDisabled)
+                {
+                    continue;
+                }
+
+                rank++;
+                TryGetLogicPnlSmaMetrics(slot, out decimal? pnlAvg, out decimal? pnlLast);
+                lines.Add(new HtmlReportMetaLogicAllocationLine
+                {
+                    Rank = rank,
+                    Slot = slot,
+                    LogicNote = GetLogicSlotHumanNote(slot),
+                    PnlSmaAvg = pnlAvg,
+                    PnlSmaLast = pnlLast
+                });
+            }
+
+            RecordHtmlReportMetaLogicJournalEntry(
+                tab,
+                candleTime,
+                "ready",
+                new List<int>(),
+                0,
+                0m,
+                0,
+                lines,
+                "PnlSMA готов — металогика начинает влиять на входы.");
+        }
+
+        private void RecordHtmlReportMetaLogicJournalEntry(
+            BotTabSimple tab,
+            DateTime candleTime,
+            string mode,
+            List<int> candidateOrder,
+            int entriesOpened,
+            decimal totalVolume,
+            int freeSlots,
+            List<HtmlReportMetaLogicAllocationLine> lines,
+            string summary)
+        {
+            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
+            {
+                return;
+            }
+
+            var entry = new HtmlReportMetaLogicJournalEntry
+            {
+                CandleTime = candleTime,
+                EventTimeUtc = DateTime.UtcNow,
+                TabKey = tab != null ? GetLogicPortfolioTabKey(tab) : "",
+                Mode = mode ?? "",
+                CandidatesTotal = candidateOrder?.Count ?? 0,
+                EntriesOpened = entriesOpened,
+                TotalVolume = totalVolume,
+                FreeSlots = freeSlots,
+                Summary = summary ?? ""
+            };
+
+            if (lines != null)
+            {
+                entry.Lines.AddRange(lines);
+            }
+
+            _htmlReportRuntime.MetaLogicJournal.Add(entry);
+            TrimHtmlReportMetaLogicJournal(_htmlReportRuntime.MetaLogicJournal);
+            _htmlReportDirty = true;
+        }
+
+        private static void TrimHtmlReportMetaLogicJournal(List<HtmlReportMetaLogicJournalEntry> journal)
+        {
+            if (journal.Count <= HtmlReportMetaLogicJournalCap)
+            {
+                return;
+            }
+
+            journal.RemoveRange(0, journal.Count - HtmlReportMetaLogicJournalCap);
+        }
+
         private static string HtmlEncode(string text)
         {
             if (string.IsNullOrEmpty(text))
@@ -10060,32 +11831,37 @@ namespace OsEngine.Robots.Custom
 
         private static void AppendHtmlReportStyles(StringBuilder sb)
         {
-            sb.AppendLine("body{font-family:Segoe UI,system-ui,sans-serif;margin:0;padding:16px 20px 40px;background:#0f1419;color:#e6edf3;}");
-            sb.AppendLine(".hdr h1{margin:0 0 6px;font-size:1.35rem;}");
-            sb.AppendLine(".sub{margin:0 0 10px;color:#8b949e;font-size:.9rem;}");
-            sb.AppendLine(".badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.85rem;font-weight:600;margin:0 6px 6px 0;}");
-            sb.AppendLine(".badge-tester{background:#1f6feb;color:#fff;}");
-            sb.AppendLine(".badge-optimizer{background:#8957e5;color:#fff;}");
-            sb.AppendLine(".badge-fake{background:#d29922;color:#0f1419;}");
-            sb.AppendLine(".badge-live{background:#238636;color:#fff;}");
+            sb.AppendLine(":root{--paper-bg:#ede4d3;--paper-surface:#faf5eb;--paper-card:#f5eedc;--paper-border:#d4c4a8;--text:#3d3429;--muted:#7a6f5c;--accent:#8b6914;--accent-soft:#f3ead6;}");
+            sb.AppendLine("body{font-family:Segoe UI,Georgia,system-ui,sans-serif;margin:0;padding:16px 20px 40px;background:var(--paper-bg);color:var(--text);}");
+            sb.AppendLine(".hdr h1{margin:0 0 6px;font-size:1.35rem;color:#2c2419;}");
+            sb.AppendLine(".sub{margin:0 0 10px;color:var(--muted);font-size:.9rem;}");
+            sb.AppendLine(".badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.85rem;font-weight:600;margin:0 6px 6px 0;border:1px solid var(--paper-border);}");
+            sb.AppendLine(".badge-tester{background:#dbeafe;color:#1e3a8a;}");
+            sb.AppendLine(".badge-optimizer{background:#ede9fe;color:#5b21b6;}");
+            sb.AppendLine(".badge-fake{background:#fde68a;color:#78350f;}");
+            sb.AppendLine(".badge-live{background:#bbf7d0;color:#14532d;}");
             sb.AppendLine(".kpi{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:16px 0 24px;}");
-            sb.AppendLine(".kpi .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;}");
-            sb.AppendLine(".kpi .lbl{font-size:.75rem;color:#8b949e;}");
-            sb.AppendLine(".kpi .val{font-size:1.15rem;font-weight:600;margin-top:4px;}");
+            sb.AppendLine(".kpi .card{background:var(--paper-card);border:1px solid var(--paper-border);border-radius:8px;padding:12px;box-shadow:0 1px 2px rgba(61,52,41,.06);}");
+            sb.AppendLine(".kpi .lbl{font-size:.75rem;color:var(--muted);}");
+            sb.AppendLine(".kpi .val{font-size:1.15rem;font-weight:600;margin-top:4px;color:#2c2419;}");
             sb.AppendLine("section{margin:24px 0;}");
-            sb.AppendLine("h2{font-size:1.05rem;border-bottom:1px solid #30363d;padding-bottom:6px;}");
-            sb.AppendLine(".chart{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px;min-height:120px;overflow-x:auto;}");
+            sb.AppendLine("h2{font-size:1.05rem;border-bottom:1px solid var(--paper-border);padding-bottom:6px;color:#2c2419;}");
+            sb.AppendLine(".chart{background:var(--paper-surface);border:1px solid var(--paper-border);border-radius:8px;padding:8px;min-height:120px;overflow-x:auto;}");
             sb.AppendLine(".tbl-wrap{overflow-x:auto;}");
             sb.AppendLine("table{border-collapse:collapse;width:100%;font-size:.85rem;}");
-            sb.AppendLine("th,td{border:1px solid #30363d;padding:6px 8px;text-align:left;}");
-            sb.AppendLine("th{background:#161b22;}");
-            sb.AppendLine("tr:nth-child(even){background:#161b2266;}");
-            sb.AppendLine("footer{margin-top:32px;color:#8b949e;font-size:.8rem;}");
-            sb.AppendLine(".bar-open{fill:#3fb950;}.bar-close{fill:#f85149;}");
-            sb.AppendLine(".eq-line{fill:none;stroke:#58a6ff;stroke-width:2;}");
-            sb.AppendLine(".pos-open-line{fill:none;stroke:#3fb950;stroke-width:2;}");
-            sb.AppendLine(".pos-close-line{fill:none;stroke:#f85149;stroke-width:2;}");
-            sb.AppendLine(".chart-legend .lg-open{color:#3fb950;}.chart-legend .lg-close{color:#f85149;}");
+            sb.AppendLine("th,td{border:1px solid var(--paper-border);padding:6px 8px;text-align:left;}");
+            sb.AppendLine("th{background:var(--paper-card);color:#2c2419;}");
+            sb.AppendLine("tr:nth-child(even){background:rgba(212,196,168,.18);}");
+            sb.AppendLine("tr.stopper-row{font-weight:700;background:linear-gradient(90deg,#fff8e7 0%,#faf5eb 100%);}");
+            sb.AppendLine("tr.stopper-row td{color:#2c2419;}");
+            sb.AppendLine("tr.stopper-row-sl{border-left:4px solid #b45309;}");
+            sb.AppendLine("tr.stopper-row-tp{border-left:4px solid #15803d;}");
+            sb.AppendLine("footer{margin-top:32px;color:var(--muted);font-size:.8rem;}");
+            sb.AppendLine(".bar-open{fill:#2d7a46;}.bar-close{fill:#b91c1c;}");
+            sb.AppendLine(".eq-line{fill:none;stroke:#1d4ed8;stroke-width:2;}");
+            sb.AppendLine(".pos-open-line{fill:none;stroke:#15803d;stroke-width:2;}");
+            sb.AppendLine(".pos-close-line{fill:none;stroke:#b91c1c;stroke-width:2;}");
+            sb.AppendLine(".chart-legend .lg-open{color:#15803d;}.chart-legend .lg-close{color:#b91c1c;}");
         }
 
         private static void AppendHtmlReportRenderScript(StringBuilder sb)
@@ -10103,8 +11879,12 @@ namespace OsEngine.Robots.Custom
   var kpi=document.getElementById('kpi');
   function card(l,v){return '<div class=""card""><div class=""lbl"">'+l+'</div><div class=""val"">'+v+'</div></div>';}
   kpi.innerHTML=card('Equity',fmt(s.equityTotal))+card('Realized',fmt(s.realizedTotal))+card('Unrealized',fmt(s.unrealizedTotal))
-    +card('Opens',s.opensTotal||0)+card('Closes',s.closesTotal||0)+card('Open pos',s.openPositionsCount||0);
+    +card('Opens',s.opensTotal||0)+card('Closes',s.closesTotal||0)+card('Open pos',s.openPositionsCount||0)
+    +card('Stopper SL/TP',s.stopperTriggersTotal||0);
   function fmt(n){if(n==null)return '—';return Number(n).toLocaleString('ru-RU',{maximumFractionDigits:2});}
+  fillStopperEvents(d.stopperEvents);
+  renderMetaLogicStatus(d.metaLogic);
+  fillMetaLogicJournal(d.metaLogicJournal);
   renderEquity(d.equitySeries&&d.equitySeries.aggregate);
   renderPositionCounts(d.positionCountSeries);
   renderDayBars(d.tradeBuckets&&d.tradeBuckets.total);
@@ -10123,14 +11903,80 @@ namespace OsEngine.Robots.Custom
     return [t.tabKey,'L'+t.logicSlot,t.openTime||'',t.closeTime||'',t.duration||'—',fmt(t.delta),t.closeReason||'',t.note||''];
   });
   fillTable('recent-events',(d.recentEvents||[]).slice().reverse(),function(e){
-    return [e.candleTime||'',e.executionModeLabel||'',e.event,e.tabKey,'L'+e.logicSlot,fmt(e.delta),e.note||''];
+    return [e.candleTime||'',e.executionModeLabel||'',e.event,e.tabKey,e.logicSlot?'L'+e.logicSlot:'—',fmt(e.delta),e.note||''];
+  },function(tr,e){
+    if(e.event==='portfolio_stop_loss'){tr.className='stopper-row stopper-row-sl';}
+    else if(e.event==='portfolio_take_profit'){tr.className='stopper-row stopper-row-tp';}
   });
-  function fillTable(id,rows,proj){
+  function fillStopperEvents(rows){
+    var tb=document.querySelector('#stopper-events tbody'); if(!tb)return;
+    tb.innerHTML='';
+    var list=(rows||[]).slice().reverse();
+    if(!list.length){tb.innerHTML='<tr><td colspan=""10"">— срабатываний пока нет —</td></tr>';return;}
+    for(var i=0;i<list.length;i++){
+      var s=list[i];
+      var tr=document.createElement('tr');
+      tr.className='stopper-row '+(s.kind==='portfolio_take_profit'?'stopper-row-tp':'stopper-row-sl');
+      var kindLbl=s.kind==='portfolio_take_profit'?'Take-profit':'Stop-loss';
+      var cells=[s.candleTime||'',s.executionModeLabel||'',kindLbl,fmt(s.referenceEquity),fmt(s.currentEquity),
+        s.thresholdPercent!=null?Number(s.thresholdPercent).toLocaleString('ru-RU'):'—',
+        fmt(s.triggerLevel),fmt(s.postCloseEquity),s.regimeStopped?'да':'нет',s.summary||''];
+      for(var j=0;j<cells.length;j++){var td=document.createElement('td');td.textContent=cells[j]==null?'':String(cells[j]);tr.appendChild(td);}
+      tb.appendChild(tr);
+    }
+  }
+  function renderMetaLogicStatus(m){
+    var st=document.getElementById('meta-logic-status');
+    if(!st)return;
+    if(!m){st.textContent='—';return;}
+    var html=(m.statusLabel||'');
+    if(m.enabled){
+      html+=' · PnlSMA '+(m.pnlSmaEnabled?'вкл':'выкл')+' · окно '+(m.pnlSmaLen||'?');
+      if(m.inversionActive) html+=' · инверсия вкл';
+      else if(m.inversion) html+=' · инверсия (ожид.)';
+      if(m.tradingActive) html+=' · <span class=""lg-open"">активна</span>';
+      else if(m.warmupPending) html+=' · <span class=""lg-close"">прогрев</span>';
+    }
+    st.innerHTML=html;
+    var rankBySlot={};
+    (m.priorityOrder||[]).forEach(function(p){rankBySlot[p.slot]=p.rank;});
+    var activeSlots=(m.slots||[]).filter(function(s){return s.active;});
+    activeSlots.sort(function(a,b){
+      var ra=rankBySlot[a.slot]||999, rb=rankBySlot[b.slot]||999;
+      return ra-rb || a.slot-b.slot;
+    });
+    fillTable('meta-logic-priority',activeSlots,function(row){
+      return [rankBySlot[row.slot]||'—','L'+row.slot,row.logicNote||'',fmt(row.pnlSmaAvg),fmt(row.pnlSmaLast),fmt(row.equity),row.historyPoints,row.pnlReady?'да':'нет'];
+    });
+  }
+  function fillMetaLogicJournal(rows){
+    fillTable('meta-logic-journal',(rows||[]).slice().reverse(),function(j){
+      var mode=j.mode||'';
+      var modeLbl=mode;
+      if(mode==='meta') modeLbl='мета';
+      else if(mode==='warmup') modeLbl='прогрев';
+      else if(mode==='plain') modeLbl='обычная';
+      else if(mode==='ready') modeLbl='готов';
+      var det=(j.lines||[]).map(function(l){
+        if(l.skipped) return 'L'+l.slot+' пропуск';
+        var s='L'+l.slot;
+        if(l.logicNote) s+=' '+l.logicNote;
+        s+=' w='+fmt(l.pnlSmaAvg);
+        if(l.weightSharePct!=null) s+=' '+Number(l.weightSharePct).toFixed(1)+'%';
+        if(l.volume) s+=' vol='+fmt(l.volume);
+        if(l.side) s+=' '+l.side;
+        return s;
+      }).join('; ');
+      return [j.candleTime||'',j.tabKey||'',modeLbl,j.candidatesTotal,j.entriesOpened,fmt(j.totalVolume),j.freeSlots,det+(j.summary?(' · '+j.summary):'')];
+    });
+  }
+  function fillTable(id,rows,proj,rowHook){
     var tb=document.querySelector('#'+id+' tbody'); if(!tb)return;
     tb.innerHTML='';
     if(!rows||!rows.length){tb.innerHTML='<tr><td colspan=""9"">—</td></tr>';return;}
     for(var i=0;i<rows.length;i++){
       var cells=proj(rows[i]); var tr=document.createElement('tr');
+      if(rowHook){rowHook(tr,rows[i]);}
       for(var j=0;j<cells.length;j++){var td=document.createElement('td');td.textContent=cells[j]==null?'':String(cells[j]);tr.appendChild(td);}
       tb.appendChild(tr);
     }
@@ -10187,24 +12033,21 @@ namespace OsEngine.Robots.Custom
 })();");
         }
         #endregion
-
-        public IReadOnlyList<string> GetConfiguredLogicNames()
-        {
-            return new[]
-            {
-                _logic1?.ValueString ?? "",
-                _logic2?.ValueString ?? "",
-                _logic3?.ValueString ?? "",
-                _logic4?.ValueString ?? "",
-                _logic5?.ValueString ?? "",
-                _logic6?.ValueString ?? "",
-                _logic7?.ValueString ?? "",
-                _logic8?.ValueString ?? "",
-                _logic9?.ValueString ?? "",
-                _logic10?.ValueString ?? "",
-            };
-        }
     }
+
+    /*
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * БЛОК 2 — ПАРСИНГ СТРОК ЛОГИКИ
+     * LogicIndicatorKind, LogicAtom, LogicParseResult, LogicLineParser — Disabled, Regime,
+     * AND/OR/NOT, Op/Cl, SL/TP, сигнатуры индикаторов для графика.
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     */
+    #region БЛОК 2 — ПАРСИНГ СТРОК ЛОГИКИ
+
     /// <summary>Тип индикатора в строке логики (соответствует классу OsEngine).</summary>
     public enum LogicIndicatorKind
     {
@@ -11199,390 +13042,17 @@ namespace OsEngine.Robots.Custom
             return CollectAtoms(root);
         }
 
-        /// <summary>Текст справки для файла MultiLogic_LogicHelp.txt (источник — код робота).</summary>
-        public static string BuildDefaultHelpText()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("MultiLogic — справка по строкам логики");
-            sb.AppendLine("(файл Custom\\Robots\\MultiLogic_LogicHelp.txt — автоматически из MultiLogic.cs;");
-            sb.AppendLine(" обновляется при запуске робота и по кнопке Help; ручные правки перезаписываются)");
-            sb.AppendLine();
-            AppendResourceHelp(sb);
-            sb.AppendLine("0) Отключение логики (только в самом начале строки, до AND/OR/&&/||):");
-            sb.AppendLine("   Disabled(true)   — логика отключена, индикаторы не создаются");
-            sb.AppendLine("   Disabled(false)  — явно включена (то же, что без префикса)");
-            sb.AppendLine("   Disable(true/false) — синоним Disabled");
-            sb.AppendLine("   Без префикса Disabled — логика включена.");
-            sb.AppendLine("   Нельзя внутри скобок фрагмента или после AND/OR/&&/|| — только в начале, без внешних скобок.");
-            sb.AppendLine("   Примеры:");
-            sb.AppendLine("     Disabled(true) SMA(100) Op[Ab] Cl[Bl]");
-            sb.AppendLine("     Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
-            sb.AppendLine();
-            sb.AppendLine("0b) Regime — режим наклона LinReg (необязательно, только в начале строки, после Disabled):");
-            sb.AppendLine("   Regime(LinReg;L=50;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)");
-            sb.AppendLine("   Entry=MatchSide  — Buy при наклоне вверх, Sell вниз; во флэте входа нет");
-            sb.AppendLine("   Entry=FlatOnly   — вход только во флэте (|Δ| ≤ SlopeDead); при выходе из флэта — RegimeFlip");
-            sb.AppendLine("   OnFlip=Close     — закрыть, если наклон против Side (MatchSide) или вышли из флэта (FlatOnly)");
-            sb.AppendLine("   OnFlat=Close     — MatchSide: закрыть позицию во флэте; OnFlat=Keep — не закрывать во флэте (FlatOnly)");
-            sb.AppendLine("   SlopeLb=5        — сравнить центр канала (серия 1) с центром N свечей назад");
-            sb.AppendLine("   SlopeDead=0.05%  — мёртвая зона |Δцентра|; внутри — флэт");
-            sb.AppendLine("   Regime(Auto;OnFlip=Close;Entry=MatchSide) — параметры из первого LinReg с Op[SlopeUp/Dn] в строке");
-            sb.AppendLine("   Op[SlopeUp] / Op[SlopeDn] в атоме LinReg — альтернатива Entry=MatchSide внутри AND");
-            sb.AppendLine("   В стандартных логиках L1…L4 (кнопка «Установить логики по умолчанию») Regime НЕ используется.");
-            sb.AppendLine("   Отменённый эксперимент (можно добавить вручную в начало строки):");
-            sb.AppendLine("     L1/L3: Regime(…;Entry=MatchSide;OnFlat=Close) — торговля только по тренду наклона LinReg;");
-            sb.AppendLine("     L2/L4: Regime(…;Entry=FlatOnly;OnFlat=Keep;OnFlip=Off) — торговля только во флэте (боковик).");
-            sb.AppendLine("   Этот вариант снят с кнопки «по умолчанию» — на тестах показал себя хуже; синтаксис Regime остаётся.");
-            sb.AppendLine();
-            sb.AppendLine("1) Составная логика (скобки обязательны вокруг каждого фрагмента):");
-            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
-            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
-            sb.AppendLine("   (SMA(100) Op[Ab]) OR (SMA(100) Side[S] Op[Bl] Cl[Ab])");
-            sb.AppendLine("   (SMA(100) Op[Ab]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
-            sb.AppendLine("   NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]  — инверсия Op/Cl атома (не Buy↔Sell)");
-            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
-            sb.AppendLine("   Приоритет между фрагментами: || / OR, затем && / AND, затем NOT / !, затем атом.");
-            sb.AppendLine("   Подробно — раздел «1a) Логические операторы» ниже.");
-            sb.AppendLine();
-            AppendLogicOperatorsHelp(sb);
-            sb.AppendLine("2) Один атом (скобки необязательны):");
-            sb.AppendLine("   <Индикатор>(параметры) [Side:L|S] Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)");
-            sb.AppendLine("   NOT / ! / NOT- перед именем индикатора — инверсия Op/Cl (true↔false), Side не меняется.");
-            sb.AppendLine("   Note(…) — только для человека, на исполнение и график не влияет. Лучше в конце строки.");
-            sb.AppendLine("   (Парсер также понимает устаревшие теги Коммент(…) и Cm(…).)");
-            sb.AppendLine();
-            sb.AppendLine("3) Параметры индикатора (общие правила):");
-            sb.AppendLine("   позиционно: Stoch(14-3-3), SMA(100), ATR(14;+3%;@5)");
-            sb.AppendLine("   именованно: Stoch(K1=14,K2=3,D=3,Lmin=55,Smax=45), SMA(L=100,Src=Close)");
-            sb.AppendLine();
-            sb.AppendLine("4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):");
-            sb.AppendLine("   Ab — close выше линии; Bl — close ниже; GrOk — ATR вырос (фильтр);");
-            sb.AppendLine("   K>=55 / K<=45 — стохастик; K>=Lmin / K<=Smax — пороги из параметров;");
-            sb.AppendLine("   CCI>=100 / CCI<=-100 — CCI (пороги Lmin/Smax в строке);");
-            sb.AppendLine("   Macd>Sig / Macd<Sig — линия MACD выше/ниже сигнальной;");
-            sb.AppendLine("   AbUp / BlUp — close выше/ниже верхней линии LinReg; Cl[-] — отдельного Cl нет (ATR: на выходе всё равно Op[GrOk]).");
-            sb.AppendLine("   Составные Op/Cl с !, NOT, &&, || — см. раздел «1a) Логические операторы».");
-            sb.AppendLine();
-            sb.AppendLine("5) SL / TP (необязательно, в той же строке):");
-            sb.AppendLine("   SL[2%] TP[6%]  — процент от входа; SL[1.5ATR]; TP[2R] (R — кратность к расстоянию SL).");
-            sb.AppendLine("   В одной логике несколько атомов: самый жёсткий SL, самый дальний TP.");
-            sb.AppendLine("   ATR для SL[…ATR] — из первого ATR-атома той же логики.");
-            sb.AppendLine();
-            sb.AppendLine("6) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.");
-            sb.AppendLine("   Непустая включённая логика — её индикаторы добавляются в общий набор.");
-            sb.AppendLine("   Одинаковые индикатор с теми же параметрами в разных логиках — один экземпляр на графике.");
-            sb.AppendLine("   Другие параметры — отдельный индикатор. Пустые/Disabled логики индикаторы не добавляют.");
-            sb.AppendLine("   Номера индикаторов: 101 … " + MaxManagedLogicIndicatorNum + " (общий пул, без дублей).");
-            sb.AppendLine();
-            sb.AppendLine("6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)");
-            sb.AppendLine("   Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10». После кнопки нажмите «Принять».");
-            sb.AppendLine("   Общая база: SMA(100) + ATR(GrOk) + MACD — как в TrendMultiIndicator; добавлен CCI(20).");
-            sb.AppendLine("   Разделение «тренд / боковик» — через NOT у Stoch, LinReg и CCI (без Regime):");
-            sb.AppendLine();
-            sb.AppendLine("   L1 — lon-trend (лонг, тренд):");
-            sb.AppendLine("     SMA Ab, LinReg AbUp, CCI>=100, MACD>Sig; NOT Stoch (вход без стохастика);");
-            sb.AppendLine("     идея: трендовый лонг, когда LinReg/CCI подтверждают рост, Stoch не обязателен.");
-            sb.AppendLine();
-            sb.AppendLine("   L2 — lon-bokovik (лонг, боковик):");
-            sb.AppendLine("     SMA Ab, Stoch K>=55, MACD>Sig; NOT LinReg AbUp и NOT CCI>=100;");
-            sb.AppendLine("     идея: лонг в боковике — стохастик даёт сигнал, LinReg/CCI «трендовые» условия отключены NOT.");
-            sb.AppendLine();
-            sb.AppendLine("   L3 — short-trend (шорт, тренд): зеркало L1 с Side[S], Bl/Ab, BlLo/AbUp, CCI<=-100, Macd<Sig.");
-            sb.AppendLine("   L4 — short-bokovik (шорт, боковик): зеркало L2 с Side[S]; Stoch K<=45, NOT LinReg/CCI шорт-тренда.");
-            sb.AppendLine();
-            sb.AppendLine("   На графике при Regime=On одновременно могут работать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры.");
-            sb.AppendLine("   SL/TP в строках по умолчанию не заданы (выход по Cl[…] индикаторов).");
-            sb.AppendLine();
-            sb.AppendLine("   Другая кнопка на той же вкладке: «Установить разнообразные логики-примеры» —");
-            sb.AppendLine("   восемь учебных строк в L1…L8 (SMA, MACD, LinReg, Stoch, Bollinger со SL/TP), не стандартный набор.");
-            sb.AppendLine();
-            sb.AppendLine("================================================================================");
-            sb.AppendLine("7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)");
-            sb.AppendLine("================================================================================");
-            sb.AppendLine();
-            AppendSmaHelp(sb);
-            AppendStochHelp(sb);
-            AppendAtrHelp(sb);
-            AppendLinRegHelp(sb);
-            AppendMacdHelp(sb);
-            AppendCciHelp(sb);
-            sb.AppendLine("================================================================================");
-            sb.AppendLine("8) Торговля (Regime = On)");
-            sb.AppendLine("================================================================================");
-            sb.AppendLine("   На каждой закрытой свече каждой вкладки скринера проверяются все не-Disabled логики.");
-            sb.AppendLine("   Вход: срабатывает составное выражение по Op[…] (||/OR, &&/AND, NOT/! между фрагментами).");
-            sb.AppendLine("   Выход: по Cl[…] (те же операторы внутри Cl[…] и NOT у атома); Cl[-] — атом не задаёт направленный выход.");
-            sb.AppendLine("   Side[S] — шорт (Sell), иначе лонг (Buy). Позиция: сигнал MultiLogic_L1 … MultiLogic_L10.");
-            sb.AppendLine("   Volume — общий объём; при нескольких входах на одной свече делится поровну между логиками.");
-            sb.AppendLine("   Max positions (all tabs) — лимит открытых позиций робота на скринере.");
-            sb.AppendLine("   Нехватка слотов: входят логики с меньшим номером (1 раньше 10), остальные пропускаются.");
-            sb.AppendLine("   SL/TP: на закрытии свечи проверяется close vs уровни из SL[…]/TP[…] строки логики позиции.");
-            sb.AppendLine("   Пробой SL — закрытие с сигналом …_SL; пробой TP — …_TP; иначе выход по Cl[…].");
-            return sb.ToString();
-        }
 
-        /// <summary>Полное описание NOT, &&, || между фрагментами и внутри Op/Cl.</summary>
-        private static void AppendLogicOperatorsHelp(StringBuilder sb)
-        {
-            sb.AppendLine("1a) Логические операторы (NOT, &&, || — в стиле JavaScript)");
-            sb.AppendLine("--------------------------------------------------------------------------------");
-            sb.AppendLine();
-            sb.AppendLine("A) Между фрагментами (скобочные атомы в одной строке «Логика N»):");
-            sb.AppendLine("   OR  — слово OR с пробелами, или оператор ||");
-            sb.AppendLine("   AND — слово AND с пробелами, или оператор &&");
-            sb.AppendLine("   NOT — префикс NOT, NOT- или ! перед фрагментом (атом или (подвыражение))");
-            sb.AppendLine("   Приоритет (как в JS): сначала ||, затем &&, затем NOT/!, затем атом.");
-            sb.AppendLine("   Скобки (…) группируют подвыражение: NOT ((A) && (B)).");
-            sb.AppendLine();
-            sb.AppendLine("   Примеры между фрагментами:");
-            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
-            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
-            sb.AppendLine("     NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
-            sb.AppendLine("     !LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]          — то же, что NOT");
-            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
-            sb.AppendLine();
-            sb.AppendLine("B) NOT у всего атома (перед именем индикатора, после Side/SL/TP/Note):");
-            sb.AppendLine("   NOT / ! / NOT- перед SMA, LinReg, Stoch… инвертирует логический результат Op и Cl");
-            sb.AppendLine("   (true↔false). Side[S]/Side[L] и Buy/Sell НЕ меняются — только «сработало / не сработало».");
-            sb.AppendLine("   Пример: NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
-            sb.AppendLine("   → если AbUp без NOT был бы true — вход по этому атому блокируется (ни Buy, ни Sell);");
-            sb.AppendLine("   → если AbUp без NOT был бы false — условие Op становится true (вход возможен, сторона как в Side).");
-            sb.AppendLine("   Cl инвертируется так же: Cl сработал ↔ Cl не сработал. Это не шорт вместо лонга.");
-            sb.AppendLine("   Переворот Buy↔Sell — Side[S] в строке, «Инверсия (покупка ↔ продажа)» на вкладке «Металогики»");
-            sb.AppendLine("   (при включённой металогике — все входы) или отрицательный PnlSMA; NOT не меняет Side.");
-            sb.AppendLine("   Можно комбинировать с NOT между фрагментами: NOT (NOT LinReg(...) Op[AbUp]) — двойное отрицание.");
-            sb.AppendLine();
-            sb.AppendLine("C) Внутри Op[…] и Cl[…] (только сигналы ЭТОГО индикатора атома):");
-            sb.AppendLine("   ! или NOT перед кодом сигнала — отрицание одного условия");
-            sb.AppendLine("   && или AND — оба условия должны выполниться");
-            sb.AppendLine("   || или OR  — достаточно одного условия");
-            sb.AppendLine("   Приоритет внутри Op/Cl: ||, затем &&, затем !/NOT, затем код сигнала.");
-            sb.AppendLine("   Скобки внутри Op/Cl: Op[(AbUp||AbLo) && !BlLo].");
-            sb.AppendLine();
-            sb.AppendLine("   Примеры внутри Op/Cl (LinReg):");
-            sb.AppendLine("     Op[AbUp]                  — close выше верхней линии");
-            sb.AppendLine("     Op[!AbUp]  Op[NOT AbUp]   — close НЕ выше верхней");
-            sb.AppendLine("     Op[AbUp && AbLo]         — выше верхней И выше нижней (сильный тренд в канале)");
-            sb.AppendLine("     Op[AbUp || AbLo]          — выше верхней ИЛИ выше нижней");
-            sb.AppendLine("     Op[(AbUp||AbLo) && !BlUp] — (выше верхней или нижней) и не ниже верхней");
-            sb.AppendLine("     Cl[BlLo]  Cl[!BlLo]       — выход по обычному или инвертированному BlLo");
-            sb.AppendLine();
-            sb.AppendLine("   Примеры (Stoch): Op[K>=55 && K<=80]  Cl[K<=45 || K>=90]");
-            sb.AppendLine("   Примеры (CCI):  Op[CCI>=100]  Cl[CCI<=-100]  Op[!CCI>=100]");
-            sb.AppendLine();
-            sb.AppendLine("D) Что НЕ смешивается:");
-            sb.AppendLine("   Внутри одного Op[…] нельзя ссылаться на другой индикатор (MACD>Sig только в атоме MACD).");
-            sb.AppendLine("   Disabled(…) — только в самом начале строки логики, не внутри Op/Cl.");
-            sb.AppendLine("   SL/TP не поддерживают &&/|| — только один уровень SL[…] TP[…] на атом.");
-            sb.AppendLine();
-            sb.AppendLine("E) Таблица записи (эквиваленты):");
-            sb.AppendLine("   ИЛИ между фрагментами     OR          ||");
-            sb.AppendLine("   И между фрагментами       AND         &&");
-            sb.AppendLine("   НЕ фрагмент               NOT  NOT-  !");
-            sb.AppendLine("   НЕ сигнал в Op/Cl         NOT AbUp    !AbUp");
-            sb.AppendLine();
-        }
+        /// <summary>Текст справки — см. <see cref="MultiLogicHelpBuilder"/> (блок 3).</summary>
+        public static string BuildDefaultHelpText() => MultiLogicHelpBuilder.BuildDefaultHelpText();
 
-        /// <summary>Алиас BuildDefaultHelpText() для обратной совместимости.</summary>
-        public static string GetHelpText() => BuildDefaultHelpText();
+        /// <summary>HTML-справка — см. <see cref="MultiLogicHelpBuilder"/> (блок 3).</summary>
+        public static string BuildDefaultHelpHtml() => MultiLogicHelpBuilder.BuildDefaultHelpHtml();
 
-        /// <summary>Обзор: RAM/диск, портфели логик, JSON-снимок (в начале справки).</summary>
-        private static void AppendResourceHelp(StringBuilder sb)
-        {
-            sb.AppendLine("================================================================================");
-            sb.AppendLine("ОБЗОР: ресурсы ПК, портфели логик, сохранение состояния");
-            sb.AppendLine("================================================================================");
-            sb.AppendLine("MultiLogic считает эффективный портфель отдельно для каждой логики L1…L10");
-            sb.AppendLine("(старт 0, может быть отрицательным): realized + unrealized по сделкам MultiLogic_Ln.");
-            sb.AppendLine();
-            sb.AppendLine("Файлы портфелей (лайв, не тестер):");
-            sb.AppendLine("  Engine\\{имя робота}_LogicPortfolio_L1.txt … _L10.txt");
-            sb.AppendLine("  История до 5000 точек на логику; сброс на диск ~раз в 30 с при изменениях.");
-            sb.AppendLine();
-            sb.AppendLine("HTML-отчёт (вкладка «Отчёт», Engine\\{имя}_Report.html):");
-            sb.AppendLine("  Пишется в тестере, лайве и при фейке (эмулятор OsEngine, EmulatorIsOn).");
-            sb.AppendLine("  В шапке — текущий режим (тестер / лайв / фейк / оптимизатор) и история смены режимов.");
-            sb.AppendLine("  Графики equity, открытых/закрытых позиций от времени и opens/closes по дням;");
-            sb.AppendLine("  таблицы по инструментам, логикам L1…L10, закрытым позициям (с длительностью), причинам закрытия.");
-            sb.AppendLine("  Интервал перезаписи — параметр «HTML-отчёт: интервал (сек)» (по умолчанию 90; не на каждой сделке).");
-            sb.AppendLine("  Кнопка «Открыть HTML-отчёт» (вкладка «Отчёт») — открыть файл в браузере.");
-            sb.AppendLine("  На первой вкладке — «Открыть HTML-файл результатов тестирования» (то же действие).");
-            sb.AppendLine();
-            sb.AppendLine("Первая вкладка параметров:");
-            sb.AppendLine("  «Сохранить настройки и результаты» — JSON (параметры, все 10 строк логик,");
-            sb.AppendLine("    портфели, открытые позиции); файл выбираете сами.");
-            sb.AppendLine("  «Загрузить настройки и результаты» — подставить всё из JSON (биржевые заявки");
-            sb.AppendLine("    по позициям не выставляются).");
-            sb.AppendLine("  Справочный % годовых (внизу вкладки): «Заполнить начальную сумму и дату портфеля»");
-            sb.AppendLine("    — текущий реальный портфель (лайв/тестер) и дата; далее в конце каждой свечи");
-            sb.AppendLine("    пересчёт линейного % и % с капитализацией (не сумма L1…L10).");
-            sb.AppendLine();
-            sb.AppendLine("Контроль ресурсов ПК (только предупреждение в лог, торговлю не блокирует):");
-            sb.AppendLine("  Сравнивается свободная RAM и место на диске (каталог Engine\\) с оценкой нагрузки:");
-            sb.AppendLine("  — число активных логик;");
-            sb.AppendLine("  — точки истории портфелей в памяти;");
-            sb.AppendLine("  — вкладки скринера и уникальные индикаторы;");
-            sb.AppendLine("  — размер файлов портфелей на диске (в т.ч. крупнейший файл).");
-            sb.AppendLine("  Проверка: при старте, после смены логик, загрузки JSON, сохранения портфелей;");
-            sb.AppendLine("  повтор того же предупреждения — не чаще ~5 минут.");
-            sb.AppendLine("  Если ресурсов мало — в лог пишется, сколько нужно RAM/диска и сколько не хватает;");
-            sb.AppendLine("  уменьшите число активных логик, вкладок скринера или объём истории портфелей.");
-            sb.AppendLine();
-            sb.AppendLine("Вкладка «Металогики» (сразу после «Логики»):");
-            sb.AppendLine("  Вверху — «Металогика включена», «Инверсия (покупка ↔ продажа)», кнопка «Включить металогику»,");
-            sb.AppendLine("  PnlSMA (вкл. и длина); под PnlSMA — разделитель; ниже — SMA, Stoch, ATR, LinReg, MACD.");
-            sb.AppendLine("  Если металогика включена: Volume на входе делится только между логиками с Op");
-            sb.AppendLine("  пропорционально |PnlSMA|; знак PnlSMA переворачивает Buy/Sell (если инверсия выкл.).");
-            sb.AppendLine("  «Инверсия (покупка ↔ продажа)» при включённой металогике — все входы Buy↔Sell, Regime по фактической стороне.");
-            sb.AppendLine("  Сумма объёмов новых входов на свече не превышает Volume (первая вкладка).");
-            sb.AppendLine("  Max positions: при нехватке слотов — приоритет логик с большим PnlSMA.");
-            sb.AppendLine("  Если металогика выключена — как раньше: каждая логика отдельно, Volume поровну, L1…L10.");
-            sb.AppendLine("  Общепортфельные SMA, Stoch, ATR, LinReg, MACD, PnlSMA — один набор параметров;");
-            sb.AppendLine("  расчёт по кривой equity каждой логики L1…L10 и по сумме (файлы _LogicPortfolio_Ln, _MetaAggregate).");
-            sb.AppendLine("  Отдельных «ЛП1…ЛП10» в параметрах нет — настройки общие для всех портфельных серий.");
-            sb.AppendLine("  При включённом мета-индикаторе робот считает его по серии equity портфеля");
-            sb.AppendLine("  (если на вкладке графика нет соответствующего индикатора) и пишет значения в файл");
-            sb.AppendLine("  портфеля (v2, поле meta) и Engine\\{имя}_MetaAggregate.txt для общепортфельных.");
-            sb.AppendLine("  JSON-снимок v2 включает meta в истории портфелей и блок AggregateMetaPortfolio.");
-            sb.AppendLine("  PnlSMA (Приведённая SMA): pnlSmaAvg = mean(E_i − E_start) по окну; pnlSmaLast = E_end − E_start;");
-            sb.AppendLine("  металогика использует pnlSmaAvg; по умолчанию включён только общепортфельный PnlSMA.");
-            sb.AppendLine();
-            sb.AppendLine("Вкладка «Stopper» (общепортфельная страховка по сумме L1…L10):");
-            sb.AppendLine("  Equity = сумма кривых портфелей всех логик (realized + unrealized MultiLogic_Ln).");
-            sb.AppendLine("  «Общепортфельный stop-loss / take-profit: включён» — по умолчанию выкл.; пороги 0,4% и 10%.");
-            sb.AppendLine("  Ref (предыдущая сумма) = equity ровно N свечей назад (lookback, по умолчанию 5);");
-            sb.AppendLine("  история обновляется на каждом закрытии свечи вкладки скринера.");
-            sb.AppendLine("  SL: current ≤ ref × (1 − SL%); TP: current ≥ ref × (1 + TP%). Ref ≤ 0 — проверка пропускается.");
-            sb.AppendLine("  При срабатывании — закрытие всех позиций робота; опционально Regime=Off (отдельно для SL и TP).");
-            sb.AppendLine("  Техн. суммы обновляются в начале обработки свечи и после торговли на ней (без SaveParameters).");
-            sb.AppendLine("  «Обновить сумму портфеля SL/TP» — текущая equity в базу; тех. суммы — в начале и после торговли на свече.");
-            sb.AppendLine("  После SL/TP ref = equity после закрытия; база 0 — ref из lookback.");
-            sb.AppendLine();
-        }
+        /// <summary>Алиас справки — см. <see cref="MultiLogicHelpBuilder"/> (блок 3).</summary>
+        public static string GetHelpText() => MultiLogicHelpBuilder.GetHelpText();
 
-        /// <summary>Добавляет в справку раздел по SMA.</summary>
-        private static void AppendSmaHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- SMA (Simple Moving Average) ---");
-            sb.AppendLine("Имя в строке: SMA");
-            sb.AppendLine("Параметры (на график):");
-            sb.AppendLine("  SMA(100)                    — длина 100, источник Close");
-            sb.AppendLine("  SMA(L=100)                  — то же, явно");
-            sb.AppendLine("  SMA(L=100,Src=Close)        — длина и источник (Close)");
-            sb.AppendLine("Сигналы:");
-            sb.AppendLine("  Op[Ab]  — close > SMA (лонг);  Cl[Bl] — close < SMA (выход из лонга)");
-            sb.AppendLine("  Side[S] Op[Bl] Cl[Ab]       — шорт: close < SMA / выход close > SMA");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  Тренд:      SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend)");
-            sb.AppendLine("  Антитренд:  SMA(100) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[6%] Note(counter-trend)");
-            sb.AppendLine("  С ATR:      (SMA(100) Op[Ab] Cl[Bl]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
-            sb.AppendLine();
-        }
 
-        /// <summary>Добавляет в справку раздел по Stochastic.</summary>
-        private static void AppendStochHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- Stochastic (Stoch) ---");
-            sb.AppendLine("Имя в строке: Stoch  (или Stochastic)");
-            sb.AppendLine("Параметры индикатора (P1-P2-P3 на график):");
-            sb.AppendLine("  Stoch(14-3-3)                              — периоды 14, 3, 3");
-            sb.AppendLine("  Stoch(14,3,3)                              — через запятую");
-            sb.AppendLine("  Stoch(K1=14,K2=3,D=3)                      — именованно");
-            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
-            sb.AppendLine("  ;Lmin=55;Smax=45  или  ;L=55;S=45");
-            sb.AppendLine("Сигналы:");
-            sb.AppendLine("  Op[K>=55] / Op[K>=Lmin]  — %K выше порога (лонг)");
-            sb.AppendLine("  Cl[K<=45] / Cl[K<=Smax]  — %K ниже порога (выход)");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  Тренд:      Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45] Note(trend)");
-            sb.AppendLine("  Антитренд:  Stoch(14-3-3;Lmin=55;Smax=45) Side[S] Op[K<=45] Cl[K>=55] Note(counter-trend)");
-            sb.AppendLine();
-        }
-
-        /// <summary>Добавляет в справку раздел по ATR.</summary>
-        private static void AppendAtrHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- ATR (фильтр роста волатильности, без направления) ---");
-            sb.AppendLine("Имя в строке: ATR");
-            sb.AppendLine("Параметры индикатора:");
-            sb.AppendLine("  ATR(14)                     — период 14");
-            sb.AppendLine("  ATR(L=14)                   — то же");
-            sb.AppendLine("Пороги роста (в строке логики):");
-            sb.AppendLine("  ;Gr=3%;Lb=5   — ATR вырос ≥ 3% относительно значения 5 свечей назад");
-            sb.AppendLine("  ;+3%@5        — краткая запись Gr/Lb");
-            sb.AppendLine("Сигналы:");
-            sb.AppendLine("  Op[GrOk]  или  Op[+3%@5]  — фильтр «волатильность выросла»");
-            sb.AppendLine("  Cl[-]                     — отдельного выхода по ATR нет");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  Фильтр:     ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(volatility-filter)");
-            sb.AppendLine("  С SMA:      (SMA(100) Op[Ab] Cl[Bl]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
-            sb.AppendLine();
-        }
-
-        /// <summary>Добавляет в справку раздел по Linear Regression.</summary>
-        private static void AppendLinRegHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- Linear Regression (LinReg) ---");
-            sb.AppendLine("Имя в строке: LinReg  (или LR, LinearRegression)");
-            sb.AppendLine("Параметры индикатора:");
-            sb.AppendLine("  LinReg(50)                  — длина канала 50, Dev=2 по умолчанию");
-            sb.AppendLine("  LinReg(50;Dev=2)            — длина и отклонение границ, %");
-            sb.AppendLine("  LinReg(L=50,Dev=2)          — именованно");
-            sb.AppendLine("Сигналы (как TrendMultiIndicatorScreener — канал LinReg):");
-            sb.AppendLine("  Op[AbUp]  — close выше верхней линии (лонг)");
-            sb.AppendLine("  Cl[BlUp]  — close ниже верхней (выход)");
-            sb.AppendLine("  Side[S] Op[BlLo] Cl[AbLo] — шорт от нижней линии");
-            sb.AppendLine("Пороги наклона (только в строке логики, не на график):");
-            sb.AppendLine("  ;SlopeLb=3  — сравнить центр канала с центром 3 свечи назад");
-            sb.AppendLine("  ;SlopeDead=0 — мёртвая зона |Δцентра| (по умолчанию 0)");
-            sb.AppendLine("  Op[SlopeUp] — центр LinReg растёт (Δ > SlopeDead); лонг-режим");
-            sb.AppendLine("  Op[SlopeDn] — центр падает (Δ < -SlopeDead); шорт-режим");
-            sb.AppendLine("  Cl[-] с Op[SlopeUp/Dn] — атом только фильтр режима, без своего выхода");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  Тренд:      LinReg(50;Dev=2) Op[AbUp] Cl[BlUp] SL[2%] TP[6%] Note(trend)");
-            sb.AppendLine("  Антитренд:  LinReg(50;Dev=2) Side[S] Op[BlLo] Cl[AbLo] Note(counter-trend)");
-            sb.AppendLine();
-        }
-
-        /// <summary>Добавляет в справку раздел по MACD.</summary>
-        private static void AppendMacdHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- MACD ---");
-            sb.AppendLine("Имя в строке: MACD  (или Macd)");
-            sb.AppendLine("Параметры индикатора:");
-            sb.AppendLine("  MACD(12,26,9)               — fast, slow, signal");
-            sb.AppendLine("  MACD(Fast=12,Slow=26,Signal=9)");
-            sb.AppendLine("Сигналы:");
-            sb.AppendLine("  Op[Macd>Sig]  — линия MACD выше сигнальной (лонг)");
-            sb.AppendLine("  Cl[Macd<Sig]  — MACD ниже сигнальной (выход / шорт)");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  Тренд:      MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] SL[2%] TP[6%] Note(trend)");
-            sb.AppendLine("  Антитренд:  MACD(12,26,9) Side[S] Op[Macd<Sig] Cl[Macd>Sig] Note(counter-trend)");
-            sb.AppendLine();
-        }
-
-        /// <summary>Добавляет в справку раздел по CCI (Commodity Channel Index).</summary>
-        private static void AppendCciHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- CCI (Commodity Channel Index) ---");
-            sb.AppendLine("Имя в строке: CCI");
-            sb.AppendLine("Параметры индикатора (на график):");
-            sb.AppendLine("  CCI(20)                     — длина 20, источник Typical (H+L+C)/3");
-            sb.AppendLine("  CCI(L=20)                   — то же, явно");
-            sb.AppendLine("  CCI(L=20,Src=Typical)       — длина и точка свечи (Typical, Close, Open, High, Low, Median)");
-            sb.AppendLine("  CCI(20;Src=Close)           — через точку с запятой");
-            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
-            sb.AppendLine("  ;Lmin=100;Smax=-100  или  ;L=100;S=-100  — классические уровни перекупленности/перепроданности");
-            sb.AppendLine("Сигналы:");
-            sb.AppendLine("  Op[CCI>=100] / Op[CCI>=Lmin]  — CCI выше порога (лонг от силы / контртренд — по смыслу стратегии)");
-            sb.AppendLine("  Cl[CCI<=-100] / Cl[CCI<=Smax] — CCI ниже порога (выход)");
-            sb.AppendLine("  Op[CCI<=-100] Side[S]         — шорт при CCI ниже −100 (контртренд)");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  Контртренд: CCI(20;Lmin=100;Smax=-100) Side[S] Op[CCI>=100] Cl[CCI<=-100] Note(CCI-fade-short)");
-            sb.AppendLine("  С фильтром:  (SMA(100) Op[Ab] Cl[Bl]) AND (CCI(20;Lmin=-100;Smax=-200) Op[CCI<=-100] Cl[CCI>=0] Note(pullback))");
-            sb.AppendLine("  Не включён в логики по умолчанию и не входит в металогики (только строки «Логика 1…10»).");
-            sb.AppendLine();
-        }
 
         /// <summary>Имя класса индикатора OsEngine для CreateCandleIndicator.</summary>
         public static string GetIndicatorTypeName(LogicIndicatorKind kind)
@@ -13951,4 +15421,1026 @@ namespace OsEngine.Robots.Custom
             return series.Values[candleIndex];
         }
     }
+
+    #endregion
+
+
+    /*
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * БЛОК 3 — СПРАВКА (HELP): ТЕКСТ И HTML-ФАЙЛ
+     * MultiLogic_LogicHelp.html · BuildDefaultHelpText / BuildDefaultHelpHtml · подсветка формул.
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     * ////////////////////////////////////////////////////////////////////////////////
+     */
+    #region БЛОК 3 — СПРАВКА (MultiLogic_LogicHelp.html)
+
+    /// <summary>Генерация plain-текста и HTML-справки по строкам логики MultiLogic.</summary>
+    public static class MultiLogicHelpBuilder
+    {
+        /// <summary>Текст справки (plain) — источник для HTML; также для отладки.</summary>
+        public static string BuildDefaultHelpText()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("MultiLogic — справка по строкам логики");
+            sb.AppendLine("(файл Custom\\Robots\\MultiLogic_LogicHelp.html — автоматически из MultiLogic.cs;");
+            sb.AppendLine(" обновляется при запуске робота и по кнопке Help; ручные правки перезаписываются)");
+            sb.AppendLine();
+            AppendResourceHelp(sb);
+            sb.AppendLine("0) Отключение логики (только в самом начале строки, до AND/OR/&&/||):");
+            sb.AppendLine("   Disabled(true)   — логика отключена, индикаторы не создаются");
+            sb.AppendLine("   Disabled(false)  — явно включена (то же, что без префикса)");
+            sb.AppendLine("   Disable(true/false) — синоним Disabled");
+            sb.AppendLine("   Без префикса Disabled — логика включена.");
+            sb.AppendLine("   Нельзя внутри скобок фрагмента или после AND/OR/&&/|| — только в начале, без внешних скобок.");
+            sb.AppendLine("   Примеры:");
+            sb.AppendLine("     Disabled(true) SMA(100) Op[Ab] Cl[Bl]");
+            sb.AppendLine("     Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
+            sb.AppendLine();
+            sb.AppendLine("0b) Regime — режим наклона LinReg (необязательно, только в начале строки, после Disabled):");
+            sb.AppendLine("   Regime(LinReg;L=50;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)");
+            sb.AppendLine("   Entry=MatchSide  — Buy при наклоне вверх, Sell вниз; во флэте входа нет");
+            sb.AppendLine("   Entry=FlatOnly   — вход только во флэте (|Δ| ≤ SlopeDead); при выходе из флэта — RegimeFlip");
+            sb.AppendLine("   OnFlip=Close     — закрыть, если наклон против Side (MatchSide) или вышли из флэта (FlatOnly)");
+            sb.AppendLine("   OnFlat=Close     — MatchSide: закрыть позицию во флэте; OnFlat=Keep — не закрывать во флэте (FlatOnly)");
+            sb.AppendLine("   SlopeLb=5        — сравнить центр канала (серия 1) с центром N свечей назад");
+            sb.AppendLine("   SlopeDead=0.05%  — мёртвая зона |Δцентра|; внутри — флэт");
+            sb.AppendLine("   Regime(Auto;OnFlip=Close;Entry=MatchSide) — параметры из первого LinReg с Op[SlopeUp/Dn] в строке");
+            sb.AppendLine("   Op[SlopeUp] / Op[SlopeDn] в атоме LinReg — альтернатива Entry=MatchSide внутри AND");
+            sb.AppendLine("   В стандартных L1…L4 на всех строках: Regime(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) — "
+                + "Buy только при наклоне вверх, Sell только вниз; при развороте наклона — закрытие (OnFlip=Close).");
+            sb.AppendLine("   SlopeDead и OnFlat в defaults не заданы — можно добавить вручную (см. параметры Regime выше).");
+            sb.AppendLine();
+            sb.AppendLine("1) Составная логика (скобки обязательны вокруг каждого фрагмента):");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
+            sb.AppendLine("   (SMA(100) Op[Ab]) OR (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("   (SMA(100) Op[Ab]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("   NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]  — инверсия Op/Cl атома (не Buy↔Sell)");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine("   Приоритет между фрагментами: || / OR, затем && / AND, затем NOT / !, затем атом.");
+            sb.AppendLine("   Подробно — раздел «1a) Логические операторы» ниже.");
+            sb.AppendLine();
+            AppendLogicOperatorsHelp(sb);
+            sb.AppendLine("2) Один атом (скобки необязательны):");
+            sb.AppendLine("   <Индикатор>(параметры) [Side:L|S] Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)");
+            sb.AppendLine("   NOT / ! / NOT- перед именем индикатора — инверсия Op/Cl (true↔false), Side не меняется.");
+            sb.AppendLine("   Note(…) — только для человека, на исполнение и график не влияет. Лучше в конце строки.");
+            sb.AppendLine("   (Парсер также понимает устаревшие теги Коммент(…) и Cm(…).)");
+            sb.AppendLine();
+            sb.AppendLine("3) Параметры индикатора (общие правила):");
+            sb.AppendLine("   позиционно: Stoch(14-3-3), SMA(100), ATR(14;+3%;@5)");
+            sb.AppendLine("   именованно: Stoch(K1=14,K2=3,D=3,Lmin=55,Smax=45), SMA(L=100,Src=Close)");
+            sb.AppendLine();
+            sb.AppendLine("4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):");
+            sb.AppendLine("   Ab — close выше линии; Bl — close ниже; GrOk — ATR вырос (фильтр);");
+            sb.AppendLine("   K>=55 / K<=45 — стохастик; K>=Lmin / K<=Smax — пороги из параметров;");
+            sb.AppendLine("   CCI>=100 / CCI<=-100 — CCI (пороги Lmin/Smax в строке);");
+            sb.AppendLine("   Macd>Sig / Macd<Sig — линия MACD выше/ниже сигнальной;");
+            sb.AppendLine("   AbUp / BlUp — close выше/ниже верхней линии LinReg; Cl[-] — отдельного Cl нет (ATR: на выходе всё равно Op[GrOk]).");
+            sb.AppendLine("   Составные Op/Cl с !, NOT, &&, || — см. раздел «1a) Логические операторы».");
+            sb.AppendLine();
+            sb.AppendLine("5) SL / TP (необязательно, в той же строке):");
+            sb.AppendLine("   SL[2%] TP[6%]  — процент от входа; SL[1.5ATR]; TP[2R] (R — кратность к расстоянию SL).");
+            sb.AppendLine("   В одной логике несколько атомов: самый жёсткий SL, самый дальний TP.");
+            sb.AppendLine("   ATR для SL[…ATR] — из первого ATR-атома той же логики.");
+            sb.AppendLine();
+            sb.AppendLine("6) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.");
+            sb.AppendLine("   Непустая включённая логика — её индикаторы добавляются в общий набор.");
+            sb.AppendLine("   Одинаковые индикатор с теми же параметрами в разных логиках — один экземпляр на графике.");
+            sb.AppendLine("   Другие параметры — отдельный индикатор. Пустые/Disabled логики индикаторы не добавляют.");
+            sb.AppendLine("   Номера индикаторов: 101 … " + LogicLineParser.MaxManagedLogicIndicatorNum + " (общий пул, без дублей).");
+            sb.AppendLine();
+            sb.AppendLine("6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)");
+            sb.AppendLine("   Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10». После кнопки нажмите «Принять».");
+            sb.AppendLine("   Общая база: SMA(100) + ATR(GrOk) + MACD — как в TrendMultiIndicator; добавлен CCI(20).");
+            sb.AppendLine("   Разделение «тренд / боковик» — NOT у Stoch, LinReg и CCI; Regime MatchSide на всех четырёх.");
+            sb.AppendLine();
+            sb.AppendLine("   L1 — lon-trend (лонг, тренд):");
+            sb.AppendLine("     Regime MatchSide + SMA Ab, LinReg AbUp, CCI>=100, MACD>Sig; NOT Stoch.");
+            sb.AppendLine();
+            sb.AppendLine("   L2 — lon-bokovik (лонг, боковик):");
+            sb.AppendLine("     Regime MatchSide + SMA Ab, Stoch K>=55, MACD>Sig; NOT LinReg AbUp и NOT CCI>=100.");
+            sb.AppendLine();
+            sb.AppendLine("   L3 — short-trend: Regime MatchSide + зеркало L1 (Side[S], BlLo/AbUp, CCI<=-100).");
+            sb.AppendLine("   L4 — short-bokovik: Regime MatchSide + зеркало L2 (Side[S]); Stoch K<=45, NOT LinReg/CCI.");
+            sb.AppendLine();
+            sb.AppendLine("   На графике при Regime=On одновременно могут работать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры.");
+            sb.AppendLine("   SL/TP в строках по умолчанию не заданы (выход по Cl[…] индикаторов).");
+            sb.AppendLine();
+            sb.AppendLine("   Другая кнопка на той же вкладке: «Установить разнообразные логики-примеры» —");
+            sb.AppendLine("   восемь учебных строк в L1…L8 (SMA, MACD, LinReg, Stoch, Bollinger со SL/TP), не стандартный набор.");
+            sb.AppendLine();
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)");
+            sb.AppendLine("================================================================================");
+            sb.AppendLine();
+            AppendSmaHelp(sb);
+            AppendStochHelp(sb);
+            AppendAtrHelp(sb);
+            AppendLinRegHelp(sb);
+            AppendMacdHelp(sb);
+            AppendCciHelp(sb);
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("8) Торговля (Regime = On)");
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("   На каждой закрытой свече каждой вкладки скринера проверяются все не-Disabled логики.");
+            sb.AppendLine("   Вход: срабатывает составное выражение по Op[…] (||/OR, &&/AND, NOT/! между фрагментами).");
+            sb.AppendLine("   Выход: по Cl[…] (те же операторы внутри Cl[…] и NOT у атома); Cl[-] — атом не задаёт направленный выход.");
+            sb.AppendLine("   Side[S] — шорт (Sell), иначе лонг (Buy). Позиция: сигнал MultiLogic_L1 … MultiLogic_L10.");
+            sb.AppendLine("   Volume — общий объём; при нескольких входах на одной свече делится поровну между логиками.");
+            sb.AppendLine("   Max positions (all tabs) — лимит открытых позиций робота на скринере.");
+            sb.AppendLine("   Нехватка слотов: входят логики с меньшим номером (1 раньше 10), остальные пропускаются.");
+            sb.AppendLine("   SL/TP: на закрытии свечи проверяется close vs уровни из SL[…]/TP[…] строки логики позиции.");
+            sb.AppendLine("   Пробой SL — закрытие с сигналом …_SL; пробой TP — …_TP; иначе выход по Cl[…].");
+            return sb.ToString();
+        }
+
+        /// <summary>Полное описание NOT, &&, || между фрагментами и внутри Op/Cl.</summary>
+        private static void AppendLogicOperatorsHelp(StringBuilder sb)
+        {
+            sb.AppendLine("1a) Логические операторы (NOT, &&, || — в стиле JavaScript)");
+            sb.AppendLine("--------------------------------------------------------------------------------");
+            sb.AppendLine();
+            sb.AppendLine("A) Между фрагментами (скобочные атомы в одной строке «Логика N»):");
+            sb.AppendLine("   OR  — слово OR с пробелами, или оператор ||");
+            sb.AppendLine("   AND — слово AND с пробелами, или оператор &&");
+            sb.AppendLine("   NOT — префикс NOT, NOT- или ! перед фрагментом (атом или (подвыражение))");
+            sb.AppendLine("   Приоритет (как в JS): сначала ||, затем &&, затем NOT/!, затем атом.");
+            sb.AppendLine("   Скобки (…) группируют подвыражение: NOT ((A) && (B)).");
+            sb.AppendLine();
+            sb.AppendLine("   Примеры между фрагментами:");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("     NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
+            sb.AppendLine("     !LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]          — то же, что NOT");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine();
+            sb.AppendLine("B) NOT у всего атома (перед именем индикатора, после Side/SL/TP/Note):");
+            sb.AppendLine("   NOT / ! / NOT- перед SMA, LinReg, Stoch… инвертирует логический результат Op и Cl");
+            sb.AppendLine("   (true↔false). Side[S]/Side[L] и Buy/Sell НЕ меняются — только «сработало / не сработало».");
+            sb.AppendLine("   Пример: NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
+            sb.AppendLine("   → если AbUp без NOT был бы true — вход по этому атому блокируется (ни Buy, ни Sell);");
+            sb.AppendLine("   → если AbUp без NOT был бы false — условие Op становится true (вход возможен, сторона как в Side).");
+            sb.AppendLine("   Cl инвертируется так же: Cl сработал ↔ Cl не сработал. Это не шорт вместо лонга.");
+            sb.AppendLine("   Переворот Buy↔Sell — Side[S] в строке, «Инверсия (покупка ↔ продажа)» на вкладке «Металогики»");
+            sb.AppendLine("   (при включённой металогике — все входы) или отрицательный PnlSMA; NOT не меняет Side.");
+            sb.AppendLine("   Можно комбинировать с NOT между фрагментами: NOT (NOT LinReg(...) Op[AbUp]) — двойное отрицание.");
+            sb.AppendLine();
+            sb.AppendLine("C) Внутри Op[…] и Cl[…] (только сигналы ЭТОГО индикатора атома):");
+            sb.AppendLine("   ! или NOT перед кодом сигнала — отрицание одного условия");
+            sb.AppendLine("   && или AND — оба условия должны выполниться");
+            sb.AppendLine("   || или OR  — достаточно одного условия");
+            sb.AppendLine("   Приоритет внутри Op/Cl: ||, затем &&, затем !/NOT, затем код сигнала.");
+            sb.AppendLine("   Скобки внутри Op/Cl: Op[(AbUp||AbLo) && !BlLo].");
+            sb.AppendLine();
+            sb.AppendLine("   Примеры внутри Op/Cl (LinReg):");
+            sb.AppendLine("     Op[AbUp]                  — close выше верхней линии");
+            sb.AppendLine("     Op[!AbUp]  Op[NOT AbUp]   — close НЕ выше верхней");
+            sb.AppendLine("     Op[AbUp && AbLo]         — выше верхней И выше нижней (сильный тренд в канале)");
+            sb.AppendLine("     Op[AbUp || AbLo]          — выше верхней ИЛИ выше нижней");
+            sb.AppendLine("     Op[(AbUp||AbLo) && !BlUp] — (выше верхней или нижней) и не ниже верхней");
+            sb.AppendLine("     Cl[BlLo]  Cl[!BlLo]       — выход по обычному или инвертированному BlLo");
+            sb.AppendLine();
+            sb.AppendLine("   Примеры (Stoch): Op[K>=55 && K<=80]  Cl[K<=45 || K>=90]");
+            sb.AppendLine("   Примеры (CCI):  Op[CCI>=100]  Cl[CCI<=-100]  Op[!CCI>=100]");
+            sb.AppendLine();
+            sb.AppendLine("D) Что НЕ смешивается:");
+            sb.AppendLine("   Внутри одного Op[…] нельзя ссылаться на другой индикатор (MACD>Sig только в атоме MACD).");
+            sb.AppendLine("   Disabled(…) — только в самом начале строки логики, не внутри Op/Cl.");
+            sb.AppendLine("   SL/TP не поддерживают &&/|| — только один уровень SL[…] TP[…] на атом.");
+            sb.AppendLine();
+            sb.AppendLine("E) Таблица записи (эквиваленты):");
+            sb.AppendLine("   ИЛИ между фрагментами     OR          ||");
+            sb.AppendLine("   И между фрагментами       AND         &&");
+            sb.AppendLine("   НЕ фрагмент               NOT  NOT-  !");
+            sb.AppendLine("   НЕ сигнал в Op/Cl         NOT AbUp    !AbUp");
+            sb.AppendLine();
+        }
+
+        /// <summary>Алиас BuildDefaultHelpText() для обратной совместимости.</summary>
+        public static string GetHelpText() => BuildDefaultHelpText();
+
+        /// <summary>HTML-справка (светлая тема) для MultiLogic_LogicHelp.html.</summary>
+        public static string BuildDefaultHelpHtml()
+        {
+            var toc = new List<(string id, string title)>();
+            string body = ConvertHelpPlainTextToHtml(BuildDefaultHelpText(), toc);
+            return WrapLogicHelpHtmlDocument(body, toc);
+        }
+
+        private static string WrapLogicHelpHtmlDocument(string bodyHtml, List<(string id, string title)> toc)
+        {
+            var sb = new StringBuilder(bodyHtml.Length + 4096);
+            sb.AppendLine("<!DOCTYPE html>");
+            sb.AppendLine("<html lang=\"ru\">");
+            sb.AppendLine("<head>");
+            sb.AppendLine("<meta charset=\"utf-8\">");
+            sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            sb.AppendLine("<title>MultiLogic — справка по строкам логики</title>");
+            sb.AppendLine("<style>");
+            AppendLogicHelpHtmlStyles(sb);
+            sb.AppendLine("</style>");
+            sb.AppendLine("</head>");
+            sb.AppendLine("<body>");
+            sb.AppendLine("<header class=\"help-hdr\">");
+            sb.AppendLine("<h1>MultiLogic — справка по строкам логики</h1>");
+            sb.AppendLine("<p class=\"help-sub\">Светлая HTML-версия · файл <code>Custom\\Robots\\MultiLogic_LogicHelp.html</code> · "
+                + "генерируется автоматически из <code>MultiLogic.cs</code></p>");
+            sb.AppendLine("<p class=\"help-sub\">Обновлено: "
+                + DateTime.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture)
+                + "</p>");
+            sb.AppendLine("</header>");
+            sb.AppendLine("<div class=\"help-layout\">");
+            if (toc.Count > 0)
+            {
+                sb.AppendLine("<nav class=\"help-toc\" aria-label=\"Содержание\">");
+                sb.AppendLine("<div class=\"help-toc-title\">Содержание</div>");
+                sb.AppendLine("<ol>");
+                for (int i = 0; i < toc.Count; i++)
+                {
+                    sb.AppendLine("<li><a href=\"#"
+                        + HelpHtmlEncode(toc[i].id)
+                        + "\">"
+                        + HelpHtmlEncode(toc[i].title)
+                        + "</a></li>");
+                }
+
+                sb.AppendLine("</ol>");
+                sb.AppendLine("</nav>");
+            }
+
+            sb.AppendLine("<main class=\"help-main\">");
+            sb.Append(bodyHtml);
+            sb.AppendLine("</main>");
+            sb.AppendLine("</div>");
+            sb.AppendLine("<footer class=\"help-ftr\">MultiLogic · OsEngine Custom Robots · справка только для чтения (правки в коде робота)</footer>");
+            sb.AppendLine("</body>");
+            sb.AppendLine("</html>");
+            return sb.ToString();
+        }
+
+        private static void AppendLogicHelpHtmlStyles(StringBuilder sb)
+        {
+            sb.AppendLine(":root{--bg:#f4f6fa;--paper:#fff;--text:#1a1d26;--muted:#5c6370;--border:#dde2eb;--accent:#2563eb;--accent-soft:#eef4ff;--code-bg:#eef1f6;--example-bg:#f0f7ff;--example-border:#c7daf5;}");
+            sb.AppendLine("*{box-sizing:border-box;}");
+            sb.AppendLine("body{margin:0;font-family:Segoe UI,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;font-size:15px;}");
+            sb.AppendLine(".help-hdr{background:linear-gradient(180deg,#fff 0%,var(--accent-soft) 100%);border-bottom:1px solid var(--border);padding:1.5rem 1.75rem 1.25rem;}");
+            sb.AppendLine(".help-hdr h1{margin:0 0 .4rem;font-size:1.65rem;font-weight:700;color:#111827;}");
+            sb.AppendLine(".help-sub{margin:.2rem 0;color:var(--muted);font-size:.92rem;}");
+            sb.AppendLine(".help-layout{max-width:1100px;margin:0 auto;padding:1.25rem 1rem 3rem;display:grid;grid-template-columns:240px 1fr;gap:1.5rem;align-items:start;}");
+            sb.AppendLine("@media(max-width:860px){.help-layout{grid-template-columns:1fr;}.help-toc{position:static!important;}}");
+            sb.AppendLine(".help-toc{position:sticky;top:12px;background:var(--paper);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;box-shadow:0 1px 3px rgba(0,0,0,.06);}");
+            sb.AppendLine(".help-toc-title{font-weight:600;font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:.5rem;}");
+            sb.AppendLine(".help-toc ol{margin:0;padding-left:1.15rem;font-size:.88rem;}");
+            sb.AppendLine(".help-toc li{margin:.35rem 0;}");
+            sb.AppendLine(".help-toc a{color:var(--accent);text-decoration:none;}");
+            sb.AppendLine(".help-toc a:hover{text-decoration:underline;}");
+            sb.AppendLine(".help-main{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:1.5rem 1.75rem 2rem;box-shadow:0 1px 4px rgba(0,0,0,.05);}");
+            sb.AppendLine(".help-main>h1:first-child{display:none;}");
+            sb.AppendLine("h2{font-size:1.28rem;margin:2rem 0 .85rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);color:#111827;scroll-margin-top:12px;}");
+            sb.AppendLine("h2:first-child{margin-top:0;}");
+            sb.AppendLine("h3{font-size:1.05rem;margin:1.35rem 0 .6rem;color:#374151;}");
+            sb.AppendLine("h3.sec{font-size:1.12rem;color:#1f2937;border-left:4px solid var(--accent);padding-left:.55rem;}");
+            sb.AppendLine("p{margin:.55rem 0;}");
+            sb.AppendLine("p.meta{color:var(--muted);font-size:.93rem;}");
+            sb.AppendLine("ul{margin:.4rem 0 .75rem;padding-left:1.35rem;}");
+            sb.AppendLine("li{margin:.3rem 0;}");
+            sb.AppendLine("code{font-family:Consolas,Monaco,monospace;background:var(--code-bg);padding:.12em .38em;border-radius:4px;font-size:.88em;color:#0f172a;}");
+            sb.AppendLine(".logic-formula-group{margin:.55rem 0 1.1rem;}");
+            sb.AppendLine(".logic-formula{display:block;width:fit-content;max-width:100%;margin:.32rem 0;padding:.48rem .72rem;background:linear-gradient(135deg,#fffbeb 0%,#fff 60%);border:1px solid #e7c96f;border-left:4px solid #d97706;border-radius:8px;box-shadow:0 1px 2px rgba(217,119,6,.1);overflow-x:auto;}");
+            sb.AppendLine(".logic-formula-code{font-family:Consolas,\"Courier New\",monospace;font-size:.84rem;font-weight:500;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:#0f172a;}");
+            sb.AppendLine(".logic-formula-inline{font-family:Consolas,\"Courier New\",monospace;font-size:.84em;font-weight:500;background:#fffbeb;padding:.1em .42em;border-radius:5px;border:1px solid #e7c96f;white-space:normal;word-break:break-word;}");
+            sb.AppendLine(".logic-formula-label{font-weight:600;color:#374151;margin-right:.25rem;}");
+            sb.AppendLine(".logic-formula-comment{font-family:Segoe UI,system-ui,sans-serif;font-size:.9rem;color:var(--muted);font-weight:400;}");
+            sb.AppendLine(".lf-ind{color:#1d4ed8;font-weight:600;}.lf-op{color:#047857;font-weight:700;}.lf-cl{color:#b91c1c;font-weight:700;}");
+            sb.AppendLine(".lf-kw{color:#c2410c;font-weight:700;}.lf-regime{color:#7c3aed;font-weight:600;}.lf-side{color:#0e7490;font-weight:600;}");
+            sb.AppendLine(".lf-sl{color:#9333ea;font-weight:600;}.lf-note-tag{color:#64748b;font-weight:600;}");
+            sb.AppendLine("pre.example{background:var(--example-bg);border:1px solid var(--example-border);border-radius:8px;padding:.75rem 1rem;margin:.65rem 0 1rem;overflow-x:auto;font-family:Consolas,Monaco,monospace;font-size:.84rem;line-height:1.45;color:#0f172a;white-space:pre-wrap;word-break:break-word;}");
+            sb.AppendLine("a{color:var(--accent);}");
+            sb.AppendLine(".help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}");
+        }
+
+        private static string ConvertHelpPlainTextToHtml(string plain, List<(string id, string title)> toc)
+        {
+            var sb = new StringBuilder(plain.Length * 2);
+            string[] lines = plain.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            bool inList = false;
+            bool inExample = false;
+            var exampleLines = new List<string>();
+            int h2Index = 0;
+            int metaLines = 0;
+
+            void CloseList()
+            {
+                if (!inList)
+                {
+                    return;
+                }
+
+                sb.AppendLine("</ul>");
+                inList = false;
+            }
+
+            void FlushExample()
+            {
+                if (!inExample)
+                {
+                    return;
+                }
+
+                sb.AppendLine("<div class=\"logic-formula-group\">");
+                for (int e = 0; e < exampleLines.Count; e++)
+                {
+                    AppendLogicFormulaHtmlBlock(sb, exampleLines[e]);
+                }
+
+                sb.AppendLine("</div>");
+                exampleLines.Clear();
+                inExample = false;
+            }
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (IsHelpExampleLine(line))
+                {
+                    CloseList();
+                    if (!inExample)
+                    {
+                        inExample = true;
+                    }
+
+                    exampleLines.Add(line.TrimStart());
+                    continue;
+                }
+
+                FlushExample();
+
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    CloseList();
+                    continue;
+                }
+
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("====", StringComparison.Ordinal))
+                {
+                    CloseList();
+                    string title = trimmed.Trim('=').Trim();
+                    h2Index++;
+                    string id = "sec-" + h2Index.ToString(CultureInfo.InvariantCulture);
+                    toc?.Add((id, title));
+                    sb.AppendLine("<h2 id=\"" + id + "\">" + HelpHtmlEncode(title) + "</h2>");
+                    continue;
+                }
+
+                if (trimmed.StartsWith("----", StringComparison.Ordinal))
+                {
+                    CloseList();
+                    sb.AppendLine("<h3>" + HelpHtmlEncode(trimmed.Trim('-').Trim()) + "</h3>");
+                    continue;
+                }
+
+                if (Regex.IsMatch(trimmed, @"^\d+[a-z]?\)", RegexOptions.CultureInvariant))
+                {
+                    CloseList();
+                    sb.AppendLine("<h3 class=\"sec\">" + HelpHtmlEncode(trimmed) + "</h3>");
+                    continue;
+                }
+
+                if (i == 0)
+                {
+                    sb.AppendLine("<h1>" + HelpHtmlEncode(trimmed) + "</h1>");
+                    continue;
+                }
+
+                if (metaLines < 2 && trimmed.StartsWith("(", StringComparison.Ordinal))
+                {
+                    metaLines++;
+                    sb.AppendLine("<p class=\"meta\">" + HelpHtmlEncode(trimmed) + "</p>");
+                    continue;
+                }
+
+                if (line.StartsWith("   ", StringComparison.Ordinal))
+                {
+                    if (!inList)
+                    {
+                        sb.AppendLine("<ul>");
+                        inList = true;
+                    }
+
+                    if (TrySplitLogicFormulaLine(trimmed, out string formula, out string comment, out string label))
+                    {
+                        sb.Append("<li>");
+                        if (!string.IsNullOrEmpty(label))
+                        {
+                            sb.Append("<span class=\"logic-formula-label\">");
+                            sb.Append(HelpHtmlEncode(label));
+                            sb.Append(": </span>");
+                        }
+
+                        sb.Append("<code class=\"logic-formula-inline\">");
+                        sb.Append(HighlightLogicFormulaHtml(formula));
+                        sb.Append("</code>");
+                        if (!string.IsNullOrWhiteSpace(comment))
+                        {
+                            sb.Append("<span class=\"logic-formula-comment\"> — ");
+                            sb.Append(HelpHtmlEncode(comment));
+                            sb.Append("</span>");
+                        }
+
+                        sb.AppendLine("</li>");
+                    }
+                    else
+                    {
+                        sb.AppendLine("<li>" + FormatHelpLineWithInlineCode(trimmed) + "</li>");
+                    }
+
+                    continue;
+                }
+
+                CloseList();
+                sb.AppendLine("<p>" + FormatHelpLineWithInlineCode(trimmed) + "</p>");
+            }
+
+            FlushExample();
+            CloseList();
+            return sb.ToString();
+        }
+
+        private static bool IsHelpExampleLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            return TrySplitLogicFormulaLine(line.TrimStart(), out _, out _, out _)
+                || IsLogicFormulaContent(line.TrimStart());
+        }
+
+        private static void AppendLogicFormulaHtmlBlock(StringBuilder sb, string rawLine)
+        {
+            if (!TrySplitLogicFormulaLine(rawLine, out string formula, out string comment, out string label)
+                && !IsLogicFormulaContent(rawLine.Trim()))
+            {
+                sb.Append("<div class=\"logic-formula\"><code class=\"logic-formula-code\">");
+                sb.Append(HelpHtmlEncode(rawLine.Trim()));
+                sb.AppendLine("</code></div>");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(formula))
+            {
+                formula = rawLine.Trim();
+                comment = null;
+                label = null;
+            }
+
+            sb.Append("<div class=\"logic-formula\">");
+            if (!string.IsNullOrEmpty(label))
+            {
+                sb.Append("<span class=\"logic-formula-label\">");
+                sb.Append(HelpHtmlEncode(label));
+                sb.Append(": </span>");
+            }
+
+            sb.Append("<code class=\"logic-formula-code\">");
+            sb.Append(HighlightLogicFormulaHtml(formula));
+            sb.Append("</code>");
+            if (!string.IsNullOrWhiteSpace(comment))
+            {
+                sb.Append("<span class=\"logic-formula-comment\"> — ");
+                sb.Append(HelpHtmlEncode(comment));
+                sb.Append("</span>");
+            }
+
+            sb.AppendLine("</div>");
+        }
+
+        private static bool TrySplitLogicFormulaLine(
+            string line,
+            out string formula,
+            out string comment,
+            out string label)
+        {
+            formula = null;
+            comment = null;
+            label = null;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            string work = line.Trim();
+            int commentSep = work.IndexOf(" — ", StringComparison.Ordinal);
+            if (commentSep < 0)
+            {
+                commentSep = work.IndexOf(" - ", StringComparison.Ordinal);
+            }
+
+            if (commentSep > 0)
+            {
+                comment = work.Substring(commentSep + 3).Trim();
+                work = work.Substring(0, commentSep).Trim();
+            }
+
+            int formulaStart = FindLogicFormulaStartIndex(work);
+            if (formulaStart < 0 || !IsLogicFormulaContent(work.Substring(formulaStart).Trim()))
+            {
+                return false;
+            }
+
+            if (formulaStart > 0)
+            {
+                label = work.Substring(0, formulaStart).Trim().TrimEnd(':').Trim();
+                if (string.IsNullOrEmpty(label))
+                {
+                    label = null;
+                }
+            }
+
+            formula = work.Substring(formulaStart).Trim();
+            return true;
+        }
+
+        private static int FindLogicFormulaStartIndex(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return -1;
+            }
+
+            Match match = Regex.Match(
+                text,
+                @"(Regime\s*\(|Disabled\s*\(|Disable\s*\(|\(|NOT\s+(Regime|Disabled|LinReg|SMA|Stoch|ATR|MACD|CCI|\()|!\s*(LinReg|SMA|Stoch|\()|\b(SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|Bollinger)\s*\()",
+                RegexOptions.CultureInvariant);
+            return match.Success ? match.Index : -1;
+        }
+
+        private static bool IsLogicFormulaContent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            if (text.Contains("Op[", StringComparison.Ordinal)
+                || text.Contains("Cl[", StringComparison.Ordinal)
+                || text.Contains("SL[", StringComparison.Ordinal)
+                || text.Contains("TP[", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (text.StartsWith("Regime(", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("Disabled(", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("Disable(", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (text.StartsWith("(", StringComparison.Ordinal)
+                && (text.Contains(" Op[", StringComparison.Ordinal)
+                    || text.Contains(" Cl[", StringComparison.Ordinal)
+                    || text.Contains(" && ", StringComparison.Ordinal)
+                    || text.Contains(" || ", StringComparison.Ordinal)
+                    || text.Contains(" AND ", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains(" OR ", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            if (Regex.IsMatch(
+                    text,
+                    @"\b(SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|Bollinger)\s*\(",
+                    RegexOptions.CultureInvariant))
+            {
+                return true;
+            }
+
+            if (Regex.IsMatch(
+                    text,
+                    @"^NOT\s+(Regime|Disabled|LinReg|SMA|Stoch|ATR|MACD|CCI|\()",
+                    RegexOptions.CultureInvariant | RegexOptions.IgnoreCase))
+            {
+                return true;
+            }
+
+            if (Regex.IsMatch(
+                    text,
+                    @"^!\s*(LinReg|SMA|Stoch|\()",
+                    RegexOptions.CultureInvariant | RegexOptions.IgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string HighlightLogicFormulaHtml(string rawFormula)
+        {
+            if (string.IsNullOrWhiteSpace(rawFormula))
+            {
+                return string.Empty;
+            }
+
+            string encoded = HelpHtmlEncode(rawFormula.Trim());
+            encoded = Regex.Replace(
+                encoded,
+                @"\b(Regime|Disabled|Disable)\(",
+                "<span class=\"lf-regime\">$1</span>(",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\b(AND|OR|NOT)\b",
+                "<span class=\"lf-kw\">$1</span>",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"(&amp;&amp;|\|\|)",
+                "<span class=\"lf-kw\">$1</span>",
+                RegexOptions.CultureInvariant);
+            encoded = Regex.Replace(
+                encoded,
+                @"\b(SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|Bollinger)\(",
+                "<span class=\"lf-ind\">$1</span>(",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\bSide\[([LS])\]",
+                "<span class=\"lf-side\">Side[$1]</span>",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\bOp\[",
+                "<span class=\"lf-op\">Op</span>[",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\bCl\[",
+                "<span class=\"lf-cl\">Cl</span>[",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\bSL\[",
+                "<span class=\"lf-sl\">SL</span>[",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\bTP\[",
+                "<span class=\"lf-sl\">TP</span>[",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                @"\bNote\(",
+                "<span class=\"lf-note-tag\">Note</span>(",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            return encoded;
+        }
+
+        private static string FormatHelpLineWithInlineCode(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder(text.Length + 32);
+            int i = 0;
+            while (i < text.Length)
+            {
+                int codeStart = FindHelpInlineCodeStart(text, i);
+                if (codeStart < 0)
+                {
+                    sb.Append(HelpHtmlEncode(text.Substring(i)));
+                    break;
+                }
+
+                if (codeStart > i)
+                {
+                    sb.Append(HelpHtmlEncode(text.Substring(i, codeStart - i)));
+                }
+
+                int codeEnd = FindHelpInlineCodeEnd(text, codeStart);
+                if (codeEnd < 0)
+                {
+                    sb.Append(HelpHtmlEncode(text.Substring(codeStart)));
+                    break;
+                }
+
+                sb.Append("<code>");
+                sb.Append(HelpHtmlEncode(text.Substring(codeStart, codeEnd - codeStart + 1)));
+                sb.Append("</code>");
+                i = codeEnd + 1;
+            }
+
+            return sb.ToString();
+        }
+
+        private static int FindHelpInlineCodeStart(string text, int from)
+        {
+            for (int i = from; i < text.Length; i++)
+            {
+                if (text[i] == 'O' && i + 2 < text.Length && text[i + 1] == 'p' && text[i + 2] == '[')
+                {
+                    return i;
+                }
+
+                if (text[i] == 'C' && i + 2 < text.Length && text[i + 1] == 'l' && text[i + 2] == '[')
+                {
+                    return i;
+                }
+
+                if (text[i] == 'S' && i + 2 < text.Length && text[i + 1] == 'L' && text[i + 2] == '[')
+                {
+                    return i;
+                }
+
+                if (text[i] == 'T' && i + 2 < text.Length && text[i + 1] == 'P' && text[i + 2] == '[')
+                {
+                    return i;
+                }
+
+                if (text[i] == 'R' && text.Substring(i).StartsWith("Regime(", StringComparison.Ordinal))
+                {
+                    return i;
+                }
+
+                if (text[i] == 'D' && text.Substring(i).StartsWith("Disabled(", StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindHelpInlineCodeEnd(string text, int start)
+        {
+            if (start >= text.Length)
+            {
+                return -1;
+            }
+
+            if (text[start] == 'R' || text[start] == 'D')
+            {
+                int depth = 0;
+                for (int i = start; i < text.Length; i++)
+                {
+                    if (text[i] == '(')
+                    {
+                        depth++;
+                    }
+                    else if (text[i] == ')')
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            return i;
+                        }
+                    }
+                }
+
+                return text.Length - 1;
+            }
+
+            for (int i = start; i < text.Length; i++)
+            {
+                if (text[i] == ']')
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string HelpHtmlEncode(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            return text
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;")
+                .Replace("\"", "&quot;");
+        }
+
+        /// <summary>Обзор: RAM/диск, портфели логик, JSON-снимок (в начале справки).</summary>
+        private static void AppendResourceHelp(StringBuilder sb)
+        {
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("ОБЗОР: ресурсы ПК, портфели логик, сохранение состояния");
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("MultiLogic считает эффективный портфель отдельно для каждой логики L1…L10");
+            sb.AppendLine("(старт 0, может быть отрицательным): realized + unrealized по сделкам MultiLogic_Ln.");
+            sb.AppendLine();
+            sb.AppendLine("Файлы портфелей (лайв, не тестер):");
+            sb.AppendLine("  Engine\\{имя робота}_LogicPortfolio_L1.txt … _L10.txt");
+            sb.AppendLine("  История до 5000 точек на логику; сброс на диск ~раз в 30 с при изменениях.");
+            sb.AppendLine();
+            sb.AppendLine("HTML-отчёт (вкладка «Отчёт», Engine\\{имя}_Report.html):");
+            sb.AppendLine("  Пишется в тестере, лайве и при фейке (эмулятор OsEngine, EmulatorIsOn).");
+            sb.AppendLine("  В шапке — текущий режим (тестер / лайв / фейк / оптимизатор) и история смены режимов.");
+            sb.AppendLine("  Графики equity, открытых/закрытых позиций от времени и opens/closes по дням;");
+            sb.AppendLine("  блок «Металогика»: текущий статус, порядок приоритета L1…L10 по PnlSMA, веса и журнал входов;");
+            sb.AppendLine("  таблицы по инструментам, логикам L1…L10, закрытым позициям (с длительностью), причинам закрытия.");
+            sb.AppendLine("  Интервал перезаписи — параметр «HTML-отчёт: интервал (сек)» (по умолчанию 90; не на каждой сделке).");
+            sb.AppendLine("  Кнопка «Открыть HTML-отчёт» (вкладка «Отчёт») — открыть файл в браузере.");
+            sb.AppendLine("  На первой вкладке — «Открыть HTML-файл результатов тестирования» (то же действие).");
+            sb.AppendLine();
+            sb.AppendLine("Первая вкладка параметров:");
+            sb.AppendLine("  «Сохранить настройки и результаты» — JSON (параметры, все 10 строк логик,");
+            sb.AppendLine("    портфели, открытые позиции); файл выбираете сами.");
+            sb.AppendLine("  «Загрузить настройки и результаты» — подставить всё из JSON (биржевые заявки");
+            sb.AppendLine("    по позициям не выставляются).");
+            sb.AppendLine("  Справочный % годовых (внизу вкладки): «Заполнить начальную сумму и дату портфеля»");
+            sb.AppendLine("    — текущий реальный портфель (лайв/тестер) и дата; далее в конце каждой свечи");
+            sb.AppendLine("    пересчёт линейного % и % с капитализацией (не сумма L1…L10).");
+            sb.AppendLine();
+            sb.AppendLine("Контроль ресурсов ПК (только предупреждение в лог, торговлю не блокирует):");
+            sb.AppendLine("  Сравнивается свободная RAM и место на диске (каталог Engine\\) с оценкой нагрузки:");
+            sb.AppendLine("  — число активных логик;");
+            sb.AppendLine("  — точки истории портфелей в памяти;");
+            sb.AppendLine("  — вкладки скринера и уникальные индикаторы;");
+            sb.AppendLine("  — размер файлов портфелей на диске (в т.ч. крупнейший файл).");
+            sb.AppendLine("  Проверка: при старте, после смены логик, загрузки JSON, сохранения портфелей;");
+            sb.AppendLine("  повтор того же предупреждения — не чаще ~5 минут.");
+            sb.AppendLine("  Если ресурсов мало — в лог пишется, сколько нужно RAM/диска и сколько не хватает;");
+            sb.AppendLine("  уменьшите число активных логик, вкладок скринера или объём истории портфелей.");
+            sb.AppendLine();
+            sb.AppendLine("Вкладка «Металогики» (сразу после «Логики»):");
+            sb.AppendLine("  Вверху — «Металогика включена», «Инверсия (покупка ↔ продажа)», кнопка «Включить металогику»,");
+            sb.AppendLine("  PnlSMA (вкл. и длина); под PnlSMA — разделитель; ниже — SMA, Stoch, ATR, LinReg, MACD.");
+            sb.AppendLine("  Пока «Металогика включена», но по каждой активной логике не накопилось окно PnlSMA");
+            sb.AppendLine("  (длина — «Общепортфельный PnlSMA: длина», по одной точке equity на свечу) — входы как без металогики:");
+            sb.AppendLine("  Volume поровну, приоритет Max positions L1…L10, без переворота по PnlSMA.");
+            sb.AppendLine("  После готовности PnlSMA: Volume делится только между логиками с Op пропорционально |PnlSMA|;");
+            sb.AppendLine("  знак PnlSMA переворачивает Buy/Sell (если инверсия выкл.).");
+            sb.AppendLine("  «Инверсия (покупка ↔ продажа)» — только когда металогика уже действует (PnlSMA готов).");
+            sb.AppendLine("  Сумма объёмов новых входов на свече не превышает Volume (первая вкладка).");
+            sb.AppendLine("  Max positions: при нехватке слотов — приоритет логик с большим PnlSMA.");
+            sb.AppendLine("  Если металогика выключена — как раньше: каждая логика отдельно, Volume поровну, L1…L10.");
+            sb.AppendLine("  Общепортфельные SMA, Stoch, ATR, LinReg, MACD, PnlSMA — один набор параметров;");
+            sb.AppendLine("  расчёт по кривой equity каждой логики L1…L10 и по сумме (файлы _LogicPortfolio_Ln, _MetaAggregate).");
+            sb.AppendLine("  Отдельных «ЛП1…ЛП10» в параметрах нет — настройки общие для всех портфельных серий.");
+            sb.AppendLine("  При включённом мета-индикаторе робот считает его по серии equity портфеля");
+            sb.AppendLine("  (если на вкладке графика нет соответствующего индикатора) и пишет значения в файл");
+            sb.AppendLine("  портфеля (v2, поле meta) и Engine\\{имя}_MetaAggregate.txt для общепортфельных.");
+            sb.AppendLine("  JSON-снимок v2 включает meta в истории портфелей и блок AggregateMetaPortfolio.");
+            sb.AppendLine("  PnlSMA (Приведённая SMA): pnlSmaAvg = mean(E_i − E_start) по окну; pnlSmaLast = E_end − E_start;");
+            sb.AppendLine("  металогика использует pnlSmaAvg; по умолчанию включён PnlSMA, длина окна — 24 свечи.");
+            sb.AppendLine();
+            sb.AppendLine("Вкладка «Stopper» (общепортфельная страховка по сумме L1…L10):");
+            sb.AppendLine("  Equity = сумма кривых портфелей всех логик (realized + unrealized MultiLogic_Ln).");
+            sb.AppendLine("  «Общепортфельный stop-loss / take-profit: включён» — по умолчанию выкл.; пороги 0,4% и 10%.");
+            sb.AppendLine("  Ref (предыдущая сумма) = equity ровно N свечей назад (lookback, по умолчанию 5);");
+            sb.AppendLine("  история обновляется на каждом закрытии свечи вкладки скринера.");
+            sb.AppendLine("  SL: current ≤ ref × (1 − SL%); TP: current ≥ ref × (1 + TP%). Ref ≤ 0 — проверка пропускается.");
+            sb.AppendLine("  При срабатывании — закрытие всех позиций робота; опционально Regime=Off (отдельно для SL и TP).");
+            sb.AppendLine("  Техн. суммы обновляются в начале обработки свечи и после торговли на ней (без SaveParameters).");
+            sb.AppendLine("  «Обновить сумму портфеля SL/TP» — текущая equity в базу; тех. суммы — в начале и после торговли на свече.");
+            sb.AppendLine("  После SL/TP ref = equity после закрытия; база 0 — ref из lookback.");
+            sb.AppendLine("  «Stopper: таймфрейм монитора» («Как основной TF» / Min1…Min15): «Как основной TF» — проверка на общей свече страницы 1;");
+            sb.AppendLine("    страница 2 скринера удаляется (вкладка «2» пропадает), робот не нагружается; Min1…Min15 — создаётся вторая страница (оранжевая «2») с «Stopper: бумага монитора»");
+            sb.AppendLine("    (по умолчанию SBER). SL/TP сравнивает текущую сумму L1…L10 с «Предыдущая сумма» на вкладке Stopper");
+            sb.AppendLine("    по CandleFinished страницы 2 (чаще основного TF); lookback N — в свечах монитора, не страницы 1.");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по SMA.</summary>
+        private static void AppendSmaHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- SMA (Simple Moving Average) ---");
+            sb.AppendLine("Имя в строке: SMA");
+            sb.AppendLine("Параметры (на график):");
+            sb.AppendLine("  SMA(100)                    — длина 100, источник Close");
+            sb.AppendLine("  SMA(L=100)                  — то же, явно");
+            sb.AppendLine("  SMA(L=100,Src=Close)        — длина и источник (Close)");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[Ab]  — close > SMA (лонг);  Cl[Bl] — close < SMA (выход из лонга)");
+            sb.AppendLine("  Side[S] Op[Bl] Cl[Ab]       — шорт: close < SMA / выход close > SMA");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("  Антитренд:  SMA(100) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[6%] Note(counter-trend)");
+            sb.AppendLine("  С ATR:      (SMA(100) Op[Ab] Cl[Bl]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по Stochastic.</summary>
+        private static void AppendStochHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- Stochastic (Stoch) ---");
+            sb.AppendLine("Имя в строке: Stoch  (или Stochastic)");
+            sb.AppendLine("Параметры индикатора (P1-P2-P3 на график):");
+            sb.AppendLine("  Stoch(14-3-3)                              — периоды 14, 3, 3");
+            sb.AppendLine("  Stoch(14,3,3)                              — через запятую");
+            sb.AppendLine("  Stoch(K1=14,K2=3,D=3)                      — именованно");
+            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
+            sb.AppendLine("  ;Lmin=55;Smax=45  или  ;L=55;S=45");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[K>=55] / Op[K>=Lmin]  — %K выше порога (лонг)");
+            sb.AppendLine("  Cl[K<=45] / Cl[K<=Smax]  — %K ниже порога (выход)");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45] Note(trend)");
+            sb.AppendLine("  Антитренд:  Stoch(14-3-3;Lmin=55;Smax=45) Side[S] Op[K<=45] Cl[K>=55] Note(counter-trend)");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по ATR.</summary>
+        private static void AppendAtrHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- ATR (фильтр роста волатильности, без направления) ---");
+            sb.AppendLine("Имя в строке: ATR");
+            sb.AppendLine("Параметры индикатора:");
+            sb.AppendLine("  ATR(14)                     — период 14");
+            sb.AppendLine("  ATR(L=14)                   — то же");
+            sb.AppendLine("Пороги роста (в строке логики):");
+            sb.AppendLine("  ;Gr=3%;Lb=5   — ATR вырос ≥ 3% относительно значения 5 свечей назад");
+            sb.AppendLine("  ;+3%@5        — краткая запись Gr/Lb");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[GrOk]  или  Op[+3%@5]  — фильтр «волатильность выросла»");
+            sb.AppendLine("  Cl[-]                     — отдельного выхода по ATR нет");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Фильтр:     ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(volatility-filter)");
+            sb.AppendLine("  С SMA:      (SMA(100) Op[Ab] Cl[Bl]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по Linear Regression.</summary>
+        private static void AppendLinRegHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- Linear Regression (LinReg) ---");
+            sb.AppendLine("Имя в строке: LinReg  (или LR, LinearRegression)");
+            sb.AppendLine("Параметры индикатора:");
+            sb.AppendLine("  LinReg(50)                  — длина канала 50, Dev=2 по умолчанию");
+            sb.AppendLine("  LinReg(50;Dev=2)            — длина и отклонение границ, %");
+            sb.AppendLine("  LinReg(L=50,Dev=2)          — именованно");
+            sb.AppendLine("Сигналы (как TrendMultiIndicatorScreener — канал LinReg):");
+            sb.AppendLine("  Op[AbUp]  — close выше верхней линии (лонг)");
+            sb.AppendLine("  Cl[BlUp]  — close ниже верхней (выход)");
+            sb.AppendLine("  Side[S] Op[BlLo] Cl[AbLo] — шорт от нижней линии");
+            sb.AppendLine("Пороги наклона (только в строке логики, не на график):");
+            sb.AppendLine("  ;SlopeLb=3  — сравнить центр канала с центром 3 свечи назад");
+            sb.AppendLine("  ;SlopeDead=0 — мёртвая зона |Δцентра| (по умолчанию 0)");
+            sb.AppendLine("  Op[SlopeUp] — центр LinReg растёт (Δ > SlopeDead); лонг-режим");
+            sb.AppendLine("  Op[SlopeDn] — центр падает (Δ < -SlopeDead); шорт-режим");
+            sb.AppendLine("  Cl[-] с Op[SlopeUp/Dn] — атом только фильтр режима, без своего выхода");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      LinReg(50;Dev=2) Op[AbUp] Cl[BlUp] SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("  Антитренд:  LinReg(50;Dev=2) Side[S] Op[BlLo] Cl[AbLo] Note(counter-trend)");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по MACD.</summary>
+        private static void AppendMacdHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- MACD ---");
+            sb.AppendLine("Имя в строке: MACD  (или Macd)");
+            sb.AppendLine("Параметры индикатора:");
+            sb.AppendLine("  MACD(12,26,9)               — fast, slow, signal");
+            sb.AppendLine("  MACD(Fast=12,Slow=26,Signal=9)");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[Macd>Sig]  — линия MACD выше сигнальной (лонг)");
+            sb.AppendLine("  Cl[Macd<Sig]  — MACD ниже сигнальной (выход / шорт)");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("  Антитренд:  MACD(12,26,9) Side[S] Op[Macd<Sig] Cl[Macd>Sig] Note(counter-trend)");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по CCI (Commodity Channel Index).</summary>
+        private static void AppendCciHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- CCI (Commodity Channel Index) ---");
+            sb.AppendLine("Имя в строке: CCI");
+            sb.AppendLine("Параметры индикатора (на график):");
+            sb.AppendLine("  CCI(20)                     — длина 20, источник Typical (H+L+C)/3");
+            sb.AppendLine("  CCI(L=20)                   — то же, явно");
+            sb.AppendLine("  CCI(L=20,Src=Typical)       — длина и точка свечи (Typical, Close, Open, High, Low, Median)");
+            sb.AppendLine("  CCI(20;Src=Close)           — через точку с запятой");
+            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
+            sb.AppendLine("  ;Lmin=100;Smax=-100  или  ;L=100;S=-100  — классические уровни перекупленности/перепроданности");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[CCI>=100] / Op[CCI>=Lmin]  — CCI выше порога (лонг от силы / контртренд — по смыслу стратегии)");
+            sb.AppendLine("  Cl[CCI<=-100] / Cl[CCI<=Smax] — CCI ниже порога (выход)");
+            sb.AppendLine("  Op[CCI<=-100] Side[S]         — шорт при CCI ниже −100 (контртренд)");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Контртренд: CCI(20;Lmin=100;Smax=-100) Side[S] Op[CCI>=100] Cl[CCI<=-100] Note(CCI-fade-short)");
+            sb.AppendLine("  С фильтром:  (SMA(100) Op[Ab] Cl[Bl]) AND (CCI(20;Lmin=-100;Smax=-200) Op[CCI<=-100] Cl[CCI>=0] Note(pullback))");
+            sb.AppendLine("  Не включён в логики по умолчанию и не входит в металогики (только строки «Логика 1…10»).");
+            sb.AppendLine();
+        }
+
+
+    }
+
+    #endregion
 }
