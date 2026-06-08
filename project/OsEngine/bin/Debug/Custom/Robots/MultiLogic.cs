@@ -215,6 +215,164 @@ namespace OsEngine.Robots.Custom
         }
     }
 
+    /// <summary>Каталог трендовых логик для кнопки «Добавить логику» (вкладка «Логики»).</summary>
+    internal static class MultiLogicTrendCatalog
+    {
+        private sealed class CatalogEntry
+        {
+            public string Label = "";
+            public string Formula = "";
+        }
+
+        private static readonly CatalogEntry[] Entries =
+        {
+            new CatalogEntry
+            {
+                Label = "1 RSI+Boll лонг (плавный тренд)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(SMA(50) Op[Ab] Cl[Bl]) AND "
+                    + "(Bollinger(20;Dev=2) Op[AbMid] Cl[BlMid]) AND "
+                    + "(RSI(14;Lmin=55;Smax=45) Op[RSI>=55] Cl[RSI<=45]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(trend-rsi-boll))"
+            },
+            new CatalogEntry
+            {
+                Label = "1 RSI+Boll шорт (плавный тренд)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(SMA(50) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(Bollinger(20;Dev=2) Side[S] Op[BlMid] Cl[AbMid]) AND "
+                    + "(RSI(14;Lmin=55;Smax=45) Side[S] Op[RSI<=45] Cl[RSI>=55]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-rsi-boll))"
+            },
+            new CatalogEntry
+            {
+                Label = "2 Mom+Slope лонг (больше сигналов)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
+                    + "(Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100]) AND "
+                    + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+                    + "(ATR(14;Gr=2%;Lb=5) Op[GrOk] Cl[-] Note(trend-mom-slope))"
+            },
+            new CatalogEntry
+            {
+                Label = "2 Mom+Slope шорт (больше сигналов)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
+                    + "(Momentum(14;Lmin=100;Smax=100) Side[S] Op[MOM<=100] Cl[MOM>=100]) AND "
+                    + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(ATR(14;Gr=2%;Lb=5) Op[GrOk] Cl[-] Note(short-mom-slope))"
+            },
+            new CatalogEntry
+            {
+                Label = "3 VWAP лонг (сессия / ликвид)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(VWAP Op[Ab] Cl[Bl]) AND "
+                    + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-vwap))"
+            },
+            new CatalogEntry
+            {
+                Label = "3 VWAP шорт (сессия / ликвид)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(VWAP Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-vwap))"
+            },
+            new CatalogEntry
+            {
+                Label = "4 Boll break лонг (пробой / всплески)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(Bollinger(20;Dev=2) Op[Ab] Cl[Bl]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig]) AND "
+                    + "(RSI(14;Lmin=50;Smax=50) Op[RSI>=50] Cl[RSI<=40]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-boll-break))"
+            },
+            new CatalogEntry
+            {
+                Label = "4 Boll break шорт (пробой / всплески)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(Bollinger(20;Dev=2) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig]) AND "
+                    + "(RSI(14;Lmin=50;Smax=50) Side[S] Op[RSI<=50] Cl[RSI>=60]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-boll-break))"
+            },
+            new CatalogEntry
+            {
+                Label = "5 Dual SMA лонг (медленный тренд)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(SMA(50) Op[Ab] Cl[Bl]) AND "
+                    + "(SMA(200) Op[Ab] Cl[Bl]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-dual-sma))"
+            },
+            new CatalogEntry
+            {
+                Label = "5 Dual SMA шорт (медленный тренд)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(SMA(50) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(SMA(200) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-dual-sma))"
+            },
+            new CatalogEntry
+            {
+                Label = "6 Stoch trend лонг (откат по тренду)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
+                    + "(Stoch(14-3-3;Lmin=50;Smax=50) Op[K>=50] Cl[K<=40]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-stoch-pullback))"
+            },
+            new CatalogEntry
+            {
+                Label = "6 Stoch trend шорт (откат по тренду)",
+                Formula = MultiLogicDefaultLogics.TrendRegimePrefix
+                    + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
+                    + "(Stoch(14-3-3;Lmin=50;Smax=50) Side[S] Op[K<=50] Cl[K>=60]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-stoch-pullback))"
+            }
+        };
+
+        public static readonly string[] ChoiceLabels = BuildChoiceLabels();
+
+        private static string[] BuildChoiceLabels()
+        {
+            var labels = new string[Entries.Length];
+            for (int i = 0; i < Entries.Length; i++)
+            {
+                labels[i] = Entries[i].Label;
+            }
+
+            return labels;
+        }
+
+        public static bool TryResolveFormula(string label, out string formula)
+        {
+            formula = "";
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                return false;
+            }
+
+            string trimmed = label.Trim();
+            for (int i = 0; i < Entries.Length; i++)
+            {
+                if (string.Equals(trimmed, Entries[i].Label, StringComparison.Ordinal))
+                {
+                    formula = Entries[i].Formula;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
     /*
      * ////////////////////////////////////////////////////////////////////////////////
      * ////////////////////////////////////////////////////////////////////////////////
@@ -326,6 +484,12 @@ namespace OsEngine.Robots.Custom
         private const string ExportLogicsButtonName = "Выгрузить логику";
         /// <summary>Кнопка импорта строк «Логика 1…10» из JSON на вкладке «Логики».</summary>
         private const string ImportLogicsButtonName = "Загрузить логику";
+        /// <summary>Очищает все слоты «Логика 1…10».</summary>
+        private const string ClearLogicsButtonName = "Очистить логики";
+        /// <summary>Список вариантов для «Добавить логику».</summary>
+        private const string AddLogicVariantParamName = "Вариант трендовой логики";
+        /// <summary>Записывает выбранный вариант в ближайший пустой слот логики.</summary>
+        private const string AddLogicButtonName = "Добавить логику";
         /// <summary>Версия формата JSON-файла только со строками логик.</summary>
         private const string MultiLogicLogicFileFormatVersion = "1";
         /// <summary>Кнопка экспорта JSON-снимка настроек, портфелей логик и позиций.</summary>
@@ -422,6 +586,12 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _exportLogicsButton;
         /// <summary>Кнопка «Загрузить логику» на вкладке «Логики».</summary>
         private StrategyParameterButton _importLogicsButton;
+        /// <summary>Кнопка «Очистить логики» на вкладке «Логики».</summary>
+        private StrategyParameterButton _clearLogicsButton;
+        /// <summary>Выбор варианта для «Добавить логику».</summary>
+        private StrategyParameterString _addLogicVariant;
+        /// <summary>Кнопка «Добавить логику» на вкладке «Логики».</summary>
+        private StrategyParameterButton _addLogicButton;
         /// <summary>Кнопка экспорта JSON-снимка (первая вкладка параметров).</summary>
         private StrategyParameterButton _saveSnapshotButton;
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -726,6 +896,15 @@ namespace OsEngine.Robots.Custom
             _exportLogicsButton.UserClickOnButtonEvent += ExportLogicsButton_UserClickOnButtonEvent;
             _importLogicsButton = CreateParameterButton(ImportLogicsButtonName, LogicsTabName);
             _importLogicsButton.UserClickOnButtonEvent += ImportLogicsButton_UserClickOnButtonEvent;
+            _clearLogicsButton = CreateParameterButton(ClearLogicsButtonName, LogicsTabName);
+            _clearLogicsButton.UserClickOnButtonEvent += ClearLogicsButton_UserClickOnButtonEvent;
+            _addLogicVariant = CreateParameter(
+                AddLogicVariantParamName,
+                MultiLogicTrendCatalog.ChoiceLabels[0],
+                MultiLogicTrendCatalog.ChoiceLabels,
+                LogicsTabName);
+            _addLogicButton = CreateParameterButton(AddLogicButtonName, LogicsTabName);
+            _addLogicButton.UserClickOnButtonEvent += AddLogicButton_UserClickOnButtonEvent;
 
             _logic1 = CreateParameter("Логика 1", MultiLogicDefaultLogics.Logic1LongTrend, LogicsTabName);
             _logic2 = CreateParameter("Логика 2", MultiLogicDefaultLogics.Logic2LongBokovik, LogicsTabName);
@@ -887,7 +1066,8 @@ namespace OsEngine.Robots.Custom
         private async void CoalescedSaveParametersAcceptBackup()
         {
             if (!_parametersAcceptBackupEnabled
-                || StartProgram == StartProgram.IsOsOptimizer)
+                || StartProgram == StartProgram.IsOsOptimizer
+                || StartProgram == StartProgram.IsTester)
             {
                 return;
             }
@@ -908,16 +1088,21 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            try
-            {
-                SaveParametersAcceptBackupToDisk();
-            }
-            catch (Exception ex)
-            {
-                SendNewLogMessage(
-                    NameStrategyUniq + " | автобэкап параметров: " + ex.Message,
-                    LogMessageType.Error);
-            }
+            RunOnUiThread(
+                () =>
+                {
+                    try
+                    {
+                        SaveParametersAcceptBackupToDisk();
+                    }
+                    catch (Exception ex)
+                    {
+                        SendNewLogMessage(
+                            NameStrategyUniq + " | автобэкап параметров: " + ex.Message,
+                            LogMessageType.Error);
+                    }
+                },
+                preferAsync: true);
         }
 
         /// <summary>
@@ -1056,6 +1241,8 @@ namespace OsEngine.Robots.Custom
             WireLogicTabButton(LogicsSetSampleDiverseButtonName, SetSampleDiverseLogicsButton_UserClickOnButtonEvent);
             WireLogicTabButton(ExportLogicsButtonName, ExportLogicsButton_UserClickOnButtonEvent);
             WireLogicTabButton(ImportLogicsButtonName, ImportLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(ClearLogicsButtonName, ClearLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(AddLogicButtonName, AddLogicButton_UserClickOnButtonEvent);
         }
 
         /// <summary>Переподписывает кнопки вкладки «Металогики».</summary>
@@ -1533,6 +1720,110 @@ namespace OsEngine.Robots.Custom
             ApplyLogicSlotStrings(slotValues);
         }
 
+        /// <summary>Очищает «Логика 1…10» (пустые строки).</summary>
+        private void ApplyClearLogicStrings()
+        {
+            var slotValues = new string[LogicSlotCount];
+            ApplyLogicSlotStrings(slotValues);
+        }
+
+        private void ClearLogicsButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ApplyClearLogicStrings();
+                string msg = NameStrategyUniq
+                    + " | «Логика 1…10» очищены. Применение на графике — «Принять».";
+                SendNewLogMessage(msg, LogMessageType.User);
+                SendNewLogMessage(msg, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private StrategyParameterString ResolveAddLogicVariantParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p =>
+                p.Name == AddLogicVariantParamName);
+            return (fromList as StrategyParameterString) ?? _addLogicVariant;
+        }
+
+        private void AddLogicButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ApplyPrefixesFromOpenParameterDialog();
+
+                StrategyParameterString variantParam = ResolveAddLogicVariantParameter();
+                string label = variantParam?.ValueString ?? "";
+                if (!MultiLogicTrendCatalog.TryResolveFormula(label, out string formula))
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | «Добавить логику»: неизвестный вариант «"
+                        + label
+                        + "».",
+                        LogMessageType.Error);
+                    return;
+                }
+
+                string[] lines = CaptureLogicLines();
+                int targetSlot = TryFindFirstEmptyLogicSlot(lines);
+                if (targetSlot < 1)
+                {
+                    string fullMsg = NameStrategyUniq
+                        + " | «Добавить логику»: все слоты «Логика 1…10» заняты — добавление отменено.";
+                    SendNewLogMessage(fullMsg, LogMessageType.User);
+                    SendNewLogMessage(fullMsg, LogMessageType.System);
+                    return;
+                }
+
+                lines[targetSlot - 1] = formula;
+                ApplyLogicSlotStrings(lines);
+                CommitLogicSlotStringsToParameters(lines);
+                SaveParametersWithoutLogicIndicatorResync();
+                RequestParameterGuiRepaintOnce();
+                RunOnUiThread(
+                    () => TryParseAndApplyAllLogicSlots(logToUser: true),
+                    preferAsync: true);
+
+                string okMsg = NameStrategyUniq
+                    + " | Вариант «"
+                    + label
+                    + "» записан в «Логика "
+                    + targetSlot.ToString(CultureInfo.InvariantCulture)
+                    + "»; индикаторы (SMA, RSI, Bollinger, Momentum, VWAP и др.) синхронизированы с графиком.";
+                SendNewLogMessage(okMsg, LogMessageType.User);
+                SendNewLogMessage(okMsg, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>Первый слот 1…10 с пустой строкой логики; 0 — нет свободных.</summary>
+        private static int TryFindFirstEmptyLogicSlot(IReadOnlyList<string> lines)
+        {
+            if (lines == null)
+            {
+                return 0;
+            }
+
+            int count = Math.Min(LogicSlotCount, lines.Count);
+            for (int slot = 1; slot <= count; slot++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[slot - 1]))
+                {
+                    return slot;
+                }
+            }
+
+            return 0;
+        }
+
         /// <summary>
         /// Записывает строки слотов логики: в открытом окне параметров — только в таблицу (до «Принять»),
         /// иначе — в ValueString и перерисовка, как у кнопок префиксов MOEX.
@@ -1562,6 +1853,29 @@ namespace OsEngine.Robots.Custom
             }
 
             RequestParameterGuiRepaintOnce();
+        }
+
+        /// <summary>
+        /// Записывает строки логики в ValueString параметров без ValueChange (для кнопок с немедленным парсингом).
+        /// </summary>
+        private void CommitLogicSlotStringsToParameters(string[] slotValues)
+        {
+            if (slotValues == null)
+            {
+                return;
+            }
+
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                StrategyParameterString param = ResolveLogicParameter(slot);
+                if (param == null)
+                {
+                    continue;
+                }
+
+                string value = slot - 1 < slotValues.Length ? slotValues[slot - 1] ?? "" : "";
+                SetStrategyParameterStringSilent(param, value);
+            }
         }
 
         /// <summary>
@@ -2391,6 +2705,13 @@ namespace OsEngine.Robots.Custom
             for (int i = 0; i < uniqueAtoms.Count; i++)
             {
                 LogicAtom atom = uniqueAtoms[i];
+                if (atom == null
+                    || atom.Kind == LogicIndicatorKind.Unknown
+                    || string.IsNullOrEmpty(atom.IndicatorTypeName))
+                {
+                    continue;
+                }
+
                 string signature = LogicLineParser.BuildIndicatorSignature(atom);
                 int num;
 
@@ -2731,6 +3052,15 @@ namespace OsEngine.Robots.Custom
             Hint(ImportLogicsButtonName,
                 "Загрузить строки «Логика 1…10» из JSON-файла того же формата или из полного JSON-снимка "
                 + "(используется только блок logicLines). После загрузки — «Принять» или перезапуск парсинга.");
+            Hint(ClearLogicsButtonName,
+                "Очистить все слоты «Логика 1…10» (пустые строки). Индикаторы снимутся после «Принять».");
+            Hint(AddLogicVariantParamName,
+                "Вариант трендовой логики для «Добавить логику»: пары лонг/шорт подряд "
+                + "(1 RSI+Boll, 2 Mom+Slope, 3 VWAP, 4 Boll break, 5 Dual SMA, 6 Stoch trend).");
+            Hint(AddLogicButtonName,
+                "Записать выбранный вариант в ближайший пустой слот «Логика 1…10». "
+                + "Индикаторы строки (в т.ч. RSI, Bollinger, Momentum, VWAP) создаются на графике сразу, "
+                + "как при «Загрузить логику». Если все слоты заняты — сообщение в лог.");
             string logicSlotHintSuffix =
                 "\n\nОдинаковый индикатор с теми же параметрами в разных логиках — один экземпляр на графике. "
                 + "Regime=On: вход по Op, выход по Cl. Volume делится поровну между сработавшими логиками на свече.";
@@ -7022,10 +7352,11 @@ namespace OsEngine.Robots.Custom
                 return dto;
             }
 
-            var points = new LogicPortfolioPointDto[runtime.History.Count];
-            for (int i = 0; i < runtime.History.Count; i++)
+            LogicPortfolioPoint[] historySnapshot = runtime.History.ToArray();
+            var points = new LogicPortfolioPointDto[historySnapshot.Length];
+            for (int i = 0; i < historySnapshot.Length; i++)
             {
-                LogicPortfolioPoint p = runtime.History[i];
+                LogicPortfolioPoint p = historySnapshot[i];
                 points[i] = new LogicPortfolioPointDto
                 {
                     Seq = p.Seq,
@@ -7110,10 +7441,12 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                for (int i = 0; i < tab.PositionsOpenAll.Count; i++)
+                List<Position> openPositionsSnapshot = tab.PositionsOpenAll.ToList();
+                for (int i = 0; i < openPositionsSnapshot.Count; i++)
                 {
-                    Position pos = tab.PositionsOpenAll[i];
-                    if (!IsOurMultiLogicOpenPosition(pos, botType)
+                    Position pos = openPositionsSnapshot[i];
+                    if (pos == null
+                        || !IsOurMultiLogicOpenPosition(pos, botType)
                         || !TryParseLogicSlotFromSignal(pos.SignalTypeOpen, out int slot))
                     {
                         continue;
@@ -8178,10 +8511,11 @@ namespace OsEngine.Robots.Custom
                 return dto;
             }
 
-            var points = new LogicPortfolioPointDto[runtime.History.Count];
-            for (int i = 0; i < runtime.History.Count; i++)
+            LogicPortfolioPoint[] historySnapshot = runtime.History.ToArray();
+            var points = new LogicPortfolioPointDto[historySnapshot.Length];
+            for (int i = 0; i < historySnapshot.Length; i++)
             {
-                LogicPortfolioPoint p = runtime.History[i];
+                LogicPortfolioPoint p = historySnapshot[i];
                 points[i] = new LogicPortfolioPointDto
                 {
                     Seq = p.Seq,
@@ -14428,6 +14762,10 @@ namespace OsEngine.Robots.Custom
         /// <summary>Последний номер в общем пуле индикаторов (1099).</summary>
         public const int MaxManagedLogicIndicatorNum = SlotIndicatorNumBase * LogicSlotsForIndicators + IndicatorsPerSlot;
 
+        /// <summary>Имена индикаторов для regex (поиск формулы, IsLogicFormulaContent, подсветка HTML).</summary>
+        internal const string IndicatorNamesRegexFragment =
+            "SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|RSI|Rsi|Momentum|Mom|Boll|Bollinger|VWAP";
+
         /// <summary>
         /// Разбирает сырую строку логики: префикс Disabled, дерево AND/OR, список атомов.
         /// </summary>
@@ -17386,7 +17724,7 @@ namespace OsEngine.Robots.Custom
     public static class MultiLogicHelpBuilder
     {
         /// <summary>Версия HTML-справки; при изменении структуры или текста — увеличить (форсирует перезапись файла).</summary>
-        private const string LogicHelpFormatVersion = "3";
+        private const string LogicHelpFormatVersion = "4";
 
         /// <summary>Текст справки (plain) — источник для HTML; также для отладки.</summary>
         public static string BuildDefaultHelpText()
@@ -17472,6 +17810,10 @@ namespace OsEngine.Robots.Custom
             AppendLinRegHelp(sb);
             AppendMacdHelp(sb);
             AppendCciHelp(sb);
+            AppendRsiHelp(sb);
+            AppendBollingerHelp(sb);
+            AppendMomentumHelp(sb);
+            AppendVwapHelp(sb);
             sb.AppendLine("================================================================================");
             sb.AppendLine("8) Торговля (Regime = On)");
             sb.AppendLine("================================================================================");
@@ -17973,9 +18315,12 @@ namespace OsEngine.Robots.Custom
                 return -1;
             }
 
+            string ind = LogicLineParser.IndicatorNamesRegexFragment;
             Match match = Regex.Match(
                 text,
-                @"(Regime\s*\(|Disabled\s*\(|Disable\s*\(|\(|NOT\s+(Regime|Disabled|LinReg|SMA|Stoch|ATR|MACD|CCI|\()|!\s*(LinReg|SMA|Stoch|\()|\b(SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|Bollinger)\s*\()",
+                "(Regime\\s*\\(|Disabled\\s*\\(|Disable\\s*\\(|\\(|NOT\\s+(Regime|Disabled|LinReg|SMA|Stoch|ATR|MACD|CCI|RSI|Rsi|Momentum|Mom|Boll|Bollinger|VWAP|\\()"
+                + "|!\\s*(LinReg|SMA|Stoch|RSI|Rsi|Momentum|Mom|Boll|Bollinger|VWAP|\\()"
+                + "|\\b(" + ind + ")\\s*\\()",
                 RegexOptions.CultureInvariant);
             return match.Success ? match.Index : -1;
         }
@@ -18015,7 +18360,7 @@ namespace OsEngine.Robots.Custom
 
             if (Regex.IsMatch(
                     text,
-                    @"\b(SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|Bollinger)\s*\(",
+                    @"\b(" + LogicLineParser.IndicatorNamesRegexFragment + @")\s*\(",
                     RegexOptions.CultureInvariant))
             {
                 return true;
@@ -18023,7 +18368,7 @@ namespace OsEngine.Robots.Custom
 
             if (Regex.IsMatch(
                     text,
-                    @"^NOT\s+(Regime|Disabled|LinReg|SMA|Stoch|ATR|MACD|CCI|\()",
+                    @"^NOT\s+(Regime|Disabled|LinReg|SMA|Stoch|ATR|MACD|CCI|RSI|Rsi|Momentum|Mom|Boll|Bollinger|VWAP|\()",
                     RegexOptions.CultureInvariant | RegexOptions.IgnoreCase))
             {
                 return true;
@@ -18065,7 +18410,7 @@ namespace OsEngine.Robots.Custom
                 RegexOptions.CultureInvariant);
             encoded = Regex.Replace(
                 encoded,
-                @"\b(SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|Bollinger)\(",
+                @"\b(" + LogicLineParser.IndicatorNamesRegexFragment + @")\(",
                 "<span class=\"lf-ind\">$1</span>(",
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
             encoded = Regex.Replace(
@@ -18438,6 +18783,80 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  Контртренд: CCI(20;Lmin=100;Smax=-100) Side[S] Op[CCI>=100] Cl[CCI<=-100] Note(CCI-fade-short)");
             sb.AppendLine("  С фильтром:  (SMA(100) Op[Ab] Cl[Bl]) AND (CCI(20;Lmin=-100;Smax=-200) Op[CCI<=-100] Cl[CCI>=0] Note(pullback))");
             sb.AppendLine("  Не включён в логики по умолчанию и не входит в металогики (только строки «Логика 1…10»).");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по RSI.</summary>
+        private static void AppendRsiHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- RSI (Relative Strength Index) ---");
+            sb.AppendLine("Имя в строке: RSI  (или Rsi)");
+            sb.AppendLine("Параметры индикатора (на график):");
+            sb.AppendLine("  RSI(14)                     — длина 14, источник Close");
+            sb.AppendLine("  RSI(L=14)                   — то же, явно");
+            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
+            sb.AppendLine("  ;Lmin=55;Smax=45  или  ;L=55;S=45");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[RSI>=55] / Op[RSI>=Lmin]  — RSI выше порога (лонг / сила)");
+            sb.AppendLine("  Cl[RSI<=45] / Cl[RSI<=Smax]  — RSI ниже порога (выход)");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      RSI(14;Lmin=55;Smax=45) Op[RSI>=55] Cl[RSI<=45] Note(trend-rsi)");
+            sb.AppendLine("  С Boll:     (Bollinger(20;Dev=2) Op[AbMid] Cl[BlMid]) AND (RSI(14;Lmin=55;Smax=45) Op[RSI>=55] Cl[RSI<=45])");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по Bollinger Bands.</summary>
+        private static void AppendBollingerHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- Bollinger Bands (Bollinger / Boll) ---");
+            sb.AppendLine("Имя в строке: Bollinger  (или Boll)");
+            sb.AppendLine("Параметры индикатора (на график):");
+            sb.AppendLine("  Bollinger(20)               — длина 20, Dev=2 по умолчанию");
+            sb.AppendLine("  Bollinger(20;Dev=2)         — длина и отклонение");
+            sb.AppendLine("  Bollinger(L=100,Dev=2)      — именованно");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[Ab]  — close выше верхней полосы;  Cl[Bl] — close ниже нижней");
+            sb.AppendLine("  Op[AbMid] — close выше середины полос; Cl[BlMid] — ниже середины");
+            sb.AppendLine("  Side[S] Op[Bl] Cl[Ab]       — шорт от нижней полосы");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Пробой:     Bollinger(20;Dev=2) Op[Ab] Cl[Bl] Note(trend-boll-break)");
+            sb.AppendLine("  Плавный:    Bollinger(20;Dev=2) Op[AbMid] Cl[BlMid] Note(trend-boll-mid)");
+            sb.AppendLine("  Контртренд: Bollinger(20;Dev=2) Side[S] Op[Bl] Cl[Ab] Note(counter-Boll)");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по Momentum.</summary>
+        private static void AppendMomentumHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- Momentum (Mom) ---");
+            sb.AppendLine("Имя в строке: Momentum  (или Mom)");
+            sb.AppendLine("Параметры индикатора (на график):");
+            sb.AppendLine("  Momentum(14)                — длина 14, источник Close");
+            sb.AppendLine("  Momentum(L=15)              — то же, явно");
+            sb.AppendLine("Пороги сигнала (только в строке логики, не на график):");
+            sb.AppendLine("  ;Lmin=100;Smax=100  — базовая линия ~100 (как в TrendMultiIndicator)");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[MOM>=100] / Op[MOM>=Lmin]  — Momentum выше порога (лонг)");
+            sb.AppendLine("  Cl[MOM<=100] / Cl[MOM<=Smax]  — Momentum ниже порога (выход)");
+            sb.AppendLine("  Side[S] Op[MOM<=100] Cl[MOM>=100] — шорт при MOM ≤ порога");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100] Note(trend-mom)");
+            sb.AppendLine("  С LinReg:   (LinReg(50;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND (Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100])");
+            sb.AppendLine();
+        }
+
+        /// <summary>Добавляет в справку раздел по VWAP.</summary>
+        private static void AppendVwapHelp(StringBuilder sb)
+        {
+            sb.AppendLine("--- VWAP (Volume Weighted Average Price) ---");
+            sb.AppendLine("Имя в строке: VWAP");
+            sb.AppendLine("Параметры индикатора: без параметров (сессионный VWAP на графике Prime).");
+            sb.AppendLine("Сигналы:");
+            sb.AppendLine("  Op[Ab]  — close > VWAP (лонг);  Cl[Bl] — close < VWAP (выход из лонга)");
+            sb.AppendLine("  Side[S] Op[Bl] Cl[Ab]       — шорт: close < VWAP / выход close > VWAP");
+            sb.AppendLine("Примеры:");
+            sb.AppendLine("  Тренд:      VWAP Op[Ab] Cl[Bl] Note(trend-vwap)");
+            sb.AppendLine("  С фильтром: (VWAP Op[Ab] Cl[Bl]) AND (SMA(100) Op[Ab] Cl[Bl]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])");
             sb.AppendLine();
         }
 

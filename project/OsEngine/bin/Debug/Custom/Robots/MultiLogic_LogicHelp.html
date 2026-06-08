@@ -51,7 +51,7 @@ a{color:var(--accent);}
 <header class="help-hdr">
 <h1>MultiLogic — справка по строкам логики</h1>
 <p class="help-sub">Светлая HTML-версия · файл <code>Custom\Robots\MultiLogic_LogicHelp.html</code> · генерируется автоматически из <code>MultiLogic.cs</code></p>
-<p class="help-sub">Версия справки: 3 · обновлено: 08.06.2026 18:56</p>
+<p class="help-sub">Версия справки: 4 · обновлено: 08.06.2026 20:21</p>
 </header>
 <div class="help-layout">
 <nav class="help-toc" aria-label="Содержание">
@@ -543,6 +543,86 @@ a{color:var(--accent);}
 <div class="logic-formula"><span class="logic-formula-label">С фильтром: </span><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=-100;Smax=-200) <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=0] <span class="lf-note-tag">Note</span>(pullback))</code></div>
 </div>
 <p>Не включён в логики по умолчанию и не входит в металогики (только строки «Логика 1…10»).</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">---: </span><code class="logic-formula-code">RSI (Relative Strength Index) ---</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Имя в строке: </span><code class="logic-formula-code">RSI  (или Rsi)</code></div>
+</div>
+<p>Параметры индикатора (на график):</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">RSI</span>(14)</code><span class="logic-formula-comment"> — длина 14, источник Close</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">RSI</span>(L=14)</code><span class="logic-formula-comment"> — то же, явно</span></div>
+</div>
+<p>Пороги сигнала (только в строке логики, не на график):</p>
+<p>;Lmin=55;Smax=45  или  ;L=55;S=45</p>
+<p>Сигналы:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-op">Op</span>[RSI&gt;=55] / <span class="lf-op">Op</span>[RSI&gt;=Lmin]  — RSI выше порога (лонг / сила)</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-cl">Cl</span>[RSI&lt;=45] / <span class="lf-cl">Cl</span>[RSI&lt;=Smax]  — RSI ниже порога (выход)</code></div>
+</div>
+<p>Примеры:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">Тренд: </span><code class="logic-formula-code"><span class="lf-ind">RSI</span>(14;Lmin=55;Smax=45) <span class="lf-op">Op</span>[RSI&gt;=55] <span class="lf-cl">Cl</span>[RSI&lt;=45] <span class="lf-note-tag">Note</span>(trend-rsi)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">С Boll: </span><code class="logic-formula-code">(<span class="lf-ind">Bollinger</span>(20;Dev=2) <span class="lf-op">Op</span>[AbMid] <span class="lf-cl">Cl</span>[BlMid]) <span class="lf-kw">AND</span> (<span class="lf-ind">RSI</span>(14;Lmin=55;Smax=45) <span class="lf-op">Op</span>[RSI&gt;=55] <span class="lf-cl">Cl</span>[RSI&lt;=45])</code></div>
+</div>
+<p>--- Bollinger Bands (Bollinger / Boll) ---</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">Имя в строке: </span><code class="logic-formula-code">Bollinger  (или Boll)</code></div>
+</div>
+<p>Параметры индикатора (на график):</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">Bollinger</span>(20)</code><span class="logic-formula-comment"> — длина 20, Dev=2 по умолчанию</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">Bollinger</span>(20;Dev=2)</code><span class="logic-formula-comment"> — длина и отклонение</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">Bollinger</span>(L=100,Dev=2)</code><span class="logic-formula-comment"> — именованно</span></div>
+</div>
+<p>Сигналы:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-op">Op</span>[Ab]  — close выше верхней полосы;  <span class="lf-cl">Cl</span>[Bl] — close ниже нижней</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-op">Op</span>[AbMid] — close выше середины полос; <span class="lf-cl">Cl</span>[BlMid] — ниже середины</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]       — шорт от нижней полосы</code></div>
+</div>
+<p>Примеры:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">Пробой: </span><code class="logic-formula-code"><span class="lf-ind">Bollinger</span>(20;Dev=2) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl] <span class="lf-note-tag">Note</span>(trend-boll-break)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Плавный: </span><code class="logic-formula-code"><span class="lf-ind">Bollinger</span>(20;Dev=2) <span class="lf-op">Op</span>[AbMid] <span class="lf-cl">Cl</span>[BlMid] <span class="lf-note-tag">Note</span>(trend-boll-mid)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Контртренд: </span><code class="logic-formula-code"><span class="lf-ind">Bollinger</span>(20;Dev=2) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab] <span class="lf-note-tag">Note</span>(counter-Boll)</code></div>
+</div>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">---: </span><code class="logic-formula-code">Momentum (Mom) ---</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Имя в строке: </span><code class="logic-formula-code">Momentum  (или Mom)</code></div>
+</div>
+<p>Параметры индикатора (на график):</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">Momentum</span>(14)</code><span class="logic-formula-comment"> — длина 14, источник Close</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">Momentum</span>(L=15)</code><span class="logic-formula-comment"> — то же, явно</span></div>
+</div>
+<p>Пороги сигнала (только в строке логики, не на график):</p>
+<p>;Lmin=100;Smax=100  — базовая линия ~100 (как в TrendMultiIndicator)</p>
+<p>Сигналы:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-op">Op</span>[MOM&gt;=100] / <span class="lf-op">Op</span>[MOM&gt;=Lmin]  — Momentum выше порога (лонг)</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-cl">Cl</span>[MOM&lt;=100] / <span class="lf-cl">Cl</span>[MOM&lt;=Smax]  — Momentum ниже порога (выход)</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[MOM&lt;=100] <span class="lf-cl">Cl</span>[MOM&gt;=100] — шорт при MOM ≤ порога</code></div>
+</div>
+<p>Примеры:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">Тренд: </span><code class="logic-formula-code"><span class="lf-ind">Momentum</span>(14;Lmin=100;Smax=100) <span class="lf-op">Op</span>[MOM&gt;=100] <span class="lf-cl">Cl</span>[MOM&lt;=100] <span class="lf-note-tag">Note</span>(trend-mom)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">С LinReg: </span><code class="logic-formula-code">(<span class="lf-ind">LinReg</span>(50;Dev=2;SlopeLb=3) <span class="lf-op">Op</span>[SlopeUp] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">Momentum</span>(14;Lmin=100;Smax=100) <span class="lf-op">Op</span>[MOM&gt;=100] <span class="lf-cl">Cl</span>[MOM&lt;=100])</code></div>
+</div>
+<div class="logic-formula-group">
+<div class="logic-formula"><span class="logic-formula-label">---: </span><code class="logic-formula-code">VWAP (Volume Weighted Average Price) ---</code></div>
+</div>
+<p>Имя в строке: VWAP</p>
+<p>Параметры индикатора: без параметров (сессионный VWAP на графике Prime).</p>
+<p>Сигналы:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-op">Op</span>[Ab]  — close &gt; VWAP (лонг);  <span class="lf-cl">Cl</span>[Bl] — close &lt; VWAP (выход из лонга)</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]       — шорт: close &lt; VWAP / выход close &gt; VWAP</code></div>
+</div>
+<p>Примеры:</p>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code">Тренд:      VWAP <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl] <span class="lf-note-tag">Note</span>(trend-vwap)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">С фильтром: </span><code class="logic-formula-code">(VWAP <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig])</code></div>
+</div>
 <h2 id="sec-3">8) Торговля (Regime = On)</h2>
 <ul>
 <li>На каждой закрытой свече каждой вкладки скринера проверяются все не-Disabled логики.</li>
