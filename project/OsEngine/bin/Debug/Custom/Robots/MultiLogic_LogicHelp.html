@@ -25,6 +25,9 @@ h2{font-size:1.28rem;margin:2rem 0 .85rem;padding-bottom:.35rem;border-bottom:2p
 h2:first-child{margin-top:0;}
 h3{font-size:1.05rem;margin:1.35rem 0 .6rem;color:#374151;}
 h3.sec{font-size:1.12rem;color:#1f2937;border-left:4px solid var(--accent);padding-left:.55rem;}
+h4.def-logic{font-size:1rem;margin:1.1rem 0 .45rem;color:#1e3a5f;border-left:4px solid #d97706;padding-left:.55rem;scroll-margin-top:12px;}
+.help-toc a.toc-major{font-weight:600;}
+.help-toc ol ol{margin:.25rem 0 .15rem;padding-left:1rem;font-size:.84rem;}
 p{margin:.55rem 0;}
 p.meta{color:var(--muted);font-size:.93rem;}
 ul{margin:.4rem 0 .75rem;padding-left:1.35rem;}
@@ -48,27 +51,35 @@ a{color:var(--accent);}
 <header class="help-hdr">
 <h1>MultiLogic — справка по строкам логики</h1>
 <p class="help-sub">Светлая HTML-версия · файл <code>Custom\Robots\MultiLogic_LogicHelp.html</code> · генерируется автоматически из <code>MultiLogic.cs</code></p>
-<p class="help-sub">Обновлено: 07.06.2026 21:39</p>
+<p class="help-sub">Версия справки: 3 · обновлено: 08.06.2026 18:56</p>
 </header>
 <div class="help-layout">
 <nav class="help-toc" aria-label="Содержание">
 <div class="help-toc-title">Содержание</div>
 <ol>
-<li><a href="#sec-1"></a></li>
-<li><a href="#sec-2"></a></li>
-<li><a href="#sec-3"></a></li>
-<li><a href="#sec-4"></a></li>
-<li><a href="#sec-5"></a></li>
-<li><a href="#sec-6"></a></li>
+<li><a href="#sec-1">ОБЗОР: ресурсы ПК, портфели логик, сохранение состояния</a></li>
+<li><a href="#topic-0">0) Отключение логики (только в самом начале строки, до AND/OR/&amp;&amp;/||):</a></li>
+<li><a href="#topic-1">1) Составная логика (скобки обязательны вокруг каждого фрагмента):</a></li>
+<li><a href="#topic-1a">1a) Логические операторы (NOT, &amp;&amp;, || — в стиле JavaScript)</a></li>
+<li><a href="#topic-2">2) Один атом (скобки необязательны):</a></li>
+<li><a href="#topic-3">3) Параметры индикатора (общие правила):</a></li>
+<li><a href="#topic-4">4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):</a></li>
+<li><a href="#topic-5">5) SL / TP (необязательно, в той же строке):</a></li>
+<li><a href="#topic-6">6) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.</a></li>
+<li><a href="#topic-6a">6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)</a></li>
+<li><a href="#def-l1">L1 — lon-trend (Лонг, тренд)</a></li>
+<li><a href="#def-l2">L2 — lon-bokovik (Лонг, боковик)</a></li>
+<li><a href="#def-l3">L3 — short-trend (Шорт, тренд)</a></li>
+<li><a href="#def-l4">L4 — short-bokovik (Шорт, боковик)</a></li>
+<li><a href="#sec-2">7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)</a></li>
+<li><a href="#sec-3">8) Торговля (Regime = On)</a></li>
 </ol>
 </nav>
 <main class="help-main">
 <h1>MultiLogic — справка по строкам логики</h1>
 <p class="meta">(файл Custom\Robots\MultiLogic_LogicHelp.html — автоматически из MultiLogic.cs;</p>
 <p>обновляется при запуске робота и по кнопке Help; ручные правки перезаписываются)</p>
-<h2 id="sec-1"></h2>
-<p>ОБЗОР: ресурсы ПК, портфели логик, сохранение состояния</p>
-<h2 id="sec-2"></h2>
+<h2 id="sec-1">ОБЗОР: ресурсы ПК, портфели логик, сохранение состояния</h2>
 <p>MultiLogic считает эффективный портфель отдельно для каждой логики L1…L10</p>
 <p class="meta">(старт 0, может быть отрицательным): realized + unrealized по сделкам MultiLogic_Ln.</p>
 <p>Файлы портфелей (лайв, не тестер):</p>
@@ -113,9 +124,10 @@ a{color:var(--accent);}
 <p>Пока «Металогика включена», но по каждой активной логике не накопилось окно PnlSMA</p>
 <p>(длина — «Общепортфельный PnlSMA: длина», по одной точке equity на свечу) — входы как без металогики:</p>
 <p>Volume поровну, приоритет Max positions L1…L10, без переворота по PnlSMA.</p>
-<p>После готовности PnlSMA: Volume делится только между логиками с Op пропорционально |PnlSMA|;</p>
-<p>знак PnlSMA переворачивает Buy/Sell (если инверсия выкл.).</p>
-<p>«Инверсия (покупка ↔ продажа)» — только когда металогика уже действует (PnlSMA готов).</p>
+<p>После готовности PnlSMA: Volume делится между логиками с Op и PnlSMA&gt;0 пропорционально PnlSMA;</p>
+<p>логики с PnlSMA≤0 не торгуют (PnlSMA=0 тоже исключается).</p>
+<p>«Инверсия (покупка ↔ продажа)» — только когда металогика уже действует (PnlSMA готов):</p>
+<p>разрешить PnlSMA&lt;0 с Buy↔Sell; доля Volume по |PnlSMA| вместе с положительными. По умолчанию выкл.</p>
 <p>Сумма объёмов новых входов на свече не превышает Volume (первая вкладка).</p>
 <p>Max positions: при нехватке слотов — приоритет логик с большим PnlSMA.</p>
 <p>Если металогика выключена — как раньше: каждая логика отдельно, Volume поровну, L1…L10.</p>
@@ -134,7 +146,9 @@ a{color:var(--accent);}
 <p>Ref (предыдущая сумма) = equity ровно N свечей назад (lookback, по умолчанию 5);</p>
 <p>история обновляется на каждом закрытии свечи вкладки скринера.</p>
 <p>SL: current ≤ ref × (1 − SL%); TP: current ≥ ref × (1 + TP%). Ref ≤ 0 — проверка пропускается.</p>
-<p>При срабатывании — закрытие всех позиций робота; опционально Regime=Off (отдельно для SL и TP).</p>
+<p>При срабатывании — закрытие всех позиций робота; для SL и TP отдельно: «Отключено», «Останавливать полностью» (Regime=Off),</p>
+<p>«Останавливать и возобновлять при достижении текущей суммы в фейк-торговле» (реальные заявки не выставляются, сигналы в L1…L10;</p>
+<p>возобновление реальной торговли при equity фейк-портфеля ≥ текущей суммы на момент срабатывания +0,1%).</p>
 <p>Техн. суммы обновляются в начале обработки свечи и после торговли на ней (без SaveParameters).</p>
 <p>«Обновить сумму портфеля SL/TP» — текущая equity в базу; тех. суммы — в начале и после торговли на свече.</p>
 <p>После SL/TP ref = equity после закрытия; база 0 — ref из lookback.</p>
@@ -144,7 +158,7 @@ a{color:var(--accent);}
 <li>(по умолчанию SBER). SL/TP сравнивает текущую сумму L1…L10 с «Предыдущая сумма» на вкладке Stopper</li>
 <li>по CandleFinished страницы 2 (чаще основного TF); lookback N — в свечах монитора, не страницы 1.</li>
 </ul>
-<h3 class="sec">0) Отключение логики (только в самом начале строки, до AND/OR/&amp;&amp;/||):</h3>
+<h3 class="sec" id="topic-0">0) Отключение логики (только в самом начале строки, до AND/OR/&amp;&amp;/||):</h3>
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Disabled</span>(true)</code><span class="logic-formula-comment"> — логика отключена, индикаторы не создаются</span></div>
 <div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Disabled</span>(false)</code><span class="logic-formula-comment"> — явно включена (то же, что без префикса)</span></div>
@@ -174,12 +188,13 @@ a{color:var(--accent);}
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(Auto;OnFlip=Close;Entry=MatchSide)</code><span class="logic-formula-comment"> — параметры из первого LinReg с Op[SlopeUp/Dn] в строке</span></div>
 <div class="logic-formula"><code class="logic-formula-code"><span class="lf-op">Op</span>[SlopeUp] / <span class="lf-op">Op</span>[SlopeDn] в атоме LinReg — альтернатива Entry=MatchSide внутри <span class="lf-kw">AND</span></code></div>
-<div class="logic-formula"><span class="logic-formula-label">В стандартных L1…L4 на всех строках: </span><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide)</code><span class="logic-formula-comment"> — Buy только при наклоне вверх, Sell только вниз; при развороте наклона — закрытие (OnFlip=Close).</span></div>
+<div class="logic-formula"><span class="logic-formula-label">L1/L3: </span><code class="logic-formula-code"><span class="lf-regime">Regime</span>(…;SlopeLb=3;OnFlip=Close;Entry=MatchSide)</code><span class="logic-formula-comment"> — Buy при наклоне вверх, Sell вниз.</span></div>
+<div class="logic-formula"><span class="logic-formula-label">L2/L4: </span><code class="logic-formula-code"><span class="lf-regime">Regime</span>(…;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly)</code><span class="logic-formula-comment"> — вход только во флэте; выход при тренде.</span></div>
 </div>
 <ul>
 <li>SlopeDead и OnFlat в defaults не заданы — можно добавить вручную (см. параметры Regime выше).</li>
 </ul>
-<h3 class="sec">1) Составная логика (скобки обязательны вокруг каждого фрагмента):</h3>
+<h3 class="sec" id="topic-1">1) Составная логика (скобки обязательны вокруг каждого фрагмента):</h3>
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=55;Smax=45) <span class="lf-op">Op</span>[K&gt;=55] <span class="lf-cl">Cl</span>[K&lt;=45])</code></div>
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=55;Smax=45) <span class="lf-op">Op</span>[K&gt;=55] <span class="lf-cl">Cl</span>[K&lt;=45])</code></div>
@@ -192,8 +207,7 @@ a{color:var(--accent);}
 <li>Приоритет между фрагментами: || / OR, затем &amp;&amp; / AND, затем NOT / !, затем атом.</li>
 <li>Подробно — раздел «1a) Логические операторы» ниже.</li>
 </ul>
-<h3 class="sec">1a) Логические операторы (NOT, &amp;&amp;, || — в стиле JavaScript)</h3>
-<h3></h3>
+<h3 class="sec" id="topic-1a">1a) Логические операторы (NOT, &amp;&amp;, || — в стиле JavaScript)</h3>
 <p>A) Между фрагментами (скобочные атомы в одной строке «Логика N»):</p>
 <ul>
 <li>OR  — слово OR с пробелами, или оператор ||</li>
@@ -226,8 +240,7 @@ a{color:var(--accent);}
 <li>→ если AbUp без NOT был бы true — вход по этому атому блокируется (ни Buy, ни Sell);</li>
 <li>→ если AbUp без NOT был бы false — условие Op становится true (вход возможен, сторона как в Side).</li>
 <li>Cl инвертируется так же: Cl сработал ↔ Cl не сработал. Это не шорт вместо лонга.</li>
-<li>Переворот Buy↔Sell — Side[S] в строке, «Инверсия (покупка ↔ продажа)» на вкладке «Металогики»</li>
-<li>(при включённой металогике — все входы) или отрицательный PnlSMA; NOT не меняет Side.</li>
+<li>Переворот Buy↔Sell — Side[S] в строке или «Инверсия» для PnlSMA&lt;0 при металогике; NOT не меняет Side.</li>
 </ul>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">Можно комбинировать с NOT между фрагментами: </span><code class="logic-formula-code"><span class="lf-kw">NOT</span> (<span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(...) <span class="lf-op">Op</span>[AbUp])</code><span class="logic-formula-comment"> — двойное отрицание.</span></div>
@@ -272,7 +285,7 @@ a{color:var(--accent);}
 <li>НЕ фрагмент               NOT  NOT-  !</li>
 <li>НЕ сигнал в Op/Cl         NOT AbUp    !AbUp</li>
 </ul>
-<h3 class="sec">2) Один атом (скобки необязательны):</h3>
+<h3 class="sec" id="topic-2">2) Один атом (скобки необязательны):</h3>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">&lt;Индикатор&gt;: </span><code class="logic-formula-code">(параметры) [Side:L|S] <span class="lf-op">Op</span>[вход] <span class="lf-cl">Cl</span>[выход] [<span class="lf-sl">SL</span>[…]] [<span class="lf-sl">TP</span>[…]] <span class="lf-note-tag">Note</span>(пояснение)</code></div>
 </div>
@@ -281,12 +294,12 @@ a{color:var(--accent);}
 <li>Note(…) — только для человека, на исполнение и график не влияет. Лучше в конце строки.</li>
 <li>(Парсер также понимает устаревшие теги Коммент(…) и Cm(…).)</li>
 </ul>
-<h3 class="sec">3) Параметры индикатора (общие правила):</h3>
+<h3 class="sec" id="topic-3">3) Параметры индикатора (общие правила):</h3>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">позиционно: </span><code class="logic-formula-code"><span class="lf-ind">Stoch</span>(14-3-3), <span class="lf-ind">SMA</span>(100), <span class="lf-ind">ATR</span>(14;+3%;@5)</code></div>
 <div class="logic-formula"><span class="logic-formula-label">именованно: </span><code class="logic-formula-code"><span class="lf-ind">Stoch</span>(K1=14,K2=3,D=3,Lmin=55,Smax=45), <span class="lf-ind">SMA</span>(L=100,Src=Close)</code></div>
 </div>
-<h3 class="sec">4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):</h3>
+<h3 class="sec" id="topic-4">4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):</h3>
 <ul>
 <li>Ab — close выше линии; Bl — close ниже; GrOk — ATR вырос (фильтр);</li>
 <li>K&gt;=55 / K&lt;=45 — стохастик; K&gt;=Lmin / K&lt;=Smax — пороги из параметров;</li>
@@ -303,7 +316,7 @@ a{color:var(--accent);}
 <ul>
 <li>Составные Op/Cl с !, NOT, &amp;&amp;, || — см. раздел «1a) Логические операторы».</li>
 </ul>
-<h3 class="sec">5) SL / TP (необязательно, в той же строке):</h3>
+<h3 class="sec" id="topic-5">5) SL / TP (необязательно, в той же строке):</h3>
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code"><span class="lf-sl">SL</span>[2%] <span class="lf-sl">TP</span>[6%]  — процент от входа; <span class="lf-sl">SL</span>[1.5ATR]; <span class="lf-sl">TP</span>[2R] (R — кратность к расстоянию SL).</code></div>
 </div>
@@ -313,52 +326,85 @@ a{color:var(--accent);}
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code">ATR для <span class="lf-sl">SL</span>[…ATR] — из первого ATR-атома той же логики.</code></div>
 </div>
-<h3 class="sec">6) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.</h3>
+<h3 class="sec" id="topic-6">6) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.</h3>
 <ul>
 <li>Непустая включённая логика — её индикаторы добавляются в общий набор.</li>
 <li>Одинаковые индикатор с теми же параметрами в разных логиках — один экземпляр на графике.</li>
 <li>Другие параметры — отдельный индикатор. Пустые/Disabled логики индикаторы не добавляют.</li>
 <li>Номера индикаторов: 101 … 1099 (общий пул, без дублей).</li>
 </ul>
-<h3 class="sec">6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)</h3>
+<h3 class="sec" id="topic-6a">6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)</h3>
 <ul>
 <li>Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10». После кнопки нажмите «Принять».</li>
+<li>Смысл набора: на базе TrendMultiIndicator+CCI — два лонга (тренд и боковик) и два шорта (тренд и боковик).</li>
+<li>L1/L3 — Regime MatchSide (вход по наклону LinReg); L2/L4 — Regime FlatOnly (вход во флэте, Stoch от границ).</li>
+<li>При Regime=On на одной свече могут сработать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры, не дубли.</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Общая база: </span><code class="logic-formula-code"><span class="lf-ind">SMA</span>(100) + <span class="lf-ind">ATR</span>(GrOk) + MACD</code><span class="logic-formula-comment"> — как в TrendMultiIndicator; добавлен CCI(20).</span></div>
+<div class="logic-formula"><code class="logic-formula-code">SL/TP в заводских строках не заданы — выход по <span class="lf-cl">Cl</span>[…] индикаторов.</code></div>
+</div>
+<h4 id="def-l1" class="def-logic">L1 — lon-trend (Лонг, тренд)</h4>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100) <span class="lf-op">Op</span>[CCI&gt;=100] <span class="lf-cl">Cl</span>[CCI&lt;=-100]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] <span class="lf-note-tag">Note</span>(lon-trend))</code></div>
 </div>
 <ul>
-<li>Разделение «тренд / боковик» — NOT у Stoch, LinReg и CCI; Regime MatchSide на всех четырёх.</li>
-</ul>
-<ul>
-<li>L1 — lon-trend (лонг, тренд):</li>
+<li>Состав:</li>
+<li>Regime MatchSide — Buy при наклоне LinReg вверх; во флэте входов нет; OnFlip=Close при смене наклона.</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Regime MatchSide + SMA Ab, LinReg AbUp, CCI&gt;=100, MACD&gt;Sig;: </span><code class="logic-formula-code"><span class="lf-kw">NOT</span> Stoch.</code></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]</code><span class="logic-formula-comment"> — цена выше SMA100 (бычий контекст); выход ниже SMA.</span></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — пробой верхней границы канала вверх; выход ниже нижней.</span></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk]</code><span class="logic-formula-comment"> — фильтр роста волатильности (без отдельного Cl).</span></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">CCI</span>(20) <span class="lf-op">Op</span>[CCI&gt;=100] <span class="lf-cl">Cl</span>[CCI&lt;=-100]</code><span class="logic-formula-comment"> — перекупленность CCI для входа в лонг-тренд.</span></div>
+<div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] — линия MACD выше сигнальной (импульс вверх).</code></div>
+</div>
+<h4 id="def-l2" class="def-logic">L2 — lon-bokovik (Лонг, боковик)</h4>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10) <span class="lf-op">Op</span>[K&lt;=10] <span class="lf-cl">Cl</span>[K&gt;=90]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] <span class="lf-note-tag">Note</span>(lon-bokovik))</code></div>
 </div>
 <ul>
-<li>L2 — lon-bokovik (лонг, боковик):</li>
+<li>Состав:</li>
+<li>Regime FlatOnly+SlopeDead — вход только во флэте LinReg; выход при выходе из флэта (OnFlip=Close).</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Regime MatchSide + SMA Ab, Stoch K&gt;=55, MACD&gt;Sig;: </span><code class="logic-formula-code"><span class="lf-kw">NOT</span> LinReg AbUp и <span class="lf-kw">NOT</span> CCI&gt;=100.</code></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab]</code><span class="logic-formula-comment"> — цена выше SMA100.</span></div>
+<div class="logic-formula"><code class="logic-formula-code">• Stoch <span class="lf-op">Op</span>[K&lt;=10] <span class="lf-cl">Cl</span>[K&gt;=90] — вход у нижней границы стохастика (отскок вверх во флэте); выход у верхней.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• ATR <span class="lf-op">Op</span>[GrOk] — фильтр волатильности.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&gt;Sig] — импульс вверх (без CCI и LinReg-пробоя — иначе это L1).</code></div>
+</div>
+<h4 id="def-l3" class="def-logic">L3 — short-trend (Шорт, тренд)</h4>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]) <span class="lf-kw">AND</span> (<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbUp]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100) <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=100]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] <span class="lf-note-tag">Note</span>(short-trend))</code></div>
 </div>
 <ul>
-<li>L3 — short-trend: Regime MatchSide + зеркало L1 (Side[S], BlLo/AbUp, CCI&lt;=-100).</li>
-<li>L4 — short-bokovik: Regime MatchSide + зеркало L2 (Side[S]); Stoch K&lt;=45, NOT LinReg/CCI.</li>
-</ul>
-<ul>
-<li>На графике при Regime=On одновременно могут работать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры.</li>
+<li>Состав:</li>
+<li>Regime MatchSide — Sell при наклоне LinReg вниз (зеркало L1).</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">SL/TP в строках по умолчанию не заданы: </span><code class="logic-formula-code">(выход по <span class="lf-cl">Cl</span>[…] индикаторов).</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• SMA <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab] — шорт: цена ниже SMA100.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• LinReg <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbUp] — пробой нижней границы вниз; выход выше верхней.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• ATR <span class="lf-op">Op</span>[GrOk] — фильтр волатильности.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• CCI <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=100] — перепроданность CCI для шорт-тренда.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] — MACD ниже сигнальной.</code></div>
+</div>
+<h4 id="def-l4" class="def-logic">L4 — short-bokovik (Шорт, боковик)</h4>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10) <span class="lf-op">Op</span>[K&gt;=90] <span class="lf-cl">Cl</span>[K&lt;=10]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] <span class="lf-note-tag">Note</span>(short-bokovik))</code></div>
 </div>
 <ul>
-<li>Другая кнопка на той же вкладке: «Установить разнообразные логики-примеры» —</li>
-<li>восемь учебных строк в L1…L8 (SMA, MACD, LinReg, Stoch, Bollinger со SL/TP), не стандартный набор.</li>
+<li>Состав:</li>
+<li>Regime FlatOnly — вход во флэте (зеркало L2).</li>
 </ul>
-<h2 id="sec-3"></h2>
-<h3 class="sec">7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)</h3>
-<h2 id="sec-4"></h2>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code">• SMA <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] — шорт ниже SMA100.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• Stoch <span class="lf-op">Op</span>[K&gt;=90] <span class="lf-cl">Cl</span>[K&lt;=10] — вход у верхней границы (откат вниз во флэте).</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• ATR <span class="lf-op">Op</span>[GrOk] — фильтр волатильности.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&lt;Sig] — импульс вниз.</code></div>
+</div>
+<ul>
+<li>Другая кнопка: «Установить разнообразные логики-примеры» — 8 учебных строк в L1…L8 со SL/TP, не заводской набор.</li>
+</ul>
+<h2 id="sec-2">7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)</h2>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">---: </span><code class="logic-formula-code">SMA (Simple Moving Average) ---</code></div>
 </div>
@@ -497,9 +543,7 @@ a{color:var(--accent);}
 <div class="logic-formula"><span class="logic-formula-label">С фильтром: </span><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=-100;Smax=-200) <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=0] <span class="lf-note-tag">Note</span>(pullback))</code></div>
 </div>
 <p>Не включён в логики по умолчанию и не входит в металогики (только строки «Логика 1…10»).</p>
-<h2 id="sec-5"></h2>
-<h3 class="sec">8) Торговля (Regime = On)</h3>
-<h2 id="sec-6"></h2>
+<h2 id="sec-3">8) Торговля (Regime = On)</h2>
 <ul>
 <li>На каждой закрытой свече каждой вкладки скринера проверяются все не-Disabled логики.</li>
 </ul>
