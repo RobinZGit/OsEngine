@@ -63,16 +63,19 @@ namespace OsEngine.Robots.Custom
     /// </summary>
     internal static class MultiLogicDefaultLogics
     {
+        /// <summary>Ссылка на параметр «Длина линейной регрессии» в строках логики (см. LogicLineParser.LinRegLengthParamToken).</summary>
+        public const string LinRegLengthRef = "@LR";
+
         public const string TrendRegimePrefix =
-            "Regime(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
+            "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
 
         public const string BokovikRegimePrefix =
-            "Regime(LinReg;L=50;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) ";
+            "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) ";
 
         public const string Logic1LongTrend =
             TrendRegimePrefix
             + "(SMA(100) Op[Ab] Cl[Bl]) AND "
-            + "(LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]) AND "
+            + "(LinReg(" + LinRegLengthRef + ";Dev=2) Op[AbUp] Cl[BlLo]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
             + "(CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND "
             + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(lon-trend))";
@@ -87,7 +90,7 @@ namespace OsEngine.Robots.Custom
         public const string Logic3ShortTrend =
             TrendRegimePrefix
             + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
-            + "(LinReg(50;Dev=2) Op[BlLo] Cl[AbUp]) AND "
+            + "(LinReg(" + LinRegLengthRef + ";Dev=2) Op[BlLo] Cl[AbUp]) AND "
             + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
             + "(CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND "
             + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-trend))";
@@ -133,7 +136,7 @@ namespace OsEngine.Robots.Custom
                 + ", L4 "
                 + ExtractNoteTag(Logic4ShortBokovik)
                 + "; L1/L3 — Regime MatchSide, L2/L4 — FlatOnly+SlopeDead; «Логика 5…10» очистить. "
-                + "Точные формулы — Help → «6a) Стандартные логики».";
+                + "Индикаторы на графике — сразу. Точные формулы — Help → «6a) Стандартные логики».";
         }
 
         public static string BuildSetDefaultLogMessage()
@@ -146,13 +149,13 @@ namespace OsEngine.Robots.Custom
                 + ExtractNoteTag(Logic3ShortTrend)
                 + ", L4 "
                 + ExtractNoteTag(Logic4ShortBokovik)
-                + "; L1/L3 Regime MatchSide, L2/L4 FlatOnly+SlopeDead; L5…10 пусто. «Принять».";
+                + "; L1/L3 Regime MatchSide, L2/L4 FlatOnly+SlopeDead; L5…10 пусто. Индикаторы — сразу.";
         }
 
         public static void AppendHelpSection6a(StringBuilder sb)
         {
             sb.AppendLine("6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)");
-            sb.AppendLine("   Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10». После кнопки нажмите «Принять».");
+            sb.AppendLine("   Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10»; индикаторы на графике — сразу.");
             sb.AppendLine("   Смысл набора: на базе TrendMultiIndicator+CCI — два лонга (тренд и боковик) и два шорта (тренд и боковик).");
             sb.AppendLine("   L1/L3 — Regime MatchSide (вход по наклону LinReg); L2/L4 — Regime FlatOnly (вход во флэте, Stoch от границ).");
             sb.AppendLine("   При Regime=On на одной свече могут сработать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры, не дубли.");
@@ -161,7 +164,7 @@ namespace OsEngine.Robots.Custom
             AppendDefaultLogicHelpBlock(sb, 1, "lon-trend", "Лонг, тренд", Logic1LongTrend,
                 "Regime MatchSide — Buy при наклоне LinReg вверх; во флэте входов нет; OnFlip=Close при смене наклона.",
                 "SMA(100) Op[Ab] Cl[Bl] — цена выше SMA100 (бычий контекст); выход ниже SMA.",
-                "LinReg(50;Dev=2) Op[AbUp] Cl[BlLo] — пробой верхней границы канала вверх; выход ниже нижней.",
+                "LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo] — пробой верхней границы канала вверх; выход ниже нижней (@LR — параметр «Длина линейной регрессии»).",
                 "ATR(14;Gr=3%;Lb=5) Op[GrOk] — фильтр роста волатильности (без отдельного Cl).",
                 "CCI(20) Op[CCI>=100] Cl[CCI<=-100] — перекупленность CCI для входа в лонг-тренд.",
                 "MACD Op[Macd>Sig] Cl[Macd<Sig] — линия MACD выше сигнальной (импульс вверх).");
@@ -174,7 +177,7 @@ namespace OsEngine.Robots.Custom
             AppendDefaultLogicHelpBlock(sb, 3, "short-trend", "Шорт, тренд", Logic3ShortTrend,
                 "Regime MatchSide — Sell при наклоне LinReg вниз (зеркало L1).",
                 "SMA Side[S] Op[Bl] Cl[Ab] — шорт: цена ниже SMA100.",
-                "LinReg Op[BlLo] Cl[AbUp] — пробой нижней границы вниз; выход выше верхней.",
+                "LinReg(@LR) Op[BlLo] Cl[AbUp] — пробой нижней границы вниз; выход выше верхней.",
                 "ATR Op[GrOk] — фильтр волатильности.",
                 "CCI Op[CCI<=-100] Cl[CCI>=100] — перепроданность CCI для шорт-тренда.",
                 "MACD Op[Macd<Sig] Cl[Macd>Sig] — MACD ниже сигнальной.");
@@ -184,8 +187,6 @@ namespace OsEngine.Robots.Custom
                 "Stoch Op[K>=90] Cl[K<=10] — вход у верхней границы (откат вниз во флэте).",
                 "ATR Op[GrOk] — фильтр волатильности.",
                 "MACD Op[Macd<Sig] — импульс вниз.");
-            sb.AppendLine();
-            sb.AppendLine("   Другая кнопка: «Установить разнообразные логики-примеры» — 8 учебных строк в L1…L8 со SL/TP, не заводской набор.");
             sb.AppendLine();
         }
 
@@ -250,7 +251,7 @@ namespace OsEngine.Robots.Custom
             {
                 Label = "2 Mom+Slope лонг (больше сигналов)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
                     + "(Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100]) AND "
                     + "(SMA(100) Op[Ab] Cl[Bl]) AND "
                     + "(ATR(14;Gr=2%;Lb=5) Op[GrOk] Cl[-] Note(trend-mom-slope))"
@@ -259,7 +260,7 @@ namespace OsEngine.Robots.Custom
             {
                 Label = "2 Mom+Slope шорт (больше сигналов)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
                     + "(Momentum(14;Lmin=100;Smax=100) Side[S] Op[MOM<=100] Cl[MOM>=100]) AND "
                     + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
                     + "(ATR(14;Gr=2%;Lb=5) Op[GrOk] Cl[-] Note(short-mom-slope))"
@@ -323,7 +324,7 @@ namespace OsEngine.Robots.Custom
                 Label = "6 Stoch trend лонг (откат по тренду)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
                     + "(SMA(100) Op[Ab] Cl[Bl]) AND "
-                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
                     + "(Stoch(14-3-3;Lmin=50;Smax=50) Op[K>=50] Cl[K<=40]) AND "
                     + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-stoch-pullback))"
             },
@@ -332,7 +333,7 @@ namespace OsEngine.Robots.Custom
                 Label = "6 Stoch trend шорт (откат по тренду)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
                     + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
-                    + "(LinReg(50;Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
                     + "(Stoch(14-3-3;Lmin=50;Smax=50) Side[S] Op[K<=50] Cl[K>=60]) AND "
                     + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-stoch-pullback))"
             }
@@ -371,6 +372,49 @@ namespace OsEngine.Robots.Custom
 
             return false;
         }
+
+        /// <summary>Случайно выбирает <paramref name="count"/> различных вариантов из каталога (без повторов).</summary>
+        public static CatalogPick[] PickRandomEntries(int count, Random rng)
+        {
+            if (rng == null || count <= 0 || Entries.Length == 0)
+            {
+                return Array.Empty<CatalogPick>();
+            }
+
+            int pickCount = Math.Min(count, Entries.Length);
+            var indices = new int[Entries.Length];
+            for (int i = 0; i < Entries.Length; i++)
+            {
+                indices[i] = i;
+            }
+
+            for (int i = Entries.Length - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (indices[i], indices[j]) = (indices[j], indices[i]);
+            }
+
+            var picks = new CatalogPick[pickCount];
+            for (int i = 0; i < pickCount; i++)
+            {
+                CatalogEntry entry = Entries[indices[i]];
+                picks[i] = new CatalogPick(entry.Label, entry.Formula);
+            }
+
+            return picks;
+        }
+
+        public readonly struct CatalogPick
+        {
+            public CatalogPick(string label, string formula)
+            {
+                Label = label ?? "";
+                Formula = formula ?? "";
+            }
+
+            public string Label { get; }
+            public string Formula { get; }
+        }
     }
 
     /*
@@ -396,13 +440,50 @@ namespace OsEngine.Robots.Custom
         private const string SignalStopRobotAndSellAll = "MultiLogicStopAll";
         /// <summary>Имя вкладки параметров со строками «Логика 1…10» и кнопкой Help.</summary>
         private const string LogicsTabName = "Логики";
+        private const string LogicLinRegLengthParamName = "Длина линейной регрессии";
+        private const string LogicLinRegLenIncButtonName = "Увеличить: длина линейной регрессии +5";
+        private const string LogicLinRegLenDecButtonName = "Уменьшить: длина линейной регрессии −5";
+        private const int LogicLinRegLengthDefault = 50;
+        private const int LogicLinRegLengthMin = 5;
+        private const int LogicLinRegLengthMax = 300;
+        private const int LogicLinRegLengthStep = 5;
         /// <summary>Вкладка общепортфельных индикаторов по кривым портфелей логик (пока только параметры).</summary>
         private const string MetaLogicsTabName = "Металогики";
         /// <summary>Вкладка общепортфельных stop-loss / take-profit по сумме портфелей L1…L10.</summary>
         private const string StopperTabName = "Stopper";
+        private const string PortfolioStopLossPercentParamName = "Общепортфельный stop-loss (%)";
+        private const string PortfolioTakeProfitPercentParamName = "Общепортфельный take-profit (%)";
+        private const string StopperSlPercentIncButtonName = "Увеличить: общепортфельный stop-loss (%) +0,1";
+        private const string StopperSlPercentDecButtonName = "Уменьшить: общепортфельный stop-loss (%) −0,1";
+        private const string StopperTpPercentIncButtonName = "Увеличить: общепортфельный take-profit (%) +0,5";
+        private const string StopperTpPercentDecButtonName = "Уменьшить: общепортфельный take-profit (%) −0,5";
+        private const decimal StopperSlPercentDefault = 0.4m;
+        private const decimal StopperTpPercentDefault = 10m;
+        private const decimal StopperSlPercentMin = 0.01m;
+        private const decimal StopperSlPercentMax = 100m;
+        private const decimal StopperSlPercentUiStep = 0.01m;
+        private const decimal StopperTpPercentMin = 0.1m;
+        private const decimal StopperTpPercentMax = 500m;
+        private const decimal StopperTpPercentUiStep = 0.1m;
+        private const decimal StopperSlPercentButtonDelta = 0.1m;
+        private const decimal StopperTpPercentButtonDelta = 0.5m;
         private const int StopperEquityHistoryCap = 10000;
         private const string SignalPortfolioStopperSl = "MultiLogicPortfolioStopSL";
         private const string SignalPortfolioStopperTp = "MultiLogicPortfolioStopTP";
+        private const string SignalPortfolioStopperEodFlat = "MultiLogicPortfolioEodFlat";
+        private const string SignalPortfolioStopperPeakSl = "MultiLogicPortfolioPeakSL";
+        private const string PortfolioPeakDrawdownEnabledParamName = "Просадка от пика: включена";
+        private const string PortfolioPeakDrawdownPercentParamName = "Просадка от пика, %";
+        private const string PortfolioPeakValueParamName = "Пик портфеля";
+        private const string PauseEntriesAfterPeakDrawdownParamName = "Пауза входов после просадки от пика: включена";
+        private const decimal PortfolioPeakDrawdownPercentDefault = 1m;
+        private const string StopperEodFlatSellParamName = "Продать всё к времени (ежедневно)";
+        private const string StopperEodFlatSellDisabled = "Не продавать";
+        private const string SignificantPeakPauseEnabledParamName = "Пауза после значительного пика: включена";
+        private const string SignificantPeakAnnualPercentParamName = "Значительный пик: % годовых (мин.)";
+        private const string SignificantPeakPauseWidthMultiplierParamName = "Пауза: ширина пика ×";
+        private const decimal SignificantPeakAnnualPercentDefault = 100m;
+        private const decimal SignificantPeakPauseWidthMultiplierDefault = 10m;
         private const string UpdateStopperPortfolioBaselineButtonName = "Обновить сумму портфеля SL/TP";
         private const string PortfolioStopLossRublesParamName = "Либо stop-loss в рублях";
         private const string PortfolioTakeProfitRublesParamName = "Либо take-profit в рублях";
@@ -448,6 +529,8 @@ namespace OsEngine.Robots.Custom
         private const string MetaLogicEnableButtonName = "Включить металогику";
         /// <summary>При включённой металогике — торговать неуспешные логики (PnlSMA&lt;0) с Buy↔Sell; по умолчанию выкл.</summary>
         private const string MetaLogicInversionParamName = "Инверсия (покупка ↔ продажа)";
+        /// <summary>На вкладке «Логики»: как в TrendMultiIndicatorScreener — покупка↔продажа и Op↔Cl (bull↔bear).</summary>
+        private const string LogicSideInversionParamName = "Инверсия логики (покупка ↔ продажа)";
 
         /// <summary>Относительный путь к файлу справки (от каталога bin); перезаписывается из кода робота.</summary>
         private const string LogicHelpFileRelativePath = @"Custom\Robots\MultiLogic_LogicHelp.html";
@@ -459,12 +542,12 @@ namespace OsEngine.Robots.Custom
             "В начале (необязательно): Disabled(true/false) и Regime(…) — режим наклона LinReg.\n"
             + "Формат: <Индикатор>(параметры) Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)\n"
             + "Disabled(…) / Regime(…) — только в начале строки, до AND/OR, без скобок вокруг.\n"
-            + "Regime(LinReg;L=50;Dev=2;SlopeLb=5;SlopeDead=0.05%;Entry=MatchSide|FlatOnly) — тренд или боковик по наклону LinReg.\n"
+            + "Regime(LinReg;L=@LR;Dev=2;SlopeLb=5;SlopeDead=0.05%;Entry=MatchSide|FlatOnly) — тренд или боковик по наклону LinReg (@LR — параметр «Длина линейной регрессии»).\n"
             + "Составная логика: AND/OR или &&/||; NOT/! перед фрагментом инвертирует Op/Cl (не Buy/Sell).\n"
             + "В Op[…] и Cl[…]: ! / NOT, && / AND, || / OR (как в JavaScript). Примеры:\n"
             + "  Disabled(true) SMA(100) Op[Ab] Cl[Bl]\n"
-            + "  NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]\n"
-            + "  LinReg(50;Dev=2) Op[!AbUp||AbLo] Cl[BlLo]\n"
+            + "  NOT LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]\n"
+            + "  LinReg(@LR;Dev=2) Op[!AbUp||AbLo] Cl[BlLo]\n"
             + "  (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])\n"
             + "  SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend)\n"
             + "  Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])";
@@ -478,14 +561,16 @@ namespace OsEngine.Robots.Custom
         private const string LogicsHelpButtonName = "Help";
         /// <summary>Имя кнопки сброса: заводские строки L1…L4 (см. <see cref="MultiLogicDefaultLogics"/>).</summary>
         private const string LogicsSetDefaultButtonName = "Установить логики по умолчанию";
-        /// <summary>Кнопка «Установить разнообразные логики-примеры» на вкладке «Логики».</summary>
-        private const string LogicsSetSampleDiverseButtonName = "Установить разнообразные логики-примеры";
         /// <summary>Кнопка экспорта строк «Логика 1…10» в JSON на вкладке «Логики».</summary>
         private const string ExportLogicsButtonName = "Выгрузить логику";
         /// <summary>Кнопка импорта строк «Логика 1…10» из JSON на вкладке «Логики».</summary>
         private const string ImportLogicsButtonName = "Загрузить логику";
         /// <summary>Очищает все слоты «Логика 1…10».</summary>
         private const string ClearLogicsButtonName = "Очистить логики";
+        private const string RandomResetLogicsButtonName = "Сброс логик и случайный выбор";
+        private const int RandomResetLogicsFillCount = 6;
+        /// <summary>Дубликат экстренной остановки с первой вкладки — на вкладке «Логики».</summary>
+        private const string StopRobotAndSellAllLogicsTabButtonName = "Остановить робота и продать всё (логики)";
         /// <summary>Список вариантов для «Добавить логику».</summary>
         private const string AddLogicVariantParamName = "Вариант трендовой логики";
         /// <summary>Записывает выбранный вариант в ближайший пустой слот логики.</summary>
@@ -545,21 +630,6 @@ namespace OsEngine.Robots.Custom
         /// <summary>Запас под JSON-снимок и прочие файлы Engine (байт).</summary>
         private const long ResourceEstimateSnapshotDiskHeadroomBytes = 5L * 1024 * 1024;
 
-        /// <summary>
-        /// Примеры для кнопки «разнообразные логики»: 3 лонга, 3 шорт-тренда, 2 контртрендовых шорта; часть со SL/TP.
-        /// </summary>
-        private static readonly string[] SampleDiverseLogicStrings =
-        {
-            "SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend-SMA100)",
-            "MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] SL[2.5%] TP[7%] Note(trend-MACD)",
-            "LinReg(50;Dev=2) Op[AbUp] Cl[BlLo] SL[2ATR] TP[2R] Note(trend-LinReg-breakout)",
-            "SMA(100) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[6%] Note(trend-short-SMA100)",
-            "MACD(12,26,9) Side[S] Op[Macd<Sig] Cl[Macd>Sig] SL[2.5%] TP[7%] Note(trend-short-MACD)",
-            "LinReg(50;Dev=2) Side[S] Op[BlLo] Cl[AbUp] SL[2ATR] TP[2R] Note(trend-short-LinReg)",
-            "Stoch(14-3-3;Lmin=75;Smax=25) Side[S] Op[K<=25] Cl[K>=75] SL[2%] TP[4%] Note(counter-Stoch-fade)",
-            "Bollinger(20;Dev=2) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[5%] Note(counter-Boll-mid-short)"
-        };
-
         /// <summary>Основной скринер (страница 1): торговые бумаги и логики.</summary>
         private BotTabScreener _screenerTab;
         /// <summary>Скринер-монитор Stopper (страница 2): одна ликвидная бумага на малом TF.</summary>
@@ -580,18 +650,23 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>Кнопка «Установить логики по умолчанию» на вкладке «Логики».</summary>
         private StrategyParameterButton _setDefaultLogicsButton;
-        /// <summary>Кнопка «Установить разнообразные логики-примеры» на вкладке «Логики».</summary>
-        private StrategyParameterButton _setSampleDiverseLogicsButton;
         /// <summary>Кнопка «Выгрузить логику» на вкладке «Логики».</summary>
         private StrategyParameterButton _exportLogicsButton;
         /// <summary>Кнопка «Загрузить логику» на вкладке «Логики».</summary>
         private StrategyParameterButton _importLogicsButton;
         /// <summary>Кнопка «Очистить логики» на вкладке «Логики».</summary>
         private StrategyParameterButton _clearLogicsButton;
+        private StrategyParameterButton _randomResetLogicsButton;
+        private StrategyParameterButton _stopRobotAndSellAllLogicsTabButton;
         /// <summary>Выбор варианта для «Добавить логику».</summary>
         private StrategyParameterString _addLogicVariant;
         /// <summary>Кнопка «Добавить логику» на вкладке «Логики».</summary>
         private StrategyParameterButton _addLogicButton;
+        /// <summary>Инверсия Buy↔Sell при открытии по всем логикам (вкладка «Логики»).</summary>
+        private StrategyParameterBool _logicSideInversion;
+        private StrategyParameterInt _logicLinRegLen;
+        private StrategyParameterButton _logicLinRegLenIncButton;
+        private StrategyParameterButton _logicLinRegLenDecButton;
         /// <summary>Кнопка экспорта JSON-снимка (первая вкладка параметров).</summary>
         private StrategyParameterButton _saveSnapshotButton;
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -801,9 +876,17 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _usePortfolioStopLoss;
         private StrategyParameterDecimal _portfolioStopLossPercent;
         private StrategyParameterDecimal _portfolioStopLossRubles;
+        private StrategyParameterButton _stopperSlPercentIncButton;
+        private StrategyParameterButton _stopperSlPercentDecButton;
         private StrategyParameterBool _usePortfolioTakeProfit;
         private StrategyParameterDecimal _portfolioTakeProfitPercent;
         private StrategyParameterDecimal _portfolioTakeProfitRubles;
+        private StrategyParameterBool _usePortfolioPeakDrawdownStop;
+        private StrategyParameterDecimal _portfolioPeakDrawdownPercent;
+        private StrategyParameterDecimal _portfolioPeakValue;
+        private StrategyParameterBool _pauseEntriesAfterPeakDrawdown;
+        private StrategyParameterButton _stopperTpPercentIncButton;
+        private StrategyParameterButton _stopperTpPercentDecButton;
         private StrategyParameterString _stopperPostTriggerAfterStopLoss;
         private StrategyParameterString _stopperPostTriggerAfterTakeProfit;
         /// <summary>Stopper: пауза реальной торговли, виртуальные сделки в портфелях L1…L10.</summary>
@@ -817,7 +900,24 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterInt _portfolioStopperLookbackCandles;
         private StrategyParameterString _stopperMonitorTimeFrame;
         private StrategyParameterString _stopperMonitorSecurity;
+        private StrategyParameterString _stopperEodFlatSellTime;
+        private StrategyParameterBool _useSignificantPeakTradingPause;
+        private StrategyParameterDecimal _significantPeakAnnualPercentMin;
+        private StrategyParameterDecimal _significantPeakPauseWidthMultiplier;
         private StrategyParameterButton _updateStopperPortfolioBaselineButton;
+        /// <summary>Календарный день последнего EOD flat (не чаще 1 раза в сутки).</summary>
+        private DateTime _stopperEodFlatLastFiredTradingDay = DateTime.MinValue;
+        /// <summary>День, для которого уже залогирован запрет входов после EOD flat.</summary>
+        private DateTime _loggedStopperEodFlatBuyBlockedDay = DateTime.MinValue;
+        /// <summary>До этого времени (время свечи) запрещены новые входы после значительного пика equity.</summary>
+        private DateTime _significantPeakPauseUntil = DateTime.MinValue;
+        /// <summary>Последний обработанный локальный пик (время свечи пика).</summary>
+        private DateTime _significantPeakLastEvaluatedPeakTime = DateTime.MinValue;
+        /// <summary>Для однократного лога активной паузы по значительному пику.</summary>
+        private DateTime _loggedSignificantPeakPauseUntil = DateTime.MinValue;
+        /// <summary>До этого времени запрещены входы после срабатывания «Просадка от пика».</summary>
+        private DateTime _peakDrawdownPauseUntil = DateTime.MinValue;
+        private DateTime _loggedPeakDrawdownPauseUntil = DateTime.MinValue;
 
         /// <summary>
         /// Конструктор робота: создаёт скринер, параметры, подписки на события и первичный разбор логик.
@@ -885,19 +985,16 @@ namespace OsEngine.Robots.Custom
                 1_000_000m,
                 0.01m);
 
-            _logicHelpButton = CreateParameterButton(LogicsHelpButtonName, LogicsTabName);
-            _logicHelpButton.UserClickOnButtonEvent += LogicHelpButton_UserClickOnButtonEvent;
-
             _setDefaultLogicsButton = CreateParameterButton(LogicsSetDefaultButtonName, LogicsTabName);
             _setDefaultLogicsButton.UserClickOnButtonEvent += SetDefaultLogicsButton_UserClickOnButtonEvent;
-            _setSampleDiverseLogicsButton = CreateParameterButton(LogicsSetSampleDiverseButtonName, LogicsTabName);
-            _setSampleDiverseLogicsButton.UserClickOnButtonEvent += SetSampleDiverseLogicsButton_UserClickOnButtonEvent;
-            _exportLogicsButton = CreateParameterButton(ExportLogicsButtonName, LogicsTabName);
-            _exportLogicsButton.UserClickOnButtonEvent += ExportLogicsButton_UserClickOnButtonEvent;
-            _importLogicsButton = CreateParameterButton(ImportLogicsButtonName, LogicsTabName);
-            _importLogicsButton.UserClickOnButtonEvent += ImportLogicsButton_UserClickOnButtonEvent;
             _clearLogicsButton = CreateParameterButton(ClearLogicsButtonName, LogicsTabName);
             _clearLogicsButton.UserClickOnButtonEvent += ClearLogicsButton_UserClickOnButtonEvent;
+            _randomResetLogicsButton = CreateParameterButton(RandomResetLogicsButtonName, LogicsTabName);
+            _randomResetLogicsButton.UserClickOnButtonEvent += RandomResetLogicsButton_UserClickOnButtonEvent;
+            _stopRobotAndSellAllLogicsTabButton = CreateParameterButton(
+                StopRobotAndSellAllLogicsTabButtonName,
+                LogicsTabName);
+            _stopRobotAndSellAllLogicsTabButton.UserClickOnButtonEvent += StopRobotAndSellAllButton_UserClickOnButtonEvent;
             _addLogicVariant = CreateParameter(
                 AddLogicVariantParamName,
                 MultiLogicTrendCatalog.ChoiceLabels[0],
@@ -905,6 +1002,18 @@ namespace OsEngine.Robots.Custom
                 LogicsTabName);
             _addLogicButton = CreateParameterButton(AddLogicButtonName, LogicsTabName);
             _addLogicButton.UserClickOnButtonEvent += AddLogicButton_UserClickOnButtonEvent;
+            _logicSideInversion = CreateParameter(LogicSideInversionParamName, false, LogicsTabName);
+            _logicLinRegLen = CreateParameter(
+                LogicLinRegLengthParamName,
+                LogicLinRegLengthDefault,
+                LogicLinRegLengthMin,
+                LogicLinRegLengthMax,
+                1,
+                LogicsTabName);
+            _logicLinRegLenIncButton = CreateParameterButton(LogicLinRegLenIncButtonName, LogicsTabName);
+            _logicLinRegLenIncButton.UserClickOnButtonEvent += LogicLinRegLenIncButton_UserClickOnButtonEvent;
+            _logicLinRegLenDecButton = CreateParameterButton(LogicLinRegLenDecButtonName, LogicsTabName);
+            _logicLinRegLenDecButton.UserClickOnButtonEvent += LogicLinRegLenDecButton_UserClickOnButtonEvent;
 
             _logic1 = CreateParameter("Логика 1", MultiLogicDefaultLogics.Logic1LongTrend, LogicsTabName);
             _logic2 = CreateParameter("Логика 2", MultiLogicDefaultLogics.Logic2LongBokovik, LogicsTabName);
@@ -916,6 +1025,13 @@ namespace OsEngine.Robots.Custom
             _logic8 = CreateParameter("Логика 8", "", LogicsTabName);
             _logic9 = CreateParameter("Логика 9", "", LogicsTabName);
             _logic10 = CreateParameter("Логика 10", "", LogicsTabName);
+
+            _logicHelpButton = CreateParameterButton(LogicsHelpButtonName, LogicsTabName);
+            _logicHelpButton.UserClickOnButtonEvent += LogicHelpButton_UserClickOnButtonEvent;
+            _exportLogicsButton = CreateParameterButton(ExportLogicsButtonName, LogicsTabName);
+            _exportLogicsButton.UserClickOnButtonEvent += ExportLogicsButton_UserClickOnButtonEvent;
+            _importLogicsButton = CreateParameterButton(ImportLogicsButtonName, LogicsTabName);
+            _importLogicsButton.UserClickOnButtonEvent += ImportLogicsButton_UserClickOnButtonEvent;
 
             _metaLogicEnabled = CreateParameter(MetaLogicEnabledParamName, false, MetaLogicsTabName);
             _metaLogicInversion = CreateParameter(MetaLogicInversionParamName, false, MetaLogicsTabName);
@@ -1020,6 +1136,7 @@ namespace OsEngine.Robots.Custom
             LogRegimeStateOnStartup();
             SyncStopMonitorScreenerPage(logToUser: false);
             RefreshPreviousAcceptBackupSnapshot();
+            RefreshHtmlReportConfigBaseline();
             _parametersAcceptBackupEnabled = true;
         }
 
@@ -1058,6 +1175,7 @@ namespace OsEngine.Robots.Custom
             }
 
             CoalescedSaveParametersAcceptBackup();
+            RecordHtmlReportConfigChangesIfAny();
         }
 
         /// <summary>
@@ -1238,11 +1356,74 @@ namespace OsEngine.Robots.Custom
         {
             WireLogicTabButton(LogicsHelpButtonName, LogicHelpButton_UserClickOnButtonEvent);
             WireLogicTabButton(LogicsSetDefaultButtonName, SetDefaultLogicsButton_UserClickOnButtonEvent);
-            WireLogicTabButton(LogicsSetSampleDiverseButtonName, SetSampleDiverseLogicsButton_UserClickOnButtonEvent);
             WireLogicTabButton(ExportLogicsButtonName, ExportLogicsButton_UserClickOnButtonEvent);
             WireLogicTabButton(ImportLogicsButtonName, ImportLogicsButton_UserClickOnButtonEvent);
             WireLogicTabButton(ClearLogicsButtonName, ClearLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(RandomResetLogicsButtonName, RandomResetLogicsButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopRobotAndSellAllLogicsTabButtonName, StopRobotAndSellAllButton_UserClickOnButtonEvent);
             WireLogicTabButton(AddLogicButtonName, AddLogicButton_UserClickOnButtonEvent);
+            WireLogicTabButton(LogicLinRegLenIncButtonName, LogicLinRegLenIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(LogicLinRegLenDecButtonName, LogicLinRegLenDecButton_UserClickOnButtonEvent);
+        }
+
+        private void LogicLinRegLenIncButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                int current = ReadLogicLinRegLengthCurrent();
+                if (current >= LogicLinRegLengthMax)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + LogicLinRegLengthParamName
+                        + ": уже максимум ("
+                        + LogicLinRegLengthMax
+                        + ").",
+                        LogMessageType.User);
+                    return;
+                }
+
+                int next = Math.Min(LogicLinRegLengthMax, current + LogicLinRegLengthStep);
+                ApplyLogicLinRegLengthValue(next);
+                SendNewLogMessage(
+                    NameStrategyUniq + " | " + LogicLinRegLengthParamName + " → " + next + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void LogicLinRegLenDecButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                int current = ReadLogicLinRegLengthCurrent();
+                if (current <= LogicLinRegLengthMin)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + LogicLinRegLengthParamName
+                        + ": минимум "
+                        + LogicLinRegLengthMin
+                        + " — уменьшение не выполнено.",
+                        LogMessageType.User);
+                    return;
+                }
+
+                int next = Math.Max(LogicLinRegLengthMin, current - LogicLinRegLengthStep);
+                ApplyLogicLinRegLengthValue(next);
+                SendNewLogMessage(
+                    NameStrategyUniq + " | " + LogicLinRegLengthParamName + " → " + next + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
         }
 
         /// <summary>Переподписывает кнопки вкладки «Металогики».</summary>
@@ -1257,6 +1438,10 @@ namespace OsEngine.Robots.Custom
             WireLogicTabButton(
                 UpdateStopperPortfolioBaselineButtonName,
                 UpdateStopperPortfolioBaselineButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperSlPercentIncButtonName, StopperSlPercentIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperSlPercentDecButtonName, StopperSlPercentDecButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperTpPercentIncButtonName, StopperTpPercentIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperTpPercentDecButtonName, StopperTpPercentDecButton_UserClickOnButtonEvent);
         }
 
         private void MetaLogicEnableButton_UserClickOnButtonEvent()
@@ -1661,7 +1846,9 @@ namespace OsEngine.Robots.Custom
 
                 string msg = NameStrategyUniq
                     + " | "
-                    + MultiLogicDefaultLogics.BuildSetDefaultLogMessage();
+                    + MultiLogicDefaultLogics.BuildSetDefaultLogMessage()
+                    + " Индикаторы синхронизированы с графиком.";
+                SendNewLogMessage(msg, LogMessageType.User);
                 SendNewLogMessage(msg, LogMessageType.System);
             }
             catch (Exception ex)
@@ -1671,8 +1858,7 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Записывает заводские строки в «Логика 1…4», очищает «Логика 5» … «Логика 10».
-        /// Если окно параметров открыто — только ячейки таблицы (как ручной ввод), без парсинга и SaveParameters.
+        /// Записывает заводские строки в «Логика 1…4», очищает «Логика 5» … «Логика 10» и сразу применяет на графике.
         /// </summary>
         private void ApplyDefaultLogicStrings()
         {
@@ -1681,50 +1867,15 @@ namespace OsEngine.Robots.Custom
             {
                 slotValues[i] = MultiLogicDefaultLogics.SlotFormulas[i];
             }
-            ApplyLogicSlotStrings(slotValues);
+
+            ApplyLogicSlotStringsImmediate(slotValues, logParseToUser: true);
         }
 
-        /// <summary>
-        /// Обработчик «Установить разнообразные логики-примеры»: очищает все слоты, в «Логика 1…8» — восемь примеров.
-        /// </summary>
-        private void SetSampleDiverseLogicsButton_UserClickOnButtonEvent()
-        {
-            try
-            {
-                ApplySampleDiverseLogicStrings();
-
-                string msg = NameStrategyUniq
-                    + " | Примеры логик: очищены «Логика 1…10»; в «Логика 1…8» — 3 лонга (SMA, MACD, LinReg), "
-                    + "3 шорт-тренда (SMA, MACD, LinReg), 2 контртрендовых шорта (Stoch, Bollinger); "
-                    + "SL/TP или ATR/R. Применение на графике — по «Принять».";
-                SendNewLogMessage(msg, LogMessageType.System);
-            }
-            catch (Exception ex)
-            {
-                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
-            }
-        }
-
-        /// <summary>Очищает «Логика 1…10» и записывает SampleDiverseLogicStrings в «Логика 1…8».</summary>
-        private void ApplySampleDiverseLogicStrings()
-        {
-            string[] slotValues = new string[LogicSlotCount];
-            for (int slot = 1; slot <= LogicSlotCount; slot++)
-            {
-                int sampleIndex = slot - 1;
-                slotValues[slot - 1] = sampleIndex >= 0 && sampleIndex < SampleDiverseLogicStrings.Length
-                    ? SampleDiverseLogicStrings[sampleIndex]
-                    : "";
-            }
-
-            ApplyLogicSlotStrings(slotValues);
-        }
-
-        /// <summary>Очищает «Логика 1…10» (пустые строки).</summary>
+        /// <summary>Очищает «Логика 1…10» (пустые строки) и сразу применяет на графике.</summary>
         private void ApplyClearLogicStrings()
         {
             var slotValues = new string[LogicSlotCount];
-            ApplyLogicSlotStrings(slotValues);
+            ApplyLogicSlotStringsImmediate(slotValues, logParseToUser: true);
         }
 
         private void ClearLogicsButton_UserClickOnButtonEvent()
@@ -1733,7 +1884,54 @@ namespace OsEngine.Robots.Custom
             {
                 ApplyClearLogicStrings();
                 string msg = NameStrategyUniq
-                    + " | «Логика 1…10» очищены. Применение на графике — «Принять».";
+                    + " | «Логика 1…10» очищены; индикаторы синхронизированы с графиком.";
+                SendNewLogMessage(msg, LogMessageType.User);
+                SendNewLogMessage(msg, LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Очищает «Логика 1…10» и заполняет «Логика 1…6» шестью случайными вариантами из каталога трендовых логик.
+        /// </summary>
+        private void RandomResetLogicsButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                ApplyPrefixesFromOpenParameterDialog();
+
+                MultiLogicTrendCatalog.CatalogPick[] picks = MultiLogicTrendCatalog.PickRandomEntries(
+                    RandomResetLogicsFillCount,
+                    Random.Shared);
+
+                if (picks.Length == 0)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq + " | «Сброс логик и случайный выбор»: каталог вариантов пуст.",
+                        LogMessageType.Error);
+                    return;
+                }
+
+                var slotValues = new string[LogicSlotCount];
+                var labelParts = new List<string>(picks.Length);
+                for (int i = 0; i < picks.Length; i++)
+                {
+                    slotValues[i] = picks[i].Formula;
+                    labelParts.Add("L" + (i + 1).ToString(CultureInfo.InvariantCulture) + ": " + picks[i].Label);
+                }
+
+                ApplyLogicSlotStringsImmediate(slotValues, logParseToUser: true);
+
+                string detail = string.Join("; ", labelParts);
+                string msg = NameStrategyUniq
+                    + " | «Сброс логик и случайный выбор»: очищены «Логика 1…10»; случайно заполнены «Логика 1…"
+                    + picks.Length.ToString(CultureInfo.InvariantCulture)
+                    + "» ("
+                    + detail
+                    + "). Индикаторы синхронизированы с графиком.";
                 SendNewLogMessage(msg, LogMessageType.User);
                 SendNewLogMessage(msg, LogMessageType.System);
             }
@@ -1781,13 +1979,7 @@ namespace OsEngine.Robots.Custom
                 }
 
                 lines[targetSlot - 1] = formula;
-                ApplyLogicSlotStrings(lines);
-                CommitLogicSlotStringsToParameters(lines);
-                SaveParametersWithoutLogicIndicatorResync();
-                RequestParameterGuiRepaintOnce();
-                RunOnUiThread(
-                    () => TryParseAndApplyAllLogicSlots(logToUser: true),
-                    preferAsync: true);
+                ApplyLogicSlotStringsImmediate(lines, logParseToUser: true);
 
                 string okMsg = NameStrategyUniq
                     + " | Вариант «"
@@ -1822,6 +2014,64 @@ namespace OsEngine.Robots.Custom
             }
 
             return 0;
+        }
+
+        /// <summary>
+        /// Записывает строки логики, обновляет окно параметров (если открыто), сохраняет и синхронизирует индикаторы.
+        /// </summary>
+        private void ApplyLogicSlotStringsImmediate(string[] slotValues, bool logParseToUser)
+        {
+            if (slotValues == null)
+            {
+                return;
+            }
+
+            ApplyPrefixesFromOpenParameterDialog();
+            TryApplyLogicSlotStringsToOpenParameterGui(slotValues);
+            CommitLogicSlotStringsToParameters(slotValues);
+            SaveParametersWithoutLogicIndicatorResync();
+            RequestParameterGuiRepaintOnce();
+            RunOnUiThread(
+                () => TryParseAndApplyAllLogicSlots(logParseToUser),
+                preferAsync: true);
+            RecordHtmlReportConfigChangesIfAny();
+        }
+
+        private StrategyParameterInt ResolveLogicLinRegLenParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == LogicLinRegLengthParamName);
+            return (fromList as StrategyParameterInt) ?? _logicLinRegLen;
+        }
+
+        private int ReadLogicLinRegLengthCurrent()
+        {
+            ApplyPrefixesFromOpenParameterDialog();
+
+            if (TryReadIntParameterFromOpenParameterGui(LogicLinRegLengthParamName, out int fromGui))
+            {
+                return fromGui;
+            }
+
+            return ResolveLogicLinRegLenParameter()?.ValueInt ?? LogicLinRegLengthDefault;
+        }
+
+        private void ApplyLogicLinRegLengthValue(int next)
+        {
+            StrategyParameterInt param = ResolveLogicLinRegLenParameter();
+            if (param == null)
+            {
+                return;
+            }
+
+            next = Math.Max(LogicLinRegLengthMin, Math.Min(LogicLinRegLengthMax, next));
+            SetStrategyParameterIntSilent(param, next);
+            TryApplyIntParameterToOpenParameterGui(LogicLinRegLengthParamName, next);
+            SaveParametersWithoutLogicIndicatorResync();
+            RequestParameterGuiRepaintOnce();
+            RunOnUiThread(
+                () => TryParseAndApplyAllLogicSlots(logToUser: false),
+                preferAsync: true);
+            RecordHtmlReportConfigChangesIfAny();
         }
 
         /// <summary>
@@ -1989,6 +2239,330 @@ namespace OsEngine.Robots.Custom
             return -1;
         }
 
+        private bool TryApplyIntParameterToOpenParameterGui(string parameterName, int value)
+        {
+            if (!ParamGuiIsOpen || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return false;
+            }
+
+            string valueText = value.ToString(CultureInfo.InvariantCulture);
+            return TryUpdateOpenParameterGuiCell(
+                parameterName,
+                StrategyParameterType.Int,
+                valueText,
+                static (grid, rowIndex, text) => grid.Rows[rowIndex].Cells[1].Value = text);
+        }
+
+        private bool TryReadIntParameterFromOpenParameterGui(string parameterName, out int value)
+        {
+            value = 0;
+            if (!ParamGuiIsOpen || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return false;
+            }
+
+            if (!TryReadOpenParameterGuiCell(
+                    parameterName,
+                    StrategyParameterType.Int,
+                    out string raw)
+                || string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            return int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool TryParseBoolParameterRaw(string raw, out bool value)
+        {
+            value = false;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            raw = raw.Trim();
+            if (bool.TryParse(raw, out value))
+            {
+                return true;
+            }
+
+            if (string.Equals(raw, "1", StringComparison.Ordinal)
+                || string.Equals(raw, "да", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase))
+            {
+                value = true;
+                return true;
+            }
+
+            if (string.Equals(raw, "0", StringComparison.Ordinal)
+                || string.Equals(raw, "нет", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "no", StringComparison.OrdinalIgnoreCase))
+            {
+                value = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryReadBoolParameterFromOpenParameterGui(string parameterName, out bool value)
+        {
+            value = false;
+            if (!ParamGuiIsOpen || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return false;
+            }
+
+            if (!TryReadOpenParameterGuiCell(
+                    parameterName,
+                    StrategyParameterType.Bool,
+                    out string raw))
+            {
+                return false;
+            }
+
+            return TryParseBoolParameterRaw(raw, out value);
+        }
+
+        private bool TryReadDecimalParameterFromOpenParameterGui(string parameterName, out decimal value)
+        {
+            value = 0m;
+            if (!ParamGuiIsOpen || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return false;
+            }
+
+            if (!TryReadOpenParameterGuiCell(
+                    parameterName,
+                    StrategyParameterType.Decimal,
+                    out string raw)
+                || string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            raw = raw.Trim().Replace(',', '.');
+            return decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out value);
+        }
+
+        private bool TryApplyDecimalParameterToOpenParameterGui(string parameterName, decimal value)
+        {
+            if (!ParamGuiIsOpen || string.IsNullOrWhiteSpace(parameterName))
+            {
+                return false;
+            }
+
+            string valueText = value.ToString(CultureInfo.InvariantCulture);
+            return TryUpdateOpenParameterGuiCell(
+                parameterName,
+                StrategyParameterType.Decimal,
+                valueText,
+                static (grid, rowIndex, text) => grid.Rows[rowIndex].Cells[1].Value = text);
+        }
+
+        private StrategyParameterBool ResolveLogicSideInversionParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == LogicSideInversionParamName);
+            return (fromList as StrategyParameterBool) ?? _logicSideInversion;
+        }
+
+        /// <summary>
+        /// «Инверсия логики»: при открытом окне параметров — из ячейки таблицы (без «Принять»), иначе ValueBool.
+        /// </summary>
+        private bool ReadLogicSideInversionCurrent()
+        {
+            if (TryReadBoolParameterFromOpenParameterGui(LogicSideInversionParamName, out bool fromGui))
+            {
+                return fromGui;
+            }
+
+            return ResolveLogicSideInversionParameter()?.ValueBool ?? false;
+        }
+
+        private delegate void OpenParameterGuiCellWriter(
+            System.Windows.Forms.DataGridView grid,
+            int rowIndex,
+            string text);
+
+        private bool TryUpdateOpenParameterGuiCell(
+            string parameterName,
+            StrategyParameterType parameterType,
+            string text,
+            OpenParameterGuiCellWriter writeCell)
+        {
+            if (writeCell == null)
+            {
+                return false;
+            }
+
+            bool VisitGrid(System.Windows.Forms.DataGridView grid, List<IIStrategyParameter> parameters)
+            {
+                bool updated = false;
+
+                void UpdateCells()
+                {
+                    for (int i = 0; i < parameters.Count; i++)
+                    {
+                        if (parameters[i].Type != parameterType
+                            || !string.Equals(parameters[i].Name, parameterName, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (i >= grid.Rows.Count || grid.Rows[i].Cells.Count <= 1)
+                        {
+                            continue;
+                        }
+
+                        writeCell(grid, i, text);
+                        updated = true;
+                    }
+                }
+
+                if (grid.InvokeRequired)
+                {
+                    grid.Invoke(new Action(UpdateCells));
+                }
+                else
+                {
+                    UpdateCells();
+                }
+
+                return updated;
+            }
+
+            return TryForEachOpenParameterGuiGrid(VisitGrid, out bool anyMatched) && anyMatched;
+        }
+
+        private bool TryReadOpenParameterGuiCell(
+            string parameterName,
+            StrategyParameterType parameterType,
+            out string raw)
+        {
+            raw = "";
+            string captured = "";
+
+            bool VisitGrid(System.Windows.Forms.DataGridView grid, List<IIStrategyParameter> parameters)
+            {
+                bool found = false;
+
+                void ReadCells()
+                {
+                    for (int i = 0; i < parameters.Count; i++)
+                    {
+                        if (parameters[i].Type != parameterType
+                            || !string.Equals(parameters[i].Name, parameterName, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (i >= grid.Rows.Count || grid.Rows[i].Cells.Count <= 1)
+                        {
+                            continue;
+                        }
+
+                        object cell = grid.Rows[i].Cells[1].Value;
+                        captured = cell?.ToString() ?? "";
+                        found = true;
+                        return;
+                    }
+                }
+
+                if (grid.InvokeRequired)
+                {
+                    grid.Invoke(new Action(ReadCells));
+                }
+                else
+                {
+                    ReadCells();
+                }
+
+                return found;
+            }
+
+            if (!TryForEachOpenParameterGuiGrid(VisitGrid, out bool found)
+                || !found)
+            {
+                return false;
+            }
+
+            raw = captured;
+            return true;
+        }
+
+        private bool TryForEachOpenParameterGuiGrid(
+            Func<System.Windows.Forms.DataGridView, List<IIStrategyParameter>, bool> visit,
+            out bool anyMatched)
+        {
+            anyMatched = false;
+            if (!ParamGuiIsOpen || visit == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                FieldInfo uiField = typeof(BotPanel).GetField(
+                    "_parametersUi",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                object uiObj = uiField?.GetValue(this);
+                if (uiObj == null)
+                {
+                    return false;
+                }
+
+                FieldInfo tabsField = uiObj.GetType().GetField(
+                    "_tabs",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (tabsField?.GetValue(uiObj) is not IList tabs)
+                {
+                    return false;
+                }
+
+                FieldInfo gridField = typeof(ParamTabPainter).GetField(
+                    "_grid",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo paramsField = typeof(ParamTabPainter).GetField(
+                    "_parameters",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (gridField == null || paramsField == null)
+                {
+                    return false;
+                }
+
+                bool anyGrid = false;
+                for (int t = 0; t < tabs.Count; t++)
+                {
+                    object tab = tabs[t];
+                    if (tab == null)
+                    {
+                        continue;
+                    }
+
+                    if (gridField.GetValue(tab) is not System.Windows.Forms.DataGridView grid
+                        || paramsField.GetValue(tab) is not List<IIStrategyParameter> parameters)
+                    {
+                        continue;
+                    }
+
+                    anyGrid = true;
+                    if (visit(grid, parameters))
+                    {
+                        anyMatched = true;
+                    }
+                }
+
+                return anyGrid;
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                return false;
+            }
+        }
+
         /// <summary>Обновляет таблицы параметров в UI после программной смены ValueString.</summary>
         private void RepaintParameterGuiTables()
         {
@@ -2049,9 +2623,17 @@ namespace OsEngine.Robots.Custom
             return _suppressLogicIndicatorResyncDepth <= 0;
         }
 
+        private void SyncDefaultLinRegLengthToParser()
+        {
+            int len = _logicLinRegLen?.ValueInt ?? LogicLinRegLengthDefault;
+            LogicLineParser.DefaultLinRegLength = Math.Max(LogicLinRegLengthMin, len);
+        }
+
         private string BuildLogicSlotsFingerprint()
         {
             var sb = new StringBuilder(4096);
+            sb.Append(_logicLinRegLen?.ValueInt ?? LogicLinRegLengthDefault);
+            sb.Append('\u001e');
             for (int slot = 1; slot <= LogicSlotCount; slot++)
             {
                 StrategyParameterString param = ResolveLogicParameter(slot);
@@ -2105,6 +2687,10 @@ namespace OsEngine.Robots.Custom
             "_valueString",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly FieldInfo StrategyParameterIntValueField = typeof(StrategyParameterInt).GetField(
+            "_valueInt",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
         /// <summary>Обновить decimal-параметр без ValueChange (не вызывает SaveParameters/ParametrsChangeByUser).</summary>
         private static void SetStrategyParameterDecimalSilent(StrategyParameterDecimal param, decimal value)
         {
@@ -2138,6 +2724,23 @@ namespace OsEngine.Robots.Custom
             }
 
             param.ValueString = value;
+        }
+
+        /// <summary>Обновить int-параметр без ValueChange (не вызывает SaveParameters/ParametrsChangeByUser).</summary>
+        private static void SetStrategyParameterIntSilent(StrategyParameterInt param, int value)
+        {
+            if (param == null || param.ValueInt == value)
+            {
+                return;
+            }
+
+            if (StrategyParameterIntValueField != null)
+            {
+                StrategyParameterIntValueField.SetValue(param, value);
+                return;
+            }
+
+            param.ValueInt = value;
         }
 
         private StrategyParameterString ResolveRegimeParameter()
@@ -2281,6 +2884,11 @@ namespace OsEngine.Robots.Custom
 
         private void TryResumeStopperVirtualTrading(BotTabSimple tab, DateTime candleTime)
         {
+            if (IsStopperEodFlatBuyBlocked(candleTime))
+            {
+                return;
+            }
+
             if (!_stopperVirtualTradingActive || _stopperVirtualRecoveryTargetEquity <= 0m)
             {
                 return;
@@ -2490,12 +3098,12 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (!LogicExpressionEvaluator.EvaluateClose(
+            if (!EvaluateLogicCloseSignal(
                     runtime.ParseResult.Root,
                     tab,
                     candles,
                     candleIndex,
-                    FindIndicatorForAtom))
+                    logicSlotIndex))
             {
                 return;
             }
@@ -2562,6 +3170,7 @@ namespace OsEngine.Robots.Custom
         /// <param name="logToUser">Дублировать сообщения парсинга в пользовательский лог.</param>
         private void TryParseAndApplyAllLogicSlots(bool logToUser)
         {
+            SyncDefaultLinRegLengthToParser();
             var allAtoms = new List<LogicAtom>();
 
             for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
@@ -3043,17 +3652,22 @@ namespace OsEngine.Robots.Custom
                 "Открыть Custom\\Robots\\MultiLogic_LogicHelp.html — полная справка (светлая HTML-страница); "
                 + "файл автоматически обновляется при запуске робота и по этой кнопке.");
             Hint(LogicsSetDefaultButtonName, MultiLogicDefaultLogics.BuildSetDefaultButtonHint());
-            Hint(LogicsSetSampleDiverseButtonName,
-                "Очистить «Логика 1…10» и записать в «Логика 1…8» примеры: 3 лонга, 3 шорт-тренда (Side[S]), "
-                + "2 контртрендовых шорта (Stoch, Bollinger), со SL/TP или ATR/R. «Логика 9…10» — пусто.");
             Hint(ExportLogicsButtonName,
                 "Сохранить строки «Логика 1…10» в JSON-файл (только логики, без параметров и портфелей). "
                 + "Если окно параметров открыто — берутся текущие значения из таблицы.");
             Hint(ImportLogicsButtonName,
                 "Загрузить строки «Логика 1…10» из JSON-файла того же формата или из полного JSON-снимка "
-                + "(используется только блок logicLines). После загрузки — «Принять» или перезапуск парсинга.");
+                + "(используется только блок logicLines). Индикаторы на графике синхронизируются сразу.");
             Hint(ClearLogicsButtonName,
-                "Очистить все слоты «Логика 1…10» (пустые строки). Индикаторы снимутся после «Принять».");
+                "Очистить все слоты «Логика 1…10» (пустые строки). Индикаторы снимаются с графика сразу, без выхода из окна параметров.");
+            Hint(RandomResetLogicsButtonName,
+                "Очистить «Логика 1…10» и случайно заполнить «Логика 1…6» шестью разными вариантами "
+                + "из списка «Вариант трендовой логики» (12 пар лонг/шорт: RSI+Boll, Mom+Slope, VWAP, Boll break, "
+                + "Dual SMA, Stoch trend). Повторов в одном нажатии нет. Индикаторы на графике — сразу, как у «Добавить логику».");
+            Hint(StopRobotAndSellAllLogicsTabButtonName,
+                "То же, что «Остановить робота и продать всё» на первой вкладке (дубликат на вкладке «Логики»): "
+                + "закрыть все позиции робота на скринере по рынку (или лимитом, если рынок недоступен) "
+                + "и перевести Regime в Off.");
             Hint(AddLogicVariantParamName,
                 "Вариант трендовой логики для «Добавить логику»: пары лонг/шорт подряд "
                 + "(1 RSI+Boll, 2 Mom+Slope, 3 VWAP, 4 Boll break, 5 Dual SMA, 6 Stoch trend).");
@@ -3061,6 +3675,41 @@ namespace OsEngine.Robots.Custom
                 "Записать выбранный вариант в ближайший пустой слот «Логика 1…10». "
                 + "Индикаторы строки (в т.ч. RSI, Bollinger, Momentum, VWAP) создаются на графике сразу, "
                 + "как при «Загрузить логику». Если все слоты заняты — сообщение в лог.");
+            Hint(
+                LogicSideInversionParamName,
+                "Если включено — при открытии позиции Buy и Sell меняются местами для всех логик "
+                + "(Side[S] и формула не меняются). Закрытие — по фактической позиции и Cl[…], без отдельной инверсии. "
+                + "Regime MatchSide учитывает сторону, с которой реально откроем. "
+                + "При открытом окне параметров переключение True/False действует сразу на следующих свечах, без «Принять». "
+                + "Не путать с «Инверсией» на вкладке «Металогики».");
+            Hint(
+                LogicLinRegLengthParamName,
+                "Длина окна LinReg для всех атомов LinReg(…)/Regime(…), где в формуле указано "
+                + LogicLineParser.LinRegLengthParamToken
+                + " или L не задан (по умолчанию "
+                + LogicLineParser.LinRegLengthParamToken
+                + "). Явное число в формуле, например LinReg(80;Dev=2), всегда имеет приоритет. "
+                + "Минимум "
+                + LogicLinRegLengthMin
+                + ". Кнопки ±5 и «Принять» пересобирают LinReg на графике.");
+            Hint(
+                LogicLinRegLenIncButtonName,
+                "Увеличить «"
+                + LogicLinRegLengthParamName
+                + "» на "
+                + LogicLinRegLengthStep
+                + " (максимум "
+                + LogicLinRegLengthMax
+                + "); значение в таблице и индикаторы — сразу.");
+            Hint(
+                LogicLinRegLenDecButtonName,
+                "Уменьшить «"
+                + LogicLinRegLengthParamName
+                + "» на "
+                + LogicLinRegLengthStep
+                + " (минимум "
+                + LogicLinRegLengthMin
+                + "; ниже — не меняет); значение в таблице и индикаторы — сразу.");
             string logicSlotHintSuffix =
                 "\n\nОдинаковый индикатор с теми же параметрами в разных логиках — один экземпляр на графике. "
                 + "Regime=On: вход по Op, выход по Cl. Volume делится поровну между сработавшими логиками на свече.";
@@ -3099,12 +3748,52 @@ namespace OsEngine.Robots.Custom
 
             Hint("Общепортфельный stop-loss: включён",
                 "Stopper: просадка суммарной equity L1…L10 от ref (lookback свечей). По умолчанию выкл.");
-            Hint("Общепортфельный stop-loss (%)",
-                "Порог SL: equity ≤ ref × (1 − %/100). По умолчанию 0,4. Ref — equity N свечей назад.");
+            Hint(
+                PortfolioStopLossPercentParamName,
+                "Порог SL: equity ≤ ref × (1 − %/100). По умолчанию 0,4. Ref — equity N свечей назад. "
+                + "Кнопки ± меняют только этот %, галочку «включён» не трогают; значение применяется сразу.");
+            Hint(
+                StopperSlPercentIncButtonName,
+                "Увеличить «"
+                + PortfolioStopLossPercentParamName
+                + "» на "
+                + StopperSlPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + " (макс. "
+                + StopperSlPercentMax.ToString(CultureInfo.InvariantCulture)
+                + ").");
+            Hint(
+                StopperSlPercentDecButtonName,
+                "Уменьшить «"
+                + PortfolioStopLossPercentParamName
+                + "» на "
+                + StopperSlPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + " (мин. "
+                + StopperSlPercentMin.ToString(CultureInfo.InvariantCulture)
+                + ").");
             Hint("Общепортфельный take-profit: включён",
                 "Stopper: рост суммарной equity от ref. По умолчанию выкл.");
-            Hint("Общепортфельный take-profit (%)",
-                "Порог TP: equity ≥ ref × (1 + %/100). По умолчанию 10.");
+            Hint(
+                PortfolioTakeProfitPercentParamName,
+                "Порог TP: equity ≥ ref × (1 + %/100). По умолчанию 10. "
+                + "Кнопки ± меняют только этот %, галочку «включён» не трогают; значение применяется сразу.");
+            Hint(
+                StopperTpPercentIncButtonName,
+                "Увеличить «"
+                + PortfolioTakeProfitPercentParamName
+                + "» на "
+                + StopperTpPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + " (макс. "
+                + StopperTpPercentMax.ToString(CultureInfo.InvariantCulture)
+                + ").");
+            Hint(
+                StopperTpPercentDecButtonName,
+                "Уменьшить «"
+                + PortfolioTakeProfitPercentParamName
+                + "» на "
+                + StopperTpPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + " (мин. "
+                + StopperTpPercentMin.ToString(CultureInfo.InvariantCulture)
+                + ").");
             Hint(
                 PortfolioStopLossRublesParamName,
                 "Альтернатива %: SL при просадке портфеля ≥ N руб от ref (ref − equity). 0 — только %. "
@@ -3139,7 +3828,38 @@ namespace OsEngine.Robots.Custom
                 + "PnL берётся с реального портфеля / L1…L10, не с цены этой бумаги.");
             Hint(UpdateStopperPortfolioBaselineButtonName,
                 "Записывает текущий портфель (тестер/лайв) или equity L1…L10 в «Предыдущая сумма портфеля» и фиксирует базу SL/TP.");
-
+            Hint(
+                StopperEodFlatSellParamName,
+                "«Не продавать» — без действия. Иначе на первой «общей свече» скринера после выбранного времени "
+                + "(по часам, 00:00…23:00) один раз в календарный день закрываются все позиции робота "
+                + "(тестер, лайв, эмулятор EmulatorIsOn, виртуальные позиции Stopper «пауза»). "
+                + "После этой продажи до следующего календарного дня новые входы запрещены; выходы по Cl/SL/TP работают. "
+                + "Regime не меняется. Не зависит от общепортфельного SL/TP.");
+            Hint(
+                PortfolioPeakDrawdownEnabledParamName,
+                "Скользящий стоп по сумме equity L1…L10 (как в отчёте), не по депозиту тестера: падение на % от пика — "
+                + "закрыть все позиции. На графике одной логики маркер может не совпадать с её локальным пиком, "
+                + "если другие логики компенсируют. Пик обновляется при новом максимуме суммы.");
+            Hint(
+                PortfolioPeakDrawdownPercentParamName,
+                "Просадка от пика в % для срабатывания (по умолчанию 1). Порог: equity ≤ пик × (1 − %/100).");
+            Hint(
+                PortfolioPeakValueParamName,
+                "Техн.: зафиксированный максимум equity для стопа «Просадка от пика»; обновляется на новых максимумах.");
+            Hint(
+                PauseEntriesAfterPeakDrawdownParamName,
+                "После срабатывания «Просадка от пика» — запрет новых входов на (ширина подъёма до пика) × «Пауза: ширина пика ×».");
+            Hint(
+                SignificantPeakPauseEnabledParamName,
+                "По суммарной equity L1…L10: после локального пика, если рост от впадины до пика "
+                + "даёт ≥ порога % годовых — временно запретить новые входы (выходы по Cl/SL/TP работают). "
+                + "Длительность паузы = (время пика − время начала пика) × множитель.");
+            Hint(
+                SignificantPeakAnnualPercentParamName,
+                "Пик «значительный», если годовая доходность от впадины до максимума ≥ этого % (по умолчанию 100).");
+            Hint(
+                SignificantPeakPauseWidthMultiplierParamName,
+                "Сколько раз умножить ширину пика (интервал впадина→пик) для длительности паузы входов (по умолчанию 10).");
             Hint("Общепортфельный SMA: включить",
                 "Справочно: SMA по портфельной серии equity; значения — в файлах портфелей и _MetaAggregate.txt.");
             Hint("Общепортфельный SMA: длина", "Период SMA по всем портфельным сериям (L1…L10 и общая).");
@@ -3374,6 +4094,18 @@ namespace OsEngine.Robots.Custom
             public decimal Equity;
         }
 
+        private static string[] BuildStopperEodFlatSellChoices()
+        {
+            var choices = new string[25];
+            choices[0] = StopperEodFlatSellDisabled;
+            for (int hour = 0; hour < 24; hour++)
+            {
+                choices[hour + 1] = hour.ToString("00", CultureInfo.InvariantCulture) + ":00";
+            }
+
+            return choices;
+        }
+
         private void CreateStopperParameters()
         {
             _usePortfolioStopLoss = CreateParameter(
@@ -3381,12 +4113,16 @@ namespace OsEngine.Robots.Custom
                 false,
                 StopperTabName);
             _portfolioStopLossPercent = CreateParameter(
-                "Общепортфельный stop-loss (%)",
-                0.4m,
-                0.01m,
-                100m,
-                0.01m,
+                PortfolioStopLossPercentParamName,
+                StopperSlPercentDefault,
+                StopperSlPercentMin,
+                StopperSlPercentMax,
+                StopperSlPercentUiStep,
                 StopperTabName);
+            _stopperSlPercentIncButton = CreateParameterButton(StopperSlPercentIncButtonName, StopperTabName);
+            _stopperSlPercentIncButton.UserClickOnButtonEvent += StopperSlPercentIncButton_UserClickOnButtonEvent;
+            _stopperSlPercentDecButton = CreateParameterButton(StopperSlPercentDecButtonName, StopperTabName);
+            _stopperSlPercentDecButton.UserClickOnButtonEvent += StopperSlPercentDecButton_UserClickOnButtonEvent;
             _portfolioStopLossRubles = CreateParameter(
                 PortfolioStopLossRublesParamName,
                 0m,
@@ -3399,18 +4135,62 @@ namespace OsEngine.Robots.Custom
                 false,
                 StopperTabName);
             _portfolioTakeProfitPercent = CreateParameter(
-                "Общепортфельный take-profit (%)",
-                10m,
-                0.1m,
-                500m,
-                0.1m,
+                PortfolioTakeProfitPercentParamName,
+                StopperTpPercentDefault,
+                StopperTpPercentMin,
+                StopperTpPercentMax,
+                StopperTpPercentUiStep,
                 StopperTabName);
+            _stopperTpPercentIncButton = CreateParameterButton(StopperTpPercentIncButtonName, StopperTabName);
+            _stopperTpPercentIncButton.UserClickOnButtonEvent += StopperTpPercentIncButton_UserClickOnButtonEvent;
+            _stopperTpPercentDecButton = CreateParameterButton(StopperTpPercentDecButtonName, StopperTabName);
+            _stopperTpPercentDecButton.UserClickOnButtonEvent += StopperTpPercentDecButton_UserClickOnButtonEvent;
             _portfolioTakeProfitRubles = CreateParameter(
                 PortfolioTakeProfitRublesParamName,
                 0m,
                 0m,
                 1_000_000_000_000m,
                 0,
+                StopperTabName);
+            _usePortfolioPeakDrawdownStop = CreateParameter(
+                PortfolioPeakDrawdownEnabledParamName,
+                false,
+                StopperTabName);
+            _portfolioPeakDrawdownPercent = CreateParameter(
+                PortfolioPeakDrawdownPercentParamName,
+                PortfolioPeakDrawdownPercentDefault,
+                0.1m,
+                50m,
+                0.1m,
+                StopperTabName);
+            _portfolioPeakValue = CreateParameter(
+                PortfolioPeakValueParamName,
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                StopperTabName);
+            _pauseEntriesAfterPeakDrawdown = CreateParameter(
+                PauseEntriesAfterPeakDrawdownParamName,
+                true,
+                StopperTabName);
+            _useSignificantPeakTradingPause = CreateParameter(
+                SignificantPeakPauseEnabledParamName,
+                false,
+                StopperTabName);
+            _significantPeakAnnualPercentMin = CreateParameter(
+                SignificantPeakAnnualPercentParamName,
+                SignificantPeakAnnualPercentDefault,
+                1m,
+                10_000m,
+                1m,
+                StopperTabName);
+            _significantPeakPauseWidthMultiplier = CreateParameter(
+                SignificantPeakPauseWidthMultiplierParamName,
+                SignificantPeakPauseWidthMultiplierDefault,
+                0.1m,
+                100m,
+                0.1m,
                 StopperTabName);
             _stopperPostTriggerAfterStopLoss = CreateParameter(
                 StopperPostTriggerAfterStopLossParamName,
@@ -3452,11 +4232,173 @@ namespace OsEngine.Robots.Custom
                 StopperMonitorSecurityParamName,
                 "SBER",
                 StopperTabName);
+            _stopperEodFlatSellTime = CreateParameter(
+                StopperEodFlatSellParamName,
+                StopperEodFlatSellDisabled,
+                BuildStopperEodFlatSellChoices(),
+                StopperTabName);
             _updateStopperPortfolioBaselineButton = CreateParameterButton(
                 UpdateStopperPortfolioBaselineButtonName,
                 StopperTabName);
             _updateStopperPortfolioBaselineButton.UserClickOnButtonEvent +=
                 UpdateStopperPortfolioBaselineButton_UserClickOnButtonEvent;
+        }
+
+        private void StopperSlPercentIncButton_UserClickOnButtonEvent()
+        {
+            AdjustStopperPercentParameter(
+                PortfolioStopLossPercentParamName,
+                StopperSlPercentButtonDelta,
+                StopperSlPercentMin,
+                StopperSlPercentMax,
+                StopperSlPercentUiStep);
+        }
+
+        private void StopperSlPercentDecButton_UserClickOnButtonEvent()
+        {
+            AdjustStopperPercentParameter(
+                PortfolioStopLossPercentParamName,
+                -StopperSlPercentButtonDelta,
+                StopperSlPercentMin,
+                StopperSlPercentMax,
+                StopperSlPercentUiStep);
+        }
+
+        private void StopperTpPercentIncButton_UserClickOnButtonEvent()
+        {
+            AdjustStopperPercentParameter(
+                PortfolioTakeProfitPercentParamName,
+                StopperTpPercentButtonDelta,
+                StopperTpPercentMin,
+                StopperTpPercentMax,
+                StopperTpPercentUiStep);
+        }
+
+        private void StopperTpPercentDecButton_UserClickOnButtonEvent()
+        {
+            AdjustStopperPercentParameter(
+                PortfolioTakeProfitPercentParamName,
+                -StopperTpPercentButtonDelta,
+                StopperTpPercentMin,
+                StopperTpPercentMax,
+                StopperTpPercentUiStep);
+        }
+
+        private StrategyParameterDecimal ResolvePortfolioStopLossPercentParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioStopLossPercentParamName);
+            return (fromList as StrategyParameterDecimal) ?? _portfolioStopLossPercent;
+        }
+
+        private StrategyParameterDecimal ResolvePortfolioTakeProfitPercentParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioTakeProfitPercentParamName);
+            return (fromList as StrategyParameterDecimal) ?? _portfolioTakeProfitPercent;
+        }
+
+        private decimal ReadPortfolioStopLossPercentCurrent()
+        {
+            if (TryReadDecimalParameterFromOpenParameterGui(PortfolioStopLossPercentParamName, out decimal fromGui))
+            {
+                return fromGui;
+            }
+
+            return ResolvePortfolioStopLossPercentParameter()?.ValueDecimal ?? StopperSlPercentDefault;
+        }
+
+        private decimal ReadPortfolioTakeProfitPercentCurrent()
+        {
+            if (TryReadDecimalParameterFromOpenParameterGui(PortfolioTakeProfitPercentParamName, out decimal fromGui))
+            {
+                return fromGui;
+            }
+
+            return ResolvePortfolioTakeProfitPercentParameter()?.ValueDecimal ?? StopperTpPercentDefault;
+        }
+
+        private static decimal ClampAndRoundStopperPercent(decimal value, decimal min, decimal max, decimal step)
+        {
+            value = Math.Max(min, Math.Min(max, value));
+            if (step <= 0m)
+            {
+                return value;
+            }
+
+            return Math.Round(value / step, MidpointRounding.AwayFromZero) * step;
+        }
+
+        private void AdjustStopperPercentParameter(
+            string parameterName,
+            decimal delta,
+            decimal min,
+            decimal max,
+            decimal step)
+        {
+            try
+            {
+                ApplyPrefixesFromOpenParameterDialog();
+                StrategyParameterDecimal param = string.Equals(
+                    parameterName,
+                    PortfolioStopLossPercentParamName,
+                    StringComparison.Ordinal)
+                    ? ResolvePortfolioStopLossPercentParameter()
+                    : ResolvePortfolioTakeProfitPercentParameter();
+                if (param == null)
+                {
+                    return;
+                }
+
+                decimal current = string.Equals(parameterName, PortfolioStopLossPercentParamName, StringComparison.Ordinal)
+                    ? ReadPortfolioStopLossPercentCurrent()
+                    : ReadPortfolioTakeProfitPercentCurrent();
+                decimal next = ClampAndRoundStopperPercent(current + delta, min, max, step);
+                if (next == current)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + parameterName
+                        + ": "
+                        + current.ToString(CultureInfo.InvariantCulture)
+                        + " — изменение "
+                        + (delta >= 0m ? "+" : "")
+                        + delta.ToString(CultureInfo.InvariantCulture)
+                        + " не выполнено (граница "
+                        + min.ToString(CultureInfo.InvariantCulture)
+                        + "…"
+                        + max.ToString(CultureInfo.InvariantCulture)
+                        + ").",
+                        LogMessageType.User);
+                    return;
+                }
+
+                ApplyStopperPercentParameterValue(param, parameterName, next);
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | "
+                    + parameterName
+                    + ": "
+                    + current.ToString(CultureInfo.InvariantCulture)
+                    + " → "
+                    + next.ToString(CultureInfo.InvariantCulture)
+                    + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void ApplyStopperPercentParameterValue(
+            StrategyParameterDecimal param,
+            string parameterName,
+            decimal next)
+        {
+            SetStrategyParameterDecimalSilent(param, next);
+            TryApplyDecimalParameterToOpenParameterGui(parameterName, next);
+            SaveParametersWithoutLogicIndicatorResync();
+            RequestParameterGuiRepaintOnce();
         }
 
         private void UpdateStopperPortfolioBaselineButton_UserClickOnButtonEvent()
@@ -3477,9 +4419,17 @@ namespace OsEngine.Robots.Custom
             return TryGetRealPortfolioAmountForReference(tab);
         }
 
-        /// <summary>Equity для Stopper: monitored портфель, при отсутствии — сумма L1…L10.</summary>
+        /// <summary>
+        /// Equity для Stopper / просадки от пика: сумма L1…L10 (как на графиках логик в отчёте),
+        /// не депозит тестера — иначе пик ~10 000 не связан с кривой логики.
+        /// </summary>
         private decimal TryGetStopperMonitoredEquity(BotTabSimple tab)
         {
+            if (ShouldUseLogicPortfolioEquityForStopper())
+            {
+                return GetCombinedLogicPortfolioEquity();
+            }
+
             decimal? monitored = TryGetPortfolioValueForStopperBaselineFill(tab);
             if (monitored.HasValue && monitored.Value > 0m)
             {
@@ -3487,6 +4437,14 @@ namespace OsEngine.Robots.Custom
             }
 
             return GetCombinedLogicPortfolioEquity();
+        }
+
+        private bool ShouldUseLogicPortfolioEquityForStopper()
+        {
+            return IsPortfolioStopperActive()
+                || IsStopperVirtualTradingActive()
+                || (_useSignificantPeakTradingPause?.ValueBool ?? false)
+                || IsStopperEodFlatSellConfigured();
         }
 
         /// <summary>
@@ -3555,6 +4513,7 @@ namespace OsEngine.Robots.Custom
 
             DateTime candleTime = GetStopperReferenceCandleTime();
             ApplyStopperReferenceBaseline(baselineToSet, candleTime, saveParameters: false);
+            SetPortfolioPeakValue(baselineToSet);
             SaveParametersWithoutLogicIndicatorResync();
             RequestParameterGuiRepaintOnce();
 
@@ -3565,6 +4524,8 @@ namespace OsEngine.Robots.Custom
                 + baselineToSet.ToString(CultureInfo.InvariantCulture)
                 + ", текущая "
                 + currentEquity.ToString(CultureInfo.InvariantCulture)
+                + ", пик "
+                + (_portfolioPeakValue?.ValueDecimal ?? 0m).ToString(CultureInfo.InvariantCulture)
                 + ".";
             SendNewLogMessage(msg, LogMessageType.System);
             SendNewLogMessage(msg, LogMessageType.User);
@@ -3602,6 +4563,29 @@ namespace OsEngine.Robots.Custom
                     }
 
                     _logicPortfolios[posSlot].Unrealized += CalculateLogicPortfolioUnrealizedAbs(tab, pos);
+                }
+            }
+
+            if (IsStopperVirtualTradingActive())
+            {
+                foreach (KeyValuePair<string, StopperVirtualPosition> kvp in _stopperVirtualPositions)
+                {
+                    StopperVirtualPosition virtualPosition = kvp.Value;
+                    if (virtualPosition == null
+                        || virtualPosition.LogicSlot < 1
+                        || virtualPosition.LogicSlot > LogicSlotCount)
+                    {
+                        continue;
+                    }
+
+                    BotTabSimple virtualTab = TryFindScreenerTabByPortfolioKey(virtualPosition.TabKey);
+                    if (virtualTab == null)
+                    {
+                        continue;
+                    }
+
+                    _logicPortfolios[virtualPosition.LogicSlot].Unrealized
+                        += CalculateStopperVirtualUnrealizedAbs(virtualTab, virtualPosition);
                 }
             }
         }
@@ -3665,24 +4649,171 @@ namespace OsEngine.Robots.Custom
             return true;
         }
 
+        private void SetPortfolioPeakValue(decimal value)
+        {
+            if (_portfolioPeakValue == null)
+            {
+                return;
+            }
+
+            if (value < 0m)
+            {
+                value = 0m;
+            }
+
+            if (_portfolioPeakValue.ValueDecimal == value)
+            {
+                return;
+            }
+
+            SetStrategyParameterDecimalSilent(_portfolioPeakValue, value);
+        }
+
+        private void UpdatePortfolioPeakTracking(decimal currentEquity)
+        {
+            if (_usePortfolioPeakDrawdownStop == null || !_usePortfolioPeakDrawdownStop.ValueBool)
+            {
+                return;
+            }
+
+            decimal peak = _portfolioPeakValue?.ValueDecimal ?? 0m;
+            if (peak > 0m && IsStaleTesterPeakVersusLogicEquity(peak, currentEquity))
+            {
+                peak = 0m;
+                SetPortfolioPeakValue(0m);
+            }
+
+            if (peak <= 0m || currentEquity > peak)
+            {
+                SetPortfolioPeakValue(Math.Max(0m, currentEquity));
+            }
+        }
+
+        /// <summary>Старый «Пик портфеля» от депозита тестера (~10k) не совместим с equity L1…L10.</summary>
+        private static bool IsStaleTesterPeakVersusLogicEquity(decimal peak, decimal logicEquity)
+        {
+            if (peak < 1000m)
+            {
+                return false;
+            }
+
+            if (logicEquity <= 0m)
+            {
+                return true;
+            }
+
+            return peak > logicEquity * 3m;
+        }
+
+        private bool TryMeasurePeakRallyWidth(out TimeSpan width, out DateTime troughTime)
+        {
+            width = TimeSpan.Zero;
+            troughTime = DateTime.MinValue;
+            if (_stopperEquityHistory.Count < 2)
+            {
+                return false;
+            }
+
+            int peakIdx = _stopperEquityHistory.Count - 1;
+            decimal peakEquity = _stopperEquityHistory[peakIdx].Equity;
+            int troughIdx = peakIdx;
+            for (int j = peakIdx - 1; j >= 0; j--)
+            {
+                if (_stopperEquityHistory[j].Equity < _stopperEquityHistory[troughIdx].Equity)
+                {
+                    troughIdx = j;
+                }
+                else if (_stopperEquityHistory[j].Equity > _stopperEquityHistory[troughIdx].Equity)
+                {
+                    break;
+                }
+            }
+
+            troughTime = _stopperEquityHistory[troughIdx].CandleTime;
+            DateTime peakTime = _stopperEquityHistory[peakIdx].CandleTime;
+            width = peakTime - troughTime;
+            if (width < TimeSpan.Zero)
+            {
+                width = TimeSpan.Zero;
+            }
+
+            return peakEquity > _stopperEquityHistory[troughIdx].Equity;
+        }
+
+        private void ApplyPeakDrawdownEntryPause(DateTime candleTime)
+        {
+            if (_pauseEntriesAfterPeakDrawdown == null || !_pauseEntriesAfterPeakDrawdown.ValueBool)
+            {
+                return;
+            }
+
+            if (!TryMeasurePeakRallyWidth(out TimeSpan peakWidth, out _))
+            {
+                peakWidth = TimeSpan.FromHours(1);
+            }
+
+            decimal multiplier = _significantPeakPauseWidthMultiplier?.ValueDecimal ?? SignificantPeakPauseWidthMultiplierDefault;
+            if (multiplier < 0.1m)
+            {
+                multiplier = 0.1m;
+            }
+
+            long pauseTicks = (long)(peakWidth.Ticks * (double)multiplier);
+            if (pauseTicks <= 0)
+            {
+                pauseTicks = peakWidth.Ticks > 0 ? peakWidth.Ticks : TimeSpan.FromHours(1).Ticks;
+            }
+
+            DateTime pauseUntil = candleTime + TimeSpan.FromTicks(pauseTicks);
+            if (pauseUntil > _peakDrawdownPauseUntil)
+            {
+                _peakDrawdownPauseUntil = pauseUntil;
+                _loggedPeakDrawdownPauseUntil = DateTime.MinValue;
+            }
+        }
+
         /// <summary>
-        /// Обновляет историю equity и проверяет общепортфельный SL/TP относительно lookback.
+        /// Обновляет историю equity и проверяет просадку от пика, общепортфельный SL/TP.
         /// </summary>
         /// <returns>true, если сработала защита (закрыты позиции).</returns>
         private bool TryManagePortfolioStopperProtection(BotTabSimple tab, DateTime candleTime)
         {
             decimal currentEquity = TryGetStopperMonitoredEquity(tab);
-            if (currentEquity <= 0m)
+            bool peakDrawdownEnabled = _usePortfolioPeakDrawdownStop?.ValueBool ?? false;
+            bool slTpEnabled = _usePortfolioStopLoss.ValueBool || _usePortfolioTakeProfit.ValueBool;
+
+            if (!peakDrawdownEnabled && !slTpEnabled)
             {
                 return false;
             }
 
-            if (!_usePortfolioStopLoss.ValueBool && !_usePortfolioTakeProfit.ValueBool)
+            if (peakDrawdownEnabled)
+            {
+                UpdatePortfolioPeakTracking(currentEquity);
+            }
+
+            if (!peakDrawdownEnabled && currentEquity <= 0m)
             {
                 return false;
             }
 
             if (candleTime == _stopperLastProtectionCandleTime)
+            {
+                return false;
+            }
+
+            if (peakDrawdownEnabled
+                && TryEvaluatePortfolioPeakDrawdownTrigger(currentEquity, out decimal peak, out decimal floor))
+            {
+                return ExecutePortfolioPeakDrawdownTrigger(tab, candleTime, peak, currentEquity, floor);
+            }
+
+            if (!slTpEnabled)
+            {
+                return false;
+            }
+
+            if (currentEquity <= 0m)
             {
                 return false;
             }
@@ -3710,7 +4841,7 @@ namespace OsEngine.Robots.Custom
                     isTakeProfit: false,
                     referenceEquity,
                     currentEquity,
-                    _portfolioStopLossPercent.ValueDecimal,
+                    ReadPortfolioStopLossPercentCurrent(),
                     _portfolioStopLossRubles.ValueDecimal,
                     slTriggerLevel,
                     slThresholdLabel);
@@ -3729,13 +4860,560 @@ namespace OsEngine.Robots.Custom
                     isTakeProfit: true,
                     referenceEquity,
                     currentEquity,
-                    _portfolioTakeProfitPercent.ValueDecimal,
+                    ReadPortfolioTakeProfitPercentCurrent(),
                     _portfolioTakeProfitRubles.ValueDecimal,
                     tpTriggerLevel,
                     tpThresholdLabel);
             }
 
             return false;
+        }
+
+        private bool TryEvaluatePortfolioPeakDrawdownTrigger(
+            decimal currentEquity,
+            out decimal peak,
+            out decimal triggerLevel)
+        {
+            peak = 0m;
+            triggerLevel = 0m;
+            decimal drawdownPercent = _portfolioPeakDrawdownPercent?.ValueDecimal ?? 0m;
+            if (drawdownPercent <= 0m)
+            {
+                return false;
+            }
+
+            peak = _portfolioPeakValue?.ValueDecimal ?? 0m;
+            if (peak <= 0m)
+            {
+                return false;
+            }
+
+            triggerLevel = peak * (1m - drawdownPercent / 100m);
+            return currentEquity <= triggerLevel;
+        }
+
+        private bool ExecutePortfolioPeakDrawdownTrigger(
+            BotTabSimple tab,
+            DateTime candleTime,
+            decimal peak,
+            decimal currentEquity,
+            decimal triggerLevel)
+        {
+            _stopperLastProtectionCandleTime = candleTime;
+            decimal drawdownPercent = _portfolioPeakDrawdownPercent?.ValueDecimal ?? PortfolioPeakDrawdownPercentDefault;
+
+            CloseAllBotPositions(SignalPortfolioStopperPeakSl);
+            CloseAllStopperVirtualPositions("_PeakSl");
+            MaybeSaveLogicPortfolios(force: true);
+
+            decimal postCloseEquity = TryGetStopperMonitoredEquity(tab);
+            if (postCloseEquity <= 0m)
+            {
+                RecalculateAllLogicPortfolioUnrealized();
+                postCloseEquity = GetCombinedLogicPortfolioEquity();
+            }
+
+            SetPortfolioPeakValue(postCloseEquity > 0m ? postCloseEquity : currentEquity);
+            ApplyPeakDrawdownEntryPause(candleTime);
+
+            string postTriggerAction = GetStopperPostTriggerAction(isTakeProfit: false);
+            bool stopFullyPreview = IsStopperPostTriggerStopFully(postTriggerAction);
+            RecordHtmlReportPeakDrawdownTrigger(
+                candleTime,
+                peak,
+                currentEquity,
+                drawdownPercent,
+                triggerLevel,
+                postCloseEquity,
+                stopFullyPreview);
+
+            MaybeWriteHtmlReport(force: true);
+
+            bool stopFully = IsStopperPostTriggerStopFully(postTriggerAction);
+            bool pauseAndResume = IsStopperPostTriggerPauseAndResume(postTriggerAction);
+            if (stopFully)
+            {
+                TrySetRegimeOff("Stopper просадка от пика («" + StopperPostTriggerStopFully + "»)");
+            }
+            else if (pauseAndResume)
+            {
+                EnterStopperVirtualTrading(currentEquity, candleTime, isTakeProfit: false);
+            }
+
+            SaveParametersWithoutLogicIndicatorResync();
+
+            string msg = NameStrategyUniq
+                + " | Stopper: просадка от пика ("
+                + drawdownPercent.ToString(CultureInfo.InvariantCulture)
+                + "%) | пик="
+                + peak.ToString(CultureInfo.InvariantCulture)
+                + ", equity="
+                + currentEquity.ToString(CultureInfo.InvariantCulture)
+                + ", порог="
+                + triggerLevel.ToString(CultureInfo.InvariantCulture)
+                + ", ref→"
+                + postCloseEquity.ToString(CultureInfo.InvariantCulture);
+            if (_peakDrawdownPauseUntil != DateTime.MinValue)
+            {
+                msg += ", пауза входов до "
+                    + _peakDrawdownPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            }
+
+            msg += stopFully
+                ? ", Regime=Off"
+                : pauseAndResume
+                    ? ", фейк-торговля L1…L10"
+                    : ", Regime без изменений";
+            msg += ".";
+            SendNewLogMessage(msg, LogMessageType.System);
+            SendNewLogMessage(msg, LogMessageType.User);
+            return true;
+        }
+
+        /// <summary>
+        /// Ежедневное «продать всё» по расписанию: первая общая свеча после выбранного часа, не чаще 1 раза в сутки.
+        /// Regime не трогаем.
+        /// </summary>
+        private bool TryExecuteStopperEodFlatSell(BotTabSimple tab, DateTime candleTime)
+        {
+            string choice = _stopperEodFlatSellTime?.ValueString ?? StopperEodFlatSellDisabled;
+            if (string.IsNullOrWhiteSpace(choice)
+                || string.Equals(choice.Trim(), StopperEodFlatSellDisabled, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!TryParseStopperEodFlatScheduledTime(choice, out TimeSpan scheduledTime))
+            {
+                return false;
+            }
+
+            if (candleTime.TimeOfDay < scheduledTime)
+            {
+                return false;
+            }
+
+            DateTime tradingDay = candleTime.Date;
+            if (_stopperEodFlatLastFiredTradingDay == tradingDay)
+            {
+                return false;
+            }
+
+            if (CountScreenerOpenPositions() <= 0)
+            {
+                return false;
+            }
+
+            _stopperEodFlatLastFiredTradingDay = tradingDay;
+            decimal equityBefore = TryGetStopperMonitoredEquity(tab);
+            if (equityBefore <= 0m)
+            {
+                RecalculateAllLogicPortfolioUnrealized();
+                equityBefore = GetCombinedLogicPortfolioEquity();
+            }
+
+            CloseAllBotPositions(SignalPortfolioStopperEodFlat);
+            CloseAllStopperVirtualPositions("_EodFlat");
+            MaybeSaveLogicPortfolios(force: true);
+            RecordHtmlReportEodFlatSell(candleTime, choice.Trim(), equityBefore);
+            LogStopperEodFlatBuyBlockedOnce(candleTime);
+
+            string msg = NameStrategyUniq
+                + " | Stopper: ежедневное «продать всё» после "
+                + choice.Trim()
+                + " (свеча "
+                + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + ") — закрытие всех позиций; новые входы запрещены до следующего дня; Regime без изменений.";
+            SendNewLogMessage(msg, LogMessageType.System);
+            SendNewLogMessage(msg, LogMessageType.User);
+            return true;
+        }
+
+        private static bool TryParseStopperEodFlatScheduledTime(string choice, out TimeSpan scheduledTime)
+        {
+            scheduledTime = TimeSpan.Zero;
+            if (string.IsNullOrWhiteSpace(choice))
+            {
+                return false;
+            }
+
+            string trimmed = choice.Trim();
+            if (DateTime.TryParseExact(
+                    trimmed,
+                    new[] { "H:mm", "HH:mm", "H:mm:ss", "HH:mm:ss" },
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateTime parsed))
+            {
+                scheduledTime = parsed.TimeOfDay;
+                return true;
+            }
+
+            if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int hourOnly)
+                && hourOnly >= 0
+                && hourOnly <= 23)
+            {
+                scheduledTime = new TimeSpan(hourOnly, 0, 0);
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsStopperEodFlatSellConfigured()
+        {
+            string choice = _stopperEodFlatSellTime?.ValueString ?? StopperEodFlatSellDisabled;
+            return !string.IsNullOrWhiteSpace(choice)
+                && !string.Equals(choice.Trim(), StopperEodFlatSellDisabled, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>После срабатывания EOD flat в этот календарный день новые входы запрещены до следующих суток.</summary>
+        private bool IsStopperEodFlatBuyBlocked(DateTime candleTime)
+        {
+            if (!IsStopperEodFlatSellConfigured() || _stopperEodFlatLastFiredTradingDay == DateTime.MinValue)
+            {
+                return false;
+            }
+
+            return _stopperEodFlatLastFiredTradingDay == candleTime.Date;
+        }
+
+        /// <summary>Активна пауза новых входов после значительного пика equity (Stopper).</summary>
+        private bool IsSignificantPeakTradingPaused(DateTime candleTime)
+        {
+            if (_useSignificantPeakTradingPause == null || !_useSignificantPeakTradingPause.ValueBool)
+            {
+                return false;
+            }
+
+            return _significantPeakPauseUntil != DateTime.MinValue && candleTime < _significantPeakPauseUntil;
+        }
+
+        private bool IsPeakDrawdownTradingPaused(DateTime candleTime)
+        {
+            return _peakDrawdownPauseUntil != DateTime.MinValue && candleTime < _peakDrawdownPauseUntil;
+        }
+
+        private bool IsStopperNewEntryBlocked(DateTime candleTime)
+        {
+            return IsStopperEodFlatBuyBlocked(candleTime)
+                || IsSignificantPeakTradingPaused(candleTime)
+                || IsPeakDrawdownTradingPaused(candleTime);
+        }
+
+        /// <summary>
+        /// На закрытой свече: локальный пик equity (подтверждён следующей свечой) → годовая доходность впадина→пик.
+        /// </summary>
+        private void TryUpdateSignificantPeakPause(DateTime candleTime)
+        {
+            if (_useSignificantPeakTradingPause == null || !_useSignificantPeakTradingPause.ValueBool)
+            {
+                return;
+            }
+
+            if (_stopperEquityHistory.Count < 3)
+            {
+                return;
+            }
+
+            int peakIdx = _stopperEquityHistory.Count - 2;
+            decimal peakEquity = _stopperEquityHistory[peakIdx].Equity;
+            decimal prevEquity = _stopperEquityHistory[peakIdx - 1].Equity;
+            decimal nextEquity = _stopperEquityHistory[peakIdx + 1].Equity;
+            if (!(peakEquity >= prevEquity && peakEquity > nextEquity))
+            {
+                return;
+            }
+
+            DateTime peakTime = _stopperEquityHistory[peakIdx].CandleTime;
+            if (peakTime <= _significantPeakLastEvaluatedPeakTime)
+            {
+                return;
+            }
+
+            _significantPeakLastEvaluatedPeakTime = peakTime;
+
+            int troughIdx = peakIdx;
+            for (int j = peakIdx - 1; j >= 0; j--)
+            {
+                if (_stopperEquityHistory[j].Equity < _stopperEquityHistory[troughIdx].Equity)
+                {
+                    troughIdx = j;
+                }
+                else if (_stopperEquityHistory[j].Equity > _stopperEquityHistory[troughIdx].Equity)
+                {
+                    break;
+                }
+            }
+
+            decimal troughEquity = _stopperEquityHistory[troughIdx].Equity;
+            if (troughEquity <= 0m || peakEquity <= troughEquity)
+            {
+                return;
+            }
+
+            DateTime troughTime = _stopperEquityHistory[troughIdx].CandleTime;
+            if (!TryComputeSignificantPeakAnnualPercent(
+                    troughEquity,
+                    peakEquity,
+                    troughTime,
+                    peakTime,
+                    out double annualPercent))
+            {
+                return;
+            }
+
+            decimal threshold = _significantPeakAnnualPercentMin?.ValueDecimal ?? SignificantPeakAnnualPercentDefault;
+            if (annualPercent < (double)threshold)
+            {
+                return;
+            }
+
+            decimal multiplier = _significantPeakPauseWidthMultiplier?.ValueDecimal ?? SignificantPeakPauseWidthMultiplierDefault;
+            if (multiplier < 0.1m)
+            {
+                multiplier = 0.1m;
+            }
+
+            TimeSpan peakWidth = peakTime - troughTime;
+            if (peakWidth < TimeSpan.Zero)
+            {
+                peakWidth = TimeSpan.Zero;
+            }
+
+            long pauseTicks = (long)(peakWidth.Ticks * (double)multiplier);
+            if (pauseTicks <= 0)
+            {
+                pauseTicks = peakWidth.Ticks > 0 ? peakWidth.Ticks : TimeSpan.FromHours(1).Ticks;
+            }
+
+            DateTime pauseUntil = peakTime + TimeSpan.FromTicks(pauseTicks);
+            if (pauseUntil <= _significantPeakPauseUntil && candleTime < _significantPeakPauseUntil)
+            {
+                return;
+            }
+
+            if (pauseUntil > _significantPeakPauseUntil)
+            {
+                _significantPeakPauseUntil = pauseUntil;
+            }
+
+            _loggedSignificantPeakPauseUntil = DateTime.MinValue;
+            RecordHtmlReportSignificantPeakPause(candleTime, troughEquity, peakEquity, annualPercent, peakWidth, _significantPeakPauseUntil);
+
+            string msg = NameStrategyUniq
+                + " | Stopper: значительный пик equity — ~"
+                + FormatSignificantPeakAnnualPercentForDisplay(annualPercent)
+                + "% годовых (порог "
+                + threshold.ToString(CultureInfo.InvariantCulture)
+                + "%), впадина "
+                + troughEquity.ToString(CultureInfo.InvariantCulture)
+                + " → пик "
+                + peakEquity.ToString(CultureInfo.InvariantCulture)
+                + ", ширина "
+                + peakWidth.ToString(@"d\.hh\:mm", CultureInfo.InvariantCulture)
+                + ", пауза входов до "
+                + _significantPeakPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + " (×"
+                + multiplier.ToString(CultureInfo.InvariantCulture)
+                + "); выходы по Cl/SL/TP без изменений.";
+            SendNewLogMessage(msg, LogMessageType.System);
+            SendNewLogMessage(msg, LogMessageType.User);
+        }
+
+        /// <summary>Годовая доходность впадина→пик; без cast в decimal (избегаем OverflowException).</summary>
+        private static bool TryComputeSignificantPeakAnnualPercent(
+            decimal troughEquity,
+            decimal peakEquity,
+            DateTime troughTime,
+            DateTime peakTime,
+            out double annualPercent)
+        {
+            annualPercent = 0.0;
+            if (troughEquity <= 0m || peakEquity <= troughEquity)
+            {
+                return false;
+            }
+
+            double totalReturn = (double)((peakEquity - troughEquity) / troughEquity);
+            if (double.IsNaN(totalReturn) || double.IsInfinity(totalReturn) || totalReturn <= -1.0)
+            {
+                return false;
+            }
+
+            double days = Math.Max((peakTime - troughTime).TotalDays, 1.0 / 24.0);
+            double exponent = 365.0 / days;
+            if (exponent > 10000.0)
+            {
+                exponent = 10000.0;
+            }
+
+            double growthFactor = Math.Pow(1.0 + totalReturn, exponent);
+            if (double.IsNaN(growthFactor) || double.IsNegativeInfinity(growthFactor))
+            {
+                return false;
+            }
+
+            if (double.IsPositiveInfinity(growthFactor))
+            {
+                annualPercent = double.PositiveInfinity;
+                return true;
+            }
+
+            annualPercent = (growthFactor - 1.0) * 100.0;
+            return !double.IsNaN(annualPercent) && !double.IsNegativeInfinity(annualPercent);
+        }
+
+        private static string FormatSignificantPeakAnnualPercentForDisplay(double annualPercent)
+        {
+            if (double.IsPositiveInfinity(annualPercent) || annualPercent > 1_000_000_000_000.0)
+            {
+                return ">1e12";
+            }
+
+            return annualPercent.ToString("F1", CultureInfo.InvariantCulture);
+        }
+
+        private void LogSignificantPeakPauseBlockedOnce(DateTime candleTime)
+        {
+            if (!IsSignificantPeakTradingPaused(candleTime)
+                || _loggedSignificantPeakPauseUntil == _significantPeakPauseUntil)
+            {
+                return;
+            }
+
+            _loggedSignificantPeakPauseUntil = _significantPeakPauseUntil;
+            string msg = NameStrategyUniq
+                + " | Stopper: пауза после значительного пика — новые входы запрещены до "
+                + _significantPeakPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + " (свеча "
+                + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + ").";
+            SendNewLogMessage(msg, LogMessageType.System);
+        }
+
+        private void LogPeakDrawdownPauseBlockedOnce(DateTime candleTime)
+        {
+            if (!IsPeakDrawdownTradingPaused(candleTime)
+                || _loggedPeakDrawdownPauseUntil == _peakDrawdownPauseUntil)
+            {
+                return;
+            }
+
+            _loggedPeakDrawdownPauseUntil = _peakDrawdownPauseUntil;
+            string msg = NameStrategyUniq
+                + " | Stopper: пауза после просадки от пика — новые входы запрещены до "
+                + _peakDrawdownPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + " (свеча "
+                + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + ").";
+            SendNewLogMessage(msg, LogMessageType.System);
+        }
+
+        private void LogStopperEodFlatBuyBlockedOnce(DateTime candleTime)
+        {
+            if (_loggedStopperEodFlatBuyBlockedDay == candleTime.Date)
+            {
+                return;
+            }
+
+            _loggedStopperEodFlatBuyBlockedDay = candleTime.Date;
+            string msg = NameStrategyUniq
+                + " | Stopper EOD: после продажи по времени новые входы запрещены до следующего календарного дня (свеча "
+                + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                + ").";
+            SendNewLogMessage(msg, LogMessageType.System);
+        }
+
+        /// <summary>Закрывает все виртуальные позиции Stopper «пауза» (тестер/лайв/эмулятор).</summary>
+        private void CloseAllStopperVirtualPositions(string closeSignalSuffix)
+        {
+            if (_stopperVirtualPositions.Count == 0)
+            {
+                return;
+            }
+
+            var snapshot = new List<KeyValuePair<string, StopperVirtualPosition>>(_stopperVirtualPositions);
+            string suffix = string.IsNullOrEmpty(closeSignalSuffix) ? "_Close" : closeSignalSuffix;
+
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                StopperVirtualPosition virtualPosition = snapshot[i].Value;
+                if (virtualPosition == null)
+                {
+                    continue;
+                }
+
+                BotTabSimple tab = TryFindScreenerTabByPortfolioKey(virtualPosition.TabKey);
+                CloseStopperVirtualPosition(tab, virtualPosition, virtualPosition.LogicSlot, suffix);
+            }
+        }
+
+        private void RecordHtmlReportEodFlatSell(DateTime candleTime, string scheduledTime, decimal equityBefore)
+        {
+            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
+            {
+                return;
+            }
+
+            lock (_htmlReportRuntimeLock)
+            {
+                TouchHtmlReportExecutionMode(null);
+                HtmlReportExecutionMode mode = ResolveHtmlReportExecutionMode(null);
+                decimal postCloseEquity = TryGetStopperMonitoredEquity(TryGetPortfolioMonitoringReferenceTab());
+                if (postCloseEquity <= 0m)
+                {
+                    RecalculateAllLogicPortfolioUnrealized();
+                    postCloseEquity = GetCombinedLogicPortfolioEquity();
+                }
+
+                string summary = "EOD flat после "
+                    + scheduledTime
+                    + " | equity "
+                    + equityBefore.ToString(CultureInfo.InvariantCulture)
+                    + " → "
+                    + postCloseEquity.ToString(CultureInfo.InvariantCulture)
+                    + ", входы до следующего дня запрещены, Regime без изменений";
+
+                _htmlReportRuntime.StopperEvents.Add(new HtmlReportStopperEvent
+                {
+                    CandleTime = candleTime,
+                    EventTimeUtc = DateTime.UtcNow,
+                    Kind = "portfolio_eod_flat",
+                    ReferenceEquity = equityBefore,
+                    CurrentEquity = equityBefore,
+                    ThresholdPercent = 0m,
+                    TriggerLevel = 0m,
+                    PostCloseEquity = postCloseEquity,
+                    RegimeStopped = false,
+                    ExecutionModeId = mode.ModeId,
+                    ExecutionModeLabel = mode.ModeLabel,
+                    Summary = summary
+                });
+
+                if (_htmlReportRuntime.StopperEvents.Count > HtmlReportStopperEventsCap)
+                {
+                    int remove = _htmlReportRuntime.StopperEvents.Count - HtmlReportStopperEventsCap;
+                    _htmlReportRuntime.StopperEvents.RemoveRange(0, remove);
+                }
+
+                _htmlReportRuntime.RecentEvents.Add(new HtmlReportRecentEvent
+                {
+                    Seq = 0,
+                    CandleTime = candleTime,
+                    EventTimeUtc = DateTime.UtcNow,
+                    Event = "portfolio_eod_flat",
+                    TabKey = "—",
+                    LogicSlot = 0,
+                    Delta = postCloseEquity - equityBefore,
+                    EquityTotal = postCloseEquity,
+                    Note = summary,
+                    ExecutionModeId = mode.ModeId,
+                    ExecutionModeLabel = mode.ModeLabel
+                });
+                TrimHtmlReportRecentEvents(_htmlReportRuntime.RecentEvents);
+                _htmlReportDirty = true;
+            }
         }
 
         private bool TryEvaluatePortfolioStopLossTrigger(
@@ -3747,7 +5425,7 @@ namespace OsEngine.Robots.Custom
             triggerLevel = referenceEquity;
             thresholdLabel = "";
 
-            decimal pct = _portfolioStopLossPercent?.ValueDecimal ?? 0m;
+            decimal pct = ReadPortfolioStopLossPercentCurrent();
             decimal rub = _portfolioStopLossRubles?.ValueDecimal ?? 0m;
             if (pct <= 0m && rub <= 0m)
             {
@@ -3792,7 +5470,7 @@ namespace OsEngine.Robots.Custom
             triggerLevel = referenceEquity;
             thresholdLabel = "";
 
-            decimal pct = _portfolioTakeProfitPercent?.ValueDecimal ?? 0m;
+            decimal pct = ReadPortfolioTakeProfitPercentCurrent();
             decimal rub = _portfolioTakeProfitRubles?.ValueDecimal ?? 0m;
             if (pct <= 0m && rub <= 0m)
             {
@@ -4636,6 +6314,7 @@ namespace OsEngine.Robots.Custom
             decimal currentEquity = TryGetStopperMonitoredEquity(tab);
             SetStrategyParameterDecimalSilent(_portfolioStopperCurrentEquity, currentEquity);
             AppendStopperEquitySnapshot(candleTime, currentEquity);
+            TryUpdateSignificantPeakPause(candleTime);
 
             if (!_stopperReferenceBaselineLocked)
             {
@@ -4732,12 +6411,23 @@ namespace OsEngine.Robots.Custom
                     TryResumeStopperVirtualTrading(refTab, candleTime);
                 }
 
-                if (IsPortfolioStopperActive() && !IsStopperVirtualTradingActive())
+                if (TryExecuteStopperEodFlatSell(refTab, candleTime))
+                {
+                    MaybeRefreshReferenceAnnualYieldAfterAggregatedCandle(
+                        candleTime,
+                        refTab,
+                        force: true);
+                    RecordHtmlReportEquitySnapshot(candleTime);
+                    MaybeWriteHtmlReport(force: true);
+                }
+
+                if (ShouldRefreshStopperEquityOnAggregatedCandle())
                 {
                     if (!IsStopMonitorScreenerActive())
                     {
                         RefreshStopperTechEquityDisplayAggregated(refTab, candleTime);
-                        if (TryManagePortfolioStopperProtection(refTab, candleTime))
+                        if (IsPortfolioStopperActive()
+                            && TryManagePortfolioStopperProtection(refTab, candleTime))
                         {
                             MaybeRefreshReferenceAnnualYieldAfterAggregatedCandle(
                                 candleTime,
@@ -4798,6 +6488,7 @@ namespace OsEngine.Robots.Custom
             _stopperLastProtectionCandleTime = candleTime;
             string closeSignal = isTakeProfit ? SignalPortfolioStopperTp : SignalPortfolioStopperSl;
             CloseAllBotPositions(closeSignal);
+            CloseAllStopperVirtualPositions(isTakeProfit ? "_TP" : "_SL");
             MaybeSaveLogicPortfolios(force: true);
 
             string postTriggerAction = GetStopperPostTriggerAction(isTakeProfit);
@@ -4953,7 +6644,15 @@ namespace OsEngine.Robots.Custom
         /// <summary>Нужен ли пересчёт L1…L10 на свече (металогика, stopper или справочный % годовых).</summary>
         private bool NeedsLogicPortfolioTrackingOnCandle()
         {
-            if (_metaLogicEnabled.ValueBool || IsPortfolioStopperActive() || IsStopperVirtualTradingActive())
+            if (_metaLogicEnabled.ValueBool
+                || IsPortfolioStopperActive()
+                || IsStopperVirtualTradingActive()
+                || (_useSignificantPeakTradingPause?.ValueBool ?? false))
+            {
+                return true;
+            }
+
+            if (IsStopperEodFlatSellConfigured())
             {
                 return true;
             }
@@ -4963,7 +6662,17 @@ namespace OsEngine.Robots.Custom
 
         private bool IsPortfolioStopperActive()
         {
-            return _usePortfolioStopLoss.ValueBool || _usePortfolioTakeProfit.ValueBool;
+            return _usePortfolioStopLoss.ValueBool
+                || _usePortfolioTakeProfit.ValueBool
+                || (_usePortfolioPeakDrawdownStop?.ValueBool ?? false);
+        }
+
+        /// <summary>Equity Stopper / пауза после пика / фейк-торговля — на общей свече скринера.</summary>
+        private bool ShouldRefreshStopperEquityOnAggregatedCandle()
+        {
+            return IsPortfolioStopperActive()
+                || IsStopperVirtualTradingActive()
+                || (_useSignificantPeakTradingPause?.ValueBool ?? false);
         }
 
         /// <summary>
@@ -5047,12 +6756,12 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                if (!LogicExpressionEvaluator.EvaluateClose(
+                if (!EvaluateLogicCloseSignal(
                         runtime.ParseResult.Root,
                         tab,
                         candles,
                         candleIndex,
-                        FindIndicatorForAtom))
+                        slotIndex))
                 {
                     continue;
                 }
@@ -5060,41 +6769,53 @@ namespace OsEngine.Robots.Custom
                 TryCloseLogicPosition(tab, openPos, slotIndex);
             }
 
-            var entryCandidates = new List<int>();
-            for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
+            DateTime candleTime = candles[candleIndex].TimeStart;
+            bool entryBlocked = IsStopperNewEntryBlocked(candleTime);
+            if (entryBlocked)
             {
-                LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-                if (runtime == null || !runtime.IsActive || runtime.ParseResult?.Root == null)
-                {
-                    continue;
-                }
+                LogStopperEodFlatBuyBlockedOnce(candleTime);
+                LogSignificantPeakPauseBlockedOnce(candleTime);
+                LogPeakDrawdownPauseBlockedOnce(candleTime);
+            }
 
-                if (FindOpenLogicPosition(tab, slotIndex) != null)
+            var entryCandidates = new List<int>();
+            if (!entryBlocked)
+            {
+                for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
                 {
-                    continue;
-                }
+                    LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
+                    if (runtime == null || !runtime.IsActive || runtime.ParseResult?.Root == null)
+                    {
+                        continue;
+                    }
 
-                if (HasStopperVirtualPosition(tab, slotIndex))
-                {
-                    continue;
-                }
+                    if (FindOpenLogicPosition(tab, slotIndex) != null)
+                    {
+                        continue;
+                    }
 
-                if (!LogicExpressionEvaluator.EvaluateOpen(
-                        runtime.ParseResult.Root,
-                        tab,
-                        candles,
-                        candleIndex,
-                        FindIndicatorForAtom))
-                {
-                    continue;
-                }
+                    if (HasStopperVirtualPosition(tab, slotIndex))
+                    {
+                        continue;
+                    }
 
-                if (!AllowsRegimeEntry(slotIndex, runtime, tab, candles, candleIndex))
-                {
-                    continue;
-                }
+                    if (!EvaluateLogicOpenSignal(
+                            runtime.ParseResult.Root,
+                            tab,
+                            candles,
+                            candleIndex,
+                            slotIndex))
+                    {
+                        continue;
+                    }
 
-                entryCandidates.Add(slotIndex);
+                    if (!AllowsRegimeEntry(slotIndex, runtime, tab, candles, candleIndex))
+                    {
+                        continue;
+                    }
+
+                    entryCandidates.Add(slotIndex);
+                }
             }
 
             if (entryCandidates.Count == 0)
@@ -5237,10 +6958,10 @@ namespace OsEngine.Robots.Custom
                     PnlSmaLast = pnlLast,
                     AbsWeightSharePct = entriesToOpen > 0 ? 100m / entriesToOpen : 0m,
                     Volume = vol,
-                    Side = runtime.EntrySide.ToString(),
+                    Side = ResolveLogicOpenSide(runtime).ToString(),
                     Opened = true
                 });
-                TryOpenLogicPosition(tab, slotIndex, vol, runtime.EntrySide);
+                TryOpenLogicPosition(tab, slotIndex, vol, ResolveLogicOpenSide(runtime));
                 plainOpened++;
             }
 
@@ -5442,6 +7163,14 @@ namespace OsEngine.Robots.Custom
         private void TryOpenLogicPosition(BotTabSimple tab, int logicSlotIndex, decimal volume, Side entrySide)
         {
             if (tab == null || volume <= 0m)
+            {
+                return;
+            }
+
+            DateTime candleTime = tab.CandlesAll != null && tab.CandlesAll.Count > 0
+                ? tab.CandlesAll[tab.CandlesAll.Count - 1].TimeStart
+                : DateTime.Now;
+            if (IsStopperNewEntryBlocked(candleTime))
             {
                 return;
             }
@@ -5723,7 +7452,7 @@ namespace OsEngine.Robots.Custom
             }
 
             string inversionHint = _metaLogicInversion.ValueBool
-                ? "Инверсия вкл. — допускаются PnlSMA<0 с Buy↔Sell."
+                ? "Инверсия вкл. — допускаются PnlSMA<0 с Buy↔Sell и Op↔Cl."
                 : "Инверсия выкл. — торгуются только L с PnlSMA>0; при всех ≤0 входы пропускаются.";
 
             SendNewLogMessage(
@@ -5768,34 +7497,147 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        /// <summary>Buy/Sell на входе при металогике: инверсия только для PnlSMA&lt;0 при включённой «Инверсии».</summary>
-        private Side ResolveMetaOpenSide(LogicSlotRuntime runtime, decimal pnlWeight)
+        /// <summary>
+        /// Фактическая сторона открытия: «Инверсия логики» (вкладка «Логики»), затем инверсия PnlSMA&lt;0 (металогика).
+        /// Вместе с <see cref="ShouldSwapEntryExitSignals"/> — как ApplyEntryExitSignalTransforms в TrendMultiIndicatorScreener.
+        /// </summary>
+        private Side ResolveLogicOpenSide(LogicSlotRuntime runtime, decimal? metaPnlWeight = null)
         {
-            Side side = runtime.EntrySide;
-            if (IsMetaLogicNegativeInversionSide(pnlWeight))
+            if (runtime == null)
             {
-                return FlipEntrySide(side);
+                return Side.Buy;
+            }
+
+            Side side = runtime.EntrySide;
+            if (IsLogicSideInversionEnabled())
+            {
+                side = FlipEntrySide(side);
+            }
+
+            if (metaPnlWeight.HasValue && IsMetaLogicNegativeInversionSide(metaPnlWeight.Value))
+            {
+                side = FlipEntrySide(side);
             }
 
             return side;
         }
 
-        /// <summary>Фактическая сторона входа для Regime при металогике (учёт инверсии неуспешных логик).</summary>
+        private bool IsLogicSideInversionEnabled()
+        {
+            return ReadLogicSideInversionCurrent();
+        }
+
+        /// <summary>Buy/Sell на входе при металогике (с учётом «Инверсии логики» и PnlSMA&lt;0).</summary>
+        private Side ResolveMetaOpenSide(LogicSlotRuntime runtime, decimal pnlWeight)
+        {
+            return ResolveLogicOpenSide(runtime, pnlWeight);
+        }
+
+        /// <summary>Фактическая сторона входа для Regime (учёт инверсий на открытии).</summary>
         private Side GetRegimeEntrySide(LogicSlotRuntime runtime, int logicSlotIndex)
         {
+            decimal? metaWeight = null;
             if (IsMetaLogicTradingActive()
-                && TryGetLogicPnlSmaAllocationWeight(logicSlotIndex, out decimal pnlWeight)
-                && IsMetaLogicNegativeInversionSide(pnlWeight))
+                && TryGetLogicPnlSmaAllocationWeight(logicSlotIndex, out decimal pnlWeight))
             {
-                return FlipEntrySide(runtime.EntrySide);
+                metaWeight = pnlWeight;
             }
 
-            return runtime.EntrySide;
+            return ResolveLogicOpenSide(runtime, metaWeight);
         }
 
         private bool IsMetaLogicNegativeInversionSide(decimal pnlWeight)
         {
             return IsMetaLogicInversionActive() && pnlWeight < 0m;
+        }
+
+        /// <summary>Вес PnlSMA логики для инверсии металогики (null — металогика не активна).</summary>
+        private decimal? TryGetMetaPnlWeightForSlot(int slotIndex)
+        {
+            if (!IsMetaLogicTradingActive())
+            {
+                return null;
+            }
+
+            if (TryGetLogicPnlSmaAllocationWeight(slotIndex, out decimal weight))
+            {
+                return weight;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Как в TrendMultiIndicatorScreener: при инверсии bull↔bear — вход по Cl[…], выход по Op[…], Buy↔Sell.
+        /// </summary>
+        private bool ShouldSwapEntryExitSignals(decimal? metaPnlWeight)
+        {
+            bool swap = IsLogicSideInversionEnabled();
+            if (metaPnlWeight.HasValue && IsMetaLogicNegativeInversionSide(metaPnlWeight.Value))
+            {
+                swap = !swap;
+            }
+
+            return swap;
+        }
+
+        private bool ShouldSwapEntryExitSignals(int logicSlotIndex)
+        {
+            return ShouldSwapEntryExitSignals(TryGetMetaPnlWeightForSlot(logicSlotIndex));
+        }
+
+        /// <summary>Условие входа Op[…] с учётом инверсии логики (при инверсии — Cl[…]).</summary>
+        private bool EvaluateLogicOpenSignal(
+            LogicExpressionNode root,
+            BotTabSimple tab,
+            List<Candle> candles,
+            int candleIndex,
+            int logicSlotIndex)
+        {
+            decimal? metaPnlWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
+            if (ShouldSwapEntryExitSignals(metaPnlWeight))
+            {
+                return LogicExpressionEvaluator.EvaluateClose(
+                    root,
+                    tab,
+                    candles,
+                    candleIndex,
+                    FindIndicatorForAtom);
+            }
+
+            return LogicExpressionEvaluator.EvaluateOpen(
+                root,
+                tab,
+                candles,
+                candleIndex,
+                FindIndicatorForAtom);
+        }
+
+        /// <summary>Условие выхода Cl[…] с учётом инверсии логики (при инверсии — Op[…]).</summary>
+        private bool EvaluateLogicCloseSignal(
+            LogicExpressionNode root,
+            BotTabSimple tab,
+            List<Candle> candles,
+            int candleIndex,
+            int logicSlotIndex)
+        {
+            decimal? metaPnlWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
+            if (ShouldSwapEntryExitSignals(metaPnlWeight))
+            {
+                return LogicExpressionEvaluator.EvaluateOpen(
+                    root,
+                    tab,
+                    candles,
+                    candleIndex,
+                    FindIndicatorForAtom);
+            }
+
+            return LogicExpressionEvaluator.EvaluateClose(
+                root,
+                tab,
+                candles,
+                candleIndex,
+                FindIndicatorForAtom);
         }
 
         private static Side FlipEntrySide(Side side)
@@ -6344,7 +8186,16 @@ namespace OsEngine.Robots.Custom
 
         private decimal? TryGetRealMonitoredPortfolioValue(BotTabSimple tab)
         {
-            Portfolio portfolio = tab?.Portfolio ?? tab?.Connector?.Portfolio;
+            if (ShouldReadPortfolioFromTesterServer(tab))
+            {
+                decimal? testerEquity = TryGetTesterPortfolioEquity(tab);
+                if (testerEquity.HasValue && testerEquity.Value > 0m)
+                {
+                    return testerEquity;
+                }
+            }
+
+            Portfolio portfolio = TryResolvePortfolioForMonitoring(tab);
             return TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
         }
 
@@ -6384,11 +8235,182 @@ namespace OsEngine.Robots.Custom
             return null;
         }
 
-        private static bool ShouldReadPortfolioFromTesterServer(BotTabSimple tab)
+        private bool ShouldReadPortfolioFromTesterServer(BotTabSimple tab)
         {
+            if (StartProgram == StartProgram.IsTester || StartProgram == StartProgram.IsOsOptimizer)
+            {
+                return true;
+            }
+
             return tab != null
                 && (tab.StartProgram == StartProgram.IsTester
                     || tab.StartProgram == StartProgram.IsOsOptimizer);
+        }
+
+        /// <summary>Коннектор для мониторинга портфеля: вкладка → скринер → Tester/TInvest.</summary>
+        private IServer ResolvePortfolioMonitoringServer(BotTabSimple tab)
+        {
+            IServer server = tab?.Connector?.MyServer;
+            if (server != null)
+            {
+                return server;
+            }
+
+            if (_screenerTab?.Tabs != null)
+            {
+                for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+                {
+                    server = _screenerTab.Tabs[i]?.Connector?.MyServer;
+                    if (server != null)
+                    {
+                        return server;
+                    }
+                }
+            }
+
+            if (ShouldUseMoexTesterConnector())
+            {
+                return FindTesterLikeServer();
+            }
+
+            return FindServerForScreener() ?? FindTInvestServer();
+        }
+
+        /// <summary>Имя портфеля: настройки скринера, вкладка, иначе первый на сервере (Tester: GodMode).</summary>
+        private string ResolvePortfolioMonitoringName(BotTabSimple tab, IServer server)
+        {
+            if (server != null)
+            {
+                if (!string.IsNullOrWhiteSpace(_screenerTab?.PortfolioName))
+                {
+                    Portfolio byScreener = server.GetPortfolioForName(_screenerTab.PortfolioName);
+                    if (byScreener != null)
+                    {
+                        return byScreener.Number;
+                    }
+                }
+
+                string tabPortfolioName = tab?.Connector?.PortfolioName;
+                if (!string.IsNullOrWhiteSpace(tabPortfolioName))
+                {
+                    Portfolio byTab = server.GetPortfolioForName(tabPortfolioName);
+                    if (byTab != null)
+                    {
+                        return byTab.Number;
+                    }
+                }
+
+                if (server.Portfolios != null && server.Portfolios.Count > 0)
+                {
+                    return server.Portfolios[0].Number;
+                }
+            }
+
+            if (ShouldUseMoexTesterConnector())
+            {
+                return "GodMode";
+            }
+
+            return _screenerTab?.PortfolioName ?? tab?.Connector?.PortfolioName;
+        }
+
+        private static Portfolio TryPickPortfolioOnServer(IServer server, string preferredName)
+        {
+            if (server?.Portfolios == null || server.Portfolios.Count == 0)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(preferredName))
+            {
+                Portfolio exact = server.GetPortfolioForName(preferredName);
+                if (exact != null)
+                {
+                    return exact;
+                }
+            }
+
+            for (int i = 0; i < server.Portfolios.Count; i++)
+            {
+                Portfolio portfolio = server.Portfolios[i];
+                if (portfolio != null)
+                {
+                    return portfolio;
+                }
+            }
+
+            return null;
+        }
+
+        private Portfolio TryResolvePortfolioForMonitoring(BotTabSimple tab)
+        {
+            if (ShouldReadPortfolioFromTesterServer(tab))
+            {
+                IServer testerServer = ResolvePortfolioMonitoringServer(tab) ?? FindTesterLikeServer();
+                if (testerServer != null)
+                {
+                    Portfolio testerPortfolio = TryPickPortfolioOnServer(
+                        testerServer,
+                        ResolvePortfolioMonitoringName(tab, testerServer));
+                    if (testerPortfolio != null)
+                    {
+                        return testerPortfolio;
+                    }
+                }
+            }
+
+            Portfolio portfolio = tab?.Connector?.Portfolio ?? tab?.Portfolio;
+            if (portfolio != null)
+            {
+                return portfolio;
+            }
+
+            if (_screenerTab?.Tabs != null)
+            {
+                for (int i = 0; i < _screenerTab.Tabs.Count; i++)
+                {
+                    BotTabSimple childTab = _screenerTab.Tabs[i];
+                    portfolio = childTab?.Connector?.Portfolio ?? childTab?.Portfolio;
+                    if (portfolio != null)
+                    {
+                        return portfolio;
+                    }
+                }
+            }
+
+            IServer server = ResolvePortfolioMonitoringServer(tab) ?? FindTesterLikeServer();
+            return TryPickPortfolioOnServer(server, ResolvePortfolioMonitoringName(tab, server));
+        }
+
+        /// <summary>
+        /// Тестер: ValueCurrent после сделок; если GodMode ещё на заводском 1M — депозит из окна тестера (StartPortfolio).
+        /// </summary>
+        private static decimal? ResolveTesterPortfolioEquity(TesterServer testerServer, Portfolio portfolio)
+        {
+            if (testerServer == null)
+            {
+                return TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
+            }
+
+            decimal startPortfolio = testerServer.StartPortfolio;
+            decimal? fromPortfolio = TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
+
+            if (startPortfolio > 0m && fromPortfolio.HasValue && fromPortfolio.Value > 0m && portfolio != null)
+            {
+                bool portfolioStillAtBegin = Math.Abs(fromPortfolio.Value - portfolio.ValueBegin) < 0.01m;
+                bool beginDiffersFromTesterDeposit = Math.Abs(portfolio.ValueBegin - startPortfolio) > 0.01m;
+                if (portfolioStillAtBegin && beginDiffersFromTesterDeposit)
+                {
+                    return startPortfolio;
+                }
+            }
+
+            if (fromPortfolio.HasValue && fromPortfolio.Value > 0m)
+            {
+                return fromPortfolio.Value;
+            }
+
+            return startPortfolio > 0m ? startPortfolio : null;
         }
 
         private static decimal? TryGetFullPortfolioEquityFromPortfolioObject(Portfolio portfolio)
@@ -6411,7 +8433,7 @@ namespace OsEngine.Robots.Custom
             return null;
         }
 
-        /// <summary>Тестер/оптимизатор: ValueCurrent или StartPortfolio.</summary>
+        /// <summary>Тестер/оптимизатор: ValueCurrent или StartPortfolio с подключённого TesterServer.</summary>
         private decimal? TryGetTesterPortfolioEquity(BotTabSimple tab)
         {
             if (StartProgram != StartProgram.IsTester && StartProgram != StartProgram.IsOsOptimizer)
@@ -6419,33 +8441,27 @@ namespace OsEngine.Robots.Custom
                 return null;
             }
 
-            if (tab?.Connector?.MyServer is TesterServer tabTester)
+            IServer server = ResolvePortfolioMonitoringServer(tab) ?? FindTesterLikeServer();
+            if (server == null)
             {
-                decimal? fromConnector = TryGetFullPortfolioEquityFromPortfolioObject(
-                    tab.Connector.Portfolio ?? tab.Portfolio);
-                if (fromConnector.HasValue)
-                {
-                    return fromConnector;
-                }
-
-                if (tabTester.StartPortfolio > 0m)
-                {
-                    return tabTester.StartPortfolio;
-                }
+                return null;
             }
 
-            IServer server = FindTesterLikeServer();
-            if (server is TesterServer testerServer && testerServer.StartPortfolio > 0m)
+            Portfolio portfolio = TryPickPortfolioOnServer(server, ResolvePortfolioMonitoringName(tab, server));
+            if (server is TesterServer testerServer)
             {
-                return testerServer.StartPortfolio;
+                return ResolveTesterPortfolioEquity(testerServer, portfolio);
             }
 
-            if (server?.Portfolios != null && server.Portfolios.Count > 0)
+            if (server.ServerType == ServerType.Optimizer
+                && server.Portfolios != null
+                && server.Portfolios.Count > 0
+                && portfolio == null)
             {
-                return TryGetFullPortfolioEquityFromPortfolioObject(server.Portfolios[0]);
+                portfolio = server.Portfolios[0];
             }
 
-            return null;
+            return TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
         }
 
         private static bool TryResolveReferencePriceForVolume(BotTabSimple tab, out decimal price)
@@ -6933,12 +8949,7 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
-                ApplyLogicSlotStrings(logicLines);
-                SaveParametersWithoutLogicIndicatorResync();
-                RequestParameterGuiRepaintOnce();
-                RunOnUiThread(
-                    () => TryParseAndApplyAllLogicSlots(logToUser: true),
-                    preferAsync: true);
+                ApplyLogicSlotStringsImmediate(logicLines, logParseToUser: true);
 
                 string msg = NameStrategyUniq + " | Логики загружены из файла: " + path;
                 SendNewLogMessage(msg, LogMessageType.User);
@@ -12191,7 +14202,55 @@ namespace OsEngine.Robots.Custom
         private const int HtmlReportMetaLogicJournalCap = 300;
         private const int HtmlReportEquitySnapshotsCap = 2500;
         private const int HtmlReportStopperEventsCap = 100;
-        private const string HtmlReportFormatVersion = "2";
+        private const int HtmlReportConfigChangeJournalCap = 500;
+        private const string HtmlReportFormatVersion = "4";
+
+        private static readonly string[] HtmlReportGlobalTradingParamNames =
+        {
+            "Regime",
+            LogicLinRegLengthParamName,
+            "Max positions (all tabs)",
+            "Volume type",
+            "Volume",
+            "Asset in portfolio",
+            MetaLogicEnabledParamName,
+            MetaLogicInversionParamName,
+            PortfolioPnlSmaEnableParamName,
+            PortfolioPnlSmaLenParamName,
+            "Общепортфельный SMA: включить",
+            "Общепортфельный SMA: длина",
+            "Общепортфельный SMA: источник",
+            "Общепортфельный Stoch: включить",
+            "Общепортфельный Stoch: P1",
+            "Общепортфельный Stoch: P2",
+            "Общепортфельный Stoch: P3",
+            "Общепортфельный Stoch: long min",
+            "Общепортфельный Stoch: short max",
+            "Общепортфельный ATR: включить",
+            "Общепортфельный ATR: длина",
+            "Общепортфельный ATR: min grow % vs lookback",
+            "Общепортфельный ATR: grow lookback (candles)",
+            "Общепортфельный LinReg: включить",
+            "Общепортфельный LinReg: длина",
+            "Общепортфельный LinReg: deviation",
+            "Общепортфельный MACD: включить",
+            "Общепортфельный MACD: fast",
+            "Общепортфельный MACD: slow",
+            "Общепортфельный MACD: signal",
+            "Предыдущий индикатор. Расчёт объёма позиций",
+            "Общепортфельный stop-loss: включён",
+            "Общепортфельный stop-loss (%)",
+            PortfolioStopLossRublesParamName,
+            "Общепортфельный take-profit: включён",
+            "Общепортфельный take-profit (%)",
+            PortfolioTakeProfitRublesParamName,
+            StopperPostTriggerAfterStopLossParamName,
+            StopperPostTriggerAfterTakeProfitParamName,
+            "Предыдущая сумма портфеля: lookback (свечей)",
+            StopperMonitorTimeFrameParamName,
+            StopperMonitorSecurityParamName,
+            StopperEodFlatSellParamName
+        };
 
         private StrategyParameterBool _htmlReportEnabled;
         private StrategyParameterInt _htmlReportIntervalSec;
@@ -12202,6 +14261,11 @@ namespace OsEngine.Robots.Custom
         private readonly object _htmlReportRuntimeLock = new object();
         private bool _htmlReportDirty;
         private DateTime _htmlReportLastWriteUtc = DateTime.MinValue;
+        private long _htmlReportConfigChangeSeq;
+        private bool _htmlReportConfigBaselineReady;
+        private string[] _htmlReportConfigBaselineLogicLines = new string[LogicSlotCount];
+        private Dictionary<string, string> _htmlReportConfigBaselineParams =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         private sealed class MultiLogicHtmlReportRuntime
         {
@@ -12216,6 +14280,8 @@ namespace OsEngine.Robots.Custom
                 new Dictionary<string, HtmlReportDayBucket>(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, int> CloseReasons =
                 new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, decimal> CloseReasonPnL =
+                new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
             public readonly List<HtmlReportRecentEvent> RecentEvents = new List<HtmlReportRecentEvent>();
             public readonly List<HtmlReportClosedTrade> ClosedTrades = new List<HtmlReportClosedTrade>();
             public readonly List<HtmlReportMetaLogicJournalEntry> MetaLogicJournal =
@@ -12225,7 +14291,26 @@ namespace OsEngine.Robots.Custom
                 new Dictionary<int, List<HtmlReportLogicSnapshotPoint>>();
             public readonly List<HtmlReportStopperEvent> StopperEvents = new List<HtmlReportStopperEvent>();
             public readonly List<HtmlReportModeSegment> ModeHistory = new List<HtmlReportModeSegment>();
+            public readonly List<HtmlReportConfigChangeEntry> ConfigChangeJournal =
+                new List<HtmlReportConfigChangeEntry>();
             public string ActiveModeId = "";
+        }
+
+        private sealed class HtmlReportConfigChangeEntry
+        {
+            public long Id;
+            public DateTime CandleTime;
+            public DateTime EventTimeUtc;
+            public string Category = "";
+            public int LogicSlot;
+            public string ParamName = "";
+            public string Summary = "";
+            public string OldValue = "";
+            public string NewValue = "";
+            public string OldLogicLine = "";
+            public string NewLogicLine = "";
+            public bool AffectsGlobalChart;
+            public bool AffectsLogicChart;
         }
 
         private sealed class HtmlReportLogicSnapshotPoint
@@ -12269,6 +14354,15 @@ namespace OsEngine.Robots.Custom
             public int Opens;
             public int Closes;
             public decimal RealizedPnL;
+            public decimal PnLPortfolioStopSL;
+            public decimal PnLPortfolioStopTP;
+            public decimal PnLPortfolioEodFlat;
+            public decimal PnLLogicStopLoss;
+            public decimal PnLLogicTakeProfit;
+            public decimal PnLSignalClose;
+            public decimal PnLRegimeFlip;
+            public decimal PnLStopRobot;
+            public decimal PnLOther;
         }
 
         private sealed class HtmlReportDayBucket
@@ -12525,6 +14619,12 @@ namespace OsEngine.Robots.Custom
             MultiLogicHtmlReportRuntime rt = _htmlReportRuntime;
             string dayKey = candleTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
+            if (!rt.ByLogic.TryGetValue(slot, out HtmlReportLogicStats logic))
+            {
+                logic = new HtmlReportLogicStats { Slot = slot };
+                rt.ByLogic[slot] = logic;
+            }
+
             if (isOpen)
             {
                 rt.OpensTotal++;
@@ -12539,6 +14639,8 @@ namespace OsEngine.Robots.Custom
                 }
 
                 rt.CloseReasons[reason]++;
+                AccumulateHtmlReportCloseReasonPnL(rt.CloseReasonPnL, reason, delta);
+                AddHtmlReportLogicClosePnLByReason(logic, reason, delta);
 
                 if (positionOpenTime.HasValue && positionCloseTime.HasValue)
                 {
@@ -12589,12 +14691,6 @@ namespace OsEngine.Robots.Custom
             {
                 inst.Closes++;
                 inst.RealizedPnL += delta;
-            }
-
-            if (!rt.ByLogic.TryGetValue(slot, out HtmlReportLogicStats logic))
-            {
-                logic = new HtmlReportLogicStats { Slot = slot };
-                rt.ByLogic[slot] = logic;
             }
 
             if (isOpen)
@@ -12866,6 +14962,147 @@ namespace OsEngine.Robots.Custom
             _htmlReportDirty = true;
         }
 
+        private void RecordHtmlReportPeakDrawdownTrigger(
+            DateTime candleTime,
+            decimal peakEquity,
+            decimal currentEquity,
+            decimal thresholdPercent,
+            decimal triggerLevel,
+            decimal postCloseEquity,
+            bool regimeStopped)
+        {
+            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
+            {
+                return;
+            }
+
+            lock (_htmlReportRuntimeLock)
+            {
+                TouchHtmlReportExecutionMode(null);
+                HtmlReportExecutionMode mode = ResolveHtmlReportExecutionMode(null);
+                string summary = "Просадка от пика "
+                    + thresholdPercent.ToString(CultureInfo.InvariantCulture)
+                    + "% | пик="
+                    + peakEquity.ToString(CultureInfo.InvariantCulture)
+                    + ", equity="
+                    + currentEquity.ToString(CultureInfo.InvariantCulture)
+                    + ", порог="
+                    + triggerLevel.ToString(CultureInfo.InvariantCulture)
+                    + ", ref→"
+                    + postCloseEquity.ToString(CultureInfo.InvariantCulture)
+                    + (regimeStopped ? ", Regime=Off" : "");
+
+                AddHtmlReportStopperEvent(
+                    candleTime,
+                    "portfolio_peak_drawdown",
+                    peakEquity,
+                    currentEquity,
+                    thresholdPercent,
+                    triggerLevel,
+                    postCloseEquity,
+                    regimeStopped,
+                    mode,
+                    summary);
+            }
+        }
+
+        private void RecordHtmlReportSignificantPeakPause(
+            DateTime candleTime,
+            decimal troughEquity,
+            decimal peakEquity,
+            double annualPercent,
+            TimeSpan peakWidth,
+            DateTime pauseUntil)
+        {
+            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
+            {
+                return;
+            }
+
+            lock (_htmlReportRuntimeLock)
+            {
+                TouchHtmlReportExecutionMode(null);
+                HtmlReportExecutionMode mode = ResolveHtmlReportExecutionMode(null);
+                decimal threshold = _significantPeakAnnualPercentMin?.ValueDecimal ?? SignificantPeakAnnualPercentDefault;
+                string summary = "Пауза: значительный пик ~"
+                    + FormatSignificantPeakAnnualPercentForDisplay(annualPercent)
+                    + "% годовых (порог "
+                    + threshold.ToString(CultureInfo.InvariantCulture)
+                    + "%), "
+                    + troughEquity.ToString(CultureInfo.InvariantCulture)
+                    + " → "
+                    + peakEquity.ToString(CultureInfo.InvariantCulture)
+                    + ", ширина "
+                    + peakWidth.ToString(@"d\.hh\:mm", CultureInfo.InvariantCulture)
+                    + ", входы до "
+                    + pauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+                AddHtmlReportStopperEvent(
+                    candleTime,
+                    "portfolio_significant_peak_pause",
+                    troughEquity,
+                    peakEquity,
+                    threshold,
+                    peakEquity,
+                    peakEquity,
+                    false,
+                    mode,
+                    summary);
+            }
+        }
+
+        private void AddHtmlReportStopperEvent(
+            DateTime candleTime,
+            string kind,
+            decimal referenceEquity,
+            decimal currentEquity,
+            decimal thresholdPercent,
+            decimal triggerLevel,
+            decimal postCloseEquity,
+            bool regimeStopped,
+            HtmlReportExecutionMode mode,
+            string summary)
+        {
+            _htmlReportRuntime.StopperEvents.Add(new HtmlReportStopperEvent
+            {
+                CandleTime = candleTime,
+                EventTimeUtc = DateTime.UtcNow,
+                Kind = kind,
+                ReferenceEquity = referenceEquity,
+                CurrentEquity = currentEquity,
+                ThresholdPercent = thresholdPercent,
+                TriggerLevel = triggerLevel,
+                PostCloseEquity = postCloseEquity,
+                RegimeStopped = regimeStopped,
+                ExecutionModeId = mode.ModeId,
+                ExecutionModeLabel = mode.ModeLabel,
+                Summary = summary
+            });
+
+            if (_htmlReportRuntime.StopperEvents.Count > HtmlReportStopperEventsCap)
+            {
+                int remove = _htmlReportRuntime.StopperEvents.Count - HtmlReportStopperEventsCap;
+                _htmlReportRuntime.StopperEvents.RemoveRange(0, remove);
+            }
+
+            _htmlReportRuntime.RecentEvents.Add(new HtmlReportRecentEvent
+            {
+                Seq = 0,
+                CandleTime = candleTime,
+                EventTimeUtc = DateTime.UtcNow,
+                Event = kind,
+                TabKey = "—",
+                LogicSlot = 0,
+                Delta = currentEquity - referenceEquity,
+                EquityTotal = currentEquity,
+                Note = summary,
+                ExecutionModeId = mode.ModeId,
+                ExecutionModeLabel = mode.ModeLabel
+            });
+            TrimHtmlReportRecentEvents(_htmlReportRuntime.RecentEvents);
+            _htmlReportDirty = true;
+        }
+
         private static void TrimHtmlReportRecentEvents(List<HtmlReportRecentEvent> events)
         {
             if (events.Count <= HtmlReportRecentEventsCap)
@@ -12918,6 +15155,207 @@ namespace OsEngine.Robots.Custom
             return ((int)span.TotalSeconds).ToString(CultureInfo.InvariantCulture) + "с";
         }
 
+        private static void AccumulateHtmlReportCloseReasonPnL(
+            Dictionary<string, decimal> closeReasonPnL,
+            string reason,
+            decimal delta)
+        {
+            if (closeReasonPnL == null || string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+
+            if (!closeReasonPnL.ContainsKey(reason))
+            {
+                closeReasonPnL[reason] = 0m;
+            }
+
+            closeReasonPnL[reason] += delta;
+        }
+
+        private static void AddHtmlReportLogicClosePnLByReason(
+            HtmlReportLogicStats logic,
+            string reason,
+            decimal delta)
+        {
+            if (logic == null || string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+
+            switch (reason)
+            {
+                case "PortfolioStopSL":
+                case "PortfolioPeakDrawdown":
+                    logic.PnLPortfolioStopSL += delta;
+                    break;
+                case "PortfolioStopTP":
+                    logic.PnLPortfolioStopTP += delta;
+                    break;
+                case "PortfolioEodFlat":
+                    logic.PnLPortfolioEodFlat += delta;
+                    break;
+                case "StopLoss":
+                    logic.PnLLogicStopLoss += delta;
+                    break;
+                case "TakeProfit":
+                    logic.PnLLogicTakeProfit += delta;
+                    break;
+                case "SignalClose":
+                    logic.PnLSignalClose += delta;
+                    break;
+                case "RegimeFlip":
+                    logic.PnLRegimeFlip += delta;
+                    break;
+                case "StopRobot":
+                    logic.PnLStopRobot += delta;
+                    break;
+                default:
+                    logic.PnLOther += delta;
+                    break;
+            }
+        }
+
+        private static decimal SumHtmlReportCloseReasonPnL(
+            Dictionary<string, decimal> closeReasonPnL,
+            params string[] reasons)
+        {
+            if (closeReasonPnL == null || reasons == null || reasons.Length == 0)
+            {
+                return 0m;
+            }
+
+            decimal sum = 0m;
+            for (int i = 0; i < reasons.Length; i++)
+            {
+                string reason = reasons[i];
+                if (!string.IsNullOrWhiteSpace(reason)
+                    && closeReasonPnL.TryGetValue(reason, out decimal part))
+                {
+                    sum += part;
+                }
+            }
+
+            return sum;
+        }
+
+        private static string HtmlReportCloseReasonLabel(string reason)
+        {
+            switch (reason)
+            {
+                case "PortfolioStopSL":
+                    return "Общепортф. stop-loss";
+                case "PortfolioPeakDrawdown":
+                    return "Просадка от пика";
+                case "PortfolioStopTP":
+                    return "Общепортф. take-profit";
+                case "PortfolioEodFlat":
+                    return "Ежедневная продажа по времени";
+                case "StopLoss":
+                    return "SL логики (SL[…] в строке)";
+                case "TakeProfit":
+                    return "TP логики (TP[…] в строке)";
+                case "SignalClose":
+                    return "По сигналу Cl (обычное закрытие)";
+                case "RegimeFlip":
+                    return "Regime(LinReg) — OnFlip=Close";
+                case "StopRobot":
+                    return "Остановить робота и продать всё";
+                default:
+                    return string.IsNullOrWhiteSpace(reason) ? "Прочее" : reason;
+            }
+        }
+
+        private static List<object> BuildHtmlReportCloseReasonsList(
+            Dictionary<string, int> closeReasons,
+            Dictionary<string, decimal> closeReasonPnL)
+        {
+            var rows = new List<object>();
+            if (closeReasons == null || closeReasons.Count == 0)
+            {
+                return rows;
+            }
+
+            foreach (KeyValuePair<string, int> kv in closeReasons.OrderByDescending(p => p.Value).ThenBy(p => p.Key, StringComparer.Ordinal))
+            {
+                decimal pnl = 0m;
+                if (closeReasonPnL != null)
+                {
+                    closeReasonPnL.TryGetValue(kv.Key, out pnl);
+                }
+
+                rows.Add(new
+                {
+                    reason = kv.Key,
+                    label = HtmlReportCloseReasonLabel(kv.Key),
+                    count = kv.Value,
+                    pnl
+                });
+            }
+
+            return rows;
+        }
+
+        private object BuildHtmlReportClosePnLSummary(MultiLogicHtmlReportRuntime rt)
+        {
+            Dictionary<string, decimal> pnl = rt?.CloseReasonPnL;
+            Dictionary<string, int> counts = rt?.CloseReasons;
+
+            decimal portfolioSl = SumHtmlReportCloseReasonPnL(pnl, "PortfolioStopSL");
+            decimal portfolioTp = SumHtmlReportCloseReasonPnL(pnl, "PortfolioStopTP");
+            decimal portfolioEod = SumHtmlReportCloseReasonPnL(pnl, "PortfolioEodFlat");
+            decimal logicSl = SumHtmlReportCloseReasonPnL(pnl, "StopLoss");
+            decimal logicTp = SumHtmlReportCloseReasonPnL(pnl, "TakeProfit");
+            decimal signalClose = SumHtmlReportCloseReasonPnL(pnl, "SignalClose");
+            decimal regimeFlip = SumHtmlReportCloseReasonPnL(pnl, "RegimeFlip");
+            decimal stopRobot = SumHtmlReportCloseReasonPnL(pnl, "StopRobot");
+            decimal other = SumHtmlReportCloseReasonPnL(pnl, "Other");
+
+            // fix typo - I used wrong name
+            decimal portfolioSlTpSum = portfolioSl + portfolioTp;
+            decimal portfolioStopAndEodSum = portfolioSlTpSum + portfolioEod;
+            decimal logicStopTakeSum = logicSl + logicTp;
+            decimal allStopTakeSum = portfolioStopAndEodSum + logicStopTakeSum;
+            decimal realizedFromTrackedCloses = pnl?.Values.Sum() ?? 0m;
+
+            int CountFor(string key)
+            {
+                if (counts != null && counts.TryGetValue(key, out int c))
+                {
+                    return c;
+                }
+
+                return 0;
+            }
+
+            bool eodFlatEnabled = IsStopperEodFlatSellConfigured();
+
+            return new
+            {
+                portfolioStopSL = portfolioSl,
+                portfolioStopTP = portfolioTp,
+                portfolioSlTpSum,
+                portfolioEodFlat = portfolioEod,
+                portfolioStopAndEodSum,
+                portfolioEodFlatEnabled = eodFlatEnabled,
+                portfolioEodFlatCount = CountFor("PortfolioEodFlat"),
+                logicStopLoss = logicSl,
+                logicTakeProfit = logicTp,
+                logicStopTakeSum,
+                allStopTakeSum,
+                signalClose,
+                regimeFlip,
+                stopRobot,
+                other,
+                realizedFromTrackedCloses,
+                portfolioStopSLCount = CountFor("PortfolioStopSL"),
+                portfolioStopTPCount = CountFor("PortfolioStopTP"),
+                logicStopLossCount = CountFor("StopLoss"),
+                logicTakeProfitCount = CountFor("TakeProfit"),
+                signalCloseCount = CountFor("SignalClose")
+            };
+        }
+
         private static string ClassifyHtmlReportCloseReason(string note)
         {
             if (string.IsNullOrWhiteSpace(note))
@@ -12936,9 +15374,24 @@ namespace OsEngine.Robots.Custom
                 return "PortfolioStopSL";
             }
 
+            if (string.Equals(n, SignalPortfolioStopperPeakSl, StringComparison.OrdinalIgnoreCase))
+            {
+                return "PortfolioPeakDrawdown";
+            }
+
             if (string.Equals(n, SignalPortfolioStopperTp, StringComparison.OrdinalIgnoreCase))
             {
                 return "PortfolioStopTP";
+            }
+
+            if (string.Equals(n, SignalPortfolioStopperEodFlat, StringComparison.OrdinalIgnoreCase))
+            {
+                return "PortfolioEodFlat";
+            }
+
+            if (n.IndexOf("_EodFlat", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "PortfolioEodFlat";
             }
 
             if (n.IndexOf("_SL", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -13050,22 +15503,6 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private static List<object> BuildHtmlReportCloseReasonsList(Dictionary<string, int> closeReasons)
-        {
-            var rows = new List<object>();
-            if (closeReasons == null || closeReasons.Count == 0)
-            {
-                return rows;
-            }
-
-            foreach (KeyValuePair<string, int> kv in closeReasons.OrderByDescending(p => p.Value).ThenBy(p => p.Key, StringComparer.Ordinal))
-            {
-                rows.Add(new { reason = kv.Key, count = kv.Value });
-            }
-
-            return rows;
-        }
-
         private List<object> BuildHtmlReportOpenPositionRows()
         {
             var rows = new List<object>();
@@ -13140,6 +15577,234 @@ namespace OsEngine.Robots.Custom
             return string.IsNullOrWhiteSpace(withoutNote) ? raw : withoutNote;
         }
 
+        private void RefreshHtmlReportConfigBaseline()
+        {
+            _htmlReportConfigBaselineLogicLines = CaptureLogicLines();
+            _htmlReportConfigBaselineParams = CaptureParameterValues();
+            _htmlReportConfigBaselineReady = true;
+        }
+
+        private void RecordHtmlReportConfigChangesIfAny()
+        {
+            if (!_htmlReportConfigBaselineReady)
+            {
+                RefreshHtmlReportConfigBaseline();
+                return;
+            }
+
+            string[] currentLines = CaptureLogicLines();
+            Dictionary<string, string> currentParams = CaptureParameterValues();
+            DateTime candleTime = GetStopperReferenceCandleTime();
+            DateTime eventUtc = DateTime.UtcNow;
+            bool any = false;
+
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                string oldLine = _htmlReportConfigBaselineLogicLines[slot - 1] ?? "";
+                string newLine = currentLines[slot - 1] ?? "";
+                if (string.Equals(oldLine, newLine, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                any = true;
+                AppendHtmlReportConfigChange(
+                    candleTime,
+                    eventUtc,
+                    "logic_line",
+                    slot,
+                    "Логика " + slot.ToString(CultureInfo.InvariantCulture),
+                    "L" + slot.ToString(CultureInfo.InvariantCulture) + ": изменена формула логики",
+                    "",
+                    "",
+                    oldLine,
+                    newLine,
+                    affectsGlobalChart: true,
+                    affectsLogicChart: true);
+            }
+
+            _htmlReportConfigBaselineParams.TryGetValue(LogicSideInversionParamName, out string oldInversion);
+            currentParams.TryGetValue(LogicSideInversionParamName, out string newInversion);
+            oldInversion ??= "";
+            newInversion ??= "";
+            if (!string.Equals(oldInversion, newInversion, StringComparison.OrdinalIgnoreCase))
+            {
+                any = true;
+                string oldInversionLabel = FormatHtmlReportLogicInversionStateLabel(oldInversion);
+                string newInversionLabel = FormatHtmlReportLogicInversionStateLabel(newInversion);
+                AppendHtmlReportConfigChange(
+                    candleTime,
+                    eventUtc,
+                    "logic_inversion",
+                    0,
+                    LogicSideInversionParamName,
+                    BuildHtmlReportLogicInversionChangeSummary(oldInversion, newInversion),
+                    oldInversionLabel,
+                    newInversionLabel,
+                    "",
+                    "",
+                    affectsGlobalChart: true,
+                    affectsLogicChart: true);
+            }
+
+            for (int i = 0; i < HtmlReportGlobalTradingParamNames.Length; i++)
+            {
+                string paramName = HtmlReportGlobalTradingParamNames[i];
+                _htmlReportConfigBaselineParams.TryGetValue(paramName, out string oldVal);
+                currentParams.TryGetValue(paramName, out string newVal);
+                oldVal ??= "";
+                newVal ??= "";
+                if (string.Equals(oldVal, newVal, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                any = true;
+                string category = ClassifyHtmlReportConfigParamCategory(paramName);
+                AppendHtmlReportConfigChange(
+                    candleTime,
+                    eventUtc,
+                    category,
+                    0,
+                    paramName,
+                    paramName + ": " + TruncateHtmlReportConfigValue(oldVal) + " → " + TruncateHtmlReportConfigValue(newVal),
+                    oldVal,
+                    newVal,
+                    "",
+                    "",
+                    affectsGlobalChart: true,
+                    affectsLogicChart: true);
+            }
+
+            if (any)
+            {
+                RefreshHtmlReportConfigBaseline();
+                _htmlReportDirty = true;
+            }
+        }
+
+        private void AppendHtmlReportConfigChange(
+            DateTime candleTime,
+            DateTime eventUtc,
+            string category,
+            int logicSlot,
+            string paramName,
+            string summary,
+            string oldValue,
+            string newValue,
+            string oldLogicLine,
+            string newLogicLine,
+            bool affectsGlobalChart,
+            bool affectsLogicChart)
+        {
+            lock (_htmlReportRuntimeLock)
+            {
+                long id = ++_htmlReportConfigChangeSeq;
+                _htmlReportRuntime.ConfigChangeJournal.Add(new HtmlReportConfigChangeEntry
+                {
+                    Id = id,
+                    CandleTime = candleTime,
+                    EventTimeUtc = eventUtc,
+                    Category = category ?? "",
+                    LogicSlot = logicSlot,
+                    ParamName = paramName ?? "",
+                    Summary = summary ?? "",
+                    OldValue = oldValue ?? "",
+                    NewValue = newValue ?? "",
+                    OldLogicLine = oldLogicLine ?? "",
+                    NewLogicLine = newLogicLine ?? "",
+                    AffectsGlobalChart = affectsGlobalChart,
+                    AffectsLogicChart = affectsLogicChart
+                });
+
+                while (_htmlReportRuntime.ConfigChangeJournal.Count > HtmlReportConfigChangeJournalCap)
+                {
+                    _htmlReportRuntime.ConfigChangeJournal.RemoveAt(0);
+                }
+
+                _htmlReportDirty = true;
+            }
+        }
+
+        private static string FormatHtmlReportConfigBoolLabel(string raw)
+        {
+            if (bool.TryParse(raw, out bool value))
+            {
+                return value ? "да" : "нет";
+            }
+
+            return string.IsNullOrWhiteSpace(raw) ? "—" : raw;
+        }
+
+        private static string FormatHtmlReportLogicInversionStateLabel(string raw)
+        {
+            if (bool.TryParse(raw, out bool enabled))
+            {
+                return enabled
+                    ? "Включена — покупка ↔ продажа, Op ↔ Cl (как TMIS)"
+                    : "Отключена — без инверсии логики";
+            }
+
+            return string.IsNullOrWhiteSpace(raw) ? "—" : raw;
+        }
+
+        private static string BuildHtmlReportLogicInversionChangeSummary(string oldRaw, string newRaw)
+        {
+            string oldLabel = FormatHtmlReportLogicInversionStateLabel(oldRaw);
+            string newLabel = FormatHtmlReportLogicInversionStateLabel(newRaw);
+            return "Инверсия логики (покупка ↔ продажа): " + oldLabel + " → " + newLabel;
+        }
+
+        private static string TruncateHtmlReportConfigValue(string value, int maxLen = 120)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return "—";
+            }
+
+            if (value.Length <= maxLen)
+            {
+                return value;
+            }
+
+            return value.Substring(0, maxLen) + "…";
+        }
+
+        private static string ClassifyHtmlReportConfigParamCategory(string paramName)
+        {
+            if (string.Equals(paramName, "Regime", StringComparison.OrdinalIgnoreCase))
+            {
+                return "regime";
+            }
+
+            if (string.Equals(paramName, "Volume type", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(paramName, "Volume", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(paramName, "Asset in portfolio", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(paramName, "Max positions (all tabs)", StringComparison.OrdinalIgnoreCase))
+            {
+                return "volume";
+            }
+
+            if (paramName.IndexOf("stop-loss", StringComparison.OrdinalIgnoreCase) >= 0
+                || paramName.IndexOf("take-profit", StringComparison.OrdinalIgnoreCase) >= 0
+                || paramName.IndexOf("Stopper", StringComparison.OrdinalIgnoreCase) >= 0
+                || string.Equals(paramName, "Предыдущая сумма портфеля: lookback (свечей)", StringComparison.OrdinalIgnoreCase))
+            {
+                return "stopper";
+            }
+
+            if (string.Equals(paramName, MetaLogicEnabledParamName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(paramName, MetaLogicInversionParamName, StringComparison.OrdinalIgnoreCase)
+                || paramName.IndexOf("PnlSMA", StringComparison.OrdinalIgnoreCase) >= 0
+                || paramName.IndexOf("Общепортфельный", StringComparison.OrdinalIgnoreCase) >= 0
+                || paramName.IndexOf("Предыдущий индикатор", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "meta";
+            }
+
+            return "trading";
+        }
+
         private string BuildHtmlReportDocument()
         {
             HtmlReportExecutionMode mode = ResolveHtmlReportExecutionMode(null);
@@ -13150,7 +15815,9 @@ namespace OsEngine.Robots.Custom
             List<HtmlReportClosedTrade> closedTradesSnapshot = rt.ClosedTrades.ToList();
             List<HtmlReportRecentEvent> recentEventsSnapshot = rt.RecentEvents.ToList();
             List<HtmlReportMetaLogicJournalEntry> metaLogicJournalSnapshot = rt.MetaLogicJournal.ToList();
+            List<HtmlReportConfigChangeEntry> configChangeJournalSnapshot = rt.ConfigChangeJournal.ToList();
             Dictionary<string, int> closeReasonsSnapshot = new Dictionary<string, int>(rt.CloseReasons);
+            Dictionary<string, decimal> closeReasonPnLSnapshot = new Dictionary<string, decimal>(rt.CloseReasonPnL);
             decimal equityTotal = GetCombinedLogicPortfolioEquity();
             decimal realizedTotal = 0m;
             decimal unrealizedTotal = 0m;
@@ -13241,14 +15908,29 @@ namespace OsEngine.Robots.Custom
                             opens = l.Opens,
                             closes = l.Closes,
                             realizedPnL = l.RealizedPnL,
-                            equity = _logicPortfolios[l.Slot].Equity
+                            equity = _logicPortfolios[l.Slot].Equity,
+                            pnlSignalClose = l.PnLSignalClose,
+                            pnlLogicStopLoss = l.PnLLogicStopLoss,
+                            pnlLogicTakeProfit = l.PnLLogicTakeProfit,
+                            pnlLogicStopTakeSum = l.PnLLogicStopLoss + l.PnLLogicTakeProfit,
+                            pnlPortfolioStopSL = l.PnLPortfolioStopSL,
+                            pnlPortfolioStopTP = l.PnLPortfolioStopTP,
+                            pnlPortfolioEodFlat = l.PnLPortfolioEodFlat,
+                            pnlPortfolioSlTpSum = l.PnLPortfolioStopSL + l.PnLPortfolioStopTP,
+                            pnlPortfolioStopAndEodSum = l.PnLPortfolioStopSL + l.PnLPortfolioStopTP + l.PnLPortfolioEodFlat,
+                            pnlRegimeFlip = l.PnLRegimeFlip,
+                            pnlStopRobot = l.PnLStopRobot,
+                            pnlOther = l.PnLOther
                         })
                         .ToList()
                 },
                 closeReasons = closeReasonsSnapshot,
-                closeReasonsList = BuildHtmlReportCloseReasonsList(closeReasonsSnapshot),
-                stopperEvents = stopperEventsSnapshot.Select(s => new
+                closeReasonPnL = closeReasonPnLSnapshot,
+                closeReasonsList = BuildHtmlReportCloseReasonsList(closeReasonsSnapshot, closeReasonPnLSnapshot),
+                closePnLSummary = BuildHtmlReportClosePnLSummary(rt),
+                stopperEvents = stopperEventsSnapshot.Select((s, stopperIndex) => new
                 {
+                    id = stopperIndex + 1,
                     candleTime = s.CandleTime.ToString("O", CultureInfo.InvariantCulture),
                     eventUtc = s.EventTimeUtc.ToString("O", CultureInfo.InvariantCulture),
                     kind = s.Kind,
@@ -13315,6 +15997,22 @@ namespace OsEngine.Robots.Custom
                         opened = l.Opened,
                         skipped = l.Skipped
                     }).ToList()
+                }).ToList(),
+                configChangeJournal = configChangeJournalSnapshot.Select(c => new
+                {
+                    id = c.Id,
+                    candleTime = c.CandleTime.ToString("O", CultureInfo.InvariantCulture),
+                    eventUtc = c.EventTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+                    category = c.Category,
+                    logicSlot = c.LogicSlot,
+                    paramName = c.ParamName,
+                    summary = c.Summary,
+                    oldValue = c.OldValue,
+                    newValue = c.NewValue,
+                    oldLogicLine = c.OldLogicLine,
+                    newLogicLine = c.NewLogicLine,
+                    affectsGlobalChart = c.AffectsGlobalChart,
+                    affectsLogicChart = c.AffectsLogicChart
                 }).ToList()
             };
 
@@ -13349,28 +16047,57 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("<h2 class=\"logic-breakdown-title\">Портфель по логикам</h2>");
             sb.AppendLine("<p class=\"sub\">Под общим графиком — каждая активная логика: формула, equity и накопленные открытия/закрытия.</p>");
             sb.AppendLine("<div id=\"logic-portfolio-charts\"></div>");
+            sb.AppendLine("<h2 class=\"logic-breakdown-title\">Журнал изменений параметров (входы / выходы)</h2>");
+            sb.AppendLine("<p class=\"sub\">Все изменения логик, Regime, объёма, металогики и Stopper. На графиках equity — вертикальные полосы и ссылки на строку журнала.</p>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"config-change-journal\"><thead><tr><th>#</th><th>Время</th><th>Категория</th><th>L</th><th>Параметр</th><th>Было</th><th>Стало</th><th>Формула была</th><th>Формула стала</th></tr></thead><tbody></tbody></table></div>");
             sb.AppendLine("</section>");
-            sb.AppendLine("<section><h2>Общепортфельный Stopper (SL / TP)</h2>");
+            sb.AppendLine("<details class=\"report-fold report-fold-stopper\">");
+            sb.AppendLine("<summary>Общепортфельный Stopper (SL / TP)</summary>");
+            sb.AppendLine("<div class=\"fold-body\">");
             sb.AppendLine("<p class=\"sub\">Срабатывания общепортфельного stop-loss и take-profit — <strong>жирным</strong> в таблице ниже.</p>");
-            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"stopper-events\"><thead><tr><th>Время</th><th>Режим</th><th>Тип</th><th>Ref</th><th>Equity</th><th>%</th><th>Порог</th><th>Ref после</th><th>Regime Off</th><th>Описание</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"stopper-events\"><thead><tr><th>Время</th><th>Режим</th><th>Тип</th><th>Ref</th><th>Equity</th><th>%</th><th>Порог</th><th>Ref после</th><th>Regime Off</th><th>Описание</th></tr></thead><tbody></tbody></table></div>");
+            sb.AppendLine("</div></details>");
             sb.AppendLine("<section><h2>Металогика — текущее состояние</h2><div id=\"meta-logic-status\" class=\"sub\"></div>");
             sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"meta-logic-priority\"><thead><tr><th>#</th><th>L</th><th>Note</th><th>PnlSMA avg</th><th>PnlSMA last</th><th>Equity</th><th>Hist</th><th>Готов</th></tr></thead><tbody></tbody></table></div></section>");
-            sb.AppendLine("<section><h2>Журнал металогики (входы и распределение Volume)</h2><div class=\"tbl-wrap\"><table id=\"meta-logic-journal\"><thead><tr><th>Время</th><th>Tab</th><th>Режим</th><th>Канд.</th><th>Открыто</th><th>Volume</th><th>Слоты</th><th>Детали (L / PnlSMA / % / Vol / Side)</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<details class=\"report-fold report-fold-meta-journal\">");
+            sb.AppendLine("<summary>Журнал металогики (входы и распределение Volume)</summary>");
+            sb.AppendLine("<div class=\"fold-body\"><div class=\"tbl-wrap\"><table id=\"meta-logic-journal\"><thead><tr><th>Время</th><th>Tab</th><th>Режим</th><th>Канд.</th><th>Открыто</th><th>Volume</th><th>Слоты</th><th>Детали (L / PnlSMA / % / Vol / Side)</th></tr></thead><tbody></tbody></table></div></div>");
+            sb.AppendLine("</details>");
             sb.AppendLine("<section><h2>Открытые и закрытые позиции (от времени)</h2>");
             sb.AppendLine("<p class=\"sub chart-legend\"><span class=\"lg-open\">● открытия (накопл.)</span> · <span class=\"lg-close\">● закрытия (накопл.)</span></p>");
             sb.AppendLine("<div id=\"position-count-chart\" class=\"chart\"></div></section>");
-            sb.AppendLine("<section><h2>Открытия / закрытия — портфель (по дням)</h2><div id=\"trades-total-chart\" class=\"chart bars\"></div>");
-            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"trades-total-table\"><thead><tr><th>День</th><th>Opens</th><th>Closes</th></tr></thead><tbody></tbody></table></div></section>");
-            sb.AppendLine("<section><h2>По инструменту</h2><div class=\"tbl-wrap\"><table id=\"by-instrument\"><thead><tr><th>Инструмент</th><th>Opens</th><th>Closes</th><th>Realized PnL</th></tr></thead><tbody></tbody></table></div></section>");
-            sb.AppendLine("<section><h2>По логике</h2><div class=\"tbl-wrap\"><table id=\"by-logic\"><thead><tr><th>Логика</th><th>Opens</th><th>Closes</th><th>Realized</th><th>Equity</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<section class=\"chart-section\"><h2>Открытия / закрытия — портфель (по дням)</h2>");
+            sb.AppendLine("<div id=\"trades-total-chart\" class=\"chart bars\"></div>");
+            sb.AppendLine("<details class=\"report-fold report-fold-inline\">");
+            sb.AppendLine("<summary>Таблица по дням (Opens / Closes)</summary>");
+            sb.AppendLine("<div class=\"fold-body\"><div class=\"tbl-wrap\"><table id=\"trades-total-table\"><thead><tr><th>День</th><th>Opens</th><th>Closes</th></tr></thead><tbody></tbody></table></div></div>");
+            sb.AppendLine("</details></section>");
+            sb.AppendLine("<details class=\"report-fold report-fold-strip report-fold-instruments\">");
+            sb.AppendLine("<summary>По инструменту</summary>");
+            sb.AppendLine("<div class=\"fold-body\"><div class=\"tbl-wrap\"><table id=\"by-instrument\"><thead><tr><th>Инструмент</th><th>Opens</th><th>Closes</th><th>Realized PnL</th></tr></thead><tbody></tbody></table></div></div>");
+            sb.AppendLine("</details>");
+            sb.AppendLine("<section><h2>Финансовый результат по причинам закрытия</h2>");
+            sb.AppendLine("<p class=\"sub\">Раздельно: общепортфельный SL/TP, ежедневная продажа по времени (если включена), SL/TP из строки логики (SL[…]/TP[…]), обычные выходы по Cl.</p>");
+            sb.AppendLine("<div id=\"close-pnl-summary\"></div>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"close-pnl-summary-table\"><thead><tr><th>Группа</th><th>Кол-во</th><th>Фин. результат</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<section><h2>По логике (фин. результат по типам выхода)</h2><div class=\"tbl-wrap\"><table id=\"by-logic\"><thead><tr><th>L</th><th>Opens</th><th>Closes</th><th>Realized</th><th>Cl</th><th>SL лог.</th><th>TP лог.</th><th>SL+TP лог.</th><th>SL портф.</th><th>TP портф.</th><th>EOD</th><th>SL+TP портф.</th><th>Equity</th></tr></thead><tbody></tbody></table></div></section>");
             sb.AppendLine("<section><h2>Причины закрытия</h2><div id=\"close-reasons\"></div>");
-            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"close-reasons-table\"><thead><tr><th>Причина</th><th>Кол-во</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"close-reasons-table\"><thead><tr><th>Причина</th><th>Кол-во</th><th>Фин. результат</th></tr></thead><tbody></tbody></table></div></section>");
             sb.AppendLine("<section><h2>История режимов</h2><div class=\"tbl-wrap\"><table id=\"mode-history\"><thead><tr><th>С</th><th>По</th><th>Режим</th><th>StartProgram</th><th>Эмулятор</th></tr></thead><tbody></tbody></table></div></section>");
-            sb.AppendLine("<section><h2>Открытые позиции</h2><p class=\"sub\" id=\"open-positions-hint\"></p>");
-            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"open-positions\"><thead><tr><th>Статус</th><th>Инструмент</th><th>L</th><th>Side</th><th>Vol</th><th>Entry</th><th>Открытие</th><th>Signal</th></tr></thead><tbody></tbody></table></div></section>");
-            sb.AppendLine("<section><h2>Закрытые позиции</h2><p class=\"sub\" id=\"closed-trades-hint\"></p>");
-            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"closed-trades\"><thead><tr><th>Инструмент</th><th>L</th><th>Открытие</th><th>Закрытие</th><th>Длительность</th><th>Δ</th><th>Причина</th><th>Note</th></tr></thead><tbody></tbody></table></div></section>");
-            sb.AppendLine("<section><h2>Последние события</h2><div class=\"tbl-wrap\"><table id=\"recent-events\"><thead><tr><th>Время</th><th>Режим</th><th>Ev</th><th>Tab</th><th>L</th><th>Δ</th><th>Note</th></tr></thead><tbody></tbody></table></div></section>");
+            sb.AppendLine("<details class=\"report-fold report-fold-positions\">");
+            sb.AppendLine("<summary>Открытые позиции</summary>");
+            sb.AppendLine("<div class=\"fold-body\"><p class=\"sub\" id=\"open-positions-hint\"></p>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"open-positions\"><thead><tr><th>Статус</th><th>Инструмент</th><th>L</th><th>Side</th><th>Vol</th><th>Entry</th><th>Открытие</th><th>Signal</th></tr></thead><tbody></tbody></table></div></div>");
+            sb.AppendLine("</details>");
+            sb.AppendLine("<details class=\"report-fold report-fold-positions\">");
+            sb.AppendLine("<summary>Закрытые позиции</summary>");
+            sb.AppendLine("<div class=\"fold-body\"><p class=\"sub\" id=\"closed-trades-hint\"></p>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"closed-trades\"><thead><tr><th>Инструмент</th><th>L</th><th>Открытие</th><th>Закрытие</th><th>Длительность</th><th>Фин. результат</th><th>Причина</th><th>Note</th></tr></thead><tbody></tbody></table></div></div>");
+            sb.AppendLine("</details>");
+            sb.AppendLine("<details class=\"report-fold report-fold-events\">");
+            sb.AppendLine("<summary>Последние события</summary>");
+            sb.AppendLine("<div class=\"fold-body\"><div class=\"tbl-wrap\"><table id=\"recent-events\"><thead><tr><th>Время</th><th>Режим</th><th>Ev</th><th>Tab</th><th>L</th><th>Δ</th><th>Note</th></tr></thead><tbody></tbody></table></div></div>");
+            sb.AppendLine("</details>");
             sb.AppendLine("<footer><p>Файл: Engine\\" + HtmlEncode(NameStrategyUniq + HtmlReportFileSuffix) + " · формат v"
                 + HtmlReportFormatVersion
                 + "</p></footer>");
@@ -13636,7 +16363,7 @@ namespace OsEngine.Robots.Custom
                     slot,
                     active,
                     logicNote = GetLogicSlotHumanNote(slot),
-                    side = active ? runtime.EntrySide.ToString() : "",
+                    side = active ? ResolveLogicOpenSide(runtime).ToString() : "",
                     pnlSmaAvg = avg,
                     pnlSmaLast = last,
                     equity = _logicPortfolios[slot].Equity,
@@ -13849,6 +16576,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("tr.stopper-row td{color:#2c2419;}");
             sb.AppendLine("tr.stopper-row-sl{border-left:4px solid #b45309;}");
             sb.AppendLine("tr.stopper-row-tp{border-left:4px solid #15803d;}");
+            sb.AppendLine("tr.stopper-row-eod{border-left:4px solid #6366f1;}");
             sb.AppendLine("footer{margin-top:32px;color:var(--muted);font-size:.8rem;}");
             sb.AppendLine(".bar-open{fill:#2d7a46;}.bar-close{fill:#b91c1c;}");
             sb.AppendLine(".eq-line{fill:none;stroke:#1d4ed8;stroke-width:2;}");
@@ -13859,6 +16587,32 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine(".chart-grid{stroke:#d4c4a8;stroke-width:1;opacity:.55;}");
             sb.AppendLine(".chart-axis-line{stroke:#b8a88c;stroke-width:1;}");
             sb.AppendLine(".chart-axis-text{font-size:10px;fill:#7a6f5c;font-family:Segoe UI,sans-serif;}");
+            sb.AppendLine(".chart-config-band-even{fill:#f5f0e6;}");
+            sb.AppendLine(".chart-config-band-odd{fill:#ffffff;}");
+            sb.AppendLine(".chart-config-marker{fill:#b45309;stroke:#fff;stroke-width:1;opacity:.92;}");
+            sb.AppendLine(".chart-config-marker-link{cursor:pointer;}");
+            sb.AppendLine(".chart-stopper-marker-link{cursor:pointer;}");
+            sb.AppendLine("#stopper-events tbody tr[id]{scroll-margin-top:80px;}");
+            sb.AppendLine("#stopper-events tbody tr:target{background:#fef3c7;}");
+            sb.AppendLine(".cfg-journal-formula{font-size:11px;white-space:pre-wrap;word-break:break-word;max-width:420px;margin:0;}");
+            sb.AppendLine("#config-change-journal tbody tr[id]{scroll-margin-top:80px;}");
+            sb.AppendLine("#config-change-journal tbody tr:target{background:#fef3c7;}");
+            sb.AppendLine("section.chart-section{margin:24px 0;}");
+            sb.AppendLine("details.report-fold{margin:16px 0;border:1px solid var(--paper-border);border-radius:8px;background:var(--paper-surface);box-shadow:0 1px 2px rgba(61,52,41,.05);}");
+            sb.AppendLine("details.report-fold summary{cursor:pointer;list-style:none;font-size:1.02rem;font-weight:600;padding:12px 16px;color:#2c2419;border-bottom:1px solid transparent;user-select:none;}");
+            sb.AppendLine("details.report-fold summary::-webkit-details-marker{display:none;}");
+            sb.AppendLine("details.report-fold summary::before{content:'▸ ';color:var(--accent);font-weight:700;}");
+            sb.AppendLine("details.report-fold[open] summary::before{content:'▾ ';}");
+            sb.AppendLine("details.report-fold[open] summary{border-bottom-color:var(--paper-border);}");
+            sb.AppendLine("details.report-fold .fold-body{padding:12px 16px 16px;}");
+            sb.AppendLine("details.report-fold .fold-body .sub{margin-top:0;}");
+            sb.AppendLine("details.report-fold-inline{margin-top:12px;}");
+            sb.AppendLine("details.report-fold-strip summary{background:linear-gradient(90deg,var(--paper-card) 0%,var(--paper-surface) 100%);border-left:4px solid var(--accent);}");
+            sb.AppendLine("details.report-fold-instruments{margin:20px 0;}");
+            sb.AppendLine("details.report-fold-stopper summary{border-left:4px solid #b45309;}");
+            sb.AppendLine("details.report-fold-meta-journal summary{border-left:4px solid #6366f1;}");
+            sb.AppendLine("details.report-fold-positions summary{border-left:4px solid #15803d;}");
+            sb.AppendLine("details.report-fold-events summary{border-left:4px solid #7a6f5c;}");
         }
 
         private static void AppendHtmlReportRenderScript(StringBuilder sb)
@@ -13894,8 +16648,14 @@ namespace OsEngine.Robots.Custom
     for(var i=0;i<list.length;i++){
       var s=list[i];
       var tr=document.createElement('tr');
-      tr.className='stopper-row '+(s.kind==='portfolio_take_profit'?'stopper-row-tp':'stopper-row-sl');
-      var kindLbl=s.kind==='portfolio_take_profit'?'Take-profit':'Stop-loss';
+      tr.id='stopper-j-'+(pick(s,'id','Id')||(list.length-i));
+      var kindCls='stopper-row-sl';
+      var kindLbl='Stop-loss';
+      if(s.kind==='portfolio_take_profit'){kindCls='stopper-row-tp';kindLbl='Take-profit';}
+      else if(s.kind==='portfolio_peak_drawdown'){kindCls='stopper-row-sl';kindLbl='Просадка от пика';}
+      else if(s.kind==='portfolio_significant_peak_pause'){kindCls='stopper-row-tp';kindLbl='Пауза: значит. пик';}
+      else if(s.kind==='portfolio_eod_flat'){kindCls='stopper-row-eod';kindLbl='EOD flat';}
+      tr.className='stopper-row '+kindCls;
       var cells=[s.candleTime||'',s.executionModeLabel||'',kindLbl,fmt(s.referenceEquity),fmt(s.currentEquity),
         s.thresholdPercent!=null?Number(s.thresholdPercent).toLocaleString('ru-RU'):'—',
         fmt(s.triggerLevel),fmt(s.postCloseEquity),s.regimeStopped?'да':'нет',s.summary||''];
@@ -13948,18 +16708,54 @@ namespace OsEngine.Robots.Custom
       return [j.candleTime||'',j.tabKey||'',modeLbl,j.candidatesTotal,j.entriesOpened,fmt(j.totalVolume),j.freeSlots,det+(j.summary?(' · '+j.summary):'')];
     });
   }
+  function closeReasonLabel(r){
+    var rs=pick(r,'reason','Reason')||'';
+    if(rs==='RegimeFlip')return 'Regime(LinReg) — OnFlip=Close';
+    return pick(r,'label','Label')||rs||'?';
+  }
+  function renderClosePnLSummary(d){
+    var s=d.closePnLSummary||{};
+    var box=document.getElementById('close-pnl-summary');
+    var rows=[
+      {g:'По сигналу Cl (обычное закрытие)',c:pick(s,'signalCloseCount'),v:pick(s,'signalClose')},
+      {g:'SL логики (SL[…] в строке)',c:pick(s,'logicStopLossCount'),v:pick(s,'logicStopLoss')},
+      {g:'TP логики (TP[…] в строке)',c:pick(s,'logicTakeProfitCount'),v:pick(s,'logicTakeProfit')},
+      {g:'Сумма SL+TP логики',c:(pick(s,'logicStopLossCount')||0)+(pick(s,'logicTakeProfitCount')||0),v:pick(s,'logicStopTakeSum')},
+      {g:'Общепортф. stop-loss',c:pick(s,'portfolioStopSLCount'),v:pick(s,'portfolioStopSL')},
+      {g:'Общепортф. take-profit',c:pick(s,'portfolioStopTPCount'),v:pick(s,'portfolioStopTP')},
+      {g:'Ежедневная продажа по времени',c:pick(s,'portfolioEodFlatCount'),v:pick(s,'portfolioEodFlat'),eod:true},
+      {g:'Сумма общепортф. SL+TP',c:(pick(s,'portfolioStopSLCount')||0)+(pick(s,'portfolioStopTPCount')||0),v:pick(s,'portfolioSlTpSum')},
+      {g:'Сумма общепортф. SL+TP+EOD',c:(pick(s,'portfolioStopSLCount')||0)+(pick(s,'portfolioStopTPCount')||0)+(pick(s,'portfolioEodFlatCount')||0),v:pick(s,'portfolioStopAndEodSum')},
+      {g:'Все SL/TP/EOD (портфель + логика)',c:null,v:pick(s,'allStopTakeSum')},
+      {g:'Итого по закрытиям (сумма строк)',c:null,v:pick(s,'realizedFromTrackedCloses')}
+    ];
+    if(box){
+      var eodOn=!!pick(s,'portfolioEodFlatEnabled');
+      var hint=eodOn?'Параметр «Продать всё к времени» включён.':'Параметр «Продать всё к времени» = «Не продавать».';
+      box.innerHTML='<p class=""sub"">'+hint+'</p>';
+    }
+    fillTable('close-pnl-summary-table',rows.filter(function(r){
+      if(r.eod&&!pick(s,'portfolioEodFlatEnabled')&&(pick(s,'portfolioEodFlatCount')||0)===0&&(pick(s,'portfolioEodFlat')||0)===0){return false;}
+      return true;
+    }),function(r){return [r.g,r.c==null?'—':r.c,fmt(r.v)];});
+  }
   function renderCloseReasons(d){
     var cr=document.getElementById('close-reasons');
     var list=d.closeReasonsList||[];
     if(!list.length&&d.closeReasons){
-      list=Object.keys(d.closeReasons).map(function(k){return {reason:k,count:d.closeReasons[k]};});
+      list=Object.keys(d.closeReasons).map(function(k){
+        var pnl=d.closeReasonPnL&&d.closeReasonPnL[k]!=null?d.closeReasonPnL[k]:0;
+        return {reason:k,label:k,count:d.closeReasons[k],pnl:pnl};
+      });
       list.sort(function(a,b){return (b.count||0)-(a.count||0);});
     }
     if(cr){
       if(!list.length){cr.innerHTML='<p class=""sub"">— нет закрытий в сессии —</p>';}
-      else{cr.innerHTML=list.map(function(r){return '<span class=""badge"">'+(r.reason||'?')+': '+(r.count||0)+'</span> ';}).join('');}
+      else{cr.innerHTML=list.map(function(r){
+        return '<span class=""badge"">'+closeReasonLabel(r)+': '+(r.count||0)+' / '+fmt(pick(r,'pnl','Pnl'))+'</span> ';
+      }).join('');}
     }
-    fillTable('close-reasons-table',list,function(r){return [r.reason||'?',r.count||0];});
+    fillTable('close-reasons-table',list,function(r){return [closeReasonLabel(r),r.count||0,fmt(pick(r,'pnl','Pnl'))];});
   }
   function renderOpenPositions(d){
     var hint=document.getElementById('open-positions-hint');
@@ -13985,8 +16781,13 @@ namespace OsEngine.Robots.Custom
       else if(total!=null&&total>rows.length){hint.textContent='Показаны последние '+rows.length+' из '+total+' закрытий сессии.';}
       else{hint.textContent='Всего закрытий в сессии: '+rows.length+'.';}
     }
+    var reasonLabels={
+      PortfolioStopSL:'Общепортф. SL',PortfolioStopTP:'Общепортф. TP',PortfolioPeakDrawdown:'Просадка от пика',PortfolioEodFlat:'EOD продажа',
+      StopLoss:'SL логики',TakeProfit:'TP логики',SignalClose:'Cl',RegimeFlip:'LinReg OnFlip',StopRobot:'Стоп робота',Other:'Прочее'
+    };
     fillTable('closed-trades',rows,function(t){
-      return [pick(t,'tabKey','TabKey')||'',pick(t,'logicSlot','LogicSlot')?'L'+pick(t,'logicSlot','LogicSlot'):'—',pick(t,'openTime','OpenTime')||'',pick(t,'closeTime','CloseTime')||'',pick(t,'duration','Duration')||'—',fmt(pick(t,'delta','Delta')),pick(t,'closeReason','CloseReason')||'',pick(t,'note','Note')||''];
+      var rs=pick(t,'closeReason','CloseReason')||'';
+      return [pick(t,'tabKey','TabKey')||'',pick(t,'logicSlot','LogicSlot')?'L'+pick(t,'logicSlot','LogicSlot'):'—',pick(t,'openTime','OpenTime')||'',pick(t,'closeTime','CloseTime')||'',pick(t,'duration','Duration')||'—',fmt(pick(t,'delta','Delta')),reasonLabels[rs]||rs,pick(t,'note','Note')||''];
     });
   }
   function fillTable(id,rows,proj,rowHook){
@@ -14062,6 +16863,174 @@ namespace OsEngine.Robots.Custom
     if(w<80){w=window.innerWidth;}
     return Math.max(320,w-16);
   }
+  function findSeriesIndexByTime(series,timeKey,isoTime){
+    if(!series||!series.length||!isoTime)return 0;
+    var target=new Date(isoTime).getTime();
+    if(isNaN(target))return 0;
+    var best=0;
+    for(var i=0;i<series.length;i++){
+      var pt=new Date(series[i][timeKey]).getTime();
+      if(isNaN(pt))continue;
+      if(pt<=target)best=i;
+      else break;
+    }
+    return best;
+  }
+  function filterConfigChangesForGlobal(journal){
+    return (journal||[]).filter(function(e){return !!pick(e,'affectsGlobalChart','AffectsGlobalChart');});
+  }
+  function filterConfigChangesForLogic(journal,slot){
+    return (journal||[]).filter(function(e){
+      var cat=pick(e,'category','Category')||'';
+      if(cat==='logic_inversion')return true;
+      if(cat==='logic_line'){
+        var ls=Number(pick(e,'logicSlot','LogicSlot'))||0;
+        return ls===slot;
+      }
+      return !!pick(e,'affectsGlobalChart','AffectsGlobalChart');
+    });
+  }
+  function configCategoryLabel(cat){
+    if(cat==='logic_line')return 'Логика';
+    if(cat==='logic_inversion')return 'Инверсия';
+    if(cat==='regime')return 'Regime';
+    if(cat==='stopper')return 'Stopper';
+    if(cat==='volume')return 'Объём';
+    if(cat==='meta')return 'Металогика';
+    return 'Торговля';
+  }
+  function configChangeHint(entry){
+    var s=pick(entry,'summary','Summary')||'';
+    if(s)return s;
+    var pn=pick(entry,'paramName','ParamName')||'';
+    return pn||('#'+(pick(entry,'id','Id')||'?'));
+  }
+  function appendConfigBandRects(svg,series,changes,x0,x1,y0,y1,timeKey){
+    if(!changes||!changes.length||!series||series.length<2)return svg;
+    var n=series.length;
+    var changeIdx=[];
+    for(var ci=0;ci<changes.length;ci++){
+      var idx=findSeriesIndexByTime(series,timeKey,pick(changes[ci],'candleTime','CandleTime')||pick(changes[ci],'t','T'));
+      if(changeIdx.indexOf(idx)<0){changeIdx.push(idx);}
+    }
+    changeIdx.sort(function(a,b){return a-b;});
+    var segments=[];
+    var segStart=0;
+    for(var bi=0;bi<changeIdx.length;bi++){
+      var cut=changeIdx[bi];
+      if(cut>segStart){segments.push({from:segStart,to:cut-1});}
+      segStart=cut;
+    }
+    if(segStart<=n-1){segments.push({from:segStart,to:n-1});}
+    if(!segments.length){segments.push({from:0,to:n-1});}
+    var bandSvg='';
+    for(var si=0;si<segments.length;si++){
+      var seg=segments[si];
+      var xFrom=x0+(x1-x0)*seg.from/(n-1||1);
+      var xTo=x0+(x1-x0)*seg.to/(n-1||1);
+      var cls=(si%2===0)?'chart-config-band-even':'chart-config-band-odd';
+      bandSvg+='<rect class=""'+cls+'"" x=""'+xFrom+'"" y=""'+y0+'"" width=""'+(Math.max(1,xTo-xFrom+((seg.to===n-1)?0:0)))+'"" height=""'+(y1-y0)+'""/>';
+    }
+    return bandSvg+svg;
+  }
+  function appendConfigChangeMarkers(svg,series,changes,x0,x1,y0,y1,timeKey){
+    if(!changes||!changes.length||!series||!series.length)return svg;
+    var n=series.length;
+    var markerSvg='';
+    for(var mi=0;mi<changes.length;mi++){
+      var ch=changes[mi];
+      var idx=findSeriesIndexByTime(series,timeKey,pick(ch,'candleTime','CandleTime')||pick(ch,'t','T'));
+      var cx=x0+(x1-x0)*idx/(n-1||1);
+      var cy=y0+8;
+      var id=pick(ch,'id','Id');
+      var hint=configChangeHint(ch).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\x22/g,'&quot;');
+      var href='#cfg-j-'+id;
+      markerSvg+='<a class=""chart-config-marker-link"" href=""'+href+'""><title>'+hint+'</title>';
+      markerSvg+='<circle class=""chart-config-marker"" cx=""'+cx+'"" cy=""'+cy+'"" r=""4""/>';
+      markerSvg+='<line x1=""'+cx+'"" y1=""'+y0+'"" x2=""'+cx+'"" y2=""'+y1+'"" stroke=""#d97706"" stroke-width=""1"" stroke-dasharray=""3,3"" opacity="".45""/>';
+      markerSvg+='</a>';
+    }
+    return svg+markerSvg;
+  }
+  function appendStopperMarkers(svg,series,events,x0,x1,y0,y1,timeKey){
+    if(!events||!events.length||!series||!series.length)return svg;
+    var n=series.length;
+    var markerSvg='';
+    for(var si=0;si<events.length;si++){
+      var ev=events[si];
+      var kind=pick(ev,'kind','Kind')||'';
+      if(kind!=='portfolio_stop_loss'&&kind!=='portfolio_take_profit'
+        &&kind!=='portfolio_peak_drawdown'&&kind!=='portfolio_significant_peak_pause')continue;
+      var idx=findSeriesIndexByTime(series,timeKey,pick(ev,'candleTime','CandleTime')||pick(ev,'t','T'));
+      var cx=x0+(x1-x0)*idx/(n-1||1);
+      var isTp=kind==='portfolio_take_profit'||kind==='portfolio_significant_peak_pause';
+      var stroke=isTp?'#15803d':'#dc2626';
+      var lbl='Общепортф. stop-loss';
+      if(kind==='portfolio_take_profit')lbl='Общепортф. take-profit';
+      else if(kind==='portfolio_peak_drawdown')lbl='Просадка от пика';
+      else if(kind==='portfolio_significant_peak_pause')lbl='Пауза: значит. пик';
+      var hint=(pick(ev,'summary','Summary')||lbl).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\x22/g,'&quot;');
+      var sid=pick(ev,'id','Id');
+      if(sid==null||sid==='')sid=si+1;
+      var href='#stopper-j-'+sid;
+      markerSvg+='<a class=""chart-stopper-marker-link"" href=""'+href+'""><title>'+hint+'</title>';
+      markerSvg+='<line x1=""'+cx+'"" y1=""'+y0+'"" x2=""'+cx+'"" y2=""'+y1+'"" stroke=""'+stroke+'"" stroke-width=""1"" opacity="".55""/>';
+      markerSvg+='<circle cx=""'+cx+'"" cy=""'+(y0+7)+'"" r=""3"" fill=""'+stroke+'"" stroke=""#fff"" stroke-width=""1"" opacity="".9""/>';
+      markerSvg+='</a>';
+    }
+    return svg+markerSvg;
+  }
+  function fillConfigChangeJournal(journal){
+    var tb=document.querySelector('#config-change-journal tbody');
+    if(!tb)return;
+    tb.innerHTML='';
+    var list=(journal||[]).slice();
+    if(!list.length){
+      tb.innerHTML='<tr><td colspan=""9"">— изменений параметров пока не зафиксировано —</td></tr>';
+      return;
+    }
+    for(var i=0;i<list.length;i++){
+      var e=list[i];
+      var tr=document.createElement('tr');
+      tr.id='cfg-j-'+(pick(e,'id','Id')||'');
+      tr.className='cfg-journal-row';
+      var slotVal=Number(pick(e,'logicSlot','LogicSlot'))||0;
+      var cat=configCategoryLabel(pick(e,'category','Category')||'');
+      var oldFormula=pick(e,'oldLogicLine','OldLogicLine')||'';
+      var newFormula=pick(e,'newLogicLine','NewLogicLine')||'';
+      var oldVal=pick(e,'oldValue','OldValue')||'';
+      var newVal=pick(e,'newValue','NewValue')||'';
+      var cells=[
+        pick(e,'id','Id')||'',
+        pick(e,'candleTime','CandleTime')||'',
+        cat,
+        slotVal>0?('L'+slotVal):'—',
+        pick(e,'paramName','ParamName')||'',
+        oldFormula?'—':(oldVal||'—'),
+        newFormula?'—':(newVal||'—'),
+        oldFormula||'—',
+        newFormula||'—'
+      ];
+      for(var j=0;j<cells.length;j++){
+        var td=document.createElement('td');
+        if(j===7&&oldFormula){
+          var pre=document.createElement('pre');
+          pre.className='cfg-journal-formula';
+          pre.textContent=oldFormula;
+          td.appendChild(pre);
+        }else if(j===8&&newFormula){
+          var pre2=document.createElement('pre');
+          pre2.className='cfg-journal-formula';
+          pre2.textContent=newFormula;
+          td.appendChild(pre2);
+        }else{
+          td.textContent=cells[j]==null?'':String(cells[j]);
+        }
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+  }
   function renderLineChart(el,series,lines,opts){
     opts=opts||{};
     if(!el)return;
@@ -14084,7 +17053,11 @@ namespace OsEngine.Robots.Custom
     var yMin=yAxis.min,yMax=yAxis.max,yTicks=yAxis.ticks;
     var n=series.length;
     var xTickIdx=pickSparseIndices(n,opts.xTicks||6);
+    var dateKey=opts.timeKey||'t';
+    var configChanges=opts.configChanges||[];
+    var stopperEvents=opts.stopperEvents||[];
     var svg='<svg width=""100%"" height=""'+h+'"" viewBox=""0 0 '+w+' '+h+'"" preserveAspectRatio=""none"" class=""chart-svg"">';
+    svg=appendConfigBandRects(svg,series,configChanges,x0,x1,y0,y1,dateKey);
     for(var yi=0;yi<yTicks.length;yi++){
       var v=yTicks[yi];
       var gy=y1-(y1-y0)*(v-yMin)/(yMax-yMin);
@@ -14095,7 +17068,6 @@ namespace OsEngine.Robots.Custom
       var idx=xTickIdx[xi];
       var gx=x0+(x1-x0)*idx/(n-1||1);
       svg+='<line class=""chart-grid"" x1=""'+gx+'"" y1=""'+y0+'"" x2=""'+gx+'"" y2=""'+y1+'""/>';
-      var dateKey=opts.timeKey||'t';
       svg+='<text class=""chart-axis-text"" x=""'+gx+'"" y=""'+(y1+16)+'"" text-anchor=""middle"">'+formatChartDate(series[idx][dateKey])+'</text>';
     }
     svg+='<line class=""chart-axis-line"" x1=""'+x0+'"" y1=""'+y1+'"" x2=""'+x1+'"" y2=""'+y1+'""/>';
@@ -14112,6 +17084,8 @@ namespace OsEngine.Robots.Custom
       var sw=' stroke-width=""'+(line.strokeWidth||2)+'""';
       svg+='<polyline fill=""none""'+cls+stroke+sw+' points=""'+pts+'""/>';
     }
+    svg=appendConfigChangeMarkers(svg,series,configChanges,x0,x1,y0,y1,dateKey);
+    svg=appendStopperMarkers(svg,series,stopperEvents,x0,x1,y0,y1,dateKey);
     svg+='</svg>';
     el.innerHTML=svg;
   }
@@ -14125,7 +17099,9 @@ namespace OsEngine.Robots.Custom
       plotHeight:opts.height||160,
       emptyText:'Нет данных equity',
       yTicks:5,
-      xTicks:6
+      xTicks:6,
+      configChanges:opts.configChanges||[],
+      stopperEvents:opts.stopperEvents||[]
     });
   }
   function renderTradeCountChart(el,series,opts){
@@ -14137,7 +17113,9 @@ namespace OsEngine.Robots.Custom
       plotHeight:opts.height||150,
       emptyText:'Нет данных по открытиям/закрытиям',
       yTicks:5,
-      xTicks:6
+      xTicks:6,
+      configChanges:opts.configChanges||[],
+      stopperEvents:opts.stopperEvents||[]
     });
   }
   function formatLogicLineForDisplay(line){
@@ -14153,7 +17131,15 @@ namespace OsEngine.Robots.Custom
   }
   function renderPortfolioEquityReport(d){
     var agg=d.equitySeries&&d.equitySeries.aggregate;
-    renderEquityChart(document.getElementById('equity-chart-aggregate'),agg,{height:190,strokeWidth:2.5,color:'#1d4ed8'});
+    var globalChanges=filterConfigChangesForGlobal(d.configChangeJournal);
+    var stopperEv=d.stopperEvents||[];
+    renderEquityChart(document.getElementById('equity-chart-aggregate'),agg,{
+      height:190,
+      strokeWidth:2.5,
+      color:'#1d4ed8',
+      configChanges:globalChanges,
+      stopperEvents:stopperEv
+    });
     var root=document.getElementById('logic-portfolio-charts');
     if(!root)return;
     root.innerHTML='';
@@ -14208,8 +17194,9 @@ namespace OsEngine.Robots.Custom
       try{
         var colors=logicChartColors||['#1d4ed8'];
         var color=colors[(lg.slot-1)%colors.length];
-        renderEquityChart(chart,lg.series,{height:160,color:color});
-        renderTradeCountChart(tradeChart,lg.tradeSeries||lg.series,{height:150});
+        var logicChanges=filterConfigChangesForLogic(d.configChangeJournal,lg.slot);
+        renderEquityChart(chart,lg.series,{height:160,color:color,configChanges:logicChanges,stopperEvents:stopperEv});
+        renderTradeCountChart(tradeChart,lg.tradeSeries||lg.series,{height:150,configChanges:logicChanges,stopperEvents:stopperEv});
       }catch(chartErr){
         chart.textContent='Ошибка графика: '+chartErr;
       }
@@ -14246,19 +17233,28 @@ namespace OsEngine.Robots.Custom
     var s=d.summary||{};
     var kpi=document.getElementById('kpi');
     if(kpi){
+      var cps=d.closePnLSummary||{};
       kpi.innerHTML=card('Equity',fmt(s.equityTotal))+card('Realized',fmt(s.realizedTotal))+card('Unrealized',fmt(s.unrealizedTotal))
         +card('Opens',s.opensTotal||0)+card('Closes',s.closesTotal||0)+card('Open pos',s.openPositionsCount||0)
-        +card('Stopper SL/TP',s.stopperTriggersTotal||0);
+        +card('Cl (фин.)',fmt(pick(cps,'signalClose')))+card('SL+TP лог.',fmt(pick(cps,'logicStopTakeSum')))
+        +card('Портф. SL+TP+EOD',fmt(pick(cps,'portfolioStopAndEodSum')))+card('EOD продажа',fmt(pick(cps,'portfolioEodFlat')))+card('Stopper событий',s.stopperTriggersTotal||0);
     }
     try{fillStopperEvents(d.stopperEvents);}catch(e1){console.error(e1);}
     try{renderMetaLogicStatus(d.metaLogic);}catch(e2){console.error(e2);}
     try{fillMetaLogicJournal(d.metaLogicJournal);}catch(e3){console.error(e3);}
     try{renderPortfolioEquityReport(d);}catch(e4){console.error(e4);}
+    try{fillConfigChangeJournal(d.configChangeJournal);}catch(e4b){console.error(e4b);}
     try{renderPositionCounts(d.positionCountSeries);}catch(e5){console.error(e5);}
     try{renderDayBars(d.tradeBuckets&&d.tradeBuckets.total);}catch(e6){console.error(e6);}
     try{fillTable('trades-total-table',d.tradeBuckets&&d.tradeBuckets.total,function(r){return [pick(r,'day','DayKey')||'',pick(r,'opens','Opens')||0,pick(r,'closes','Closes')||0];});}catch(e7){console.error(e7);}
     try{fillTable('by-instrument',d.tradeBuckets&&d.tradeBuckets.byInstrument,function(r){return [pick(r,'tabKey','TabKey')||'',pick(r,'opens','Opens')||0,pick(r,'closes','Closes')||0,fmt(pick(r,'realizedPnL','RealizedPnL'))];});}catch(e8){console.error(e8);}
-    try{fillTable('by-logic',d.tradeBuckets&&d.tradeBuckets.byLogicSlot,function(r){return ['L'+pick(r,'slot','Slot'),pick(r,'opens','Opens')||0,pick(r,'closes','Closes')||0,fmt(pick(r,'realizedPnL','RealizedPnL')),fmt(pick(r,'equity','Equity'))];});}catch(e9){console.error(e9);}
+    try{fillTable('by-logic',d.tradeBuckets&&d.tradeBuckets.byLogicSlot,function(r){
+      return ['L'+pick(r,'slot','Slot'),pick(r,'opens','Opens')||0,pick(r,'closes','Closes')||0,fmt(pick(r,'realizedPnL','RealizedPnL')),
+        fmt(pick(r,'pnlSignalClose')),fmt(pick(r,'pnlLogicStopLoss')),fmt(pick(r,'pnlLogicTakeProfit')),fmt(pick(r,'pnlLogicStopTakeSum')),
+        fmt(pick(r,'pnlPortfolioStopSL')),fmt(pick(r,'pnlPortfolioStopTP')),fmt(pick(r,'pnlPortfolioEodFlat')),fmt(pick(r,'pnlPortfolioSlTpSum')),
+        fmt(pick(r,'equity','Equity'))];
+    });}catch(e9){console.error(e9);}
+    try{renderClosePnLSummary(d);}catch(e9b){console.error(e9b);}
     try{renderCloseReasons(d);}catch(e10){console.error(e10);}
     try{fillTable('mode-history',d.modeHistory,function(m){
       return [pick(m,'fromUtc','FromUtc')||'',pick(m,'toUtc','ToUtc')||'…',pick(m,'modeLabel','ModeLabel')||pick(m,'modeId','ModeId')||'',pick(m,'startProgram','StartProgram')||'',pick(m,'emulatorIsOn','EmulatorIsOn')?'да':'нет'];
@@ -14269,8 +17265,9 @@ namespace OsEngine.Robots.Custom
       return [pick(e,'candleTime','CandleTime')||'',pick(e,'executionModeLabel','ExecutionModeLabel')||'',pick(e,'eventName','eventName','Event','event')||'',pick(e,'tabKey','TabKey')||'',pick(e,'logicSlot','LogicSlot')?'L'+pick(e,'logicSlot','LogicSlot'):'—',fmt(pick(e,'delta','Delta')),pick(e,'note','Note')||''];
     },function(tr,e){
       var ev=pick(e,'eventName','Event','event')||'';
-      if(ev==='portfolio_stop_loss'){tr.className='stopper-row stopper-row-sl';}
-      else if(ev==='portfolio_take_profit'){tr.className='stopper-row stopper-row-tp';}
+      if(ev==='portfolio_stop_loss'||ev==='portfolio_peak_drawdown'){tr.className='stopper-row stopper-row-sl';}
+      else if(ev==='portfolio_take_profit'||ev==='portfolio_significant_peak_pause'){tr.className='stopper-row stopper-row-tp';}
+      else if(ev==='portfolio_eod_flat'){tr.className='stopper-row stopper-row-eod';}
     });}catch(e14){console.error(e14);}
   }
   renderMultiLogicReportBody(d);
@@ -14422,6 +17419,18 @@ namespace OsEngine.Robots.Custom
                 ? value
                 : defaultValue;
         }
+
+        /// <summary>Длина окна LinReg с учётом @LR и параметра робота.</summary>
+        public int GetLinRegLength()
+        {
+            if (Kind != LogicIndicatorKind.LinReg)
+            {
+                return LogicLineParser.ResolveLinRegLength(null, LogicLineParser.DefaultLinRegLength);
+            }
+
+            Params.TryGetValue("L", out string raw);
+            return LogicLineParser.ResolveLinRegLength(raw, LogicLineParser.DefaultLinRegLength);
+        }
     }
 
     /// <summary>Узел дерева выражения логики (атом или AND/OR).</summary>
@@ -14519,6 +17528,13 @@ namespace OsEngine.Robots.Custom
             return decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal value)
                 ? value
                 : defaultValue;
+        }
+
+        /// <summary>Длина LinReg в Regime(…): L=@LR или параметр робота, если L не задан.</summary>
+        public int GetLinRegLength()
+        {
+            Params.TryGetValue("L", out string raw);
+            return LogicLineParser.ResolveLinRegLength(raw, LogicLineParser.DefaultLinRegLength);
         }
 
         /// <summary>Мёртвая зона наклона: абсолютное число или доля от центра (SuffixDead=0.05%).</summary>
@@ -14765,6 +17781,50 @@ namespace OsEngine.Robots.Custom
         /// <summary>Имена индикаторов для regex (поиск формулы, IsLogicFormulaContent, подсветка HTML).</summary>
         internal const string IndicatorNamesRegexFragment =
             "SMA|Stoch|Stochastic|ATR|LinReg|LR|LinearRegression|MACD|Macd|CCI|RSI|Rsi|Momentum|Mom|Boll|Bollinger|VWAP";
+
+        /// <summary>Длина LinReg из параметра робота «Длина линейной регрессии» (в строке логики: L=@LR или LinReg(@LR;…)).</summary>
+        public const string LinRegLengthParamToken = "@LR";
+
+        public const int DefaultLinRegLengthFallback = 50;
+
+        public const int MinLinRegLength = 5;
+
+        /// <summary>Текущее значение параметра «Длина линейной регрессии» перед Parse (устанавливает MultiLogic).</summary>
+        public static int DefaultLinRegLength { get; set; } = DefaultLinRegLengthFallback;
+
+        /// <summary>true — токен ссылается на параметр робота, а не на явное число.</summary>
+        public static bool IsLinRegLengthParamReference(string raw)
+        {
+            return !string.IsNullOrWhiteSpace(raw)
+                && raw.Trim().Equals(LinRegLengthParamToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Число свечей LinReg: явное L в формуле или параметр робота для @LR / пустого L.</summary>
+        public static int ResolveLinRegLength(string raw, int fallbackWhenMissing)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return Math.Max(MinLinRegLength, DefaultLinRegLength);
+            }
+
+            raw = raw.Trim();
+            if (IsLinRegLengthParamReference(raw))
+            {
+                return Math.Max(MinLinRegLength, DefaultLinRegLength);
+            }
+
+            if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
+            {
+                return Math.Max(2, iv);
+            }
+
+            if (decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal dec))
+            {
+                return Math.Max(2, (int)dec);
+            }
+
+            return Math.Max(MinLinRegLength, fallbackWhenMissing);
+        }
 
         /// <summary>
         /// Разбирает сырую строку логики: префикс Disabled, дерево AND/OR, список атомов.
@@ -15400,7 +18460,7 @@ namespace OsEngine.Robots.Custom
                     string devStr = dev.ToString(CultureInfo.InvariantCulture);
                     return new List<string>
                     {
-                        atom.GetIntParam("L", 50).ToString(CultureInfo.InvariantCulture),
+                        atom.GetLinRegLength().ToString(CultureInfo.InvariantCulture),
                         "Close",
                         devStr,
                         devStr
@@ -15820,7 +18880,7 @@ namespace OsEngine.Robots.Custom
                     EnsureDefault(atom, "Signal", "9");
                     break;
                 case LogicIndicatorKind.LinReg:
-                    EnsureDefault(atom, "L", "50");
+                    EnsureDefault(atom, "L", LinRegLengthParamToken);
                     EnsureDefault(atom, "Dev", "2");
                     break;
                 case LogicIndicatorKind.Bollinger:
@@ -17223,7 +20283,7 @@ namespace OsEngine.Robots.Custom
                 case LogicIndicatorKind.Macd:
                     return atom.GetIntParam("Slow", 26) + atom.GetIntParam("Signal", 9);
                 case LogicIndicatorKind.LinReg:
-                    return atom.GetIntParam("L", 50) + atom.GetIntParam("SlopeLb", 3);
+                    return atom.GetLinRegLength() + atom.GetIntParam("SlopeLb", 3);
                 case LogicIndicatorKind.Bollinger:
                     return atom.GetIntParam("L", 100);
                 case LogicIndicatorKind.Momentum:
@@ -17746,7 +20806,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("     Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
             sb.AppendLine();
             sb.AppendLine("0b) Regime — режим наклона LinReg (необязательно, только в начале строки, после Disabled):");
-            sb.AppendLine("   Regime(LinReg;L=50;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)");
+            sb.AppendLine("   Regime(LinReg;L=@LR;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)");
             sb.AppendLine("   Entry=MatchSide  — Buy при наклоне вверх, Sell вниз; во флэте входа нет");
             sb.AppendLine("   Entry=FlatOnly   — вход только во флэте (|Δ| ≤ SlopeDead); при выходе из флэта — RegimeFlip");
             sb.AppendLine("   OnFlip=Close     — закрыть, если наклон против Side (MatchSide) или вышли из флэта (FlatOnly)");
@@ -17764,8 +20824,8 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
             sb.AppendLine("   (SMA(100) Op[Ab]) OR (SMA(100) Side[S] Op[Bl] Cl[Ab])");
             sb.AppendLine("   (SMA(100) Op[Ab]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
-            sb.AppendLine("   NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]  — инверсия Op/Cl атома (не Buy↔Sell)");
-            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine("   NOT LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]  — инверсия Op/Cl атома (не Buy↔Sell)");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo])");
             sb.AppendLine("   Приоритет между фрагментами: || / OR, затем && / AND, затем NOT / !, затем атом.");
             sb.AppendLine("   Подробно — раздел «1a) Логические операторы» ниже.");
             sb.AppendLine();
@@ -17821,6 +20881,8 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Вход: срабатывает составное выражение по Op[…] (||/OR, &&/AND, NOT/! между фрагментами).");
             sb.AppendLine("   Выход: по Cl[…] (те же операторы внутри Cl[…] и NOT у атома); Cl[-] — атом не задаёт направленный выход.");
             sb.AppendLine("   Side[S] — шорт (Sell), иначе лонг (Buy). Позиция: сигнал MultiLogic_L1 … MultiLogic_L10.");
+            sb.AppendLine("   «Инверсия логики (покупка ↔ продажа)» (вкладка «Логики», по умолчанию выкл.): как в TrendMultiIndicatorScreener —");
+            sb.AppendLine("   bull↔bear: вход по Cl[…] вместо Op[…], выход по Op[…] вместо Cl[…], Buy↔Sell (NOT в строке не меняется).");
             sb.AppendLine("   Volume — общий объём; при нескольких входах на одной свече делится поровну между логиками.");
             sb.AppendLine("   Max positions (all tabs) — лимит открытых позиций робота на скринере.");
             sb.AppendLine("   Нехватка слотов: входят логики с меньшим номером (1 раньше 10), остальные пропускаются.");
@@ -17845,18 +20907,18 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Примеры между фрагментами:");
             sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
             sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
-            sb.AppendLine("     NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
-            sb.AppendLine("     !LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]          — то же, что NOT");
-            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine("     NOT LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]");
+            sb.AppendLine("     !LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]          — то же, что NOT");
+            sb.AppendLine("     (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo])");
             sb.AppendLine();
             sb.AppendLine("B) NOT у всего атома (перед именем индикатора, после Side/SL/TP/Note):");
             sb.AppendLine("   NOT / ! / NOT- перед SMA, LinReg, Stoch… инвертирует логический результат Op и Cl");
             sb.AppendLine("   (true↔false). Side[S]/Side[L] и Buy/Sell НЕ меняются — только «сработало / не сработало».");
-            sb.AppendLine("   Пример: NOT LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]");
+            sb.AppendLine("   Пример: NOT LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]");
             sb.AppendLine("   → если AbUp без NOT был бы true — вход по этому атому блокируется (ни Buy, ни Sell);");
             sb.AppendLine("   → если AbUp без NOT был бы false — условие Op становится true (вход возможен, сторона как в Side).");
             sb.AppendLine("   Cl инвертируется так же: Cl сработал ↔ Cl не сработал. Это не шорт вместо лонга.");
-            sb.AppendLine("   Переворот Buy↔Sell — Side[S] в строке или «Инверсия» для PnlSMA<0 при металогике; NOT не меняет Side.");
+            sb.AppendLine("   Переворот Buy↔Sell и Op↔Cl — «Инверсия логики» или «Инверсия» для PnlSMA<0 при металогике; NOT не меняет Side.");
             sb.AppendLine("   Можно комбинировать с NOT между фрагментами: NOT (NOT LinReg(...) Op[AbUp]) — двойное отрицание.");
             sb.AppendLine();
             sb.AppendLine("C) Внутри Op[…] и Cl[…] (только сигналы ЭТОГО индикатора атома):");
@@ -18629,7 +21691,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  После готовности PnlSMA: Volume делится между логиками с Op и PnlSMA>0 пропорционально PnlSMA;");
             sb.AppendLine("  логики с PnlSMA≤0 не торгуют (PnlSMA=0 тоже исключается).");
             sb.AppendLine("  «Инверсия (покупка ↔ продажа)» — только когда металогика уже действует (PnlSMA готов):");
-            sb.AppendLine("  разрешить PnlSMA<0 с Buy↔Sell; доля Volume по |PnlSMA| вместе с положительными. По умолчанию выкл.");
+            sb.AppendLine("  разрешить PnlSMA<0 с Buy↔Sell и Op↔Cl (как инверсия логики); доля Volume по |PnlSMA|. По умолчанию выкл.");
             sb.AppendLine("  Сумма объёмов новых входов на свече не превышает Volume (первая вкладка).");
             sb.AppendLine("  Max positions: при нехватке слотов — приоритет логик с большим PnlSMA.");
             sb.AppendLine("  Если металогика выключена — как раньше: каждая логика отдельно, Volume поровну, L1…L10.");
@@ -18727,9 +21789,10 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("--- Linear Regression (LinReg) ---");
             sb.AppendLine("Имя в строке: LinReg  (или LR, LinearRegression)");
             sb.AppendLine("Параметры индикатора:");
-            sb.AppendLine("  LinReg(50)                  — длина канала 50, Dev=2 по умолчанию");
-            sb.AppendLine("  LinReg(50;Dev=2)            — длина и отклонение границ, %");
-            sb.AppendLine("  LinReg(L=50,Dev=2)          — именованно");
+            sb.AppendLine("  LinReg(@LR)                 — длина из параметра «Длина линейной регрессии», Dev=2");
+            sb.AppendLine("  LinReg(@LR;Dev=2)           — длина из параметра, отклонение границ");
+            sb.AppendLine("  LinReg(50;Dev=2)            — явная длина 50 (не из параметра)");
+            sb.AppendLine("  LinReg(L=@LR,Dev=2)         — именованно, длина из параметра");
             sb.AppendLine("Сигналы (как TrendMultiIndicatorScreener — канал LinReg):");
             sb.AppendLine("  Op[AbUp]  — close выше верхней линии (лонг)");
             sb.AppendLine("  Cl[BlUp]  — close ниже верхней (выход)");
@@ -18741,8 +21804,8 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  Op[SlopeDn] — центр падает (Δ < -SlopeDead); шорт-режим");
             sb.AppendLine("  Cl[-] с Op[SlopeUp/Dn] — атом только фильтр режима, без своего выхода");
             sb.AppendLine("Примеры:");
-            sb.AppendLine("  Тренд:      LinReg(50;Dev=2) Op[AbUp] Cl[BlUp] SL[2%] TP[6%] Note(trend)");
-            sb.AppendLine("  Антитренд:  LinReg(50;Dev=2) Side[S] Op[BlLo] Cl[AbLo] Note(counter-trend)");
+            sb.AppendLine("  Тренд:      LinReg(@LR;Dev=2) Op[AbUp] Cl[BlUp] SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("  Антитренд:  LinReg(@LR;Dev=2) Side[S] Op[BlLo] Cl[AbLo] Note(counter-trend)");
             sb.AppendLine();
         }
 
@@ -18841,7 +21904,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  Side[S] Op[MOM<=100] Cl[MOM>=100] — шорт при MOM ≤ порога");
             sb.AppendLine("Примеры:");
             sb.AppendLine("  Тренд:      Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100] Note(trend-mom)");
-            sb.AppendLine("  С LinReg:   (LinReg(50;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND (Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100])");
+            sb.AppendLine("  С LinReg:   (LinReg(@LR;Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND (Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100])");
             sb.AppendLine();
         }
 

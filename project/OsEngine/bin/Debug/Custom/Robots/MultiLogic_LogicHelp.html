@@ -51,7 +51,7 @@ a{color:var(--accent);}
 <header class="help-hdr">
 <h1>MultiLogic — справка по строкам логики</h1>
 <p class="help-sub">Светлая HTML-версия · файл <code>Custom\Robots\MultiLogic_LogicHelp.html</code> · генерируется автоматически из <code>MultiLogic.cs</code></p>
-<p class="help-sub">Версия справки: 4 · обновлено: 08.06.2026 20:21</p>
+<p class="help-sub">Версия справки: 4 · обновлено: 09.06.2026 18:50</p>
 </header>
 <div class="help-layout">
 <nav class="help-toc" aria-label="Содержание">
@@ -127,7 +127,7 @@ a{color:var(--accent);}
 <p>После готовности PnlSMA: Volume делится между логиками с Op и PnlSMA&gt;0 пропорционально PnlSMA;</p>
 <p>логики с PnlSMA≤0 не торгуют (PnlSMA=0 тоже исключается).</p>
 <p>«Инверсия (покупка ↔ продажа)» — только когда металогика уже действует (PnlSMA готов):</p>
-<p>разрешить PnlSMA&lt;0 с Buy↔Sell; доля Volume по |PnlSMA| вместе с положительными. По умолчанию выкл.</p>
+<p>разрешить PnlSMA&lt;0 с Buy↔Sell и Op↔Cl (как инверсия логики); доля Volume по |PnlSMA|. По умолчанию выкл.</p>
 <p>Сумма объёмов новых входов на свече не превышает Volume (первая вкладка).</p>
 <p>Max positions: при нехватке слотов — приоритет логик с большим PnlSMA.</p>
 <p>Если металогика выключена — как раньше: каждая логика отдельно, Volume поровну, L1…L10.</p>
@@ -175,7 +175,7 @@ a{color:var(--accent);}
 </div>
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code">0b) Regime — режим наклона LinReg (необязательно, только в начале строки, после Disabled):</code></div>
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)</code></div>
 </div>
 <ul>
 <li>Entry=MatchSide  — Buy при наклоне вверх, Sell вниз; во флэте входа нет</li>
@@ -200,8 +200,8 @@ a{color:var(--accent);}
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=55;Smax=45) <span class="lf-op">Op</span>[K&gt;=55] <span class="lf-cl">Cl</span>[K&lt;=45])</code></div>
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab]) <span class="lf-kw">OR</span> (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab])</code></div>
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab]) <span class="lf-kw">||</span> (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab])</code></div>
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — инверсия Op/Cl атома (не Buy↔Sell)</span></div>
-<div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> <span class="lf-kw">NOT</span> (<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo])</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — инверсия Op/Cl атома (не Buy↔Sell)</span></div>
+<div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> <span class="lf-kw">NOT</span> (<span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo])</code></div>
 </div>
 <ul>
 <li>Приоритет между фрагментами: || / OR, затем &amp;&amp; / AND, затем NOT / !, затем атом.</li>
@@ -224,9 +224,9 @@ a{color:var(--accent);}
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-])</code></div>
 <div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">||</span> (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab])</code></div>
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code></div>
-<div class="logic-formula"><code class="logic-formula-code">!<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — то же, что NOT</span></div>
-<div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> <span class="lf-kw">NOT</span> (<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo])</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code></div>
+<div class="logic-formula"><code class="logic-formula-code">!<span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — то же, что NOT</span></div>
+<div class="logic-formula"><code class="logic-formula-code">(<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">&amp;&amp;</span> <span class="lf-kw">NOT</span> (<span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo])</code></div>
 </div>
 <p>B) NOT у всего атома (перед именем индикатора, после Side/SL/TP/Note):</p>
 <ul>
@@ -234,13 +234,13 @@ a{color:var(--accent);}
 <li>(true↔false). Side[S]/Side[L] и Buy/Sell НЕ меняются — только «сработало / не сработало».</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Пример: </span><code class="logic-formula-code"><span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Пример: </span><code class="logic-formula-code"><span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code></div>
 </div>
 <ul>
 <li>→ если AbUp без NOT был бы true — вход по этому атому блокируется (ни Buy, ни Sell);</li>
 <li>→ если AbUp без NOT был бы false — условие Op становится true (вход возможен, сторона как в Side).</li>
 <li>Cl инвертируется так же: Cl сработал ↔ Cl не сработал. Это не шорт вместо лонга.</li>
-<li>Переворот Buy↔Sell — Side[S] в строке или «Инверсия» для PnlSMA&lt;0 при металогике; NOT не меняет Side.</li>
+<li>Переворот Buy↔Sell и Op↔Cl — «Инверсия логики» или «Инверсия» для PnlSMA&lt;0 при металогике; NOT не меняет Side.</li>
 </ul>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">Можно комбинировать с NOT между фрагментами: </span><code class="logic-formula-code"><span class="lf-kw">NOT</span> (<span class="lf-kw">NOT</span> <span class="lf-ind">LinReg</span>(...) <span class="lf-op">Op</span>[AbUp])</code><span class="logic-formula-comment"> — двойное отрицание.</span></div>
@@ -335,7 +335,7 @@ a{color:var(--accent);}
 </ul>
 <h3 class="sec" id="topic-6a">6a) Стандартные логики L1…L4 (кнопка «Установить логики по умолчанию», вкладка «Логики»)</h3>
 <ul>
-<li>Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10». После кнопки нажмите «Принять».</li>
+<li>Записывает четыре строки в «Логика 1…4», очищает «Логика 5…10»; индикаторы на графике — сразу.</li>
 <li>Смысл набора: на базе TrendMultiIndicator+CCI — два лонга (тренд и боковик) и два шорта (тренд и боковик).</li>
 <li>L1/L3 — Regime MatchSide (вход по наклону LinReg); L2/L4 — Regime FlatOnly (вход во флэте, Stoch от границ).</li>
 <li>При Regime=On на одной свече могут сработать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры, не дубли.</li>
@@ -345,7 +345,7 @@ a{color:var(--accent);}
 </div>
 <h4 id="def-l1" class="def-logic">L1 — lon-trend (Лонг, тренд)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100) <span class="lf-op">Op</span>[CCI&gt;=100] <span class="lf-cl">Cl</span>[CCI&lt;=-100]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] <span class="lf-note-tag">Note</span>(lon-trend))</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100) <span class="lf-op">Op</span>[CCI&gt;=100] <span class="lf-cl">Cl</span>[CCI&lt;=-100]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] <span class="lf-note-tag">Note</span>(lon-trend))</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -353,14 +353,14 @@ a{color:var(--accent);}
 </ul>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]</code><span class="logic-formula-comment"> — цена выше SMA100 (бычий контекст); выход ниже SMA.</span></div>
-<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — пробой верхней границы канала вверх; выход ниже нижней.</span></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlLo]</code><span class="logic-formula-comment"> — пробой верхней границы канала вверх; выход ниже нижней (@LR — параметр «Длина линейной регрессии»).</span></div>
 <div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk]</code><span class="logic-formula-comment"> — фильтр роста волатильности (без отдельного Cl).</span></div>
 <div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">CCI</span>(20) <span class="lf-op">Op</span>[CCI&gt;=100] <span class="lf-cl">Cl</span>[CCI&lt;=-100]</code><span class="logic-formula-comment"> — перекупленность CCI для входа в лонг-тренд.</span></div>
 <div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] — линия MACD выше сигнальной (импульс вверх).</code></div>
 </div>
 <h4 id="def-l2" class="def-logic">L2 — lon-bokovik (Лонг, боковик)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10) <span class="lf-op">Op</span>[K&lt;=10] <span class="lf-cl">Cl</span>[K&gt;=90]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] <span class="lf-note-tag">Note</span>(lon-bokovik))</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (<span class="lf-ind">SMA</span>(100) <span class="lf-op">Op</span>[Ab] <span class="lf-cl">Cl</span>[Bl]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10) <span class="lf-op">Op</span>[K&lt;=10] <span class="lf-cl">Cl</span>[K&gt;=90]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&gt;Sig] <span class="lf-cl">Cl</span>[Macd&lt;Sig] <span class="lf-note-tag">Note</span>(lon-bokovik))</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -374,7 +374,7 @@ a{color:var(--accent);}
 </div>
 <h4 id="def-l3" class="def-logic">L3 — short-trend (Шорт, тренд)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]) <span class="lf-kw">AND</span> (<span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbUp]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100) <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=100]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] <span class="lf-note-tag">Note</span>(short-trend))</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]) <span class="lf-kw">AND</span> (<span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbUp]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100) <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=100]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] <span class="lf-note-tag">Note</span>(short-trend))</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -382,14 +382,14 @@ a{color:var(--accent);}
 </ul>
 <div class="logic-formula-group">
 <div class="logic-formula"><code class="logic-formula-code">• SMA <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab] — шорт: цена ниже SMA100.</code></div>
-<div class="logic-formula"><code class="logic-formula-code">• LinReg <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbUp] — пробой нижней границы вниз; выход выше верхней.</code></div>
+<div class="logic-formula"><span class="logic-formula-label">•: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(@LR) <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbUp]</code><span class="logic-formula-comment"> — пробой нижней границы вниз; выход выше верхней.</span></div>
 <div class="logic-formula"><code class="logic-formula-code">• ATR <span class="lf-op">Op</span>[GrOk] — фильтр волатильности.</code></div>
 <div class="logic-formula"><code class="logic-formula-code">• CCI <span class="lf-op">Op</span>[CCI&lt;=-100] <span class="lf-cl">Cl</span>[CCI&gt;=100] — перепроданность CCI для шорт-тренда.</code></div>
 <div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] — MACD ниже сигнальной.</code></div>
 </div>
 <h4 id="def-l4" class="def-logic">L4 — short-bokovik (Шорт, боковик)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=50;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10) <span class="lf-op">Op</span>[K&gt;=90] <span class="lf-cl">Cl</span>[K&lt;=10]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] <span class="lf-note-tag">Note</span>(short-bokovik))</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (<span class="lf-ind">SMA</span>(100) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[Bl] <span class="lf-cl">Cl</span>[Ab]) <span class="lf-kw">AND</span> (<span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10) <span class="lf-op">Op</span>[K&gt;=90] <span class="lf-cl">Cl</span>[K&lt;=10]) <span class="lf-kw">AND</span> (<span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5) <span class="lf-op">Op</span>[GrOk] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">MACD</span>(12,26,9) <span class="lf-op">Op</span>[Macd&lt;Sig] <span class="lf-cl">Cl</span>[Macd&gt;Sig] <span class="lf-note-tag">Note</span>(short-bokovik))</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -401,9 +401,6 @@ a{color:var(--accent);}
 <div class="logic-formula"><code class="logic-formula-code">• ATR <span class="lf-op">Op</span>[GrOk] — фильтр волатильности.</code></div>
 <div class="logic-formula"><code class="logic-formula-code">• MACD <span class="lf-op">Op</span>[Macd&lt;Sig] — импульс вниз.</code></div>
 </div>
-<ul>
-<li>Другая кнопка: «Установить разнообразные логики-примеры» — 8 учебных строк в L1…L8 со SL/TP, не заводской набор.</li>
-</ul>
 <h2 id="sec-2">7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)</h2>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">---: </span><code class="logic-formula-code">SMA (Simple Moving Average) ---</code></div>
@@ -476,9 +473,10 @@ a{color:var(--accent);}
 </div>
 <p>Параметры индикатора:</p>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50)</code><span class="logic-formula-comment"> — длина канала 50, Dev=2 по умолчанию</span></div>
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50;Dev=2)</code><span class="logic-formula-comment"> — длина и отклонение границ, %</span></div>
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(L=50,Dev=2)</code><span class="logic-formula-comment"> — именованно</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(@LR)</code><span class="logic-formula-comment"> — длина из параметра «Длина линейной регрессии», Dev=2</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(@LR;Dev=2)</code><span class="logic-formula-comment"> — длина из параметра, отклонение границ</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50;Dev=2)</code><span class="logic-formula-comment"> — явная длина 50 (не из параметра)</span></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(L=@LR,Dev=2)</code><span class="logic-formula-comment"> — именованно, длина из параметра</span></div>
 </div>
 <p>Сигналы (как TrendMultiIndicatorScreener — канал LinReg):</p>
 <div class="logic-formula-group">
@@ -496,8 +494,8 @@ a{color:var(--accent);}
 </div>
 <p>Примеры:</p>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Тренд: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlUp] <span class="lf-sl">SL</span>[2%] <span class="lf-sl">TP</span>[6%] <span class="lf-note-tag">Note</span>(trend)</code></div>
-<div class="logic-formula"><span class="logic-formula-label">Антитренд: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(50;Dev=2) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbLo] <span class="lf-note-tag">Note</span>(counter-trend)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Тренд: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-op">Op</span>[AbUp] <span class="lf-cl">Cl</span>[BlUp] <span class="lf-sl">SL</span>[2%] <span class="lf-sl">TP</span>[6%] <span class="lf-note-tag">Note</span>(trend)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Антитренд: </span><code class="logic-formula-code"><span class="lf-ind">LinReg</span>(@LR;Dev=2) <span class="lf-side">Side[S]</span> <span class="lf-op">Op</span>[BlLo] <span class="lf-cl">Cl</span>[AbLo] <span class="lf-note-tag">Note</span>(counter-trend)</code></div>
 </div>
 <p>--- MACD ---</p>
 <div class="logic-formula-group">
@@ -606,7 +604,7 @@ a{color:var(--accent);}
 <p>Примеры:</p>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">Тренд: </span><code class="logic-formula-code"><span class="lf-ind">Momentum</span>(14;Lmin=100;Smax=100) <span class="lf-op">Op</span>[MOM&gt;=100] <span class="lf-cl">Cl</span>[MOM&lt;=100] <span class="lf-note-tag">Note</span>(trend-mom)</code></div>
-<div class="logic-formula"><span class="logic-formula-label">С LinReg: </span><code class="logic-formula-code">(<span class="lf-ind">LinReg</span>(50;Dev=2;SlopeLb=3) <span class="lf-op">Op</span>[SlopeUp] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">Momentum</span>(14;Lmin=100;Smax=100) <span class="lf-op">Op</span>[MOM&gt;=100] <span class="lf-cl">Cl</span>[MOM&lt;=100])</code></div>
+<div class="logic-formula"><span class="logic-formula-label">С LinReg: </span><code class="logic-formula-code">(<span class="lf-ind">LinReg</span>(@LR;Dev=2;SlopeLb=3) <span class="lf-op">Op</span>[SlopeUp] <span class="lf-cl">Cl</span>[-]) <span class="lf-kw">AND</span> (<span class="lf-ind">Momentum</span>(14;Lmin=100;Smax=100) <span class="lf-op">Op</span>[MOM&gt;=100] <span class="lf-cl">Cl</span>[MOM&lt;=100])</code></div>
 </div>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">---: </span><code class="logic-formula-code">VWAP (Volume Weighted Average Price) ---</code></div>
@@ -633,6 +631,12 @@ a{color:var(--accent);}
 </div>
 <ul>
 <li>Side[S] — шорт (Sell), иначе лонг (Buy). Позиция: сигнал MultiLogic_L1 … MultiLogic_L10.</li>
+<li>«Инверсия логики (покупка ↔ продажа)» (вкладка «Логики», по умолчанию выкл.): как в TrendMultiIndicatorScreener —</li>
+</ul>
+<div class="logic-formula-group">
+<div class="logic-formula"><code class="logic-formula-code">bull↔bear: вход по <span class="lf-cl">Cl</span>[…] вместо <span class="lf-op">Op</span>[…], выход по <span class="lf-op">Op</span>[…] вместо <span class="lf-cl">Cl</span>[…], Buy↔Sell (<span class="lf-kw">NOT</span> в строке не меняется).</code></div>
+</div>
+<ul>
 <li>Volume — общий объём; при нескольких входах на одной свече делится поровну между логиками.</li>
 <li>Max positions (all tabs) — лимит открытых позиций робота на скринере.</li>
 <li>Нехватка слотов: входят логики с меньшим номером (1 раньше 10), остальные пропускаются.</li>

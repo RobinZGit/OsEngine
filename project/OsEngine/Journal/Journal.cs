@@ -380,16 +380,28 @@ namespace OsEngine.Journal
                     return 0;
                 }
 
-                List<Position> dealsToDay = deals.FindAll(
-                    position => position.OpenOrders[0].TimeCreate.Day == DateTime.Now.Day
-                    );
-
                 decimal profit = 0;
+                int today = DateTime.Now.Day;
 
-                for (int i = 0; i < dealsToDay.Count; i++)
+                for (int i = 0; i < deals.Count; i++)
                 {
-                    profit += dealsToDay[i].ProfitOperationPercent;
+                    Position position = deals[i];
+                    if (position == null
+                        || position.OpenOrders == null
+                        || position.OpenOrders.Count == 0
+                        || position.OpenOrders[0] == null)
+                    {
+                        continue;
+                    }
+
+                    if (position.OpenOrders[0].TimeCreate.Day != today)
+                    {
+                        continue;
+                    }
+
+                    profit += position.ProfitOperationPercent;
                 }
+
                 return profit;
             }
             catch (Exception error)

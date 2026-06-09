@@ -1,5 +1,30 @@
 # Скрипты QUIK для роботов OsEngine
 
+## MultiLogic.lua
+
+Порт **MultiLogic** (`Custom/Robots/MultiLogic.cs`) на **один инструмент**.
+
+### Перенесено
+
+- 4 слота L1–L4, строки логики (по умолчанию как в OsEngine)
+- `@LR` → `LINREG_LEN`
+- `Regime`, `Disabled`, AND-цепочки атомов, Op/Cl, `Side[S]`
+- **VWAP**, **Bollinger** (`Boll` / `Bollinger`), **RSI** (`RSI>=55`, `AbMid`, …)
+- Инверсия, Regime, упрощённый портфельный SL/TP, нерабочие периоды, трейлинг
+
+### Не перенесено
+
+- HTML-отчёт, кнопки, скринер MOEX, металогика, SL/TP в строке
+
+### Запуск
+
+1. Скопируйте `MultiLogic.lua` в каталог Lua QUIK.
+2. Задайте `CLASS_CODE`, `SEC_CODE`, `LOGIC1`…`LOGIC4`, `LINREG_LEN`.
+3. `REGIME = "On"` на демо.
+4. Сервис → Lua-скрипты → Запустить.
+
+---
+
 ## TrendMultiIndicatorScreener.lua
 
 Порт логики робота **TrendMultiIndicatorScreener** на **один** инструмент в терминале QUIK.

@@ -887,8 +887,8 @@ namespace OsEngine.Robots.Custom
             }
 
             decimal initialAmount = _calculationsInitialPortfolioAmount?.ValueDecimal ?? 0m;
-            BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
-            DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
+                BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+                DateTime referenceTime = ResolvePortfolioMonitoringReferenceTime(tab);
 
             if (initialAmount <= 0m
                 || !TryParseCalculationsStartDate(tab, referenceTime, out DateTime startDate))
@@ -1088,8 +1088,8 @@ namespace OsEngine.Robots.Custom
 
             BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
             decimal? value = TryGetPortfolioValueForStopsBaselineFill(tab);
-            if (!value.HasValue || value.Value <= 0m)
-            {
+                if (!value.HasValue || value.Value <= 0m)
+                {
                 StrategyParameterDecimal baselineParam = ResolvePortfolioStopBaselineParameter();
                 if (baselineParam != null && baselineParam.ValueDecimal > 0m)
                 {
@@ -1151,55 +1151,55 @@ namespace OsEngine.Robots.Custom
             DateTime currentDate = GetCalendarDateForTimeOnly(tab, referenceTime);
 
             decimal? value = TryGetPortfolioValueForStopsBaselineFill(tab);
-            if (value.HasValue && value.Value > 0m)
-            {
-                decimal baselineToSet = value.Value;
-                if (_usePortfolioTakeProfit.ValueBool && _portfolioTakeProfitPercent.ValueDecimal > 0m)
+                if (value.HasValue && value.Value > 0m)
                 {
+                    decimal baselineToSet = value.Value;
+                    if (_usePortfolioTakeProfit.ValueBool && _portfolioTakeProfitPercent.ValueDecimal > 0m)
+                    {
                     decimal? currentPortfolio = TryGetPortfolioValueForStopsBaselineFill(tab);
 
-                    if (currentPortfolio.HasValue && currentPortfolio.Value > 0m)
-                    {
-                        decimal ceiling = baselineToSet
-                            * (1m + _portfolioTakeProfitPercent.ValueDecimal / 100m);
-                        if (currentPortfolio.Value >= ceiling)
+                        if (currentPortfolio.HasValue && currentPortfolio.Value > 0m)
                         {
-                            baselineToSet = currentPortfolio.Value;
-                            SendNewLogMessage(
-                                NameStrategyUniq
-                                + " | Стопы: база поднята до текущего портфеля "
-                                + baselineToSet.ToString(CultureInfo.InvariantCulture)
-                                + " — иначе take profit сработал бы сразу (портфель уже выше порога).",
-                                LogMessageType.User);
+                            decimal ceiling = baselineToSet
+                                * (1m + _portfolioTakeProfitPercent.ValueDecimal / 100m);
+                            if (currentPortfolio.Value >= ceiling)
+                            {
+                                baselineToSet = currentPortfolio.Value;
+                                SendNewLogMessage(
+                                    NameStrategyUniq
+                                    + " | Стопы: база поднята до текущего портфеля "
+                                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                                    + " — иначе take profit сработал бы сразу (портфель уже выше порога).",
+                                    LogMessageType.User);
+                            }
                         }
                     }
-                }
 
                 ApplyPortfolioStopFieldsToParameters(baselineToSet, currentDate, setAmount: true, silentDecimals: false);
                 SetFakePortfolioAmount(baselineToSet, refreshParameterGui: false, silent: false);
                 SetPortfolioPeakValue(baselineToSet, silent: false);
                 SetFakeMode(false, refreshParameterGui: false, syncPortfolioAmountFromReal: false);
-                _portfolioTakeProfitNeedsPullback = false;
+                    _portfolioTakeProfitNeedsPullback = false;
                 SaveParametersWithoutIndicatorResync();
                 RequestParameterGuiRepaintOnce();
 
                 string actionLabel = string.IsNullOrWhiteSpace(invokedByButtonName)
                     ? "Заполнить сумму портфеля"
                     : invokedByButtonName;
-                string msg =
-                    NameStrategyUniq
+                    string msg =
+                        NameStrategyUniq
                     + " | Стопы: «"
                     + actionLabel
                     + "» — база "
-                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
-                    + ", фейковая сумма "
+                        + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                        + ", фейковая сумма "
                     + baselineToSet.ToString(CultureInfo.InvariantCulture)
                     + ", пик "
-                    + baselineToSet.ToString(CultureInfo.InvariantCulture)
-                    + ", фейковый режим=выкл., дата "
-                    + FormatPortfolioStopDate(currentDate);
-                SendNewLogMessage(msg, LogMessageType.System);
-                SendNewLogMessage(msg, LogMessageType.User);
+                        + baselineToSet.ToString(CultureInfo.InvariantCulture)
+                        + ", фейковый режим=выкл., дата "
+                        + FormatPortfolioStopDate(currentDate);
+                    SendNewLogMessage(msg, LogMessageType.System);
+                    SendNewLogMessage(msg, LogMessageType.User);
                 return true;
             }
 
@@ -1210,20 +1210,20 @@ namespace OsEngine.Robots.Custom
 
             string modeHint = ShouldReadPortfolioFromTesterServer(tab)
                 ? "тестер (Portfolio сервера тестера: Initial deposit / начальный депозит > 0)"
-                : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
+                    : (_screenerTab?.EmulatorIsOn == true ? "фейк" : "лайв");
             string failLabel = string.IsNullOrWhiteSpace(invokedByButtonName)
                 ? FillPortfolioStopBaselineButtonName
                 : invokedByButtonName;
-            SendNewLogMessage(
-                NameStrategyUniq
+                SendNewLogMessage(
+                    NameStrategyUniq
                 + " | Стопы: «"
                 + failLabel
                 + "» — дата просадки="
-                + FormatPortfolioStopDate(currentDate)
+                    + FormatPortfolioStopDate(currentDate)
                 + ", но сумма портфеля не получена ("
-                + modeHint
+                    + modeHint
                 + ").",
-                LogMessageType.Error);
+                    LogMessageType.Error);
             return false;
         }
 
@@ -2287,8 +2287,8 @@ namespace OsEngine.Robots.Custom
 
                 if (syncPortfolioAmountFromReal)
                 {
-                    SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
-                    EnsureFakePortfolioAmountAlignedWithReal(tab, refreshParameterGui: false);
+                SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+                EnsureFakePortfolioAmountAlignedWithReal(tab, refreshParameterGui: false);
                 }
             }
             else
@@ -2298,7 +2298,7 @@ namespace OsEngine.Robots.Custom
                 // When we exit fake execution, keep shadow portfolio (it mirrors real trading).
                 if (syncPortfolioAmountFromReal)
                 {
-                    SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
+                SyncFakePortfolioAmountFromRealPortfolio(tab, refreshParameterGui: false);
                 }
 
                 _loggedFakeModeBlocksRealOrders = false;
@@ -2873,7 +2873,7 @@ namespace OsEngine.Robots.Custom
                         continue;
                     }
 
-                    writer.WriteLine(
+                writer.WriteLine(
                         pair.Key
                         + "|"
                         + p.Direction
@@ -3554,8 +3554,8 @@ namespace OsEngine.Robots.Custom
 
             decimal recoveryTarget = ResolveFakeModeRecoveryTargetAmount(tab);
             if (recoveryTarget <= 0m)
-            {
-                return;
+                {
+                    return;
             }
 
             decimal targetThreshold = recoveryTarget * (1m + ResumeTradingFakeOverBaselinePercent / 100m);
@@ -5585,8 +5585,8 @@ namespace OsEngine.Robots.Custom
                         existing.Reload();
                     }
                     else
-                    {
-                        ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
+                {
+                    ApplyIndicatorParamsToTab(tab, ind.Num, ind.Type, ind.Parameters);
                     }
 
                     return true;
@@ -7127,35 +7127,35 @@ namespace OsEngine.Robots.Custom
 
             if (server != null)
             {
-                string portfolioName = ResolvePortfolioMonitoringName(tab, server);
-                Portfolio portfolio = TryPickPortfolioOnServer(server, portfolioName);
-                if (portfolio != null)
-                {
+            string portfolioName = ResolvePortfolioMonitoringName(tab, server);
+            Portfolio portfolio = TryPickPortfolioOnServer(server, portfolioName);
+            if (portfolio != null)
+            {
                     decimal? fromPortfolio = TryGetFullPortfolioEquityFromPortfolioObject(portfolio);
                     if (fromPortfolio.HasValue)
-                    {
-                        return fromPortfolio;
-                    }
+                {
+                    return fromPortfolio;
+                }
+            }
+
+            if (server is TesterServer testerServer && testerServer.StartPortfolio > 0m)
+            {
+                return testerServer.StartPortfolio;
+            }
+
+            if (server.ServerType == ServerType.Optimizer
+                && server.Portfolios != null
+                && server.Portfolios.Count > 0)
+            {
+                Portfolio optimizerPortfolio = server.Portfolios[0];
+                if (optimizerPortfolio.ValueCurrent > 0m)
+                {
+                    return optimizerPortfolio.ValueCurrent;
                 }
 
-                if (server is TesterServer testerServer && testerServer.StartPortfolio > 0m)
+                if (optimizerPortfolio.ValueBegin > 0m)
                 {
-                    return testerServer.StartPortfolio;
-                }
-
-                if (server.ServerType == ServerType.Optimizer
-                    && server.Portfolios != null
-                    && server.Portfolios.Count > 0)
-                {
-                    Portfolio optimizerPortfolio = server.Portfolios[0];
-                    if (optimizerPortfolio.ValueCurrent > 0m)
-                    {
-                        return optimizerPortfolio.ValueCurrent;
-                    }
-
-                    if (optimizerPortfolio.ValueBegin > 0m)
-                    {
-                        return optimizerPortfolio.ValueBegin;
+                    return optimizerPortfolio.ValueBegin;
                     }
                 }
             }
@@ -8349,9 +8349,9 @@ namespace OsEngine.Robots.Custom
                 ApplyEntryExitSignalTransforms(ref bullEntry, ref bearEntry);
 
                 if (!bullEntry && !bearEntry)
-                {
-                    return;
-                }
+            {
+                return;
+            }
 
                 if (_regime.ValueString == "OnlyClosePosition")
                 {
@@ -8491,9 +8491,9 @@ namespace OsEngine.Robots.Custom
             void AddFrom(StrategyParameterString groupParam, bool enabled)
             {
                 if (!enabled || groupParam == null)
-                {
-                    return;
-                }
+            {
+                return;
+            }
 
                 List<int> parsed = ParseIndicatorGroupNumbers(groupParam.ValueString);
                 for (int i = 0; i < parsed.Count; i++)
@@ -8949,69 +8949,69 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            bool tmp = bull;
-            bull = bear;
-            bear = tmp;
+                bool tmp = bull;
+                bull = bear;
+                bear = tmp;
         }
 
         /// <summary>Бычий сигнал на свече candleIndex.</summary>
         private bool IsBullSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex, bool checkPortfolioSuccess)
-        {
-            decimal close = candles[candleIndex].Close;
-            var items = new List<(int group, bool pass)>();
-
-            AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
-            AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
-
-            if (!CombineGroupedOrOfAnds(items))
             {
-                return false;
-            }
+                decimal close = candles[candleIndex].Close;
+                var items = new List<(int group, bool pass)>();
+
+                AddGroupedIndicatorResult(items, _smaAndGroup, BullSmaPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rsiAndGroup, BullRsiPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _stochAndGroup, BullStochPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _momAndGroup, BullMomentumPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _bollAndGroup, BullBollingerPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _linRegAndGroup, BullLinRegPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _volumeAndGroup, BullVolumePasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _vwapAndGroup, BullVwapPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _atrAndGroup, BullAtrPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _macdAndGroup, BullMacdPasses(tab, candleIndex));
+
+                if (!CombineGroupedOrOfAnds(items))
+                {
+                    return false;
+                }
 
             if (checkPortfolioSuccess && !IsPortfolioStrategySuccessful(tab, candleIndex))
             {
                 return false;
             }
 
-            return !VolumeTodFilterBlocksSignal(candles, candleIndex);
+                return !VolumeTodFilterBlocksSignal(candles, candleIndex);
         }
 
         /// <summary>Медвежий сигнал на свече candleIndex.</summary>
         private bool IsBearSignalAt(List<Candle> candles, BotTabSimple tab, int candleIndex, bool checkPortfolioSuccess)
-        {
-            decimal close = candles[candleIndex].Close;
-            var items = new List<(int group, bool pass)>();
-
-            AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
-            AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
-            AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
-
-            if (!CombineGroupedOrOfAnds(items))
             {
-                return false;
-            }
+                decimal close = candles[candleIndex].Close;
+                var items = new List<(int group, bool pass)>();
+
+                AddGroupedIndicatorResult(items, _smaAndGroup, BearSmaPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _rsiAndGroup, BearRsiPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _stochAndGroup, BearStochPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _momAndGroup, BearMomentumPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _bollAndGroup, BearBollingerPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _linRegAndGroup, BearLinRegPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _volumeAndGroup, BearVolumePasses(candles, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _vwapAndGroup, BearVwapPasses(close, tab, candleIndex));
+                AddGroupedIndicatorResult(items, _atrAndGroup, BearAtrPasses(tab, candleIndex));
+                AddGroupedIndicatorResult(items, _macdAndGroup, BearMacdPasses(tab, candleIndex));
+
+                if (!CombineGroupedOrOfAnds(items))
+                {
+                    return false;
+                }
 
             if (checkPortfolioSuccess && !IsPortfolioStrategySuccessful(tab, candleIndex))
             {
                 return false;
             }
 
-            return !VolumeTodFilterBlocksSignal(candles, candleIndex);
+                return !VolumeTodFilterBlocksSignal(candles, candleIndex);
         }
 
         /// <summary>Бычий сигнал на последней свече.</summary>
@@ -9793,12 +9793,12 @@ namespace OsEngine.Robots.Custom
                 if (tab.StartProgram == StartProgram.IsOsTrader
                     && tab.Security != null
                     && tab.Security.UsePriceStepCostToCalculateVolume
-                    && tab.Security.PriceStep != tab.Security.PriceStepCost
+                        && tab.Security.PriceStep != tab.Security.PriceStepCost
                     && tab.Security.PriceStep != 0m
                     && tab.Security.PriceStepCost != 0m)
-                {
+                    {
                     qty = moneyOnPosition / (referencePrice / tab.Security.PriceStep * tab.Security.PriceStepCost);
-                }
+                    }
 
                 if (tab.StartProgram == StartProgram.IsOsTrader)
                 {
