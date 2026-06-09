@@ -12,8 +12,8 @@
 - Масштабирование порогов Lmin/Smax/Gr/Dev/SlopeDead и Op/Cl при разборе (strict≠3)
 - Атомы: SMA, LinReg, ATR, CCI, MACD, Stochastic, **RSI**, **VWAP**, **Bollinger**; Op/Cl (`Ab`, `AbMid`, `BlMid`, `RSI>=`, …)
 - Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
-- Общепортфельный SL/TP (% от equity, high-water reference)
-- **Просадка от пика** (% от max equity — закрыть всё, без паузы входов)
+- Общепортфельный SL/TP (% от equity, high-water reference; **отрицательный equity допустим** — как в OsEngine при плече)
+- **Просадка от пика** (% от max equity — закрыть всё; пик обновляется только вверх, может быть &lt; 0)
 - **Пауза после значительного пика** (годовая доходность впадина→пик ≥ порога; блок новых входов)
 - Инверсия: Buy↔Sell **и Op↔Cl** (как OsEngine / TMIS)
 - Нерабочие периоды, трейлинг позиции

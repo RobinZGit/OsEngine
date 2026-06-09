@@ -14,8 +14,8 @@
   • 4 слота L1–L4 (строки как в OsEngine, @LR → LINREG_LEN, @Strict → STRICTNESS)
   • Disabled, Strict(@Strict|1…5), Regime(LinReg;…), AND, SMA/LinReg/ATR/CCI/MACD/Stoch
   • Op/Cl, Side[S], инверсия логики, Regime On/Off/OnlyLong/…
-  • Общепортфельный SL/TP % (упрощённо по equity счёта)
-  • Просадка от пика (% от max equity — только закрытие)
+  • Общепортфельный SL/TP % (equity счёта; отрицательный equity допустим)
+  • Просадка от пика (% от max equity — только закрытие; пик может быть < 0)
   • Пауза входов после значительного пика (годовая доходность впадина→пик)
   • Инверсия: Buy↔Sell и Op↔Cl (как OsEngine / TMIS)
   • Нерабочие периоды, трейлинг позиции
@@ -55,7 +55,7 @@ LOGIC2 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;On
 LOGIC3 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (LinReg(@LR;Dev=2) Op[BlLo] Cl[AbUp]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
 LOGIC4 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
 
--- Stopper (упрощённо: equity = баланс + переоценка по позиции)
+-- Stopper (упрощённо: equity счёта; отрицательный equity — норма при плече, без «обнуления»)
 PORTF_SL_ON = false
 PORTF_SL_PCT = 1.0
 PORTF_TP_ON = false
@@ -611,8 +611,9 @@ end
 function check_peak_drawdown()
     if not PEAK_DRAWDOWN_ON or PEAK_DRAWDOWN_PCT <= 0 then return false end
     local eq = account_equity_approx()
-    if eq <= 0 then return false end
-    if portfolio_peak <= 0 or eq > portfolio_peak then portfolio_peak = eq end
+    if portfolio_peak == 0 and eq == 0 then return false end
+    if eq > portfolio_peak then portfolio_peak = eq end
+    if portfolio_peak == 0 then return false end
     local floor = portfolio_peak * (1 - PEAK_DRAWDOWN_PCT / 100)
     if eq > floor then return false end
     close_all()
@@ -713,8 +714,8 @@ end
 
 function check_portf_stopper()
     local eq = account_equity_approx()
-    if eq <= 0 then return false end
-    if ref_equity <= 0 then ref_equity = eq end
+    if ref_equity == 0 and eq == 0 then return false end
+    if ref_equity == 0 then ref_equity = eq end
     if eq > ref_equity then ref_equity = eq end
     if PORTF_SL_ON and PORTF_SL_PCT > 0 and eq <= ref_equity * (1 - PORTF_SL_PCT / 100) then
         close_all(); ref_equity = eq; return true

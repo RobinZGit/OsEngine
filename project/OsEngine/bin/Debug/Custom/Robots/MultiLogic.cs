@@ -1477,6 +1477,7 @@ namespace OsEngine.Robots.Custom
             SetStrategyParameterIntSilent(param, next);
             TryApplyIntParameterToOpenParameterGui(MaxPositionsParamName, next);
             _loggedMaxPositionsLimit = false;
+            TryRefreshStopperTechEquityAfterParameterTweak();
             SaveParametersWithoutLogicIndicatorResync();
             RequestParameterGuiRepaintOnce();
             RecordHtmlReportConfigChangesIfAny();
@@ -1493,6 +1494,7 @@ namespace OsEngine.Robots.Custom
             next = Math.Max(VolumeMin, Math.Min(VolumeMax, next));
             SetStrategyParameterDecimalSilent(param, next);
             TryApplyDecimalParameterToOpenParameterGui(VolumeParamName, next);
+            TryRefreshStopperTechEquityAfterParameterTweak();
             SaveParametersWithoutLogicIndicatorResync();
             RequestParameterGuiRepaintOnce();
             RecordHtmlReportConfigChangesIfAny();
@@ -2439,6 +2441,7 @@ namespace OsEngine.Robots.Custom
             SetStrategyParameterIntSilent(param, next);
             TryApplyIntParameterToOpenParameterGui(LogicStrictnessParamName, next);
             SyncLogicParserGlobals();
+            TryRefreshStopperTechEquityAfterParameterTweak();
             SaveParametersWithoutLogicIndicatorResync();
             RequestParameterGuiRepaintOnce();
             RunOnUiThread(
@@ -4249,9 +4252,10 @@ namespace OsEngine.Robots.Custom
             Hint(StopperPostTriggerAfterTakeProfitParamName,
                 "После общепортфельного TP — то же, что для stop-loss (три режима).");
             Hint("Предыдущая сумма портфеля (техн.)",
-                "База SL/TP или lookback; обновляется в начале/конце обработки свечи, кнопкой и после Stopper.");
+                "База SL/TP или lookback. Может быть отрицательной (плечо). До сделок — депозит; иначе PnL L1…L10.");
             Hint("Текущая сумма портфеля (техн.)",
-                "Equity L1…L10; перезаписывается в начале и после торговли на каждой закрытой свече вкладки.");
+                "PnL L1…L10 (может быть отрицательным — плечо/убыток); до сделок — депозит тестера/лайва. "
+                + "В фейк-торговле — виртуальные позиции в тех же L1…L10.");
             Hint("Предыдущая сумма портфеля: lookback (свечей)",
                 "Если база = 0 — ref из N свечей назад (по умолчанию 5). Кнопка SL/TP или срабатывание фиксируют базу. "
                 + "При Min1…Min15 — N = свечи монитора (страница 2), не страницы 1.");
@@ -4264,7 +4268,8 @@ namespace OsEngine.Robots.Custom
                 "Бумага на странице 2 (по умолчанию SBER). Нужна только как «часы» для частой проверки портфеля; "
                 + "PnL берётся с реального портфеля / L1…L10, не с цены этой бумаги.");
             Hint(UpdateStopperPortfolioBaselineButtonName,
-                "Записывает текущий портфель (тестер/лайв) или equity L1…L10 в «Предыдущая сумма портфеля» и фиксирует базу SL/TP.");
+                "Записывает базу SL/TP: ненулевой PnL L1…L10 (включая минус) или депозит тестера/лайва. "
+                + "Предыдущая и текущая — одинаково.");
             Hint(
                 StopperEodFlatSellParamName,
                 "«Не продавать» — без действия. Иначе на первой «общей свече» скринера после выбранного времени "
@@ -4283,7 +4288,7 @@ namespace OsEngine.Robots.Custom
                 "Просадка от пика в % для срабатывания (по умолчанию 1). Порог: equity ≤ пик × (1 − %/100).");
             Hint(
                 PortfolioPeakValueParamName,
-                "Техн.: зафиксированный максимум equity для стопа «Просадка от пика»; обновляется на новых максимумах.");
+                "Техн.: максимум equity для «Просадки от пика» (может быть отрицательным при плече); обновляется на новых максимумах.");
             Hint(
                 SignificantPeakPauseEnabledParamName,
                 "По суммарной equity L1…L10: после локального пика, если рост от впадины до пика "
@@ -4852,14 +4857,25 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Equity для Stopper / просадки от пика: сумма L1…L10 (как на графиках логик в отчёте),
-        /// не депозит тестера — иначе пик ~10 000 не связан с кривой логики.
+        /// Equity для Stopper / просадки от пика: PnL L1…L10; до первых сделок — депозит тестера/лайва.
         /// </summary>
         private decimal TryGetStopperMonitoredEquity(BotTabSimple tab)
         {
             if (ShouldUseLogicPortfolioEquityForStopper())
             {
-                return GetCombinedLogicPortfolioEquity();
+                decimal logicEquity = GetCombinedLogicPortfolioEquity();
+                if (logicEquity != 0m)
+                {
+                    return logicEquity;
+                }
+
+                decimal? realPortfolio = TryGetPortfolioValueForStopperBaselineFill(tab);
+                if (realPortfolio.HasValue && realPortfolio.Value > 0m)
+                {
+                    return realPortfolio.Value;
+                }
+
+                return 0m;
             }
 
             decimal? monitored = TryGetPortfolioValueForStopperBaselineFill(tab);
@@ -4892,22 +4908,10 @@ namespace OsEngine.Robots.Custom
             }
 
             BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
-            decimal? monitored = TryGetPortfolioValueForStopperBaselineFill(tab);
-            if (!monitored.HasValue || monitored.Value <= 0m)
+            if (!TryResolveStopperBaselineFillEquity(tab, out decimal baselineEquity, out decimal currentEquity))
             {
-                RecalculateAllLogicPortfolioUnrealized();
-                decimal logicEquity = GetCombinedLogicPortfolioEquity();
-                if (logicEquity > 0m)
-                {
-                    monitored = logicEquity;
-                }
-            }
-
-            if (!monitored.HasValue || monitored.Value <= 0m)
-            {
-                string modeHint = ShouldReadPortfolioFromTesterServer(tab)
-                    ? "тестер (Portfolio / StartPortfolio > 0)"
-                    : (_screenerTab?.EmulatorIsOn == true ? "эмулятор" : "лайв");
+                string modeHint = "депозит тестера/лайва (Portfolio / StartPortfolio > 0)"
+                    + " или ненулевой PnL L1…L10 (включая отрицательный)";
                 SendNewLogMessage(
                     NameStrategyUniq
                     + " | Stopper: «"
@@ -4921,8 +4925,7 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            decimal currentEquity = monitored.Value;
-            decimal baselineToSet = currentEquity;
+            decimal baselineToSet = baselineEquity;
             decimal oldReference = _portfolioStopperReferenceEquity.ValueDecimal;
 
             if (_usePortfolioTakeProfit.ValueBool
@@ -4944,8 +4947,12 @@ namespace OsEngine.Robots.Custom
             }
 
             DateTime candleTime = GetStopperReferenceCandleTime();
-            ApplyStopperReferenceBaseline(baselineToSet, candleTime, saveParameters: false);
-            SetPortfolioPeakValue(baselineToSet);
+            ApplyStopperReferenceBaseline(
+                baselineToSet,
+                candleTime,
+                saveParameters: false,
+                currentEquityForDisplay: currentEquity);
+            SetPortfolioPeakValue(currentEquity);
             SaveParametersWithoutLogicIndicatorResync();
             RequestParameterGuiRepaintOnce();
 
@@ -4962,6 +4969,49 @@ namespace OsEngine.Robots.Custom
             SendNewLogMessage(msg, LogMessageType.System);
             SendNewLogMessage(msg, LogMessageType.User);
             return true;
+        }
+
+        /// <summary>
+        /// База для кнопки SL/TP: ненулевой PnL L1…L10 (включая минус) или депозит тестера/лайва.
+        /// </summary>
+        private bool TryResolveStopperBaselineFillEquity(
+            BotTabSimple tab,
+            out decimal baselineEquity,
+            out decimal currentEquity)
+        {
+            baselineEquity = 0m;
+            currentEquity = 0m;
+
+            RecalculateAllLogicPortfolioUnrealized();
+            decimal logicEquity = SumLogicPortfolioEquityRaw();
+            if (logicEquity != 0m)
+            {
+                baselineEquity = logicEquity;
+                currentEquity = logicEquity;
+                return true;
+            }
+
+            decimal? realPortfolio = TryGetPortfolioValueForStopperBaselineFill(tab);
+            if (realPortfolio.HasValue && realPortfolio.Value > 0m)
+            {
+                baselineEquity = realPortfolio.Value;
+                currentEquity = realPortfolio.Value;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Сумма equity L1…L10 (realized+unrealized), включая отрицательную.</summary>
+        private decimal SumLogicPortfolioEquityRaw()
+        {
+            decimal total = 0m;
+            for (int slot = 1; slot <= LogicSlotCount; slot++)
+            {
+                total += _logicPortfolios[slot].Equity;
+            }
+
+            return total;
         }
 
         private void RecalculateAllLogicPortfolioUnrealized()
@@ -5036,13 +5086,17 @@ namespace OsEngine.Robots.Custom
             return candleTime != DateTime.MinValue ? candleTime : DateTime.UtcNow;
         }
 
-        private void ApplyStopperReferenceBaseline(decimal baseline, DateTime candleTime, bool saveParameters)
+        private void ApplyStopperReferenceBaseline(
+            decimal baseline,
+            DateTime candleTime,
+            bool saveParameters,
+            decimal? currentEquityForDisplay = null)
         {
             _stopperReferenceBaselineLocked = true;
             SetStrategyParameterDecimalSilent(_portfolioStopperReferenceEquity, baseline);
 
             BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
-            decimal currentEquity = TryGetStopperMonitoredEquity(tab);
+            decimal currentEquity = currentEquityForDisplay ?? TryGetStopperMonitoredEquity(tab);
             SetStrategyParameterDecimalSilent(_portfolioStopperCurrentEquity, currentEquity);
             ResetStopperEquityHistory(currentEquity, candleTime);
 
@@ -5067,7 +5121,38 @@ namespace OsEngine.Robots.Custom
             if (_stopperReferenceBaselineLocked)
             {
                 referenceEquity = _portfolioStopperReferenceEquity.ValueDecimal;
-                return true;
+                if (ShouldUseLogicPortfolioEquityForStopper())
+                {
+                    RecalculateAllLogicPortfolioUnrealized();
+                    BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+                    decimal monitoredEquity = TryGetStopperMonitoredEquity(tab);
+                    decimal logicEquityRaw = SumLogicPortfolioEquityRaw();
+                    if (IsStaleReferenceVersusMonitoredEquity(
+                            referenceEquity,
+                            monitoredEquity,
+                            logicEquityRaw))
+                    {
+                        _stopperReferenceBaselineLocked = false;
+                        SendNewLogMessage(
+                            NameStrategyUniq
+                            + " | Stopper: «Предыдущая сумма» "
+                            + referenceEquity.ToString(CultureInfo.InvariantCulture)
+                            + " — депозит, а мониторинг уже по PnL L1…L10 ("
+                            + monitoredEquity.ToString(CultureInfo.InvariantCulture)
+                            + "). База сброшена — нажмите «"
+                            + UpdateStopperPortfolioBaselineButtonName
+                            + "» или задайте lookback.",
+                            LogMessageType.User);
+                    }
+                    else
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    return true;
+                }
             }
 
             int lookback = Math.Max(1, _portfolioStopperLookbackCandles.ValueInt);
@@ -5088,11 +5173,6 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            if (value < 0m)
-            {
-                value = 0m;
-            }
-
             if (_portfolioPeakValue.ValueDecimal == value)
             {
                 return;
@@ -5109,32 +5189,47 @@ namespace OsEngine.Robots.Custom
             }
 
             decimal peak = _portfolioPeakValue?.ValueDecimal ?? 0m;
-            if (peak > 0m && IsStaleTesterPeakVersusLogicEquity(peak, currentEquity))
+            decimal logicEquityRaw = SumLogicPortfolioEquityRaw();
+            if (peak > 0m
+                && IsStaleReferenceVersusMonitoredEquity(peak, currentEquity, logicEquityRaw))
             {
                 peak = 0m;
                 SetPortfolioPeakValue(0m);
             }
 
-            if (peak <= 0m || currentEquity > peak)
+            if (currentEquity > peak)
             {
-                SetPortfolioPeakValue(Math.Max(0m, currentEquity));
+                SetPortfolioPeakValue(currentEquity);
             }
         }
 
-        /// <summary>Старый «Пик портфеля» от депозита тестера (~10k) не совместим с equity L1…L10.</summary>
-        private static bool IsStaleTesterPeakVersusLogicEquity(decimal peak, decimal logicEquity)
+        /// <summary>
+        /// База/пик зафиксированы по депозиту, а мониторинг уже по PnL L1…L10 (другая шкала).
+        /// На старте (PnL=0, monitored≈депозит) — не считается устаревшим.
+        /// </summary>
+        private static bool IsStaleReferenceVersusMonitoredEquity(
+            decimal lockedReferenceOrPeak,
+            decimal monitoredEquity,
+            decimal logicEquityRaw)
         {
-            if (peak < 1000m)
+            if (lockedReferenceOrPeak < 1000m)
             {
                 return false;
             }
 
-            if (logicEquity <= 0m)
+            if (logicEquityRaw == 0m
+                && monitoredEquity > 0m
+                && Math.Abs(lockedReferenceOrPeak - monitoredEquity) <= lockedReferenceOrPeak * 0.01m)
             {
-                return true;
+                return false;
             }
 
-            return peak > logicEquity * 3m;
+            if (logicEquityRaw <= 0m)
+            {
+                return false;
+            }
+
+            return lockedReferenceOrPeak > logicEquityRaw * 3m;
         }
 
         /// <summary>
@@ -5157,11 +5252,6 @@ namespace OsEngine.Robots.Custom
                 UpdatePortfolioPeakTracking(currentEquity);
             }
 
-            if (!peakDrawdownEnabled && currentEquity <= 0m)
-            {
-                return false;
-            }
-
             if (candleTime == _stopperLastProtectionCandleTime)
             {
                 return false;
@@ -5178,17 +5268,12 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            if (currentEquity <= 0m)
-            {
-                return false;
-            }
-
             if (!TryResolveStopperReferenceEquity(out decimal referenceEquity))
             {
                 return false;
             }
 
-            if (referenceEquity <= 0m)
+            if (referenceEquity == 0m && currentEquity == 0m)
             {
                 return false;
             }
@@ -5248,7 +5333,7 @@ namespace OsEngine.Robots.Custom
             }
 
             peak = _portfolioPeakValue?.ValueDecimal ?? 0m;
-            if (peak <= 0m)
+            if (peak == 0m)
             {
                 return false;
             }
@@ -5271,14 +5356,9 @@ namespace OsEngine.Robots.Custom
             CloseAllStopperVirtualPositions("_PeakSl");
             MaybeSaveLogicPortfolios(force: true);
 
+            RecalculateAllLogicPortfolioUnrealized();
             decimal postCloseEquity = TryGetStopperMonitoredEquity(tab);
-            if (postCloseEquity <= 0m)
-            {
-                RecalculateAllLogicPortfolioUnrealized();
-                postCloseEquity = GetCombinedLogicPortfolioEquity();
-            }
-
-            SetPortfolioPeakValue(postCloseEquity > 0m ? postCloseEquity : currentEquity);
+            SetPortfolioPeakValue(postCloseEquity);
 
             string postTriggerAction = GetStopperPostTriggerAction(isTakeProfit: false);
             bool stopFullyPreview = IsStopperPostTriggerStopFully(postTriggerAction);
@@ -6645,10 +6725,31 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void RefreshStopperTechEquityDisplayAggregated(BotTabSimple tab, DateTime candleTime)
         {
+            RecalculateAllLogicPortfolioUnrealized();
             decimal currentEquity = TryGetStopperMonitoredEquity(tab);
             SetStrategyParameterDecimalSilent(_portfolioStopperCurrentEquity, currentEquity);
             AppendStopperEquitySnapshot(candleTime, currentEquity);
             TryUpdateSignificantPeakPause(candleTime);
+
+            if (_stopperReferenceBaselineLocked
+                && ShouldUseLogicPortfolioEquityForStopper()
+                && IsStaleReferenceVersusMonitoredEquity(
+                    _portfolioStopperReferenceEquity.ValueDecimal,
+                    currentEquity,
+                    SumLogicPortfolioEquityRaw()))
+            {
+                _stopperReferenceBaselineLocked = false;
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | Stopper: «Предыдущая сумма» "
+                    + (_portfolioStopperReferenceEquity?.ValueDecimal ?? 0m).ToString(CultureInfo.InvariantCulture)
+                    + " — депозит, а «Текущая» уже по PnL L1…L10 ("
+                    + currentEquity.ToString(CultureInfo.InvariantCulture)
+                    + "). Нажмите «"
+                    + UpdateStopperPortfolioBaselineButtonName
+                    + "» для согласованной базы.",
+                    LogMessageType.User);
+            }
 
             if (!_stopperReferenceBaselineLocked)
             {
@@ -6729,12 +6830,18 @@ namespace OsEngine.Robots.Custom
 
                 RecalculateAllLogicPortfolioUnrealized();
 
+                BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
+                if (refTab == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
+                {
+                    refTab = _screenerTab.Tabs[0];
+                }
+
                 if (_metaLogicEnabled.ValueBool)
                 {
                     AppendMetaLogicWarmupPortfolioPoints(candleTime);
                 }
 
-                BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
+                refTab = TryGetPortfolioMonitoringReferenceTab();
                 if (refTab == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
                 {
                     refTab = _screenerTab.Tabs[0];
@@ -6840,14 +6947,14 @@ namespace OsEngine.Robots.Custom
 
             MaybeWriteHtmlReport(force: true);
 
+            RecalculateAllLogicPortfolioUnrealized();
             decimal postCloseEquity = TryGetStopperMonitoredEquity(tab);
-            if (postCloseEquity <= 0m)
-            {
-                RecalculateAllLogicPortfolioUnrealized();
-                postCloseEquity = GetCombinedLogicPortfolioEquity();
-            }
 
-            ApplyStopperReferenceBaseline(postCloseEquity, candleTime, saveParameters: false);
+            ApplyStopperReferenceBaseline(
+                postCloseEquity,
+                candleTime,
+                saveParameters: false,
+                currentEquityForDisplay: postCloseEquity);
 
             bool stopFully = IsStopperPostTriggerStopFully(postTriggerAction);
             bool pauseAndResume = IsStopperPostTriggerPauseAndResume(postTriggerAction);
@@ -7010,6 +7117,30 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
+        /// После кнопок Volume / Max positions / Strict — пересчитать тех. поля Stopper без ожидания свечи.
+        /// </summary>
+        private void TryRefreshStopperTechEquityAfterParameterTweak()
+        {
+            if (!ShouldRefreshStopperEquityOnAggregatedCandle())
+            {
+                return;
+            }
+
+            BotTabSimple refTab = TryGetPortfolioMonitoringReferenceTab();
+            if (refTab == null && _screenerTab?.Tabs != null && _screenerTab.Tabs.Count > 0)
+            {
+                refTab = _screenerTab.Tabs[0];
+            }
+
+            if (refTab == null)
+            {
+                return;
+            }
+
+            RefreshStopperTechEquityDisplayAggregated(refTab, GetStopperReferenceCandleTime());
+        }
+
+        /// <summary>
         /// Торговый цикл на одной свече: SL/TP, выходы по Cl, входы по Op.
         /// Volume: поровну или по PnlSMA (когда металогика включена и PnlSMA готов).
         /// Max positions: металогика — приоритет по PnlSMA; иначе L1…L10.
@@ -7020,6 +7151,8 @@ namespace OsEngine.Robots.Custom
         private void ProcessLogicTradingOnCandle(List<Candle> candles, BotTabSimple tab, int candleIndex)
         {
             LogTradingModeDiagnosticsOnce(tab);
+
+            RecalculateAllLogicPortfolioUnrealized();
 
             for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
             {
@@ -10579,13 +10712,7 @@ namespace OsEngine.Robots.Custom
 
         private decimal GetCombinedLogicPortfolioEquity()
         {
-            decimal total = 0m;
-            for (int slot = 1; slot <= LogicSlotCount; slot++)
-            {
-                total += _logicPortfolios[slot].Equity;
-            }
-
-            return total;
+            return SumLogicPortfolioEquityRaw();
         }
 
         private void SyncAggregateMetaPortfolioPoint(

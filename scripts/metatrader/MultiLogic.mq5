@@ -11,8 +11,8 @@
 //   • Op/Cl: Ab, Bl, AbUp, BlLo, GrOk, Macd>Sig, CCI>=, K<=, RSI>=, SlopeUp, …
 //   • Regime Entry=MatchSide / FlatOnly, OnFlip=Close, SlopeDead
 //   • Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
-//   • Общепортфельный SL/TP (% от equity, high-water ref)
-//   • Просадка от пика (% от max equity, только закрытие)
+//   • Общепортфельный SL/TP (% от equity, high-water ref; отрицательный equity допустим)
+//   • Просадка от пика (% от max equity, только закрытие; пик может быть < 0)
 //   • Пауза входов после значительного пика (годовая доходность впадина→пик)
 //   • Инверсия: Buy↔Sell и Op↔Cl (как OsEngine / TMIS)
 //   • Приоритет входа: L1 → L2 → L3 → L4 (упрощённая металогика)
@@ -940,10 +940,12 @@ bool ML_CheckPeakDrawdown()
    if(!InpPeakDrawdownOn || InpPeakDrawdownPct <= 0.0)
       return false;
    double eq = AccountInfoDouble(ACCOUNT_EQUITY);
-   if(eq <= 0.0)
+   if(g_portfolioPeak == 0.0 && eq == 0.0)
       return false;
-   if(g_portfolioPeak <= 0.0 || eq > g_portfolioPeak)
+   if(eq > g_portfolioPeak)
       g_portfolioPeak = eq;
+   if(g_portfolioPeak == 0.0)
+      return false;
    double floor = g_portfolioPeak * (1.0 - InpPeakDrawdownPct / 100.0);
    if(eq > floor)
       return false;
@@ -1040,7 +1042,12 @@ void ML_Open(const ENUM_ORDER_TYPE type, const int slot)
 bool ML_CheckPortfStopper()
   {
    double eq = AccountInfoDouble(ACCOUNT_EQUITY);
-   if(eq > g_refEquity) g_refEquity = eq;
+   if(g_refEquity == 0.0 && eq == 0.0)
+      return false;
+   if(g_refEquity == 0.0)
+      g_refEquity = eq;
+   if(eq > g_refEquity)
+      g_refEquity = eq;
    if(InpPortfSlOn && InpPortfSlPct>0 && eq <= g_refEquity*(1.0-InpPortfSlPct/100.0))
      { ML_CloseAll(); g_refEquity=eq; return true; }
    if(InpPortfTpOn && InpPortfTpPct>0 && eq >= g_refEquity*(1.0+InpPortfTpPct/100.0))
