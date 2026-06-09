@@ -12,13 +12,17 @@
 - Атомы: SMA, LinReg, ATR, CCI, MACD, Stochastic, **RSI**, **VWAP**, **Bollinger**; Op/Cl (`Ab`, `AbMid`, `BlMid`, `RSI>=`, …)
 - Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
 - Общепортфельный SL/TP (% от equity, high-water reference)
+- **Просадка от пика** (% от max equity — закрыть всё, без паузы входов)
+- **Пауза после значительного пика** (годовая доходность впадина→пик ≥ порога; блок новых входов)
+- Инверсия: Buy↔Sell **и Op↔Cl** (как OsEngine / TMIS)
 - Нерабочие периоды, трейлинг позиции
 - Приоритет входа: L1 → L2 → L3 → L4
 
 ### Не перенесено
 
 - HTML-отчёт, кнопки GUI, MOEX-скринер, много вкладок
-- Металогика PnlSMA, shadow-позиции, SL/TP в строке логики
+- Металогика PnlSMA, shadow-позиции, фейк-торговля Stopper, EOD flat
+- Equity L1…L10 (в MT5 — equity счёта), HTML-маркеры, Regime после SL/TP
 - OR/NOT в формуле, каталог трендов, оптимизатор OsEngine
 
 ### Установка

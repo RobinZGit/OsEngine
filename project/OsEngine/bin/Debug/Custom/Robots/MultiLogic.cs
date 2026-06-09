@@ -475,7 +475,6 @@ namespace OsEngine.Robots.Custom
         private const string PortfolioPeakDrawdownEnabledParamName = "Просадка от пика: включена";
         private const string PortfolioPeakDrawdownPercentParamName = "Просадка от пика, %";
         private const string PortfolioPeakValueParamName = "Пик портфеля";
-        private const string PauseEntriesAfterPeakDrawdownParamName = "Пауза входов после просадки от пика: включена";
         private const decimal PortfolioPeakDrawdownPercentDefault = 1m;
         private const string StopperEodFlatSellParamName = "Продать всё к времени (ежедневно)";
         private const string StopperEodFlatSellDisabled = "Не продавать";
@@ -884,7 +883,6 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterBool _usePortfolioPeakDrawdownStop;
         private StrategyParameterDecimal _portfolioPeakDrawdownPercent;
         private StrategyParameterDecimal _portfolioPeakValue;
-        private StrategyParameterBool _pauseEntriesAfterPeakDrawdown;
         private StrategyParameterButton _stopperTpPercentIncButton;
         private StrategyParameterButton _stopperTpPercentDecButton;
         private StrategyParameterString _stopperPostTriggerAfterStopLoss;
@@ -915,9 +913,6 @@ namespace OsEngine.Robots.Custom
         private DateTime _significantPeakLastEvaluatedPeakTime = DateTime.MinValue;
         /// <summary>Для однократного лога активной паузы по значительному пику.</summary>
         private DateTime _loggedSignificantPeakPauseUntil = DateTime.MinValue;
-        /// <summary>До этого времени запрещены входы после срабатывания «Просадка от пика».</summary>
-        private DateTime _peakDrawdownPauseUntil = DateTime.MinValue;
-        private DateTime _loggedPeakDrawdownPauseUntil = DateTime.MinValue;
 
         /// <summary>
         /// Конструктор робота: создаёт скринер, параметры, подписки на события и первичный разбор логик.
@@ -3838,7 +3833,8 @@ namespace OsEngine.Robots.Custom
             Hint(
                 PortfolioPeakDrawdownEnabledParamName,
                 "Скользящий стоп по сумме equity L1…L10 (как в отчёте), не по депозиту тестера: падение на % от пика — "
-                + "закрыть все позиции. На графике одной логики маркер может не совпадать с её локальным пиком, "
+                + "закрыть все позиции (без паузы новых входов; пауза — только «Пауза после значительного пика»). "
+                + "На графике одной логики маркер может не совпадать с её локальным пиком, "
                 + "если другие логики компенсируют. Пик обновляется при новом максимуме суммы.");
             Hint(
                 PortfolioPeakDrawdownPercentParamName,
@@ -3847,12 +3843,10 @@ namespace OsEngine.Robots.Custom
                 PortfolioPeakValueParamName,
                 "Техн.: зафиксированный максимум equity для стопа «Просадка от пика»; обновляется на новых максимумах.");
             Hint(
-                PauseEntriesAfterPeakDrawdownParamName,
-                "После срабатывания «Просадка от пика» — запрет новых входов на (ширина подъёма до пика) × «Пауза: ширина пика ×».");
-            Hint(
                 SignificantPeakPauseEnabledParamName,
                 "По суммарной equity L1…L10: после локального пика, если рост от впадины до пика "
                 + "даёт ≥ порога % годовых — временно запретить новые входы (выходы по Cl/SL/TP работают). "
+                + "«Просадка от пика» только закрывает позиции и не ставит паузу входов. "
                 + "Длительность паузы = (время пика − время начала пика) × множитель.");
             Hint(
                 SignificantPeakAnnualPercentParamName,
@@ -4169,10 +4163,6 @@ namespace OsEngine.Robots.Custom
                 0m,
                 1_000_000_000_000m,
                 2,
-                StopperTabName);
-            _pauseEntriesAfterPeakDrawdown = CreateParameter(
-                PauseEntriesAfterPeakDrawdownParamName,
-                true,
                 StopperTabName);
             _useSignificantPeakTradingPause = CreateParameter(
                 SignificantPeakPauseEnabledParamName,
@@ -4705,73 +4695,6 @@ namespace OsEngine.Robots.Custom
             return peak > logicEquity * 3m;
         }
 
-        private bool TryMeasurePeakRallyWidth(out TimeSpan width, out DateTime troughTime)
-        {
-            width = TimeSpan.Zero;
-            troughTime = DateTime.MinValue;
-            if (_stopperEquityHistory.Count < 2)
-            {
-                return false;
-            }
-
-            int peakIdx = _stopperEquityHistory.Count - 1;
-            decimal peakEquity = _stopperEquityHistory[peakIdx].Equity;
-            int troughIdx = peakIdx;
-            for (int j = peakIdx - 1; j >= 0; j--)
-            {
-                if (_stopperEquityHistory[j].Equity < _stopperEquityHistory[troughIdx].Equity)
-                {
-                    troughIdx = j;
-                }
-                else if (_stopperEquityHistory[j].Equity > _stopperEquityHistory[troughIdx].Equity)
-                {
-                    break;
-                }
-            }
-
-            troughTime = _stopperEquityHistory[troughIdx].CandleTime;
-            DateTime peakTime = _stopperEquityHistory[peakIdx].CandleTime;
-            width = peakTime - troughTime;
-            if (width < TimeSpan.Zero)
-            {
-                width = TimeSpan.Zero;
-            }
-
-            return peakEquity > _stopperEquityHistory[troughIdx].Equity;
-        }
-
-        private void ApplyPeakDrawdownEntryPause(DateTime candleTime)
-        {
-            if (_pauseEntriesAfterPeakDrawdown == null || !_pauseEntriesAfterPeakDrawdown.ValueBool)
-            {
-                return;
-            }
-
-            if (!TryMeasurePeakRallyWidth(out TimeSpan peakWidth, out _))
-            {
-                peakWidth = TimeSpan.FromHours(1);
-            }
-
-            decimal multiplier = _significantPeakPauseWidthMultiplier?.ValueDecimal ?? SignificantPeakPauseWidthMultiplierDefault;
-            if (multiplier < 0.1m)
-            {
-                multiplier = 0.1m;
-            }
-
-            long pauseTicks = (long)(peakWidth.Ticks * (double)multiplier);
-            if (pauseTicks <= 0)
-            {
-                pauseTicks = peakWidth.Ticks > 0 ? peakWidth.Ticks : TimeSpan.FromHours(1).Ticks;
-            }
-
-            DateTime pauseUntil = candleTime + TimeSpan.FromTicks(pauseTicks);
-            if (pauseUntil > _peakDrawdownPauseUntil)
-            {
-                _peakDrawdownPauseUntil = pauseUntil;
-                _loggedPeakDrawdownPauseUntil = DateTime.MinValue;
-            }
-        }
-
         /// <summary>
         /// Обновляет историю equity и проверяет просадку от пика, общепортфельный SL/TP.
         /// </summary>
@@ -4914,7 +4837,6 @@ namespace OsEngine.Robots.Custom
             }
 
             SetPortfolioPeakValue(postCloseEquity > 0m ? postCloseEquity : currentEquity);
-            ApplyPeakDrawdownEntryPause(candleTime);
 
             string postTriggerAction = GetStopperPostTriggerAction(isTakeProfit: false);
             bool stopFullyPreview = IsStopperPostTriggerStopFully(postTriggerAction);
@@ -4952,19 +4874,13 @@ namespace OsEngine.Robots.Custom
                 + ", порог="
                 + triggerLevel.ToString(CultureInfo.InvariantCulture)
                 + ", ref→"
-                + postCloseEquity.ToString(CultureInfo.InvariantCulture);
-            if (_peakDrawdownPauseUntil != DateTime.MinValue)
-            {
-                msg += ", пауза входов до "
-                    + _peakDrawdownPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-            }
-
-            msg += stopFully
-                ? ", Regime=Off"
-                : pauseAndResume
-                    ? ", фейк-торговля L1…L10"
-                    : ", Regime без изменений";
-            msg += ".";
+                + postCloseEquity.ToString(CultureInfo.InvariantCulture)
+                + (stopFully
+                    ? ", Regime=Off"
+                    : pauseAndResume
+                        ? ", фейк-торговля L1…L10"
+                        : ", Regime без изменений")
+                + ".";
             SendNewLogMessage(msg, LogMessageType.System);
             SendNewLogMessage(msg, LogMessageType.User);
             return true;
@@ -5089,16 +5005,10 @@ namespace OsEngine.Robots.Custom
             return _significantPeakPauseUntil != DateTime.MinValue && candleTime < _significantPeakPauseUntil;
         }
 
-        private bool IsPeakDrawdownTradingPaused(DateTime candleTime)
-        {
-            return _peakDrawdownPauseUntil != DateTime.MinValue && candleTime < _peakDrawdownPauseUntil;
-        }
-
         private bool IsStopperNewEntryBlocked(DateTime candleTime)
         {
             return IsStopperEodFlatBuyBlocked(candleTime)
-                || IsSignificantPeakTradingPaused(candleTime)
-                || IsPeakDrawdownTradingPaused(candleTime);
+                || IsSignificantPeakTradingPaused(candleTime);
         }
 
         /// <summary>
@@ -5286,24 +5196,6 @@ namespace OsEngine.Robots.Custom
             string msg = NameStrategyUniq
                 + " | Stopper: пауза после значительного пика — новые входы запрещены до "
                 + _significantPeakPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-                + " (свеча "
-                + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-                + ").";
-            SendNewLogMessage(msg, LogMessageType.System);
-        }
-
-        private void LogPeakDrawdownPauseBlockedOnce(DateTime candleTime)
-        {
-            if (!IsPeakDrawdownTradingPaused(candleTime)
-                || _loggedPeakDrawdownPauseUntil == _peakDrawdownPauseUntil)
-            {
-                return;
-            }
-
-            _loggedPeakDrawdownPauseUntil = _peakDrawdownPauseUntil;
-            string msg = NameStrategyUniq
-                + " | Stopper: пауза после просадки от пика — новые входы запрещены до "
-                + _peakDrawdownPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
                 + " (свеча "
                 + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
                 + ").";
@@ -6775,7 +6667,6 @@ namespace OsEngine.Robots.Custom
             {
                 LogStopperEodFlatBuyBlockedOnce(candleTime);
                 LogSignificantPeakPauseBlockedOnce(candleTime);
-                LogPeakDrawdownPauseBlockedOnce(candleTime);
             }
 
             var entryCandidates = new List<int>();

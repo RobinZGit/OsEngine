@@ -15,6 +15,9 @@
   • Disabled, Regime(LinReg;…), AND, SMA/LinReg/ATR/CCI/MACD/Stoch
   • Op/Cl, Side[S], инверсия логики, Regime On/Off/OnlyLong/…
   • Общепортфельный SL/TP % (упрощённо по equity счёта)
+  • Просадка от пика (% от max equity — только закрытие)
+  • Пауза входов после значительного пика (годовая доходность впадина→пик)
+  • Инверсия: Buy↔Sell и Op↔Cl (как OsEngine / TMIS)
   • Нерабочие периоды, трейлинг позиции
   • Приоритет входа L1→L4
 
@@ -56,6 +59,11 @@ PORTF_SL_ON = false
 PORTF_SL_PCT = 1.0
 PORTF_TP_ON = false
 PORTF_TP_PCT = 2.0
+PEAK_DRAWDOWN_ON = false
+PEAK_DRAWDOWN_PCT = 1.0
+SIG_PEAK_PAUSE_ON = false
+SIG_PEAK_ANNUAL_PCT = 100.0
+SIG_PEAK_WIDTH_MULT = 10.0
 
 USE_TRAILING = false
 TRAILING_PCT = 1.0
@@ -74,6 +82,10 @@ position_side = 0
 active_slot = 0
 trail_peak = 0
 ref_equity = 0
+portfolio_peak = 0
+sig_peak_pause_until = 0
+sig_peak_last_peak_time = 0
+eq_hist = {}
 slots = {}
 
 function log_msg(t) message(tostring(t), 1) end
@@ -445,6 +457,87 @@ function eval_close(slot, idx)
     return false
 end
 
+function eval_entry_signal(slot, idx)
+    if LOGIC_INVERSION then return eval_close(slot, idx) end
+    return eval_open(slot, idx)
+end
+
+function eval_exit_signal(slot, idx)
+    if LOGIC_INVERSION then return eval_open(slot, idx) end
+    return eval_close(slot, idx)
+end
+
+function append_equity_snapshot(bar_time)
+    local eq = account_equity_approx()
+    local n = #eq_hist
+    if n > 0 and eq_hist[n].time == bar_time then
+        eq_hist[n].equity = eq
+        return
+    end
+    table.insert(eq_hist, { time = bar_time, equity = eq })
+    if #eq_hist > 128 then table.remove(eq_hist, 1) end
+end
+
+function try_compute_sig_peak_annual_pct(trough_eq, peak_eq, trough_time, peak_time)
+    if trough_eq <= 0 or peak_eq <= trough_eq then return nil end
+    local total_return = (peak_eq - trough_eq) / trough_eq
+    if total_return <= -1 then return nil end
+    local days = (peak_time - trough_time) / 86400
+    if days < 1 / 24 then days = 1 / 24 end
+    local exponent = 365 / days
+    if exponent > 10000 then exponent = 10000 end
+    local growth = (1 + total_return) ^ exponent
+    if growth ~= growth or growth <= 0 then return nil end
+    if growth >= 1e100 then return 1e12 end
+    return (growth - 1) * 100
+end
+
+function update_sig_peak_pause(bar_time)
+    if not SIG_PEAK_PAUSE_ON or #eq_hist < 3 then return end
+    local peak_idx = #eq_hist - 1
+    local peak_eq = eq_hist[peak_idx].equity
+    local prev_eq = eq_hist[peak_idx - 1].equity
+    local next_eq = eq_hist[peak_idx + 1].equity
+    if not (peak_eq >= prev_eq and peak_eq > next_eq) then return end
+    local peak_time = eq_hist[peak_idx].time
+    if peak_time <= sig_peak_last_peak_time then return end
+    sig_peak_last_peak_time = peak_time
+    local trough_idx = peak_idx
+    for j = peak_idx - 1, 1, -1 do
+        if eq_hist[j].equity < eq_hist[trough_idx].equity then
+            trough_idx = j
+        elseif eq_hist[j].equity > eq_hist[trough_idx].equity then
+            break
+        end
+    end
+    local trough_eq = eq_hist[trough_idx].equity
+    local trough_time = eq_hist[trough_idx].time
+    local annual_pct = try_compute_sig_peak_annual_pct(trough_eq, peak_eq, trough_time, peak_time)
+    if not annual_pct or annual_pct < SIG_PEAK_ANNUAL_PCT then return end
+    local mult = SIG_PEAK_WIDTH_MULT
+    if mult < 0.1 then mult = 0.1 end
+    local pause_sec = (peak_time - trough_time) * mult
+    if pause_sec <= 0 then pause_sec = 3600 end
+    local pause_until = peak_time + pause_sec
+    if pause_until > sig_peak_pause_until then sig_peak_pause_until = pause_until end
+end
+
+function is_sig_peak_entry_paused(bar_time)
+    return SIG_PEAK_PAUSE_ON and sig_peak_pause_until > 0 and bar_time < sig_peak_pause_until
+end
+
+function check_peak_drawdown()
+    if not PEAK_DRAWDOWN_ON or PEAK_DRAWDOWN_PCT <= 0 then return false end
+    local eq = account_equity_approx()
+    if eq <= 0 then return false end
+    if portfolio_peak <= 0 or eq > portfolio_peak then portfolio_peak = eq end
+    local floor = portfolio_peak * (1 - PEAK_DRAWDOWN_PCT / 100)
+    if eq > floor then return false end
+    close_all()
+    portfolio_peak = eq
+    return true
+end
+
 function slot_side(slot)
     for _, a in ipairs(slot.atoms) do
         if a.isShort then return -1 end
@@ -572,23 +665,28 @@ function process_bar(idx)
     if time_in_non_trade() then return end
     refresh_position()
     check_trailing(idx)
+    local bar_time = ds:T(idx)
+    append_equity_snapshot(bar_time)
+    update_sig_peak_pause(bar_time)
+    if check_peak_drawdown() then return end
     if check_portf_stopper() then return end
 
     if position_side ~= 0 and active_slot >= 1 and active_slot <= 4 then
         local sl = slots[active_slot]
         local side = apply_inversion(slot_side(sl))
         local sign = regime_sign(sl.regime, idx)
-        if regime_should_close(sl.regime, side, sign) or eval_close(sl, idx) then
+        if regime_should_close(sl.regime, side, sign) or eval_exit_signal(sl, idx) then
             close_all()
             return
         end
     end
 
     if position_side ~= 0 then return end
+    if is_sig_peak_entry_paused(bar_time) then return end
 
     for s = 1, 4 do
         local sl = slots[s]
-        if sl.enabled and not sl.disabled and eval_open(sl, idx) then
+        if sl.enabled and not sl.disabled and eval_entry_signal(sl, idx) then
             local side = apply_inversion(slot_side(sl))
             local sign = regime_sign(sl.regime, idx)
             if regime_allows_entry(sl.regime, side, sign) then
@@ -612,6 +710,7 @@ function OnInit()
     slots[3] = parse_slot(LOGIC3, L3_ENABLE)
     slots[4] = parse_slot(LOGIC4, L4_ENABLE)
     ref_equity = account_equity_approx()
+    portfolio_peak = ref_equity
     log_msg("MultiLogic QUIK: старт " .. CLASS_CODE .. "." .. SEC_CODE .. " LinReg=" .. LINREG_LEN)
 end
 

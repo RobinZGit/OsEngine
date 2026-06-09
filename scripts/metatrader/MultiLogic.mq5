@@ -12,7 +12,9 @@
 //   • Regime Entry=MatchSide / FlatOnly, OnFlip=Close, SlopeDead
 //   • Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
 //   • Общепортфельный SL/TP (% от equity, high-water ref)
-//   • Нерабочие периоды, трейлинг позиции %
+//   • Просадка от пика (% от max equity, только закрытие)
+//   • Пауза входов после значительного пика (годовая доходность впадина→пик)
+//   • Инверсия: Buy↔Sell и Op↔Cl (как OsEngine / TMIS)
 //   • Приоритет входа: L1 → L2 → L3 → L4 (упрощённая металогика)
 //
 // НЕ ПЕРЕНЕСЕНО (только OsEngine)
@@ -24,7 +26,7 @@
 // СИГНАЛЫ: только на ЗАКРЫТОЙ свече (shift=1).
 //+------------------------------------------------------------------+
 #property copyright "OsEngine MultiLogic port"
-#property version   "1.00"
+#property version   "1.01"
 #property description "MultiLogic: 4 logic slots, Regime, portfolio stopper. See file header."
 
 #include <Trade/Trade.mqh>
@@ -94,6 +96,11 @@ input bool   InpPortfSlOn = false;
 input double InpPortfSlPct = 1.0;
 input bool   InpPortfTpOn = false;
 input double InpPortfTpPct = 2.0;
+input bool   InpPeakDrawdownOn = false;
+input double InpPeakDrawdownPct = 1.0;
+input bool   InpSigPeakPauseOn = false;
+input double InpSigPeakAnnualPct = 100.0;
+input double InpSigPeakWidthMult = 10.0;
 
 input group "=== Стопы и время ==="
 input bool   InpUseTrailing = false;
@@ -148,6 +155,13 @@ datetime   g_lastBar = 0;
 int        g_activeSlot = 0;
 double     g_trailPeak = 0;
 double     g_refEquity = 0;
+double     g_portfolioPeak = 0;
+datetime   g_sigPeakPauseUntil = 0;
+datetime   g_sigPeakLastPeakTime = 0;
+#define    ML_EQ_HIST 128
+double     g_eqHist[ML_EQ_HIST];
+datetime   g_eqHistTime[ML_EQ_HIST];
+int        g_eqHistCount = 0;
 MLSlot     g_slots[4];
 
 int g_hCci = INVALID_HANDLE;
@@ -684,12 +698,138 @@ ENUM_ML_SIDE ML_SlotSide(const MLSlot &slot)
    return ML_BUY;
   }
 
+bool ML_EvalEntrySignal(const MLSlot &slot, const int shift)
+  {
+   return InpLogicInversion ? ML_EvalClose(slot, shift) : ML_EvalOpen(slot, shift);
+  }
+
+bool ML_EvalExitSignal(const MLSlot &slot, const int shift)
+  {
+   return InpLogicInversion ? ML_EvalOpen(slot, shift) : ML_EvalClose(slot, shift);
+  }
+
+void ML_AppendEquitySnapshot(const datetime barTime)
+  {
+   double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(g_eqHistCount > 0 && g_eqHistTime[g_eqHistCount - 1] == barTime)
+     {
+      g_eqHist[g_eqHistCount - 1] = eq;
+      return;
+     }
+   if(g_eqHistCount >= ML_EQ_HIST)
+     {
+      for(int i = 1; i < ML_EQ_HIST; i++)
+        {
+         g_eqHist[i - 1] = g_eqHist[i];
+         g_eqHistTime[i - 1] = g_eqHistTime[i];
+        }
+      g_eqHistCount = ML_EQ_HIST - 1;
+     }
+   g_eqHist[g_eqHistCount] = eq;
+   g_eqHistTime[g_eqHistCount] = barTime;
+   g_eqHistCount++;
+  }
+
+bool ML_TryComputeSigPeakAnnualPct(
+   const double troughEq,
+   const double peakEq,
+   const datetime troughTime,
+   const datetime peakTime,
+   double &annualPct)
+  {
+   annualPct = 0.0;
+   if(troughEq <= 0.0 || peakEq <= troughEq)
+      return false;
+   double totalReturn = (peakEq - troughEq) / troughEq;
+   if(totalReturn <= -1.0)
+      return false;
+   double days = (double)(peakTime - troughTime) / 86400.0;
+   if(days < 1.0 / 24.0)
+      days = 1.0 / 24.0;
+   double exponent = 365.0 / days;
+   if(exponent > 10000.0)
+      exponent = 10000.0;
+   double growth = MathPow(1.0 + totalReturn, exponent);
+   if(!MathIsValidNumber(growth) || growth <= 0.0)
+      return false;
+   if(growth >= DBL_MAX / 100.0)
+     {
+      annualPct = 1.0e12;
+      return true;
+     }
+   annualPct = (growth - 1.0) * 100.0;
+   return MathIsValidNumber(annualPct);
+  }
+
+void ML_UpdateSigPeakPause(const datetime barTime)
+  {
+   if(!InpSigPeakPauseOn || g_eqHistCount < 3)
+      return;
+   int peakIdx = g_eqHistCount - 2;
+   double peakEq = g_eqHist[peakIdx];
+   double prevEq = g_eqHist[peakIdx - 1];
+   double nextEq = g_eqHist[peakIdx + 1];
+   if(!(peakEq >= prevEq && peakEq > nextEq))
+      return;
+   datetime peakTime = g_eqHistTime[peakIdx];
+   if(peakTime <= g_sigPeakLastPeakTime)
+      return;
+   g_sigPeakLastPeakTime = peakTime;
+   int troughIdx = peakIdx;
+   for(int j = peakIdx - 1; j >= 0; j--)
+     {
+      if(g_eqHist[j] < g_eqHist[troughIdx])
+         troughIdx = j;
+      else if(g_eqHist[j] > g_eqHist[troughIdx])
+         break;
+     }
+   double troughEq = g_eqHist[troughIdx];
+   datetime troughTime = g_eqHistTime[troughIdx];
+   double annualPct = 0.0;
+   if(!ML_TryComputeSigPeakAnnualPct(troughEq, peakEq, troughTime, peakTime, annualPct))
+      return;
+   if(annualPct < InpSigPeakAnnualPct)
+      return;
+   double mult = InpSigPeakWidthMult;
+   if(mult < 0.1)
+      mult = 0.1;
+   long pauseSec = (long)((peakTime - troughTime) * mult);
+   if(pauseSec <= 0)
+      pauseSec = 3600;
+   datetime pauseUntil = peakTime + pauseSec;
+   if(pauseUntil > g_sigPeakPauseUntil)
+      g_sigPeakPauseUntil = pauseUntil;
+  }
+
+bool ML_IsSigPeakEntryPaused(const datetime barTime)
+  {
+   return InpSigPeakPauseOn && g_sigPeakPauseUntil > 0 && barTime < g_sigPeakPauseUntil;
+  }
+
+bool ML_CheckPeakDrawdown()
+  {
+   if(!InpPeakDrawdownOn || InpPeakDrawdownPct <= 0.0)
+      return false;
+   double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(eq <= 0.0)
+      return false;
+   if(g_portfolioPeak <= 0.0 || eq > g_portfolioPeak)
+      g_portfolioPeak = eq;
+   double floor = g_portfolioPeak * (1.0 - InpPeakDrawdownPct / 100.0);
+   if(eq > floor)
+      return false;
+   ML_CloseAll();
+   g_portfolioPeak = eq;
+   return true;
+  }
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
    g_trade.SetExpertMagicNumber(InpMagic);
    g_trade.SetDeviationInPoints(InpSlippagePoints);
    g_refEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   g_portfolioPeak = g_refEquity;
 
    string lines[4] = {InpLogic1, InpLogic2, InpLogic3, InpLogic4};
    bool ens[4] = {InpL1Enable, InpL2Enable, InpL3Enable, InpL4Enable};
@@ -805,6 +945,9 @@ void OnTick()
    if(bt==0 || bt==g_lastBar) return;
    g_lastBar = bt;
    if(!ML_CanTradeTime()) return;
+   ML_AppendEquitySnapshot(bt);
+   ML_UpdateSigPeakPause(bt);
+   if(ML_CheckPeakDrawdown()) return;
    if(ML_CheckPortfStopper()) return;
 
    const int sh = 1;
@@ -815,17 +958,18 @@ void OnTick()
       ENUM_ML_SIDE side = ML_SlotSide(g_slots[si]);
       if(InpLogicInversion) side = (side==ML_BUY)?ML_SELL:ML_BUY;
       int sign = ML_RegimeSign(g_slots[si].regime, sh);
-      if(ML_RegimeShouldClose(g_slots[si].regime, side, sign) || ML_EvalClose(g_slots[si], sh))
+      if(ML_RegimeShouldClose(g_slots[si].regime, side, sign) || ML_EvalExitSignal(g_slots[si], sh))
         { ML_CloseAll(); return; }
      }
 
    if(ML_HasPos()) return;
+   if(ML_IsSigPeakEntryPaused(bt)) return;
 
    int pick = 0;
    for(int s=0;s<4;s++)
      {
       if(!g_slots[s].enabled || g_slots[s].disabled) continue;
-      if(!ML_EvalOpen(g_slots[s], sh)) continue;
+      if(!ML_EvalEntrySignal(g_slots[s], sh)) continue;
       ENUM_ML_SIDE side = ML_SlotSide(g_slots[s]);
       if(InpLogicInversion) side = (side==ML_BUY)?ML_SELL:ML_BUY;
       int sign = ML_RegimeSign(g_slots[s].regime, sh);
