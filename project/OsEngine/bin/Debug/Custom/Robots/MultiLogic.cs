@@ -66,11 +66,18 @@ namespace OsEngine.Robots.Custom
         /// <summary>Ссылка на параметр «Длина линейной регрессии» в строках логики (см. LogicLineParser.LinRegLengthParamToken).</summary>
         public const string LinRegLengthRef = "@LR";
 
+        /// <summary>Ссылка на параметр «Strict (строгость)» в строках логики (см. LogicLineParser.StrictnessParamToken).</summary>
+        public const string StrictnessRef = "@Strict";
+
+        public const string StrictPrefix = "Strict(" + StrictnessRef + ") ";
+
         public const string TrendRegimePrefix =
-            "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
+            StrictPrefix
+            + "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
 
         public const string BokovikRegimePrefix =
-            "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) ";
+            StrictPrefix
+            + "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) ";
 
         public const string Logic1LongTrend =
             TrendRegimePrefix
@@ -447,6 +454,24 @@ namespace OsEngine.Robots.Custom
         private const int LogicLinRegLengthMin = 5;
         private const int LogicLinRegLengthMax = 300;
         private const int LogicLinRegLengthStep = 5;
+        private const string LogicStrictnessParamName = "Strict (строгость)";
+        private const string LogicStrictnessIncButtonName = "Увеличить: Strict +1";
+        private const string LogicStrictnessDecButtonName = "Уменьшить: Strict −1";
+        private const int LogicStrictnessMin = 1;
+        private const int LogicStrictnessMax = 5;
+        private const int LogicStrictnessDefault = 3;
+        private const string MaxPositionsParamName = "Max positions (all tabs)";
+        private const string VolumeParamName = "Volume";
+        private const string MaxPositionsIncButtonName = "Увеличить: Max positions +5";
+        private const string MaxPositionsDecButtonName = "Уменьшить: Max positions −5";
+        private const string VolumeIncButtonName = "Увеличить: Volume +5";
+        private const string VolumeDecButtonName = "Уменьшить: Volume −5";
+        private const int MaxPositionsButtonDelta = 5;
+        private const int MaxPositionsMin = 0;
+        private const int MaxPositionsMax = 200;
+        private const decimal VolumeButtonDelta = 5m;
+        private const decimal VolumeMin = 1.0m;
+        private const decimal VolumeMax = 50m;
         /// <summary>Вкладка общепортфельных индикаторов по кривым портфелей логик (пока только параметры).</summary>
         private const string MetaLogicsTabName = "Металогики";
         /// <summary>Вкладка общепортфельных stop-loss / take-profit по сумме портфелей L1…L10.</summary>
@@ -538,9 +563,10 @@ namespace OsEngine.Robots.Custom
         /// Краткая подсказка в параметрах. Полная справка — MultiLogic_LogicHelp.html (кнопка Help, автообновление).
         /// </summary>
         private const string LogicLineFormatHint =
-            "В начале (необязательно): Disabled(true/false) и Regime(…) — режим наклона LinReg.\n"
+            "В начале (необязательно): Disabled(true/false), Strict(@Strict|1…5) и Regime(…) — режим наклона LinReg.\n"
             + "Формат: <Индикатор>(параметры) Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)\n"
-            + "Disabled(…) / Regime(…) — только в начале строки, до AND/OR, без скобок вокруг.\n"
+            + "Disabled(…) / Strict(…) / Regime(…) — только в начале строки, до AND/OR, без скобок вокруг.\n"
+            + "Strict(@Strict) — строгость из параметра «Strict (строгость)»; Strict(4) — явное 1…5; без префикса — параметр робота.\n"
             + "Regime(LinReg;L=@LR;Dev=2;SlopeLb=5;SlopeDead=0.05%;Entry=MatchSide|FlatOnly) — тренд или боковик по наклону LinReg (@LR — параметр «Длина линейной регрессии»).\n"
             + "Составная логика: AND/OR или &&/||; NOT/! перед фрагментом инвертирует Op/Cl (не Buy/Sell).\n"
             + "В Op[…] и Cl[…]: ! / NOT, && / AND, || / OR (как в JavaScript). Примеры:\n"
@@ -664,8 +690,11 @@ namespace OsEngine.Robots.Custom
         /// <summary>Инверсия Buy↔Sell при открытии по всем логикам (вкладка «Логики»).</summary>
         private StrategyParameterBool _logicSideInversion;
         private StrategyParameterInt _logicLinRegLen;
+        private StrategyParameterInt _logicStrictness;
         private StrategyParameterButton _logicLinRegLenIncButton;
         private StrategyParameterButton _logicLinRegLenDecButton;
+        private StrategyParameterButton _logicStrictnessIncButton;
+        private StrategyParameterButton _logicStrictnessDecButton;
         /// <summary>Кнопка экспорта JSON-снимка (первая вкладка параметров).</summary>
         private StrategyParameterButton _saveSnapshotButton;
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -788,10 +817,14 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _stopRobotAndSellAllButton;
         /// <summary>Лимит открытых позиций на всём скринере.</summary>
         private StrategyParameterInt _maxPositions;
+        private StrategyParameterButton _maxPositionsIncButton;
+        private StrategyParameterButton _maxPositionsDecButton;
         /// <summary>Способ задания объёма: Contracts / Contract currency / Deposit percent.</summary>
         private StrategyParameterString _volumeType;
         /// <summary>Числовое значение объёма (зависит от Volume type).</summary>
         private StrategyParameterDecimal _volume;
+        private StrategyParameterButton _volumeIncButton;
+        private StrategyParameterButton _volumeDecButton;
         /// <summary>База для расчёта % депозита: Prime или код валюты.</summary>
         private StrategyParameterString _tradeAssetInPortfolio;
 
@@ -948,13 +981,21 @@ namespace OsEngine.Robots.Custom
             _openHtmlReportMainTabButton = CreateParameterButton(OpenHtmlReportMainTabButtonName);
             _openHtmlReportMainTabButton.UserClickOnButtonEvent += HtmlReportOpenButton_UserClickOnButtonEvent;
 
-            _maxPositions = CreateParameter("Max positions (all tabs)", 40, 0, 200, 1);
+            _maxPositions = CreateParameter(MaxPositionsParamName, 40, MaxPositionsMin, MaxPositionsMax, 1);
+            _maxPositionsIncButton = CreateParameterButton(MaxPositionsIncButtonName);
+            _maxPositionsIncButton.UserClickOnButtonEvent += MaxPositionsIncButton_UserClickOnButtonEvent;
+            _maxPositionsDecButton = CreateParameterButton(MaxPositionsDecButtonName);
+            _maxPositionsDecButton.UserClickOnButtonEvent += MaxPositionsDecButton_UserClickOnButtonEvent;
 
             _volumeType = CreateParameter(
                 "Volume type",
                 "Deposit percent",
                 new[] { "Contracts", "Contract currency", "Deposit percent" });
-            _volume = CreateParameter("Volume", 10, 1.0m, 50, 4);
+            _volume = CreateParameter(VolumeParamName, 10, VolumeMin, VolumeMax, 4);
+            _volumeIncButton = CreateParameterButton(VolumeIncButtonName);
+            _volumeIncButton.UserClickOnButtonEvent += VolumeIncButton_UserClickOnButtonEvent;
+            _volumeDecButton = CreateParameterButton(VolumeDecButtonName);
+            _volumeDecButton.UserClickOnButtonEvent += VolumeDecButton_UserClickOnButtonEvent;
             _tradeAssetInPortfolio = CreateParameter("Asset in portfolio", "Prime");
 
             _referenceInitialPortfolioAmount = CreateParameter(
@@ -1009,6 +1050,17 @@ namespace OsEngine.Robots.Custom
             _logicLinRegLenIncButton.UserClickOnButtonEvent += LogicLinRegLenIncButton_UserClickOnButtonEvent;
             _logicLinRegLenDecButton = CreateParameterButton(LogicLinRegLenDecButtonName, LogicsTabName);
             _logicLinRegLenDecButton.UserClickOnButtonEvent += LogicLinRegLenDecButton_UserClickOnButtonEvent;
+            _logicStrictness = CreateParameter(
+                LogicStrictnessParamName,
+                LogicStrictnessDefault,
+                LogicStrictnessMin,
+                LogicStrictnessMax,
+                1,
+                LogicsTabName);
+            _logicStrictnessIncButton = CreateParameterButton(LogicStrictnessIncButtonName, LogicsTabName);
+            _logicStrictnessIncButton.UserClickOnButtonEvent += LogicStrictnessIncButton_UserClickOnButtonEvent;
+            _logicStrictnessDecButton = CreateParameterButton(LogicStrictnessDecButtonName, LogicsTabName);
+            _logicStrictnessDecButton.UserClickOnButtonEvent += LogicStrictnessDecButton_UserClickOnButtonEvent;
 
             _logic1 = CreateParameter("Логика 1", MultiLogicDefaultLogics.Logic1LongTrend, LogicsTabName);
             _logic2 = CreateParameter("Логика 2", MultiLogicDefaultLogics.Logic2LongBokovik, LogicsTabName);
@@ -1153,6 +1205,7 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void MultiLogic_ParametrsChangeByUser()
         {
+            WireMainTabButtons();
             WireLogicTabButtons();
             WireMetaLogicTabButtons();
             WireStopperTabButtons();
@@ -1163,6 +1216,7 @@ namespace OsEngine.Robots.Custom
             RegisterParameterHints();
             _stopperReferenceBaselineLocked = _portfolioStopperReferenceEquity.ValueDecimal != 0m;
             SyncStopMonitorScreenerPage(logToUser: false);
+            TryApplyLogicStrictnessChangeOnParameterAccept();
             if (ShouldResyncLogicIndicatorsOnParameterChange()
                 && HaveLogicSlotStringsChangedSinceLastSync())
             {
@@ -1346,6 +1400,185 @@ namespace OsEngine.Robots.Custom
             }
         }
 
+        /// <summary>Переподписывает кнопки ±5 для Volume и Max positions на главной вкладке параметров.</summary>
+        private void WireMainTabButtons()
+        {
+            WireLogicTabButton(MaxPositionsIncButtonName, MaxPositionsIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(MaxPositionsDecButtonName, MaxPositionsDecButton_UserClickOnButtonEvent);
+            WireLogicTabButton(VolumeIncButtonName, VolumeIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(VolumeDecButtonName, VolumeDecButton_UserClickOnButtonEvent);
+        }
+
+        private void MaxPositionsIncButton_UserClickOnButtonEvent()
+        {
+            AdjustMaxPositionsParameter(+MaxPositionsButtonDelta);
+        }
+
+        private void MaxPositionsDecButton_UserClickOnButtonEvent()
+        {
+            AdjustMaxPositionsParameter(-MaxPositionsButtonDelta);
+        }
+
+        private void VolumeIncButton_UserClickOnButtonEvent()
+        {
+            AdjustVolumeParameter(+VolumeButtonDelta);
+        }
+
+        private void VolumeDecButton_UserClickOnButtonEvent()
+        {
+            AdjustVolumeParameter(-VolumeButtonDelta);
+        }
+
+        private StrategyParameterInt ResolveMaxPositionsParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == MaxPositionsParamName);
+            return (fromList as StrategyParameterInt) ?? _maxPositions;
+        }
+
+        private StrategyParameterDecimal ResolveVolumeParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == VolumeParamName);
+            return (fromList as StrategyParameterDecimal) ?? _volume;
+        }
+
+        private int ReadMaxPositionsCurrent()
+        {
+            ApplyPrefixesFromOpenParameterDialog();
+
+            if (TryReadIntParameterFromOpenParameterGui(MaxPositionsParamName, out int fromGui))
+            {
+                return fromGui;
+            }
+
+            return ResolveMaxPositionsParameter()?.ValueInt ?? 40;
+        }
+
+        private decimal ReadVolumeCurrent()
+        {
+            ApplyPrefixesFromOpenParameterDialog();
+
+            if (TryReadDecimalParameterFromOpenParameterGui(VolumeParamName, out decimal fromGui))
+            {
+                return fromGui;
+            }
+
+            return ResolveVolumeParameter()?.ValueDecimal ?? 10m;
+        }
+
+        private void ApplyMaxPositionsValue(int next)
+        {
+            StrategyParameterInt param = ResolveMaxPositionsParameter();
+            if (param == null)
+            {
+                return;
+            }
+
+            next = Math.Max(MaxPositionsMin, Math.Min(MaxPositionsMax, next));
+            SetStrategyParameterIntSilent(param, next);
+            TryApplyIntParameterToOpenParameterGui(MaxPositionsParamName, next);
+            _loggedMaxPositionsLimit = false;
+            SaveParametersWithoutLogicIndicatorResync();
+            RequestParameterGuiRepaintOnce();
+            RecordHtmlReportConfigChangesIfAny();
+        }
+
+        private void ApplyVolumeValue(decimal next)
+        {
+            StrategyParameterDecimal param = ResolveVolumeParameter();
+            if (param == null)
+            {
+                return;
+            }
+
+            next = Math.Max(VolumeMin, Math.Min(VolumeMax, next));
+            SetStrategyParameterDecimalSilent(param, next);
+            TryApplyDecimalParameterToOpenParameterGui(VolumeParamName, next);
+            SaveParametersWithoutLogicIndicatorResync();
+            RequestParameterGuiRepaintOnce();
+            RecordHtmlReportConfigChangesIfAny();
+        }
+
+        private void AdjustMaxPositionsParameter(int delta)
+        {
+            try
+            {
+                int current = ReadMaxPositionsCurrent();
+                int next = Math.Max(MaxPositionsMin, Math.Min(MaxPositionsMax, current + delta));
+                if (next == current)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + MaxPositionsParamName
+                        + ": "
+                        + current
+                        + " — изменение "
+                        + (delta >= 0 ? "+" : "")
+                        + delta
+                        + " не выполнено (граница "
+                        + MaxPositionsMin
+                        + "…"
+                        + MaxPositionsMax
+                        + ").",
+                        LogMessageType.User);
+                    return;
+                }
+
+                ApplyMaxPositionsValue(next);
+                SendNewLogMessage(
+                    NameStrategyUniq + " | " + MaxPositionsParamName + ": " + current + " → " + next + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void AdjustVolumeParameter(decimal delta)
+        {
+            try
+            {
+                decimal current = ReadVolumeCurrent();
+                decimal next = Math.Max(VolumeMin, Math.Min(VolumeMax, current + delta));
+                if (next == current)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + VolumeParamName
+                        + ": "
+                        + current.ToString(CultureInfo.InvariantCulture)
+                        + " — изменение "
+                        + (delta >= 0m ? "+" : "")
+                        + delta.ToString(CultureInfo.InvariantCulture)
+                        + " не выполнено (граница "
+                        + VolumeMin.ToString(CultureInfo.InvariantCulture)
+                        + "…"
+                        + VolumeMax.ToString(CultureInfo.InvariantCulture)
+                        + ").",
+                        LogMessageType.User);
+                    return;
+                }
+
+                ApplyVolumeValue(next);
+                SendNewLogMessage(
+                    NameStrategyUniq
+                    + " | "
+                    + VolumeParamName
+                    + ": "
+                    + current.ToString(CultureInfo.InvariantCulture)
+                    + " → "
+                    + next.ToString(CultureInfo.InvariantCulture)
+                    + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
         /// <summary>Переподписывает обработчики кнопок на вкладке «Логики» (после пересоздания UI параметров).</summary>
         private void WireLogicTabButtons()
         {
@@ -1359,6 +1592,8 @@ namespace OsEngine.Robots.Custom
             WireLogicTabButton(AddLogicButtonName, AddLogicButton_UserClickOnButtonEvent);
             WireLogicTabButton(LogicLinRegLenIncButtonName, LogicLinRegLenIncButton_UserClickOnButtonEvent);
             WireLogicTabButton(LogicLinRegLenDecButtonName, LogicLinRegLenDecButton_UserClickOnButtonEvent);
+            WireLogicTabButton(LogicStrictnessIncButtonName, LogicStrictnessIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(LogicStrictnessDecButtonName, LogicStrictnessDecButton_UserClickOnButtonEvent);
         }
 
         private void LogicLinRegLenIncButton_UserClickOnButtonEvent()
@@ -1413,6 +1648,64 @@ namespace OsEngine.Robots.Custom
                 ApplyLogicLinRegLengthValue(next);
                 SendNewLogMessage(
                     NameStrategyUniq + " | " + LogicLinRegLengthParamName + " → " + next + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void LogicStrictnessIncButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                int current = ReadLogicStrictnessCurrent();
+                if (current >= LogicStrictnessMax)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + LogicStrictnessParamName
+                        + ": уже максимум ("
+                        + LogicStrictnessMax
+                        + ").",
+                        LogMessageType.User);
+                    return;
+                }
+
+                ApplyLogicStrictnessValue(current + 1, current);
+                SendNewLogMessage(
+                    NameStrategyUniq + " | " + LogicStrictnessParamName + " → " + (current + 1) + ".",
+                    LogMessageType.User);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void LogicStrictnessDecButton_UserClickOnButtonEvent()
+        {
+            try
+            {
+                int current = ReadLogicStrictnessCurrent();
+                if (current <= LogicStrictnessMin)
+                {
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | "
+                        + LogicStrictnessParamName
+                        + ": минимум "
+                        + LogicStrictnessMin
+                        + " — уменьшение не выполнено.",
+                        LogMessageType.User);
+                    return;
+                }
+
+                ApplyLogicStrictnessValue(current - 1, current);
+                SendNewLogMessage(
+                    NameStrategyUniq + " | " + LogicStrictnessParamName + " → " + (current - 1) + ".",
                     LogMessageType.User);
             }
             catch (Exception ex)
@@ -1857,6 +2150,17 @@ namespace OsEngine.Robots.Custom
         /// </summary>
         private void ApplyDefaultLogicStrings()
         {
+            int strict = ReadLogicStrictnessCurrent();
+            if (strict != LogicStrictnessDefault)
+            {
+                StrategyParameterInt strictParam = ResolveLogicStrictnessParameter();
+                if (strictParam != null)
+                {
+                    SetStrategyParameterIntSilent(strictParam, LogicStrictnessDefault);
+                    TryApplyIntParameterToOpenParameterGui(LogicStrictnessParamName, LogicStrictnessDefault);
+                }
+            }
+
             string[] slotValues = new string[LogicSlotCount];
             for (int i = 0; i < MultiLogicDefaultLogics.SlotFormulas.Length; i++)
             {
@@ -2061,6 +2365,80 @@ namespace OsEngine.Robots.Custom
             next = Math.Max(LogicLinRegLengthMin, Math.Min(LogicLinRegLengthMax, next));
             SetStrategyParameterIntSilent(param, next);
             TryApplyIntParameterToOpenParameterGui(LogicLinRegLengthParamName, next);
+            SaveParametersWithoutLogicIndicatorResync();
+            RequestParameterGuiRepaintOnce();
+            RunOnUiThread(
+                () => TryParseAndApplyAllLogicSlots(logToUser: false),
+                preferAsync: true);
+            RecordHtmlReportConfigChangesIfAny();
+        }
+
+        private StrategyParameterInt ResolveLogicStrictnessParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == LogicStrictnessParamName);
+            return (fromList as StrategyParameterInt) ?? _logicStrictness;
+        }
+
+        private int ReadLogicStrictnessCurrent()
+        {
+            ApplyPrefixesFromOpenParameterDialog();
+
+            if (TryReadIntParameterFromOpenParameterGui(LogicStrictnessParamName, out int fromGui))
+            {
+                return LogicStrictnessAdjuster.Clamp(fromGui);
+            }
+
+            return LogicStrictnessAdjuster.Clamp(
+                ResolveLogicStrictnessParameter()?.ValueInt ?? LogicStrictnessDefault);
+        }
+
+        private static int ParseStrictnessFromLogicSlotsFingerprint(string fingerprint)
+        {
+            if (string.IsNullOrEmpty(fingerprint))
+            {
+                return LogicStrictnessDefault;
+            }
+
+            string[] parts = fingerprint.Split('\u001e');
+            if (parts.Length < 2 || !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int strict))
+            {
+                return LogicStrictnessDefault;
+            }
+
+            return LogicStrictnessAdjuster.Clamp(strict);
+        }
+
+        /// <summary>После «Принять»: если Strict изменили в поле параметра — пересчитать пороги в строках логик.</summary>
+        private void TryApplyLogicStrictnessChangeOnParameterAccept()
+        {
+            int previous = ParseStrictnessFromLogicSlotsFingerprint(_lastSyncedLogicSlotsFingerprint);
+            int next = ReadLogicStrictnessCurrent();
+            if (next == previous)
+            {
+                return;
+            }
+
+            ApplyLogicStrictnessValue(next, previous);
+        }
+
+        private void ApplyLogicStrictnessValue(int next, int previous)
+        {
+            StrategyParameterInt param = ResolveLogicStrictnessParameter();
+            if (param == null)
+            {
+                return;
+            }
+
+            next = LogicStrictnessAdjuster.Clamp(next);
+            previous = LogicStrictnessAdjuster.Clamp(previous);
+            if (next == previous)
+            {
+                return;
+            }
+
+            SetStrategyParameterIntSilent(param, next);
+            TryApplyIntParameterToOpenParameterGui(LogicStrictnessParamName, next);
+            SyncLogicParserGlobals();
             SaveParametersWithoutLogicIndicatorResync();
             RequestParameterGuiRepaintOnce();
             RunOnUiThread(
@@ -2624,10 +3002,18 @@ namespace OsEngine.Robots.Custom
             LogicLineParser.DefaultLinRegLength = Math.Max(LogicLinRegLengthMin, len);
         }
 
+        private void SyncLogicParserGlobals()
+        {
+            SyncDefaultLinRegLengthToParser();
+            LogicLineParser.DefaultStrictness = ReadLogicStrictnessCurrent();
+        }
+
         private string BuildLogicSlotsFingerprint()
         {
             var sb = new StringBuilder(4096);
             sb.Append(_logicLinRegLen?.ValueInt ?? LogicLinRegLengthDefault);
+            sb.Append('\u001e');
+            sb.Append(_logicStrictness?.ValueInt ?? LogicStrictnessDefault);
             sb.Append('\u001e');
             for (int slot = 1; slot <= LogicSlotCount; slot++)
             {
@@ -3165,7 +3551,7 @@ namespace OsEngine.Robots.Custom
         /// <param name="logToUser">Дублировать сообщения парсинга в пользовательский лог.</param>
         private void TryParseAndApplyAllLogicSlots(bool logToUser)
         {
-            SyncDefaultLinRegLengthToParser();
+            SyncLogicParserGlobals();
             var allAtoms = new List<LogicAtom>();
 
             for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
@@ -3609,6 +3995,24 @@ namespace OsEngine.Robots.Custom
                 "Максимум одновременно открытых позиций робота на всём скринере (все вкладки). "
                 + "0 — новые входы запрещены. При нехватке слотов: без металогики — L1, L2, …; "
                 + "с металогикой — выше PnlSMA раньше.");
+            Hint(
+                MaxPositionsIncButtonName,
+                "Увеличить «"
+                + MaxPositionsParamName
+                + "» на "
+                + MaxPositionsButtonDelta
+                + " (максимум "
+                + MaxPositionsMax
+                + "); сразу, без «Принять».");
+            Hint(
+                MaxPositionsDecButtonName,
+                "Уменьшить «"
+                + MaxPositionsParamName
+                + "» на "
+                + MaxPositionsButtonDelta
+                + " (минимум "
+                + MaxPositionsMin
+                + "); сразу, без «Принять».");
             Hint("Volume type",
                 "Способ задания объёма заявки:\n"
                 + "Contracts — фиксированное число контрактов;\n"
@@ -3618,6 +4022,24 @@ namespace OsEngine.Robots.Custom
                 "Общий объём одной «порции» на вкладку. Если на одной свече срабатывает несколько логик — "
                 + "без металогики делится поровну; с «Металогика включена» — по PnlSMA между логиками с Op "
                 + "(только PnlSMA&gt;0; при «Инверсия» — ещё PnlSMA&lt;0 с Buy↔Sell). Единицы — см. Volume type.");
+            Hint(
+                VolumeIncButtonName,
+                "Увеличить «"
+                + VolumeParamName
+                + "» на "
+                + VolumeButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + " (максимум "
+                + VolumeMax.ToString(CultureInfo.InvariantCulture)
+                + "); сразу, без «Принять».");
+            Hint(
+                VolumeDecButtonName,
+                "Уменьшить «"
+                + VolumeParamName
+                + "» на "
+                + VolumeButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + " (минимум "
+                + VolumeMin.ToString(CultureInfo.InvariantCulture)
+                + "); сразу, без «Принять».");
             Hint("Asset in portfolio",
                 "От какой суммы на счёте считать процент при Volume type = Deposit percent.\n"
                 + "Prime — вся стоимость портфеля (обычно правильный выбор).\n"
@@ -3705,6 +4127,26 @@ namespace OsEngine.Robots.Custom
                 + " (минимум "
                 + LogicLinRegLengthMin
                 + "; ниже — не меняет); значение в таблице и индикаторы — сразу.");
+            Hint(
+                LogicStrictnessParamName,
+                "Строгость отбора 1…5 (по умолчанию 3): 1–2 — больше сделок, 4–5 — меньше. "
+                + "В строке логики: Strict(@Strict) — ссылка на этот параметр; Strict(4) — явное значение. "
+                + "Пороги Lmin/Smax/Gr/… масштабируются при разборе (текст строки — нейтральный, strict=3). "
+                + "Кнопки ±1 — сразу, без закрытия окна параметров.");
+            Hint(
+                LogicStrictnessIncButtonName,
+                "Увеличить «"
+                + LogicStrictnessParamName
+                + "» на 1 (максимум "
+                + LogicStrictnessMax
+                + ") — ужесточить пороги в строках логик; сразу обновляет таблицу и график, без «Принять».");
+            Hint(
+                LogicStrictnessDecButtonName,
+                "Уменьшить «"
+                + LogicStrictnessParamName
+                + "» на 1 (минимум "
+                + LogicStrictnessMin
+                + ") — смягчить пороги в строках логик; сразу обновляет таблицу и график, без «Принять».");
             string logicSlotHintSuffix =
                 "\n\nОдинаковый индикатор с теми же параметрами в разных логиках — один экземпляр на графике. "
                 + "Regime=On: вход по Op, выход по Cl. Volume делится поровну между сработавшими логиками на свече.";
@@ -17631,6 +18073,8 @@ namespace OsEngine.Robots.Custom
         public bool Success;
         /// <summary>Логика отключена префиксом Disabled(true) / Disable(true) в начале строки.</summary>
         public bool IsDisabled;
+        /// <summary>Строгость отбора 1…5 (из Strict(…) или параметр робота).</summary>
+        public int Strictness = LogicStrictnessAdjuster.Neutral;
         /// <summary>Префикс Regime(…) — наклон LinReg, закрытие и фильтр входа.</summary>
         public LogicRegimeSpec Regime;
         /// <summary>Список текстов ошибок при Success=false.</summary>
@@ -17650,6 +18094,403 @@ namespace OsEngine.Robots.Custom
                 Success = false,
                 Errors = new List<string> { error }
             };
+        }
+    }
+
+    /// <summary>
+    /// Масштаб порогов индикаторов по Strict 1…5 (3 — без изменений). Меняет Lmin/Smax/Gr/SlopeDead/Dev и числа в Op/Cl.
+    /// </summary>
+    public static class LogicStrictnessAdjuster
+    {
+        public const int Min = 1;
+        public const int Max = 5;
+        public const int Neutral = 3;
+
+        private enum ThresholdKind
+        {
+            LongMin,
+            ShortMaxSigned,
+            ShortMaxPositive,
+            AtrGrowthPercent,
+            SlopeDeadPercent,
+            LinRegDeviation
+        }
+
+        public static int Clamp(int value)
+        {
+            if (value < Min)
+            {
+                return Min;
+            }
+
+            if (value > Max)
+            {
+                return Max;
+            }
+
+            return value;
+        }
+
+        private static int Offset(int strict)
+        {
+            return Clamp(strict) - Neutral;
+        }
+
+        private static decimal ScaleFromNeutral(decimal neutral, ThresholdKind kind, int strict)
+        {
+            int off = Offset(strict);
+            if (off == 0 || neutral == 0m)
+            {
+                return neutral;
+            }
+
+            decimal factor = 1m;
+            switch (kind)
+            {
+                case ThresholdKind.LongMin:
+                    factor = 1m + off * 0.10m;
+                    return ClampScaled(neutral, neutral * factor, 0.76m, 1.24m);
+                case ThresholdKind.ShortMaxSigned:
+                    factor = 1m + off * 0.10m;
+                    return ClampScaled(neutral, neutral * factor, 0.76m, 1.24m);
+                case ThresholdKind.ShortMaxPositive:
+                    factor = 1m - off * 0.10m;
+                    return ClampScaled(neutral, neutral * factor, 0.76m, 1.24m);
+                case ThresholdKind.AtrGrowthPercent:
+                    factor = 1m + off * 0.12m;
+                    return ClampScaled(neutral, neutral * factor, 0.65m, 1.35m);
+                case ThresholdKind.SlopeDeadPercent:
+                    factor = 1m - off * 0.10m;
+                    return ClampScaled(neutral, neutral * factor, 0.70m, 1.30m);
+                case ThresholdKind.LinRegDeviation:
+                    factor = 1m - off * 0.08m;
+                    return ClampScaled(neutral, neutral * factor, 0.88m, 1.12m);
+                default:
+                    return neutral;
+            }
+        }
+
+        private static decimal ClampScaled(decimal neutral, decimal scaled, decimal minRatio, decimal maxRatio)
+        {
+            decimal lo = neutral * minRatio;
+            decimal hi = neutral * maxRatio;
+            if (scaled < lo)
+            {
+                return lo;
+            }
+
+            if (scaled > hi)
+            {
+                return hi;
+            }
+
+            return scaled;
+        }
+
+        private static decimal ToNeutral(decimal value, ThresholdKind kind, int strict)
+        {
+            int off = Offset(strict);
+            if (off == 0 || value == 0m)
+            {
+                return value;
+            }
+
+            switch (kind)
+            {
+                case ThresholdKind.LongMin:
+                    return value / (1m + off * 0.10m);
+                case ThresholdKind.ShortMaxSigned:
+                    return value / (1m + off * 0.10m);
+                case ThresholdKind.ShortMaxPositive:
+                    return value / (1m - off * 0.10m);
+                case ThresholdKind.AtrGrowthPercent:
+                    return value / (1m + off * 0.12m);
+                case ThresholdKind.SlopeDeadPercent:
+                    return value / (1m - off * 0.10m);
+                case ThresholdKind.LinRegDeviation:
+                    return value / (1m - off * 0.08m);
+                default:
+                    return value;
+            }
+        }
+
+        private static decimal TransitionThreshold(decimal value, ThresholdKind kind, int fromStrict, int toStrict)
+        {
+            if (fromStrict == toStrict)
+            {
+                return value;
+            }
+
+            decimal neutral = ToNeutral(value, kind, fromStrict);
+            return ScaleFromNeutral(neutral, kind, toStrict);
+        }
+
+        private static ThresholdKind ClassifyShortMax(decimal value)
+        {
+            return value < 0m ? ThresholdKind.ShortMaxSigned : ThresholdKind.ShortMaxPositive;
+        }
+
+        private static string FormatThreshold(decimal value)
+        {
+            decimal rounded = decimal.Round(value, 4, MidpointRounding.AwayFromZero);
+            if (rounded == decimal.Truncate(rounded))
+            {
+                return ((long)rounded).ToString(CultureInfo.InvariantCulture);
+            }
+
+            return rounded.ToString("0.####", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>Масштабирует пороги атомов и Regime при разборе строки (нейтральные значения в тексте, strict≠3).</summary>
+        public static void ApplyToParsedLogic(List<LogicAtom> atoms, LogicRegimeSpec regime, int strict)
+        {
+            strict = Clamp(strict);
+            if (strict == Neutral)
+            {
+                return;
+            }
+
+            if (atoms != null)
+            {
+                for (int i = 0; i < atoms.Count; i++)
+                {
+                    ApplyToAtom(atoms[i], strict);
+                }
+            }
+
+            if (regime != null)
+            {
+                ApplyToRegime(regime, strict);
+            }
+        }
+
+        private static void ApplyToAtom(LogicAtom atom, int strict)
+        {
+            if (atom == null)
+            {
+                return;
+            }
+
+            ScaleDecimalParam(atom.Params, "Lmin", ThresholdKind.LongMin, strict);
+            ScaleDecimalParam(atom.Params, "Smax", null, strict, resolveShortMaxKind: true);
+            ScaleDecimalParam(atom.Params, "Gr", ThresholdKind.AtrGrowthPercent, strict, percentSuffix: true);
+            ScaleDecimalParam(atom.Params, "Dev", ThresholdKind.LinRegDeviation, strict);
+            atom.OpenSignal = ScaleSignalThresholds(atom.OpenSignal, strict);
+            atom.CloseSignal = ScaleSignalThresholds(atom.CloseSignal, strict);
+        }
+
+        private static void ApplyToRegime(LogicRegimeSpec regime, int strict)
+        {
+            ScaleDecimalParam(regime.Params, "Dev", ThresholdKind.LinRegDeviation, strict);
+            ScaleDecimalParam(regime.Params, "SlopeDead", ThresholdKind.SlopeDeadPercent, strict, percentSuffix: true);
+        }
+
+        private static void ScaleDecimalParam(
+            Dictionary<string, string> dict,
+            string key,
+            ThresholdKind? kind,
+            int strict,
+            bool percentSuffix = false,
+            bool resolveShortMaxKind = false)
+        {
+            if (dict == null
+                || !dict.TryGetValue(key, out string raw)
+                || string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            raw = raw.Trim();
+            string suffix = "";
+            if (percentSuffix && raw.EndsWith("%", StringComparison.Ordinal))
+            {
+                suffix = "%";
+                raw = raw.Substring(0, raw.Length - 1).Trim();
+            }
+
+            if (!decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal value))
+            {
+                return;
+            }
+
+            ThresholdKind resolvedKind = kind
+                ?? (resolveShortMaxKind ? ClassifyShortMax(value) : ThresholdKind.LongMin);
+            dict[key] = FormatThreshold(ScaleFromNeutral(value, resolvedKind, strict)) + suffix;
+        }
+
+        public static string ScaleSignalThresholds(string signal, int strict)
+        {
+            if (string.IsNullOrWhiteSpace(signal) || Clamp(strict) == Neutral)
+            {
+                return signal;
+            }
+
+            string line = signal;
+            line = Regex.Replace(
+                line,
+                @"(?i)(CCI>=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(CCI<=)(-?\d+(?:\.\d+)?)",
+                m =>
+                {
+                    decimal.TryParse(m.Groups[2].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal v);
+                    ThresholdKind k = v <= 0m ? ThresholdKind.ShortMaxSigned : ThresholdKind.ShortMaxPositive;
+                    return TransformMatch(m.Groups[1].Value, m.Groups[2].Value, k, Neutral, strict);
+                });
+            line = Regex.Replace(
+                line,
+                @"(?i)(CCI<)(-?\d+(?:\.\d+)?)",
+                m =>
+                {
+                    decimal.TryParse(m.Groups[2].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal v);
+                    ThresholdKind k = v <= 0m ? ThresholdKind.ShortMaxSigned : ThresholdKind.ShortMaxPositive;
+                    return TransformMatch(m.Groups[1].Value, m.Groups[2].Value, k, Neutral, strict);
+                });
+            line = Regex.Replace(
+                line,
+                @"(?i)(K>=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(K<=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(RSI>=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(RSI<=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(MOM>=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(MOM<=)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, Neutral, strict));
+            line = Regex.Replace(
+                line,
+                @"(?i)(MOM<)(-?\d+(?:\.\d+)?)",
+                m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, Neutral, strict));
+            return line;
+        }
+
+        public static string TransformLogicLine(string line, int fromStrict, int toStrict)
+        {
+            if (string.IsNullOrWhiteSpace(line) || fromStrict == toStrict)
+            {
+                return line;
+            }
+
+            fromStrict = Clamp(fromStrict);
+            toStrict = Clamp(toStrict);
+            int savedStrict = LogicLineParser.DefaultStrictness;
+            try
+            {
+                LogicLineParser.DefaultStrictness = fromStrict;
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(Lmin=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(Smax=)(-?\d+(?:\.\d+)?)",
+                    m =>
+                    {
+                        decimal.TryParse(m.Groups[2].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal v);
+                        ThresholdKind kind = ClassifyShortMax(v);
+                        return TransformMatch(m.Groups[1].Value, m.Groups[2].Value, kind, fromStrict, toStrict);
+                    });
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(Gr=)(-?\d+(?:\.\d+)?)(%?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.AtrGrowthPercent, fromStrict, toStrict)
+                        + m.Groups[3].Value);
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(SlopeDead=)(-?\d+(?:\.\d+)?)(%?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.SlopeDeadPercent, fromStrict, toStrict)
+                        + m.Groups[3].Value);
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(Dev=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LinRegDeviation, fromStrict, toStrict));
+
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(CCI>=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(CCI<=)(-?\d+(?:\.\d+)?)",
+                    m =>
+                    {
+                        decimal.TryParse(m.Groups[2].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal v);
+                        ThresholdKind kind = v <= 0m ? ThresholdKind.ShortMaxSigned : ThresholdKind.ShortMaxPositive;
+                        return TransformMatch(m.Groups[1].Value, m.Groups[2].Value, kind, fromStrict, toStrict);
+                    });
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(CCI<)(-?\d+(?:\.\d+)?)",
+                    m =>
+                    {
+                        decimal.TryParse(m.Groups[2].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal v);
+                        ThresholdKind kind = v <= 0m ? ThresholdKind.ShortMaxSigned : ThresholdKind.ShortMaxPositive;
+                        return TransformMatch(m.Groups[1].Value, m.Groups[2].Value, kind, fromStrict, toStrict);
+                    });
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(K>=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(K<=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(RSI>=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(RSI<=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(MOM>=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.LongMin, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(MOM<=)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, fromStrict, toStrict));
+                line = Regex.Replace(
+                    line,
+                    @"(?i)(MOM<)(-?\d+(?:\.\d+)?)",
+                    m => TransformMatch(m.Groups[1].Value, m.Groups[2].Value, ThresholdKind.ShortMaxPositive, fromStrict, toStrict));
+                return line;
+            }
+            finally
+            {
+                LogicLineParser.DefaultStrictness = savedStrict;
+            }
+        }
+
+        private static string TransformMatch(
+            string prefix,
+            string numberText,
+            ThresholdKind kind,
+            int fromStrict,
+            int toStrict)
+        {
+            if (!decimal.TryParse(numberText, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal value))
+            {
+                return prefix + numberText;
+            }
+
+            return prefix + FormatThreshold(TransitionThreshold(value, kind, fromStrict, toStrict));
         }
     }
 
@@ -17682,6 +18523,54 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>Текущее значение параметра «Длина линейной регрессии» перед Parse (устанавливает MultiLogic).</summary>
         public static int DefaultLinRegLength { get; set; } = DefaultLinRegLengthFallback;
+
+        /// <summary>Строгость из параметра робота «Strict (строгость)» (в строке: Strict(@Strict) или без префикса).</summary>
+        public const string StrictnessParamToken = "@Strict";
+
+        /// <summary>Strict (строгость) 1…5; 3 — пороги в строке без масштабирования.</summary>
+        public static int DefaultStrictness { get; set; } = LogicStrictnessAdjuster.Neutral;
+
+        /// <summary>true — токен ссылается на параметр Strict робота.</summary>
+        public static bool IsStrictnessParamReference(string raw)
+        {
+            return !string.IsNullOrWhiteSpace(raw)
+                && raw.Trim().Equals(StrictnessParamToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Строгость 1…5: @Strict → параметр робота, иначе явное число.</summary>
+        public static int ResolveStrictness(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return LogicStrictnessAdjuster.Clamp(DefaultStrictness);
+            }
+
+            raw = raw.Trim();
+            if (IsStrictnessParamReference(raw))
+            {
+                return LogicStrictnessAdjuster.Clamp(DefaultStrictness);
+            }
+
+            if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
+            {
+                return LogicStrictnessAdjuster.Clamp(iv);
+            }
+
+            if (decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal dec))
+            {
+                return LogicStrictnessAdjuster.Clamp((int)dec);
+            }
+
+            throw new InvalidOperationException(
+                "Strict(…): ожидается "
+                + StrictnessParamToken
+                + " или число "
+                + LogicStrictnessAdjuster.Min
+                + "…"
+                + LogicStrictnessAdjuster.Max
+                + ", получено: "
+                + raw);
+        }
 
         /// <summary>true — токен ссылается на параметр робота, а не на явное число.</summary>
         public static bool IsLinRegLengthParamReference(string raw)
@@ -17744,6 +18633,12 @@ namespace OsEngine.Robots.Custom
                     isDisabled = disabledFlag;
                 }
 
+                int lineStrict = DefaultStrictness;
+                if (TryExtractLeadingStrict(ref work, out int parsedStrict))
+                {
+                    lineStrict = parsedStrict;
+                }
+
                 LogicRegimeSpec regime = null;
                 if (TryExtractLeadingRegime(ref work, out LogicRegimeSpec parsedRegime))
                 {
@@ -17756,10 +18651,16 @@ namespace OsEngine.Robots.Custom
                         "Disabled(…) / Disable(…) допустимы только в самом начале строки, до AND/OR, без скобок вокруг.");
                 }
 
+                if (ContainsInnerStrictMarker(work))
+                {
+                    return LogicParseResult.Fail(
+                        "Strict(…) допустим только в самом начале строки (после Disabled), до AND/OR, без скобок вокруг.");
+                }
+
                 if (ContainsInnerRegimeMarker(work))
                 {
                     return LogicParseResult.Fail(
-                        "Regime(…) допустим только в самом начале строки (после Disabled), до AND/OR, без скобок вокруг.");
+                        "Regime(…) допустим только в самом начале строки (после Disabled и Strict), до AND/OR, без скобок вокруг.");
                 }
 
                 if (string.IsNullOrWhiteSpace(work))
@@ -17768,6 +18669,7 @@ namespace OsEngine.Robots.Custom
                     {
                         Success = true,
                         IsDisabled = isDisabled,
+                        Strictness = lineStrict,
                         Regime = regime,
                         Root = null,
                         Atoms = new List<LogicAtom>()
@@ -17792,10 +18694,16 @@ namespace OsEngine.Robots.Custom
                     EnsureRegimeIndicatorInAtoms(atoms, regime);
                 }
 
+                if (!isDisabled)
+                {
+                    LogicStrictnessAdjuster.ApplyToParsedLogic(atoms, regime, lineStrict);
+                }
+
                 return new LogicParseResult
                 {
                     Success = true,
                     IsDisabled = isDisabled,
+                    Strictness = lineStrict,
                     Regime = regime,
                     Root = root,
                     Atoms = atoms
@@ -17883,6 +18791,46 @@ namespace OsEngine.Robots.Custom
         private static readonly Regex InnerRegimeMarkerRegex = new Regex(
             @"\bRegime\s*\(",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        private static readonly Regex InnerStrictMarkerRegex = new Regex(
+            @"\bStrict\s*\(",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>Извлекает префикс Strict(@Strict) или Strict(1…5) из начала строки (после Disabled).</summary>
+        private static bool TryExtractLeadingStrict(ref string input, out int strictness)
+        {
+            strictness = DefaultStrictness;
+            input = input?.Trim() ?? "";
+            if (input.Length == 0)
+            {
+                return false;
+            }
+
+            if (!StartsWithIgnoreCaseAt(input, 0, "Strict", out int nameLen))
+            {
+                return false;
+            }
+
+            int pos = nameLen;
+            while (pos < input.Length && char.IsWhiteSpace(input[pos]))
+            {
+                pos++;
+            }
+
+            if (pos >= input.Length || input[pos] != '(')
+            {
+                return false;
+            }
+
+            if (!TryReadBalancedParenthesesContent(input, pos, out string content))
+            {
+                throw new InvalidOperationException("Не закрыты скобки в Strict(…).");
+            }
+
+            strictness = ResolveStrictness(content);
+            input = input.Substring(pos + content.Length + 2).Trim();
+            return true;
+        }
 
         /// <summary>
         /// Извлекает префикс Regime(…) из начала строки (после Disabled).
@@ -18163,6 +19111,11 @@ namespace OsEngine.Robots.Custom
         private static bool ContainsInnerRegimeMarker(string text)
         {
             return !string.IsNullOrWhiteSpace(text) && InnerRegimeMarkerRegex.IsMatch(text);
+        }
+
+        private static bool ContainsInnerStrictMarker(string text)
+        {
+            return !string.IsNullOrWhiteSpace(text) && InnerStrictMarkerRegex.IsMatch(text);
         }
 
         /// <summary>Проверяет, есть ли Disabled(…) не в начале строки (недопустимо).</summary>
@@ -20675,7 +21628,7 @@ namespace OsEngine.Robots.Custom
     public static class MultiLogicHelpBuilder
     {
         /// <summary>Версия HTML-справки; при изменении структуры или текста — увеличить (форсирует перезапись файла).</summary>
-        private const string LogicHelpFormatVersion = "4";
+        private const string LogicHelpFormatVersion = "7";
 
         /// <summary>Текст справки (plain) — источник для HTML; также для отладки.</summary>
         public static string BuildDefaultHelpText()
@@ -20696,7 +21649,13 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("     Disabled(true) SMA(100) Op[Ab] Cl[Bl]");
             sb.AppendLine("     Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
             sb.AppendLine();
-            sb.AppendLine("0b) Regime — режим наклона LinReg (необязательно, только в начале строки, после Disabled):");
+            sb.AppendLine("0a) Strict — строгость отбора (необязательно, в начале строки, после Disabled, до Regime):");
+            sb.AppendLine("   Strict(@Strict) — значение из параметра «Strict (строгость)» на вкладке «Логики» (как @LR).");
+            sb.AppendLine("   Strict(4)       — явное 1…5 для этой строки (не зависит от параметра робота).");
+            sb.AppendLine("   Без Strict(…)   — используется параметр робота. Подробно — раздел «6b) Strict».");
+            sb.AppendLine("   Пример: Strict(@Strict) Regime(LinReg;L=@LR;…) (SMA(100) Op[Ab] Cl[Bl]) …");
+            sb.AppendLine();
+            sb.AppendLine("0b) Regime — режим наклона LinReg (необязательно, только в начале строки, после Disabled и Strict):");
             sb.AppendLine("   Regime(LinReg;L=@LR;Dev=2;SlopeLb=5;SlopeDead=0.05%;OnFlip=Close;Entry=MatchSide;OnFlat=Close)");
             sb.AppendLine("   Entry=MatchSide  — Buy при наклоне вверх, Sell вниз; во флэте входа нет");
             sb.AppendLine("   Entry=FlatOnly   — вход только во флэте (|Δ| ≤ SlopeDead); при выходе из флэта — RegimeFlip");
@@ -20751,6 +21710,15 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Номера индикаторов: 101 … " + LogicLineParser.MaxManagedLogicIndicatorNum + " (общий пул, без дублей).");
             sb.AppendLine();
             MultiLogicDefaultLogics.AppendHelpSection6a(sb);
+            sb.AppendLine("6b) Strict (строгость отбора) — параметр на вкладке «Логики», целое 1…5, по умолчанию 3.");
+            sb.AppendLine("   В начале строки (после Disabled, до Regime): Strict(@Strict) или Strict(4).");
+            sb.AppendLine("   @Strict — токен параметра робота (как @LR для длины LinReg); число 1…5 — фиксированная строгость логики.");
+            sb.AppendLine("   Без префикса Strict(…) используется параметр «Strict (строгость)».");
+            sb.AppendLine("   1–2 — мягче (больше сделок); 4–5 — строже (меньше сделок); 3 — пороги в тексте без масштабирования.");
+            sb.AppendLine("   В строке хранятся нейтральные пороги (как при strict=3); парсер масштабирует Lmin/Smax/Gr/SlopeDead/Dev");
+            sb.AppendLine("   и числа в Op/Cl (CCI, K, RSI, MOM) при разборе. Кнопки ±1 меняют параметр и сразу перепарсивают логики.");
+            sb.AppendLine("   Пример: Strict(@Strict) Regime(LinReg;L=@LR;…) (SMA(100) Op[Ab] Cl[Bl]) …");
+            sb.AppendLine("   Для одной логики жёстче остальных: Strict(5) … (остальные с Strict(@Strict) или без префикса).");
             sb.AppendLine("================================================================================");
             sb.AppendLine("7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)");
             sb.AppendLine("================================================================================");
@@ -21348,8 +22316,13 @@ namespace OsEngine.Robots.Custom
             string encoded = HelpHtmlEncode(rawFormula.Trim());
             encoded = Regex.Replace(
                 encoded,
-                @"\b(Regime|Disabled|Disable)\(",
+                @"\b(Regime|Disabled|Disable|Strict)\(",
                 "<span class=\"lf-regime\">$1</span>(",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                Regex.Escape(LogicLineParser.StrictnessParamToken),
+                "<span class=\"lf-param-ref\">" + LogicLineParser.StrictnessParamToken + "</span>",
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
             encoded = Regex.Replace(
                 encoded,

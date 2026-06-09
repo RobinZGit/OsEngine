@@ -6,8 +6,8 @@
 // УСТАНОВКА: MQL5/Experts/ → Compile (F7) → на график → Algo Trading.
 //
 // ПЕРЕНЕСЕНО
-//   • 4 слота «Логика N» (строки как в OsEngine, токен @LR → InpLinRegLen)
-//   • Парсер: Disabled, Regime(LinReg;…), AND, атомы SMA/LinReg/ATR/CCI/MACD/Stoch/RSI/Boll/Mom
+//   • 4 слота «Логика N» (строки как в OsEngine, @LR → InpLinRegLen, @Strict → InpStrictness)
+//   • Парсер: Disabled, Strict(@Strict|1…5), Regime(LinReg;…), AND, атомы …
 //   • Op/Cl: Ab, Bl, AbUp, BlLo, GrOk, Macd>Sig, CCI>=, K<=, RSI>=, SlopeUp, …
 //   • Regime Entry=MatchSide / FlatOnly, OnFlip=Close, SlopeDead
 //   • Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
@@ -26,7 +26,7 @@
 // СИГНАЛЫ: только на ЗАКРЫТОЙ свече (shift=1).
 //+------------------------------------------------------------------+
 #property copyright "OsEngine MultiLogic port"
-#property version   "1.01"
+#property version   "1.02"
 #property description "MultiLogic: 4 logic slots, Regime, portfolio stopper. See file header."
 
 #include <Trade/Trade.mqh>
@@ -53,10 +53,13 @@ input int    InpSlippagePoints = 10;
 input group "=== Линейная регрессия (@LR в строках) ==="
 input int InpLinRegLen = 50;
 
+input group "=== Строгость (@Strict в строках) ==="
+input int InpStrictness = 3;  // 1…5 (3 — пороги в тексте без масштабирования)
+
 input group "=== Логика 1 (лонг-тренд по умолчанию) ==="
 input bool   InpL1Enable = true;
 input string InpLogic1 =
-   "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
    "(SMA(100) Op[Ab] Cl[Bl]) AND "
    "(LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]) AND "
    "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -66,7 +69,7 @@ input string InpLogic1 =
 input group "=== Логика 2 (лонг-боковик) ==="
 input bool   InpL2Enable = true;
 input string InpLogic2 =
-   "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
    "(SMA(100) Op[Ab] Cl[Bl]) AND "
    "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND "
    "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -75,7 +78,7 @@ input string InpLogic2 =
 input group "=== Логика 3 (шорт-тренд) ==="
 input bool   InpL3Enable = true;
 input string InpLogic3 =
-   "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
    "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
    "(LinReg(@LR;Dev=2) Op[BlLo] Cl[AbUp]) AND "
    "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -85,7 +88,7 @@ input string InpLogic3 =
 input group "=== Логика 4 (шорт-боковик) ==="
 input bool   InpL4Enable = true;
 input string InpLogic4 =
-   "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
    "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
    "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND "
    "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
@@ -227,6 +230,125 @@ bool ML_ParseDisabled(string &work, bool &disabled)
       return true;
      }
    return false;
+  }
+
+int ML_ClampStrict(const int v)
+  {
+   if(v < 1) return 1;
+   if(v > 5) return 5;
+   return v;
+  }
+
+int ML_ResolveStrictInner(const string inner)
+  {
+   string t = ML_Upper(ML_Trim(inner));
+   if(t == "@STRICT")
+      return ML_ClampStrict(InpStrictness);
+   return ML_ClampStrict((int)StringToInteger(inner));
+  }
+
+bool ML_ParseStrict(string &work, int &strict)
+  {
+   strict = ML_ClampStrict(InpStrictness);
+   string inner;
+   if(!ML_TryExtractParenBlock(work, "Strict", inner))
+      return false;
+   strict = ML_ResolveStrictInner(inner);
+   return true;
+  }
+
+double ML_ScaleNeutral(const double neutral, const int strict, const double stepPct,
+                       const bool invert, const double loR, const double hiR)
+  {
+   if(strict == 3 || neutral == 0.0)
+      return neutral;
+   int off = strict - 3;
+   double factor = invert ? (1.0 - off * stepPct) : (1.0 + off * stepPct);
+   double scaled = neutral * factor;
+   double lo = neutral * loR;
+   double hi = neutral * hiR;
+   if(scaled < lo) return lo;
+   if(scaled > hi) return hi;
+   return scaled;
+  }
+
+double ML_ScaleLongMin(const double v, const int strict)
+  {
+   return ML_ScaleNeutral(v, strict, 0.10, false, 0.76, 1.24);
+  }
+
+double ML_ScaleShortPos(const double v, const int strict)
+  {
+   return ML_ScaleNeutral(v, strict, 0.10, true, 0.76, 1.24);
+  }
+
+double ML_ScaleShortSigned(const double v, const int strict)
+  {
+   return ML_ScaleNeutral(v, strict, 0.10, false, 0.76, 1.24);
+  }
+
+string ML_FormatThr(const double v)
+  {
+   string s = DoubleToString(v, 4);
+   while(StringLen(s) > 0 && StringGetCharacter(s, StringLen(s) - 1) == '0')
+      s = StringSubstr(s, 0, StringLen(s) - 1);
+   if(StringLen(s) > 0 && StringGetCharacter(s, StringLen(s) - 1) == '.')
+      s = StringSubstr(s, 0, StringLen(s) - 1);
+   return s;
+  }
+
+string ML_ScaleSigNum(const string sig, const string prefix, const int strict, const bool longMin)
+  {
+   if(strict == 3 || StringFind(sig, prefix, 0) != 0)
+      return sig;
+   double thr = StringToDouble(StringSubstr(sig, StringLen(prefix)));
+   double sc = longMin ? ML_ScaleLongMin(thr, strict)
+      : (thr <= 0.0 ? ML_ScaleShortSigned(thr, strict) : ML_ScaleShortPos(thr, strict));
+   return prefix + ML_FormatThr(sc);
+  }
+
+string ML_ScaleOpCl(const string sig, const int strict)
+  {
+   if(strict == 3 || sig == "" || sig == "-")
+      return sig;
+   string s = sig;
+   s = ML_ScaleSigNum(s, "CCI>=", strict, true);
+   s = ML_ScaleSigNum(s, "CCI<=", strict, false);
+   s = ML_ScaleSigNum(s, "CCI<", strict, false);
+   s = ML_ScaleSigNum(s, "K>=", strict, true);
+   s = ML_ScaleSigNum(s, "K<=", strict, false);
+   s = ML_ScaleSigNum(s, "RSI>=", strict, true);
+   s = ML_ScaleSigNum(s, "RSI<=", strict, false);
+   s = ML_ScaleSigNum(s, "MOM>=", strict, true);
+   s = ML_ScaleSigNum(s, "MOM<=", strict, false);
+   s = ML_ScaleSigNum(s, "MOM<", strict, false);
+   return s;
+  }
+
+void ML_ApplyStrictToAtom(MLAtom &a, const int strict)
+  {
+   if(strict == 3)
+      return;
+   if(a.lmin != 0.0)
+      a.lmin = ML_ScaleLongMin(a.lmin, strict);
+   if(a.smax != 0.0)
+      a.smax = (a.smax < 0.0 ? ML_ScaleShortSigned(a.smax, strict) : ML_ScaleShortPos(a.smax, strict));
+   if(a.grPct != 0.0)
+      a.grPct = ML_ScaleNeutral(a.grPct, strict, 0.12, false, 0.65, 1.35);
+   if(a.dev != 0.0)
+      a.dev = ML_ScaleNeutral(a.dev, strict, 0.08, true, 0.88, 1.12);
+   a.opSig = ML_ScaleOpCl(a.opSig, strict);
+   a.clSig = ML_ScaleOpCl(a.clSig, strict);
+  }
+
+void ML_ApplyStrictToRegime(MLRegime &r, const int strict)
+  {
+   if(strict == 3)
+      return;
+   if(r.slopeDeadPct != 0.0)
+      r.slopeDeadPct = ML_ScaleNeutral(r.slopeDeadPct, strict, 0.10, true, 0.70, 1.30);
+   if(r.linDev != 0.0)
+      r.linDev = ML_ScaleNeutral(r.linDev, strict, 0.08, true, 0.88, 1.12);
   }
 
 bool ML_ParseRegime(string &work, MLRegime &r)
@@ -421,7 +543,9 @@ bool ML_ParseSlot(const string rawLine, const bool enabled, MLSlot &slot)
    ZeroMemory(slot);
    slot.enabled = enabled;
    string work = ML_ReplaceLR(rawLine);
+   int lineStrict = ML_ClampStrict(InpStrictness);
    ML_ParseDisabled(work, slot.disabled);
+   ML_ParseStrict(work, lineStrict);
    ML_ParseRegime(work, slot.regime);
    string parts[];
    int n = 0;
@@ -446,8 +570,13 @@ bool ML_ParseSlot(const string rawLine, const bool enabled, MLSlot &slot)
      {
       MLAtom a;
       if(ML_ParseAtom(parts[i], a))
+        {
+         ML_ApplyStrictToAtom(a, lineStrict);
          slot.atoms[slot.atomCount++] = a;
+        }
      }
+   if(slot.regime.valid)
+      ML_ApplyStrictToRegime(slot.regime, lineStrict);
    return slot.atomCount > 0 || slot.regime.valid;
   }
 
@@ -838,7 +967,7 @@ int OnInit()
       if(!ML_ParseSlot(lines[i], ens[i], g_slots[i]))
          Print("MultiLogic: L", i+1, " parse warning");
      }
-   Print("MultiLogic MT5 OK. LinRegLen=", InpLinRegLen, " slots parsed.");
+   Print("MultiLogic MT5 OK. LinRegLen=", InpLinRegLen, " Strictness=", InpStrictness, " slots parsed.");
    return INIT_SUCCEEDED;
   }
 

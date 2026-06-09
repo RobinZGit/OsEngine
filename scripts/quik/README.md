@@ -7,8 +7,9 @@
 ### Перенесено
 
 - 4 слота L1–L4, строки логики (по умолчанию как в OsEngine)
-- `@LR` → `LINREG_LEN`
-- `Regime`, `Disabled`, AND-цепочки атомов, Op/Cl, `Side[S]`
+- `@LR` → `LINREG_LEN`, `@Strict` → `STRICTNESS` (1…5)
+- `Strict(@Strict|4)`, `Regime`, `Disabled`, AND-цепочки, Op/Cl, `Side[S]`
+- Масштабирование порогов при разборе (strict≠3)
 - **VWAP**, **Bollinger** (`Boll` / `Bollinger`), **RSI** (`RSI>=55`, `AbMid`, …)
 - Инверсия (Buy↔Sell **и Op↔Cl**), Regime
 - Общепортфельный SL/TP, **просадка от пика**, **пауза после значительного пика**
@@ -16,7 +17,7 @@
 
 ### Не перенесено
 
-- HTML-отчёт, кнопки, скринер MOEX, металогика, фейк Stopper
+- HTML-отчёт, кнопки GUI OsEngine (Strict ±1, Volume/Max positions ±5), скринер MOEX, металогика, фейк Stopper
 - OR/NOT в строке, SL[…]/TP[…] в логике
 - Equity L1…L10 (в Lua — equity счёта)
 

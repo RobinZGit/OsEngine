@@ -7,8 +7,9 @@
 ### Перенесено
 
 - 4 слота логики L1–L4 (строки по умолчанию как в OsEngine)
-- Токен `@LR` → вход `InpLinRegLen`
-- `Disabled`, `Regime(LinReg;…)`, `Entry=MatchSide` / `FlatOnly`, `OnFlip=Close`
+- Токены `@LR` → `InpLinRegLen`, `@Strict` → `InpStrictness` (1…5)
+- `Disabled`, `Strict(@Strict|4)`, `Regime(LinReg;…)`, `Entry=MatchSide` / `FlatOnly`, `OnFlip=Close`
+- Масштабирование порогов Lmin/Smax/Gr/Dev/SlopeDead и Op/Cl при разборе (strict≠3)
 - Атомы: SMA, LinReg, ATR, CCI, MACD, Stochastic, **RSI**, **VWAP**, **Bollinger**; Op/Cl (`Ab`, `AbMid`, `BlMid`, `RSI>=`, …)
 - Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
 - Общепортфельный SL/TP (% от equity, high-water reference)
@@ -20,7 +21,7 @@
 
 ### Не перенесено
 
-- HTML-отчёт, кнопки GUI, MOEX-скринер, много вкладок
+- HTML-отчёт, кнопки GUI (Strict ±1, Volume/Max positions ±5), MOEX-скринер, много вкладок
 - Металогика PnlSMA, shadow-позиции, фейк-торговля Stopper, EOD flat
 - Equity L1…L10 (в MT5 — equity счёта), HTML-маркеры, Regime после SL/TP
 - OR/NOT в формуле, каталог трендов, оптимизатор OsEngine

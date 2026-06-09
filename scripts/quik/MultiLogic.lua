@@ -11,8 +11,8 @@
   4. Сервис → Lua-скрипты → Добавить → Запустить.
 
 ПЕРЕНЕСЕНО
-  • 4 слота L1–L4 (строки как в OsEngine, @LR → LINREG_LEN)
-  • Disabled, Regime(LinReg;…), AND, SMA/LinReg/ATR/CCI/MACD/Stoch
+  • 4 слота L1–L4 (строки как в OsEngine, @LR → LINREG_LEN, @Strict → STRICTNESS)
+  • Disabled, Strict(@Strict|1…5), Regime(LinReg;…), AND, SMA/LinReg/ATR/CCI/MACD/Stoch
   • Op/Cl, Side[S], инверсия логики, Regime On/Off/OnlyLong/…
   • Общепортфельный SL/TP % (упрощённо по equity счёта)
   • Просадка от пика (% от max equity — только закрытие)
@@ -43,16 +43,17 @@ LOT_SIZE    = 1
 REGIME = "Off"              -- Off / On / OnlyLong / OnlyShort / OnlyClosePosition
 LOGIC_INVERSION = false
 LINREG_LEN = 50
+STRICTNESS = 3              -- 1…5 (3 — пороги в тексте без масштабирования; @Strict в строке)
 
 L1_ENABLE = true
 L2_ENABLE = true
 L3_ENABLE = true
 L4_ENABLE = true
 
-LOGIC1 = "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Op[Ab] Cl[Bl]) AND (LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])"
-LOGIC2 = "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])"
-LOGIC3 = "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (LinReg(@LR;Dev=2) Op[BlLo] Cl[AbUp]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
-LOGIC4 = "Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
+LOGIC1 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Op[Ab] Cl[Bl]) AND (LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])"
+LOGIC2 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])"
+LOGIC3 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (LinReg(@LR;Dev=2) Op[BlLo] Cl[AbUp]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
+LOGIC4 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
 
 -- Stopper (упрощённо: equity = баланс + переоценка по позиции)
 PORTF_SL_ON = false
@@ -155,6 +156,81 @@ function parse_disabled(work)
     return false, work
 end
 
+function clamp_strict(v)
+    v = tonumber(v) or 3
+    if v < 1 then return 1 end
+    if v > 5 then return 5 end
+    return math.floor(v + 0.5)
+end
+
+function resolve_strict_inner(inner)
+    inner = trim(inner or "")
+    if upper(inner) == "@STRICT" then return clamp_strict(STRICTNESS) end
+    return clamp_strict(inner)
+end
+
+function parse_strict(work)
+    local inner, rest = work:match("^Strict%((.-)%)%s*(.*)$")
+    if not inner then return clamp_strict(STRICTNESS), work end
+    return resolve_strict_inner(inner), trim(rest)
+end
+
+function scale_neutral(neutral, strict, step, invert, lo_r, hi_r)
+    if strict == 3 or not neutral or neutral == 0 then return neutral end
+    local off = strict - 3
+    local factor = invert and (1 - off * step) or (1 + off * step)
+    local scaled = neutral * factor
+    local lo, hi = neutral * lo_r, neutral * hi_r
+    if scaled < lo then return lo end
+    if scaled > hi then return hi end
+    return scaled
+end
+
+function scale_long_min(v, strict) return scale_neutral(v, strict, 0.10, false, 0.76, 1.24) end
+function scale_short_pos(v, strict) return scale_neutral(v, strict, 0.10, true, 0.76, 1.24) end
+function scale_short_signed(v, strict) return scale_neutral(v, strict, 0.10, false, 0.76, 1.24) end
+
+function scale_sig_num(sig, prefix, strict, long_min)
+    if strict == 3 or not sig:find("^" .. prefix) then return sig end
+    local thr = tonumber(sig:sub(#prefix + 1))
+    if not thr then return sig end
+    local sc = long_min and scale_long_min(thr, strict)
+        or (thr <= 0 and scale_short_signed(thr, strict) or scale_short_pos(thr, strict))
+    return prefix .. tostring(sc)
+end
+
+function scale_op_cl(sig, strict)
+    if strict == 3 or not sig or sig == "" or sig == "-" then return sig end
+    local s = sig
+    for _, p in ipairs({{"CCI>=", true}, {"CCI<=", false}, {"CCI<", false}, {"K>=", true}, {"K<=", false},
+        {"RSI>=", true}, {"RSI<=", false}, {"MOM>=", true}, {"MOM<=", false}, {"MOM<", false}}) do
+        s = scale_sig_num(s, p[1], strict, p[2])
+    end
+    return s
+end
+
+function apply_strict_atom(a, strict)
+    if strict == 3 or not a then return end
+    if a.lmin and a.lmin ~= 0 then a.lmin = scale_long_min(a.lmin, strict) end
+    if a.smax and a.smax ~= 0 then
+        a.smax = (a.smax < 0) and scale_short_signed(a.smax, strict) or scale_short_pos(a.smax, strict)
+    end
+    if a.grPct and a.grPct ~= 0 then a.grPct = scale_neutral(a.grPct, strict, 0.12, false, 0.65, 1.35) end
+    if a.dev and a.dev ~= 0 then a.dev = scale_neutral(a.dev, strict, 0.08, true, 0.88, 1.12) end
+    a.opSig = scale_op_cl(a.opSig, strict)
+    a.clSig = scale_op_cl(a.clSig, strict)
+end
+
+function apply_strict_regime(r, strict)
+    if strict == 3 or not r or not r.valid then return end
+    if r.slopeDeadPct and r.slopeDeadPct ~= 0 then
+        r.slopeDeadPct = scale_neutral(r.slopeDeadPct, strict, 0.10, true, 0.70, 1.30)
+    end
+    if r.linDev and r.linDev ~= 0 then
+        r.linDev = scale_neutral(r.linDev, strict, 0.08, true, 0.88, 1.12)
+    end
+end
+
 function parse_atom(token)
     token = trim(token)
     if token:sub(1,1) == "(" and token:sub(-1) == ")" then
@@ -221,14 +297,20 @@ function parse_slot(line, enabled)
     local work = replace_lr(line)
     local disabled, w2 = parse_disabled(work)
     work = w2
+    local line_strict, w25 = parse_strict(work)
+    work = w25
     local regime, w3 = parse_regime(work)
     work = w3
     local atoms = {}
     for _, tok in ipairs(split_and(work)) do
         local a = parse_atom(tok)
-        if a then table.insert(atoms, a) end
+        if a then
+            apply_strict_atom(a, line_strict)
+            table.insert(atoms, a)
+        end
     end
-    return { enabled=enabled, disabled=disabled, regime=regime, atoms=atoms }
+    apply_strict_regime(regime, line_strict)
+    return { enabled=enabled, disabled=disabled, regime=regime, atoms=atoms, strictness=line_strict }
 end
 
 function calc_linreg_bands(idx, period, dev)
@@ -711,7 +793,7 @@ function OnInit()
     slots[4] = parse_slot(LOGIC4, L4_ENABLE)
     ref_equity = account_equity_approx()
     portfolio_peak = ref_equity
-    log_msg("MultiLogic QUIK: старт " .. CLASS_CODE .. "." .. SEC_CODE .. " LinReg=" .. LINREG_LEN)
+    log_msg("MultiLogic QUIK: старт " .. CLASS_CODE .. "." .. SEC_CODE .. " LinReg=" .. LINREG_LEN .. " Strict=" .. STRICTNESS)
 end
 
 function OnStop()
