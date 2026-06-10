@@ -81,37 +81,33 @@ namespace OsEngine.Robots.Custom
 
         public const string Logic1LongTrend =
             TrendRegimePrefix
-            + "Op(Long("
-            + "SMA(100)(Ab) AND LinReg(" + LinRegLengthRef + ";Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
-            + "CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)"
-            + ")) Cl(Long("
-            + "SMA(100)(Bl) AND LinReg(" + LinRegLengthRef + ";Dev=2)(BlLo) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)"
-            + ") OnFlip(Close)) Note(lon-trend)";
+            + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+            + "(LinReg(" + LinRegLengthRef + ";Dev=2) Op[AbUp] Cl[BlLo]) AND "
+            + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+            + "(CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND "
+            + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(lon-trend))";
 
         public const string Logic2LongBokovik =
             BokovikRegimePrefix
-            + "Op(Long("
-            + "SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig)"
-            + ")) Cl(Long("
-            + "SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND MACD(12,26,9)(Macd<Sig)"
-            + ") OnFlip(Close)) Note(lon-bokovik)";
+            + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+            + "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND "
+            + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+            + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(lon-bokovik))";
 
         public const string Logic3ShortTrend =
             TrendRegimePrefix
-            + "Op(Short("
-            + "SMA(100)(Bl) AND LinReg(" + LinRegLengthRef + ";Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
-            + "CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)"
-            + ")) Cl(Short("
-            + "SMA(100)(Ab) AND LinReg(" + LinRegLengthRef + ";Dev=2)(AbUp) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)"
-            + ") OnFlip(Close)) Note(short-trend)";
+            + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+            + "(LinReg(" + LinRegLengthRef + ";Dev=2) Op[BlLo] Cl[AbUp]) AND "
+            + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+            + "(CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND "
+            + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-trend))";
 
         public const string Logic4ShortBokovik =
             BokovikRegimePrefix
-            + "Op(Short("
-            + "SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig)"
-            + ")) Cl(Short("
-            + "SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)"
-            + ") OnFlip(Close)) Note(short-bokovik)";
+            + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+            + "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND "
+            + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+            + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-bokovik))";
 
         public static readonly string[] SlotFormulas =
         {
@@ -173,26 +169,31 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   SL/TP в заводских строках не заданы — выход по Cl[…] индикаторов.");
             sb.AppendLine();
             AppendDefaultLogicHelpBlock(sb, 1, "lon-trend", "Лонг, тренд", Logic1LongTrend,
-                "Regime MatchSide — Buy при наклоне LinReg вверх; во флэте входов нет.",
-                "Op(Long(…)) — SMA(100)(Ab), LinReg(@LR;Dev=2)(AbUp), ATR(GrOk), CCI, MACD.",
-                "Cl(Long(…)) OnFlip(Close) — выход когда все Cl-условия атомов (AND, как v1 Op[]/Cl[]); ATR Cl[-] только в Op.",
-                "ATR(14;Gr=3%;Lb=5)(GrOk) — общий фильтр волатильности.",
-                "@LR — параметр «Длина линейной регрессии».");
+                "Regime MatchSide — Buy при наклоне LinReg вверх; во флэте входов нет; OnFlip=Close при смене наклона.",
+                "SMA(100) Op[Ab] Cl[Bl] — цена выше SMA100 (бычий контекст); выход ниже SMA.",
+                "LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo] — пробой верхней границы канала вверх; выход ниже нижней (@LR — параметр «Длина линейной регрессии»).",
+                "ATR(14;Gr=3%;Lb=5) Op[GrOk] — фильтр роста волатильности (без отдельного Cl).",
+                "CCI(20) Op[CCI>=100] Cl[CCI<=-100] — перекупленность CCI для входа в лонг-тренд.",
+                "MACD Op[Macd>Sig] Cl[Macd<Sig] — линия MACD выше сигнальной (импульс вверх).");
             AppendDefaultLogicHelpBlock(sb, 2, "lon-bokovik", "Лонг, боковик", Logic2LongBokovik,
-                "Regime FlatOnly+SlopeDead — вход только во флэте LinReg.",
-                "Op(Long(…)) — SMA(100)(Ab), Stoch(K<=10), MACD>Sig.",
-                "Cl(Long(…)) OnFlip(Close) — выход Stoch/MACD и при выходе из флэта.",
-                "ATR(GrOk) — фильтр волатильности.");
+                "Regime FlatOnly+SlopeDead — вход только во флэте LinReg; выход при выходе из флэта (OnFlip=Close).",
+                "SMA(100) Op[Ab] — цена выше SMA100.",
+                "Stoch Op[K<=10] Cl[K>=90] — вход у нижней границы стохастика (отскок вверх во флэте); выход у верхней.",
+                "ATR Op[GrOk] — фильтр волатильности.",
+                "MACD Op[Macd>Sig] — импульс вверх (без CCI и LinReg-пробоя — иначе это L1).");
             AppendDefaultLogicHelpBlock(sb, 3, "short-trend", "Шорт, тренд", Logic3ShortTrend,
-                "Regime MatchSide — Op(Short(…)) вместо Side[S].",
-                "Short(SMA(100)(Bl) AND LinReg(BlLo) …) — медвежьи условия в Short-блоке.",
-                "Cl(Short(…)) OnFlip(Close) — зеркало L1.",
-                "ATR(GrOk) — фильтр волатильности.");
+                "Regime MatchSide — Sell при наклоне LinReg вниз (зеркало L1).",
+                "SMA Side[S] Op[Bl] Cl[Ab] — шорт: цена ниже SMA100.",
+                "LinReg(@LR) Op[BlLo] Cl[AbUp] — пробой нижней границы вниз; выход выше верхней.",
+                "ATR Op[GrOk] — фильтр волатильности.",
+                "CCI Op[CCI<=-100] Cl[CCI>=100] — перепроданность CCI для шорт-тренда.",
+                "MACD Op[Macd<Sig] Cl[Macd>Sig] — MACD ниже сигнальной.");
             AppendDefaultLogicHelpBlock(sb, 4, "short-bokovik", "Шорт, боковик", Logic4ShortBokovik,
-                "Regime FlatOnly — Op(Short(…)) во флэте (зеркало L2).",
-                "Short(Stoch(K>=90) …) — вход у верхней границы Stoch.",
-                "Cl(Short(…)) OnFlip(Close).",
-                "MACD(Macd<Sig) — импульс вниз.");
+                "Regime FlatOnly — вход во флэте (зеркало L2).",
+                "SMA Side[S] Op[Bl] — шорт ниже SMA100.",
+                "Stoch Op[K>=90] Cl[K<=10] — вход у верхней границы (откат вниз во флэте).",
+                "ATR Op[GrOk] — фильтр волатильности.",
+                "MACD Op[Macd<Sig] — импульс вниз.");
             sb.AppendLine();
         }
 
@@ -237,85 +238,111 @@ namespace OsEngine.Robots.Custom
             {
                 Label = "1 RSI+Boll лонг (плавный тренд)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Long(SMA(50)(Ab) AND Bollinger(20;Dev=2)(AbMid) AND RSI(14;Lmin=55;Smax=45)(RSI>=55) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig))) "
-                    + "Cl(Long(SMA(50)(Bl) OR Bollinger(20;Dev=2)(BlMid) OR RSI(14;Lmin=55;Smax=45)(RSI<=45) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) Note(trend-rsi-boll)"
+                    + "(SMA(50) Op[Ab] Cl[Bl]) AND "
+                    + "(Bollinger(20;Dev=2) Op[AbMid] Cl[BlMid]) AND "
+                    + "(RSI(14;Lmin=55;Smax=45) Op[RSI>=55] Cl[RSI<=45]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(trend-rsi-boll))"
             },
             new CatalogEntry
             {
                 Label = "1 RSI+Boll шорт (плавный тренд)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Short(SMA(50)(Bl) AND Bollinger(20;Dev=2)(BlMid) AND RSI(14;Lmin=55;Smax=45)(RSI<=45) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) "
-                    + "Cl(Short(SMA(50)(Ab) OR Bollinger(20;Dev=2)(AbMid) OR RSI(14;Lmin=55;Smax=45)(RSI>=55) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) Note(short-rsi-boll)"
+                    + "(SMA(50) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(Bollinger(20;Dev=2) Side[S] Op[BlMid] Cl[AbMid]) AND "
+                    + "(RSI(14;Lmin=55;Smax=45) Side[S] Op[RSI<=45] Cl[RSI>=55]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-rsi-boll))"
             },
             new CatalogEntry
             {
                 Label = "2 Mom+Slope лонг (больше сигналов)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Long(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3)(SlopeUp) AND Momentum(14;Lmin=100;Smax=100)(MOM>=100) AND SMA(100)(Ab) AND ATR(14;Gr=2%;Lb=5)(GrOk))) "
-                    + "Cl(Long(SMA(100)(Bl) OR Momentum(14;Lmin=100;Smax=100)(MOM<=100)) OnFlip(Close)) Note(trend-mom-slope)"
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
+                    + "(Momentum(14;Lmin=100;Smax=100) Op[MOM>=100] Cl[MOM<=100]) AND "
+                    + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+                    + "(ATR(14;Gr=2%;Lb=5) Op[GrOk] Cl[-] Note(trend-mom-slope))"
             },
             new CatalogEntry
             {
                 Label = "2 Mom+Slope шорт (больше сигналов)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Short(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3)(SlopeDn) AND Momentum(14;Lmin=100;Smax=100)(MOM<=100) AND SMA(100)(Bl) AND ATR(14;Gr=2%;Lb=5)(GrOk))) "
-                    + "Cl(Short(SMA(100)(Ab) OR Momentum(14;Lmin=100;Smax=100)(MOM>=100)) OnFlip(Close)) Note(short-mom-slope)"
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
+                    + "(Momentum(14;Lmin=100;Smax=100) Side[S] Op[MOM<=100] Cl[MOM>=100]) AND "
+                    + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(ATR(14;Gr=2%;Lb=5) Op[GrOk] Cl[-] Note(short-mom-slope))"
             },
             new CatalogEntry
             {
                 Label = "3 VWAP лонг (сессия / ликвид)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Long(VWAP()(Ab) AND SMA(100)(Ab) AND MACD(12,26,9)(Macd>Sig) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Long(VWAP()(Bl) OR SMA(100)(Bl) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) Note(trend-vwap)"
+                    + "(VWAP Op[Ab] Cl[Bl]) AND "
+                    + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-vwap))"
             },
             new CatalogEntry
             {
                 Label = "3 VWAP шорт (сессия / ликвид)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Short(VWAP()(Bl) AND SMA(100)(Bl) AND MACD(12,26,9)(Macd<Sig) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Short(VWAP()(Ab) OR SMA(100)(Ab) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) Note(short-vwap)"
+                    + "(VWAP Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-vwap))"
             },
             new CatalogEntry
             {
                 Label = "4 Boll break лонг (пробой / всплески)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Long(Bollinger(20;Dev=2)(Ab) AND MACD(12,26,9)(Macd>Sig) AND RSI(14;Lmin=50;Smax=50)(RSI>=50) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Long(Bollinger(20;Dev=2)(Bl) OR MACD(12,26,9)(Macd<Sig) OR RSI(14;Lmin=50;Smax=50)(RSI<=40)) OnFlip(Close)) Note(trend-boll-break)"
+                    + "(Bollinger(20;Dev=2) Op[Ab] Cl[Bl]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig]) AND "
+                    + "(RSI(14;Lmin=50;Smax=50) Op[RSI>=50] Cl[RSI<=40]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-boll-break))"
             },
             new CatalogEntry
             {
                 Label = "4 Boll break шорт (пробой / всплески)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Short(Bollinger(20;Dev=2)(Bl) AND MACD(12,26,9)(Macd<Sig) AND RSI(14;Lmin=50;Smax=50)(RSI<=50) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Short(Bollinger(20;Dev=2)(Ab) OR MACD(12,26,9)(Macd>Sig) OR RSI(14;Lmin=50;Smax=50)(RSI>=60)) OnFlip(Close)) Note(short-boll-break)"
+                    + "(Bollinger(20;Dev=2) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig]) AND "
+                    + "(RSI(14;Lmin=50;Smax=50) Side[S] Op[RSI<=50] Cl[RSI>=60]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-boll-break))"
             },
             new CatalogEntry
             {
                 Label = "5 Dual SMA лонг (медленный тренд)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Long(SMA(50)(Ab) AND SMA(200)(Ab) AND MACD(12,26,9)(Macd>Sig) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Long(SMA(50)(Bl) OR SMA(200)(Bl) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) Note(trend-dual-sma)"
+                    + "(SMA(50) Op[Ab] Cl[Bl]) AND "
+                    + "(SMA(200) Op[Ab] Cl[Bl]) AND "
+                    + "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-dual-sma))"
             },
             new CatalogEntry
             {
                 Label = "5 Dual SMA шорт (медленный тренд)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Short(SMA(50)(Bl) AND SMA(200)(Bl) AND MACD(12,26,9)(Macd<Sig) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Short(SMA(50)(Ab) OR SMA(200)(Ab) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) Note(short-dual-sma)"
+                    + "(SMA(50) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(SMA(200) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-dual-sma))"
             },
             new CatalogEntry
             {
                 Label = "6 Stoch trend лонг (откат по тренду)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Long(SMA(100)(Ab) AND LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3)(SlopeUp) AND Stoch(14-3-3;Lmin=50;Smax=50)(K>=50) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Long(SMA(100)(Bl) OR Stoch(14-3-3;Lmin=50;Smax=50)(K<=40)) OnFlip(Close)) Note(trend-stoch-pullback)"
+                    + "(SMA(100) Op[Ab] Cl[Bl]) AND "
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeUp] Cl[-]) AND "
+                    + "(Stoch(14-3-3;Lmin=50;Smax=50) Op[K>=50] Cl[K<=40]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(trend-stoch-pullback))"
             },
             new CatalogEntry
             {
                 Label = "6 Stoch trend шорт (откат по тренду)",
                 Formula = MultiLogicDefaultLogics.TrendRegimePrefix
-                    + "Op(Short(SMA(100)(Bl) AND LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3)(SlopeDn) AND Stoch(14-3-3;Lmin=50;Smax=50)(K<=50) AND ATR(14;Gr=3%;Lb=5)(GrOk))) "
-                    + "Cl(Short(SMA(100)(Ab) OR Stoch(14-3-3;Lmin=50;Smax=50)(K>=60)) OnFlip(Close)) Note(short-stoch-pullback)"
+                    + "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+                    + "(LinReg(" + MultiLogicDefaultLogics.LinRegLengthRef + ";Dev=2;SlopeLb=3) Op[SlopeDn] Cl[-]) AND "
+                    + "(Stoch(14-3-3;Lmin=50;Smax=50) Side[S] Op[K<=50] Cl[K>=60]) AND "
+                    + "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-] Note(short-stoch-pullback))"
             }
         };
 
@@ -423,7 +450,7 @@ namespace OsEngine.Robots.Custom
         private const string LogicLinRegLengthParamName = "Длина линейной регрессии";
         private const string LogicLinRegLenIncButtonName = "Увеличить: длина линейной регрессии +5";
         private const string LogicLinRegLenDecButtonName = "Уменьшить: длина линейной регрессии −5";
-        private const int LogicLinRegLengthDefault = 10;
+        private const int LogicLinRegLengthDefault = 50;
         private const int LogicLinRegLengthMin = 5;
         private const int LogicLinRegLengthMax = 300;
         private const int LogicLinRegLengthStep = 5;
@@ -472,12 +499,7 @@ namespace OsEngine.Robots.Custom
         private const string SignalPortfolioStopperPeakSl = "MultiLogicPortfolioPeakSL";
         private const string PortfolioPeakDrawdownEnabledParamName = "Просадка от пика: включена";
         private const string PortfolioPeakDrawdownPercentParamName = "Просадка от пика, %";
-        private const string PortfolioPeakValueParamName = "Пик портфеля (PnL L1…L10)";
-        private const string PortfolioPeakValueParamNameLegacy = "Пик портфеля";
-        private const string PortfolioStopperReferenceEquityParamName = "Предыдущая сумма (PnL L1…L10, тех.)";
-        private const string PortfolioStopperReferenceEquityParamNameLegacy = "Предыдущая сумма портфеля (техн.)";
-        private const string PortfolioStopperCurrentEquityParamName = "Текущая сумма (PnL L1…L10, тех.)";
-        private const string PortfolioStopperCurrentEquityParamNameLegacy = "Текущая сумма портфеля (техн.)";
+        private const string PortfolioPeakValueParamName = "Пик портфеля";
         private const decimal PortfolioPeakDrawdownPercentDefault = 1m;
         private const string StopperEodFlatSellParamName = "Продать всё к времени (ежедневно)";
         private const string StopperEodFlatSellDisabled = "Не продавать";
@@ -541,13 +563,19 @@ namespace OsEngine.Robots.Custom
         /// Краткая подсказка в параметрах. Полная справка — MultiLogic_LogicHelp.html (кнопка Help, автообновление).
         /// </summary>
         private const string LogicLineFormatHint =
-            "Формат v2: Disabled, Strict(@Strict|1…5), Regime(…) — префиксы; затем Op(…) Cl(…); SL[…] TP[…] Note(…).\n"
-            + "Op(Long(Ind(параметры)(условие) AND …) [Short(…)] [общие Ind(…)(…) до Long/Short]) Cl(Long(…) [Short(…)] OnFlip(Close|Flip|Open)).\n"
-            + "Параметры управления: @Strict, @LR (длина LinReg). OnFlip в Cl/Op приоритетнее Regime(…).\n"
-            + "Long приоритетнее Short, если оба истинны. Пример:\n"
-            + "  Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) "
-            + "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp))) "
-            + "Cl(Long(SMA(100)(Bl)) OnFlip(Close)) Note(trend)";
+            "В начале (необязательно): Disabled(true/false), Strict(@Strict|1…5) и Regime(…) — режим наклона LinReg.\n"
+            + "Формат: <Индикатор>(параметры) Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)\n"
+            + "Disabled(…) / Strict(…) / Regime(…) — только в начале строки, до AND/OR, без скобок вокруг.\n"
+            + "Strict(@Strict) — строгость из параметра «Strict (строгость)»; Strict(4) — явное 1…5; без префикса — параметр робота.\n"
+            + "Regime(LinReg;L=@LR;Dev=2;SlopeLb=5;SlopeDead=0.05%;Entry=MatchSide|FlatOnly) — тренд или боковик по наклону LinReg (@LR — параметр «Длина линейной регрессии»).\n"
+            + "Составная логика: AND/OR или &&/||; NOT/! перед фрагментом инвертирует Op/Cl (не Buy/Sell).\n"
+            + "В Op[…] и Cl[…]: ! / NOT, && / AND, || / OR (как в JavaScript). Примеры:\n"
+            + "  Disabled(true) SMA(100) Op[Ab] Cl[Bl]\n"
+            + "  NOT LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]\n"
+            + "  LinReg(@LR;Dev=2) Op[!AbUp||AbLo] Cl[BlLo]\n"
+            + "  (SMA(100) Op[Ab] Cl[Bl]) && (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])\n"
+            + "  SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend)\n"
+            + "  Disabled(false) (SMA(100) Op[Ab]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])";
 
         /// <summary>Количество слотов строк логики («Логика 1» … «Логика 10»).</summary>
         private const int LogicSlotCount = 10;
@@ -820,9 +848,6 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>Объединяет несколько подряд ValueChange в один TryParse (например, «Принять» после пресета логик).</summary>
         private int _logicParseCoalesceToken;
-
-        /// <summary>Последняя залогированная ошибка парсера по слоту (чтобы не забивать экстренный лог).</summary>
-        private readonly string[] _lastLogicParseErrorLogged = new string[LogicSlotCount + 1];
 
         /// <summary>Объединяет ValueChange за одно «Принять» в один JSON-бэкап параметров.</summary>
         private int _paramsBackupCoalesceToken;
@@ -1153,7 +1178,6 @@ namespace OsEngine.Robots.Custom
             LoadLogicPortfoliosFromDisk();
             EnsureLogicPortfolioInitPoints();
             InitializeHtmlReportSession();
-            MigrateLegacyStopperPnLParamNamesIfNeeded();
             _stopperReferenceBaselineLocked = _portfolioStopperReferenceEquity.ValueDecimal != 0m;
             CheckAndWarnMultiLogicResources(force: true);
             LogRegimeStateOnStartup();
@@ -3437,13 +3461,14 @@ namespace OsEngine.Robots.Custom
                 return;
             }
 
-            LogicStopTakeHit stopTakeHit = EvaluateLogicStopTake(
-                runtime.ParseResult,
+            LogicStopTakeHit stopTakeHit = LogicStopTakeEvaluator.EvaluateStopTake(
+                runtime.ParseResult.Root,
                 tab,
                 candles,
                 candleIndex,
                 virtualPosition.Direction,
-                virtualPosition.EntryPrice);
+                virtualPosition.EntryPrice,
+                FindIndicatorForAtom);
 
             if (stopTakeHit == LogicStopTakeHit.StopLoss)
             {
@@ -3458,8 +3483,7 @@ namespace OsEngine.Robots.Custom
             }
 
             if (!EvaluateLogicCloseSignal(
-                    runtime.ParseResult,
-                    virtualPosition.Direction,
+                    runtime.ParseResult.Root,
                     tab,
                     candles,
                     candleIndex,
@@ -3560,9 +3584,9 @@ namespace OsEngine.Robots.Custom
         private void UpdateLogicSlotRuntime(int logicSlotIndex, LogicParseResult result, bool isActive)
         {
             Side entrySide = Side.Buy;
-            if (isActive && result?.V2 != null)
+            if (isActive && result?.Root != null)
             {
-                entrySide = LogicV2ExpressionEvaluator.ResolveDefaultEntrySide(result.V2);
+                entrySide = LogicExpressionEvaluator.ResolveEntrySide(result.Root);
             }
 
             _logicSlotRuntimes[logicSlotIndex] = new LogicSlotRuntime
@@ -3602,20 +3626,14 @@ namespace OsEngine.Robots.Custom
                     + logicSlotIndex
                     + ": "
                     + string.Join("; ", result.Errors);
-                if (!string.Equals(_lastLogicParseErrorLogged[logicSlotIndex], err, StringComparison.Ordinal))
+                SendNewLogMessage(err, LogMessageType.Error);
+                if (logToUser)
                 {
-                    _lastLogicParseErrorLogged[logicSlotIndex] = err;
-                    SendNewLogMessage(err, LogMessageType.Error);
-                    if (logToUser)
-                    {
-                        SendNewLogMessage(err, LogMessageType.User);
-                    }
+                    SendNewLogMessage(err, LogMessageType.User);
                 }
 
                 return false;
             }
-
-            _lastLogicParseErrorLogged[logicSlotIndex] = null;
 
             if (result.IsDisabled)
             {
@@ -3633,7 +3651,7 @@ namespace OsEngine.Robots.Custom
                 return true;
             }
 
-            UpdateLogicSlotRuntime(logicSlotIndex, result, isActive: result.HasActiveBody);
+            UpdateLogicSlotRuntime(logicSlotIndex, result, isActive: result.Root != null);
 
             string msg = NameStrategyUniq
                 + " | Логика "
@@ -3757,20 +3775,8 @@ namespace OsEngine.Robots.Custom
             public bool IsActive;
             /// <summary>Последний результат парсинга (дерево AND/OR, атомы, флаг Disabled).</summary>
             public LogicParseResult ParseResult;
-            /// <summary>Сторона по умолчанию (Long-блок → Buy, иначе Short → Sell).</summary>
-            public Side EntrySide;
-        }
-
-        private readonly struct LogicEntryCandidate
-        {
-            public LogicEntryCandidate(int slotIndex, Side side)
-            {
-                SlotIndex = slotIndex;
-                Side = side;
-            }
-
-            public int SlotIndex { get; }
-            public Side Side { get; }
+            /// <summary>Сторона входа: Buy (лонг) или Sell (шорт) по тегу Side в строке.</summary>
+            public Side EntrySide = Side.Buy;
         }
 
         /// <summary>
@@ -4245,9 +4251,9 @@ namespace OsEngine.Robots.Custom
                 + "возобновление, когда equity L1…L10 в фейк-торговле снова ≥ текущей суммы на момент срабатывания (+0,1%).");
             Hint(StopperPostTriggerAfterTakeProfitParamName,
                 "После общепортфельного TP — то же, что для stop-loss (три режима).");
-            Hint(PortfolioStopperReferenceEquityParamName,
+            Hint("Предыдущая сумма портфеля (техн.)",
                 "База SL/TP или lookback. Может быть отрицательной (плечо). До сделок — депозит; иначе PnL L1…L10.");
-            Hint(PortfolioStopperCurrentEquityParamName,
+            Hint("Текущая сумма портфеля (техн.)",
                 "PnL L1…L10 (может быть отрицательным — плечо/убыток); до сделок — депозит тестера/лайва. "
                 + "В фейк-торговле — виртуальные позиции в тех же L1…L10.");
             Hint("Предыдущая сумма портфеля: lookback (свечей)",
@@ -4634,14 +4640,14 @@ namespace OsEngine.Robots.Custom
                 StopperPostTriggerChoices,
                 StopperTabName);
             _portfolioStopperReferenceEquity = CreateParameter(
-                PortfolioStopperReferenceEquityParamName,
+                "Предыдущая сумма портфеля (техн.)",
                 0m,
                 -1_000_000_000_000m,
                 1_000_000_000_000m,
                 2,
                 StopperTabName);
             _portfolioStopperCurrentEquity = CreateParameter(
-                PortfolioStopperCurrentEquityParamName,
+                "Текущая сумма портфеля (техн.)",
                 0m,
                 -1_000_000_000_000m,
                 1_000_000_000_000m,
@@ -5965,68 +5971,6 @@ namespace OsEngine.Robots.Custom
             _stopperMonitorTimeFrame.ValueString = StopperMonitorTimeFrameSameAsMain;
         }
 
-        /// <summary>Перенос значений после переименования полей PnL L1…L10 (старые ключи в Parametrs.txt).</summary>
-        private void MigrateLegacyStopperPnLParamNamesIfNeeded()
-        {
-            bool changed = false;
-            changed |= TryMigrateLegacyStopperDecimalParam(
-                PortfolioStopperReferenceEquityParamNameLegacy,
-                _portfolioStopperReferenceEquity);
-            changed |= TryMigrateLegacyStopperDecimalParam(
-                PortfolioStopperCurrentEquityParamNameLegacy,
-                _portfolioStopperCurrentEquity);
-            changed |= TryMigrateLegacyStopperDecimalParam(
-                PortfolioPeakValueParamNameLegacy,
-                _portfolioPeakValue);
-            if (changed)
-            {
-                SaveParametersWithoutLogicIndicatorResync();
-            }
-        }
-
-        private bool TryMigrateLegacyStopperDecimalParam(string legacyName, StrategyParameterDecimal target)
-        {
-            if (target == null || string.IsNullOrEmpty(legacyName))
-            {
-                return false;
-            }
-
-            string path = Path.Combine("Engine", NameStrategyUniq + "Parametrs.txt");
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            try
-            {
-                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    string line = lines[i];
-                    if (string.IsNullOrWhiteSpace(line))
-                    {
-                        continue;
-                    }
-
-                    string[] save = line.Split('#');
-                    if (save.Length < 2
-                        || !string.Equals(save[0], legacyName, StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    target.LoadParamFromString(save);
-                    return true;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-
-            return false;
-        }
-
         private bool IsStopMonitorScreenerActive()
         {
             if (IsStopMonitorSameAsMainTimeFrame())
@@ -7213,14 +7157,14 @@ namespace OsEngine.Robots.Custom
             for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
             {
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-                if (runtime == null || !runtime.IsActive || !runtime.ParseResult.HasActiveBody)
+                if (runtime == null || !runtime.IsActive || runtime.ParseResult?.Root == null)
                 {
                     continue;
                 }
 
                 if (IsStopperVirtualTradingActive()
                     && TryGetStopperVirtualPosition(tab, slotIndex, out StopperVirtualPosition virtualRegimePos)
-                    && TryHandleStopperVirtualPositionForRegime(
+                    && TryCloseStopperVirtualPositionForRegime(
                         tab,
                         virtualRegimePos,
                         slotIndex,
@@ -7233,7 +7177,7 @@ namespace OsEngine.Robots.Custom
 
                 Position regimePos = FindOpenLogicPosition(tab, slotIndex);
                 if (regimePos != null
-                    && TryHandleLogicPositionForRegime(tab, regimePos, slotIndex, runtime, candles, candleIndex))
+                    && TryCloseLogicPositionForRegime(tab, regimePos, slotIndex, runtime, candles, candleIndex))
                 {
                     continue;
                 }
@@ -7242,7 +7186,7 @@ namespace OsEngine.Robots.Custom
             for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
             {
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-                if (runtime == null || !runtime.IsActive || !runtime.ParseResult.HasActiveBody)
+                if (runtime == null || !runtime.IsActive || runtime.ParseResult?.Root == null)
                 {
                     continue;
                 }
@@ -7259,13 +7203,13 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                LogicStopTakeHit stopTakeHit = EvaluateLogicStopTake(
-                    runtime.ParseResult,
+                LogicStopTakeHit stopTakeHit = LogicStopTakeEvaluator.EvaluateStopTake(
+                    runtime.ParseResult.Root,
                     tab,
                     candles,
                     candleIndex,
-                    openPos.Direction,
-                    openPos.EntryPrice);
+                    openPos,
+                    FindIndicatorForAtom);
 
                 if (stopTakeHit == LogicStopTakeHit.StopLoss)
                 {
@@ -7280,8 +7224,7 @@ namespace OsEngine.Robots.Custom
                 }
 
                 if (!EvaluateLogicCloseSignal(
-                        runtime.ParseResult,
-                        openPos.Direction,
+                        runtime.ParseResult.Root,
                         tab,
                         candles,
                         candleIndex,
@@ -7302,13 +7245,12 @@ namespace OsEngine.Robots.Custom
             }
 
             var entryCandidates = new List<int>();
-            var entryCandidateSides = new Dictionary<int, Side>();
             if (!entryBlocked)
             {
                 for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
                 {
                     LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-                    if (runtime == null || !runtime.IsActive || !runtime.ParseResult.HasActiveBody)
+                    if (runtime == null || !runtime.IsActive || runtime.ParseResult?.Root == null)
                     {
                         continue;
                     }
@@ -7323,24 +7265,22 @@ namespace OsEngine.Robots.Custom
                         continue;
                     }
 
-                    if (!TryEvaluateLogicOpenSignal(
-                            runtime.ParseResult,
+                    if (!EvaluateLogicOpenSignal(
+                            runtime.ParseResult.Root,
                             tab,
                             candles,
                             candleIndex,
-                            slotIndex,
-                            out Side openSide))
+                            slotIndex))
                     {
                         continue;
                     }
 
-                    if (!AllowsRegimeEntry(slotIndex, runtime, tab, candles, candleIndex, openSide))
+                    if (!AllowsRegimeEntry(slotIndex, runtime, tab, candles, candleIndex))
                     {
                         continue;
                     }
 
                     entryCandidates.Add(slotIndex);
-                    entryCandidateSides[slotIndex] = openSide;
                 }
             }
 
@@ -7443,7 +7383,6 @@ namespace OsEngine.Robots.Custom
                 OpenEntryCandidatesByMetaLogicPnlSma(
                     tab,
                     entryCandidates,
-                    entryCandidateSides,
                     totalVolume,
                     entriesToOpen,
                     candles[candleIndex].TimeStart,
@@ -7475,10 +7414,6 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                Side signalSide = entryCandidateSides.TryGetValue(slotIndex, out Side side)
-                    ? side
-                    : runtime.EntrySide;
-                Side entrySide = ResolveLogicOpenSide(runtime, signalSide);
                 TryGetLogicPnlSmaMetrics(slotIndex, out decimal? pnlAvg, out decimal? pnlLast);
                 plainLines.Add(new HtmlReportMetaLogicAllocationLine
                 {
@@ -7489,10 +7424,10 @@ namespace OsEngine.Robots.Custom
                     PnlSmaLast = pnlLast,
                     AbsWeightSharePct = entriesToOpen > 0 ? 100m / entriesToOpen : 0m,
                     Volume = vol,
-                    Side = entrySide.ToString(),
+                    Side = ResolveLogicOpenSide(runtime).ToString(),
                     Opened = true
                 });
-                TryOpenLogicPosition(tab, slotIndex, vol, entrySide);
+                TryOpenLogicPosition(tab, slotIndex, vol, ResolveLogicOpenSide(runtime));
                 plainOpened++;
             }
 
@@ -7525,12 +7460,12 @@ namespace OsEngine.Robots.Custom
             for (int slotIndex = 1; slotIndex <= LogicSlotCount; slotIndex++)
             {
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-                if (runtime == null || !runtime.IsActive || !runtime.ParseResult.HasActiveBody)
+                if (runtime == null || !runtime.IsActive || runtime.ParseResult?.Root == null)
                 {
                     continue;
                 }
 
-                List<LogicAtom> atoms = runtime.ParseResult.Atoms;
+                List<LogicAtom> atoms = LogicLineParser.GetExpressionAtoms(runtime.ParseResult.Root);
                 for (int i = 0; i < atoms.Count; i++)
                 {
                     minBars = Math.Max(minBars, LogicSignalEvaluator.GetMinBarsRequired(atoms[i]));
@@ -7742,7 +7677,6 @@ namespace OsEngine.Robots.Custom
         private void OpenEntryCandidatesByMetaLogicPnlSma(
             BotTabSimple tab,
             List<int> entryCandidates,
-            Dictionary<int, Side> entryCandidateSides,
             decimal totalVolume,
             int entriesToOpen,
             DateTime candleTime,
@@ -7752,8 +7686,6 @@ namespace OsEngine.Robots.Custom
             {
                 return;
             }
-
-            entryCandidateSides = entryCandidateSides ?? new Dictionary<int, Side>();
 
             var journalLines = new List<HtmlReportMetaLogicAllocationLine>();
             var weights = new decimal[entriesToOpen];
@@ -7785,10 +7717,7 @@ namespace OsEngine.Robots.Custom
                 int slotIndex = entryCandidates[i];
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
                 decimal volume = volumes[i];
-                Side signalSide = entryCandidateSides.TryGetValue(slotIndex, out Side side)
-                    ? side
-                    : runtime.EntrySide;
-                Side entrySide = ResolveMetaOpenSide(runtime, weights[i], signalSide);
+                Side entrySide = ResolveMetaOpenSide(runtime, weights[i]);
                 bool opened = volume > 0m;
                 if (opened)
                 {
@@ -7926,7 +7855,7 @@ namespace OsEngine.Robots.Custom
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
                 if (runtime == null
                     || !runtime.IsActive
-                    || !runtime.ParseResult.HasActiveBody
+                    || runtime.ParseResult?.Root == null
                     || runtime.ParseResult.IsDisabled)
                 {
                     continue;
@@ -8011,7 +7940,7 @@ namespace OsEngine.Robots.Custom
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
                 if (runtime == null
                     || !runtime.IsActive
-                    || !runtime.ParseResult.HasActiveBody
+                    || runtime.ParseResult?.Root == null
                     || runtime.ParseResult.IsDisabled)
                 {
                     continue;
@@ -8038,14 +7967,14 @@ namespace OsEngine.Robots.Custom
         /// Фактическая сторона открытия: «Инверсия логики» (вкладка «Логики»), затем инверсия PnlSMA&lt;0 (металогика).
         /// Вместе с <see cref="ShouldSwapEntryExitSignals"/> — как ApplyEntryExitSignalTransforms в TrendMultiIndicatorScreener.
         /// </summary>
-        private Side ResolveLogicOpenSide(LogicSlotRuntime runtime, Side signalSide, decimal? metaPnlWeight = null)
+        private Side ResolveLogicOpenSide(LogicSlotRuntime runtime, decimal? metaPnlWeight = null)
         {
             if (runtime == null)
             {
-                return signalSide;
+                return Side.Buy;
             }
 
-            Side side = signalSide;
+            Side side = runtime.EntrySide;
             if (IsLogicSideInversionEnabled())
             {
                 side = FlipEntrySide(side);
@@ -8059,20 +7988,15 @@ namespace OsEngine.Robots.Custom
             return side;
         }
 
-        private Side ResolveLogicOpenSide(LogicSlotRuntime runtime, decimal? metaPnlWeight = null)
-        {
-            return ResolveLogicOpenSide(runtime, runtime?.EntrySide ?? Side.Buy, metaPnlWeight);
-        }
-
         private bool IsLogicSideInversionEnabled()
         {
             return ReadLogicSideInversionCurrent();
         }
 
         /// <summary>Buy/Sell на входе при металогике (с учётом «Инверсии логики» и PnlSMA&lt;0).</summary>
-        private Side ResolveMetaOpenSide(LogicSlotRuntime runtime, decimal pnlWeight, Side signalSide)
+        private Side ResolveMetaOpenSide(LogicSlotRuntime runtime, decimal pnlWeight)
         {
-            return ResolveLogicOpenSide(runtime, signalSide, pnlWeight);
+            return ResolveLogicOpenSide(runtime, pnlWeight);
         }
 
         /// <summary>Фактическая сторона входа для Regime (учёт инверсий на открытии).</summary>
@@ -8128,107 +8052,57 @@ namespace OsEngine.Robots.Custom
             return ShouldSwapEntryExitSignals(TryGetMetaPnlWeightForSlot(logicSlotIndex));
         }
 
-        /// <summary>Условие входа Op(…) с учётом инверсии логики.</summary>
-        private bool TryEvaluateLogicOpenSignal(
-            LogicParseResult parseResult,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            int logicSlotIndex,
-            out Side openSide)
-        {
-            openSide = Side.Buy;
-            if (parseResult?.V2 == null)
-            {
-                return false;
-            }
-
-            decimal? metaPnlWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
-            if (ShouldSwapEntryExitSignals(metaPnlWeight))
-            {
-                bool closeHit = LogicV2ExpressionEvaluator.EvaluateClose(
-                    parseResult.V2,
-                    Side.Buy,
-                    tab,
-                    candles,
-                    candleIndex,
-                    FindIndicatorForAtom);
-                if (closeHit)
-                {
-                    openSide = Side.Sell;
-                    return true;
-                }
-
-                return false;
-            }
-
-            return LogicV2ExpressionEvaluator.TryEvaluateOpen(
-                parseResult.V2,
-                parseResult.Regime,
-                tab,
-                candles,
-                candleIndex,
-                FindIndicatorForAtom,
-                out openSide);
-        }
-
-        /// <summary>Условие выхода Cl(…) с учётом инверсии логики.</summary>
-        private bool EvaluateLogicCloseSignal(
-            LogicParseResult parseResult,
-            Side positionSide,
+        /// <summary>Условие входа Op[…] с учётом инверсии логики (при инверсии — Cl[…]).</summary>
+        private bool EvaluateLogicOpenSignal(
+            LogicExpressionNode root,
             BotTabSimple tab,
             List<Candle> candles,
             int candleIndex,
             int logicSlotIndex)
         {
-            if (parseResult?.V2 == null)
-            {
-                return false;
-            }
-
             decimal? metaPnlWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
             if (ShouldSwapEntryExitSignals(metaPnlWeight))
             {
-                return LogicV2ExpressionEvaluator.TryEvaluateOpen(
-                    parseResult.V2,
-                    parseResult.Regime,
+                return LogicExpressionEvaluator.EvaluateClose(
+                    root,
                     tab,
                     candles,
                     candleIndex,
-                    FindIndicatorForAtom,
-                    out _);
+                    FindIndicatorForAtom);
             }
 
-            return LogicV2ExpressionEvaluator.EvaluateClose(
-                parseResult.V2,
-                positionSide,
+            return LogicExpressionEvaluator.EvaluateOpen(
+                root,
                 tab,
                 candles,
                 candleIndex,
                 FindIndicatorForAtom);
         }
 
-        private LogicStopTakeHit EvaluateLogicStopTake(
-            LogicParseResult parseResult,
+        /// <summary>Условие выхода Cl[…] с учётом инверсии логики (при инверсии — Op[…]).</summary>
+        private bool EvaluateLogicCloseSignal(
+            LogicExpressionNode root,
             BotTabSimple tab,
             List<Candle> candles,
             int candleIndex,
-            Side direction,
-            decimal entryPrice)
+            int logicSlotIndex)
         {
-            if (parseResult?.V2 == null)
+            decimal? metaPnlWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
+            if (ShouldSwapEntryExitSignals(metaPnlWeight))
             {
-                return LogicStopTakeHit.None;
+                return LogicExpressionEvaluator.EvaluateOpen(
+                    root,
+                    tab,
+                    candles,
+                    candleIndex,
+                    FindIndicatorForAtom);
             }
 
-            return LogicStopTakeEvaluator.EvaluateStopTakeV2(
-                parseResult.V2,
-                parseResult.Atoms,
+            return LogicExpressionEvaluator.EvaluateClose(
+                root,
                 tab,
                 candles,
                 candleIndex,
-                direction,
-                entryPrice,
                 FindIndicatorForAtom);
         }
 
@@ -8313,14 +8187,18 @@ namespace OsEngine.Robots.Custom
             }
 
             LogicSlotRuntime runtime = _logicSlotRuntimes[slotIndex];
-            if (runtime?.ParseResult?.V2 == null)
+            if (runtime?.ParseResult?.Root == null)
             {
                 return "";
             }
 
-            if (!string.IsNullOrWhiteSpace(runtime.ParseResult.V2.Comment))
+            List<LogicAtom> atoms = LogicLineParser.GetExpressionAtoms(runtime.ParseResult.Root);
+            for (int i = 0; i < atoms.Count; i++)
             {
-                return runtime.ParseResult.V2.Comment.Trim();
+                if (!string.IsNullOrWhiteSpace(atoms[i].Comment))
+                {
+                    return atoms[i].Comment.Trim();
+                }
             }
 
             return "";
@@ -8367,7 +8245,7 @@ namespace OsEngine.Robots.Custom
             return FindIndicatorForAtom(tab, probe);
         }
 
-        private bool TryHandleLogicPositionForRegime(
+        private bool TryCloseLogicPositionForRegime(
             BotTabSimple tab,
             Position pos,
             int logicSlotIndex,
@@ -8375,105 +8253,13 @@ namespace OsEngine.Robots.Custom
             List<Candle> candles,
             int candleIndex)
         {
-            if (!TryEvaluateRegimePositionAction(
-                    tab,
-                    runtime,
-                    logicSlotIndex,
-                    pos.Direction,
-                    candles,
-                    candleIndex,
-                    out LogicRegimeSpec spec,
-                    out int sign))
+            LogicRegimeSpec spec = runtime?.ParseResult?.Regime;
+            if (spec == null || pos == null)
             {
                 return false;
             }
 
-            if (spec.FlipOnRegimeMismatch
-                && LogicRegimeEvaluator.TryGetFlipTargetSideFromSign(sign, out Side flipSide))
-            {
-                flipSide = ApplyRegimeFlipSideInversions(runtime, logicSlotIndex, flipSide);
-                decimal volume = pos.OpenVolume;
-                TryCloseLogicPosition(tab, pos, logicSlotIndex, "_RegimeFlipRev");
-                TryOpenLogicPosition(tab, logicSlotIndex, volume, flipSide);
-                return true;
-            }
-
-            if (spec.CloseOnRegimeMismatch || spec.EntryFlatOnly || spec.CloseOnFlat)
-            {
-                TryCloseLogicPosition(tab, pos, logicSlotIndex, "_RegimeFlip");
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryHandleStopperVirtualPositionForRegime(
-            BotTabSimple tab,
-            StopperVirtualPosition virtualPosition,
-            int logicSlotIndex,
-            LogicSlotRuntime runtime,
-            List<Candle> candles,
-            int candleIndex)
-        {
-            if (virtualPosition == null
-                || !TryEvaluateRegimePositionAction(
-                    tab,
-                    runtime,
-                    logicSlotIndex,
-                    virtualPosition.Direction,
-                    candles,
-                    candleIndex,
-                    out LogicRegimeSpec spec,
-                    out int sign))
-            {
-                return false;
-            }
-
-            if (spec.FlipOnRegimeMismatch
-                && LogicRegimeEvaluator.TryGetFlipTargetSideFromSign(sign, out Side flipSide))
-            {
-                flipSide = ApplyRegimeFlipSideInversions(runtime, logicSlotIndex, flipSide);
-                decimal volume = virtualPosition.Volume;
-                CloseStopperVirtualPosition(tab, virtualPosition, logicSlotIndex, "_RegimeFlipRev");
-                OpenStopperVirtualPosition(
-                    tab,
-                    logicSlotIndex,
-                    volume,
-                    flipSide,
-                    BuildLogicEntrySignal(logicSlotIndex));
-                return true;
-            }
-
-            if (spec.CloseOnRegimeMismatch || spec.EntryFlatOnly || spec.CloseOnFlat)
-            {
-                CloseStopperVirtualPosition(tab, virtualPosition, logicSlotIndex, "_RegimeFlip");
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool TryEvaluateRegimePositionAction(
-            BotTabSimple tab,
-            LogicSlotRuntime runtime,
-            int logicSlotIndex,
-            Side positionSide,
-            List<Candle> candles,
-            int candleIndex,
-            out LogicRegimeSpec spec,
-            out int sign)
-        {
-            spec = BuildEffectiveCloseRegimeSpec(runtime);
-            sign = 0;
-            if (spec == null)
-            {
-                return false;
-            }
-
-            if (!spec.CloseOnRegimeMismatch
-                && !spec.FlipOnRegimeMismatch
-                && !spec.EntryFlatOnly
-                && !spec.CloseOnFlat)
+            if (!spec.CloseOnRegimeMismatch && !spec.EntryFlatOnly && !spec.CloseOnFlat)
             {
                 return false;
             }
@@ -8484,59 +8270,51 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            sign = LogicRegimeEvaluator.GetSign(spec, indicator, candleIndex);
-            Side regimeSide = ApplyRegimeSideInversions(runtime, logicSlotIndex, positionSide);
-            return LogicRegimeEvaluator.ShouldCloseForRegime(spec, regimeSide, sign);
-        }
-
-        private LogicRegimeSpec BuildEffectiveCloseRegimeSpec(LogicSlotRuntime runtime)
-        {
-            LogicRegimeSpec spec = runtime?.ParseResult?.Regime?.CloneShallow() ?? new LogicRegimeSpec();
-            if (runtime?.ParseResult?.V2 == null)
+            int sign = LogicRegimeEvaluator.GetSign(spec, indicator, candleIndex);
+            Side regimeSide = GetRegimeEntrySide(runtime, logicSlotIndex);
+            if (!LogicRegimeEvaluator.ShouldCloseForRegime(spec, regimeSide, sign))
             {
-                return spec;
+                return false;
             }
 
-            LogicOnFlipSpec inline = runtime.ParseResult.V2.GetEffectiveClOnFlip(runtime.ParseResult.Regime);
-            if (inline != null)
-            {
-                inline.ApplyOverridesTo(spec);
-            }
-
-            return spec;
+            TryCloseLogicPosition(tab, pos, logicSlotIndex, "_RegimeFlip");
+            return true;
         }
 
-        private Side ApplyRegimeSideInversions(
-            LogicSlotRuntime runtime,
+        private bool TryCloseStopperVirtualPositionForRegime(
+            BotTabSimple tab,
+            StopperVirtualPosition virtualPosition,
             int logicSlotIndex,
-            Side side)
-        {
-            decimal? metaWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
-            if (ShouldSwapEntryExitSignals(metaWeight))
-            {
-                side = FlipEntrySide(side);
-            }
-
-            if (IsLogicSideInversionEnabled())
-            {
-                side = FlipEntrySide(side);
-            }
-
-            return side;
-        }
-
-        private Side ApplyRegimeFlipSideInversions(
             LogicSlotRuntime runtime,
-            int logicSlotIndex,
-            Side flipSide)
+            List<Candle> candles,
+            int candleIndex)
         {
-            decimal? metaWeight = TryGetMetaPnlWeightForSlot(logicSlotIndex);
-            if (ShouldSwapEntryExitSignals(metaWeight))
+            LogicRegimeSpec spec = runtime?.ParseResult?.Regime;
+            if (spec == null || virtualPosition == null)
             {
-                flipSide = FlipEntrySide(flipSide);
+                return false;
             }
 
-            return flipSide;
+            if (!spec.CloseOnRegimeMismatch && !spec.EntryFlatOnly && !spec.CloseOnFlat)
+            {
+                return false;
+            }
+
+            Aindicator indicator = FindIndicatorForRegime(tab, spec);
+            if (indicator == null)
+            {
+                return false;
+            }
+
+            int sign = LogicRegimeEvaluator.GetSign(spec, indicator, candleIndex);
+            Side regimeSide = GetRegimeEntrySide(runtime, logicSlotIndex);
+            if (!LogicRegimeEvaluator.ShouldCloseForRegime(spec, regimeSide, sign))
+            {
+                return false;
+            }
+
+            CloseStopperVirtualPosition(tab, virtualPosition, logicSlotIndex, "_RegimeFlip");
+            return true;
         }
 
         private bool AllowsRegimeEntry(
@@ -8544,8 +8322,7 @@ namespace OsEngine.Robots.Custom
             LogicSlotRuntime runtime,
             BotTabSimple tab,
             List<Candle> candles,
-            int candleIndex,
-            Side intendedSide)
+            int candleIndex)
         {
             LogicRegimeSpec spec = runtime?.ParseResult?.Regime;
             if (spec == null || (!spec.BlockEntryBySide && !spec.EntryFlatOnly))
@@ -8560,8 +8337,7 @@ namespace OsEngine.Robots.Custom
             }
 
             int sign = LogicRegimeEvaluator.GetSign(spec, indicator, candleIndex);
-            Side regimeSide = ResolveLogicOpenSide(runtime, intendedSide, TryGetMetaPnlWeightForSlot(logicSlotIndex));
-            return LogicRegimeEvaluator.AllowsEntry(spec, regimeSide, sign);
+            return LogicRegimeEvaluator.AllowsEntry(spec, GetRegimeEntrySide(runtime, logicSlotIndex), sign);
         }
 
         /// <summary>
@@ -14930,8 +14706,6 @@ namespace OsEngine.Robots.Custom
             PortfolioTakeProfitRublesParamName,
             StopperPostTriggerAfterStopLossParamName,
             StopperPostTriggerAfterTakeProfitParamName,
-            PortfolioStopperReferenceEquityParamName,
-            PortfolioStopperCurrentEquityParamName,
             "Предыдущая сумма портфеля: lookback (свечей)",
             StopperMonitorTimeFrameParamName,
             StopperMonitorSecurityParamName,
@@ -15944,7 +15718,7 @@ namespace OsEngine.Robots.Custom
                 case "SignalClose":
                     return "По сигналу Cl (обычное закрытие)";
                 case "RegimeFlip":
-                    return "Regime(LinReg) — OnFlip=Close / OnFlip=Flip";
+                    return "Regime(LinReg) — OnFlip=Close";
                 case "StopRobot":
                     return "Остановить робота и продать всё";
                 default:
@@ -16050,8 +15824,7 @@ namespace OsEngine.Robots.Custom
             }
 
             string n = note;
-            if (n.IndexOf("_RegimeFlipRev", StringComparison.OrdinalIgnoreCase) >= 0
-                || n.IndexOf("_RegimeFlip", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (n.IndexOf("_RegimeFlip", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return "RegimeFlip";
             }
@@ -16475,7 +16248,6 @@ namespace OsEngine.Robots.Custom
             if (paramName.IndexOf("stop-loss", StringComparison.OrdinalIgnoreCase) >= 0
                 || paramName.IndexOf("take-profit", StringComparison.OrdinalIgnoreCase) >= 0
                 || paramName.IndexOf("Stopper", StringComparison.OrdinalIgnoreCase) >= 0
-                || paramName.IndexOf("PnL L1", StringComparison.OrdinalIgnoreCase) >= 0
                 || string.Equals(paramName, "Предыдущая сумма портфеля: lookback (свечей)", StringComparison.OrdinalIgnoreCase))
             {
                 return "stopper";
@@ -16978,7 +16750,7 @@ namespace OsEngine.Robots.Custom
                     && runtime.ParseResult != null
                     && runtime.ParseResult.Success
                     && !runtime.ParseResult.IsDisabled
-                    && runtime.ParseResult.HasActiveBody;
+                    && runtime.ParseResult.Root != null;
 
                 rt.ByLogic.TryGetValue(slot, out HtmlReportLogicStats tradeStats);
                 int opens = tradeStats?.Opens ?? 0;
@@ -17033,7 +16805,7 @@ namespace OsEngine.Robots.Custom
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
                 bool active = runtime != null
                     && runtime.IsActive
-                    && runtime.ParseResult.HasActiveBody
+                    && runtime.ParseResult?.Root != null
                     && !runtime.ParseResult.IsDisabled;
                 TryGetLogicPnlSmaMetrics(slot, out decimal? avg, out decimal? last);
                 bool slotReady = active
@@ -17131,7 +16903,7 @@ namespace OsEngine.Robots.Custom
                 LogicSlotRuntime runtime = _logicSlotRuntimes[slot];
                 if (runtime == null
                     || !runtime.IsActive
-                    || !runtime.ParseResult.HasActiveBody
+                    || runtime.ParseResult?.Root == null
                     || runtime.ParseResult.IsDisabled)
                 {
                     continue;
@@ -17398,7 +17170,7 @@ namespace OsEngine.Robots.Custom
   }
   function closeReasonLabel(r){
     var rs=pick(r,'reason','Reason')||'';
-    if(rs==='RegimeFlip')return 'Regime(LinReg) — OnFlip=Close / OnFlip=Flip';
+    if(rs==='RegimeFlip')return 'Regime(LinReg) — OnFlip=Close';
     return pick(r,'label','Label')||rs||'?';
   }
   function renderClosePnLSummary(d){
@@ -17471,7 +17243,7 @@ namespace OsEngine.Robots.Custom
     }
     var reasonLabels={
       PortfolioStopSL:'Общепортф. SL',PortfolioStopTP:'Общепортф. TP',PortfolioPeakDrawdown:'Просадка от пика',PortfolioEodFlat:'EOD продажа',
-      StopLoss:'SL логики',TakeProfit:'TP логики',SignalClose:'Cl',RegimeFlip:'LinReg OnFlip Close/Flip',StopRobot:'Стоп робота',Other:'Прочее'
+      StopLoss:'SL логики',TakeProfit:'TP логики',SignalClose:'Cl',RegimeFlip:'LinReg OnFlip',StopRobot:'Стоп робота',Other:'Прочее'
     };
     fillTable('closed-trades',rows,function(t){
       var rs=pick(t,'closeReason','CloseReason')||'';
@@ -18176,166 +17948,6 @@ namespace OsEngine.Robots.Custom
         }
     }
 
-    /// <summary>Режим OnFlip в Op/Cl (приоритет над Regime-префиксом).</summary>
-    public enum LogicOnFlipMode
-    {
-        None = 0,
-        Open = 1,
-        Close = 2,
-        Flip = 3
-    }
-
-    /// <summary>OnFlip(…) внутри Op/Cl; параметры перекрывают Regime(…).</summary>
-    public sealed class LogicOnFlipSpec
-    {
-        public LogicOnFlipMode Mode = LogicOnFlipMode.None;
-        public Dictionary<string, string> Params = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        public void ApplyOverridesTo(LogicRegimeSpec target)
-        {
-            if (target == null || Mode == LogicOnFlipMode.None)
-            {
-                return;
-            }
-
-            if (Mode == LogicOnFlipMode.Close)
-            {
-                target.CloseOnRegimeMismatch = true;
-                target.FlipOnRegimeMismatch = false;
-            }
-            else if (Mode == LogicOnFlipMode.Flip)
-            {
-                target.FlipOnRegimeMismatch = true;
-                target.CloseOnRegimeMismatch = false;
-            }
-
-            foreach (KeyValuePair<string, string> kv in Params)
-            {
-                string key = kv.Key?.Trim() ?? "";
-                string val = kv.Value?.Trim() ?? "";
-                if (key.Length == 0)
-                {
-                    continue;
-                }
-
-                if (string.Equals(key, "Entry", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (val.Equals("FlatOnly", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("Chop", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("Flat", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("Bokovik", StringComparison.OrdinalIgnoreCase))
-                    {
-                        target.EntryFlatOnly = true;
-                        target.BlockEntryBySide = false;
-                    }
-                    else if (val.Equals("MatchSide", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("Side", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("Trend", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("true", StringComparison.OrdinalIgnoreCase))
-                    {
-                        target.BlockEntryBySide = true;
-                        target.EntryFlatOnly = false;
-                    }
-                }
-                else if (string.Equals(key, "OnFlat", StringComparison.OrdinalIgnoreCase))
-                {
-                    target.CloseOnFlat = val.Equals("Close", StringComparison.OrdinalIgnoreCase)
-                        || val.Equals("true", StringComparison.OrdinalIgnoreCase);
-                }
-                else
-                {
-                    target.Params[key] = val;
-                }
-            }
-        }
-    }
-
-    /// <summary>Узел OnFlip(…) в дереве Op/Cl.</summary>
-    public sealed class LogicOnFlipNode : LogicExpressionNode
-    {
-        public LogicOnFlipSpec Spec = new LogicOnFlipSpec();
-
-        public LogicOnFlipNode(LogicOnFlipSpec spec)
-        {
-            Spec = spec ?? new LogicOnFlipSpec();
-        }
-    }
-
-    /// <summary>Блок Op(…) или Cl(…): общие предикаты + Long/Short.</summary>
-    public sealed class LogicSignalBlock
-    {
-        public LogicExpressionNode SharedRoot;
-        public LogicExpressionNode LongRoot;
-        public LogicExpressionNode ShortRoot;
-        public List<LogicOnFlipSpec> OnFlipSpecs = new List<LogicOnFlipSpec>();
-
-        public bool HasSideContent => LongRoot != null || ShortRoot != null || OnFlipSpecs.Count > 0;
-
-        public bool HasAnyContent => SharedRoot != null || HasSideContent;
-    }
-
-    /// <summary>Тело строки логики v2: Op/Cl, SL/TP/Note на уровне строки.</summary>
-    public sealed class LogicV2Body
-    {
-        public LogicSignalBlock Op = new LogicSignalBlock();
-        public LogicSignalBlock Cl = new LogicSignalBlock();
-        public string StopLoss = "";
-        public string TakeProfit = "";
-        public string Comment = "";
-
-        public bool IsNonEmpty => Op.HasAnyContent || Cl.HasAnyContent;
-
-        public LogicOnFlipSpec GetEffectiveClOnFlip(LogicRegimeSpec regimeDefaults)
-        {
-            if (Cl?.OnFlipSpecs != null)
-            {
-                for (int i = 0; i < Cl.OnFlipSpecs.Count; i++)
-                {
-                    LogicOnFlipSpec inline = Cl.OnFlipSpecs[i];
-                    if (inline != null
-                        && (inline.Mode == LogicOnFlipMode.Close || inline.Mode == LogicOnFlipMode.Flip))
-                    {
-                        return inline;
-                    }
-                }
-            }
-
-            if (regimeDefaults == null)
-            {
-                return null;
-            }
-
-            if (regimeDefaults.FlipOnRegimeMismatch)
-            {
-                return new LogicOnFlipSpec { Mode = LogicOnFlipMode.Flip };
-            }
-
-            if (regimeDefaults.CloseOnRegimeMismatch)
-            {
-                return new LogicOnFlipSpec { Mode = LogicOnFlipMode.Close };
-            }
-
-            return null;
-        }
-
-        public LogicRegimeSpec BuildEffectiveRegimeSpec(LogicRegimeSpec regimeDefaults, bool forClose)
-        {
-            LogicRegimeSpec spec = regimeDefaults?.CloneShallow() ?? new LogicRegimeSpec();
-            LogicSignalBlock block = forClose ? Cl : Op;
-            if (block?.OnFlipSpecs == null)
-            {
-                return spec;
-            }
-
-            for (int i = 0; i < block.OnFlipSpecs.Count; i++)
-            {
-                block.OnFlipSpecs[i]?.ApplyOverridesTo(spec);
-            }
-
-            return spec;
-        }
-    }
-
     /// <summary>Режим наклона LinReg из префикса Regime(…) в начале строки логики.</summary>
     public sealed class LogicRegimeSpec
     {
@@ -18347,8 +17959,6 @@ namespace OsEngine.Robots.Custom
         public bool AutoResolve;
         /// <summary>OnFlip=Close — закрывать позицию слота при наклоне против Side.</summary>
         public bool CloseOnRegimeMismatch;
-        /// <summary>OnFlip=Flip — закрыть и открыть в сторону нового наклона (Buy при sign&gt;0, Sell при sign&lt;0).</summary>
-        public bool FlipOnRegimeMismatch;
         /// <summary>Entry=MatchSide — блокировать вход, если наклон не совпадает с Side.</summary>
         public bool BlockEntryBySide;
         /// <summary>Entry=FlatOnly — вход только при флэте (|Δ| ≤ SlopeDead).</summary>
@@ -18429,27 +18039,6 @@ namespace OsEngine.Robots.Custom
 
             LogicLineParser.ApplyDefaultParamsForAtom(atom);
             return atom;
-        }
-
-        public LogicRegimeSpec CloneShallow()
-        {
-            var clone = new LogicRegimeSpec
-            {
-                SourceKind = SourceKind,
-                AutoResolve = AutoResolve,
-                CloseOnRegimeMismatch = CloseOnRegimeMismatch,
-                FlipOnRegimeMismatch = FlipOnRegimeMismatch,
-                BlockEntryBySide = BlockEntryBySide,
-                EntryFlatOnly = EntryFlatOnly,
-                CloseOnFlat = CloseOnFlat
-            };
-
-            foreach (KeyValuePair<string, string> pair in Params)
-            {
-                clone.Params[pair.Key] = pair.Value;
-            }
-
-            return clone;
         }
     }
 
@@ -18555,7 +18144,7 @@ namespace OsEngine.Robots.Custom
                 return sign != 0;
             }
 
-            if (!spec.CloseOnRegimeMismatch && !spec.FlipOnRegimeMismatch)
+            if (!spec.CloseOnRegimeMismatch)
             {
                 return spec.CloseOnFlat && sign == 0;
             }
@@ -18602,25 +18191,6 @@ namespace OsEngine.Robots.Custom
 
             return true;
         }
-
-        /// <summary>Сторона переворота по знаку наклона LinReg (без учёта инверсий логики).</summary>
-        public static bool TryGetFlipTargetSideFromSign(int sign, out Side targetSide)
-        {
-            targetSide = Side.Buy;
-            if (sign > 0)
-            {
-                targetSide = Side.Buy;
-                return true;
-            }
-
-            if (sign < 0)
-            {
-                targetSide = Side.Sell;
-                return true;
-            }
-
-            return false;
-        }
     }
 
     /// <summary>Результат парсинга одной строки «Логика N».</summary>
@@ -18636,14 +18206,10 @@ namespace OsEngine.Robots.Custom
         public LogicRegimeSpec Regime;
         /// <summary>Список текстов ошибок при Success=false.</summary>
         public List<string> Errors = new List<string>();
-        /// <summary>Корень дерева AND/OR; null для пустой строки (legacy v1).</summary>
+        /// <summary>Корень дерева AND/OR; null для пустой строки.</summary>
         public LogicExpressionNode Root;
-        /// <summary>Тело строки формата v2: Op(Long/Short) Cl(Long/Short).</summary>
-        public LogicV2Body V2;
         /// <summary>Уникальные атомы для создания индикаторов (пусто при Disabled).</summary>
         public List<LogicAtom> Atoms = new List<LogicAtom>();
-
-        public bool HasActiveBody => V2 != null && V2.IsNonEmpty;
 
         /// <summary>Фабрика результата с ошибкой.</summary>
         /// <param name="error">Текст ошибки.</param>
@@ -19078,7 +18644,7 @@ namespace OsEngine.Robots.Custom
         /// <summary>Длина LinReg из параметра робота «Длина линейной регрессии» (в строке логики: L=@LR или LinReg(@LR;…)).</summary>
         public const string LinRegLengthParamToken = "@LR";
 
-        public const int DefaultLinRegLengthFallback = 10;
+        public const int DefaultLinRegLengthFallback = 50;
 
         public const int MinLinRegLength = 5;
 
@@ -19168,8 +18734,10 @@ namespace OsEngine.Robots.Custom
         }
 
         /// <summary>
-        /// Разбирает сырую строку логики v2: префиксы, Op(Long/Short), Cl(Long/Short), SL/TP/Note.
+        /// Разбирает сырую строку логики: префикс Disabled, дерево AND/OR, список атомов.
         /// </summary>
+        /// <param name="raw">Текст из параметра «Логика N».</param>
+        /// <returns>LogicParseResult с деревом, атомами или ошибками.</returns>
         public LogicParseResult Parse(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -19178,7 +18746,7 @@ namespace OsEngine.Robots.Custom
                 {
                     Success = true,
                     IsDisabled = false,
-                    V2 = null,
+                    Root = null,
                     Atoms = new List<LogicAtom>()
                 };
             }
@@ -19207,27 +18775,19 @@ namespace OsEngine.Robots.Custom
                 if (ContainsInnerDisableMarker(work))
                 {
                     return LogicParseResult.Fail(
-                        "Disabled(…) / Disable(…) допустимы только в самом начале строки.");
+                        "Disabled(…) / Disable(…) допустимы только в самом начале строки, до AND/OR, без скобок вокруг.");
                 }
 
                 if (ContainsInnerStrictMarker(work))
                 {
                     return LogicParseResult.Fail(
-                        "Strict(…) допустим только в самом начале строки (после Disabled).");
+                        "Strict(…) допустим только в самом начале строки (после Disabled), до AND/OR, без скобок вокруг.");
                 }
 
                 if (ContainsInnerRegimeMarker(work))
                 {
                     return LogicParseResult.Fail(
-                        "Regime(…) допустим только в самом начале строки (после Disabled и Strict).");
-                }
-
-                if (LooksLikeLegacyV1Format(work))
-                {
-                    return LogicParseResult.Fail(
-                        "Формат v1 (Op[…]/Cl[…]/Side[S]) не поддерживается парсером v2. "
-                        + "Перепишите строку в Op(Long/Short(Ind(парам)(условие) …)) Cl(…) "
-                        + "или нажмите «Установить логики по умолчанию».");
+                        "Regime(…) допустим только в самом начале строки (после Disabled и Strict), до AND/OR, без скобок вокруг.");
                 }
 
                 if (string.IsNullOrWhiteSpace(work))
@@ -19238,36 +18798,18 @@ namespace OsEngine.Robots.Custom
                         IsDisabled = isDisabled,
                         Strictness = lineStrict,
                         Regime = regime,
-                        V2 = null,
+                        Root = null,
                         Atoms = new List<LogicAtom>()
                     };
                 }
 
-                var body = new LogicV2Body();
-                if (!TryConsumeSignalBlock(ref work, "Op", body.Op))
+                LogicExpressionNode root = ParseExpression(work);
+                if (root == null)
                 {
-                    return LogicParseResult.Fail(
-                        "Ожидается Op(…) с блоками Long(…) / Short(…) и общими индикаторами. Формат v2: Op(Long(SMA(100)(Ab) …)) Cl(…).");
+                    return LogicParseResult.Fail("Пустое выражение после разбора.");
                 }
 
-                if (!TryConsumeSignalBlock(ref work, "Cl", body.Cl))
-                {
-                    return LogicParseResult.Fail("После Op(…) ожидается Cl(…).");
-                }
-
-                work = ExtractLineLevelSlTpNote(work, body);
-
-                if (!string.IsNullOrWhiteSpace(work))
-                {
-                    return LogicParseResult.Fail("Лишний текст после Cl(…): " + work.Trim());
-                }
-
-                if (!body.IsNonEmpty)
-                {
-                    return LogicParseResult.Fail("Op(…) и Cl(…) не содержат условий.");
-                }
-
-                var atoms = isDisabled ? new List<LogicAtom>() : CollectAtomsFromV2(body);
+                var atoms = isDisabled ? new List<LogicAtom>() : CollectAtoms(root);
                 if (!isDisabled && regime != null)
                 {
                     if (regime.AutoResolve)
@@ -19290,537 +18832,13 @@ namespace OsEngine.Robots.Custom
                     IsDisabled = isDisabled,
                     Strictness = lineStrict,
                     Regime = regime,
-                    V2 = body,
+                    Root = root,
                     Atoms = atoms
                 };
             }
             catch (Exception ex)
             {
                 return LogicParseResult.Fail(ex.Message);
-            }
-        }
-
-        private static string ExtractLineLevelSlTpNote(string work, LogicV2Body body)
-        {
-            work = work?.Trim() ?? "";
-            work = ExtractRepeatedTag(work, null, new[] { "Note", "Коммент", "Cm" }, value => body.Comment = value);
-            work = ExtractBracketTag(work, "SL", value => body.StopLoss = value);
-            work = ExtractBracketTag(work, "TP", value => body.TakeProfit = value);
-            return work.Trim();
-        }
-
-        private bool TryConsumeSignalBlock(ref string work, string keyword, LogicSignalBlock block)
-        {
-            work = work?.Trim() ?? "";
-            if (work.Length == 0)
-            {
-                return false;
-            }
-
-            if (!StartsWithIgnoreCaseAt(work, 0, keyword, out int nameLen))
-            {
-                return false;
-            }
-
-            int pos = nameLen;
-            while (pos < work.Length && char.IsWhiteSpace(work[pos]))
-            {
-                pos++;
-            }
-
-            if (pos >= work.Length || work[pos] != '(')
-            {
-                throw new InvalidOperationException("Ожидается " + keyword + "(…) после " + keyword + ".");
-            }
-
-            if (!TryReadBalancedParenthesesContent(work, pos, out string inner))
-            {
-                throw new InvalidOperationException("Не закрыты скобки в " + keyword + "(…).");
-            }
-
-            ParseSignalBlockContent(inner, block);
-            work = work.Substring(pos + inner.Length + 2).Trim();
-            return true;
-        }
-
-        private void ParseSignalBlockContent(string content, LogicSignalBlock block)
-        {
-            content = content?.Trim() ?? "";
-            if (content.Length == 0 || block == null)
-            {
-                return;
-            }
-
-            SplitSignalBlockSegments(
-                content,
-                out string sharedCombined,
-                out string longText,
-                out string shortText,
-                out List<string> onFlipParts);
-
-            if (!string.IsNullOrWhiteSpace(sharedCombined))
-            {
-                block.SharedRoot = ParsePredicateExpression(sharedCombined);
-            }
-
-            if (!string.IsNullOrWhiteSpace(longText))
-            {
-                block.LongRoot = ParsePredicateExpression(longText);
-            }
-
-            if (!string.IsNullOrWhiteSpace(shortText))
-            {
-                block.ShortRoot = ParsePredicateExpression(shortText);
-            }
-
-            for (int i = 0; i < onFlipParts.Count; i++)
-            {
-                block.OnFlipSpecs.Add(ParseOnFlipSpec(onFlipParts[i]));
-            }
-        }
-
-        private static void SplitSignalBlockSegments(
-            string content,
-            out string sharedCombined,
-            out string longText,
-            out string shortText,
-            out List<string> onFlipParts)
-        {
-            sharedCombined = "";
-            longText = "";
-            shortText = "";
-            onFlipParts = new List<string>();
-            var sharedParts = new List<string>();
-
-            int pos = 0;
-            while (pos < content.Length)
-            {
-                SkipWhitespace(content, ref pos);
-                if (pos >= content.Length)
-                {
-                    break;
-                }
-
-                if (TryMatchSideKeywordBlock(content, pos, "Long", out int endLong, out string innerLong)
-                    || TryMatchSideKeywordBlock(content, pos, "Buy", out endLong, out innerLong))
-                {
-                    longText = innerLong.Trim();
-                    pos = endLong;
-                    continue;
-                }
-
-                if (TryMatchSideKeywordBlock(content, pos, "Short", out int endShort, out string innerShort)
-                    || TryMatchSideKeywordBlock(content, pos, "Sell", out endShort, out innerShort))
-                {
-                    shortText = innerShort.Trim();
-                    pos = endShort;
-                    continue;
-                }
-
-                if (TryMatchSideKeywordBlock(content, pos, "OnFlip", out int endFlip, out string innerFlip))
-                {
-                    onFlipParts.Add(innerFlip.Trim());
-                    pos = endFlip;
-                    continue;
-                }
-
-                int nextKeyword = FindNextSideKeywordIndex(content, pos);
-                int len = (nextKeyword < 0 ? content.Length : nextKeyword) - pos;
-                string part = content.Substring(pos, len).Trim();
-                pos = nextKeyword < 0 ? content.Length : nextKeyword;
-                if (part.Length == 0)
-                {
-                    continue;
-                }
-
-                if (StartsWithIgnoreCaseAt(part, 0, "OnFlip", out int flipNameLen)
-                    && flipNameLen < part.Length
-                    && part[flipNameLen] == '(')
-                {
-                    if (TryReadBalancedParenthesesContent(part, flipNameLen, out string flipInner))
-                    {
-                        onFlipParts.Add(flipInner.Trim());
-                        continue;
-                    }
-                }
-
-                sharedParts.Add(part);
-            }
-
-            sharedCombined = CombineSharedParts(sharedParts);
-        }
-
-        private static string CombineSharedParts(List<string> sharedParts)
-        {
-            if (sharedParts == null || sharedParts.Count == 0)
-            {
-                return "";
-            }
-
-            if (sharedParts.Count == 1)
-            {
-                return sharedParts[0];
-            }
-
-            return string.Join(" AND ", sharedParts);
-        }
-
-        private static void SkipWhitespace(string input, ref int pos)
-        {
-            while (pos < input.Length && char.IsWhiteSpace(input[pos]))
-            {
-                pos++;
-            }
-        }
-
-        private static bool TryMatchSideKeywordBlock(
-            string input,
-            int start,
-            string keyword,
-            out int endExclusive,
-            out string inner)
-        {
-            inner = "";
-            endExclusive = start;
-            if (!StartsWithIgnoreCaseAt(input, start, keyword, out int nameLen))
-            {
-                return false;
-            }
-
-            int pos = start + nameLen;
-            while (pos < input.Length && char.IsWhiteSpace(input[pos]))
-            {
-                pos++;
-            }
-
-            if (pos >= input.Length || input[pos] != '(')
-            {
-                return false;
-            }
-
-            if (!TryReadBalancedParenthesesContent(input, pos, out inner))
-            {
-                throw new InvalidOperationException("Не закрыты скобки в " + keyword + "(…).");
-            }
-
-            endExclusive = pos + inner.Length + 2;
-            return true;
-        }
-
-        private static int FindNextSideKeywordIndex(string input, int start)
-        {
-            int best = -1;
-            string[] keywords = { "Long", "Buy", "Short", "Sell", "OnFlip" };
-            for (int k = 0; k < keywords.Length; k++)
-            {
-                int idx = FindKeywordAtDepthZero(input, start, keywords[k]);
-                if (idx >= 0 && (best < 0 || idx < best))
-                {
-                    best = idx;
-                }
-            }
-
-            return best;
-        }
-
-        private static int FindKeywordAtDepthZero(string input, int start, string keyword)
-        {
-            int depth = 0;
-            for (int i = start; i < input.Length; i++)
-            {
-                char c = input[i];
-                if (c == '(')
-                {
-                    depth++;
-                    continue;
-                }
-
-                if (c == ')')
-                {
-                    depth = Math.Max(0, depth - 1);
-                    continue;
-                }
-
-                if (depth != 0)
-                {
-                    continue;
-                }
-
-                if (StartsWithIgnoreCaseAt(input, i, keyword, out int nameLen))
-                {
-                    if (i > start && char.IsLetterOrDigit(input[i - 1]))
-                    {
-                        continue;
-                    }
-
-                    int after = i + nameLen;
-                    if (after < input.Length && char.IsLetterOrDigit(input[after]))
-                    {
-                        continue;
-                    }
-
-                    while (after < input.Length && char.IsWhiteSpace(input[after]))
-                    {
-                        after++;
-                    }
-
-                    if (after < input.Length && input[after] == '(')
-                    {
-                        return i;
-                    }
-                }
-            }
-
-            return -1;
-        }
-
-        private LogicOnFlipSpec ParseOnFlipSpec(string content)
-        {
-            content = content?.Trim() ?? "";
-            if (content.Length == 0)
-            {
-                throw new InvalidOperationException("OnFlip(…): пустое содержимое.");
-            }
-
-            var spec = new LogicOnFlipSpec();
-            string[] parts = content.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-            string modeText = parts[0].Trim();
-            if (modeText.Equals("Open", StringComparison.OrdinalIgnoreCase))
-            {
-                spec.Mode = LogicOnFlipMode.Open;
-            }
-            else if (modeText.Equals("Flip", StringComparison.OrdinalIgnoreCase)
-                || modeText.Equals("Reverse", StringComparison.OrdinalIgnoreCase)
-                || modeText.Equals("Rev", StringComparison.OrdinalIgnoreCase))
-            {
-                spec.Mode = LogicOnFlipMode.Flip;
-            }
-            else if (modeText.Equals("Close", StringComparison.OrdinalIgnoreCase)
-                || modeText.Equals("CloseOnFlip", StringComparison.OrdinalIgnoreCase)
-                || modeText.Equals("true", StringComparison.OrdinalIgnoreCase))
-            {
-                spec.Mode = LogicOnFlipMode.Close;
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    "OnFlip(…): ожидается Open, Close или Flip, получено: " + modeText);
-            }
-
-            for (int i = 1; i < parts.Length; i++)
-            {
-                string part = parts[i].Trim();
-                int eq = part.IndexOf('=');
-                if (eq <= 0)
-                {
-                    continue;
-                }
-
-                spec.Params[part.Substring(0, eq).Trim()] = part.Substring(eq + 1).Trim();
-            }
-
-            return spec;
-        }
-
-        private LogicExpressionNode ParsePredicateExpression(string input)
-        {
-            List<string> orParts = SplitAtTopLevelLogicOperators(input, LogicCombineOp.Or);
-            if (orParts.Count > 1)
-            {
-                LogicExpressionNode node = ParsePredicateAndExpression(orParts[0]);
-                for (int i = 1; i < orParts.Count; i++)
-                {
-                    node = new LogicCombineNode(LogicCombineOp.Or, node, ParsePredicateAndExpression(orParts[i]));
-                }
-
-                return node;
-            }
-
-            return ParsePredicateAndExpression(input);
-        }
-
-        private LogicExpressionNode ParsePredicateAndExpression(string input)
-        {
-            List<string> andParts = SplitAtTopLevelLogicOperators(input, LogicCombineOp.And);
-            if (andParts.Count > 1)
-            {
-                LogicExpressionNode node = ParsePredicateNotExpression(andParts[0]);
-                for (int i = 1; i < andParts.Count; i++)
-                {
-                    node = new LogicCombineNode(LogicCombineOp.And, node, ParsePredicateNotExpression(andParts[i]));
-                }
-
-                return node;
-            }
-
-            return ParsePredicateNotExpression(input);
-        }
-
-        private LogicExpressionNode ParsePredicateNotExpression(string input)
-        {
-            string fragment = input?.Trim() ?? "";
-            int notCount = 0;
-            while (TryExtractLeadingNot(ref fragment))
-            {
-                notCount++;
-            }
-
-            LogicExpressionNode node = ParsePredicatePrimary(fragment);
-            for (int i = 0; i < notCount; i++)
-            {
-                node = new LogicNotNode(node);
-            }
-
-            return node;
-        }
-
-        private LogicExpressionNode ParsePredicatePrimary(string input)
-        {
-            string fragment = input?.Trim() ?? "";
-            if (fragment.Length >= 2
-                && fragment[0] == '('
-                && TryExtractOuterParentheses(fragment, out string inner)
-                && ContainsTopLevelLogicOperators(inner))
-            {
-                return ParsePredicateExpression(inner.Trim());
-            }
-
-            if (StartsWithIgnoreCaseAt(fragment, 0, "OnFlip", out int flipLen)
-                && flipLen < fragment.Length
-                && fragment[flipLen] == '('
-                && TryReadBalancedParenthesesContent(fragment, flipLen, out string flipInner))
-            {
-                int after = flipLen + flipInner.Length + 2;
-                string tail = fragment.Substring(after).Trim();
-                if (tail.Length > 0)
-                {
-                    throw new InvalidOperationException("OnFlip(…) должен быть отдельным фрагментом: " + fragment);
-                }
-
-                return new LogicOnFlipNode(ParseOnFlipSpec(flipInner));
-            }
-
-            return ParseIndicatorPredicateNode(fragment);
-        }
-
-        private LogicAtomNode ParseIndicatorPredicateNode(string input)
-        {
-            string fragment = input?.Trim() ?? "";
-            if (string.IsNullOrEmpty(fragment))
-            {
-                throw new InvalidOperationException("Пустой индикаторный предикат.");
-            }
-
-            var atom = new LogicAtom { RawFragment = fragment };
-            int notCount = 0;
-            while (TryExtractLeadingNot(ref fragment))
-            {
-                notCount++;
-            }
-
-            if (!TryGetIndicatorNamePrefix(fragment, 0, out string name, out int afterName))
-            {
-                throw new InvalidOperationException("Не найден индикатор в: " + input);
-            }
-
-            int pos = afterName;
-            while (pos < fragment.Length && char.IsWhiteSpace(fragment[pos]))
-            {
-                pos++;
-            }
-
-            if (pos >= fragment.Length || fragment[pos] != '(')
-            {
-                throw new InvalidOperationException("Ожидается Ind(параметры)(условие) в: " + input);
-            }
-
-            if (!TryReadBalancedParenthesesContent(fragment, pos, out string paramsBody))
-            {
-                throw new InvalidOperationException("Не закрыты скобки параметров в: " + input);
-            }
-
-            pos += paramsBody.Length + 2;
-            while (pos < fragment.Length && char.IsWhiteSpace(fragment[pos]))
-            {
-                pos++;
-            }
-
-            if (pos >= fragment.Length || fragment[pos] != '(')
-            {
-                throw new InvalidOperationException("Ожидается второй блок (условие) Ind(…)(…) в: " + input);
-            }
-
-            if (!TryReadBalancedParenthesesContent(fragment, pos, out string conditionBody))
-            {
-                throw new InvalidOperationException("Не закрыты скобки условия в: " + input);
-            }
-
-            pos += conditionBody.Length + 2;
-            string tail = fragment.Substring(pos).Trim();
-            if (tail.Length > 0)
-            {
-                throw new InvalidOperationException("Лишний текст после предиката: " + tail);
-            }
-
-            string signal = conditionBody.Trim();
-            atom.OpenSignal = signal;
-            atom.CloseSignal = signal;
-            for (int i = 0; i < notCount; i++)
-            {
-                atom.InvertSignals = !atom.InvertSignals;
-            }
-
-            string header = name + "(" + paramsBody + ")";
-            ParseIndicatorHeader(header, atom);
-            if (atom.Kind == LogicIndicatorKind.Unknown)
-            {
-                throw new InvalidOperationException("Неизвестный индикатор в: " + input);
-            }
-
-            ApplyDefaultParams(atom);
-            return new LogicAtomNode(atom);
-        }
-
-        public static List<LogicAtom> CollectAtomsFromV2(LogicV2Body body)
-        {
-            var result = new List<LogicAtom>();
-            if (body == null)
-            {
-                return result;
-            }
-
-            CollectAtomsFromNode(body.Op?.SharedRoot, result);
-            CollectAtomsFromNode(body.Op?.LongRoot, result);
-            CollectAtomsFromNode(body.Op?.ShortRoot, result);
-            CollectAtomsFromNode(body.Cl?.SharedRoot, result);
-            CollectAtomsFromNode(body.Cl?.LongRoot, result);
-            CollectAtomsFromNode(body.Cl?.ShortRoot, result);
-            return DeduplicateAtomsByIndicatorSignature(result);
-        }
-
-        private static void CollectAtomsFromNode(LogicExpressionNode node, List<LogicAtom> result)
-        {
-            if (node == null || result == null)
-            {
-                return;
-            }
-
-            if (node is LogicAtomNode atomNode && atomNode.Atom != null)
-            {
-                result.Add(atomNode.Atom);
-                return;
-            }
-
-            if (node is LogicCombineNode combine)
-            {
-                CollectAtomsFromNode(combine.Left, result);
-                CollectAtomsFromNode(combine.Right, result);
-                return;
-            }
-
-            if (node is LogicNotNode notNode)
-            {
-                CollectAtomsFromNode(notNode.Inner, result);
             }
         }
 
@@ -20028,22 +19046,9 @@ namespace OsEngine.Robots.Custom
                 string value = part.Substring(eq + 1).Trim();
                 if (string.Equals(key, "OnFlip", StringComparison.OrdinalIgnoreCase))
                 {
-                    string flipMode = value.Trim();
-                    if (flipMode.Equals("Flip", StringComparison.OrdinalIgnoreCase)
-                        || flipMode.Equals("Reverse", StringComparison.OrdinalIgnoreCase)
-                        || flipMode.Equals("Rev", StringComparison.OrdinalIgnoreCase))
-                    {
-                        spec.FlipOnRegimeMismatch = true;
-                        spec.CloseOnRegimeMismatch = false;
-                    }
-                    else
-                    {
-                        spec.CloseOnRegimeMismatch = flipMode.Equals("Close", StringComparison.OrdinalIgnoreCase)
-                            || flipMode.Equals("CloseOnFlip", StringComparison.OrdinalIgnoreCase)
-                            || flipMode.Equals("true", StringComparison.OrdinalIgnoreCase);
-                        spec.FlipOnRegimeMismatch = false;
-                    }
-
+                    spec.CloseOnRegimeMismatch = value.Equals("Close", StringComparison.OrdinalIgnoreCase)
+                        || value.Equals("CloseOnFlip", StringComparison.OrdinalIgnoreCase)
+                        || value.Equals("true", StringComparison.OrdinalIgnoreCase);
                     continue;
                 }
 
@@ -20138,13 +19143,10 @@ namespace OsEngine.Robots.Custom
                 throw new InvalidOperationException("Regime(…): поддерживается только LinReg.");
             }
 
-            if (!spec.CloseOnRegimeMismatch
-                && !spec.FlipOnRegimeMismatch
-                && !spec.BlockEntryBySide
-                && !spec.EntryFlatOnly)
+            if (!spec.CloseOnRegimeMismatch && !spec.BlockEntryBySide && !spec.EntryFlatOnly)
             {
                 throw new InvalidOperationException(
-                    "Regime(…): укажите OnFlip=Close или OnFlip=Flip, Entry=MatchSide и/или Entry=FlatOnly.");
+                    "Regime(…): укажите OnFlip=Close, Entry=MatchSide и/или Entry=FlatOnly.");
             }
         }
 
@@ -20230,20 +19232,6 @@ namespace OsEngine.Robots.Custom
             }
 
             atoms.Add(probe);
-        }
-
-        /// <summary>Строка в устаревшем формате v1 (Op[…]/Cl[…]/Side[S]) — парсер v2 не принимает.</summary>
-        private static bool LooksLikeLegacyV1Format(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return false;
-            }
-
-            return text.Contains("Op[", StringComparison.Ordinal)
-                || text.Contains("Cl[", StringComparison.Ordinal)
-                || text.IndexOf("Side[S]", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Side[SELL]", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>Проверяет, есть ли Regime(…) не в начале строки (недопустимо).</summary>
@@ -21614,97 +20602,6 @@ namespace OsEngine.Robots.Custom
             return LogicStopTakeHit.None;
         }
 
-        /// <summary>SL/TP на уровне строки v2 + ATR из атомов.</summary>
-        public static LogicStopTakeHit EvaluateStopTakeV2(
-            LogicV2Body body,
-            IReadOnlyList<LogicAtom> atoms,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            Side direction,
-            decimal entryPrice,
-            FindIndicatorHandler findIndicator)
-        {
-            if (body == null
-                || tab == null
-                || candles == null
-                || findIndicator == null
-                || candleIndex < 0
-                || candleIndex >= candles.Count
-                || entryPrice <= 0m)
-            {
-                return LogicStopTakeHit.None;
-            }
-
-            bool isLong = direction != Side.Sell;
-            decimal close = candles[candleIndex].Close;
-            LogicAtom atrAtom = FindFirstAtrAtom(atoms);
-            decimal? atrValue = TryGetAtrValue(atrAtom, tab, candleIndex, findIndicator);
-
-            decimal? stopPrice = null;
-            if (!string.IsNullOrWhiteSpace(body.StopLoss)
-                && TryParseStopTake(body.StopLoss, out ParsedStopTake parsedSl)
-                && parsedSl.Format != StopTakeFormat.None
-                && parsedSl.Format != StopTakeFormat.RiskMultiple)
-            {
-                stopPrice = TryComputeStopPrice(
-                    parsedSl,
-                    entryPrice,
-                    isLong,
-                    ResolveAtrValueForAtom(atrAtom, atrAtom, atrValue, tab, candleIndex, findIndicator));
-            }
-            else
-            {
-                stopPrice = ResolveAggregatedStopPrice(
-                    atoms,
-                    entryPrice,
-                    isLong,
-                    atrValue,
-                    tab,
-                    candleIndex,
-                    findIndicator,
-                    atrAtom);
-            }
-
-            decimal? takePrice = null;
-            if (!string.IsNullOrWhiteSpace(body.TakeProfit)
-                && TryParseStopTake(body.TakeProfit, out ParsedStopTake parsedTp)
-                && parsedTp.Format != StopTakeFormat.None)
-            {
-                takePrice = TryComputeTakePrice(
-                    parsedTp,
-                    entryPrice,
-                    isLong,
-                    stopPrice,
-                    ResolveAtrValueForAtom(atrAtom, atrAtom, atrValue, tab, candleIndex, findIndicator));
-            }
-            else
-            {
-                takePrice = ResolveAggregatedTakePrice(
-                    atoms,
-                    entryPrice,
-                    isLong,
-                    stopPrice,
-                    atrValue,
-                    tab,
-                    candleIndex,
-                    findIndicator,
-                    atrAtom);
-            }
-
-            if (stopPrice.HasValue && IsStopLossHit(isLong, close, stopPrice.Value))
-            {
-                return LogicStopTakeHit.StopLoss;
-            }
-
-            if (takePrice.HasValue && IsTakeProfitHit(isLong, close, takePrice.Value))
-            {
-                return LogicStopTakeHit.TakeProfit;
-            }
-
-            return LogicStopTakeHit.None;
-        }
-
         private static decimal? ResolveAggregatedStopPrice(
             IReadOnlyList<LogicAtom> atoms,
             decimal entry,
@@ -22016,241 +20913,6 @@ namespace OsEngine.Robots.Custom
             }
 
             return series.Values[candleIndex];
-        }
-    }
-
-    /// <summary>Вычисление Op/Cl формата v2 (Long/Short, общие предикаты, OnFlip).</summary>
-    public static class LogicV2ExpressionEvaluator
-    {
-        public delegate Aindicator FindIndicatorHandler(BotTabSimple tab, LogicAtom atom);
-
-        public static bool TryEvaluateOpen(
-            LogicV2Body body,
-            LogicRegimeSpec regimeDefaults,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            FindIndicatorHandler findIndicator,
-            out Side openSide)
-        {
-            openSide = Side.Buy;
-            if (body?.Op == null || !body.Op.HasAnyContent)
-            {
-                return false;
-            }
-
-            bool sharedOk = EvaluateShared(body.Op, tab, candles, candleIndex, findIndicator);
-            bool longOk = body.Op.LongRoot != null
-                && sharedOk
-                && EvaluateNode(body.Op.LongRoot, tab, candles, candleIndex, findIndicator);
-            bool shortOk = body.Op.ShortRoot != null
-                && sharedOk
-                && EvaluateNode(body.Op.ShortRoot, tab, candles, candleIndex, findIndicator);
-
-            if (longOk)
-            {
-                openSide = Side.Buy;
-                return true;
-            }
-
-            if (shortOk)
-            {
-                openSide = Side.Sell;
-                return true;
-            }
-
-            if (!sharedOk && body.Op.SharedRoot != null)
-            {
-                return false;
-            }
-
-            return EvaluateOnFlipOpenOnly(body, regimeDefaults, tab, candles, candleIndex, findIndicator, out openSide);
-        }
-
-        private static bool EvaluateOnFlipOpenOnly(
-            LogicV2Body body,
-            LogicRegimeSpec regimeDefaults,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            FindIndicatorHandler findIndicator,
-            out Side openSide)
-        {
-            openSide = Side.Buy;
-            LogicRegimeSpec spec = body.BuildEffectiveRegimeSpec(regimeDefaults, forClose: false);
-            if (!HasOnFlipMode(body.Op, LogicOnFlipMode.Open))
-            {
-                return false;
-            }
-
-            Aindicator indicator = findIndicator?.Invoke(tab, spec.CreateIndicatorProbeAtom());
-            if (indicator == null)
-            {
-                return false;
-            }
-
-            int sign = LogicRegimeEvaluator.GetSign(spec, indicator, candleIndex);
-            if (sign > 0)
-            {
-                openSide = Side.Buy;
-                return true;
-            }
-
-            if (sign < 0)
-            {
-                openSide = Side.Sell;
-                return true;
-            }
-
-            return false;
-        }
-
-        public static bool EvaluateClose(
-            LogicV2Body body,
-            Side positionSide,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            FindIndicatorHandler findIndicator)
-        {
-            if (body?.Cl == null || !body.Cl.HasAnyContent)
-            {
-                return false;
-            }
-
-            LogicExpressionEvaluator.FindIndicatorHandler resolveIndicator =
-                (BotTabSimple t, LogicAtom atom) => findIndicator(t, atom);
-
-            if (body.Cl.SharedRoot != null
-                && !LogicExpressionEvaluator.EvaluateClose(
-                    body.Cl.SharedRoot,
-                    tab,
-                    candles,
-                    candleIndex,
-                    resolveIndicator))
-            {
-                return false;
-            }
-
-            LogicExpressionNode sideRoot = positionSide == Side.Sell ? body.Cl.ShortRoot : body.Cl.LongRoot;
-            if (sideRoot == null)
-            {
-                return false;
-            }
-
-            return LogicExpressionEvaluator.EvaluateClose(
-                sideRoot,
-                tab,
-                candles,
-                candleIndex,
-                resolveIndicator);
-        }
-
-        public static Side ResolveDefaultEntrySide(LogicV2Body body)
-        {
-            if (body?.Op?.LongRoot != null)
-            {
-                return Side.Buy;
-            }
-
-            if (body?.Op?.ShortRoot != null)
-            {
-                return Side.Sell;
-            }
-
-            return Side.Buy;
-        }
-
-        private static bool EvaluateShared(
-            LogicSignalBlock block,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            FindIndicatorHandler findIndicator)
-        {
-            if (block?.SharedRoot == null)
-            {
-                return true;
-            }
-
-            return EvaluateNode(block.SharedRoot, tab, candles, candleIndex, findIndicator);
-        }
-
-        private static bool HasOnFlipMode(LogicSignalBlock block, LogicOnFlipMode mode)
-        {
-            if (block?.OnFlipSpecs == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < block.OnFlipSpecs.Count; i++)
-            {
-                if (block.OnFlipSpecs[i]?.Mode == mode)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool EvaluateNode(
-            LogicExpressionNode node,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            FindIndicatorHandler findIndicator)
-        {
-            if (node == null)
-            {
-                return false;
-            }
-
-            if (node is LogicOnFlipNode)
-            {
-                return true;
-            }
-
-            if (node is LogicAtomNode atomNode)
-            {
-                return EvaluateAtom(atomNode.Atom, tab, candles, candleIndex, findIndicator);
-            }
-
-            if (node is LogicCombineNode combine)
-            {
-                bool left = EvaluateNode(combine.Left, tab, candles, candleIndex, findIndicator);
-                bool right = EvaluateNode(combine.Right, tab, candles, candleIndex, findIndicator);
-                return combine.Op == LogicCombineOp.And ? left && right : left || right;
-            }
-
-            if (node is LogicNotNode notNode)
-            {
-                return !EvaluateNode(notNode.Inner, tab, candles, candleIndex, findIndicator);
-            }
-
-            return false;
-        }
-
-        private static bool EvaluateAtom(
-            LogicAtom atom,
-            BotTabSimple tab,
-            List<Candle> candles,
-            int candleIndex,
-            FindIndicatorHandler findIndicator)
-        {
-            if (atom == null || string.IsNullOrWhiteSpace(atom.OpenSignal))
-            {
-                return false;
-            }
-
-            Aindicator indicator = findIndicator(tab, atom);
-            if (indicator == null)
-            {
-                return false;
-            }
-
-            bool result = LogicSignalEvaluator.Evaluate(atom.OpenSignal, atom, indicator, candles, tab, candleIndex);
-            return atom.InvertSignals ? !result : result;
         }
     }
 
@@ -22577,54 +21239,29 @@ namespace OsEngine.Robots.Custom
                 return 20;
             }
 
-            int baseBars;
             switch (atom.Kind)
             {
                 case LogicIndicatorKind.Sma:
-                    baseBars = atom.GetIntParam("L", 100);
-                    break;
+                    return atom.GetIntParam("L", 100);
                 case LogicIndicatorKind.Stoch:
-                    baseBars = atom.GetIntParam("P1", 14) + atom.GetIntParam("P2", 3) + atom.GetIntParam("P3", 3);
-                    break;
+                    return atom.GetIntParam("P1", 14) + atom.GetIntParam("P2", 3) + atom.GetIntParam("P3", 3);
                 case LogicIndicatorKind.Atr:
-                    baseBars = atom.GetIntParam("L", 14) + atom.GetIntParam("Lb", 5);
-                    break;
+                    return atom.GetIntParam("L", 14) + atom.GetIntParam("Lb", 5);
                 case LogicIndicatorKind.Rsi:
-                    baseBars = atom.GetIntParam("L", 14);
-                    break;
+                    return atom.GetIntParam("L", 14);
                 case LogicIndicatorKind.Cci:
-                    baseBars = atom.GetIntParam("L", 20) + 1;
-                    break;
+                    return atom.GetIntParam("L", 20) + 1;
                 case LogicIndicatorKind.Macd:
-                    baseBars = atom.GetIntParam("Slow", 26) + atom.GetIntParam("Signal", 9);
-                    break;
+                    return atom.GetIntParam("Slow", 26) + atom.GetIntParam("Signal", 9);
                 case LogicIndicatorKind.LinReg:
-                    baseBars = atom.GetLinRegLength() + atom.GetIntParam("SlopeLb", 3);
-                    break;
+                    return atom.GetLinRegLength() + atom.GetIntParam("SlopeLb", 3);
                 case LogicIndicatorKind.Bollinger:
-                    baseBars = atom.GetIntParam("L", 100);
-                    break;
+                    return atom.GetIntParam("L", 100);
                 case LogicIndicatorKind.Momentum:
-                    baseBars = atom.GetIntParam("L", 15);
-                    break;
+                    return atom.GetIntParam("L", 15);
                 default:
-                    baseBars = 20;
-                    break;
+                    return 20;
             }
-
-            return baseBars + GetValueDynamicsExtraBars(atom);
-        }
-
-        private static int GetValueDynamicsExtraBars(LogicAtom atom)
-        {
-            if (atom == null)
-            {
-                return 1;
-            }
-
-            return Math.Max(
-                Math.Max(1, atom.GetIntParam("Streak", 1)),
-                Math.Max(1, atom.GetIntParam("ChgLb", 1)));
         }
 
         /// <summary>
@@ -22778,11 +21415,6 @@ namespace OsEngine.Robots.Custom
                 return EvaluateAtrGrowth(atom, indicator, candleIndex, signal);
             }
 
-            if (TryEvaluateValueDynamicsSignal(signal, atom, indicator, candleIndex, out bool dynamicsResult))
-            {
-                return dynamicsResult;
-            }
-
             switch (signal)
             {
                 case "AB":
@@ -22838,301 +21470,6 @@ namespace OsEngine.Robots.Custom
         {
             int sign = LogicRegimeEvaluator.GetSignFromAtom(atom, indicator, candleIndex);
             return requireUp ? sign > 0 : sign < 0;
-        }
-
-        /// <summary>ValUp/ValDn/Chg — динамика основной серии индикатора (не цены).</summary>
-        private static bool TryEvaluateValueDynamicsSignal(
-            string signal,
-            LogicAtom atom,
-            Aindicator indicator,
-            int candleIndex,
-            out bool result)
-        {
-            result = false;
-
-            if (TryEvaluateValueChangePercentSignal(signal, atom, indicator, candleIndex, out result))
-            {
-                return true;
-            }
-
-            if (TryEvaluateValueDirectionSignal(signal, atom, indicator, candleIndex, out result))
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private static int GetPrimaryValueSeriesIndex(LogicIndicatorKind kind)
-        {
-            switch (kind)
-            {
-                case LogicIndicatorKind.Macd:
-                case LogicIndicatorKind.LinReg:
-                    return 1;
-                default:
-                    return 0;
-            }
-        }
-
-        private static bool TryGetPrimaryIndicatorValue(
-            LogicAtom atom,
-            Aindicator indicator,
-            int candleIndex,
-            out decimal value)
-        {
-            value = 0m;
-            if (atom == null || indicator == null)
-            {
-                return false;
-            }
-
-            if (atom.Kind == LogicIndicatorKind.Bollinger)
-            {
-                if (indicator.DataSeries == null || indicator.DataSeries.Count < 2)
-                {
-                    return false;
-                }
-
-                decimal up = SeriesValueAt(indicator, 0, candleIndex);
-                decimal down = SeriesValueAt(indicator, 1, candleIndex);
-                if (up == 0m || down == 0m)
-                {
-                    return false;
-                }
-
-                value = (up + down) / 2m;
-                return true;
-            }
-
-            int seriesIndex = GetPrimaryValueSeriesIndex(atom.Kind);
-            value = SeriesValueAt(indicator, seriesIndex, candleIndex);
-            return value != 0m;
-        }
-
-        private static decimal ComputePercentChange(decimal past, decimal current)
-        {
-            if (past == 0m)
-            {
-                return 0m;
-            }
-
-            return (current - past) / Math.Abs(past) * 100m;
-        }
-
-        private static bool TryParseValueDirectionSignal(
-            string signal,
-            LogicAtom atom,
-            out bool requireUp,
-            out int streak)
-        {
-            requireUp = true;
-            streak = Math.Max(1, atom.GetIntParam("Streak", 1));
-
-            if (signal == "RISE" || signal == "VALUP")
-            {
-                return true;
-            }
-
-            if (signal == "FALL" || signal == "VALDN")
-            {
-                requireUp = false;
-                return true;
-            }
-
-            if (signal.StartsWith("VALUP", StringComparison.Ordinal) && signal.Length > 5
-                && int.TryParse(
-                    signal.Substring(5),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int upStreak)
-                && upStreak >= 1)
-            {
-                streak = upStreak;
-                return true;
-            }
-
-            if (signal.StartsWith("RISE", StringComparison.Ordinal) && signal.Length > 4
-                && int.TryParse(
-                    signal.Substring(4),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int riseStreak)
-                && riseStreak >= 1)
-            {
-                streak = riseStreak;
-                return true;
-            }
-
-            if (signal.StartsWith("VALDN", StringComparison.Ordinal) && signal.Length > 5
-                && int.TryParse(
-                    signal.Substring(5),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int dnStreak)
-                && dnStreak >= 1)
-            {
-                requireUp = false;
-                streak = dnStreak;
-                return true;
-            }
-
-            if (signal.StartsWith("FALL", StringComparison.Ordinal) && signal.Length > 4
-                && int.TryParse(
-                    signal.Substring(4),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int fallStreak)
-                && fallStreak >= 1)
-            {
-                requireUp = false;
-                streak = fallStreak;
-                return true;
-            }
-
-            return false;
-        }
-
-        private static bool TryEvaluateValueDirectionSignal(
-            string signal,
-            LogicAtom atom,
-            Aindicator indicator,
-            int candleIndex,
-            out bool result)
-        {
-            result = false;
-            if (!TryParseValueDirectionSignal(signal, atom, out bool requireUp, out int streak))
-            {
-                return false;
-            }
-
-            streak = Math.Max(1, streak);
-            decimal minPct = atom.GetDecimalParam("ValDead", 0m);
-
-            for (int i = 0; i < streak; i++)
-            {
-                int idx = candleIndex - i;
-                int prevIdx = idx - 1;
-                if (prevIdx < 0
-                    || !TryGetPrimaryIndicatorValue(atom, indicator, idx, out decimal cur)
-                    || !TryGetPrimaryIndicatorValue(atom, indicator, prevIdx, out decimal prev))
-                {
-                    result = false;
-                    return true;
-                }
-
-                if (minPct > 0m)
-                {
-                    decimal pct = ComputePercentChange(prev, cur);
-                    if (requireUp && pct < minPct)
-                    {
-                        result = false;
-                        return true;
-                    }
-
-                    if (!requireUp && pct > -minPct)
-                    {
-                        result = false;
-                        return true;
-                    }
-                }
-                else if (requireUp && !(cur > prev))
-                {
-                    result = false;
-                    return true;
-                }
-                else if (!requireUp && !(cur < prev))
-                {
-                    result = false;
-                    return true;
-                }
-            }
-
-            result = true;
-            return true;
-        }
-
-        private static bool TryEvaluateValueChangePercentSignal(
-            string signal,
-            LogicAtom atom,
-            Aindicator indicator,
-            int candleIndex,
-            out bool result)
-        {
-            result = false;
-            if (string.IsNullOrEmpty(signal) || !signal.StartsWith("CHG", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            string rest = signal.Substring(3);
-            int lookback = Math.Max(1, atom.GetIntParam("ChgLb", 1));
-            int digitLen = 0;
-            while (digitLen < rest.Length && char.IsDigit(rest[digitLen]))
-            {
-                digitLen++;
-            }
-
-            if (digitLen > 0
-                && int.TryParse(
-                    rest.Substring(0, digitLen),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int parsedLookback))
-            {
-                lookback = Math.Max(1, parsedLookback);
-                rest = rest.Substring(digitLen);
-            }
-
-            bool greaterOrEqual;
-            if (rest.StartsWith(">=", StringComparison.Ordinal))
-            {
-                greaterOrEqual = true;
-                rest = rest.Substring(2);
-            }
-            else if (rest.StartsWith("<=", StringComparison.Ordinal))
-            {
-                greaterOrEqual = false;
-                rest = rest.Substring(2);
-            }
-            else
-            {
-                return false;
-            }
-
-            decimal threshold;
-            if (string.Equals(rest, "CHGMIN", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(rest, "MIN", StringComparison.OrdinalIgnoreCase))
-            {
-                threshold = atom.GetDecimalParam("ChgMin", 0m);
-            }
-            else if (string.Equals(rest, "CHGMAX", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(rest, "MAX", StringComparison.OrdinalIgnoreCase))
-            {
-                threshold = atom.GetDecimalParam("ChgMax", atom.GetDecimalParam("ChgMin", 0m));
-            }
-            else
-            {
-                rest = rest.Trim().TrimEnd('%');
-                if (!decimal.TryParse(rest, NumberStyles.Number, CultureInfo.InvariantCulture, out threshold))
-                {
-                    return false;
-                }
-            }
-
-            int pastIdx = candleIndex - lookback;
-            if (pastIdx < 0
-                || !TryGetPrimaryIndicatorValue(atom, indicator, candleIndex, out decimal current)
-                || !TryGetPrimaryIndicatorValue(atom, indicator, pastIdx, out decimal past))
-            {
-                result = false;
-                return true;
-            }
-
-            decimal pct = ComputePercentChange(past, current);
-            threshold = Math.Abs(threshold);
-            result = greaterOrEqual ? pct >= threshold : pct <= -threshold;
-            return true;
         }
 
         /// <summary>Нормализует код сигнала: trim, без пробелов, upper case.</summary>
@@ -23418,7 +21755,7 @@ namespace OsEngine.Robots.Custom
     public static class MultiLogicHelpBuilder
     {
         /// <summary>Версия HTML-справки; при изменении структуры или текста — увеличить (форсирует перезапись файла).</summary>
-        private const string LogicHelpFormatVersion = "8";
+        private const string LogicHelpFormatVersion = "7";
 
         /// <summary>Текст справки (plain) — источник для HTML; также для отладки.</summary>
         public static string BuildDefaultHelpText()
@@ -23450,8 +21787,6 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Entry=MatchSide  — Buy при наклоне вверх, Sell вниз; во флэте входа нет");
             sb.AppendLine("   Entry=FlatOnly   — вход только во флэте (|Δ| ≤ SlopeDead); при выходе из флэта — RegimeFlip");
             sb.AppendLine("   OnFlip=Close     — закрыть, если наклон против Side (MatchSide) или вышли из флэта (FlatOnly)");
-            sb.AppendLine("   OnFlip=Flip      — переворот: закрыть и сразу открыть по новому наклону (Buy при sign>0, Sell при sign<0);");
-            sb.AppendLine("                    во флэте (sign=0) — только закрытие, если сработал OnFlat=Close");
             sb.AppendLine("   OnFlat=Close     — MatchSide: закрыть позицию во флэте; OnFlat=Keep — не закрывать во флэте (FlatOnly)");
             sb.AppendLine("   SlopeLb=5        — сравнить центр канала (серия 1) с центром N свечей назад");
             sb.AppendLine("   SlopeDead=0.05%  — мёртвая зона |Δцентра|; внутри — флэт");
@@ -23461,37 +21796,41 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   L2/L4: Regime(…;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) — вход только во флэте; выход при тренде.");
             sb.AppendLine("   SlopeDead и OnFlat в defaults не заданы — можно добавить вручную (см. параметры Regime выше).");
             sb.AppendLine();
-            sb.AppendLine("1) Формат v2 — Op(…) и Cl(…) с блоками Long / Short:");
-            sb.AppendLine("   Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide)");
-            sb.AppendLine("   Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk)))");
-            sb.AppendLine("   Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo)) OnFlip(Close)) SL[2%] TP[6%] Note(trend)");
-            sb.AppendLine("   Индикатор: Ind(параметры)(условие) — 1-я скобка: настройка, 2-я: сигнал (Ab, K>=10, ValUp, &&, ||, !).");
-            sb.AppendLine("   Общие фильтры до Long/Short: Op(ATR(14;Gr=3%;Lb=5)(GrOk) Long(…)) — один экземпляр ATR на графике.");
-            sb.AppendLine("   Long приоритетнее Short, если оба истинны. Buy/Sell — синонимы Long/Short.");
-            sb.AppendLine("   OnFlip в Cl/Op: Close | Flip | Open; параметры (;Entry=…;OnFlat=…) приоритетнее Regime(…).");
-            sb.AppendLine("   Параметры управления (@…): @Strict, @LR — ссылки на параметры робота на вкладке «Логики».");
+            sb.AppendLine("1) Составная логика (скобки обязательны вокруг каждого фрагмента):");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && (Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45])");
+            sb.AppendLine("   (SMA(100) Op[Ab]) OR (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("   (SMA(100) Op[Ab]) || (SMA(100) Side[S] Op[Bl] Cl[Ab])");
+            sb.AppendLine("   NOT LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]  — инверсия Op/Cl атома (не Buy↔Sell)");
+            sb.AppendLine("   (SMA(100) Op[Ab] Cl[Bl]) && NOT (LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo])");
+            sb.AppendLine("   Приоритет между фрагментами: || / OR, затем && / AND, затем NOT / !, затем атом.");
+            sb.AppendLine("   Подробно — раздел «1a) Логические операторы» ниже.");
             sb.AppendLine();
-            sb.AppendLine("1a) Логические операторы внутри Long(…) / Short(…) и общих предикатов:");
             AppendLogicOperatorsHelp(sb);
-            sb.AppendLine("2) Параметры индикатора (общие правила):");
+            sb.AppendLine("2) Один атом (скобки необязательны):");
+            sb.AppendLine("   <Индикатор>(параметры) [Side:L|S] Op[вход] Cl[выход] [SL[…]] [TP[…]] Note(пояснение)");
+            sb.AppendLine("   NOT / ! / NOT- перед именем индикатора — инверсия Op/Cl (true↔false), Side не меняется.");
+            sb.AppendLine("   Note(…) — только для человека, на исполнение и график не влияет. Лучше в конце строки.");
+            sb.AppendLine("   (Парсер также понимает устаревшие теги Коммент(…) и Cm(…).)");
+            sb.AppendLine();
+            sb.AppendLine("3) Параметры индикатора (общие правила):");
             sb.AppendLine("   позиционно: Stoch(14-3-3), SMA(100), ATR(14;+3%;@5)");
             sb.AppendLine("   именованно: Stoch(K1=14,K2=3,D=3,Lmin=55,Smax=45), SMA(L=100,Src=Close)");
             sb.AppendLine();
-            sb.AppendLine("3) Условия во 2-й скобке Ind(…)(условие):");
+            sb.AppendLine("4) Сигналы Op / Cl (как TrendMultiIndicatorScreener):");
             sb.AppendLine("   Ab — close выше линии; Bl — close ниже; GrOk — ATR вырос (фильтр);");
             sb.AppendLine("   K>=55 / K<=45 — стохастик; K>=Lmin / K<=Smax — пороги из параметров;");
             sb.AppendLine("   CCI>=100 / CCI<=-100 — CCI (пороги Lmin/Smax в строке);");
             sb.AppendLine("   Macd>Sig / Macd<Sig — линия MACD выше/ниже сигнальной;");
-            sb.AppendLine("   AbUp / BlUp — close выше/ниже верхней линии LinReg.");
-            sb.AppendLine("   ValUp / ValDn / Chg>=0.05% — динамика значения индикатора.");
-            sb.AppendLine("   Составные условия с !, NOT, &&, || — см. раздел «1a)».");
+            sb.AppendLine("   AbUp / BlUp — close выше/ниже верхней линии LinReg; Cl[-] — отдельного Cl нет (ATR: на выходе всё равно Op[GrOk]).");
+            sb.AppendLine("   Составные Op/Cl с !, NOT, &&, || — см. раздел «1a) Логические операторы».");
             sb.AppendLine();
-            sb.AppendLine("4) SL / TP (на уровне строки, после Cl):");
+            sb.AppendLine("5) SL / TP (необязательно, в той же строке):");
             sb.AppendLine("   SL[2%] TP[6%]  — процент от входа; SL[1.5ATR]; TP[2R] (R — кратность к расстоянию SL).");
             sb.AppendLine("   В одной логике несколько атомов: самый жёсткий SL, самый дальний TP.");
             sb.AppendLine("   ATR для SL[…ATR] — из первого ATR-атома той же логики.");
             sb.AppendLine();
-            sb.AppendLine("5) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.");
+            sb.AppendLine("6) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.");
             sb.AppendLine("   Непустая включённая логика — её индикаторы добавляются в общий набор.");
             sb.AppendLine("   Одинаковые индикатор с теми же параметрами в разных логиках — один экземпляр на графике.");
             sb.AppendLine("   Другие параметры — отдельный индикатор. Пустые/Disabled логики индикаторы не добавляют.");
@@ -23511,7 +21850,6 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("7) СПРАВОЧНИК ИНДИКАТОРОВ — как записывать (полный набор)");
             sb.AppendLine("================================================================================");
             sb.AppendLine();
-            AppendValueDynamicsHelp(sb);
             AppendSmaHelp(sb);
             AppendStochHelp(sb);
             AppendAtrHelp(sb);
@@ -23575,9 +21913,6 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   || или OR  — достаточно одного условия");
             sb.AppendLine("   Приоритет внутри Op/Cl: ||, затем &&, затем !/NOT, затем код сигнала.");
             sb.AppendLine("   Скобки внутри Op/Cl: Op[(AbUp||AbLo) && !BlLo].");
-            sb.AppendLine("     Op[Ab && ValUp]           — close > SMA и значение SMA выросло к прошлой свече");
-            sb.AppendLine("     Op[Bl && ValDn]           — close < SMA и SMA уменьшилась");
-            sb.AppendLine("     Cl[Bl || ValDn]           — выход: цена ниже SMA или SMA падает");
             sb.AppendLine();
             sb.AppendLine("   Примеры внутри Op/Cl (LinReg):");
             sb.AppendLine("     Op[AbUp]                  — close выше верхней линии");
@@ -24380,32 +22715,6 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine();
         }
 
-        /// <summary>Общие сигналы динамики значения индикатора (ValUp/Chg) для всех типов.</summary>
-        private static void AppendValueDynamicsHelp(StringBuilder sb)
-        {
-            sb.AppendLine("--- Динамика значения индикатора (ValUp / Chg — для SMA, RSI, CCI, MACD, …) ---");
-            sb.AppendLine("Сравнивается основная серия индикатора (не close): SMA→линия SMA, MACD→линия MACD, Boll→середина полос, LinReg→центр.");
-            sb.AppendLine("Параметры в строке атома (только логика, не на график):");
-            sb.AppendLine("  ;Streak=2       — ValUp/ValDn: N свечей подряд роста/падения (или ValUp2 / ValDn3 в Op[…])");
-            sb.AppendLine("  ;ValDead=0.05%  — минимальный |% изменения| за одну свечу для ValUp/ValDn");
-            sb.AppendLine("  ;ChgLb=2        — окно для Chg (по умолчанию 1; Chg2>=… — явно 2 свечи)");
-            sb.AppendLine("  ;ChgMin=0.1%    — порог для Op[Chg>=ChgMin] / Cl[Chg<=ChgMin]");
-            sb.AppendLine("Сигналы (в Op[…] и Cl[…], можно с && / ||):");
-            sb.AppendLine("  ValUp / Rise    — значение выросло к прошлой свече");
-            sb.AppendLine("  ValDn / Fall    — значение уменьшилось");
-            sb.AppendLine("  ValUp2 / ValDn3 — рост/падение N свечей подряд");
-            sb.AppendLine("  Chg>=0.05%      — рост ≥ 0.05% за ChgLb свечей (Chg2>=0.1% — за 2 свечи)");
-            sb.AppendLine("  Chg<=-0.05%     — падение ≥ 0.05% за окно");
-            sb.AppendLine("  Chg>=ChgMin     — порог из ;ChgMin=… в атоме");
-            sb.AppendLine("LinReg: Op[SlopeUp/Dn] — наклон центра за SlopeLb с мёртвой зоной; ValUp — только vs 1 свеча.");
-            sb.AppendLine("Примеры:");
-            sb.AppendLine("  L1 тренд:  (SMA(100) Op[Ab && ValUp] Cl[Bl || ValDn]) AND …");
-            sb.AppendLine("  L3 шорт:   (SMA(100) Side[S] Op[Bl && ValDn] Cl[Ab || ValUp]) AND …");
-            sb.AppendLine("  MACD:      MACD(12,26,9) Op[Macd>Sig && ValUp] Cl[Macd<Sig || ValDn]");
-            sb.AppendLine("  RSI %:     RSI(14;ChgLb=2;ChgMin=0.5%) Op[RSI>=55 && Chg>=ChgMin] Cl[RSI<=45]");
-            sb.AppendLine();
-        }
-
         /// <summary>Добавляет в справку раздел по SMA.</summary>
         private static void AppendSmaHelp(StringBuilder sb)
         {
@@ -24417,12 +22726,11 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("  SMA(L=100,Src=Close)        — длина и источник (Close)");
             sb.AppendLine("Сигналы:");
             sb.AppendLine("  Op[Ab]  — close > SMA (лонг);  Cl[Bl] — close < SMA (выход из лонга)");
-            sb.AppendLine("  Op[Ab && ValUp]  — close > SMA и линия SMA растёт (см. раздел ValUp/Chg)");
-            sb.AppendLine("  Side[S] Op[Bl && ValDn] Cl[Ab || ValUp] — шорт: цена ниже SMA и SMA падает");
+            sb.AppendLine("  Side[S] Op[Bl] Cl[Ab]       — шорт: close < SMA / выход close > SMA");
             sb.AppendLine("Примеры:");
-            sb.AppendLine("  Тренд:      SMA(100) Op[Ab && ValUp] Cl[Bl || ValDn] SL[2%] TP[6%] Note(trend)");
-            sb.AppendLine("  Антитренд:  SMA(100) Side[S] Op[Bl && ValDn] Cl[Ab || ValUp] Note(counter-trend)");
-            sb.AppendLine("  С ATR:      (SMA(100) Op[Ab && ValUp] Cl[Bl]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
+            sb.AppendLine("  Тренд:      SMA(100) Op[Ab] Cl[Bl] SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("  Антитренд:  SMA(100) Side[S] Op[Bl] Cl[Ab] SL[2%] TP[6%] Note(counter-trend)");
+            sb.AppendLine("  С ATR:      (SMA(100) Op[Ab] Cl[Bl]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-])");
             sb.AppendLine();
         }
 

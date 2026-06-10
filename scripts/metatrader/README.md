@@ -6,10 +6,9 @@
 
 ### Перенесено
 
-- 4 слота логики L1–L4 (строки v2 по умолчанию как в OsEngine)
+- 4 слота логики L1–L4 (строки по умолчанию как в OsEngine)
 - Токены `@LR` → `InpLinRegLen`, `@Strict` → `InpStrictness` (1…5)
-- Формат v2: `Op(Long/Short(Ind(парам)(условие) …))` `Cl(… OnFlip(Close|Flip|Open))`
-- `Disabled`, `Strict(@Strict|4)`, `Regime(LinReg;…)`, `Entry=MatchSide` / `FlatOnly`; OnFlip в Cl приоритетнее Regime
+- `Disabled`, `Strict(@Strict|4)`, `Regime(LinReg;…)`, `Entry=MatchSide` / `FlatOnly`, `OnFlip=Close`
 - Масштабирование порогов Lmin/Smax/Gr/Dev/SlopeDead и Op/Cl при разборе (strict≠3)
 - Атомы: SMA, LinReg, ATR, CCI, MACD, Stochastic, **RSI**, **VWAP**, **Bollinger**; Op/Cl (`Ab`, `AbMid`, `BlMid`, `RSI>=`, …)
 - Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose

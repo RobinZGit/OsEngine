@@ -1,26 +1,33 @@
 //+------------------------------------------------------------------+
 //|                                              MultiLogic.mq5      |
 //|  Порт OsEngine: Custom/Robots/MultiLogic.cs (упрощённый)         |
-//|  Один символ графика; 4 слота логики L1–L4; формат v2 Op/Cl.     |
+//|  Один символ графика; 4 слота логики L1–L4; строки Op/Cl/Regime. |
 //+------------------------------------------------------------------+
 // УСТАНОВКА: MQL5/Experts/ → Compile (F7) → на график → Algo Trading.
 //
 // ПЕРЕНЕСЕНО
-//   • 4 слота «Логика N» (строки v2 как в OsEngine, @LR, @Strict)
-//   • Op(Long/Short(Ind(параметры)(условие) …)) Cl(… OnFlip(Close|Flip|Open))
-//   • Общие индикаторы до Long/Short; Long приоритетнее Short
-//   • Regime Entry=MatchSide / FlatOnly; OnFlip в Cl приоритетнее Regime
-//   • Op/Cl сигналы: Ab, Bl, AbUp, GrOk, Macd>Sig, CCI>=, K<=, ValUp, …
-//   • Strict 1…5, инверсия логики, Regime Off/On/OnlyLong/…
-//   • Общепортфельный SL/TP, просадка от пика, пауза после пика
+//   • 4 слота «Логика N» (строки как в OsEngine, @LR → InpLinRegLen, @Strict → InpStrictness)
+//   • Парсер: Disabled, Strict(@Strict|1…5), Regime(LinReg;…), AND, атомы …
+//   • Op/Cl: Ab, Bl, AbUp, BlLo, GrOk, Macd>Sig, CCI>=, K<=, RSI>=, SlopeUp, …
+//   • Regime Entry=MatchSide / FlatOnly, OnFlip=Close, SlopeDead
+//   • Инверсия логики, Regime Off/On/OnlyLong/OnlyShort/OnlyClose
+//   • Общепортфельный SL/TP (% от equity, high-water ref; отрицательный equity допустим)
+//   • Просадка от пика (% от max equity, только закрытие; пик может быть < 0)
+//   • Пауза входов после значительного пика (годовая доходность впадина→пик)
+//   • Инверсия: Buy↔Sell и Op↔Cl (как OsEngine / TMIS)
+//   • Приоритет входа: L1 → L2 → L3 → L4 (упрощённая металогика)
 //
-// НЕ ПЕРЕСЕНОСЕНО: HTML-отчёт, металогика PnlSMA, OR/NOT внутри блоков (кроме OR в Cl)
+// НЕ ПЕРЕНЕСЕНО (только OsEngine)
+//   • HTML-отчёт, кнопки GUI, импорт/рандом логик, MOEX-скринер, много вкладок
+//   • Металогика PnlSMA / распределение Volume, shadow-позиции, FAKE2
+//   • Полный OR/NOT в строке, SL[…]/TP[…] в логике, каталог трендов, оптимизатор
+//   • OR внутри Op[…] (кроме простых кодов), Note(…), Regime(Auto)
 //
 // СИГНАЛЫ: только на ЗАКРЫТОЙ свече (shift=1).
 //+------------------------------------------------------------------+
 #property copyright "OsEngine MultiLogic port"
-#property version   "1.03"
-#property description "MultiLogic v2: Op(Long/Short) Cl(OnFlip). See file header."
+#property version   "1.02"
+#property description "MultiLogic: 4 logic slots, Regime, portfolio stopper. See file header."
 
 #include <Trade/Trade.mqh>
 
@@ -44,7 +51,7 @@ input ulong  InpMagic = 20260608;
 input int    InpSlippagePoints = 10;
 
 input group "=== Линейная регрессия (@LR в строках) ==="
-input int InpLinRegLen = 10;
+input int InpLinRegLen = 50;
 
 input group "=== Строгость (@Strict в строках) ==="
 input int InpStrictness = 3;  // 1…5 (3 — пороги в тексте без масштабирования)
@@ -53,35 +60,39 @@ input group "=== Логика 1 (лонг-тренд по умолчанию) ==
 input bool   InpL1Enable = true;
 input string InpLogic1 =
    "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
-   "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
-   "CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) "
-   "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) "
-   "Note(lon-trend)";
+   "(SMA(100) Op[Ab] Cl[Bl]) AND "
+   "(LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]) AND "
+   "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+   "(CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND "
+   "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])";
 
 input group "=== Логика 2 (лонг-боковик) ==="
 input bool   InpL2Enable = true;
 input string InpLogic2 =
    "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
-   "Op(Long(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig))) "
-   "Cl(Long(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) "
-   "Note(lon-bokovik)";
+   "(SMA(100) Op[Ab] Cl[Bl]) AND "
+   "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND "
+   "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+   "(MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])";
 
 input group "=== Логика 3 (шорт-тренд) ==="
 input bool   InpL3Enable = true;
 input string InpLogic3 =
    "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
-   "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
-   "CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) "
-   "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) "
-   "Note(short-trend)";
+   "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+   "(LinReg(@LR;Dev=2) Op[BlLo] Cl[AbUp]) AND "
+   "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+   "(CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND "
+   "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])";
 
 input group "=== Логика 4 (шорт-боковик) ==="
 input bool   InpL4Enable = true;
 input string InpLogic4 =
    "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
-   "Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) "
-   "Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) "
-   "Note(short-bokovik)";
+   "(SMA(100) Side[S] Op[Bl] Cl[Ab]) AND "
+   "(Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND "
+   "(ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND "
+   "(MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])";
 
 input group "=== Общепортфельный Stopper ==="
 input bool   InpPortfSlOn = false;
@@ -108,7 +119,6 @@ input bool   InpTradeSat = false;
 input bool   InpTradeSun = false;
 
 #define ML_MAX_ATOMS 16
-#define ML_MAX_BLOCK 12
 
 struct MLRegime
   {
@@ -116,7 +126,6 @@ struct MLRegime
    bool     entryMatchSide;
    bool     entryFlatOnly;
    bool     closeOnFlip;
-   bool     flipOnRegime;
    int      slopeLb;
    double   slopeDeadPct;
    int      linLen;
@@ -140,19 +149,6 @@ struct MLSlot
    bool     enabled;
    bool     disabled;
    MLRegime regime;
-   MLAtom   sharedOp[ML_MAX_BLOCK];
-   int      sharedOpCount;
-   MLAtom   longOp[ML_MAX_BLOCK];
-   int      longOpCount;
-   MLAtom   shortOp[ML_MAX_BLOCK];
-   int      shortOpCount;
-   MLAtom   longCl[ML_MAX_BLOCK];
-   int      longClCount;
-   MLAtom   shortCl[ML_MAX_BLOCK];
-   int      shortClCount;
-   bool     clOnFlipClose;
-   bool     clOnFlipFlip;
-   bool     opOnFlipOpen;
    int      atomCount;
    MLAtom   atoms[ML_MAX_ATOMS];
   };
@@ -368,7 +364,6 @@ bool ML_ParseRegime(string &work, MLRegime &r)
    r.entryMatchSide = false;
    r.entryFlatOnly = false;
    r.closeOnFlip = false;
-   r.flipOnRegime = false;
 
    string parts[];
    int n = StringSplit(inner, ';', parts);
@@ -397,26 +392,43 @@ bool ML_ParseRegime(string &work, MLRegime &r)
          r.entryMatchSide = true;
       else if(ku == "ENTRY" && ML_Upper(val) == "FLATONLY")
          r.entryFlatOnly = true;
-      else if(ku == "ONFLIP")
-        {
-         string vu = ML_Upper(val);
-         if(vu == "FLIP" || vu == "REVERSE" || vu == "REV")
-           {
-            r.flipOnRegime = true;
-            r.closeOnFlip = false;
-           }
-         else if(vu == "CLOSE" || vu == "CLOSEONFLIP" || vu == "TRUE")
-            r.closeOnFlip = true;
-        }
+      else if(ku == "ONFLIP" && ML_Upper(val) == "CLOSE")
+         r.closeOnFlip = true;
      }
    r.valid = true;
    return true;
   }
 
-bool ML_ParseIndicatorHeader(string head, MLAtom &a)
+bool ML_ExtractBrackets(string atom, const string tag, string &val)
+  {
+   val = "";
+   string pat = tag + "[";
+   int p = StringFind(atom, pat, 0);
+   if(p < 0) return false;
+   int e = StringFind(atom, "]", p);
+   if(e < 0) return false;
+   val = StringSubstr(atom, p + StringLen(pat), e - p - StringLen(pat));
+   return true;
+  }
+
+bool ML_ParseAtom(string token, MLAtom &a)
   {
    ZeroMemory(a);
-   head = ML_Trim(head);
+   token = ML_Trim(token);
+   if(StringLen(token) >= 2 && StringGetCharacter(token, 0) == '(')
+      token = StringSubstr(token, 1, StringLen(token) - 2);
+   token = ML_Trim(token);
+
+   int opPos = StringFind(token, " Op[", 0);
+   if(opPos < 0) opPos = StringFind(token, " op[", 0);
+   if(opPos < 0) return false;
+
+   string head = ML_Trim(StringSubstr(token, 0, opPos));
+   string tail = StringSubstr(token, opPos + 1);
+   ML_ExtractBrackets(tail, "Op", a.opSig);
+   ML_ExtractBrackets(tail, "Cl", a.clSig);
+   a.isShort = (StringFind(tail, "Side[S]", 0) >= 0 || StringFind(tail, "Side[SELL]", 0) >= 0);
+
    int p0 = StringFind(head, "(", 0);
    string params = "";
    if(p0 < 0)
@@ -526,183 +538,6 @@ bool ML_ParseIndicatorHeader(string head, MLAtom &a)
    return true;
   }
 
-bool ML_ParsePredicate(string token, MLAtom &a)
-  {
-   ZeroMemory(a);
-   token = ML_Trim(token);
-   if(StringLen(token) >= 2 && StringGetCharacter(token, 0) == '(')
-      token = StringSubstr(token, 1, StringLen(token) - 2);
-   token = ML_Trim(token);
-   int pc = StringFind(token, ")(", 0);
-   if(pc < 0) return false;
-   string head = StringSubstr(token, 0, pc + 1);
-   string cond = StringSubstr(token, pc + 2);
-   if(StringLen(cond) >= 2 && StringGetCharacter(cond, 0) == '(')
-      cond = StringSubstr(cond, 1, StringLen(cond) - 2);
-   if(!ML_ParseIndicatorHeader(head, a)) return false;
-   a.opSig = ML_Trim(cond);
-   a.clSig = "";
-   return StringLen(a.opSig) > 0;
-  }
-
-bool ML_TryExtractTaggedBlock(string &work, const string tag, string &inner)
-  {
-   inner = "";
-   string key = tag + "(";
-   int p = StringFind(work, key, 0);
-   if(p < 0) return false;
-   int depth = 0;
-   int start = p + StringLen(key);
-   for(int i = start - 1; i < (int)StringLen(work); i++)
-     {
-      ushort c = StringGetCharacter(work, i);
-      if(c == '(') depth++;
-      else if(c == ')')
-        {
-         depth--;
-         if(depth == 0)
-           {
-            inner = StringSubstr(work, start, i - start);
-            string before = StringSubstr(work, 0, p);
-            string after = StringSubstr(work, i + 1);
-            work = ML_Trim(before + " " + after);
-            return true;
-           }
-        }
-     }
-   return false;
-  }
-
-void ML_ParseOnFlipFromTail(string &content, bool &closeOn, bool &flipOn, bool &openOn)
-  {
-   closeOn = flipOn = openOn = false;
-   int p = StringFind(content, "OnFlip(", 0);
-   if(p < 0) return;
-   string tail = StringSubstr(content, p);
-   content = ML_Trim(StringSubstr(content, 0, p));
-   int e = StringFind(tail, ")", 0);
-   if(e < 0) return;
-   string mode = ML_Upper(ML_Trim(StringSubstr(tail, 7, e - 7)));
-   if(mode == "FLIP") flipOn = true;
-   else if(mode == "OPEN") openOn = true;
-   else closeOn = true;
-  }
-
-int ML_SplitTopLevel(const string text, const string sep, string &parts[])
-  {
-   int n = 0;
-   ArrayResize(parts, 0);
-   int depth = 0;
-   int start = 0;
-   int len = (int)StringLen(text);
-   int sepLen = (int)StringLen(sep);
-   for(int i = 0; i <= len - sepLen; i++)
-     {
-      ushort c = (i < len) ? StringGetCharacter(text, i) : 0;
-      if(c == '(') depth++;
-      else if(c == ')') depth--;
-      else if(depth == 0 && StringSubstr(text, i, sepLen) == sep)
-        {
-         string chunk = ML_Trim(StringSubstr(text, start, i - start));
-         if(StringLen(chunk) > 0)
-           {
-            ArrayResize(parts, n + 1);
-            parts[n++] = chunk;
-           }
-         start = i + sepLen;
-         i += sepLen - 1;
-        }
-     }
-   string last = ML_Trim(StringSubstr(text, start));
-   if(StringLen(last) > 0)
-     {
-      ArrayResize(parts, n + 1);
-      parts[n++] = last;
-     }
-   return n;
-  }
-
-bool ML_ParsePredicateList(const string inner, const bool useAnd, const int strict,
-                           MLAtom &arr[], int &count, MLSlot &slot)
-  {
-   count = 0;
-   string parts[];
-   int n = useAnd ? ML_SplitTopLevel(inner, " AND ", parts) : ML_SplitTopLevel(inner, " OR ", parts);
-   for(int i = 0; i < n && count < ML_MAX_BLOCK; i++)
-     {
-      MLAtom a;
-      if(!ML_ParsePredicate(parts[i], a)) continue;
-      ML_ApplyStrictToAtom(a, strict);
-      arr[count++] = a;
-      if(slot.atomCount < ML_MAX_ATOMS)
-         slot.atoms[slot.atomCount++] = a;
-     }
-   return count > 0;
-  }
-
-bool ML_ParseSideBlock(string &content, const string sideTag, const bool useAnd,
-                       MLAtom &arr[], int &count, const int strict, MLSlot &slot)
-  {
-   count = 0;
-   string key = sideTag + "(";
-   int p = StringFind(content, key, 0);
-   if(p < 0) return false;
-   int depth = 0;
-   int start = p + StringLen(key);
-   for(int i = start - 1; i < (int)StringLen(content); i++)
-     {
-      ushort c = StringGetCharacter(content, i);
-      if(c == '(') depth++;
-      else if(c == ')')
-        {
-         depth--;
-         if(depth == 0)
-           {
-            string inner = StringSubstr(content, start, i - start);
-            ML_ParsePredicateList(inner, useAnd, strict, arr, count, slot);
-            string before = StringSubstr(content, 0, p);
-            string after = StringSubstr(content, i + 1);
-            content = ML_Trim(before + " " + after);
-            return count > 0;
-           }
-        }
-     }
-   return false;
-  }
-
-void ML_ParseSignalBlock(string content, const bool isOp, const int strict, MLSlot &slot)
-  {
-   bool cClose=false, cFlip=false, cOpen=false;
-   ML_ParseOnFlipFromTail(content, cClose, cFlip, cOpen);
-   if(!isOp)
-     {
-      if(cClose) { slot.clOnFlipClose = true; slot.clOnFlipFlip = false; }
-      if(cFlip)  { slot.clOnFlipFlip = true; slot.clOnFlipClose = false; }
-     }
-   else if(cOpen)
-      slot.opOnFlipOpen = true;
-
-   string shared = content;
-   const bool useAnd = true;
-   if(isOp)
-     {
-      ML_ParseSideBlock(shared, "Long", useAnd, slot.longOp, slot.longOpCount, strict, slot);
-      ML_ParseSideBlock(shared, "Short", useAnd, slot.shortOp, slot.shortOpCount, strict, slot);
-      ML_ParseSideBlock(shared, "Buy", useAnd, slot.longOp, slot.longOpCount, strict, slot);
-      ML_ParseSideBlock(shared, "Sell", useAnd, slot.shortOp, slot.shortOpCount, strict, slot);
-     }
-   else
-     {
-      ML_ParseSideBlock(shared, "Long", useAnd, slot.longCl, slot.longClCount, strict, slot);
-      ML_ParseSideBlock(shared, "Short", useAnd, slot.shortCl, slot.shortClCount, strict, slot);
-      ML_ParseSideBlock(shared, "Buy", useAnd, slot.longCl, slot.longClCount, strict, slot);
-      ML_ParseSideBlock(shared, "Sell", useAnd, slot.shortCl, slot.shortClCount, strict, slot);
-     }
-   shared = ML_Trim(shared);
-   if(isOp && StringLen(shared) > 0)
-      ML_ParsePredicateList(shared, true, strict, slot.sharedOp, slot.sharedOpCount, slot);
-  }
-
 bool ML_ParseSlot(const string rawLine, const bool enabled, MLSlot &slot)
   {
    ZeroMemory(slot);
@@ -712,21 +547,37 @@ bool ML_ParseSlot(const string rawLine, const bool enabled, MLSlot &slot)
    ML_ParseDisabled(work, slot.disabled);
    ML_ParseStrict(work, lineStrict);
    ML_ParseRegime(work, slot.regime);
-   work = ML_Trim(work);
-
-   string opBody = "", clBody = "";
-   if(!ML_TryExtractTaggedBlock(work, "Op", opBody))
-      return false;
-   ML_TryExtractTaggedBlock(work, "Cl", clBody);
-
-   ML_ParseSignalBlock(opBody, true, lineStrict, slot);
-   if(StringLen(clBody) > 0)
-      ML_ParseSignalBlock(clBody, false, lineStrict, slot);
-
+   string parts[];
+   int n = 0;
+   ArrayResize(parts, 0);
+   int start = 0;
+   string marker = " AND ";
+   while(true)
+     {
+      int p = StringFind(work, marker, start);
+      string chunk = (p < 0) ? StringSubstr(work, start) : StringSubstr(work, start, p - start);
+      chunk = ML_Trim(chunk);
+      if(StringLen(chunk) > 0)
+        {
+         ArrayResize(parts, n + 1);
+         parts[n++] = chunk;
+        }
+      if(p < 0) break;
+      start = p + StringLen(marker);
+     }
+   slot.atomCount = 0;
+   for(int i = 0; i < n && slot.atomCount < ML_MAX_ATOMS; i++)
+     {
+      MLAtom a;
+      if(ML_ParseAtom(parts[i], a))
+        {
+         ML_ApplyStrictToAtom(a, lineStrict);
+         slot.atoms[slot.atomCount++] = a;
+        }
+     }
    if(slot.regime.valid)
       ML_ApplyStrictToRegime(slot.regime, lineStrict);
-   return (slot.longOpCount > 0 || slot.shortOpCount > 0 || slot.sharedOpCount > 0
-           || slot.longClCount > 0 || slot.shortClCount > 0 || slot.regime.valid);
+   return slot.atomCount > 0 || slot.regime.valid;
   }
 
 //--- LinReg bands (OsEngine LinearRegressionChannelFast style)
@@ -789,38 +640,13 @@ bool ML_RegimeAllowsEntry(const MLRegime &r, const ENUM_ML_SIDE side, const int 
    return true;
   }
 
-bool ML_RegimeShouldAct(const MLRegime &r, const ENUM_ML_SIDE side, const int sign)
+bool ML_RegimeShouldClose(const MLRegime &r, const ENUM_ML_SIDE side, const int sign)
   {
-   if(!r.valid) return false;
-   if(!r.closeOnFlip && !r.flipOnRegime && !r.entryFlatOnly) return false;
+   if(!r.valid || !r.closeOnFlip) return false;
    if(r.entryFlatOnly) return sign != 0;
-   if(!r.closeOnFlip && !r.flipOnRegime) return false;
    if(sign > 0) return side == ML_SELL;
    if(sign < 0) return side == ML_BUY;
    return false;
-  }
-
-ENUM_ML_SIDE ML_RegimeFlipTargetSide(const int sign)
-  {
-   if(sign > 0) return ML_BUY;
-   if(sign < 0) return ML_SELL;
-   return ML_BUY;
-  }
-
-void ML_FlipPosition(const int slot, const ENUM_ML_SIDE newSide)
-  {
-   double lots = InpLots;
-   if(PositionSelect(_Symbol))
-     {
-      lots = PositionGetDouble(POSITION_VOLUME);
-      g_trade.PositionClose(_Symbol);
-     }
-   g_activeSlot = slot;
-   g_trailPeak = 0;
-   ENUM_ORDER_TYPE type = (newSide == ML_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-   double price = (type==ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol,SYMBOL_ASK) : SymbolInfoDouble(_Symbol,SYMBOL_BID);
-   g_trade.PositionOpen(_Symbol, type, lots, price, 0, 0, "ML-L"+IntegerToString(slot));
-   g_trailPeak = price;
   }
 
 double ML_Sma(const int shift, const int len)
@@ -888,146 +714,10 @@ bool ML_AtrGrow(const int shift, const int len, const double grPct, const int lb
    return (a0[0]/(a1[0]/100.0)-100.0) >= grPct;
   }
 
-bool ML_TryGetPrimaryValue(const MLAtom &a, const int shift, double &val)
-  {
-   val = 0.0;
-   if(a.kind=="SMA")
-     {
-      val = ML_Sma(shift, a.p1);
-      return val != 0.0;
-     }
-   if(a.kind=="RSI")
-     {
-      int h = iRSI(_Symbol, PERIOD_CURRENT, a.p1, PRICE_CLOSE);
-      double b[];
-      if(CopyBuffer(h,0,shift,1,b)!=1) { IndicatorRelease(h); return false; }
-      IndicatorRelease(h);
-      val = b[0];
-      return val != 0.0;
-     }
-   if(a.kind=="CCI")
-     {
-      int h = iCCI(_Symbol, PERIOD_CURRENT, a.p1, PRICE_TYPICAL);
-      double b[];
-      if(CopyBuffer(h,0,shift,1,b)!=1) { IndicatorRelease(h); return false; }
-      IndicatorRelease(h);
-      val = b[0];
-      return true;
-     }
-   if(a.kind=="MACD")
-     {
-      int h = iMACD(_Symbol, PERIOD_CURRENT, a.p1, a.p2, a.p3, PRICE_CLOSE);
-      double m[];
-      if(CopyBuffer(h,0,shift,1,m)!=1) { IndicatorRelease(h); return false; }
-      IndicatorRelease(h);
-      val = m[0];
-      return true;
-     }
-   if(a.kind=="LINREG" || a.kind=="LR")
-     {
-      double up,mid,lo;
-      if(!ML_LinRegBands(shift, a.p1, a.dev, up, mid, lo)) return false;
-      val = mid;
-      return val != 0.0;
-     }
-   if(a.kind=="BOLL" || a.kind=="BOLLINGER")
-     {
-      double up,mid,lo;
-      if(!ML_BollBands(shift, a.p1, a.dev, up, mid, lo)) return false;
-      val = mid;
-      return val != 0.0;
-     }
-   if(a.kind=="VWAP")
-     {
-      val = ML_CalcVwap(shift);
-      return val > 0.0;
-     }
-   if(a.kind=="STOCH" || a.kind=="STOCHASTIC")
-     {
-      int h = iStochastic(_Symbol, PERIOD_CURRENT, a.p1, a.p2, a.p3, MODE_SMA, STO_LOWHIGH);
-      double k[];
-      if(CopyBuffer(h,0,shift,1,k)!=1) { IndicatorRelease(h); return false; }
-      IndicatorRelease(h);
-      val = k[0];
-      return true;
-     }
-   return false;
-  }
-
-bool ML_TryEvalValueDirection(const MLAtom &a, const int shift, const string sig, bool &out)
-  {
-   out = false;
-   string s = ML_Upper(ML_Trim(sig));
-   bool requireUp = true;
-   int streak = 1;
-   if(s=="RISE" || s=="VALUP") {}
-   else if(s=="FALL" || s=="VALDN") requireUp = false;
-   else if(StringFind(s,"VALUP")==0 && StringLen(s)>5)
-     streak = (int)MathMax(1, StringToInteger(StringSubstr(s,5)));
-   else if(StringFind(s,"RISE")==0 && StringLen(s)>4)
-     streak = (int)MathMax(1, StringToInteger(StringSubstr(s,4)));
-   else if(StringFind(s,"VALDN")==0 && StringLen(s)>5)
-     { requireUp=false; streak=(int)MathMax(1,StringToInteger(StringSubstr(s,5))); }
-   else if(StringFind(s,"FALL")==0 && StringLen(s)>4)
-     { requireUp=false; streak=(int)MathMax(1,StringToInteger(StringSubstr(s,4))); }
-   else return false;
-
-   for(int i=0;i<streak;i++)
-     {
-      double cur, prev;
-      if(!ML_TryGetPrimaryValue(a, shift-i, cur)) return true;
-      if(!ML_TryGetPrimaryValue(a, shift-i-1, prev)) return true;
-      if(requireUp && !(cur>prev)) return true;
-      if(!requireUp && !(cur<prev)) return true;
-     }
-   out = true;
-   return true;
-  }
-
-bool ML_TryEvalValueChange(const MLAtom &a, const int shift, const string sig, bool &out)
-  {
-   out = false;
-   string s = ML_Upper(ML_Trim(sig));
-   if(StringFind(s,"CHG") != 0) return false;
-   string rest = StringSubstr(s, 3);
-   int lookback = 1;
-   int pos = 0;
-   while(pos < (int)StringLen(rest) && StringGetCharacter(rest, pos) >= '0' && StringGetCharacter(rest, pos) <= '9')
-      pos++;
-   if(pos > 0)
-     {
-      lookback = (int)MathMax(1, StringToInteger(StringSubstr(rest, 0, pos)));
-      rest = StringSubstr(rest, pos);
-     }
-   bool ge = false;
-   if(StringFind(rest, ">=") == 0) { ge=true; rest=StringSubstr(rest,2); }
-   else if(StringFind(rest, "<=") == 0) { ge=false; rest=StringSubstr(rest,2); }
-   else return true;
-   StringReplace(rest, "%", "");
-   double thr = StringToDouble(rest);
-   double cur, past;
-   if(!ML_TryGetPrimaryValue(a, shift, cur)) return true;
-   if(!ML_TryGetPrimaryValue(a, shift+lookback, past)) return true;
-   if(past == 0.0) return true;
-   double pct = (cur - past) / MathAbs(past) * 100.0;
-   thr = MathAbs(thr);
-   out = ge ? (pct >= thr) : (pct <= -thr);
-   return true;
-  }
-
-bool ML_TryEvalValueDynamics(const MLAtom &a, const int shift, const string sig, bool &out)
-  {
-   if(ML_TryEvalValueChange(a, shift, sig, out)) return true;
-   if(ML_TryEvalValueDirection(a, shift, sig, out)) return true;
-   return false;
-  }
-
 bool ML_EvalSignal(const string sig, const MLAtom &a, const int shift, const bool forClose)
   {
    string s = ML_Upper(ML_Trim(sig));
    if(s=="" || s=="-" || s=="NONE") return forClose ? false : false;
-   bool dyn = false;
-   if(ML_TryEvalValueDynamics(a, shift, s, dyn)) return dyn;
    double close = iClose(_Symbol, PERIOD_CURRENT, shift);
 
    if(a.kind=="SMA")
@@ -1105,88 +795,46 @@ bool ML_EvalSignal(const string sig, const MLAtom &a, const int shift, const boo
    return false;
   }
 
-bool ML_EvalAtomCond(const MLAtom &a, const int shift)
+bool ML_EvalAtom(const MLAtom &a, const int shift, const bool forClose)
   {
-   return ML_EvalSignal(a.opSig, a, shift, false);
+   string sig = forClose ? a.clSig : a.opSig;
+   return ML_EvalSignal(sig, a, shift, forClose);
   }
 
-bool ML_EvalAtomsAnd(const MLAtom &arr[], const int count, const int shift)
+bool ML_EvalOpen(const MLSlot &slot, const int shift)
   {
-   if(count <= 0) return true;
-   for(int i=0;i<count;i++)
-      if(!ML_EvalAtomCond(arr[i], shift)) return false;
-   return true;
-  }
-
-bool ML_EvalAtomsOr(const MLAtom &arr[], const int count, const int shift)
-  {
-   for(int i=0;i<count;i++)
-      if(ML_EvalAtomCond(arr[i], shift)) return true;
-   return false;
-  }
-
-MLRegime ML_GetEffectiveRegime(const MLSlot &slot)
-  {
-   MLRegime r = slot.regime;
-   if(slot.clOnFlipFlip)
-     { r.flipOnRegime = true; r.closeOnFlip = false; }
-   else if(slot.clOnFlipClose)
-     { r.closeOnFlip = true; r.flipOnRegime = false; }
-   return r;
-  }
-
-bool ML_TryPickEntrySideNormal(const MLSlot &slot, const int shift, ENUM_ML_SIDE &outSide)
-  {
-   outSide = ML_BUY;
    if(!slot.enabled || slot.disabled) return false;
-   bool sharedOk = ML_EvalAtomsAnd(slot.sharedOp, slot.sharedOpCount, shift);
-   if(slot.sharedOpCount > 0 && !sharedOk) return false;
-   if(slot.longOpCount > 0 && sharedOk && ML_EvalAtomsAnd(slot.longOp, slot.longOpCount, shift))
-     { outSide = ML_BUY; return true; }
-   if(slot.shortOpCount > 0 && sharedOk && ML_EvalAtomsAnd(slot.shortOp, slot.shortOpCount, shift))
-     { outSide = ML_SELL; return true; }
+   for(int i=0;i<slot.atomCount;i++)
+      if(!ML_EvalAtom(slot.atoms[i], shift, false)) return false;
+   return slot.atomCount > 0;
+  }
+
+bool ML_EvalClose(const MLSlot &slot, const int shift)
+  {
+   for(int i=0;i<slot.atomCount;i++)
+     {
+      string cl = ML_Upper(slot.atoms[i].clSig);
+      if(cl=="" || cl=="-") continue;
+      if(ML_EvalAtom(slot.atoms[i], shift, true)) return true;
+     }
    return false;
   }
 
-bool ML_EvalCloseForSide(const MLSlot &slot, const int shift, const ENUM_ML_SIDE posSide)
+ENUM_ML_SIDE ML_SlotSide(const MLSlot &slot)
   {
-   if(posSide == ML_BUY && slot.longClCount > 0)
-      return ML_EvalAtomsAnd(slot.longCl, slot.longClCount, shift);
-   if(posSide == ML_SELL && slot.shortClCount > 0)
-      return ML_EvalAtomsAnd(slot.shortCl, slot.shortClCount, shift);
-   return false;
-  }
-
-bool ML_TryPickEntrySide(const MLSlot &slot, const int shift, ENUM_ML_SIDE &outSide)
-  {
-   if(InpLogicInversion)
-     {
-      if(ML_EvalCloseForSide(slot, shift, ML_BUY))
-        { outSide = ML_SELL; return true; }
-      return false;
-     }
-   return ML_TryPickEntrySideNormal(slot, shift, outSide);
-  }
-
-bool ML_EvalExitForPosition(const MLSlot &slot, const int shift, const ENUM_ML_SIDE posSide)
-  {
-   if(InpLogicInversion)
-     {
-      ENUM_ML_SIDE dummy = ML_BUY;
-      return ML_TryPickEntrySideNormal(slot, shift, dummy);
-     }
-   return ML_EvalCloseForSide(slot, shift, posSide);
+   for(int i=0;i<slot.atomCount;i++)
+      if(slot.atoms[i].isShort) return ML_SELL;
+   return ML_BUY;
   }
 
 bool ML_EvalEntrySignal(const MLSlot &slot, const int shift)
   {
-   ENUM_ML_SIDE side;
-   return ML_TryPickEntrySide(slot, shift, side);
+   return InpLogicInversion ? ML_EvalClose(slot, shift) : ML_EvalOpen(slot, shift);
   }
 
-bool ML_EvalExitSignal(const MLSlot &slot, const int shift, const ENUM_ML_SIDE posSide)
+bool ML_EvalExitSignal(const MLSlot &slot, const int shift)
   {
-   return ML_EvalExitForPosition(slot, shift, posSide);
+   return InpLogicInversion ? ML_EvalOpen(slot, shift) : ML_EvalClose(slot, shift);
   }
 
 void ML_AppendEquitySnapshot(const datetime barTime)
@@ -1443,23 +1091,10 @@ void OnTick()
    if(ML_HasPos() && g_activeSlot>=1 && g_activeSlot<=4)
      {
       int si = g_activeSlot - 1;
-      long pt = ML_PosType();
-      ENUM_ML_SIDE posSide = (pt==POSITION_TYPE_SELL) ? ML_SELL : ML_BUY;
-      MLRegime effReg = ML_GetEffectiveRegime(g_slots[si]);
+      ENUM_ML_SIDE side = ML_SlotSide(g_slots[si]);
+      if(InpLogicInversion) side = (side==ML_BUY)?ML_SELL:ML_BUY;
       int sign = ML_RegimeSign(g_slots[si].regime, sh);
-      if(ML_RegimeShouldAct(effReg, posSide, sign))
-        {
-         if(effReg.flipOnRegime && sign != 0)
-           {
-            ENUM_ML_SIDE flipSide = ML_RegimeFlipTargetSide(sign);
-            if(InpLogicInversion) flipSide = (flipSide==ML_BUY)?ML_SELL:ML_BUY;
-            ML_FlipPosition(g_activeSlot, flipSide);
-            return;
-           }
-         ML_CloseAll();
-         return;
-        }
-      if(ML_EvalExitSignal(g_slots[si], sh, posSide))
+      if(ML_RegimeShouldClose(g_slots[si].regime, side, sign) || ML_EvalExitSignal(g_slots[si], sh))
         { ML_CloseAll(); return; }
      }
 
@@ -1467,24 +1102,25 @@ void OnTick()
    if(ML_IsSigPeakEntryPaused(bt)) return;
 
    int pick = 0;
-   ENUM_ML_SIDE pickSide = ML_BUY;
    for(int s=0;s<4;s++)
      {
       if(!g_slots[s].enabled || g_slots[s].disabled) continue;
-      ENUM_ML_SIDE side;
-      if(!ML_TryPickEntrySide(g_slots[s], sh, side)) continue;
+      if(!ML_EvalEntrySignal(g_slots[s], sh)) continue;
+      ENUM_ML_SIDE side = ML_SlotSide(g_slots[s]);
+      if(InpLogicInversion) side = (side==ML_BUY)?ML_SELL:ML_BUY;
       int sign = ML_RegimeSign(g_slots[s].regime, sh);
       if(!ML_RegimeAllowsEntry(g_slots[s].regime, side, sign)) continue;
       if(InpRegime==ML_ONLY_CLOSE) continue;
       if(side==ML_BUY && InpRegime==ML_ONLY_SHORT) continue;
       if(side==ML_SELL && InpRegime==ML_ONLY_LONG) continue;
-      pick = s + 1;
-      pickSide = side;
+      pick = s+1;
       break;
      }
 
    if(pick==0) return;
-   if(pickSide==ML_BUY) ML_Open(ORDER_TYPE_BUY, pick);
+   ENUM_ML_SIDE side = ML_SlotSide(g_slots[pick-1]);
+   if(InpLogicInversion) side = (side==ML_BUY)?ML_SELL:ML_BUY;
+   if(side==ML_BUY) ML_Open(ORDER_TYPE_BUY, pick);
    else ML_Open(ORDER_TYPE_SELL, pick);
   }
 //+------------------------------------------------------------------+
