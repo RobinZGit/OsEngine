@@ -51,10 +51,10 @@ L2_ENABLE = true
 L3_ENABLE = true
 L4_ENABLE = true
 
-LOGIC1 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) Cl(Long(SMA(100)(Bl) OR LinReg(@LR;Dev=2)(BlLo) OR CCI(20;Lmin=100;Smax=-100)(CCI<=-100) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close))"
-LOGIC2 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) Op(Long(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig))) Cl(Long(SMA(100)(Bl) OR Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close))"
-LOGIC3 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) Cl(Short(SMA(100)(Ab) OR LinReg(@LR;Dev=2)(AbUp) OR CCI(20;Lmin=100;Smax=-100)(CCI>=100) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close))"
-LOGIC4 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) Cl(Short(SMA(100)(Ab) OR Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close))"
+LOGIC1 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) Note(lon-trend)"
+LOGIC2 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) Op(Long(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig))) Cl(Long(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) Note(lon-bokovik)"
+LOGIC3 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) Note(short-trend)"
+LOGIC4 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) Note(short-bokovik)"
 
 -- Stopper (упрощённо: equity счёта; отрицательный equity — норма при плече, без «обнуления»)
 PORTF_SL_ON = false
@@ -416,7 +416,7 @@ function parse_signal_block(content, is_op, strict, slot)
         elseif closeOn then slot.clOnFlipClose = true; slot.clOnFlipFlip = false end
     elseif openOn then slot.opOnFlipOpen = true end
 
-    local use_and = is_op
+    local use_and = true
     local shared = content
     if is_op then
         slot.longOp, shared = parse_side_block(shared, "Long", use_and, strict, slot.atoms)
@@ -764,10 +764,10 @@ end
 
 function eval_close_for_side(slot, idx, pos_side)
     if pos_side == 1 and slot.longCl and #slot.longCl > 0 then
-        return eval_atoms_or(slot.longCl, idx)
+        return eval_atoms_and(slot.longCl, idx)
     end
     if pos_side == -1 and slot.shortCl and #slot.shortCl > 0 then
-        return eval_atoms_or(slot.shortCl, idx)
+        return eval_atoms_and(slot.shortCl, idx)
     end
     return false
 end

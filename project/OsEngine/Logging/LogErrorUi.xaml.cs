@@ -43,5 +43,16 @@ namespace OsEngine.Logging
 
             Log.ClearErrorLog();
         }
+
+        protected override void OnClosed(System.EventArgs e)
+        {
+            // Отцепить WinForms-грид до уничтожения Host — иначе повторное открытие ломает UI.
+            if (HostLog != null)
+            {
+                HostLog.Child = null;
+            }
+
+            base.OnClosed(e);
+        }
     }
 }

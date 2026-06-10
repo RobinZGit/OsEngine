@@ -73,11 +73,11 @@ namespace OsEngine.Robots.Custom
 
         public const string TrendRegimePrefix =
             StrictPrefix
-            + "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;Entry=MatchSide) ";
+            + "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
 
         public const string BokovikRegimePrefix =
             StrictPrefix
-            + "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) ";
+            + "Regime(LinReg;L=" + LinRegLengthRef + ";Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) ";
 
         public const string Logic1LongTrend =
             TrendRegimePrefix
@@ -85,7 +85,7 @@ namespace OsEngine.Robots.Custom
             + "SMA(100)(Ab) AND LinReg(" + LinRegLengthRef + ";Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
             + "CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)"
             + ")) Cl(Long("
-            + "SMA(100)(Bl) OR LinReg(" + LinRegLengthRef + ";Dev=2)(BlLo) OR CCI(20;Lmin=100;Smax=-100)(CCI<=-100) OR MACD(12,26,9)(Macd<Sig)"
+            + "SMA(100)(Bl) AND LinReg(" + LinRegLengthRef + ";Dev=2)(BlLo) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)"
             + ") OnFlip(Close)) Note(lon-trend)";
 
         public const string Logic2LongBokovik =
@@ -93,7 +93,7 @@ namespace OsEngine.Robots.Custom
             + "Op(Long("
             + "SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig)"
             + ")) Cl(Long("
-            + "SMA(100)(Bl) OR Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) OR MACD(12,26,9)(Macd<Sig)"
+            + "SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND MACD(12,26,9)(Macd<Sig)"
             + ") OnFlip(Close)) Note(lon-bokovik)";
 
         public const string Logic3ShortTrend =
@@ -102,7 +102,7 @@ namespace OsEngine.Robots.Custom
             + "SMA(100)(Bl) AND LinReg(" + LinRegLengthRef + ";Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
             + "CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)"
             + ")) Cl(Short("
-            + "SMA(100)(Ab) OR LinReg(" + LinRegLengthRef + ";Dev=2)(AbUp) OR CCI(20;Lmin=100;Smax=-100)(CCI>=100) OR MACD(12,26,9)(Macd>Sig)"
+            + "SMA(100)(Ab) AND LinReg(" + LinRegLengthRef + ";Dev=2)(AbUp) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)"
             + ") OnFlip(Close)) Note(short-trend)";
 
         public const string Logic4ShortBokovik =
@@ -110,7 +110,7 @@ namespace OsEngine.Robots.Custom
             + "Op(Short("
             + "SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig)"
             + ")) Cl(Short("
-            + "SMA(100)(Ab) OR Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) OR MACD(12,26,9)(Macd>Sig)"
+            + "SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)"
             + ") OnFlip(Close)) Note(short-bokovik)";
 
         public static readonly string[] SlotFormulas =
@@ -175,7 +175,7 @@ namespace OsEngine.Robots.Custom
             AppendDefaultLogicHelpBlock(sb, 1, "lon-trend", "Лонг, тренд", Logic1LongTrend,
                 "Regime MatchSide — Buy при наклоне LinReg вверх; во флэте входов нет.",
                 "Op(Long(…)) — SMA(100)(Ab), LinReg(@LR;Dev=2)(AbUp), ATR(GrOk), CCI, MACD.",
-                "Cl(Long(…)) OnFlip(Close) — выход по индикаторам и смене режима.",
+                "Cl(Long(…)) OnFlip(Close) — выход когда все Cl-условия атомов (AND, как v1 Op[]/Cl[]); ATR Cl[-] только в Op.",
                 "ATR(14;Gr=3%;Lb=5)(GrOk) — общий фильтр волатильности.",
                 "@LR — параметр «Длина линейной регрессии».");
             AppendDefaultLogicHelpBlock(sb, 2, "lon-bokovik", "Лонг, боковик", Logic2LongBokovik,
@@ -820,6 +820,9 @@ namespace OsEngine.Robots.Custom
 
         /// <summary>Объединяет несколько подряд ValueChange в один TryParse (например, «Принять» после пресета логик).</summary>
         private int _logicParseCoalesceToken;
+
+        /// <summary>Последняя залогированная ошибка парсера по слоту (чтобы не забивать экстренный лог).</summary>
+        private readonly string[] _lastLogicParseErrorLogged = new string[LogicSlotCount + 1];
 
         /// <summary>Объединяет ValueChange за одно «Принять» в один JSON-бэкап параметров.</summary>
         private int _paramsBackupCoalesceToken;
@@ -3599,14 +3602,20 @@ namespace OsEngine.Robots.Custom
                     + logicSlotIndex
                     + ": "
                     + string.Join("; ", result.Errors);
-                SendNewLogMessage(err, LogMessageType.Error);
-                if (logToUser)
+                if (!string.Equals(_lastLogicParseErrorLogged[logicSlotIndex], err, StringComparison.Ordinal))
                 {
-                    SendNewLogMessage(err, LogMessageType.User);
+                    _lastLogicParseErrorLogged[logicSlotIndex] = err;
+                    SendNewLogMessage(err, LogMessageType.Error);
+                    if (logToUser)
+                    {
+                        SendNewLogMessage(err, LogMessageType.User);
+                    }
                 }
 
                 return false;
             }
+
+            _lastLogicParseErrorLogged[logicSlotIndex] = null;
 
             if (result.IsDisabled)
             {
@@ -19213,6 +19222,14 @@ namespace OsEngine.Robots.Custom
                         "Regime(…) допустим только в самом начале строки (после Disabled и Strict).");
                 }
 
+                if (LooksLikeLegacyV1Format(work))
+                {
+                    return LogicParseResult.Fail(
+                        "Формат v1 (Op[…]/Cl[…]/Side[S]) не поддерживается парсером v2. "
+                        + "Перепишите строку в Op(Long/Short(Ind(парам)(условие) …)) Cl(…) "
+                        + "или нажмите «Установить логики по умолчанию».");
+                }
+
                 if (string.IsNullOrWhiteSpace(work))
                 {
                     return new LogicParseResult
@@ -19745,8 +19762,9 @@ namespace OsEngine.Robots.Custom
                 throw new InvalidOperationException("Лишний текст после предиката: " + tail);
             }
 
-            atom.OpenSignal = conditionBody.Trim();
-            atom.CloseSignal = "-";
+            string signal = conditionBody.Trim();
+            atom.OpenSignal = signal;
+            atom.CloseSignal = signal;
             for (int i = 0; i < notCount; i++)
             {
                 atom.InvertSignals = !atom.InvertSignals;
@@ -20212,6 +20230,20 @@ namespace OsEngine.Robots.Custom
             }
 
             atoms.Add(probe);
+        }
+
+        /// <summary>Строка в устаревшем формате v1 (Op[…]/Cl[…]/Side[S]) — парсер v2 не принимает.</summary>
+        private static bool LooksLikeLegacyV1Format(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            return text.Contains("Op[", StringComparison.Ordinal)
+                || text.Contains("Cl[", StringComparison.Ordinal)
+                || text.IndexOf("Side[S]", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("Side[SELL]", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>Проверяет, есть ли Regime(…) не в начале строки (недопустимо).</summary>
@@ -22086,8 +22118,16 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
+            LogicExpressionEvaluator.FindIndicatorHandler resolveIndicator =
+                (BotTabSimple t, LogicAtom atom) => findIndicator(t, atom);
+
             if (body.Cl.SharedRoot != null
-                && !EvaluateNode(body.Cl.SharedRoot, tab, candles, candleIndex, findIndicator))
+                && !LogicExpressionEvaluator.EvaluateClose(
+                    body.Cl.SharedRoot,
+                    tab,
+                    candles,
+                    candleIndex,
+                    resolveIndicator))
             {
                 return false;
             }
@@ -22098,7 +22138,12 @@ namespace OsEngine.Robots.Custom
                 return false;
             }
 
-            return EvaluateNode(sideRoot, tab, candles, candleIndex, findIndicator);
+            return LogicExpressionEvaluator.EvaluateClose(
+                sideRoot,
+                tab,
+                candles,
+                candleIndex,
+                resolveIndicator);
         }
 
         public static Side ResolveDefaultEntrySide(LogicV2Body body)
@@ -23419,7 +23464,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("1) Формат v2 — Op(…) и Cl(…) с блоками Long / Short:");
             sb.AppendLine("   Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide)");
             sb.AppendLine("   Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk)))");
-            sb.AppendLine("   Cl(Long(SMA(100)(Bl) OR LinReg(@LR;Dev=2)(BlLo)) OnFlip(Close)) SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("   Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo)) OnFlip(Close)) SL[2%] TP[6%] Note(trend)");
             sb.AppendLine("   Индикатор: Ind(параметры)(условие) — 1-я скобка: настройка, 2-я: сигнал (Ab, K>=10, ValUp, &&, ||, !).");
             sb.AppendLine("   Общие фильтры до Long/Short: Op(ATR(14;Gr=3%;Lb=5)(GrOk) Long(…)) — один экземпляр ATR на графике.");
             sb.AppendLine("   Long приоритетнее Short, если оба истинны. Buy/Sell — синонимы Long/Short.");

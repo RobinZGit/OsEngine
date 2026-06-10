@@ -1054,7 +1054,8 @@ namespace OsEngine.Logging
 
         private static void _gridErrorLog_DataError(object sender, DataGridViewDataErrorEventArgs e)
         {
-            ServerMaster.SendNewLogMessage(e.ToString(), Logging.LogMessageType.Error);
+            // Не писать в экстренный лог из DataError — иначе рекурсия и блокировка UI.
+            e.ThrowException = false;
         }
 
         private static bool _errorLogShutDown = false;
@@ -1141,31 +1142,20 @@ namespace OsEngine.Logging
             }
         }
 
-        private static DateTime _lastTimeShowErrorLog = DateTime.Now;
-
         public static void ShowErrorLogUi()
         {
             try
             {
                 if (!MainWindow.GetDispatcher.CheckAccess())
                 {
-                    MainWindow.GetDispatcher.Invoke(new Action(ShowErrorLogUi));
+                    MainWindow.GetDispatcher.BeginInvoke(new Action(ShowErrorLogUi));
                     return;
-                }
-                else
-                {
-                    if (_lastTimeShowErrorLog.AddSeconds(1) < DateTime.Now)
-                    {
-                        _lastTimeShowErrorLog = DateTime.Now;
-                        Task.Run(ShowErrorLogUi);
-                        return;
-                    }
                 }
 
                 if (_logErrorUi == null)
                 {
                     _logErrorUi = new LogErrorUi(_gridErrorLog);
-                    _logErrorUi.Closing += _logErrorUi_Closing;
+                    _logErrorUi.Closed += _logErrorUi_Closed;
                     _logErrorUi.Show();
                 }
                 else
@@ -1179,10 +1169,13 @@ namespace OsEngine.Logging
             }
         }
 
-        private static void _logErrorUi_Closing(object sender, CancelEventArgs e)
+        private static void _logErrorUi_Closed(object sender, EventArgs e)
         {
-            _logErrorUi.Closing -= _logErrorUi_Closing;
-            _gridErrorLog.DataError -= _gridErrorLog_DataError;
+            if (_logErrorUi != null)
+            {
+                _logErrorUi.Closed -= _logErrorUi_Closed;
+            }
+
             _logErrorUi = null;
         }
     }

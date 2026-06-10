@@ -52,32 +52,36 @@ input int InpStrictness = 3;  // 1…5 (3 — пороги в тексте бе�
 input group "=== Логика 1 (лонг-тренд по умолчанию) ==="
 input bool   InpL1Enable = true;
 input string InpLogic1 =
-   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
    "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
    "CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) "
-   "Cl(Long(SMA(100)(Bl) OR LinReg(@LR;Dev=2)(BlLo) OR CCI(20;Lmin=100;Smax=-100)(CCI<=-100) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close))";
+   "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) "
+   "Note(lon-trend)";
 
 input group "=== Логика 2 (лонг-боковик) ==="
 input bool   InpL2Enable = true;
 input string InpLogic2 =
-   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
    "Op(Long(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig))) "
-   "Cl(Long(SMA(100)(Bl) OR Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close))";
+   "Cl(Long(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) "
+   "Note(lon-bokovik)";
 
 input group "=== Логика 3 (шорт-тренд) ==="
 input bool   InpL3Enable = true;
 input string InpLogic3 =
-   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) "
    "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND "
    "CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) "
-   "Cl(Short(SMA(100)(Ab) OR LinReg(@LR;Dev=2)(AbUp) OR CCI(20;Lmin=100;Smax=-100)(CCI>=100) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close))";
+   "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) "
+   "Note(short-trend)";
 
 input group "=== Логика 4 (шорт-боковик) ==="
 input bool   InpL4Enable = true;
 input string InpLogic4 =
-   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) "
+   "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) "
    "Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) "
-   "Cl(Short(SMA(100)(Ab) OR Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close))";
+   "Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close)) "
+   "Note(short-bokovik)";
 
 input group "=== Общепортфельный Stopper ==="
 input bool   InpPortfSlOn = false;
@@ -679,7 +683,7 @@ void ML_ParseSignalBlock(string content, const bool isOp, const int strict, MLSl
       slot.opOnFlipOpen = true;
 
    string shared = content;
-   const bool useAnd = isOp;
+   const bool useAnd = true;
    if(isOp)
      {
       ML_ParseSideBlock(shared, "Long", useAnd, slot.longOp, slot.longOpCount, strict, slot);
@@ -1147,9 +1151,9 @@ bool ML_TryPickEntrySideNormal(const MLSlot &slot, const int shift, ENUM_ML_SIDE
 bool ML_EvalCloseForSide(const MLSlot &slot, const int shift, const ENUM_ML_SIDE posSide)
   {
    if(posSide == ML_BUY && slot.longClCount > 0)
-      return ML_EvalAtomsOr(slot.longCl, slot.longClCount, shift);
+      return ML_EvalAtomsAnd(slot.longCl, slot.longClCount, shift);
    if(posSide == ML_SELL && slot.shortClCount > 0)
-      return ML_EvalAtomsOr(slot.shortCl, slot.shortClCount, shift);
+      return ML_EvalAtomsAnd(slot.shortCl, slot.shortClCount, shift);
    return false;
   }
 
