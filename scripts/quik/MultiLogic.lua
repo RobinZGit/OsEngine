@@ -11,9 +11,10 @@
   4. Сервис → Lua-скрипты → Добавить → Запустить.
 
 ПЕРЕНЕСЕНО
-  • 4 слота L1–L4 (строки как в OsEngine, @LR → LINREG_LEN, @Strict → STRICTNESS)
-  • Disabled, Strict(@Strict|1…5), Regime(LinReg;…), AND, SMA/LinReg/ATR/CCI/MACD/Stoch
-  • Op/Cl, Side[S], инверсия логики, Regime On/Off/OnlyLong/…
+  • 4 слота L1–L4 (строки v2 Op/Cl как в OsEngine, @LR → LINREG_LEN, @Strict → STRICTNESS)
+  • Op(Long/Short(Ind(параметры)(условие) …)) Cl(… OnFlip(Close|Flip|Open))
+  • Regime Entry=MatchSide / FlatOnly; OnFlip в Cl приоритетнее Regime
+  • Op/Cl сигналы, инверсия логики, Regime On/Off/OnlyLong/…
   • Общепортфельный SL/TP % (equity счёта; отрицательный equity допустим)
   • Просадка от пика (% от max equity — только закрытие; пик может быть < 0)
   • Пауза входов после значительного пика (годовая доходность впадина→пик)
@@ -42,7 +43,7 @@ LOT_SIZE    = 1
 -- ======================== ОБЩИЕ ========================
 REGIME = "Off"              -- Off / On / OnlyLong / OnlyShort / OnlyClosePosition
 LOGIC_INVERSION = false
-LINREG_LEN = 50
+LINREG_LEN = 10
 STRICTNESS = 3              -- 1…5 (3 — пороги в тексте без масштабирования; @Strict в строке)
 
 L1_ENABLE = true
@@ -50,10 +51,10 @@ L2_ENABLE = true
 L3_ENABLE = true
 L4_ENABLE = true
 
-LOGIC1 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Op[Ab] Cl[Bl]) AND (LinReg(@LR;Dev=2) Op[AbUp] Cl[BlLo]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])"
-LOGIC2 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Op[Ab] Cl[Bl]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K<=10] Cl[K>=90]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig])"
-LOGIC3 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (LinReg(@LR;Dev=2) Op[BlLo] Cl[AbUp]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
-LOGIC4 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (Stoch(14-3-3;Lmin=90;Smax=10) Op[K>=90] Cl[K<=10]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig])"
+LOGIC1 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) Cl(Long(SMA(100)(Bl) OR LinReg(@LR;Dev=2)(BlLo) OR CCI(20;Lmin=100;Smax=-100)(CCI<=-100) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close))"
+LOGIC2 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) Op(Long(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig))) Cl(Long(SMA(100)(Bl) OR Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) OR MACD(12,26,9)(Macd<Sig)) OnFlip(Close))"
+LOGIC3 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) Cl(Short(SMA(100)(Ab) OR LinReg(@LR;Dev=2)(AbUp) OR CCI(20;Lmin=100;Smax=-100)(CCI>=100) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close))"
+LOGIC4 = "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;Entry=FlatOnly) Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) Cl(Short(SMA(100)(Ab) OR Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) OR MACD(12,26,9)(Macd>Sig)) OnFlip(Close))"
 
 -- Stopper (упрощённо: equity счёта; отрицательный equity — норма при плече, без «обнуления»)
 PORTF_SL_ON = false
@@ -116,7 +117,7 @@ function split_and(line)
 end
 
 function parse_regime(work)
-    local r = { valid=false, entryMatchSide=false, entryFlatOnly=false, closeOnFlip=false,
+    local r = { valid=false, entryMatchSide=false, entryFlatOnly=false, closeOnFlip=false, flipOnRegime=false,
                 slopeLb=3, slopeDeadPct=0, linLen=LINREG_LEN, linDev=2.0 }
     local body, rest = work:match("^Regime%((.-)%)%s*(.*)$")
     if not body then return r, work end
@@ -134,7 +135,14 @@ function parse_regime(work)
                 r.slopeDeadPct = tonumber(v) or 0
             elseif k == "ENTRY" and upper(v) == "MATCHSIDE" then r.entryMatchSide = true
             elseif k == "ENTRY" and upper(v) == "FLATONLY" then r.entryFlatOnly = true
-            elseif k == "ONFLIP" and upper(v) == "CLOSE" then r.closeOnFlip = true
+            elseif k == "ONFLIP" then
+                local uv = upper(v)
+                if uv == "FLIP" or uv == "REVERSE" or uv == "REV" then
+                    r.flipOnRegime = true
+                    r.closeOnFlip = false
+                elseif uv == "CLOSE" or uv == "CLOSEONFLIP" or uv == "TRUE" then
+                    r.closeOnFlip = true
+                end
             end
         end
     end
@@ -231,16 +239,54 @@ function apply_strict_regime(r, strict)
     end
 end
 
-function parse_atom(token)
-    token = trim(token)
-    if token:sub(1,1) == "(" and token:sub(-1) == ")" then
-        token = trim(token:sub(2, -2))
+function split_top_level(text, sep)
+    local parts = {}
+    local depth = 0
+    local start = 1
+    local i = 1
+    local len = #text
+    local sep_len = #sep
+    while i <= len do
+        local c = text:sub(i, i)
+        if c == "(" then depth = depth + 1
+        elseif c == ")" then depth = depth - 1
+        elseif depth == 0 and text:sub(i, i + sep_len - 1) == sep then
+            local chunk = trim(text:sub(start, i - 1))
+            if chunk ~= "" then table.insert(parts, chunk) end
+            start = i + sep_len
+            i = start - 1
+        end
+        i = i + 1
     end
-    local head, tail = token:match("^(.-)%s+Op%[(.-)$")
-    if not head then return nil end
-    local opSig = tail:match("^([^%]]+)%]")
-    local clSig = token:match("Cl%[([^%]]*)%]")
-    local isShort = token:find("Side%[S%]") or token:find("Side%[SELL%]")
+    local last = trim(text:sub(start))
+    if last ~= "" then table.insert(parts, last) end
+    return parts
+end
+
+function extract_tagged_block(work, tag)
+    local key = tag .. "("
+    local p = work:find(key, 1, true)
+    if not p then return nil, work end
+    local depth = 0
+    local start = p + #key
+    for i = start - 1, #work do
+        local c = work:sub(i, i)
+        if c == "(" then depth = depth + 1
+        elseif c == ")" then
+            depth = depth - 1
+            if depth == 0 then
+                local inner = work:sub(start, i - 1)
+                local before = work:sub(1, p - 1)
+                local after = work:sub(i + 1)
+                return inner, trim(before .. " " .. after)
+            end
+        end
+    end
+    return nil, work
+end
+
+function parse_indicator_header(head)
+    head = trim(head)
     local kind, params = head:match("^([%w]+)%((.*)%)$")
     if not kind then
         kind = upper(trim(head))
@@ -248,8 +294,7 @@ function parse_atom(token)
     else
         kind = upper(kind)
     end
-    local a = { kind=kind, p1=14, p2=26, p3=9, dev=2, grPct=3, grLb=5, lmin=55, smax=45,
-                opSig=opSig or "", clSig=clSig or "", isShort=not not isShort }
+    local a = { kind=kind, p1=14, p2=26, p3=9, dev=2, grPct=3, grLb=5, lmin=55, smax=45, opSig="", clSig="" }
     if kind == "VWAP" then return a
     if kind == "SMA" then a.p1 = tonumber(params) or 100
     elseif kind == "CCI" or kind == "RSI" then
@@ -293,6 +338,101 @@ function parse_atom(token)
     return a
 end
 
+function parse_predicate(token)
+    token = trim(token)
+    if token:sub(1,1) == "(" and token:sub(-1) == ")" then
+        token = trim(token:sub(2, -2))
+    end
+    local pc = token:find(")(", 1, true)
+    if not pc then return nil end
+    local head = token:sub(1, pc)
+    local cond = token:sub(pc + 2)
+    if cond:sub(1,1) == "(" and cond:sub(-1) == ")" then
+        cond = trim(cond:sub(2, -2))
+    end
+    local a = parse_indicator_header(head)
+    if not a then return nil end
+    a.opSig = trim(cond)
+    a.clSig = ""
+    if a.opSig == "" then return nil end
+    return a
+end
+
+function parse_predicate_list(inner, use_and, strict, atoms_out)
+    local sep = use_and and " AND " or " OR "
+    local parts = split_top_level(inner, sep)
+    local list = {}
+    for _, tok in ipairs(parts) do
+        local a = parse_predicate(tok)
+        if a then
+            apply_strict_atom(a, strict)
+            table.insert(list, a)
+            table.insert(atoms_out, a)
+        end
+    end
+    return list
+end
+
+function parse_onflip_from_tail(content)
+    local p = content:find("OnFlip(", 1, true)
+    if not p then return content, false, false, false end
+    local tail = content:sub(p)
+    content = trim(content:sub(1, p - 1))
+    local mode = upper(trim(tail:match("^OnFlip%((.-)%)")))
+    local closeOn, flipOn, openOn = false, false, false
+    if mode == "FLIP" then flipOn = true
+    elseif mode == "OPEN" then openOn = true
+    else closeOn = true end
+    return content, closeOn, flipOn, openOn
+end
+
+function parse_side_block(content, side_tag, use_and, strict, atoms_out)
+    local key = side_tag .. "("
+    local p = content:find(key, 1, true)
+    if not p then return {}, content end
+    local depth = 0
+    local start = p + #key
+    for i = start - 1, #content do
+        local c = content:sub(i, i)
+        if c == "(" then depth = depth + 1
+        elseif c == ")" then
+            depth = depth - 1
+            if depth == 0 then
+                local inner = content:sub(start, i - 1)
+                local before = content:sub(1, p - 1)
+                local after = content:sub(i + 1)
+                return parse_predicate_list(inner, use_and, strict, atoms_out), trim(before .. " " .. after)
+            end
+        end
+    end
+    return {}, content
+end
+
+function parse_signal_block(content, is_op, strict, slot)
+    local closeOn, flipOn, openOn
+    content, closeOn, flipOn, openOn = parse_onflip_from_tail(content)
+    if not is_op then
+        if flipOn then slot.clOnFlipFlip = true; slot.clOnFlipClose = false
+        elseif closeOn then slot.clOnFlipClose = true; slot.clOnFlipFlip = false end
+    elseif openOn then slot.opOnFlipOpen = true end
+
+    local use_and = is_op
+    local shared = content
+    if is_op then
+        slot.longOp, shared = parse_side_block(shared, "Long", use_and, strict, slot.atoms)
+        slot.shortOp, shared = parse_side_block(shared, "Short", use_and, strict, slot.atoms)
+        slot.longOp, shared = parse_side_block(shared, "Buy", use_and, strict, slot.atoms)
+        slot.shortOp, shared = parse_side_block(shared, "Sell", use_and, strict, slot.atoms)
+        shared = trim(shared)
+        if shared ~= "" then slot.sharedOp = parse_predicate_list(shared, true, strict, slot.atoms) end
+    else
+        slot.longCl, shared = parse_side_block(shared, "Long", use_and, strict, slot.atoms)
+        slot.shortCl, shared = parse_side_block(shared, "Short", use_and, strict, slot.atoms)
+        slot.longCl, shared = parse_side_block(shared, "Buy", use_and, strict, slot.atoms)
+        slot.shortCl, shared = parse_side_block(shared, "Sell", use_and, strict, slot.atoms)
+    end
+end
+
 function parse_slot(line, enabled)
     local work = replace_lr(line)
     local disabled, w2 = parse_disabled(work)
@@ -300,17 +440,20 @@ function parse_slot(line, enabled)
     local line_strict, w25 = parse_strict(work)
     work = w25
     local regime, w3 = parse_regime(work)
-    work = w3
-    local atoms = {}
-    for _, tok in ipairs(split_and(work)) do
-        local a = parse_atom(tok)
-        if a then
-            apply_strict_atom(a, line_strict)
-            table.insert(atoms, a)
-        end
-    end
+    work = trim(w3)
+    local slot = {
+        enabled=enabled, disabled=disabled, regime=regime, strictness=line_strict,
+        atoms={}, sharedOp={}, longOp={}, shortOp={}, longCl={}, shortCl={},
+        clOnFlipClose=false, clOnFlipFlip=false, opOnFlipOpen=false
+    }
+    local opBody, clBody
+    opBody, work = extract_tagged_block(work, "Op")
+    if not opBody then return slot end
+    clBody, work = extract_tagged_block(work, "Cl")
+    parse_signal_block(opBody, true, line_strict, slot)
+    if clBody then parse_signal_block(clBody, false, line_strict, slot) end
     apply_strict_regime(regime, line_strict)
-    return { enabled=enabled, disabled=disabled, regime=regime, atoms=atoms, strictness=line_strict }
+    return slot
 end
 
 function calc_linreg_bands(idx, period, dev)
@@ -467,9 +610,70 @@ function calc_macd_hist(idx, fast, slow, sig)
     return m, s
 end
 
+function try_get_primary_value(a, idx)
+    if a.kind == "SMA" then return calc_sma(idx, a.p1) end
+    if a.kind == "CCI" then return calc_cci(idx, a.p1) end
+    if a.kind == "RSI" then return calc_rsi(idx, a.p1) end
+    if a.kind == "VWAP" then return calc_vwap(idx) end
+    if a.kind == "STOCH" or a.kind == "STOCHASTIC" then return calc_stoch_k(idx, a.p1, a.p2, a.p3) end
+    if a.kind == "MACD" then
+        local m, _ = calc_macd_hist(idx, a.p1, a.p2, a.p3)
+        return m
+    end
+    if a.kind == "LINREG" or a.kind == "LR" then
+        local _, mid, _ = calc_linreg_bands(idx, a.p1, a.dev)
+        return mid
+    end
+    if a.kind == "BOLL" or a.kind == "BOLLINGER" then
+        local _, mid, _ = calc_boll_bands(idx, a.p1, a.dev)
+        return mid
+    end
+    return nil
+end
+
+function eval_value_direction(sig, a, idx)
+    sig = upper(trim(sig or ""))
+    local require_up, streak = true, 1
+    if sig == "RISE" or sig == "VALUP" then
+    elseif sig == "FALL" or sig == "VALDN" then require_up = false
+    elseif sig:match("^VALUP(%d+)$") then streak = tonumber(sig:match("^VALUP(%d+)$")) or 1
+    elseif sig:match("^RISE(%d+)$") then streak = tonumber(sig:match("^RISE(%d+)$")) or 1
+    elseif sig:match("^VALDN(%d+)$") then require_up = false; streak = tonumber(sig:match("^VALDN(%d+)$")) or 1
+    elseif sig:match("^FALL(%d+)$") then require_up = false; streak = tonumber(sig:match("^FALL(%d+)$")) or 1
+    else return nil end
+    streak = math.max(1, streak)
+    for i = 0, streak - 1 do
+        local cur = try_get_primary_value(a, idx - i)
+        local prev = try_get_primary_value(a, idx - i - 1)
+        if not cur or not prev then return false end
+        if require_up and not (cur > prev) then return false end
+        if not require_up and not (cur < prev) then return false end
+    end
+    return true
+end
+
+function eval_value_change(sig, a, idx)
+    sig = upper(trim(sig or ""))
+    local lb, op, thr = sig:match("^CHG(%d*)([<>]=)(.+)$")
+    if not op then return nil end
+    lb = math.max(1, tonumber(lb) or 1)
+    thr = tonumber((thr or "0"):gsub("%%", "")) or 0
+    local cur = try_get_primary_value(a, idx)
+    local past = try_get_primary_value(a, idx - lb)
+    if not cur or not past or past == 0 then return false end
+    local pct = (cur - past) / math.abs(past) * 100
+    thr = math.abs(thr)
+    if op == ">=" then return pct >= thr end
+    return pct <= -thr
+end
+
 function eval_signal(sig, a, idx, _)
     sig = upper(trim(sig or ""))
     if sig == "" or sig == "-" or sig == "NONE" then return false end
+    local dir = eval_value_direction(sig, a, idx)
+    if dir ~= nil then return dir end
+    local chg = eval_value_change(sig, a, idx)
+    if chg ~= nil then return chg end
     local close = ds:C(idx)
     if a.kind == "SMA" then
         local v = calc_sma(idx, a.p1)
@@ -521,32 +725,76 @@ function eval_signal(sig, a, idx, _)
     return false
 end
 
-function eval_open(slot, idx)
-    if not slot.enabled or slot.disabled then return false end
-    for _, a in ipairs(slot.atoms) do
+function eval_atoms_and(list, idx)
+    if not list or #list == 0 then return true end
+    for _, a in ipairs(list) do
         if not eval_signal(a.opSig, a, idx, false) then return false end
     end
-    return #slot.atoms > 0
+    return true
 end
 
-function eval_close(slot, idx)
-    for _, a in ipairs(slot.atoms) do
-        local cl = upper(trim(a.clSig))
-        if cl ~= "" and cl ~= "-" then
-            if eval_signal(a.clSig, a, idx, true) then return true end
-        end
+function eval_atoms_or(list, idx)
+    if not list or #list == 0 then return false end
+    for _, a in ipairs(list) do
+        if eval_signal(a.opSig, a, idx, false) then return true end
     end
     return false
 end
 
-function eval_entry_signal(slot, idx)
-    if LOGIC_INVERSION then return eval_close(slot, idx) end
-    return eval_open(slot, idx)
+function effective_regime(slot)
+    local r = {}
+    for k, v in pairs(slot.regime) do r[k] = v end
+    if slot.clOnFlipFlip then r.flipOnRegime = true; r.closeOnFlip = false
+    elseif slot.clOnFlipClose then r.closeOnFlip = true; r.flipOnRegime = false end
+    return r
 end
 
-function eval_exit_signal(slot, idx)
-    if LOGIC_INVERSION then return eval_open(slot, idx) end
-    return eval_close(slot, idx)
+function try_pick_entry_side_normal(slot, idx)
+    if not slot.enabled or slot.disabled then return false, 0 end
+    local sharedOk = eval_atoms_and(slot.sharedOp, idx)
+    if slot.sharedOp and #slot.sharedOp > 0 and not sharedOk then return false, 0 end
+    if slot.longOp and #slot.longOp > 0 and sharedOk and eval_atoms_and(slot.longOp, idx) then
+        return true, 1
+    end
+    if slot.shortOp and #slot.shortOp > 0 and sharedOk and eval_atoms_and(slot.shortOp, idx) then
+        return true, -1
+    end
+    return false, 0
+end
+
+function eval_close_for_side(slot, idx, pos_side)
+    if pos_side == 1 and slot.longCl and #slot.longCl > 0 then
+        return eval_atoms_or(slot.longCl, idx)
+    end
+    if pos_side == -1 and slot.shortCl and #slot.shortCl > 0 then
+        return eval_atoms_or(slot.shortCl, idx)
+    end
+    return false
+end
+
+function try_pick_entry_side(slot, idx)
+    if LOGIC_INVERSION then
+        if eval_close_for_side(slot, idx, 1) then return true, -1 end
+        return false, 0
+    end
+    return try_pick_entry_side_normal(slot, idx)
+end
+
+function eval_exit_for_position(slot, idx, pos_side)
+    if LOGIC_INVERSION then
+        local ok, _ = try_pick_entry_side_normal(slot, idx)
+        return ok
+    end
+    return eval_close_for_side(slot, idx, pos_side)
+end
+
+function eval_entry_signal(slot, idx)
+    local ok, _ = try_pick_entry_side(slot, idx)
+    return ok
+end
+
+function eval_exit_signal(slot, idx, pos_side)
+    return eval_exit_for_position(slot, idx, pos_side)
 end
 
 function append_equity_snapshot(bar_time)
@@ -622,9 +870,7 @@ function check_peak_drawdown()
 end
 
 function slot_side(slot)
-    for _, a in ipairs(slot.atoms) do
-        if a.isShort then return -1 end
-    end
+    if slot.shortOp and #slot.shortOp > 0 then return -1 end
     return 1
 end
 
@@ -639,12 +885,20 @@ function regime_allows_entry(r, side, sign)
     return true
 end
 
-function regime_should_close(r, side, sign)
-    if not r.valid or not r.closeOnFlip then return false end
+function regime_should_act(r, side, sign)
+    if not r.valid then return false end
+    if not r.closeOnFlip and not r.flipOnRegime and not r.entryFlatOnly then return false end
     if r.entryFlatOnly then return sign ~= 0 end
+    if not r.closeOnFlip and not r.flipOnRegime then return false end
     if sign > 0 then return side == -1 end
     if sign < 0 then return side == 1 end
     return false
+end
+
+function regime_flip_target_side(sign)
+    if sign > 0 then return 1 end
+    if sign < 0 then return -1 end
+    return 0
 end
 
 function time_in_non_trade()
@@ -756,9 +1010,20 @@ function process_bar(idx)
 
     if position_side ~= 0 and active_slot >= 1 and active_slot <= 4 then
         local sl = slots[active_slot]
-        local side = apply_inversion(slot_side(sl))
+        local pos_side = position_side
+        local eff = effective_regime(sl)
         local sign = regime_sign(sl.regime, idx)
-        if regime_should_close(sl.regime, side, sign) or eval_exit_signal(sl, idx) then
+        if regime_should_act(eff, pos_side, sign) then
+            if eff.flipOnRegime and sign ~= 0 then
+                local flip_side = apply_inversion(regime_flip_target_side(sign))
+                close_all()
+                open_side(flip_side, active_slot)
+                return
+            end
+            close_all()
+            return
+        end
+        if eval_exit_signal(sl, idx, pos_side) then
             close_all()
             return
         end
@@ -769,10 +1034,9 @@ function process_bar(idx)
 
     for s = 1, 4 do
         local sl = slots[s]
-        if sl.enabled and not sl.disabled and eval_entry_signal(sl, idx) then
-            local side = apply_inversion(slot_side(sl))
-            local sign = regime_sign(sl.regime, idx)
-            if regime_allows_entry(sl.regime, side, sign) then
+        if sl.enabled and not sl.disabled then
+            local ok, side = try_pick_entry_side(sl, idx)
+            if ok and regime_allows_entry(sl.regime, side, regime_sign(sl.regime, idx)) then
                 open_side(side, s)
                 return
             end
