@@ -5,237 +5,172 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MultiLogic — калькулятор FINRESP</title>
 <style>
-:root{
-  --bg:#f4f6fa;--paper:#fff;--text:#1a1d26;--muted:#5c6370;--border:#dde2eb;
-  --accent:#2563eb;--accent-soft:#eef4ff;--code-bg:#eef1f6;--example-bg:#f0f7ff;--example-border:#c7daf5;
-  --poly:#1d4ed8;
-  --mkt:#c026d3;
-  --deal:#ea580c;
-  --coef:#b45309;--coef-soft:#fffbeb;
-  --delta:#7c3aed;
-}
+:root{--bg:#f4f6fa;--paper:#fff;--text:#1a1d26;--muted:#5c6370;--border:#dde2eb;--accent:#2563eb;--accent-soft:#eef4ff;--code-bg:#eef1f6;}
 *{box-sizing:border-box;}
-body{margin:0;font-family:Segoe UI,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;font-size:15px;}
+body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.55;font-size:15px;}
 .help-hdr{background:linear-gradient(180deg,#fff 0%,var(--accent-soft) 100%);border-bottom:1px solid var(--border);padding:1.5rem 1.75rem 1.25rem;}
-.help-hdr h1{margin:0 0 .4rem;font-size:1.65rem;font-weight:700;color:#111827;}
+.help-hdr h1{margin:0 0 .4rem;font-size:1.65rem;}
 .help-sub{margin:.2rem 0;color:var(--muted);font-size:.92rem;}
-.legend{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem;margin-top:.75rem;font-size:.9rem;}
-.legend span{display:inline-flex;align-items:center;gap:.35rem;}
-.dot-poly,.dot-mkt,.dot-deal,.dot-coef{width:.85rem;height:.85rem;border-radius:3px;display:inline-block;}
-.dot-poly{background:var(--poly);}
-.dot-mkt{background:var(--mkt);}
-.dot-deal{background:var(--deal);}
-.dot-coef{background:var(--coef);}
-.help-layout{max-width:960px;margin:0 auto;padding:1.25rem 1rem 3rem;}
+.help-layout{max-width:1040px;margin:0 auto;padding:1.25rem 1rem 3rem;}
 .help-main{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:1.5rem 1.75rem 2rem;box-shadow:0 1px 4px rgba(0,0,0,.05);}
-h2{font-size:1.28rem;margin:2rem 0 .85rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);color:#111827;scroll-margin-top:12px;}
+h2{font-size:1.2rem;margin:1.5rem 0 .75rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
 h2:first-child{margin-top:0;}
-h3{font-size:1.05rem;margin:1.35rem 0 .6rem;color:#374151;}
-p{margin:.55rem 0;}
-ul{margin:.4rem 0 .75rem;padding-left:1.35rem;}
-li{margin:.3rem 0;}
-code{font-family:Consolas,Monaco,monospace;background:var(--code-bg);padding:.12em .38em;border-radius:4px;font-size:.88em;}
-.poly{font-weight:700;color:var(--poly);font-family:Consolas,"Courier New",monospace;letter-spacing:.02em;}
-.mkt{font-weight:700;color:var(--mkt);font-family:Consolas,"Courier New",monospace;letter-spacing:.02em;}
-.deal{font-weight:700;color:var(--deal);font-family:Consolas,"Courier New",monospace;letter-spacing:.02em;}
-.coef{font-weight:700;color:var(--coef);font-family:Consolas,"Courier New",monospace;}
-.delta{font-weight:700;color:var(--delta);font-family:"Segoe UI Symbol",Consolas,serif;letter-spacing:.02em;}
-.op{font-weight:700;color:#047857;}
-pre.formula{background:var(--example-bg);border:1px solid var(--example-border);border-radius:8px;padding:.75rem 1rem;margin:.65rem 0 1rem;overflow-x:auto;font-family:Consolas,Monaco,monospace;font-size:.9rem;line-height:1.55;color:#0f172a;white-space:pre-wrap;}
 .note{color:var(--muted);font-size:.93rem;}
-.warn{background:var(--coef-soft);border:1px solid #e7c96f;border-left:4px solid var(--coef);border-radius:8px;padding:.65rem .9rem;margin:.75rem 0;font-size:.93rem;}
-.chart-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:.75rem;margin:1rem 0;overflow-x:auto;}
-.chart-card svg{display:block;min-width:720px;max-width:100%;height:auto;}
-.legend-line{display:inline-flex;align-items:center;gap:.35rem;margin-right:1rem;font-size:.9rem;color:var(--muted);}
-.line-sample{width:1.7rem;height:.18rem;border-radius:999px;display:inline-block;background:#2563eb;}
-.line-sample.sma{background:#d97706;}
-.line-sample.buy{width:.75rem;height:.75rem;background:#16a34a;border-radius:50%;}
-.line-sample.sell{width:.75rem;height:.75rem;background:#dc2626;border-radius:50%;}
-.finresp-card{background:#f8fafc;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:.75rem 1rem;margin:1rem 0;}
-.finresp-value{font-size:1.35rem;font-weight:700;color:#b91c1c;font-family:Consolas,"Courier New",monospace;}
 .calc-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:1rem;margin:1rem 0;}
-.calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;align-items:end;}
+.calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.65rem;align-items:end;}
 .calc-field label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:.25rem;}
-.calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);}
-.calc-btn{padding:.48rem .8rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
+.calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;}
+.calc-field select[multiple]{min-height:6.5rem;}
+.calc-btn{padding:.48rem .85rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
 .calc-btn:disabled{opacity:.55;cursor:wait;}
 .calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
-.calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin:.85rem 0;}
+.calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.5rem;margin:.85rem 0;}
 .calc-metric{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.55rem .7rem;}
 .calc-metric b{display:block;font-size:.82rem;color:var(--muted);font-weight:500;}
-.calc-metric span{font-family:Consolas,"Courier New",monospace;font-weight:700;}
+.calc-metric span{font-family:Consolas,monospace;font-weight:700;}
 .range-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin:.6rem 0;}
 .range-grid input{width:100%;}
-.calc-chart svg{min-width:720px;}
-table.ind{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.92rem;}
-table.ind th,table.ind td{border:1px solid var(--border);padding:.45rem .65rem;text-align:left;vertical-align:top;}
-table.ind th{background:var(--accent-soft);font-weight:600;}
+.chart-card{border:1px solid var(--border);border-radius:10px;padding:.75rem;margin:1rem 0;overflow-x:auto;}
+.chart-card svg{display:block;min-width:720px;max-width:100%;}
+details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
+details.logic-editor summary{cursor:pointer;font-weight:600;color:#374151;}
+.logic-grid{display:grid;gap:.75rem;margin-top:.75rem;}
+.logic-grid label{font-size:.82rem;color:var(--muted);display:block;margin-bottom:.2rem;}
+.logic-grid textarea{width:100%;min-height:4.5rem;font-family:Consolas,monospace;font-size:.78rem;padding:.45rem;border:1px solid var(--border);border-radius:6px;resize:vertical;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
 a{color:var(--accent);}
-
-
-.finresp-card{background:#f8fafc;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:.75rem 1rem;margin:1rem 0;}
-.finresp-value{font-size:1.35rem;font-weight:700;color:#b91c1c;font-family:Consolas,"Courier New",monospace;}
-.calc-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:1rem;margin:1rem 0;}
-.calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;align-items:end;}
-.calc-field label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:.25rem;}
-.calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);}
-.calc-btn{padding:.48rem .8rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
-.calc-btn:disabled{opacity:.55;cursor:wait;}
-.calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
-.calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin:.85rem 0;}
-.calc-metric{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.55rem .7rem;}
-.calc-metric b{display:block;font-size:.82rem;color:var(--muted);font-weight:500;}
-.calc-metric span{font-family:Consolas,"Courier New",monospace;font-weight:700;}
-.range-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin:.6rem 0;}
-.range-grid input{width:100%;}
-.calc-chart svg{min-width:720px;}
-.chart-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:.75rem;margin:1rem 0;overflow-x:auto;}
-.chart-card svg{display:block;min-width:720px;max-width:100%;height:auto;}
-.legend-line{display:inline-flex;align-items:center;gap:.35rem;margin-right:1rem;font-size:.9rem;color:var(--muted);}
-.line-sample{width:1.7rem;height:.18rem;border-radius:999px;display:inline-block;background:#2563eb;}
-.line-sample.sma{background:#d97706;}
-.line-sample.buy{width:.75rem;height:.75rem;background:#16a34a;border-radius:50%;}
-.line-sample.sell{width:.75rem;height:.75rem;background:#dc2626;border-radius:50%;}
-.note{color:var(--muted);font-size:.93rem;}
-.poly{font-weight:700;color:var(--poly);font-family:Consolas,"Courier New",monospace;}
-.deal{font-weight:700;color:var(--deal);font-family:Consolas,"Courier New",monospace;}
-.op{font-weight:700;color:#047857;}
-
 </style>
 </head>
 <body>
 <header class="help-hdr">
 <h1>MultiLogic — калькулятор FINRESP</h1>
-<p class="help-sub">Светлая страница · <a href="../index.html">документация</a> · <a href="MultiLogic_LogicHelp.html">справка по роботу</a> · <a href="MultiLogic_PolynomialIndicators.html">рынок в терминах многочленов</a></p>
-<p class="help-sub">Стратегия SMA-разности: <span class="deal">bb</span> при Close &gt; SMA, <span class="deal">ee</span> при Close &lt; SMA, объём = |Close − SMA|. Формулы — в <a href="MultiLogic_PolynomialIndicators.html#deals">разделе 7</a> справки по многочленам.</p>
+<p class="help-sub"><a href="../index.html">документация</a> · <a href="MultiLogic_LogicHelp.html">справка по роботу</a> · <a href="MultiLogic_PolynomialIndicators.html">многочлены</a></p>
+<p class="help-sub">Свечи MOEX ISS → индикаторы → Op/Cl → FINRESP на выбранном окне. Ползунки пересчитывают сразу. Без сохранения в файл.</p>
 </header>
 <div class="help-layout">
 <main class="help-main">
-<h3>Онлайн-калькулятор FINRESP</h3>
+<h2>Калькулятор</h2>
 <div class="calc-card" id="finresp-calc">
 <div class="calc-grid">
-<div class="calc-field"><label for="calc-sec">Бумага</label><select id="calc-sec">
-<option value="SBER">SBER — Сбербанк</option>
-<option value="LKOH">LKOH — Лукойл</option>
-<option value="GAZP">GAZP — Газпром</option>
-<option value="GMKN">GMKN — Норникель</option>
-<option value="ROSN">ROSN — Роснефть</option>
-<option value="NVTK">NVTK — Новатэк</option>
-<option value="TATN">TATN — Татнефть</option>
-<option value="PLZL">PLZL — Полюс</option>
-<option value="YDEX">YDEX — Яндекс</option>
-<option value="VTBR">VTBR — ВТБ</option>
+<div class="calc-field"><label for="calc-sec">Бумаги (Ctrl+клик)</label>
+<select id="calc-sec" multiple size="6">
+<option value="SBER" selected>SBER</option>
+<option value="LKOH">LKOH</option>
+<option value="GAZP">GAZP</option>
+<option value="GMKN">GMKN</option>
+<option value="ROSN">ROSN</option>
+<option value="NVTK">NVTK</option>
+<option value="TATN">TATN</option>
+<option value="PLZL">PLZL</option>
+<option value="YDEX">YDEX</option>
+<option value="VTBR">VTBR</option>
 </select></div>
-<div class="calc-field"><label for="calc-tf">Таймфрейм</label><select id="calc-tf">
-<option value="1">1 минута</option>
-<option value="10">10 минут</option>
+<div class="calc-field"><label for="calc-tf">Таймфрейм</label>
+<select id="calc-tf">
+<option value="1">1 мин</option>
+<option value="10">10 мин</option>
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
 </select></div>
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date"></div>
-<div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"><option value="sma3">SMA-разность, SMA(3)</option></select></div>
-<button class="calc-btn" id="calc-run" type="button">Execute / Рассчитать</button>
+<div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
+<div class="calc-field"><label for="param-lr">@LR</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
+<div class="calc-field"><label for="param-sl">@SL ×ATR</label><input id="param-sl" type="number" value="2" min="0" max="50" step="0.1"></div>
+<div class="calc-field"><label for="param-tp">@TP ×ATR</label><input id="param-tp" type="number" value="3" min="0" max="50" step="0.1"></div>
+<button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
 </div>
-<p class="calc-status" id="calc-status">Загрузите свечи MOEX ISS и двигайте границы периода — FINRESP пересчитывается сразу. Для малых таймфреймов диапазон ограничен, чтобы браузеру хватало ресурсов.</p>
-<div class="calc-result" id="calc-result">
-<div class="calc-metric"><b>FINRESP</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric"><b>Свечи</b><span id="calc-count">—</span></div>
+<p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
+<div class="calc-result">
+<div class="calc-metric"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric"><b>Свечи (первая бумага)</b><span id="calc-count">—</span></div>
 <div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
 <div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
+<div class="calc-metric"><b>По бумагам</b><span id="calc-bysec" style="font-size:.75rem">—</span></div>
 </div>
 <div class="range-grid">
 <div><label for="calc-start">Левая граница</label><input id="calc-start" type="range" min="0" max="0" value="0" disabled><small id="calc-start-label">—</small></div>
 <div><label for="calc-end">Правая граница</label><input id="calc-end" type="range" min="0" max="0" value="0" disabled><small id="calc-end-label">—</small></div>
 </div>
-<div class="chart-card calc-chart" id="calc-chart"></div>
+<div class="chart-card" id="calc-chart"></div>
 </div>
 
-<h3>SBER H1 за последние 3 месяца: FINRESP</h3>
-<div class="finresp-card">
-<p><strong>Источник:</strong> MOEX ISS, <code>SBER</code>, свечи <code>interval=60</code>.</p>
-<p><strong>Период расчёта:</strong> 2026-03-11 06:00 — 2026-06-11 16:00; свечей: <code>1411</code>; торговых свечей после появления SMA(3): <code>1409</code>.</p>
-<p><strong>Параметры:</strong> <code>SMA(3)</code>, <code>mm = 1</code>, Close, без округления лотов, комиссий и проскальзывания.</p>
-<p><strong>Итог:</strong> <span class="finresp-value">FINRESP = −158,36 ₽</span></p>
-<p>На последней свече: <code>z_T = 6,6067</code>, <code>C_T = −2284,32 ₽</code>, <code>p_T = 321,79 ₽</code>, поэтому <code>F_T = C_T + z_T·p_T = −158,36 ₽</code>.</p>
-</div>
-
-<div class="chart-card" aria-label="SBER H1 SMA FINRESP chart">
-<p>
-<span class="legend-line"><span class="line-sample"></span>Close SBER H1</span>
-<span class="legend-line"><span class="line-sample sma"></span>SMA(3)</span>
-<span class="legend-line"><span class="line-sample buy"></span>Buy, маркеры прорежены</span>
-<span class="legend-line"><span class="line-sample sell"></span>Sell, маркеры прорежены</span>
-</p>
-<svg viewBox="0 0 760 300" role="img" aria-labelledby="sber-h1-title sber-h1-desc">
-<title id="sber-h1-title">SBER H1: Close, SMA(3), FINRESP за 3 месяца</title>
-<desc id="sber-h1-desc">Синяя линия показывает часовой Close SBER, оранжевая линия SMA(3), зелёные и красные точки — прореженные маркеры покупок и продаж. FINRESP стратегии: минус 158,36 рубля.</desc>
-<rect x="0" y="0" width="760" height="300" fill="#ffffff"/>
-<line x1="55" y1="22" x2="55" y2="252" stroke="#cbd5e1"/>
-<line x1="55" y1="252" x2="735" y2="252" stroke="#cbd5e1"/>
-<g fill="#64748b" font-size="12" font-family="Segoe UI, sans-serif">
-<text x="20" y="82">325</text><text x="20" y="151">320</text><text x="20" y="220">315</text>
-<text x="55" y="274">11.03</text><text x="305" y="274">апрель</text><text x="530" y="274">май</text><text x="695" y="274">11.06</text>
-<text x="8" y="18">₽</text>
-</g>
-<g stroke="#e2e8f0" stroke-width="1">
-<line x1="55" y1="217.1" x2="735" y2="217.1"/><line x1="55" y1="148.0" x2="735" y2="148.0"/><line x1="55" y1="78.8" x2="735" y2="78.8"/>
-</g>
-<polyline fill="none" stroke="#2563eb" stroke-width="2.3" points="55.0,210.6 56.0,211.8 79.1,192.3 103.2,164.6 127.3,127.9 151.5,185.3 175.6,230.6 199.7,226.1 223.8,202.8 247.9,164.5 272.0,186.3 296.1,192.8 320.2,120.3 344.4,86.4 368.5,79.9 392.6,69.4 416.7,145.2 440.8,140.0 464.9,129.7 489.0,170.1 513.2,74.0 537.3,101.2 561.4,94.2 585.5,115.5 609.6,142.5 633.7,117.2 657.8,106.6 682.0,97.1 706.1,115.9 730.2,122.0 735.0,123.2"/>
-<polyline fill="none" stroke="#d97706" stroke-width="2.3" stroke-dasharray="6 5" points="56.0,212.6 79.1,193.4 103.2,179.9 127.3,132.0 151.5,185.8 175.6,229.5 199.7,221.9 223.8,194.7 247.9,164.3 272.0,189.6 296.1,192.3 320.2,125.1 344.4,84.9 368.5,82.1 392.6,69.5 416.7,147.9 440.8,141.1 464.9,126.4 489.0,166.6 513.2,73.1 537.3,102.1 561.4,93.5 585.5,107.6 609.6,147.8 633.7,119.1 657.8,108.7 682.0,94.6 706.1,106.8 730.2,121.1 735.0,123.5"/>
-<g fill="#16a34a" stroke="#ffffff" stroke-width="2">
-<circle cx="56.0" cy="211.8" r="5"><title>2026-03-11 08:00 Buy 0,06</title></circle>
-<circle cx="113.8" cy="124.9" r="5"><title>2026-03-18 18:00 Buy 0,97</title></circle>
-<circle cx="229.6" cy="218.5" r="5"><title>2026-04-03 22:00 Buy 0,18</title></circle>
-<circle cx="287.5" cy="177.9" r="5"><title>2026-04-11 17:00 Buy 0,01</title></circle>
-<circle cx="345.3" cy="85.3" r="5"><title>2026-04-19 17:00 Buy 0,06</title></circle>
-<circle cx="403.2" cy="96.1" r="5"><title>2026-04-27 14:00 Buy 0,04</title></circle>
-<circle cx="518.9" cy="58.4" r="5"><title>2026-05-14 08:00 Buy 0,17</title></circle>
-<circle cx="576.8" cy="94.3" r="5"><title>2026-05-21 18:00 Buy 0,74</title></circle>
-<circle cx="692.6" cy="117.4" r="5"><title>2026-06-05 20:00 Buy 0,04</title></circle>
-<circle cx="735.0" cy="123.2" r="5"><title>2026-06-11 16:00 Buy 0,02</title></circle>
-</g>
-<g fill="#dc2626" stroke="#ffffff" stroke-width="2">
-<circle cx="171.7" cy="224.5" r="5"><title>2026-03-27 12:00 Sell 0,55</title></circle>
-<circle cx="461.1" cy="142.3" r="5"><title>2026-05-05 14:00 Sell 0,33</title></circle>
-<circle cx="634.7" cy="136.8" r="5"><title>2026-05-29 10:00 Sell 0,68</title></circle>
-</g>
-<text x="510" y="36" fill="#b91c1c" font-size="16" font-weight="700" font-family="Consolas,monospace">FINRESP −158,36 ₽</text>
-</svg>
-</div>
-
-
-<p class="note">Учебный разбор на 12 свечах — в <a href="MultiLogic_PolynomialIndicators.html#deals">справке по многочленам</a>.</p>
+<details class="logic-editor" id="logic-editor">
+<summary>Строки логик L1…L4 (редактируемые) — после изменения нажмите «Применить»</summary>
+<div class="logic-grid" id="logic-lines"></div>
+<button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить строки</button>
+<p class="note">Regime/Strict в калькуляторе не блокируют вход — учитываются Op/Cl и SL/TP по ATR. Общепортфельный Stopper пока не считается.</p>
+</details>
 </main>
 </div>
-<footer class="help-ftr">
-MultiLogic · <a href="../index.html">документация</a> · <a href="MultiLogic_PolynomialIndicators.html">многочлены</a> · FINRESP · OsEngine Custom\Robots
-</footer>
+<footer class="help-ftr">MultiLogic FINRESP · OsEngine Custom\Robots</footer>
+<script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
+  const E = window.MultiLogicFinrespEngine;
   const $ = (id) => document.getElementById(id);
-  const state = { candles: [], rows: [], movedSlider: "end" };
+  const state = { packs: [], movedSlider: "end", customLines: { ...E.DEFAULT_LOGIC_LINES } };
   const TF_LIMITS = {
-    "1": { label: "1 минута", maxDays: 7, maxBars: 900, defaultDays: 3 },
-    "10": { label: "10 минут", maxDays: 31, maxBars: 1200, defaultDays: 14 },
+    "1": { label: "1 мин", maxDays: 7, maxBars: 900, defaultDays: 3 },
+    "10": { label: "10 мин", maxDays: 31, maxBars: 1200, defaultDays: 14 },
     "60": { label: "1 час", maxDays: 93, maxBars: 1500, defaultDays: 90 },
     "24": { label: "1 день", maxDays: 3650, maxBars: 1500, defaultDays: 365 }
   };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
   const day = (dt) => dt.toISOString().slice(0, 10);
   const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
-  const parseDay = (value) => new Date(`${value}T00:00:00`);
-  const addDays = (date, days) => {
-    const next = new Date(date);
-    next.setDate(next.getDate() + days);
-    return next;
-  };
+  const parseDay = (v) => new Date(`${v}T00:00:00`);
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+  function params() {
+    return {
+      LR: +$("param-lr").value || E.DEFAULT_PARAMS.LR,
+      SL: +$("param-sl").value || 0,
+      TP: +$("param-tp").value || 0
+    };
+  }
+
+  function selectedSecs() {
+    return Array.from($("calc-sec").selectedOptions).map((o) => o.value);
+  }
+
+  function fillLogicSelect() {
+    const sel = $("calc-logic");
+    const cur = sel.value;
+    sel.innerHTML = "";
+    for (const m of E.BUILTIN_META) {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = m.name;
+      sel.appendChild(o);
+    }
+    if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+
+  function fillLogicEditor() {
+    const box = $("logic-lines");
+    box.innerHTML = "";
+    for (const key of ["L1", "L2", "L3", "L4"]) {
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `<label>${key}</label>`;
+      const ta = document.createElement("textarea");
+      ta.dataset.key = key;
+      ta.value = state.customLines[key] || E.DEFAULT_LOGIC_LINES[key];
+      wrap.appendChild(ta);
+      box.appendChild(wrap);
+    }
+  }
+
+  function readLogicEditor() {
+    document.querySelectorAll("#logic-lines textarea").forEach((ta) => {
+      state.customLines[ta.dataset.key] = ta.value;
+    });
+    fillLogicSelect();
+  }
 
   function initDates() {
     const till = new Date();
-    const from = new Date(till);
-    from.setDate(from.getDate() - currentLimit().defaultDays);
+    const from = addDays(till, -currentLimit().defaultDays);
     $("calc-from").value = day(from);
     $("calc-till").value = day(till);
   }
@@ -245,67 +180,19 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
     let from = parseDay($("calc-from").value);
     let till = parseDay($("calc-till").value);
     if (!Number.isFinite(from.getTime()) || !Number.isFinite(till.getTime())) return;
-    if (from > till) {
-      if (anchor === "from") till = from;
-      else from = till;
-    }
-    const spanDays = Math.round((till - from) / 86400000);
-    if (spanDays > limit.maxDays) {
+    if (from > till) { if (anchor === "from") till = from; else from = till; }
+    const span = Math.round((till - from) / 86400000);
+    if (span > limit.maxDays) {
       if (anchor === "from") till = addDays(from, limit.maxDays);
       else from = addDays(till, -limit.maxDays);
     }
     $("calc-from").value = day(from);
     $("calc-till").value = day(till);
-    $("calc-status").textContent = `${limit.label}: максимум ${limit.maxDays} дней загрузки и ${limit.maxBars} свечей в расчётном окне.`;
-  }
-
-  async function loadCandles(sec, from, till, interval) {
-    const all = [];
-    let start = 0;
-    while (true) {
-      const url = new URL(`https://iss.moex.com/iss/engines/stock/markets/shares/securities/${sec}/candles.json`);
-      url.search = new URLSearchParams({ from, till, interval, start: String(start) }).toString();
-      const data = await fetch(url).then((r) => {
-        if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
-        return r.json();
-      });
-      const chunk = data?.candles?.data || [];
-      if (!chunk.length) break;
-      all.push(...chunk);
-      if (chunk.length < 500) break;
-      start += chunk.length;
-      if (start > 20000) break;
-    }
-    const seen = new Set();
-    return all.filter((r) => {
-      if (seen.has(r[6])) return false;
-      seen.add(r[6]);
-      return true;
-    }).map((r) => ({ open: +r[0], close: +r[1], high: +r[2], low: +r[3], volume: +r[5], time: r[6] }));
-  }
-
-  function calcFinResp(candles, startIdx, endIdx) {
-    const part = candles.slice(startIdx, endIdx + 1);
-    let cash = 0, pos = 0, buys = 0, sells = 0;
-    const rows = part.map((c, i) => {
-      let sma = null, d = 0, buy = 0, sell = 0;
-      if (i >= 2) {
-        sma = (part[i - 2].close + part[i - 1].close + c.close) / 3;
-        d = c.close - sma;
-        buy = Math.max(d, 0);
-        sell = Math.max(-d, 0);
-        cash += c.close * (sell - buy);
-        pos += buy - sell;
-        buys += buy;
-        sells += sell;
-      }
-      return { ...c, sma, d, buy, sell, cash, pos, eq: cash + pos * c.close };
-    });
-    return { rows, finresp: rows.at(-1)?.eq ?? 0, cash, pos, buys, sells };
   }
 
   function setSliderBounds() {
-    const max = Math.max(0, state.candles.length - 1);
+    const n = state.packs[0]?.length || 0;
+    const max = Math.max(0, n - 1);
     const width = Math.min(max + 1, currentLimit().maxBars);
     for (const id of ["calc-start", "calc-end"]) {
       $(id).min = 0;
@@ -317,47 +204,29 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
   }
 
   function normalizeSliders() {
+    const n = state.packs[0]?.length || 0;
     let a = +$("calc-start").value;
     let b = +$("calc-end").value;
-    const max = Math.max(0, state.candles.length - 1);
+    const max = Math.max(0, n - 1);
     const maxBars = currentLimit().maxBars;
     if (a > b - 2) a = Math.max(0, b - 2);
-    if (b < a + 2) b = Math.min(state.candles.length - 1, a + 2);
+    if (b < a + 2) b = Math.min(n - 1, a + 2);
     if (b - a + 1 > maxBars) {
       if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
       else a = Math.max(0, b - maxBars + 1);
-    }
-    if (b - a + 1 > maxBars) {
-      b = Math.min(max, a + maxBars - 1);
     }
     $("calc-start").value = a;
     $("calc-end").value = b;
     return [a, b];
   }
 
-  function render() {
-    if (!state.candles.length) return;
-    const [a, b] = normalizeSliders();
-    const result = calcFinResp(state.candles, a, b);
-    state.rows = result.rows;
-    $("calc-finresp").textContent = `${fmt(result.finresp)} ₽`;
-    $("calc-finresp").style.color = result.finresp < 0 ? "#b91c1c" : "#047857";
-    $("calc-count").textContent = String(result.rows.length);
-    $("calc-pos").textContent = fmt(result.pos, 4);
-    $("calc-cash").textContent = `${fmt(result.cash)} ₽`;
-    $("calc-start-label").textContent = state.candles[a]?.time || "—";
-    $("calc-end-label").textContent = state.candles[b]?.time || "—";
-    $("calc-status").textContent = `FINRESP пересчитан: ${state.candles[a]?.time} — ${state.candles[b]?.time}. Выбрано ${result.rows.length}/${currentLimit().maxBars} свечей. Buy ${fmt(result.buys, 2)}, Sell ${fmt(result.sells, 2)}.`;
-    drawChart(result.rows, result.finresp);
-  }
-
   function drawChart(rows, finresp) {
-    if (rows.length < 3) {
-      $("calc-chart").innerHTML = "<p class=\"note\">Недостаточно свечей для SMA(3).</p>";
+    if (!rows?.length) {
+      $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
       return;
     }
     const w = 760, h = 300, left = 55, right = 25, top = 22, bottom = 48;
-    const vals = rows.flatMap((r) => r.sma == null ? [r.close] : [r.close, r.sma]);
+    const vals = rows.flatMap((r) => r.sma != null ? [r.close, r.sma] : [r.close]);
     const min = Math.min(...vals), max = Math.max(...vals);
     const pad = Math.max((max - min) * 0.08, 0.01);
     const lo = min - pad, hi = max + pad;
@@ -366,61 +235,73 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
     const step = Math.max(1, Math.ceil(rows.length / 420));
     const sample = rows.map((_, i) => i).filter((i) => i % step === 0 || i === rows.length - 1);
     const line = (key) => sample.filter((i) => rows[i][key] != null).map((i) => `${x(i).toFixed(1)},${y(rows[i][key]).toFixed(1)}`).join(" ");
-    const markerStep = Math.max(1, Math.ceil(rows.length / 80));
-    const markers = rows.map((r, i) => ({ r, i })).filter(({ r, i }) => i >= 2 && (r.buy || r.sell) && (i % markerStep === 0 || i === rows.length - 1));
-    const circles = markers.map(({ r, i }) => {
-      const cls = r.buy ? "#16a34a" : "#dc2626";
-      const side = r.buy ? "Buy" : "Sell";
-      const vol = r.buy || r.sell;
-      return `<circle cx="${x(i).toFixed(1)}" cy="${y(r.close).toFixed(1)}" r="4.5" fill="${cls}" stroke="#fff" stroke-width="1.5"><title>${r.time} ${side} ${fmt(vol, 2)}</title></circle>`;
-    }).join("");
-    const y1 = y(lo + (hi - lo) * 0.25), y2 = y(lo + (hi - lo) * 0.5), y3 = y(lo + (hi - lo) * 0.75);
     const color = finresp < 0 ? "#b91c1c" : "#047857";
-    $("calc-chart").innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="FINRESP chart">
-<rect x="0" y="0" width="${w}" height="${h}" fill="#fff"/>
-<line x1="${left}" y1="${top}" x2="${left}" y2="${h - bottom}" stroke="#cbd5e1"/><line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#cbd5e1"/>
-<g stroke="#e2e8f0"><line x1="${left}" y1="${y1.toFixed(1)}" x2="${w - right}" y2="${y1.toFixed(1)}"/><line x1="${left}" y1="${y2.toFixed(1)}" x2="${w - right}" y2="${y2.toFixed(1)}"/><line x1="${left}" y1="${y3.toFixed(1)}" x2="${w - right}" y2="${y3.toFixed(1)}"/></g>
+    let extra = "";
+    if (rows[0]?.sma != null) {
+      extra = `<polyline fill="none" stroke="#d97706" stroke-width="2.2" stroke-dasharray="6 5" points="${line("sma")}"/>`;
+    }
+    $("calc-chart").innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img">
+<rect width="${w}" height="${h}" fill="#fff"/>
+<line x1="${left}" y1="${top}" x2="${left}" y2="${h-bottom}" stroke="#cbd5e1"/>
+<line x1="${left}" y1="${h-bottom}" x2="${w-right}" y2="${h-bottom}" stroke="#cbd5e1"/>
 <polyline fill="none" stroke="#2563eb" stroke-width="2.2" points="${line("close")}"/>
-<polyline fill="none" stroke="#d97706" stroke-width="2.2" stroke-dasharray="6 5" points="${line("sma")}"/>
-<g>${circles}</g>
-<g fill="#64748b" font-size="12" font-family="Segoe UI, sans-serif"><text x="10" y="26">${fmt(hi, 1)}</text><text x="10" y="${h - bottom}">${fmt(lo, 1)}</text><text x="${left}" y="274">${rows[0].time.slice(0, 10)}</text><text x="${w - 105}" y="274">${rows.at(-1).time.slice(0, 10)}</text></g>
+${extra}
 <text x="500" y="36" fill="${color}" font-size="16" font-weight="700" font-family="Consolas,monospace">FINRESP ${fmt(finresp)} ₽</text>
 </svg>`;
   }
 
+  function render() {
+    if (!state.packs.length) return;
+    const [a, b] = normalizeSliders();
+    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params());
+    if (!spec) return;
+    const { perSec, agg, chartRows } = E.runMulti(state.packs, spec, a, b, params());
+    $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
+    $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
+    $("calc-count").textContent = String(chartRows.length);
+    $("calc-pos").textContent = fmt(agg.pos, 4);
+    $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
+    const bySec = Object.entries(agg.bySec).map(([k, v]) => `${k}:${fmt(v)}`).join(" · ");
+    $("calc-bysec").textContent = bySec || "—";
+    const c0 = state.packs[0][a]?.time || "—";
+    const c1 = state.packs[0][b]?.time || "—";
+    $("calc-start-label").textContent = c0;
+    $("calc-end-label").textContent = c1;
+    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} бумаг | ${chartRows.length} свечей в окне`;
+    drawChart(chartRows, agg.finresp);
+  }
+
   async function run() {
-    const btn = $("calc-run");
-    btn.disabled = true;
+    const secs = selectedSecs();
+    if (!secs.length) { $("calc-status").textContent = "Выберите хотя бы одну бумагу."; return; }
+    $("calc-run").disabled = true;
     enforceDateRange("till");
-    $("calc-status").textContent = "Загрузка свечей MOEX ISS...";
+    $("calc-status").textContent = `Загрузка ${secs.join(", ")}…`;
     try {
-      state.candles = await loadCandles($("calc-sec").value, $("calc-from").value, $("calc-till").value, $("calc-tf").value);
-      if (state.candles.length < 3) throw new Error("MOEX вернул меньше 3 свечей.");
+      state.packs = await E.loadMany(secs, $("calc-from").value, $("calc-till").value, $("calc-tf").value);
+      if (!state.packs[0]?.length) throw new Error("MOEX не вернул свечи.");
       setSliderBounds();
       render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
       $("calc-chart").innerHTML = "";
     } finally {
-      btn.disabled = false;
+      $("calc-run").disabled = false;
     }
   }
 
+  fillLogicSelect();
+  fillLogicEditor();
   initDates();
   $("calc-run").addEventListener("click", run);
+  $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
+  $("calc-logic").addEventListener("change", render);
+  ["param-lr", "param-sl", "param-tp"].forEach((id) => $(id).addEventListener("change", render));
   $("calc-tf").addEventListener("change", () => {
-    const limit = currentLimit();
     const till = parseDay($("calc-till").value);
-    $("calc-from").value = day(addDays(till, -limit.defaultDays));
+    $("calc-from").value = day(addDays(till, -currentLimit().defaultDays));
     enforceDateRange("till");
-    if (state.candles.length) {
-      state.candles = [];
-      $("calc-chart").innerHTML = "";
-      $("calc-finresp").textContent = "—";
-      $("calc-count").textContent = "—";
-      $("calc-pos").textContent = "—";
-      $("calc-cash").textContent = "—";
-    }
+    state.packs = [];
   });
   $("calc-from").addEventListener("change", () => enforceDateRange("from"));
   $("calc-till").addEventListener("change", () => enforceDateRange("till"));
