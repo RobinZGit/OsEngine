@@ -280,24 +280,32 @@ RSI_k ≈ 100 − 100 · (1 + k_k)<sup>−1</sup>     на баре k</pre>
 <strong>Ограничения.</strong> (1) Одна цена <span class="mkt">pp</span> на бар — для тиковых сделок нужны свои цены исполнения. (2) <span class="poly">zz</span> — суммарный лот; шорт и лонг в одной формуле — знаковая позиция. (3) Комиссии, проскальзывание, своп — отдельные слагаемые, не выводятся из <span class="mkt">pp</span> и <span class="deal">bb</span>/<span class="deal">ee</span> без дополнительных многочленов. (4) Реализованная прибыль по паре «вход–выход» — рекуррентная логика FIFO/LIFO, не одна свёртка с фиксированным ядром.
 </div>
 
-<h3>Пример: покупка выше SMA и продажа ниже SMA объёмом |Close − SMA|</h3>
-<p>Правило: если цена закрытия выше SMA, покупаем объём, равный разнице <code>Close − SMA</code>; если цена ниже SMA, продаём объём <code>SMA − Close</code>. Для реальной торговли добавьте множитель лота <code>m</code> и округление до шага инструмента; ниже <code>m = 1</code>, комиссии и проскальзывание не учитываются.</p>
+<h3>Стратегия SMA-разности как многочлены сделок</h3>
+<p>Здесь покупка и продажа задаются <strong>на каждой свече</strong> как коэффициенты многочленов <span class="deal">bb</span> и <span class="deal">ee</span>. Объём сделки равен модулю разности между ценой и SMA: выше SMA — покупка, ниже SMA — продажа. Для реальной торговли добавьте множитель лота <span class="poly">mm</span> и округление до шага инструмента; ниже <span class="poly">mm</span> можно считать единичным многочленом.</p>
 
-<pre class="formula"><span class="poly">ss</span> = <span class="mkt">pp</span> * <span class="poly">ww</span>_SMA(N)                 s_k = SMA_N(p)_k
-<span class="poly">dd</span> = <span class="mkt">pp</span> − <span class="poly">ss</span>                            d_k = p_k − s_k
+<pre class="formula"><span class="poly">ww</span>_SMA = <span class="coef">(1/N; …; 1/N)</span>
+<span class="poly">ss</span> = <span class="mkt">pp</span> * <span class="poly">ww</span>_SMA                         s_k = SMA_N(p)_k
+<span class="poly">dd</span> = <span class="mkt">pp</span> − <span class="poly">ss</span>                                d_k = p_k − s_k
 
-<span class="deal">bb</span>_SMA,k = m · max(d_k, 0)             покупка, когда p_k &gt; s_k
-<span class="deal">ee</span>_SMA,k = m · max(−d_k, 0)            продажа, когда p_k &lt; s_k
-<span class="poly">xx</span>_SMA,k = <span class="deal">bb</span>_SMA,k − <span class="deal">ee</span>_SMA,k = m · d_k
+<span class="poly">ii</span>_B = H(<span class="poly">dd</span>)                              i^B_k = 1, если d_k &gt; 0, иначе 0
+<span class="poly">ii</span>_E = H(−<span class="poly">dd</span>)                             i^E_k = 1, если d_k &lt; 0, иначе 0
 
-<span class="poly">zz</span>_SMA = <span class="poly">xx</span>_SMA * <span class="poly">ww</span>_ONE              позиция после сделок
-<span class="poly">CC</span>_SMA = (<span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span>_SMA − <span class="deal">bb</span>_SMA)) * <span class="poly">ww</span>_ONE
-<span class="poly">EQ</span>_SMA,k = C_k + z_k · p_k             финрезультат mark-to-market
+<span class="deal">bb</span>_SMA = <span class="poly">mm</span> <span class="op">#</span> <span class="poly">dd</span> <span class="op">#</span> <span class="poly">ii</span>_B                  b_k = m_k · (p_k − s_k), если p_k &gt; s_k
+<span class="deal">ee</span>_SMA = <span class="poly">mm</span> <span class="op">#</span> (−<span class="poly">dd</span>) <span class="op">#</span> <span class="poly">ii</span>_E               e_k = m_k · (s_k − p_k), если p_k &lt; s_k
 
-F_T = C_T + z_T · p_T
-если в конце закрыть остаток z_T по p_T, реализованный результат тоже равен F_T</pre>
+<span class="poly">xx</span>_SMA = <span class="deal">bb</span>_SMA − <span class="deal">ee</span>_SMA                  чистый поток сделок на каждой свече
+<span class="poly">zz</span>_SMA = <span class="poly">xx</span>_SMA * <span class="poly">ww</span>_ONE                  z_k = x₀ + … + x_k
 
-<p>Учебный пример для SBER: берём 12 закрытий, SMA(3), торгуем на закрытии каждого бара после появления SMA. На 4-й свече <code>275 &gt; 272,67</code>, поэтому покупаем <code>2,33</code>; на 6-й свече <code>276 &lt; 276,33</code>, поэтому продаём <code>0,33</code>.</p>
+<span class="poly">cc</span>_SMA = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span>_SMA − <span class="deal">bb</span>_SMA)            денежный поток каждой свечи
+<span class="poly">CC</span>_SMA = <span class="poly">cc</span>_SMA * <span class="poly">ww</span>_ONE                  C_k = c₀ + … + c_k
+
+<span class="poly">EQ</span>_SMA = <span class="poly">CC</span>_SMA + (<span class="poly">zz</span>_SMA <span class="op">#</span> <span class="mkt">pp</span>)          mark-to-market кривая результата
+F_T = (<span class="poly">EQ</span>_SMA)_T
+
+То же как сумма всех свечей:
+F_T = Σ_{k=0..T} p_k·(e_k − b_k) + p_T·Σ_{k=0..T}(b_k − e_k)</pre>
+
+<p>Учебный пример для SBER ниже — это просто раскрытие коэффициентов этих многочленов для 12 закрытий и SMA(3). На каждой свече после появления SMA считаются <code>d_k</code>, затем коэффициенты <code>b_k</code> или <code>e_k</code>, после чего всё суммируется через <code>* ww_ONE</code>.</p>
 
 <table class="ind">
 <tr><th>Бар</th><th>Close SBER, ₽</th><th>SMA(3)</th><th>d = Close − SMA</th><th>Buy</th><th>Sell</th><th>Позиция z</th><th>Кэш C, ₽</th><th>EQ, ₽</th></tr>
@@ -380,7 +388,7 @@ VWAP:    <span class="poly">ss</span> = (<span class="poly">tt</span> <span clas
 Сделки:  <span class="deal">bb</span>, <span class="deal">ee</span> — покупки / продажи;  <span class="poly">xx</span> = <span class="deal">bb</span> − <span class="deal">ee</span>;  <span class="poly">zz</span> = <span class="poly">xx</span> * <span class="coef">(1;1;…)</span>
 Кэш:     <span class="poly">cc</span>_cash = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)
 Финрез:  <span class="poly">RR</span> = (<span class="poly">zz</span> * <span class="delta">δδ</span>(1) <span class="op">#</span> (<span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1))) * <span class="coef">(1;1;…)</span>
-SMA-размер: <span class="poly">dd</span>=<span class="mkt">pp</span>−<span class="poly">ss</span>_SMA; <span class="deal">bb</span>=max(<span class="poly">dd</span>,0); <span class="deal">ee</span>=max(−<span class="poly">dd</span>,0); F_T=C_T+z_T·p_T
+SMA-сделки: <span class="poly">dd</span>=<span class="mkt">pp</span>−<span class="poly">ss</span>_SMA; <span class="deal">bb</span>=<span class="poly">mm</span>#<span class="poly">dd</span>#H(<span class="poly">dd</span>); <span class="deal">ee</span>=<span class="poly">mm</span>#(−<span class="poly">dd</span>)#H(−<span class="poly">dd</span>); <span class="poly">EQ</span>=((<span class="mkt">pp</span>#(<span class="deal">ee</span>−<span class="deal">bb</span>))*<span class="coef">(1;1;…)</span>)+(((<span class="deal">bb</span>−<span class="deal">ee</span>)*<span class="coef">(1;1;…)</span>)#<span class="mkt">pp</span>)
 
 Хвост: s₀…s_{N−2} — не используем</pre>
 
