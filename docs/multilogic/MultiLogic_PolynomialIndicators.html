@@ -358,6 +358,7 @@ F_T = Σ_{k=0..T} p_k·(e_k − b_k) + p_T·Σ_{k=0..T}(b_k − e_k)</pre>
 <option value="VTBR">VTBR — ВТБ</option>
 </select></div>
 <div class="calc-field"><label for="calc-tf">Таймфрейм</label><select id="calc-tf">
+<option value="1">1 минута</option>
 <option value="10">10 минут</option>
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
@@ -367,7 +368,7 @@ F_T = Σ_{k=0..T} p_k·(e_k − b_k) + p_T·Σ_{k=0..T}(b_k − e_k)</pre>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"><option value="sma3">SMA-разность, SMA(3)</option></select></div>
 <button class="calc-btn" id="calc-run" type="button">Execute / Рассчитать</button>
 </div>
-<p class="calc-status" id="calc-status">Загрузите свечи MOEX ISS и двигайте границы периода — FINRESP пересчитывается сразу.</p>
+<p class="calc-status" id="calc-status">Загрузите свечи MOEX ISS и двигайте границы периода — FINRESP пересчитывается сразу. Для малых таймфреймов диапазон ограничен, чтобы браузеру хватало ресурсов.</p>
 <div class="calc-result" id="calc-result">
 <div class="calc-metric"><b>FINRESP</b><span id="calc-finresp">—</span></div>
 <div class="calc-metric"><b>Свечи</b><span id="calc-count">—</span></div>
@@ -532,16 +533,48 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { candles: [], rows: [] };
+  const state = { candles: [], rows: [], movedSlider: "end" };
+  const TF_LIMITS = {
+    "1": { label: "1 минута", maxDays: 7, maxBars: 900, defaultDays: 3 },
+    "10": { label: "10 минут", maxDays: 31, maxBars: 1200, defaultDays: 14 },
+    "60": { label: "1 час", maxDays: 93, maxBars: 1500, defaultDays: 90 },
+    "24": { label: "1 день", maxDays: 3650, maxBars: 1500, defaultDays: 365 }
+  };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
   const day = (dt) => dt.toISOString().slice(0, 10);
+  const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
+  const parseDay = (value) => new Date(`${value}T00:00:00`);
+  const addDays = (date, days) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+  };
 
   function initDates() {
     const till = new Date();
     const from = new Date(till);
-    from.setMonth(from.getMonth() - 3);
+    from.setDate(from.getDate() - currentLimit().defaultDays);
     $("calc-from").value = day(from);
     $("calc-till").value = day(till);
+  }
+
+  function enforceDateRange(anchor = "till") {
+    const limit = currentLimit();
+    let from = parseDay($("calc-from").value);
+    let till = parseDay($("calc-till").value);
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(till.getTime())) return;
+    if (from > till) {
+      if (anchor === "from") till = from;
+      else from = till;
+    }
+    const spanDays = Math.round((till - from) / 86400000);
+    if (spanDays > limit.maxDays) {
+      if (anchor === "from") till = addDays(from, limit.maxDays);
+      else from = addDays(till, -limit.maxDays);
+    }
+    $("calc-from").value = day(from);
+    $("calc-till").value = day(till);
+    $("calc-status").textContent = `${limit.label}: максимум ${limit.maxDays} дней загрузки и ${limit.maxBars} свечей в расчётном окне.`;
   }
 
   async function loadCandles(sec, from, till, interval) {
@@ -591,20 +624,30 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
 
   function setSliderBounds() {
     const max = Math.max(0, state.candles.length - 1);
+    const width = Math.min(max + 1, currentLimit().maxBars);
     for (const id of ["calc-start", "calc-end"]) {
       $(id).min = 0;
       $(id).max = max;
       $(id).disabled = max < 2;
     }
-    $("calc-start").value = 0;
+    $("calc-start").value = Math.max(0, max - width + 1);
     $("calc-end").value = max;
   }
 
   function normalizeSliders() {
     let a = +$("calc-start").value;
     let b = +$("calc-end").value;
+    const max = Math.max(0, state.candles.length - 1);
+    const maxBars = currentLimit().maxBars;
     if (a > b - 2) a = Math.max(0, b - 2);
     if (b < a + 2) b = Math.min(state.candles.length - 1, a + 2);
+    if (b - a + 1 > maxBars) {
+      if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
+      else a = Math.max(0, b - maxBars + 1);
+    }
+    if (b - a + 1 > maxBars) {
+      b = Math.min(max, a + maxBars - 1);
+    }
     $("calc-start").value = a;
     $("calc-end").value = b;
     return [a, b];
@@ -622,7 +665,7 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
     $("calc-cash").textContent = `${fmt(result.cash)} ₽`;
     $("calc-start-label").textContent = state.candles[a]?.time || "—";
     $("calc-end-label").textContent = state.candles[b]?.time || "—";
-    $("calc-status").textContent = `FINRESP пересчитан: ${state.candles[a]?.time} — ${state.candles[b]?.time}. Buy ${fmt(result.buys, 2)}, Sell ${fmt(result.sells, 2)}.`;
+    $("calc-status").textContent = `FINRESP пересчитан: ${state.candles[a]?.time} — ${state.candles[b]?.time}. Выбрано ${result.rows.length}/${currentLimit().maxBars} свечей. Buy ${fmt(result.buys, 2)}, Sell ${fmt(result.sells, 2)}.`;
     drawChart(result.rows, result.finresp);
   }
 
@@ -666,6 +709,7 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
   async function run() {
     const btn = $("calc-run");
     btn.disabled = true;
+    enforceDateRange("till");
     $("calc-status").textContent = "Загрузка свечей MOEX ISS...";
     try {
       state.candles = await loadCandles($("calc-sec").value, $("calc-from").value, $("calc-till").value, $("calc-tf").value);
@@ -682,8 +726,24 @@ MultiLogic · <a href="../index.html">документация</a> · <a href="M
 
   initDates();
   $("calc-run").addEventListener("click", run);
-  $("calc-start").addEventListener("input", render);
-  $("calc-end").addEventListener("input", render);
+  $("calc-tf").addEventListener("change", () => {
+    const limit = currentLimit();
+    const till = parseDay($("calc-till").value);
+    $("calc-from").value = day(addDays(till, -limit.defaultDays));
+    enforceDateRange("till");
+    if (state.candles.length) {
+      state.candles = [];
+      $("calc-chart").innerHTML = "";
+      $("calc-finresp").textContent = "—";
+      $("calc-count").textContent = "—";
+      $("calc-pos").textContent = "—";
+      $("calc-cash").textContent = "—";
+    }
+  });
+  $("calc-from").addEventListener("change", () => enforceDateRange("from"));
+  $("calc-till").addEventListener("change", () => enforceDateRange("till"));
+  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; render(); });
+  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; render(); });
 })();
 </script>
 </body>
