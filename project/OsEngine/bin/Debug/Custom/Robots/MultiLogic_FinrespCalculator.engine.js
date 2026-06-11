@@ -103,6 +103,28 @@
     return prefixes.some((p) => name === String(p).trim().toUpperCase());
   }
 
+  function normMoexDate(value) {
+    if (!value) return "";
+    return String(value).slice(0, 10);
+  }
+
+  function isPerpetualFuture(secid) {
+    const s = String(secid || "").trim().toUpperCase();
+    return /RUBF$/.test(s) || s === "IMOEXF";
+  }
+
+  function futuresMatchesCalcPeriod(sec, from, till) {
+    const last = normMoexDate(sec.LASTTRADEDATE);
+    const first = normMoexDate(sec.FIRSTTRADEDATE);
+    if (isPerpetualFuture(sec.SECID)) {
+      return !last || last >= from;
+    }
+    if (last && last < from) return false;
+    if (first && first > till) return false;
+    if (first && first < from) return false;
+    return true;
+  }
+
   function futuresTickerMatches(secid, prefixes) {
     const normalized = String(secid || "").trim();
     const root = extractFuturesLetterRoot(normalized);
@@ -150,8 +172,8 @@
     { id: "L2", name: "L2 — лонг, боковик", type: "logic_line", key: "L2" },
     { id: "L3", name: "L3 — шорт, тренд", type: "logic_line", key: "L3" },
     { id: "L4", name: "L4 — шорт, боковик", type: "logic_line", key: "L4" },
-    { id: "sma_above", name: "Выше SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "above" },
-    { id: "sma_below", name: "Ниже SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "below" }
+    { id: "sma_below", name: "Ниже SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "below" },
+    { id: "sma_above", name: "Выше SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "above" }
   ];
 
   function substituteParams(line, params) {
@@ -1015,24 +1037,65 @@
     return parseTickerPrefixes(futuresPrefixesRaw || DEFAULT_FUTURES_PREFIXES_RAW);
   }
 
-  async function fetchFuturesList(futuresPrefixesRaw) {
+  async function fetchFuturesList(futuresPrefixesRaw, period) {
     const prefixes = parseTickerPrefixes(futuresPrefixesRaw || DEFAULT_FUTURES_PREFIXES_RAW);
     if (!prefixes.length) return [];
     const today = new Date().toISOString().slice(0, 10);
+    const from = normMoexDate(period?.from) || today;
+    const till = normMoexDate(period?.till) || from;
     return fetchIssSecIds(
       "https://iss.moex.com/iss/engines/futures/markets/forts/securities.json",
-      "SECID,ASSETCODE,LASTTRADEDATE,BOARDID",
+      "SECID,ASSETCODE,LASTTRADEDATE,FIRSTTRADEDATE,BOARDID",
       (o) => o.BOARDID === "RFUD"
         && o.ASSETCODE
-        && String(o.LASTTRADEDATE || "") >= today
         && futuresTickerMatches(o.SECID, prefixes)
+        && futuresMatchesCalcPeriod(o, from, till)
     );
   }
 
-  async function resolveFuturesMoexSec(secOrPrefix) {
+  function isFullFuturesSecid(secid) {
+    const s = String(secid || "").trim();
+    if (!s) return false;
+    if (isPerpetualFuture(s)) return true;
+    return /-\d/.test(s) || /\d/.test(s.slice(-2));
+  }
+
+  async function expandFuturesSelection(selectedSecs, futuresPrefixesRaw, period) {
+    const selected = new Set((selectedSecs || []).map((s) => String(s || "").trim()).filter(Boolean));
+    if (!selected.size) return [];
+    const all = await fetchFuturesList(futuresPrefixesRaw, period);
+    const prefixList = listFuturesPrefixes(futuresPrefixesRaw);
+    const allPrefixesSelected = prefixList.length > 0
+      && prefixList.every((p) => selected.has(p))
+      && selected.size === prefixList.length;
+    if (allPrefixesSelected) return all;
+    const out = new Set();
+    for (const sec of all) {
+      if (selected.has(sec)) {
+        out.add(sec);
+        continue;
+      }
+      for (const sel of selected) {
+        if (isFullFuturesSecid(sel)) continue;
+        if (futuresTickerMatches(sec, [sel])) {
+          out.add(sec);
+          break;
+        }
+      }
+    }
+    for (const sel of selected) {
+      if (isFullFuturesSecid(sel)) out.add(sel);
+    }
+    return [...out].sort();
+  }
+
+  async function resolveFuturesMoexSec(secOrPrefix, period) {
     const key = String(parseTickerPrefixes(secOrPrefix)[0] || "").trim();
     if (!key) return null;
+    if (isFullFuturesSecid(key)) return key;
     const today = new Date().toISOString().slice(0, 10);
+    const from = normMoexDate(period?.from) || today;
+    const till = normMoexDate(period?.till) || from;
     const keyUpper = key.toUpperCase();
     let exact = null;
     let front = null;
@@ -1040,7 +1103,7 @@
     while (true) {
       const url = new URL("https://iss.moex.com/iss/engines/futures/markets/forts/securities.json");
       url.searchParams.set("iss.meta", "off");
-      url.searchParams.set("securities.columns", "SECID,ASSETCODE,LASTTRADEDATE,BOARDID");
+      url.searchParams.set("securities.columns", "SECID,ASSETCODE,LASTTRADEDATE,FIRSTTRADEDATE,BOARDID");
       url.searchParams.set("start", String(start));
       const data = await fetch(url).then((r) => {
         if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
@@ -1052,7 +1115,7 @@
       for (const row of chunk) {
         const o = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
         if (o.BOARDID !== "RFUD" || !o.ASSETCODE) continue;
-        if (String(o.LASTTRADEDATE || "") < today) continue;
+        if (!futuresMatchesCalcPeriod(o, from, till)) continue;
         const secid = String(o.SECID || "");
         if (secid.toUpperCase() !== keyUpper && !futuresTickerMatches(secid, [key])) continue;
         if (secid.toUpperCase() === keyUpper) exact = o;
@@ -1065,8 +1128,8 @@
     return exact?.SECID || front?.SECID || null;
   }
 
-  async function resolveFuturesContract(secOrPrefix) {
-    return resolveFuturesMoexSec(secOrPrefix);
+  async function resolveFuturesContract(secOrPrefix, period) {
+    return resolveFuturesMoexSec(secOrPrefix, period);
   }
 
   async function loadMoexCandles(sec, from, till, interval, market = "shares") {
@@ -1110,7 +1173,7 @@
     try {
       let moexSec = sec;
       if (market === "futures") {
-        moexSec = await resolveFuturesContract(sec);
+        moexSec = await resolveFuturesContract(sec, { from, till });
         if (!moexSec) {
           return { ok: false, error: "нет активного контракта MOEX для префикса", requestedSec };
         }
@@ -1220,6 +1283,9 @@
     futuresTickerMatches,
     fetchShareList,
     fetchFuturesList,
+    expandFuturesSelection,
+    futuresMatchesCalcPeriod,
+    isFullFuturesSecid,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -213,7 +213,7 @@ a{color:var(--accent);}
 <button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-futures">Подобрать</button>
 </div></div>
 </div>
-<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. Акции: «Подобрать» — из текста поля. Фьючерсы: «Подобрать» — актуальные контракты MOEX (полные тикеры, LASTTRADEDATE ≥ сегодня) по префиксам из поля; выбор переключается на них. Свечи — при «Рассчитать».</p>
+<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. Акции: «Подобрать» — из текста поля. Фьючерсы: «Подобрать» и «Рассчитать» — контракты MOEX по префиксам и периоду расчёта: экспирация (LASTTRADEDATE) не раньше начала периода, выпуск (FIRSTTRADEDATE) внутри периода; бессрочные (…RUBF, IMOEXF) — по экспирации. При «выбрать все фьючерсы» в расчёт попадают все подходящие серии, не только по одному на префикс.</p>
 </details>
 
 <div class="chart-card" id="calc-chart"></div>
@@ -722,7 +722,7 @@ a{color:var(--accent);}
 
   function updateSecHint() {
     const futLabel = state.futuresFromMoex
-      ? `${state.futuresList.length} фьючерсов MOEX (актуальные контракты)`
+      ? `${state.futuresList.length} фьючерсов MOEX (за период расчёта)`
       : `${state.futuresList.length} префиксов фьючерсов из поля`;
     $("calc-sec-hint").textContent =
       `${state.shareList.length} тикеров акций · ${futLabel}`;
@@ -731,7 +731,7 @@ a{color:var(--accent);}
   function fillSecSelect(opts) {
     const options = opts || {};
     const sel = $("calc-sec");
-    const prev = new Set(selectedSecs());
+    const prev = new Set(options.preserveSecs || selectedSecs());
     sel.innerHTML = "";
     const addOptions = (ids, market) => {
       for (const id of ids) {
@@ -771,11 +771,39 @@ a{color:var(--accent);}
   }
 
   async function reloadFuturesListFromMoex() {
-    state.futuresList = await E.fetchFuturesList($("prefix-futures").value);
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    state.futuresList = await E.fetchFuturesList($("prefix-futures").value, { from, till });
     state.futuresFromMoex = true;
     fillSecSelect({ selectFutures: true });
     updateSecHint();
     return state.futuresList.length;
+  }
+
+  function allFuturesInListSelected() {
+    const opts = Array.from($("calc-sec").options).filter((o) => o.dataset.market === "futures");
+    return opts.length > 0 && opts.every((o) => o.selected);
+  }
+
+  async function expandFuturesForCalcPeriod(instruments) {
+    const futuresInst = instruments.filter((i) => i.market === "futures");
+    if (!futuresInst.length) return instruments;
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    const prefixes = $("prefix-futures").value;
+    const selectedSecs = futuresInst.map((i) => i.sec);
+    const allContracts = await E.fetchFuturesList(prefixes, { from, till });
+    const expanded = allFuturesInListSelected()
+      ? allContracts
+      : await E.expandFuturesSelection(selectedSecs, prefixes, { from, till });
+    if (expanded.length) {
+      state.futuresList = allContracts;
+      state.futuresFromMoex = true;
+      fillSecSelect({ preserveSecs: expanded });
+      updateSecHint();
+    }
+    const shares = instruments.filter((i) => i.market === "shares");
+    return [...shares, ...expanded.map((sec) => ({ sec, market: "futures" }))];
   }
 
   function initInstrumentLists() {
@@ -800,8 +828,8 @@ a{color:var(--accent);}
       o.textContent = m.name;
       sel.appendChild(o);
     }
-    if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
-    else if ([...sel.options].some((o) => o.value === "L1")) sel.value = "L1";
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    else sel.value = "L1";
   }
 
   function updatePositionSlHint() {
@@ -1315,12 +1343,18 @@ ${markers}
 
   async function run() {
     applyEditorParams();
-    const instruments = selectedInstruments();
+    let instruments = selectedInstruments();
     if (!instruments.length) {
       $("calc-status").textContent = "Выберите хотя бы один инструмент в списке.";
       return;
     }
     try {
+      if (instruments.some((i) => i.market === "futures")) {
+        setBusy(true);
+        $("calc-status").textContent = "Подбор фьючерсов MOEX за период расчёта…";
+        instruments = await expandFuturesForCalcPeriod(instruments);
+        setBusy(false);
+      }
       await runWithInstruments(instruments, null);
     } catch (_) { /* status уже выставлен */ }
   }
@@ -1348,7 +1382,7 @@ ${markers}
   });
   $("prefix-pick-futures").addEventListener("click", async () => {
     setBusy(true);
-    $("calc-status").textContent = "Подбор актуальных фьючерсов на MOEX…";
+    $("calc-status").textContent = "Подбор фьючерсов MOEX за период расчёта…";
     try {
       const n = await reloadFuturesListFromMoex();
       if (!n) {
