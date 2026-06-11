@@ -689,7 +689,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function orderPacksForInstruments(instruments, byKey) {
-    return instruments.map((i) => byKey.get(instrumentKey(i))).filter(Boolean);
+    const out = [];
+    for (const inst of instruments) {
+      let pack = byKey.get(instrumentKey(inst));
+      if (!pack) {
+        const secUpper = String(inst.sec || "").trim().toUpperCase();
+        for (const candidate of byKey.values()) {
+          if (String(candidate[0]?.sec || "").trim().toUpperCase() === secUpper) {
+            pack = candidate;
+            break;
+          }
+        }
+      }
+      if (pack?.length) out.push(pack);
+    }
+    return out;
   }
 
   function tryRefreshFromLoadedPacks() {
