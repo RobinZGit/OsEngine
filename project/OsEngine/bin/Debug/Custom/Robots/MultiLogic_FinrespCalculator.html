@@ -90,6 +90,7 @@ a{color:var(--accent);}
 <div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
 <div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
 <div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
+<div class="calc-metric"><b>Stopper</b><span id="calc-stopper">—</span></div>
 <div class="calc-metric" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
 </div>
 <div class="range-grid">
@@ -138,6 +139,21 @@ a{color:var(--accent);}
 </div>
 <p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 — отключить соответствующий стоп.</p>
 
+<p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
+<div class="calc-grid">
+<div class="calc-field"><label><input id="stopper-sl-on" type="checkbox"> Общепортфельный stop-loss</label></div>
+<div class="calc-field"><label for="stopper-sl-mult">SL кратность ATR</label>
+<input id="stopper-sl-mult" type="number" value="2" min="0" max="50" step="0.1"></div>
+<div class="calc-field"><label><input id="stopper-tp-on" type="checkbox"> Общепортфельный take-profit</label></div>
+<div class="calc-field"><label for="stopper-tp-mult">TP кратность ATR</label>
+<input id="stopper-tp-mult" type="number" value="3" min="0" max="50" step="0.1"></div>
+<div class="calc-field"><label for="stopper-atr-len">Длина ATR портфеля для SL/TP</label>
+<input id="stopper-atr-len" type="number" value="14" min="2" max="500" step="1"></div>
+<div class="calc-field"><label for="stopper-ref">Предыдущая сумма (база SL/TP), ₽</label>
+<input id="stopper-ref" type="number" value="0" min="0" step="1000" title="0 — авто: equity на первой свече окна"></div>
+</div>
+<p class="note">Equity = сумма FINRESP по инструментам. ATR<sub>порт</sub> = mean(|Δequity|) за N свечей (как MetaIndicatorEquityCalculator в роботе). SL: equity ≤ база − K×ATR; TP: equity ≥ база + K×ATR. При срабатывании — закрытие всех позиций, база обновляется (режим «Отключено» после триггера).</p>
+
 <p class="extra-section">Параметры строки логики</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="param-lr">LinReg длина (@LR)</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
@@ -146,7 +162,7 @@ a{color:var(--accent);}
 <p class="extra-section">Строки L1…L4</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
-<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и SL/TP позиции по ATR (см. выше). Общепортфельный Stopper не считается.</p>
+<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl, SL/TP позиции и общепортфельный Stopper (если включён). Просадка от пика и EOD-flat не считаются.</p>
 </details>
 
 <div class="chart-card" id="calc-chart"></div>
@@ -234,6 +250,29 @@ a{color:var(--accent);}
       deposit: +$("vol-deposit").value || E.DEFAULT_VOLUME.deposit,
       maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions)
     };
+  }
+
+  function stopperConfig() {
+    return {
+      useSl: $("stopper-sl-on").checked,
+      useTp: $("stopper-tp-on").checked,
+      slMult: Math.max(0, +$("stopper-sl-mult").value || E.DEFAULT_STOPPER.slMult),
+      tpMult: Math.max(0, +$("stopper-tp-mult").value || E.DEFAULT_STOPPER.tpMult),
+      atrLen: Math.max(2, +$("stopper-atr-len").value || E.DEFAULT_STOPPER.atrLen),
+      refEquity: Math.max(0, +$("stopper-ref").value || 0)
+    };
+  }
+
+  function formatStopperSummary(stopper) {
+    if (!stopper?.events?.length) {
+      const cfg = stopperConfig();
+      if (!cfg.useSl && !cfg.useTp) return "выкл.";
+      return "нет срабатываний";
+    }
+    return stopper.events.map((e) => {
+      const label = e.kind === "tp" ? "TP" : "SL";
+      return `${label} @ ${e.time}`;
+    }).join(" · ");
   }
 
   function syncVolumeFields() {
@@ -560,13 +599,14 @@ ${markers}
     const [a, b] = normalizeSliders();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params());
     if (!spec) return;
-    const { perSec, agg } = E.runMulti(state.packs, spec, a, b, params(), volConfig());
+    const { perSec, agg, stopper } = E.runMulti(state.packs, spec, a, b, params(), volConfig(), stopperConfig());
     const winLen = perSec[0]?.rows?.length ?? 0;
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
     $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
+    $("calc-stopper").textContent = formatStopperSummary(stopper);
     $("calc-bysec").textContent = formatBySec(agg.bySec) || "—";
     const c0 = refPack()[a]?.time || "—";
     const c1 = refPack()[b]?.time || "—";
@@ -580,7 +620,10 @@ ${markers}
     $("calc-start-label").textContent = c0;
     $("calc-end-label").textContent = c1;
     const mode = state.bulkMode === "futures" ? "фьючерсы" : state.bulkMode === "shares" ? "все акции" : "выбор";
-    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} инстр. (${mode}) | ${winLen} свечей в окне`;
+    const stopNote = stopper?.events?.length
+      ? ` | Stopper: ${stopper.events.length} сраб.`
+      : (stopperConfig().useSl || stopperConfig().useTp) ? " | Stopper вкл." : "";
+    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} инстр. (${mode}) | ${winLen} свечей в окне${stopNote}`;
     drawCharts(perSec);
   }
 
@@ -667,9 +710,13 @@ ${markers}
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
-  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "param-sl", "param-tp", "param-atr-sl"].forEach((id) => {
+  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "param-sl", "param-tp", "param-atr-sl",
+    "stopper-sl-mult", "stopper-tp-mult", "stopper-atr-len", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", render);
     $(id).addEventListener("input", render);
+  });
+  ["stopper-sl-on", "stopper-tp-on"].forEach((id) => {
+    $(id).addEventListener("change", render);
   });
   $("calc-tf").addEventListener("change", () => {
     enforceDateRange("till");

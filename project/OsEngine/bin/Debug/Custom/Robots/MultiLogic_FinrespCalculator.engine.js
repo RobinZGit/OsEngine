@@ -3,6 +3,14 @@
   "use strict";
 
   const DEFAULT_PARAMS = { LR: 20, Strict: 3, SL: 2, TP: 3, slTpAtrLen: 14 };
+  const DEFAULT_STOPPER = {
+    useSl: false,
+    useTp: false,
+    slMult: 2,
+    tpMult: 3,
+    atrLen: 14,
+    refEquity: 0
+  };
   const DEFAULT_VOLUME = {
     volumeType: "Deposit percent",
     volume: 10,
@@ -564,16 +572,18 @@
     return ind;
   }
 
-  function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig) {
+  function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig, options) {
+    const opts = options || {};
     const cache = new IndicatorCache(candles);
     const atrLen = parsed.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen;
     const atrSlTp = cache.atr(atrLen);
-    let pos = 0;
-    let cash = 0;
-    let entryPrice = null;
+    const initial = opts.initial || {};
+    let pos = initial.pos || 0;
+    let cash = initial.cash || 0;
+    let entryPrice = initial.entryPrice ?? null;
     const rows = [];
     const w = Math.max(warmupBars(), 2);
-    const from = Math.max(startIdx, w);
+    const from = opts.skipWarmup ? Math.max(startIdx, 0) : Math.max(startIdx, w);
     const to = Math.min(endIdx, candles.length - 1);
 
     const flatten = (price) => {
@@ -642,11 +652,13 @@
     };
   }
 
-  function simulateSmaSpread(candles, smaLen, side, startIdx, endIdx, volConfig) {
+  function simulateSmaSpread(candles, smaLen, side, startIdx, endIdx, volConfig, options) {
+    const opts = options || {};
     const closes = candles.map((c) => c.close);
     const sma = smaSeries(closes, smaLen);
-    let cash = 0;
-    let pos = 0;
+    const initial = opts.initial || {};
+    let cash = initial.cash || 0;
+    let pos = initial.pos || 0;
     let buys = 0;
     let sells = 0;
     const rows = [];
@@ -709,13 +721,157 @@
     return { type: "logic_line", parsed, line };
   }
 
-  function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig) {
+  function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
     if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, buys: 0, sells: 0 };
     const vol = { ...DEFAULT_VOLUME, ...volConfig };
     if (spec.type === "sma_spread") {
-      return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol);
+      return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, options);
     }
-    return simulateLogicLine(candles, spec.parsed, startIdx, endIdx, vol);
+    return simulateLogicLine(candles, spec.parsed, startIdx, endIdx, vol, options);
+  }
+
+  function findCandleIndexByTime(candles, time) {
+    if (!candles?.length || !time) return -1;
+    return candles.findIndex((c) => c.time === time);
+  }
+
+  function findRowIdxAtOrBefore(rows, time) {
+    if (!rows?.length || !time) return -1;
+    let idx = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].time <= time) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  function equityAtTime(perSecItem, time) {
+    const idx = findRowIdxAtOrBefore(perSecItem.rows, time);
+    return idx >= 0 ? perSecItem.rows[idx].eq : 0;
+  }
+
+  function portfolioEquityAtr(history, index, length) {
+    if (!history?.length || index < length) return null;
+    let sum = 0;
+    for (let i = index - length + 1; i <= index; i++) {
+      sum += Math.abs(history[i].equity - history[i - 1].equity);
+    }
+    return sum / length;
+  }
+
+  function recomputePerSecTotals(perSecItem) {
+    const last = perSecItem.rows.at(-1);
+    perSecItem.finresp = last?.eq ?? 0;
+    perSecItem.cash = last?.cash ?? 0;
+    perSecItem.pos = last?.pos ?? 0;
+    perSecItem.buys = perSecItem.rows.reduce((s, r) => s + (r.buy || 0), 0);
+    perSecItem.sells = perSecItem.rows.reduce((s, r) => s + (r.sell || 0), 0);
+  }
+
+  function flattenRowAtIdx(perSecItem, rowIdx) {
+    const row = { ...perSecItem.rows[rowIdx] };
+    if (row.pos !== 0) {
+      const price = row.close;
+      row.sell = (row.sell || 0) + Math.abs(row.pos);
+      row.cash += row.pos * price;
+      row.pos = 0;
+      row.eq = row.cash;
+    }
+    return row;
+  }
+
+  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endIdx, params, volConfig) {
+    const rowIdx = findRowIdxAtOrBefore(perSecItem.rows, triggerTime);
+    if (rowIdx < 0) return;
+    const triggerRow = flattenRowAtIdx(perSecItem, rowIdx);
+    const head = perSecItem.rows.slice(0, rowIdx);
+    const candleIdx = findCandleIndexByTime(candles, triggerTime);
+    if (candleIdx < 0 || candleIdx >= endIdx) {
+      perSecItem.rows = [...head, triggerRow];
+      recomputePerSecTotals(perSecItem);
+      return;
+    }
+    const initial = { pos: 0, cash: triggerRow.cash, entryPrice: null };
+    const tail = runOnCandles(
+      candles,
+      spec,
+      candleIdx + 1,
+      endIdx,
+      params,
+      volConfig,
+      { initial, skipWarmup: true }
+    );
+    perSecItem.rows = [...head, triggerRow, ...tail.rows];
+    recomputePerSecTotals(perSecItem);
+  }
+
+  function applyPortfolioStopper(perSec, packs, spec, startIdx, endIdx, params, volConfig, cfg) {
+    const stopper = { ...DEFAULT_STOPPER, ...cfg };
+    const events = [];
+    if ((!stopper.useSl && !stopper.useTp) || !perSec.length || !packs.length) {
+      return { perSec, stopper: { events } };
+    }
+
+    const refCandles = packs[0];
+    const times = [];
+    for (let i = startIdx; i <= endIdx && i < refCandles.length; i++) {
+      times.push(refCandles[i].time);
+    }
+    if (!times.length) return { perSec, stopper: { events } };
+
+    let referenceEquity = stopper.refEquity > 0 ? stopper.refEquity : null;
+    let scanFrom = 0;
+    const equityHistory = [];
+
+    while (scanFrom < times.length) {
+      let triggered = false;
+
+      for (let t = scanFrom; t < times.length; t++) {
+        const time = times[t];
+        let totalEq = 0;
+        for (const p of perSec) totalEq += equityAtTime(p, time);
+
+        if (referenceEquity == null) referenceEquity = totalEq;
+        equityHistory.push({ equity: totalEq, time });
+        const idx = equityHistory.length - 1;
+        const atrLen = Math.max(1, stopper.atrLen || DEFAULT_STOPPER.atrLen);
+        if (idx < atrLen) continue;
+
+        const atr = portfolioEquityAtr(equityHistory, idx, atrLen);
+        if (atr == null || atr <= 0) continue;
+
+        let kind = null;
+        let triggerLevel = referenceEquity;
+        if (stopper.useSl && stopper.slMult > 0 && totalEq <= referenceEquity - stopper.slMult * atr) {
+          kind = "sl";
+          triggerLevel = referenceEquity - stopper.slMult * atr;
+        } else if (stopper.useTp && stopper.tpMult > 0 && totalEq >= referenceEquity + stopper.tpMult * atr) {
+          kind = "tp";
+          triggerLevel = referenceEquity + stopper.tpMult * atr;
+        }
+        if (!kind) continue;
+
+        const refAtTrigger = referenceEquity;
+        for (let s = 0; s < perSec.length; s++) {
+          flattenAndResimTail(perSec[s], packs[s], spec, time, endIdx, params, volConfig);
+        }
+        events.push({
+          kind,
+          time,
+          equity: totalEq,
+          referenceEquity: refAtTrigger,
+          atr,
+          triggerLevel
+        });
+        referenceEquity = perSec.reduce((sum, p) => sum + equityAtTime(p, time), 0);
+        scanFrom = t + 1;
+        triggered = true;
+        break;
+      }
+      if (!triggered) break;
+    }
+
+    return { perSec, stopper: { events, referenceEquity } };
   }
 
   function candlesUrl(sec, market) {
@@ -865,7 +1021,7 @@
     return { finresp, cash, pos, buys, sells, bySec };
   }
 
-  function runMulti(packs, spec, startIdx, endIdx, params, volConfig) {
+  function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig) {
     const perSec = packs.map((candles) => {
       const sec = candles[0]?.sec || "?";
       const a = Math.max(0, Math.min(startIdx, candles.length - 1));
@@ -873,13 +1029,22 @@
       const r = runOnCandles(candles, spec, a, b, params, volConfig);
       return { sec, ...r };
     });
+    let stopper = { events: [] };
+    const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
+    if (cfg && perSec.length) {
+      const a = Math.max(0, Math.min(startIdx, (packs[0]?.length || 1) - 1));
+      const b = Math.max(a, Math.min(endIdx, (packs[0]?.length || 1) - 1));
+      const applied = applyPortfolioStopper(perSec, packs, spec, a, b, params, volConfig, cfg);
+      stopper = applied.stopper;
+    }
     const agg = aggregateFinresp(perSec);
     const chartPack = perSec.length === 1 ? perSec[0] : perSec[0];
-    return { perSec, agg, chartRows: chartPack?.rows || [] };
+    return { perSec, agg, stopper, chartRows: chartPack?.rows || [] };
   }
 
   root.MultiLogicFinrespEngine = {
     DEFAULT_PARAMS,
+    DEFAULT_STOPPER,
     DEFAULT_VOLUME,
     DEFAULT_LOGIC_LINES,
     BUILTIN_META,
