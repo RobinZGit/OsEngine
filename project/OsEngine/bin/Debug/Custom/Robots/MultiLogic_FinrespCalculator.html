@@ -29,11 +29,11 @@ h2:first-child{margin-top:0;}
 .calc-opt-btn{flex-shrink:0;padding:.42rem .65rem;font-size:.82rem;white-space:nowrap;}
 .calc-opt-btn-active{background:var(--accent);color:#fff;border-color:var(--accent);animation:opt-pulse 1.1s ease-in-out infinite;}
 @keyframes opt-pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.45)}50%{box-shadow:0 0 0 6px rgba(37,99,235,0)}}
-.calc-sec-label-row{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .75rem;margin-bottom:.25rem;max-width:100%;}
-.calc-sec-select-all-row{display:flex;flex-wrap:wrap;gap:.35rem .85rem;flex:0 0 auto;}
-.calc-sec-label-row>label[for="calc-sec"]{margin-bottom:0;flex:0 1 auto;}
-.calc-sec-select-all{font-size:.82rem;color:var(--muted);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;flex:0 0 auto;}
-.calc-sec-select-all input{margin:0;}
+.calc-sec-head{display:flex;flex-direction:column;align-items:flex-start;gap:.3rem;margin-bottom:.35rem;max-width:100%;}
+.calc-sec-head>label[for="calc-sec"]{margin:0;line-height:1.3;}
+.calc-sec-select-all-row{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem 1.1rem;max-width:100%;}
+.calc-sec-select-all{font-size:.82rem;color:var(--muted);display:inline-flex;align-items:center;gap:.3rem;cursor:pointer;line-height:1.25;flex:0 0 auto;}
+.calc-sec-select-all input{margin:0;flex-shrink:0;}
 .calc-sec-hint{font-size:.8rem;color:var(--muted);}
 .calc-field-wide{grid-column:1/-1;}
 .bysec-scroll{max-height:4.5rem;overflow-y:auto;line-height:1.35;}
@@ -84,7 +84,7 @@ a{color:var(--accent);}
 <div class="calc-card" id="finresp-calc">
 
 <div class="calc-field calc-field-wide">
-<div class="calc-sec-label-row">
+<div class="calc-sec-head">
 <label for="calc-sec">Акции (фьючерсы) — выбор (Ctrl+клик)</label>
 <div class="calc-sec-select-all-row">
 <label class="calc-sec-select-all"><input id="calc-sec-all-shares" type="checkbox"> Выбрать все акции</label>
@@ -419,8 +419,8 @@ a{color:var(--accent);}
       return;
     }
     const n = opts.filter((o) => o.selected).length;
-    cb.checked = n === opts.length;
-    cb.indeterminate = n > 0 && n < opts.length;
+    cb.indeterminate = false;
+    cb.checked = n > 0 && n === opts.length;
   }
 
   function syncSelectAllCheckboxes() {
@@ -436,15 +436,10 @@ a{color:var(--accent);}
     syncSelectAllCheckboxes();
   }
 
-  function handleMarketCheckboxClick(market, cbId, e) {
-    e.preventDefault();
+  function onMarketCheckboxChange(market, cbId) {
     const cb = $(cbId);
     if (cb.disabled) return;
-    const opts = Array.from($("calc-sec").options).filter((o) => o.dataset.market === market);
-    if (!opts.length) return;
-    const n = opts.filter((o) => o.selected).length;
-    const selectAll = n === 0;
-    setSelectAllMarket(market, selectAll);
+    setSelectAllMarket(market, cb.checked);
     onSecSelectionChanged();
   }
 
@@ -722,9 +717,7 @@ a{color:var(--accent);}
         o.textContent = id;
         o.dataset.market = market;
         const selectFutures = options.selectFutures && market === "futures";
-        if (selectFutures
-          || prev.has(id)
-          || (prev.size === 0 && market === "shares" && id.toUpperCase() === "SBER")) {
+        if (selectFutures || prev.has(id)) {
           o.selected = true;
         }
         sel.appendChild(o);
@@ -1296,8 +1289,8 @@ ${markers}
   OPT_BUTTONS.forEach(({ btnId, kind }) => {
     $(btnId).addEventListener("click", () => toggleOptim(kind));
   });
-  $("calc-sec-all-shares").addEventListener("click", (e) => handleMarketCheckboxClick("shares", "calc-sec-all-shares", e));
-  $("calc-sec-all-futures").addEventListener("click", (e) => handleMarketCheckboxClick("futures", "calc-sec-all-futures", e));
+  $("calc-sec-all-shares").addEventListener("change", () => onMarketCheckboxChange("shares", "calc-sec-all-shares"));
+  $("calc-sec-all-futures").addEventListener("change", () => onMarketCheckboxChange("futures", "calc-sec-all-futures"));
   $("calc-sec").addEventListener("change", onSecSelectionChanged);
   $("prefix-pick-stocks").addEventListener("click", () => {
     reloadShareList();
