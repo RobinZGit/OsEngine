@@ -1021,6 +1021,35 @@
     return { perSec, stopper: { events, referenceEquity } };
   }
 
+  function moexFileProtocolHint() {
+    if (typeof location !== "undefined" && location.protocol === "file:") {
+      return " Страница открыта как file:// — браузер блокирует MOEX (CORS). "
+        + "Запустите serve-calculator.ps1 в этой папке или откройте через GitHub Pages / http://localhost.";
+    }
+    return "";
+  }
+
+  async function moexFetchJson(url, context, timeoutMs = 45000) {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+    try {
+      const r = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+      if (!r.ok) throw new Error(`MOEX HTTP ${r.status}${context ? ` (${context})` : ""}`);
+      return r.json();
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (err?.name === "AbortError") {
+        throw new Error(`MOEX: таймаут ${Math.round(timeoutMs / 1000)} с${context ? ` (${context})` : ""}.${moexFileProtocolHint()}`);
+      }
+      if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(msg)) {
+        throw new Error(`MOEX недоступен (сеть/CORS): ${msg}.${moexFileProtocolHint()}`);
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   function candlesUrl(sec, market) {
     if (market === "futures") {
       return `https://iss.moex.com/iss/engines/futures/markets/forts/securities/${sec}/candles.json`;
@@ -1037,10 +1066,7 @@
       url.searchParams.set("iss.meta", "off");
       if (columns) url.searchParams.set("securities.columns", columns);
       url.searchParams.set("start", String(start));
-      const data = await fetch(url).then((r) => {
-        if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
-        return r.json();
-      });
+      const data = await moexFetchJson(url, "securities");
       const chunk = data?.securities?.data || [];
       const cols = data?.securities?.columns || [];
       if (!chunk.length) break;
@@ -1140,10 +1166,7 @@
       url.searchParams.set("iss.meta", "off");
       url.searchParams.set("securities.columns", "SECID,ASSETCODE,LASTTRADEDATE,FIRSTTRADEDATE,BOARDID");
       url.searchParams.set("start", String(start));
-      const data = await fetch(url).then((r) => {
-        if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
-        return r.json();
-      });
+      const data = await moexFetchJson(url, key);
       const chunk = data?.securities?.data || [];
       const cols = data?.securities?.columns || [];
       if (!chunk.length) break;
@@ -1173,10 +1196,7 @@
     while (true) {
       const url = new URL(candlesUrl(sec, market));
       url.search = new URLSearchParams({ from, till, interval, start: String(start) }).toString();
-      const data = await fetch(url).then((r) => {
-        if (!r.ok) throw new Error(`MOEX HTTP ${r.status} (${sec})`);
-        return r.json();
-      });
+      const data = await moexFetchJson(url, sec);
       const chunk = data?.candles?.data || [];
       if (!chunk.length) break;
       all.push(...chunk);
@@ -1531,6 +1551,7 @@
     isFullFuturesSecid,
     createCandleCache,
     CANDLE_CACHE_VERSION,
+    moexFileProtocolHint,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);

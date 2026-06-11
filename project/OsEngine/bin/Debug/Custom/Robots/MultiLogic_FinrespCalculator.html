@@ -97,6 +97,11 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .prefix-pick-btn{flex:0 0 auto;align-self:flex-end;padding:.48rem .75rem;}
 .cache-btn-row{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.35rem;}
 .cache-row{margin:.75rem 0 0;}
+.file-protocol-warn{
+  margin:0 0 1rem;padding:.75rem 1rem;border:2px solid #b45309;border-radius:10px;
+  background:#fffbeb;color:#78350f;font-size:.9rem;line-height:1.45;
+}
+.file-protocol-warn b{color:#92400e;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
@@ -120,6 +125,12 @@ a{color:var(--accent);}
 <div class="help-layout">
 <main class="help-main">
 <h2>Калькулятор</h2>
+<div class="file-protocol-warn" id="file-protocol-warn" hidden>
+<b>Открыто как файл (file://)</b> — браузер блокирует загрузку свечей MOEX (CORS).
+Cursor «Open with Browser» и двойной клик по HTML так работают.
+Запустите в этой папке <code>serve-calculator.ps1</code> (откроется <code>http://127.0.0.1:8765/…</code>)
+или откройте <a href="https://robinzgit.github.io/OsEngine/multilogic/MultiLogic_FinrespCalculator.html">версию на GitHub Pages</a>.
+</div>
 <div class="calc-card" id="finresp-calc">
 
 <div class="calc-field calc-field-wide">
@@ -289,8 +300,9 @@ a{color:var(--accent);}
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-recalc";
+  const CALC_PAGE_VERSION = "2026-06-08-selectall";
   const $ = (id) => document.getElementById(id);
+  const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
     startedAt: new Date().toISOString(),
     errors: [],
@@ -313,6 +325,9 @@ a{color:var(--accent);}
       `startedAt=${techLog.startedAt}`,
       `lastEvent=${techLog.lastEvent}`,
       `url=${location.href}`,
+      `protocol=${location.protocol}`,
+      `fileProtocol=${IS_FILE_PROTOCOL}`,
+      `moexCorsBlocked=${IS_FILE_PROTOCOL}`,
       `online=${navigator.onLine}`,
       `engineLoaded=${!!E}`,
       `createCandleCache=${!!E?.createCandleCache}`,
@@ -391,6 +406,17 @@ a{color:var(--accent);}
   });
   $("tech-info-refresh")?.addEventListener("click", () => updateTechInfo("tech-refresh"));
 
+  if (IS_FILE_PROTOCOL) {
+    const warn = $("file-protocol-warn");
+    if (warn) warn.hidden = false;
+    noteTechError("file:// — MOEX fetch blocked by browser CORS");
+    const st = $("calc-status");
+    if (st) {
+      st.textContent =
+        "file:// — MOEX недоступен. Запустите serve-calculator.ps1 в папке с HTML или откройте GitHub Pages.";
+    }
+  }
+
   let calcState = null;
   const E = window.MultiLogicFinrespEngine;
   if (!E) {
@@ -420,6 +446,7 @@ a{color:var(--accent);}
     lastInstruments: [],
     lastLoadMeta: null,
     runGeneration: 0,
+    runBusyOwner: null,
     uiBusy: false,
     optim: {
       active: null,
@@ -674,6 +701,7 @@ a{color:var(--accent);}
     const interval = $("calc-tf").value;
     if (state.lastLoadMeta?.periodKey !== loadMetaKey(from, till, interval)) return false;
     const byKey = packsByInstrumentKey(state.packs);
+    if (instruments.length > byKey.size) return false;
     if (!instruments.every((i) => byKey.has(instrumentKey(i)))) return false;
     state.packs = orderPacksForInstruments(instruments, byKey);
     state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
@@ -724,15 +752,40 @@ a{color:var(--accent);}
     onSecSelectionChanged();
   }
 
+  function allSharesInListSelected() {
+    const opts = Array.from($("calc-sec").options).filter((o) => o.dataset.market === "shares");
+    return opts.length > 0 && opts.every((o) => o.selected);
+  }
+
+  function resolveBulkMode(instruments) {
+    if (!instruments.length) return null;
+    const hasFutures = instruments.some((i) => i.market === "futures");
+    const hasShares = instruments.some((i) => i.market === "shares");
+    if (hasShares && !hasFutures && allSharesInListSelected()) return "shares";
+    if (hasFutures && !hasShares && allFuturesInListSelected()) return "futures";
+    return null;
+  }
+
+  function releaseRunBusy(runGen) {
+    if (state.runBusyOwner === runGen) {
+      state.runBusyOwner = null;
+      setBusy(false);
+    }
+  }
+
   function onSecSelectionChanged() {
     syncSelectAllCheckboxes();
     const n = selectedInstrumentCount();
-    if (n > 0 && enforceDateRange("till", n)) {
-      $("calc-status").textContent =
-        `Период сужен до ${maxCalcDays($("calc-tf").value, n)} дн. для выбранных инструментов.`;
+    if (n > 0) {
+      const narrowed = enforceDateRange("till", n);
+      updateDateHint(n);
+      if (narrowed) {
+        $("calc-status").textContent =
+          `Период сужен до ${maxCalcDays($("calc-tf").value, n)} дн. для выбранных инструментов.`;
+      }
     } else {
       enforceDateRange("till", 0);
-      updateDateHint(n);
+      updateDateHint(0);
     }
     if (!tryRefreshFromLoadedPacks() && n > 0 && state.packs.length) {
       const instruments = selectedInstruments();
@@ -1884,6 +1937,7 @@ ${totalBlock}
     if (!instruments.length) throw new Error("Список инструментов пуст.");
     if (runGen == null) runGen = ++state.runGeneration;
     if (isOptimizing()) stopOptim();
+    state.runBusyOwner = runGen;
     setBusy(true);
     state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
     const periodNarrowed = enforceDateRange("till", instruments.length);
@@ -1925,6 +1979,10 @@ ${totalBlock}
       if (!renderWithStatus()) {
         $("calc-chart").innerHTML = "";
         $("calc-chart-equity").innerHTML = "";
+        if (instruments.length > 1 && loadedData.failures.length) {
+          $("calc-status").textContent +=
+            ` Загружено ${state.packs.length}/${instruments.length}; ошибок MOEX: ${loadedData.failures.length}.`;
+        }
       }
     } catch (err) {
       if (runGen !== state.runGeneration) return;
@@ -1934,10 +1992,8 @@ ${totalBlock}
       $("calc-chart-equity").innerHTML = "";
       throw err;
     } finally {
-      if (runGen === state.runGeneration) {
-        setBusy(false);
-        updateTechInfo("run-finished");
-      }
+      releaseRunBusy(runGen);
+      if (runGen === state.runGeneration) updateTechInfo("run-finished");
     }
   }
 
@@ -1949,19 +2005,24 @@ ${totalBlock}
       return;
     }
     const runGen = ++state.runGeneration;
+    const bulkMode = resolveBulkMode(instruments);
     try {
       if (instruments.some((i) => i.market === "futures")) {
+        state.runBusyOwner = runGen;
         setBusy(true);
         $("calc-status").textContent = "Подбор фьючерсов MOEX за период расчёта…";
         try {
           instruments = await expandFuturesForCalcPeriod(instruments);
         } finally {
-          setBusy(false);
+          releaseRunBusy(runGen);
         }
         if (runGen !== state.runGeneration) return;
       }
-      await runWithInstruments(instruments, null, runGen);
+      await runWithInstruments(instruments, bulkMode, runGen);
     } catch (_) { /* status уже выставлен */ }
+    finally {
+      releaseRunBusy(runGen);
+    }
   }
 
   function bindUiEvents() {
