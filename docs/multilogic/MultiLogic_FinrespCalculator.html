@@ -167,7 +167,7 @@ a{color:var(--accent);}
 <div class="calc-field"><label for="param-atr-sl">Длина ATR для SL/TP</label>
 <input id="param-atr-sl" type="number" value="14" min="2" max="200" step="1"></div>
 </div>
-<p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 — отключить соответствующий стоп. «Оптимизировать» перебирает параметр шагом 2&nbsp;% и оставляет значение при улучшении FINRESP; «Остановить» — текущее значение.</p>
+<p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 — отключить соответствующий стоп. «Оптимизировать» перебирает все значения шагом 2&nbsp;%; параметр меняется только при улучшении FINRESP; по окончании перебора или «Остановить» остаётся наилучшее значение.</p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
 <div class="calc-grid">
@@ -217,9 +217,10 @@ a{color:var(--accent);}
     hasWindow: false,
     optim: {
       active: null,
-      maxFinresp: -Infinity,
-      scanValue: 0,
-      direction: 1,
+      bestFinresp: -Infinity,
+      bestValue: 0,
+      candidates: [],
+      candidateIndex: 0,
       dots: 0,
       dotTimer: null,
       runToken: 0
@@ -378,6 +379,23 @@ a{color:var(--accent);}
     return Math.max(ref * 0.02, 0.02);
   }
 
+  function enumerateOptimValues(min, max) {
+    const vals = [];
+    const seen = new Set();
+    let v = min;
+    while (v <= max + 1e-9) {
+      const r = roundParam(v);
+      if (!seen.has(r)) {
+        seen.add(r);
+        vals.push(r);
+      }
+      if (r >= max) break;
+      v = roundParam(r + optimStepSize(r, min, max));
+      if (vals.length > 5000) break;
+    }
+    return vals;
+  }
+
   function stopOptimLabel() {
     const dots = ".".repeat(state.optim.dots % 4);
     return `Остановить${dots}`;
@@ -413,13 +431,31 @@ a{color:var(--accent);}
     }
   }
 
-  function stopOptim() {
+  function applyOptimBestValue() {
     if (!state.optim.active) return;
+    const meta = OPT_BUTTONS.find((x) => x.kind === state.optim.active);
+    if (meta) $(meta.inputId).value = String(state.optim.bestValue);
+  }
+
+  function finishOptim(token, autoDone) {
+    if (token !== state.optim.runToken || !state.optim.active) return;
+    applyOptimBestValue();
+    const kind = state.optim.active;
     state.optim.active = null;
     state.optim.runToken += 1;
     stopOptimDots();
     syncOptimButtons();
     render({ redrawCharts: true });
+    if (autoDone) {
+      $("calc-status").textContent =
+        `Оптимизация ${kind.toUpperCase()} завершена: лучшее значение ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
+    }
+  }
+
+  function stopOptim() {
+    if (!state.optim.active) return;
+    const token = state.optim.runToken;
+    finishOptim(token, false);
   }
 
   function calcResult() {
@@ -438,25 +474,23 @@ a{color:var(--accent);}
     const kind = state.optim.active;
     const meta = OPT_BUTTONS.find((x) => x.kind === kind);
     const input = $(meta.inputId);
-    const min = +input.min || 0;
-    const max = +input.max || 50;
-    let v = state.optim.scanValue;
-    const step = optimStepSize(v, min, max);
-    v = roundParam(v + step * state.optim.direction);
-    if (v > max) {
-      v = max;
-      state.optim.direction = -1;
-    } else if (v < min) {
-      v = min;
-      state.optim.direction = 1;
+
+    if (state.optim.candidateIndex >= state.optim.candidates.length) {
+      finishOptim(token, true);
+      return;
     }
-    state.optim.scanValue = v;
-    input.value = String(v);
-    const result = calcResult();
-    if (result && result.agg.finresp > state.optim.maxFinresp) {
-      state.optim.maxFinresp = result.agg.finresp;
+
+    const candidate = state.optim.candidates[state.optim.candidateIndex];
+    state.optim.candidateIndex += 1;
+    input.value = String(candidate);
+    const trial = calcResult();
+    if (trial && trial.agg.finresp > state.optim.bestFinresp) {
+      state.optim.bestFinresp = trial.agg.finresp;
+      state.optim.bestValue = candidate;
     }
-    if (result) applyResult(result, { redrawCharts: false, optimNote: kind.toUpperCase() });
+    input.value = String(state.optim.bestValue);
+    const display = input.value === String(candidate) ? trial : calcResult();
+    if (display) applyResult(display, { redrawCharts: false, optimNote: kind.toUpperCase() });
     await new Promise((r) => setTimeout(r, 40));
     optimLoop(token);
   }
@@ -473,11 +507,16 @@ a{color:var(--accent);}
     if (state.optim.active) stopOptim();
     const meta = OPT_BUTTONS.find((x) => x.kind === kind);
     const input = $(meta.inputId);
+    const min = +input.min || 0;
+    const max = +input.max || 50;
+    const startValue = roundParam(Math.max(+input.value || 0, min));
     state.optim.active = kind;
-    state.optim.scanValue = roundParam(Math.max(+input.value || 0, +input.min || 0));
-    state.optim.direction = 1;
+    state.optim.candidates = enumerateOptimValues(min, max);
+    state.optim.candidateIndex = 0;
+    state.optim.bestValue = startValue;
+    input.value = String(startValue);
     const cur = calcResult();
-    state.optim.maxFinresp = cur?.agg.finresp ?? -Infinity;
+    state.optim.bestFinresp = cur?.agg.finresp ?? -Infinity;
     state.optim.runToken += 1;
     const token = state.optim.runToken;
     startOptimDots();
@@ -840,9 +879,7 @@ ${markers}
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
     if (opts.optimNote) {
-      const meta = OPT_BUTTONS.find((x) => x.kind === state.optim.active);
-      const pval = meta ? $(meta.inputId).value : "";
-      status += ` | Опт. ${opts.optimNote}=${pval}, лучший FINRESP ${fmt(state.optim.maxFinresp)} ₽`;
+      status += ` | Опт. ${opts.optimNote}=${state.optim.bestValue}, лучший FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
     if (opts.redrawCharts !== false) drawCharts(perSec);
