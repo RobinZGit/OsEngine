@@ -109,6 +109,7 @@ a{color:var(--accent);}
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
 </div>
+<p class="calc-sec-hint" id="calc-date-hint"></p>
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
 <div class="calc-result">
 <div class="calc-metric"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
@@ -258,11 +259,14 @@ a{color:var(--accent);}
     { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true }
   ];
   const MAX_CHARTS = 8;
+  const DATE_MIN = "2020-01-01";
+  const DEFAULT_RANGE_DAYS = 30;
+  const MOEX_MINUTES_PER_SESSION = 530;
   const TF_LIMITS = {
-    "1": { label: "1 мин", maxDays: 7, maxBars: 900, defaultDays: 3 },
-    "10": { label: "10 мин", maxDays: 31, maxBars: 1200, defaultDays: 14 },
-    "60": { label: "1 час", maxDays: 93, maxBars: 1500, defaultDays: 90 },
-    "24": { label: "1 день", maxDays: 3650, maxBars: 1500, defaultDays: 365 }
+    "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
+    "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
+    "60": { label: "1 час", maxDays: 93, maxBars: 1500 },
+    "24": { label: "1 день", maxDays: 3650, maxBars: 1500 }
   };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
   const fmtPct = (v) => Number.isFinite(v) ? `${v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : "—";
@@ -305,6 +309,42 @@ a{color:var(--accent);}
   const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
   const parseDay = (v) => new Date(`${v}T00:00:00`);
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const todayDate = () => parseDay(day(new Date()));
+
+  function barsPerTradingDay(tf) {
+    if (tf === "1") return MOEX_MINUTES_PER_SESSION;
+    if (tf === "10") return Math.ceil(MOEX_MINUTES_PER_SESSION / 10);
+    if (tf === "60") return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
+    if (tf === "24") return 1;
+    return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
+  }
+
+  function maxCalcDays(tf, instrumentCount) {
+    const lim = TF_LIMITS[tf] || TF_LIMITS["60"];
+    const n = Math.max(1, instrumentCount || 1);
+    const daysByBars = Math.floor(lim.maxBars / (barsPerTradingDay(tf) * n));
+    return Math.max(1, Math.min(lim.maxDays, daysByBars));
+  }
+
+  function dateBounds() {
+    return { min: parseDay(DATE_MIN), max: todayDate() };
+  }
+
+  function initDateInputs() {
+    const maxStr = day(todayDate());
+    $("calc-from").min = DATE_MIN;
+    $("calc-till").min = DATE_MIN;
+    $("calc-from").max = maxStr;
+    $("calc-till").max = maxStr;
+  }
+
+  function updateDateHint(instrumentCount) {
+    const tf = $("calc-tf").value;
+    const n = Math.max(1, instrumentCount ?? selectedInstruments().length || 1);
+    const maxD = maxCalcDays(tf, n);
+    $("calc-date-hint").textContent =
+      `Календарь: ${DATE_MIN} — сегодня · по умолчанию ${DEFAULT_RANGE_DAYS} дн. · макс. период ~${maxD} дн. (${currentLimit().label}, ${n} инстр.)`;
+  }
 
   function params() {
     const sl = Math.max(0, +$("param-sl").value);
@@ -751,25 +791,50 @@ a{color:var(--accent);}
   }
 
   function initDates() {
-    const till = new Date();
-    const from = addDays(till, -currentLimit().defaultDays);
+    initDateInputs();
+    const { min, max } = dateBounds();
+    const n = Math.max(1, selectedInstruments().length || 1);
+    const span = Math.min(DEFAULT_RANGE_DAYS, maxCalcDays($("calc-tf").value, n));
+    const till = max;
+    let from = addDays(till, -span);
+    if (from < min) from = min;
     $("calc-from").value = day(from);
     $("calc-till").value = day(till);
+    updateDateHint(n);
   }
 
-  function enforceDateRange(anchor = "till") {
-    const limit = currentLimit();
+  function enforceDateRange(anchor = "till", instrumentCount) {
+    const tf = $("calc-tf").value;
+    const n = Math.max(1, instrumentCount ?? selectedInstruments().length || 1);
+    const maxSpan = maxCalcDays(tf, n);
+    const { min, max } = dateBounds();
     let from = parseDay($("calc-from").value);
     let till = parseDay($("calc-till").value);
-    if (!Number.isFinite(from.getTime()) || !Number.isFinite(till.getTime())) return;
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(till.getTime())) return false;
+    const beforeFrom = $("calc-from").value;
+    const beforeTill = $("calc-till").value;
     if (from > till) { if (anchor === "from") till = from; else from = till; }
-    const span = Math.round((till - from) / 86400000);
-    if (span > limit.maxDays) {
-      if (anchor === "from") till = addDays(from, limit.maxDays);
-      else from = addDays(till, -limit.maxDays);
+    if (till > max) till = max;
+    if (from < min) from = min;
+    if (from > till) from = till;
+    let span = Math.round((till - from) / 86400000);
+    if (span > maxSpan) {
+      if (anchor === "from") till = addDays(from, maxSpan);
+      else from = addDays(till, -maxSpan);
+    }
+    if (till > max) {
+      till = max;
+      from = addDays(till, -maxSpan);
+    }
+    if (from < min) {
+      from = min;
+      till = addDays(from, maxSpan);
+      if (till > max) till = max;
     }
     $("calc-from").value = day(from);
     $("calc-till").value = day(till);
+    updateDateHint(n);
+    return $("calc-from").value !== beforeFrom || $("calc-till").value !== beforeTill;
   }
 
   function refPack() {
@@ -1115,7 +1180,7 @@ ${markers}
     if (isOptimizing()) stopOptim();
     setBusy(true);
     saveWindowAnchor();
-    enforceDateRange("till");
+    const periodNarrowed = enforceDateRange("till", instruments.length);
     const from = $("calc-from").value;
     const till = $("calc-till").value;
     const interval = $("calc-tf").value;
@@ -1124,7 +1189,10 @@ ${markers}
     const label = nShares && nFutures
       ? `${nShares} акц. + ${nFutures} фьюч.`
       : nFutures ? `${nFutures} фьючерсов` : `${nShares} акций`;
-    $("calc-status").textContent = `Загрузка ${label}…`;
+    const maxD = maxCalcDays(interval, instruments.length);
+    $("calc-status").textContent = periodNarrowed
+      ? `Период сужен до ${maxD} дн. (${TF_LIMITS[interval]?.label || interval}, ${instruments.length} инстр.). Загрузка ${label}…`
+      : `Загрузка ${label}…`;
     try {
       let loaded = 0;
       const total = instruments.length;
@@ -1194,9 +1262,9 @@ ${markers}
   fillLogicSelect();
   fillLogicEditor();
   initPrefixFields();
-  initDates();
   syncVolumeFields();
   initInstrumentLists();
+  initDates();
   $("calc-run").addEventListener("click", run);
   $("pick-shares").addEventListener("click", pickShares);
   $("pick-futures").addEventListener("click", pickFutures);
@@ -1204,7 +1272,15 @@ ${markers}
     $(btnId).addEventListener("click", () => toggleOptim(kind));
   });
   $("calc-sec-all").addEventListener("change", () => setSelectAll($("calc-sec-all").checked));
-  $("calc-sec").addEventListener("change", syncSelectAllCheckbox);
+  $("calc-sec").addEventListener("change", () => {
+    syncSelectAllCheckbox();
+    if (enforceDateRange("till")) {
+      $("calc-status").textContent =
+        `Период сужен до ${maxCalcDays($("calc-tf").value, selectedInstruments().length)} дн. для выбранных инструментов.`;
+    } else {
+      updateDateHint();
+    }
+  });
   $("prefix-pick-stocks").addEventListener("click", () => {
     reloadShareList();
     $("calc-status").textContent = state.packs.length
@@ -1243,7 +1319,10 @@ ${markers}
     $(inputId).addEventListener("input", () => { if (!isOptimizing()) render(); });
   });
   $("calc-tf").addEventListener("change", () => {
-    enforceDateRange("till");
+    if (enforceDateRange("till")) {
+      $("calc-status").textContent =
+        `Таймфрейм изменён — период сужен до ${maxCalcDays($("calc-tf").value, selectedInstruments().length)} дн.`;
+    }
     if (state.packs.length) setSliderBounds(true);
   });
   $("calc-from").addEventListener("change", () => enforceDateRange("from"));
