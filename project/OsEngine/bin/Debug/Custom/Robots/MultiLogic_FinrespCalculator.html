@@ -236,6 +236,7 @@ a{color:var(--accent);}
     anchorEndTime: null,
     hasWindow: false,
     failedInstruments: [],
+    uiBusy: false,
     optim: {
       active: null,
       bestFinresp: -Infinity,
@@ -438,6 +439,16 @@ a{color:var(--accent);}
     return `Остановить${dots}`;
   }
 
+  function applyUiLocks() {
+    const lock = state.uiBusy || isOptimizing();
+    $("calc-run").disabled = lock;
+    $("pick-shares").disabled = lock || !state.shareList.length;
+    $("pick-futures").disabled = lock || !state.futuresList.length;
+    $("prefix-pick-stocks").disabled = lock;
+    $("prefix-pick-futures").disabled = lock;
+    $("calc-sec-all").disabled = lock || !$("calc-sec").options.length;
+  }
+
   function syncOptimButtons() {
     const active = state.optim.active;
     for (const { kind, btnId } of OPT_BUTTONS) {
@@ -451,6 +462,7 @@ a{color:var(--accent);}
     for (const { inputId } of OPT_BUTTONS) {
       $(inputId).readOnly = lock;
     }
+    applyUiLocks();
   }
 
   function startOptimDots() {
@@ -575,11 +587,13 @@ a{color:var(--accent);}
       state.optim.bestFinresp = score;
       state.optim.bestValue = candidate;
     }
-    input.value = String(optimCandidateValue(kind, state.optim.bestValue));
+    const candLabel = optimCandidateValue(kind, candidate);
+    input.value = String(candLabel);
     if (trial) {
       applyResult(trial, {
         redrawCharts: false,
-        optimNote: `${optimDisplayLabel(kind)} → ${optimCandidateValue(kind, candidate)}`
+        optimTrial: true,
+        optimNote: `${optimDisplayLabel(kind)} ${candLabel}`
       });
     }
     await new Promise((r) => setTimeout(r, 40));
@@ -617,13 +631,9 @@ a{color:var(--accent);}
   }
 
   function setBusy(busy) {
-    $("calc-run").disabled = busy || isOptimizing();
-    $("pick-shares").disabled = busy || isOptimizing() || !state.shareList.length;
-    $("pick-futures").disabled = busy || isOptimizing() || !state.futuresList.length;
-    $("prefix-pick-stocks").disabled = busy || isOptimizing();
-    $("prefix-pick-futures").disabled = busy || isOptimizing();
-    $("calc-sec-all").disabled = busy || isOptimizing() || (!$("calc-sec").options.length);
-    if (!busy && !isOptimizing()) syncOptimButtons();
+    state.uiBusy = busy;
+    applyUiLocks();
+    if (!state.uiBusy && !isOptimizing()) syncOptimButtons();
   }
 
   function updateSecHint() {
@@ -716,6 +726,10 @@ a{color:var(--accent);}
       state.customLines[ta.dataset.key] = ta.value;
     });
     fillLogicSelect();
+  }
+
+  function applyEditorParams() {
+    readLogicEditor();
   }
 
   function initDates() {
@@ -1007,9 +1021,18 @@ ${markers}
       : "<p class=\"note\">Нет данных для графика.</p>";
   }
 
+  function optimDisplayAgg(result, opts) {
+    const kind = state.optim.active;
+    if (opts?.optimTrial && kind && isPositionOptimKind(kind) && result.preStopperAgg) {
+      return result.preStopperAgg;
+    }
+    return result.agg;
+  }
+
   function applyResult(result, options) {
     const opts = options || {};
-    const { perSec, agg, stopper, a, b } = result;
+    const { perSec, stopper, a, b } = result;
+    const agg = optimDisplayAgg(result, opts);
     const winLen = perSec.reduce((m, p) => Math.max(m, p.rows?.length ?? 0), 0);
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
@@ -1036,7 +1059,8 @@ ${markers}
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
     if (opts.optimNote) {
-      status += ` | Опт. ${opts.optimNote} = ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
+      const bestLabel = optimCandidateValue(state.optim.active, state.optim.bestValue);
+      status += ` | Опт. ${opts.optimNote}: FINRESP ${fmt(agg.finresp)} ₽ | лучшее ${bestLabel} → ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
     if (opts.redrawCharts !== false) drawCharts(perSec, stopper);
@@ -1110,6 +1134,7 @@ ${markers}
   }
 
   async function run() {
+    applyEditorParams();
     const instruments = selectedInstruments();
     if (!instruments.length) {
       $("calc-status").textContent = "Выберите хотя бы один инструмент в списке.";
@@ -1121,6 +1146,7 @@ ${markers}
   }
 
   async function pickShares() {
+    applyEditorParams();
     if (!state.shareList.length) {
       $("calc-status").textContent = "В списке нет акций — проверьте тикеры и нажмите «Подобрать».";
       return;
@@ -1134,6 +1160,7 @@ ${markers}
   }
 
   async function pickFutures() {
+    applyEditorParams();
     if (!state.futuresList.length) {
       $("calc-status").textContent = "В списке нет фьючерсов — проверьте префиксы и нажмите «Подобрать».";
       return;
@@ -1174,7 +1201,7 @@ ${markers}
       : `Список фьючерсов обновлён (${state.futuresList.length}). Выберите инструменты и нажмите «Рассчитать».`;
     if (state.packs.length) render();
   });
-  $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
+  $("logic-apply").addEventListener("click", () => { applyEditorParams(); render(); });
   $("calc-logic").addEventListener("change", render);
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
   ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "stopper-ref"].forEach((id) => {
