@@ -34,6 +34,8 @@ h2:first-child{margin-top:0;}
 .chart-card svg{display:block;min-width:720px;max-width:100%;}
 details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
 details.logic-editor summary{cursor:pointer;font-weight:600;color:#374151;}
+.drama-section{margin:1rem 0 .5rem;font-size:.95rem;font-weight:600;color:#374151;border-bottom:1px solid var(--border);padding-bottom:.3rem;}
+.drama-section:first-of-type{margin-top:.5rem;}
 .logic-grid{display:grid;gap:.75rem;margin-top:.75rem;}
 .logic-grid label{font-size:.82rem;color:var(--muted);display:block;margin-bottom:.2rem;}
 .logic-grid textarea{width:100%;min-height:4.5rem;font-family:Consolas,monospace;font-size:.78rem;padding:.45rem;border:1px solid var(--border);border-radius:6px;resize:vertical;}
@@ -75,9 +77,6 @@ a{color:var(--accent);}
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
-<div class="calc-field"><label for="param-lr">@LR</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
-<div class="calc-field"><label for="param-sl">@SL ×ATR</label><input id="param-sl" type="number" value="2" min="0" max="50" step="0.1"></div>
-<div class="calc-field"><label for="param-tp">@TP ×ATR</label><input id="param-tp" type="number" value="3" min="0" max="50" step="0.1"></div>
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
 </div>
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
@@ -95,11 +94,37 @@ a{color:var(--accent);}
 <div class="chart-card" id="calc-chart"></div>
 </div>
 
-<details class="logic-editor" id="logic-editor">
-<summary>Строки логик L1…L4 (редактируемые) — после изменения нажмите «Применить»</summary>
+<details class="logic-editor" id="dramatica">
+<summary>Драматика — объёмы, параметры и строки логик L1…L4</summary>
+
+<p class="drama-section">Объём сделки (как в роботе)</p>
+<div class="calc-grid">
+<div class="calc-field"><label for="vol-type">Volume type</label>
+<select id="vol-type">
+<option value="Deposit percent" selected>Deposit percent — % депозита</option>
+<option value="Contracts">Contracts — контракты (лоты)</option>
+<option value="Contract currency">Contract currency — сумма в валюте контракта</option>
+</select></div>
+<div class="calc-field"><label for="vol-value" id="vol-value-label">Volume, % депозита</label>
+<input id="vol-value" type="number" value="10" min="0.0001" max="50" step="0.0001"></div>
+<div class="calc-field" id="vol-deposit-wrap"><label for="vol-deposit">Депозит (Prime), ₽</label>
+<input id="vol-deposit" type="number" value="1000000" min="1" step="1000"></div>
+<div class="calc-field"><label for="vol-maxpos">Max positions (all tabs)</label>
+<input id="vol-maxpos" type="number" value="40" min="0" max="200" step="1"></div>
+</div>
+<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
+
+<p class="drama-section">Параметры строки логики</p>
+<div class="calc-grid">
+<div class="calc-field"><label for="param-lr">@LR</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
+<div class="calc-field"><label for="param-sl">@SL ×ATR</label><input id="param-sl" type="number" value="2" min="0" max="50" step="0.1"></div>
+<div class="calc-field"><label for="param-tp">@TP ×ATR</label><input id="param-tp" type="number" value="3" min="0" max="50" step="0.1"></div>
+</div>
+
+<p class="drama-section">Строки L1…L4</p>
 <div class="logic-grid" id="logic-lines"></div>
-<button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить строки</button>
-<p class="note">Regime/Strict в калькуляторе не блокируют вход — учитываются Op/Cl и SL/TP по ATR. Общепортфельный Stopper пока не считается.</p>
+<button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
+<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и SL/TP по ATR. Общепортфельный Stopper не считается.</p>
 </details>
 </main>
 </div>
@@ -128,6 +153,26 @@ a{color:var(--accent);}
       SL: +$("param-sl").value || 0,
       TP: +$("param-tp").value || 0
     };
+  }
+
+  function volConfig() {
+    return {
+      volumeType: $("vol-type").value,
+      volume: +$("vol-value").value || E.DEFAULT_VOLUME.volume,
+      deposit: +$("vol-deposit").value || E.DEFAULT_VOLUME.deposit,
+      maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions)
+    };
+  }
+
+  function syncVolumeFields() {
+    const t = $("vol-type").value;
+    $("vol-deposit-wrap").style.display = t === "Deposit percent" ? "" : "none";
+    const labels = {
+      "Deposit percent": "Volume, % депозита",
+      "Contracts": "Volume, контракты",
+      "Contract currency": "Volume, валюте контракта, ₽"
+    };
+    $("vol-value-label").textContent = labels[t] || "Volume";
   }
 
   function selectedSecs() {
@@ -317,7 +362,7 @@ ${markers}
     const [a, b] = normalizeSliders();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params());
     if (!spec) return;
-    const { perSec, agg, chartRows } = E.runMulti(state.packs, spec, a, b, params());
+    const { perSec, agg, chartRows } = E.runMulti(state.packs, spec, a, b, params(), volConfig());
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
     $("calc-count").textContent = String(chartRows.length);
@@ -355,10 +400,15 @@ ${markers}
   fillLogicSelect();
   fillLogicEditor();
   initDates();
+  syncVolumeFields();
   $("calc-run").addEventListener("click", run);
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
-  ["param-lr", "param-sl", "param-tp"].forEach((id) => $(id).addEventListener("change", render));
+  $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
+  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "param-sl", "param-tp"].forEach((id) => {
+    $(id).addEventListener("change", render);
+    $(id).addEventListener("input", render);
+  });
   $("calc-tf").addEventListener("change", () => {
     const till = parseDay($("calc-till").value);
     $("calc-from").value = day(addDays(till, -currentLimit().defaultDays));
