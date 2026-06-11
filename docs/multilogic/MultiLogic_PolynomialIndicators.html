@@ -53,6 +53,20 @@ pre.formula{background:var(--example-bg);border:1px solid var(--example-border);
 .line-sample.sell{width:.75rem;height:.75rem;background:#dc2626;border-radius:50%;}
 .finresp-card{background:#f8fafc;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:.75rem 1rem;margin:1rem 0;}
 .finresp-value{font-size:1.35rem;font-weight:700;color:#b91c1c;font-family:Consolas,"Courier New",monospace;}
+.calc-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:1rem;margin:1rem 0;}
+.calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;align-items:end;}
+.calc-field label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:.25rem;}
+.calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);}
+.calc-btn{padding:.48rem .8rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
+.calc-btn:disabled{opacity:.55;cursor:wait;}
+.calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
+.calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin:.85rem 0;}
+.calc-metric{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.55rem .7rem;}
+.calc-metric b{display:block;font-size:.82rem;color:var(--muted);font-weight:500;}
+.calc-metric span{font-family:Consolas,"Courier New",monospace;font-weight:700;}
+.range-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin:.6rem 0;}
+.range-grid input{width:100%;}
+.calc-chart svg{min-width:720px;}
 table.ind{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.92rem;}
 table.ind th,table.ind td{border:1px solid var(--border);padding:.45rem .65rem;text-align:left;vertical-align:top;}
 table.ind th{background:var(--accent-soft);font-weight:600;}
@@ -328,6 +342,45 @@ F_T = (<span class="poly">EQ</span>_SMA)_T
 То же как сумма всех свечей:
 F_T = Σ_{k=0..T} p_k·(e_k − b_k) + p_T·Σ_{k=0..T}(b_k − e_k)</pre>
 
+<h3>Онлайн-калькулятор FINRESP</h3>
+<div class="calc-card" id="finresp-calc">
+<div class="calc-grid">
+<div class="calc-field"><label for="calc-sec">Бумага</label><select id="calc-sec">
+<option value="SBER">SBER — Сбербанк</option>
+<option value="LKOH">LKOH — Лукойл</option>
+<option value="GAZP">GAZP — Газпром</option>
+<option value="GMKN">GMKN — Норникель</option>
+<option value="ROSN">ROSN — Роснефть</option>
+<option value="NVTK">NVTK — Новатэк</option>
+<option value="TATN">TATN — Татнефть</option>
+<option value="PLZL">PLZL — Полюс</option>
+<option value="YDEX">YDEX — Яндекс</option>
+<option value="VTBR">VTBR — ВТБ</option>
+</select></div>
+<div class="calc-field"><label for="calc-tf">Таймфрейм</label><select id="calc-tf">
+<option value="10">10 минут</option>
+<option value="60" selected>1 час</option>
+<option value="24">1 день</option>
+</select></div>
+<div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date"></div>
+<div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date"></div>
+<div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"><option value="sma3">SMA-разность, SMA(3)</option></select></div>
+<button class="calc-btn" id="calc-run" type="button">Execute / Рассчитать</button>
+</div>
+<p class="calc-status" id="calc-status">Загрузите свечи MOEX ISS и двигайте границы периода — FINRESP пересчитывается сразу.</p>
+<div class="calc-result" id="calc-result">
+<div class="calc-metric"><b>FINRESP</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric"><b>Свечи</b><span id="calc-count">—</span></div>
+<div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
+<div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
+</div>
+<div class="range-grid">
+<div><label for="calc-start">Левая граница</label><input id="calc-start" type="range" min="0" max="0" value="0" disabled><small id="calc-start-label">—</small></div>
+<div><label for="calc-end">Правая граница</label><input id="calc-end" type="range" min="0" max="0" value="0" disabled><small id="calc-end-label">—</small></div>
+</div>
+<div class="chart-card calc-chart" id="calc-chart"></div>
+</div>
+
 <h3>SBER H1 за последние 3 месяца: FINRESP</h3>
 <div class="finresp-card">
 <p><strong>Источник:</strong> MOEX ISS, <code>SBER</code>, свечи <code>interval=60</code>.</p>
@@ -476,5 +529,162 @@ SMA-сделки: <span class="poly">dd</span>=<span class="mkt">pp</span>−<sp
 <footer class="help-ftr">
 MultiLogic · <a href="../index.html">документация</a> · <a href="MultiLogic_LogicHelp.html">справка по роботу</a> · <span class="deal">ff(1)</span> финрез · OsEngine Custom\Robots
 </footer>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const state = { candles: [], rows: [] };
+  const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
+  const day = (dt) => dt.toISOString().slice(0, 10);
+
+  function initDates() {
+    const till = new Date();
+    const from = new Date(till);
+    from.setMonth(from.getMonth() - 3);
+    $("calc-from").value = day(from);
+    $("calc-till").value = day(till);
+  }
+
+  async function loadCandles(sec, from, till, interval) {
+    const all = [];
+    let start = 0;
+    while (true) {
+      const url = new URL(`https://iss.moex.com/iss/engines/stock/markets/shares/securities/${sec}/candles.json`);
+      url.search = new URLSearchParams({ from, till, interval, start: String(start) }).toString();
+      const data = await fetch(url).then((r) => {
+        if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
+        return r.json();
+      });
+      const chunk = data?.candles?.data || [];
+      if (!chunk.length) break;
+      all.push(...chunk);
+      if (chunk.length < 500) break;
+      start += chunk.length;
+      if (start > 20000) break;
+    }
+    const seen = new Set();
+    return all.filter((r) => {
+      if (seen.has(r[6])) return false;
+      seen.add(r[6]);
+      return true;
+    }).map((r) => ({ open: +r[0], close: +r[1], high: +r[2], low: +r[3], volume: +r[5], time: r[6] }));
+  }
+
+  function calcFinResp(candles, startIdx, endIdx) {
+    const part = candles.slice(startIdx, endIdx + 1);
+    let cash = 0, pos = 0, buys = 0, sells = 0;
+    const rows = part.map((c, i) => {
+      let sma = null, d = 0, buy = 0, sell = 0;
+      if (i >= 2) {
+        sma = (part[i - 2].close + part[i - 1].close + c.close) / 3;
+        d = c.close - sma;
+        buy = Math.max(d, 0);
+        sell = Math.max(-d, 0);
+        cash += c.close * (sell - buy);
+        pos += buy - sell;
+        buys += buy;
+        sells += sell;
+      }
+      return { ...c, sma, d, buy, sell, cash, pos, eq: cash + pos * c.close };
+    });
+    return { rows, finresp: rows.at(-1)?.eq ?? 0, cash, pos, buys, sells };
+  }
+
+  function setSliderBounds() {
+    const max = Math.max(0, state.candles.length - 1);
+    for (const id of ["calc-start", "calc-end"]) {
+      $(id).min = 0;
+      $(id).max = max;
+      $(id).disabled = max < 2;
+    }
+    $("calc-start").value = 0;
+    $("calc-end").value = max;
+  }
+
+  function normalizeSliders() {
+    let a = +$("calc-start").value;
+    let b = +$("calc-end").value;
+    if (a > b - 2) a = Math.max(0, b - 2);
+    if (b < a + 2) b = Math.min(state.candles.length - 1, a + 2);
+    $("calc-start").value = a;
+    $("calc-end").value = b;
+    return [a, b];
+  }
+
+  function render() {
+    if (!state.candles.length) return;
+    const [a, b] = normalizeSliders();
+    const result = calcFinResp(state.candles, a, b);
+    state.rows = result.rows;
+    $("calc-finresp").textContent = `${fmt(result.finresp)} ₽`;
+    $("calc-finresp").style.color = result.finresp < 0 ? "#b91c1c" : "#047857";
+    $("calc-count").textContent = String(result.rows.length);
+    $("calc-pos").textContent = fmt(result.pos, 4);
+    $("calc-cash").textContent = `${fmt(result.cash)} ₽`;
+    $("calc-start-label").textContent = state.candles[a]?.time || "—";
+    $("calc-end-label").textContent = state.candles[b]?.time || "—";
+    $("calc-status").textContent = `FINRESP пересчитан: ${state.candles[a]?.time} — ${state.candles[b]?.time}. Buy ${fmt(result.buys, 2)}, Sell ${fmt(result.sells, 2)}.`;
+    drawChart(result.rows, result.finresp);
+  }
+
+  function drawChart(rows, finresp) {
+    if (rows.length < 3) {
+      $("calc-chart").innerHTML = "<p class=\"note\">Недостаточно свечей для SMA(3).</p>";
+      return;
+    }
+    const w = 760, h = 300, left = 55, right = 25, top = 22, bottom = 48;
+    const vals = rows.flatMap((r) => r.sma == null ? [r.close] : [r.close, r.sma]);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const pad = Math.max((max - min) * 0.08, 0.01);
+    const lo = min - pad, hi = max + pad;
+    const x = (i) => left + i * (w - left - right) / Math.max(1, rows.length - 1);
+    const y = (v) => top + (hi - v) * (h - top - bottom) / (hi - lo);
+    const step = Math.max(1, Math.ceil(rows.length / 420));
+    const sample = rows.map((_, i) => i).filter((i) => i % step === 0 || i === rows.length - 1);
+    const line = (key) => sample.filter((i) => rows[i][key] != null).map((i) => `${x(i).toFixed(1)},${y(rows[i][key]).toFixed(1)}`).join(" ");
+    const markerStep = Math.max(1, Math.ceil(rows.length / 80));
+    const markers = rows.map((r, i) => ({ r, i })).filter(({ r, i }) => i >= 2 && (r.buy || r.sell) && (i % markerStep === 0 || i === rows.length - 1));
+    const circles = markers.map(({ r, i }) => {
+      const cls = r.buy ? "#16a34a" : "#dc2626";
+      const side = r.buy ? "Buy" : "Sell";
+      const vol = r.buy || r.sell;
+      return `<circle cx="${x(i).toFixed(1)}" cy="${y(r.close).toFixed(1)}" r="4.5" fill="${cls}" stroke="#fff" stroke-width="1.5"><title>${r.time} ${side} ${fmt(vol, 2)}</title></circle>`;
+    }).join("");
+    const y1 = y(lo + (hi - lo) * 0.25), y2 = y(lo + (hi - lo) * 0.5), y3 = y(lo + (hi - lo) * 0.75);
+    const color = finresp < 0 ? "#b91c1c" : "#047857";
+    $("calc-chart").innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="FINRESP chart">
+<rect x="0" y="0" width="${w}" height="${h}" fill="#fff"/>
+<line x1="${left}" y1="${top}" x2="${left}" y2="${h - bottom}" stroke="#cbd5e1"/><line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#cbd5e1"/>
+<g stroke="#e2e8f0"><line x1="${left}" y1="${y1.toFixed(1)}" x2="${w - right}" y2="${y1.toFixed(1)}"/><line x1="${left}" y1="${y2.toFixed(1)}" x2="${w - right}" y2="${y2.toFixed(1)}"/><line x1="${left}" y1="${y3.toFixed(1)}" x2="${w - right}" y2="${y3.toFixed(1)}"/></g>
+<polyline fill="none" stroke="#2563eb" stroke-width="2.2" points="${line("close")}"/>
+<polyline fill="none" stroke="#d97706" stroke-width="2.2" stroke-dasharray="6 5" points="${line("sma")}"/>
+<g>${circles}</g>
+<g fill="#64748b" font-size="12" font-family="Segoe UI, sans-serif"><text x="10" y="26">${fmt(hi, 1)}</text><text x="10" y="${h - bottom}">${fmt(lo, 1)}</text><text x="${left}" y="274">${rows[0].time.slice(0, 10)}</text><text x="${w - 105}" y="274">${rows.at(-1).time.slice(0, 10)}</text></g>
+<text x="500" y="36" fill="${color}" font-size="16" font-weight="700" font-family="Consolas,monospace">FINRESP ${fmt(finresp)} ₽</text>
+</svg>`;
+  }
+
+  async function run() {
+    const btn = $("calc-run");
+    btn.disabled = true;
+    $("calc-status").textContent = "Загрузка свечей MOEX ISS...";
+    try {
+      state.candles = await loadCandles($("calc-sec").value, $("calc-from").value, $("calc-till").value, $("calc-tf").value);
+      if (state.candles.length < 3) throw new Error("MOEX вернул меньше 3 свечей.");
+      setSliderBounds();
+      render();
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка: ${err.message}`;
+      $("calc-chart").innerHTML = "";
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  initDates();
+  $("calc-run").addEventListener("click", run);
+  $("calc-start").addEventListener("input", render);
+  $("calc-end").addEventListener("input", render);
+})();
+</script>
 </body>
 </html>
