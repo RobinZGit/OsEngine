@@ -4991,6 +4991,8 @@ namespace OsEngine.Robots.Custom
                     oldReference,
                     currentEquity,
                     out _,
+                    out _,
+                    out _,
                     out _))
             {
                 baselineToSet = currentEquity;
