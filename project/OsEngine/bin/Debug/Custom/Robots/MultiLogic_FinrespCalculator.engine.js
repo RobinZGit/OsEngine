@@ -955,14 +955,25 @@
   }
 
   async function fetchFuturesList(futuresPrefixesRaw) {
-    return listFuturesPrefixes(futuresPrefixesRaw);
+    const prefixes = parseTickerPrefixes(futuresPrefixesRaw || DEFAULT_FUTURES_PREFIXES_RAW);
+    if (!prefixes.length) return [];
+    const today = new Date().toISOString().slice(0, 10);
+    return fetchIssSecIds(
+      "https://iss.moex.com/iss/engines/futures/markets/forts/securities.json",
+      "SECID,ASSETCODE,LASTTRADEDATE,BOARDID",
+      (o) => o.BOARDID === "RFUD"
+        && o.ASSETCODE
+        && String(o.LASTTRADEDATE || "") >= today
+        && futuresTickerMatches(o.SECID, prefixes)
+    );
   }
 
-  async function resolveFuturesContract(prefix) {
-    const prefixes = parseTickerPrefixes(prefix);
-    const key = prefixes[0];
+  async function resolveFuturesMoexSec(secOrPrefix) {
+    const key = String(parseTickerPrefixes(secOrPrefix)[0] || "").trim();
     if (!key) return null;
     const today = new Date().toISOString().slice(0, 10);
+    const keyUpper = key.toUpperCase();
+    let exact = null;
     let front = null;
     let start = 0;
     while (true) {
@@ -981,14 +992,20 @@
         const o = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
         if (o.BOARDID !== "RFUD" || !o.ASSETCODE) continue;
         if (String(o.LASTTRADEDATE || "") < today) continue;
-        if (!futuresTickerMatches(o.SECID, [key])) continue;
+        const secid = String(o.SECID || "");
+        if (secid.toUpperCase() !== keyUpper && !futuresTickerMatches(secid, [key])) continue;
+        if (secid.toUpperCase() === keyUpper) exact = o;
         if (!front || String(o.LASTTRADEDATE) < String(front.LASTTRADEDATE)) front = o;
       }
       if (chunk.length < 100) break;
       start += chunk.length;
       if (start > 20000) break;
     }
-    return front?.SECID || null;
+    return exact?.SECID || front?.SECID || null;
+  }
+
+  async function resolveFuturesContract(secOrPrefix) {
+    return resolveFuturesMoexSec(secOrPrefix);
   }
 
   async function loadMoexCandles(sec, from, till, interval, market = "shares") {

@@ -212,7 +212,7 @@ a{color:var(--accent);}
 <button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-futures">Подобрать</button>
 </div></div>
 </div>
-<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать» обновляет список выбора из текста поля (без запросов к MOEX). Проверка и свечи — при «Рассчитать».</p>
+<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. Акции: «Подобрать» — из текста поля. Фьючерсы: «Подобрать» — актуальные контракты MOEX (полные тикеры, LASTTRADEDATE ≥ сегодня) по префиксам из поля; выбор переключается на них. Свечи — при «Рассчитать».</p>
 </details>
 
 <div class="chart-card" id="calc-chart"></div>
@@ -229,6 +229,7 @@ a{color:var(--accent);}
     packs: [],
     shareList: [],
     futuresList: [],
+    futuresFromMoex: false,
     bulkMode: null,
     movedSlider: "end",
     customLines: { ...E.DEFAULT_LOGIC_LINES },
@@ -637,11 +638,15 @@ a{color:var(--accent);}
   }
 
   function updateSecHint() {
+    const futLabel = state.futuresFromMoex
+      ? `${state.futuresList.length} фьючерсов MOEX (актуальные контракты)`
+      : `${state.futuresList.length} префиксов фьючерсов из поля`;
     $("calc-sec-hint").textContent =
-      `${state.shareList.length} тикеров акций · ${state.futuresList.length} префиксов фьючерсов из полей (MOEX — при расчёте)`;
+      `${state.shareList.length} тикеров акций · ${futLabel}`;
   }
 
-  function fillSecSelect() {
+  function fillSecSelect(opts) {
+    const options = opts || {};
     const sel = $("calc-sec");
     const prev = new Set(selectedSecs());
     sel.innerHTML = "";
@@ -651,7 +656,10 @@ a{color:var(--accent);}
         o.value = id;
         o.textContent = id;
         o.dataset.market = market;
-        if (prev.has(id) || (prev.size === 0 && market === "shares" && id.toUpperCase() === "SBER")) {
+        const selectFutures = options.selectFutures && market === "futures";
+        if (selectFutures
+          || prev.has(id)
+          || (prev.size === 0 && market === "shares" && id.toUpperCase() === "SBER")) {
           o.selected = true;
         }
         sel.appendChild(o);
@@ -677,9 +685,19 @@ a{color:var(--accent);}
 
   function reloadFuturesList() {
     state.futuresList = E.listFuturesPrefixes($("prefix-futures").value);
+    state.futuresFromMoex = false;
     fillSecSelect();
     updateSecHint();
     if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
+  }
+
+  async function reloadFuturesListFromMoex() {
+    state.futuresList = await E.fetchFuturesList($("prefix-futures").value);
+    state.futuresFromMoex = true;
+    fillSecSelect({ selectFutures: true });
+    updateSecHint();
+    if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
+    return state.futuresList.length;
   }
 
   function initInstrumentLists() {
@@ -1194,12 +1212,24 @@ ${markers}
       : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
     if (state.packs.length) render();
   });
-  $("prefix-pick-futures").addEventListener("click", () => {
-    reloadFuturesList();
-    $("calc-status").textContent = state.packs.length
-      ? `Список фьючерсов обновлён (${state.futuresList.length}). FINRESP пересчитан по текущему окну.`
-      : `Список фьючерсов обновлён (${state.futuresList.length}). Выберите инструменты и нажмите «Рассчитать».`;
-    if (state.packs.length) render();
+  $("prefix-pick-futures").addEventListener("click", async () => {
+    setBusy(true);
+    $("calc-status").textContent = "Подбор актуальных фьючерсов на MOEX…";
+    try {
+      const n = await reloadFuturesListFromMoex();
+      if (!n) {
+        $("calc-status").textContent = "MOEX не вернул активных фьючерсов по указанным префиксам.";
+        return;
+      }
+      $("calc-status").textContent = state.packs.length
+        ? `Подобрано ${n} контрактов MOEX, выбор обновлён. FINRESP пересчитан по текущему окну.`
+        : `Подобрано ${n} контрактов MOEX, выбор обновлён. Нажмите «Рассчитать».`;
+      if (state.packs.length) render();
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка подбора фьючерсов: ${err.message}`;
+    } finally {
+      setBusy(false);
+    }
   });
   $("logic-apply").addEventListener("click", () => { applyEditorParams(); render(); });
   $("calc-logic").addEventListener("change", render);
