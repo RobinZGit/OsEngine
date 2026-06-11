@@ -53,7 +53,13 @@ h2:first-child{margin-top:0;}
 .chart-fail .chart-fail-msg{margin:0;font-size:.85rem;color:#b91c1c;}
 .chart-sec-title{margin:0 0 .4rem;font-size:.88rem;font-weight:600;color:#374151;font-family:Consolas,monospace;}
 details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
-details.logic-editor summary{cursor:pointer;font-weight:600;color:#374151;}
+details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
+.extra-params-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.55rem .15rem .7rem;margin:-.5rem -.85rem .35rem;border-bottom:2px solid var(--accent);cursor:pointer;list-style:none;}
+.extra-params-head::-webkit-details-marker{display:none;}
+.extra-params-head::marker{content:"";}
+.extra-params-title{font-size:1.18rem;font-weight:700;color:var(--text);letter-spacing:-.01em;}
+.extra-params-toggle{font-size:.9rem;font-weight:600;flex-shrink:0;text-decoration:none;}
+.extra-params-toggle:hover{text-decoration:underline;}
 .extra-section{margin:1rem 0 .5rem;font-size:.95rem;font-weight:600;color:#374151;border-bottom:1px solid var(--border);padding-bottom:.3rem;}
 .extra-section:first-of-type{margin-top:.5rem;}
 .logic-grid{display:grid;gap:.75rem;margin-top:.75rem;}
@@ -119,7 +125,10 @@ a{color:var(--accent);}
 </div>
 
 <details class="logic-editor" id="extra-params">
-<summary>Дополнительные параметры и логики</summary>
+<summary class="extra-params-head">
+<span class="extra-params-title">Дополнительные параметры и логики</span>
+<a href="#" class="extra-params-toggle" id="extra-params-toggle" role="button">Развернуть</a>
+</summary>
 
 <p class="extra-section">MOEX — тикеры акций и префиксы фьючерсов</p>
 <div class="logic-grid">
@@ -1151,6 +1160,12 @@ ${markers}
   $("calc-till").addEventListener("change", () => enforceDateRange("till"));
   $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); render(); });
   $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); render(); });
+  const extraParams = $("extra-params");
+  const extraParamsToggle = $("extra-params-toggle");
+  extraParamsToggle.addEventListener("click", (e) => e.preventDefault());
+  extraParams.addEventListener("toggle", () => {
+    extraParamsToggle.textContent = extraParams.open ? "Свернуть" : "Развернуть";
+  });
 })();
 </script>
 </body>
