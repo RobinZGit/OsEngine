@@ -38,8 +38,31 @@ h2:first-child{margin-top:0;}
 .calc-field-wide{grid-column:1/-1;}
 .bysec-scroll{max-height:4.5rem;overflow-y:auto;line-height:1.35;}
 .calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
+.calc-result-hero{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.85rem 1rem;
+  margin:1rem 0 .65rem;padding:1.1rem 1.25rem;
+  border:2px solid var(--accent);border-radius:12px;
+  background:linear-gradient(165deg,#e8f0ff 0%,#fff 48%,#f8fbff 100%);
+  box-shadow:0 3px 14px rgba(37,99,235,.14);
+}
+@media (min-width:720px){.calc-result-hero{grid-template-columns:1.5fr 1fr 1fr;}}
+.calc-metric-primary{text-align:center;padding:.25rem .4rem;}
+.calc-metric-primary b{
+  display:block;font-size:1rem;font-weight:700;color:#1e3a5f;
+  margin-bottom:.45rem;letter-spacing:.01em;
+}
+.calc-metric-primary span{
+  font-family:Consolas,monospace;font-weight:800;font-size:1.75rem;line-height:1.15;
+}
+.calc-metric-finresp span{font-size:2.15rem;}
+.calc-result-secondary{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.45rem;margin:.5rem 0 .85rem;
+}
 .calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.5rem;margin:.85rem 0;}
 .calc-metric{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.55rem .7rem;}
+.calc-metric-secondary{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.45rem .6rem;}
+.calc-metric-secondary b{display:block;font-size:.78rem;color:var(--muted);font-weight:500;}
+.calc-metric-secondary span{font-family:Consolas,monospace;font-weight:600;font-size:.92rem;}
 .calc-metric b{display:block;font-size:.82rem;color:var(--muted);font-weight:500;}
 .calc-metric span{font-family:Consolas,monospace;font-weight:700;}
 .range-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin:.6rem 0;}
@@ -52,6 +75,10 @@ h2:first-child{margin-top:0;}
 .chart-fail{min-height:4.5rem;display:flex;flex-direction:column;justify-content:center;}
 .chart-fail .chart-fail-msg{margin:0;font-size:.85rem;color:#b91c1c;}
 .chart-sec-title{margin:0 0 .4rem;font-size:.88rem;font-weight:600;color:#374151;font-family:Consolas,monospace;}
+.chart-equity-section{margin-top:1.35rem;padding-top:1.1rem;border-top:2px solid var(--accent);}
+.chart-equity-section-title{margin:0 0 .85rem;font-size:1.05rem;font-weight:700;color:#1e3a5f;}
+.chart-equity-total{margin-top:.85rem;padding:.75rem;border:2px solid var(--accent);border-radius:10px;background:linear-gradient(180deg,#eef4ff 0%,#fff 70%);}
+.chart-equity-total .chart-sec-title{font-size:1rem;color:#1e3a5f;}
 details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
 details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
 .extra-params-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.55rem .15rem .7rem;margin:-.5rem -.85rem .35rem;border-bottom:2px solid var(--accent);cursor:pointer;list-style:none;}
@@ -109,15 +136,17 @@ a{color:var(--accent);}
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
+<div class="calc-result-hero" aria-label="Итог FINRESP">
+<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric-primary"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
+<div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
+</div>
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
-<div class="calc-result">
-<div class="calc-metric"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
-<div class="calc-metric"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
-<div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
-<div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
-<div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
-<div class="calc-metric" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
+<div class="calc-result-secondary">
+<div class="calc-metric-secondary"><b>Свечей в окне</b><span id="calc-count">—</span></div>
+<div class="calc-metric-secondary"><b>Позиция z</b><span id="calc-pos">—</span></div>
+<div class="calc-metric-secondary"><b>Кэш C</b><span id="calc-cash">—</span></div>
+<div class="calc-metric-secondary" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
 </div>
 <div class="range-grid">
 <div><label for="calc-start">Левая граница</label><input id="calc-start" type="range" min="0" max="0" value="0" disabled><small id="calc-start-label">—</small></div>
@@ -217,6 +246,7 @@ a{color:var(--accent);}
 </details>
 
 <div class="chart-card" id="calc-chart"></div>
+<div class="chart-card" id="calc-chart-equity"></div>
 </div>
 </main>
 </div>
@@ -1153,6 +1183,126 @@ ${markers}
 </svg>`;
   }
 
+  const LOGIC_EQUITY_KEYS = ["L1", "L2", "L3", "L4"];
+  const LOGIC_EQUITY_COLORS = { L1: "#2563eb", L2: "#d97706", L3: "#7c3aed", L4: "#0891b2" };
+  const EQUITY_STOPPER_OFF = { useSl: false, useTp: false, slMult: 0, tpMult: 0, atrLen: 14, refEquity: 0 };
+
+  function logicEquityLabel(key) {
+    const meta = E.BUILTIN_META.find((m) => m.key === key);
+    return meta?.name || key;
+  }
+
+  function buildEquityChartSvg(rows, finresp, title, compact, strokeColor) {
+    if (!rows?.length) return "";
+    const w = 820;
+    const h = compact ? 190 : 240;
+    const left = 72, right = 28, top = 26, bottom = 58;
+    const plotW = w - left - right;
+    const plotH = h - top - bottom;
+    const vals = rows.map((r) => r?.eq).filter((v) => v != null);
+    if (!vals.length) return "";
+    let min = Math.min(...vals);
+    let max = Math.max(...vals);
+    if (min > 0) min = 0;
+    if (max < 0) max = 0;
+    const pad = Math.max((max - min) * 0.08, 1);
+    const lo = min - pad;
+    const hi = max + pad;
+    const x = (i) => left + i * plotW / Math.max(1, rows.length - 1);
+    const y = (v) => top + (hi - v) * plotH / (hi - lo);
+    const yTicks = niceTicks(lo, hi, 5);
+    const xTickCount = Math.min(6, Math.max(2, Math.floor(rows.length / 80)));
+    const xTickIdx = Array.from({ length: xTickCount }, (_, k) =>
+      Math.round(k * (rows.length - 1) / Math.max(1, xTickCount - 1)));
+    const step = Math.max(1, Math.ceil(rows.length / 420));
+    const sample = rows.map((_, i) => i).filter((i) => i % step === 0 || i === rows.length - 1);
+    const eqLine = sample.map((i) => `${x(i).toFixed(1)},${y(rows[i].eq).toFixed(1)}`).join(" ");
+    const color = strokeColor || (finresp < 0 ? "#b91c1c" : "#047857");
+    const finColor = finresp < 0 ? "#b91c1c" : "#047857";
+    const gridH = yTicks.map((v) =>
+      `<line x1="${left}" y1="${y(v).toFixed(1)}" x2="${w - right}" y2="${y(v).toFixed(1)}" stroke="#e8edf4" stroke-width="1"/>`).join("");
+    const gridV = xTickIdx.map((i) =>
+      `<line x1="${x(i).toFixed(1)}" y1="${top}" x2="${x(i).toFixed(1)}" y2="${h - bottom}" stroke="#e8edf4" stroke-width="1"/>`).join("");
+    const yLabels = yTicks.map((v) =>
+      `<text x="${left - 8}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#64748b" font-family="Consolas,monospace">${axisPrice(v)}</text>`).join("");
+    const xLabels = xTickIdx.map((i) =>
+      `<text x="${x(i).toFixed(1)}" y="${h - 10}" text-anchor="middle" font-size="9" fill="#64748b" font-family="Consolas,monospace">${axisTime(rows[i]?.time)}</text>`).join("");
+    const zeroY = lo < 0 && hi > 0 ? y(0).toFixed(1) : null;
+    const zeroLine = zeroY
+      ? `<line x1="${left}" y1="${zeroY}" x2="${w - right}" y2="${zeroY}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4" opacity=".7"/>`
+      : "";
+    const strokeW = compact ? 1.8 : 2.2;
+    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${title}">
+<rect width="${w}" height="${h}" fill="#fff"/>
+${gridH}${gridV}${zeroLine}
+<line x1="${left}" y1="${top}" x2="${left}" y2="${h - bottom}" stroke="#94a3b8" stroke-width="1.2"/>
+<line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#94a3b8" stroke-width="1.2"/>
+${yLabels}${xLabels}
+<text x="${left - 10}" y="${top - 8}" text-anchor="end" font-size="10" fill="#475569" font-weight="600">Equity, ₽</text>
+<text x="${(left + w - right) / 2}" y="${h - 1}" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">Время</text>
+<polyline fill="none" stroke="${color}" stroke-width="${strokeW}" points="${eqLine}"/>
+<text x="${w - right - 4}" y="${top + 12}" text-anchor="end" fill="${finColor}" font-size="${compact ? 12 : 14}" font-weight="700" font-family="Consolas,monospace">FINRESP ${fmt(finresp)} ₽</text>
+</svg>`;
+  }
+
+  function calcLogicEquityRuns(a, b) {
+    if (!state.packs.length) return null;
+    const pack = refPack();
+    if (!pack.length) return null;
+    const p = params();
+    const vol = volConfig();
+    const times = pack.slice(a, b + 1).map((c) => c.time).filter(Boolean);
+    if (!times.length) return null;
+    const runs = {};
+    for (const key of LOGIC_EQUITY_KEYS) {
+      const spec = E.resolveLogicSpec(key, state.customLines, p);
+      if (!spec || spec.type !== "logic_line") continue;
+      const { perSec } = E.runMulti(state.packs, spec, a, b, p, vol, EQUITY_STOPPER_OFF);
+      const rows = E.buildPortfolioEquityRows(perSec, times);
+      runs[key] = { rows, finresp: rows.length ? rows.at(-1).eq : 0 };
+    }
+    return { runs, times };
+  }
+
+  function buildTotalEquityRows(runs, times) {
+    return times.map((time, i) => ({
+      time,
+      eq: LOGIC_EQUITY_KEYS.reduce((sum, key) => sum + (runs[key]?.rows[i]?.eq ?? 0), 0)
+    }));
+  }
+
+  function drawEquityCharts(a, b) {
+    const box = $("calc-chart-equity");
+    if (!box) return;
+    if (!state.packs.length) {
+      box.innerHTML = "";
+      return;
+    }
+    const data = calcLogicEquityRuns(a, b);
+    if (!data || !Object.keys(data.runs).length) {
+      box.innerHTML = "";
+      return;
+    }
+    const { runs, times } = data;
+    const logicBlocks = LOGIC_EQUITY_KEYS.filter((key) => runs[key]?.rows?.length).map((key) => {
+      const run = runs[key];
+      const svg = buildEquityChartSvg(run.rows, run.finresp, `Equity ${key}`, true, LOGIC_EQUITY_COLORS[key]);
+      if (!svg) return "";
+      return `<div class="chart-mini"><p class="chart-sec-title">${logicEquityLabel(key)}</p>${svg}</div>`;
+    }).filter(Boolean);
+    const totalRows = buildTotalEquityRows(runs, times);
+    const totalFin = totalRows.length ? totalRows.at(-1).eq : 0;
+    const totalSvg = buildEquityChartSvg(totalRows, totalFin, "Equity Σ L1…L4", false, "#1d4ed8");
+    const totalBlock = totalSvg
+      ? `<div class="chart-equity-total"><p class="chart-sec-title">Общий equity (L1 + L2 + L3 + L4)</p>${totalSvg}</div>`
+      : "";
+    box.innerHTML = `<div class="chart-equity-section">
+<p class="chart-equity-section-title">Equity по логикам (сумма по выбранным инструментам, без портф. Stopper)</p>
+<div class="chart-stack">${logicBlocks.join("")}</div>
+${totalBlock}
+</div>`;
+  }
+
   function chartEntriesForDraw(perSec, failed) {
     const ok = perSec || [];
     const bad = failed || [];
@@ -1267,7 +1417,10 @@ ${markers}
       status += ` | Опт. ${opts.optimNote}: FINRESP ${fmt(agg.finresp)} ₽ | лучшее ${bestLabel} → ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
-    if (opts.redrawCharts !== false) drawCharts(perSec, stopper);
+    if (opts.redrawCharts !== false) {
+      drawCharts(perSec, stopper);
+      drawEquityCharts(a, b);
+    }
   }
 
   function render(options) {
@@ -1335,6 +1488,7 @@ ${markers}
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
       $("calc-chart").innerHTML = "";
+      $("calc-chart-equity").innerHTML = "";
       throw err;
     } finally {
       setBusy(false);

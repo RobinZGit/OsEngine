@@ -857,6 +857,14 @@
     return idx >= 0 ? perSecItem.rows[idx].eq : 0;
   }
 
+  function buildPortfolioEquityRows(perSec, times) {
+    if (!perSec?.length || !times?.length) return [];
+    return times.map((time) => ({
+      time,
+      eq: perSec.reduce((sum, p) => sum + equityAtTime(p, time), 0)
+    }));
+  }
+
   function portfolioEquityAtr(history, index, length) {
     if (!history?.length || index < length) return null;
     let sum = 0;
@@ -1270,6 +1278,7 @@
     resolveLogicSpec,
     runOnCandles,
     runMulti,
+    buildPortfolioEquityRows,
     loadMany,
     loadManyBatched,
     loadManyDetailed,
