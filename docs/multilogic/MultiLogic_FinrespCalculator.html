@@ -85,6 +85,8 @@ a{color:var(--accent);}
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
 <div class="calc-result">
 <div class="calc-metric"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
+<div class="calc-metric"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
 <div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
 <div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
 <div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
@@ -93,8 +95,6 @@ a{color:var(--accent);}
 <div class="range-grid">
 <div><label for="calc-start">Левая граница</label><input id="calc-start" type="range" min="0" max="0" value="0" disabled><small id="calc-start-label">—</small></div>
 <div><label for="calc-end">Правая граница</label><input id="calc-end" type="range" min="0" max="0" value="0" disabled><small id="calc-end-label">—</small></div>
-</div>
-<div class="chart-card" id="calc-chart"></div>
 </div>
 
 <details class="logic-editor" id="extra-params">
@@ -138,6 +138,9 @@ a{color:var(--accent);}
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
 <p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и SL/TP позиции по ATR (см. выше). Общепортфельный Stopper не считается.</p>
 </details>
+
+<div class="chart-card" id="calc-chart"></div>
+</div>
 </main>
 </div>
 <footer class="help-ftr">MultiLogic FINRESP · OsEngine Custom\Robots</footer>
@@ -164,6 +167,42 @@ a{color:var(--accent);}
     "24": { label: "1 день", maxDays: 3650, maxBars: 1500, defaultDays: 365 }
   };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
+  const fmtPct = (v) => Number.isFinite(v) ? `${v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : "—";
+
+  function parseMoexTime(t) {
+    if (!t || t === "—") return null;
+    const d = new Date(String(t).replace(" ", "T"));
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  function windowDays(t0, t1) {
+    const d0 = parseMoexTime(t0);
+    const d1 = parseMoexTime(t1);
+    if (!d0 || !d1) return null;
+    return Math.max(Math.abs(d1 - d0) / 86400000, 1 / 1440);
+  }
+
+  function annualSimplePct(finresp, deposit, days) {
+    if (!deposit || deposit <= 0 || !days || days <= 0) return null;
+    return (finresp / deposit) * (365 / days) * 100;
+  }
+
+  function annualCompoundPct(finresp, deposit, days) {
+    if (!deposit || deposit <= 0 || !days || days <= 0) return null;
+    const growth = 1 + finresp / deposit;
+    if (growth <= 0) return null;
+    return (Math.pow(growth, 365 / days) - 1) * 100;
+  }
+
+  function setAnnMetric(id, value) {
+    const el = $(id);
+    el.textContent = fmtPct(value);
+    if (!Number.isFinite(value)) {
+      el.style.color = "";
+      return;
+    }
+    el.style.color = value < 0 ? "#b91c1c" : "#047857";
+  }
   const day = (dt) => dt.toISOString().slice(0, 10);
   const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
   const parseDay = (v) => new Date(`${v}T00:00:00`);
@@ -507,6 +546,10 @@ ${markers}
     $("calc-bysec").textContent = formatBySec(agg.bySec) || "—";
     const c0 = refPack()[a]?.time || "—";
     const c1 = refPack()[b]?.time || "—";
+    const deposit = volConfig().deposit;
+    const days = windowDays(c0, c1);
+    setAnnMetric("calc-ann-simple", annualSimplePct(agg.finresp, deposit, days));
+    setAnnMetric("calc-ann-compound", annualCompoundPct(agg.finresp, deposit, days));
     state.anchorStartTime = c0 !== "—" ? c0 : state.anchorStartTime;
     state.anchorEndTime = c1 !== "—" ? c1 : state.anchorEndTime;
     state.hasWindow = c0 !== "—" && c1 !== "—";
