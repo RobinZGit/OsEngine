@@ -46,7 +46,7 @@ h2:first-child{margin-top:0;}
 .range-grid input{width:100%;}
 .chart-card{border:1px solid var(--border);border-radius:10px;padding:.75rem;margin:1rem 0;overflow-x:auto;}
 .chart-card svg{display:block;min-width:720px;max-width:100%;}
-.chart-stack{display:flex;flex-direction:column;gap:.85rem;}
+.chart-stack{display:flex;flex-direction:column;gap:.85rem;max-height:75vh;overflow-y:auto;}
 .chart-mini{padding-bottom:.35rem;border-bottom:1px solid var(--border);}
 .chart-mini:last-child{border-bottom:0;padding-bottom:0;}
 .chart-fail{min-height:4.5rem;display:flex;flex-direction:column;justify-content:center;}
@@ -238,6 +238,7 @@ a{color:var(--accent);}
     anchorEndTime: null,
     hasWindow: false,
     failedInstruments: [],
+    lastInstruments: [],
     uiBusy: false,
     optim: {
       active: null,
@@ -258,7 +259,6 @@ a{color:var(--accent);}
     { kind: "p-tp", btnId: "opt-stopper-tp", inputId: "stopper-tp-mult", label: "портф. TP" },
     { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true }
   ];
-  const MAX_CHARTS = 8;
   const DATE_MIN = "2020-01-01";
   const DEFAULT_RANGE_DAYS = 30;
   const MOEX_MINUTES_PER_SESSION = 530;
@@ -1064,24 +1064,66 @@ ${markers}
 </svg>`;
   }
 
+  function chartEntriesForDraw(perSec, failed) {
+    const ok = perSec || [];
+    const bad = failed || [];
+    const perByUpper = new Map(ok.map((p) => [String(p.sec).toUpperCase(), p]));
+    const failByUpper = new Map(bad.map((f) => [String(f.sec).toUpperCase(), f]));
+    const seen = new Set();
+    const entries = [];
+
+    const pushEntry = (entry) => {
+      const key = String(entry.sec || "").toUpperCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      entries.push(entry);
+    };
+
+    for (const inst of state.lastInstruments || []) {
+      const sec = inst.sec || inst;
+      const key = String(sec).toUpperCase();
+      const row = perByUpper.get(key);
+      if (row) {
+        pushEntry({ kind: "ok", sec: row.sec, row });
+        continue;
+      }
+      const fail = failByUpper.get(key);
+      if (fail) {
+        pushEntry({ kind: "fail", sec: fail.sec, error: fail.error });
+        continue;
+      }
+      pushEntry({ kind: "fail", sec, error: "нет данных для графика в расчёте" });
+    }
+
+    for (const f of bad) pushEntry({ kind: "fail", sec: f.sec, error: f.error });
+    for (const p of ok) pushEntry({ kind: "ok", sec: p.sec, row: p });
+
+    return entries;
+  }
+
   function drawCharts(perSec, stopper) {
     const failed = state.failedInstruments || [];
-    if (!perSec?.length && !failed.length) {
+    const entries = chartEntriesForDraw(perSec, failed);
+    if (!entries.length) {
       $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
       return;
     }
-    const compact = (perSec?.length || 0) + failed.length > 1;
+    const compact = entries.length > 1;
     const portfolioEvents = stopper?.events || [];
-    let chartSet = perSec || [];
     let note = "";
-    if (perSec.length > MAX_CHARTS) {
-      chartSet = [...perSec].sort((a, b) => Math.abs(b.finresp) - Math.abs(a.finresp)).slice(0, MAX_CHARTS);
-      note = `<p class="note">Графики для ${perSec.length} инструментов: показаны топ-${MAX_CHARTS} по |FINRESP|. Сводка — в блоке «По инструментам».</p>`;
+    const nOk = entries.filter((e) => e.kind === "ok").length;
+    const nFail = entries.filter((e) => e.kind === "fail").length;
+    if (entries.length > 1) {
+      note = `<p class="note">Графики: ${entries.length} инстр. (${nOk} с данными${nFail ? `, ${nFail} с сообщением об ошибке` : ""}).</p>`;
     }
     if (portfolioEvents.length) {
-      note += `${note ? " " : ""}<span class="note">Верт. черта: SL красная, TP зелёная; тонкая — позиция, жирная — портфель (на всех графиках).</span>`;
+      note += `<span class="note">Верт. черта: SL красная, TP зелёная; тонкая — позиция, жирная — портфель (на всех графиках).</span>`;
     }
-    const okBlocks = chartSet.map((p) => {
+    const blocks = entries.map((entry) => {
+      if (entry.kind === "fail") {
+        return `<div class="chart-mini chart-fail"><p class="chart-sec-title">${entry.sec}</p><p class="chart-fail-msg">${entry.error}</p></div>`;
+      }
+      const p = entry.row;
       const vLines = chartStopLines(p.rows, portfolioEvents);
       const svg = buildChartSvg(p.rows, p.finresp, `График ${p.sec}`, compact, vLines);
       if (!svg) {
@@ -1089,16 +1131,6 @@ ${markers}
       }
       return `<div class="chart-mini"><p class="chart-sec-title">${p.sec}</p>${svg}</div>`;
     });
-    const failedShown = failed.length > MAX_CHARTS
-      ? failed.slice(0, MAX_CHARTS)
-      : failed;
-    const failBlocks = failedShown.map((f) =>
-      `<div class="chart-mini chart-fail"><p class="chart-sec-title">${f.sec}</p><p class="chart-fail-msg">${f.error}</p></div>`
-    );
-    if (failed.length > MAX_CHARTS) {
-      note += `<p class="note">Пропущено при загрузке: ${failed.length} инстр. (показаны первые ${MAX_CHARTS}).</p>`;
-    }
-    const blocks = [...okBlocks, ...failBlocks].filter(Boolean);
     $("calc-chart").innerHTML = blocks.length
       ? `${note}<div class="chart-stack">${blocks.join("")}</div>`
       : "<p class=\"note\">Нет данных для графика.</p>";
@@ -1179,6 +1211,7 @@ ${markers}
     if (!instruments.length) throw new Error("Список инструментов пуст.");
     if (isOptimizing()) stopOptim();
     setBusy(true);
+    state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
     saveWindowAnchor();
     const periodNarrowed = enforceDateRange("till", instruments.length);
     const from = $("calc-from").value;
