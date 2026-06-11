@@ -151,12 +151,12 @@ a{color:var(--accent);}
 <div class="calc-grid">
 <div class="calc-field"><label for="param-sl">SL позиции кратность ATR (@SL)</label>
 <div class="calc-field-opt-row">
-<input id="param-sl" type="number" value="2" min="0" max="50" step="0.1" title="0 — без stop-loss">
+<input id="param-sl" type="number" value="2" min="0" max="50" step="any" title="0 — без stop-loss">
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-sl" data-opt="sl">Оптимизировать</button>
 </div></div>
 <div class="calc-field"><label for="param-tp">TP позиции кратность ATR (@TP)</label>
 <div class="calc-field-opt-row">
-<input id="param-tp" type="number" value="3" min="0" max="50" step="0.1" title="0 — без take-profit">
+<input id="param-tp" type="number" value="3" min="0" max="50" step="any" title="0 — без take-profit">
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-tp" data-opt="tp">Оптимизировать</button>
 </div></div>
 <div class="calc-field"><label for="param-atr-sl">Длина ATR для SL/TP</label>
@@ -171,12 +171,12 @@ a{color:var(--accent);}
 <div class="calc-grid">
 <div class="calc-field"><label for="stopper-sl-mult">SL кратность ATR</label>
 <div class="calc-field-opt-row">
-<input id="stopper-sl-mult" type="number" value="2" min="0" max="50" step="0.1" title="0 — без stop-loss">
+<input id="stopper-sl-mult" type="number" value="2" min="0" max="50" step="any" title="0 — без stop-loss">
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-stopper-sl">Оптимизировать</button>
 </div></div>
 <div class="calc-field"><label for="stopper-tp-mult">TP кратность ATR</label>
 <div class="calc-field-opt-row">
-<input id="stopper-tp-mult" type="number" value="3" min="0" max="50" step="0.1" title="0 — без take-profit">
+<input id="stopper-tp-mult" type="number" value="3" min="0" max="50" step="any" title="0 — без take-profit">
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-stopper-tp">Оптимизировать</button>
 </div></div>
 <div class="calc-field"><label for="stopper-atr-len">Длина ATR портфеля для SL/TP</label>
@@ -473,7 +473,7 @@ a{color:var(--accent);}
     if (!state.optim.active) return;
     const meta = optimMeta(state.optim.active);
     if (!meta) return;
-    const v = meta.integer ? Math.round(state.optim.bestValue) : state.optim.bestValue;
+    const v = optimCandidateValue(state.optim.active, state.optim.bestValue);
     $(meta.inputId).value = String(v);
     state.optim.bestValue = v;
   }
@@ -499,13 +499,46 @@ a{color:var(--accent);}
     finishOptim(token, false);
   }
 
-  function calcResult() {
+  function optimCandidateValue(kind, value) {
+    const meta = optimMeta(kind);
+    return meta?.integer ? Math.round(value) : roundParam(value);
+  }
+
+  function optimRunContext(kind, value) {
+    const cv = optimCandidateValue(kind, value);
+    const p = params();
+    const sc = stopperConfig();
+    switch (kind) {
+      case "sl":
+        return { params: { ...p, SL: Math.max(0, cv) }, stopper: sc };
+      case "tp":
+        return { params: { ...p, TP: Math.max(0, cv) }, stopper: sc };
+      case "atr-sl":
+        return { params: { ...p, slTpAtrLen: Math.max(2, Math.round(cv)) }, stopper: sc };
+      case "p-sl": {
+        const slMult = Math.max(0, cv);
+        return { params: p, stopper: { ...sc, slMult, useSl: slMult > 0 } };
+      }
+      case "p-tp": {
+        const tpMult = Math.max(0, cv);
+        return { params: p, stopper: { ...sc, tpMult, useTp: tpMult > 0 } };
+      }
+      case "p-atr":
+        return { params: p, stopper: { ...sc, atrLen: Math.max(2, Math.round(cv)) } };
+      default:
+        return { params: p, stopper: sc };
+    }
+  }
+
+  function calcResult(optimCtx) {
     if (!state.packs.length) return null;
     const [a, b] = normalizeSliders();
-    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params());
+    const p = optimCtx?.params ?? params();
+    const sc = optimCtx?.stopper ?? stopperConfig();
+    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p);
     if (!spec) return null;
     const { perSec, agg, stopper } = E.runMulti(
-      state.packs, spec, a, b, params(), volConfig(), stopperConfig()
+      state.packs, spec, a, b, p, volConfig(), sc
     );
     return { perSec, agg, stopper, a, b };
   }
@@ -523,15 +556,18 @@ a{color:var(--accent);}
 
     const candidate = state.optim.candidates[state.optim.candidateIndex];
     state.optim.candidateIndex += 1;
-    input.value = String(candidate);
-    const trial = calcResult();
+    const trial = calcResult(optimRunContext(kind, candidate));
     if (trial && trial.agg.finresp > state.optim.bestFinresp) {
       state.optim.bestFinresp = trial.agg.finresp;
       state.optim.bestValue = candidate;
     }
-    input.value = String(state.optim.bestValue);
-    const display = input.value === String(candidate) ? trial : calcResult();
-    if (display) applyResult(display, { redrawCharts: false, optimNote: optimDisplayLabel(kind) });
+    input.value = String(optimCandidateValue(kind, state.optim.bestValue));
+    if (trial) {
+      applyResult(trial, {
+        redrawCharts: false,
+        optimNote: `${optimDisplayLabel(kind)} → ${optimCandidateValue(kind, candidate)}`
+      });
+    }
     await new Promise((r) => setTimeout(r, 40));
     optimLoop(token);
   }
@@ -551,13 +587,13 @@ a{color:var(--accent);}
     const min = +input.min || 0;
     const max = +input.max || 50;
     const rawStart = Math.max(+input.value || 0, min);
-    const startValue = meta.integer ? Math.round(rawStart) : roundParam(rawStart);
+    const startValue = optimCandidateValue(kind, rawStart);
     state.optim.active = kind;
     state.optim.candidates = enumerateOptimValues(min, max, !!meta.integer);
     state.optim.candidateIndex = 0;
     state.optim.bestValue = startValue;
     input.value = String(startValue);
-    const cur = calcResult();
+    const cur = calcResult(optimRunContext(kind, startValue));
     state.optim.bestFinresp = cur?.agg.finresp ?? -Infinity;
     state.optim.runToken += 1;
     const token = state.optim.runToken;
