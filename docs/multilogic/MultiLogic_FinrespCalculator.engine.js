@@ -941,21 +941,12 @@
     return ids.sort();
   }
 
+  function listShareTickers(stockPrefixesRaw) {
+    return parseTickerPrefixes(stockPrefixesRaw || DEFAULT_STOCK_TICKERS_RAW);
+  }
+
   async function fetchShareList(stockPrefixesRaw) {
-    const prefixes = parseTickerPrefixes(stockPrefixesRaw || DEFAULT_STOCK_TICKERS_RAW);
-    if (!prefixes.length) return [];
-    const activeOnTqbr = await fetchIssSecIds(
-      "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json",
-      "SECID,STATUS",
-      (o) => o.STATUS === "A" && stockTickerMatches(o.SECID, prefixes)
-    );
-    const byUpper = new Map(activeOnTqbr.map((id) => [id.toUpperCase(), id]));
-    const ordered = [];
-    for (const p of prefixes) {
-      const hit = byUpper.get(String(p).trim().toUpperCase());
-      if (hit) ordered.push(hit);
-    }
-    return ordered.length ? ordered : activeOnTqbr;
+    return listShareTickers(stockPrefixesRaw);
   }
 
   async function fetchFuturesList(futuresPrefixesRaw) {
@@ -1008,30 +999,48 @@
       }));
   }
 
+  async function loadInstrumentSec(sec, from, till, interval, market) {
+    try {
+      const candles = await loadMoexCandles(sec, from, till, interval, market);
+      if (!candles.length) {
+        return { ok: false, error: "нет свечей MOEX за выбранный период" };
+      }
+      return { ok: true, pack: candles };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
+  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress) {
+    const packs = [];
+    const failures = [];
+    const queue = [...secs];
+    let done = 0;
+    const workers = Array.from(
+      { length: Math.max(1, concurrency && secs.length > 12 ? concurrency : 1) },
+      async () => {
+        while (queue.length) {
+          const sec = queue.shift();
+          const r = await loadInstrumentSec(sec, from, till, interval, market);
+          if (r.ok) packs.push(r.pack);
+          else failures.push({ sec, market, error: r.error });
+          done += 1;
+          if (onProgress) onProgress(done, secs.length, sec);
+        }
+      }
+    );
+    await Promise.all(workers);
+    packs.sort((a, b) => (a[0]?.sec || "").localeCompare(b[0]?.sec || ""));
+    return { packs, failures };
+  }
+
   async function loadMany(secs, from, till, interval, market = "shares") {
-    const packs = await Promise.all(secs.map((s) => loadMoexCandles(s, from, till, interval, market)));
-    return packs.filter((p) => p.length > 0);
+    const { packs } = await loadManyDetailed(secs, from, till, interval, market);
+    return packs;
   }
 
   async function loadManyBatched(secs, from, till, interval, market, concurrency, onProgress) {
-    const packs = [];
-    const queue = [...secs];
-    let done = 0;
-    const workers = Array.from({ length: Math.max(1, concurrency || 6) }, async () => {
-      while (queue.length) {
-        const sec = queue.shift();
-        try {
-          const candles = await loadMoexCandles(sec, from, till, interval, market);
-          if (candles.length) packs.push(candles);
-        } catch (_) {
-          /* пропускаем инструмент без свечей */
-        }
-        done += 1;
-        if (onProgress) onProgress(done, secs.length, sec);
-      }
-    });
-    await Promise.all(workers);
-    packs.sort((a, b) => (a[0]?.sec || "").localeCompare(b[0]?.sec || ""));
+    const { packs } = await loadManyDetailed(secs, from, till, interval, market, concurrency, onProgress);
     return packs;
   }
 
@@ -1085,6 +1094,8 @@
     runMulti,
     loadMany,
     loadManyBatched,
+    loadManyDetailed,
+    listShareTickers,
     DEFAULT_STOCK_TICKERS_RAW,
     DEFAULT_FUTURES_PREFIXES_RAW,
     parseTickerPrefixes,

@@ -49,6 +49,8 @@ h2:first-child{margin-top:0;}
 .chart-stack{display:flex;flex-direction:column;gap:.85rem;}
 .chart-mini{padding-bottom:.35rem;border-bottom:1px solid var(--border);}
 .chart-mini:last-child{border-bottom:0;padding-bottom:0;}
+.chart-fail{min-height:4.5rem;display:flex;flex-direction:column;justify-content:center;}
+.chart-fail .chart-fail-msg{margin:0;font-size:.85rem;color:#b91c1c;}
 .chart-sec-title{margin:0 0 .4rem;font-size:.88rem;font-weight:600;color:#374151;font-family:Consolas,monospace;}
 details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
 details.logic-editor summary{cursor:pointer;font-weight:600;color:#374151;}
@@ -224,6 +226,7 @@ a{color:var(--accent);}
     anchorStartTime: null,
     anchorEndTime: null,
     hasWindow: false,
+    failedInstruments: [],
     optim: {
       active: null,
       bestFinresp: -Infinity,
@@ -566,7 +569,7 @@ a{color:var(--accent);}
 
   function updateSecHint() {
     $("calc-sec-hint").textContent =
-      `${state.shareList.length} акций · ${state.futuresList.length} фьючерсов в списке`;
+      `${state.shareList.length} тикеров акций · ${state.futuresList.length} фьючерсов в списке (проверка MOEX — при расчёте)`;
   }
 
   function fillSecSelect() {
@@ -596,8 +599,8 @@ a{color:var(--accent);}
     $("prefix-futures").value = E.DEFAULT_FUTURES_PREFIXES_RAW;
   }
 
-  async function reloadShareList() {
-    state.shareList = await E.fetchShareList($("prefix-stocks").value);
+  function reloadShareList() {
+    state.shareList = E.listShareTickers($("prefix-stocks").value);
     fillSecSelect();
     updateSecHint();
     if (!isOptimizing()) $("pick-shares").disabled = !state.shareList.length;
@@ -610,13 +613,10 @@ a{color:var(--accent);}
     if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
   }
 
-  async function initInstrumentLists() {
+  function initInstrumentLists() {
     state.futuresList = [];
-    try {
-      await reloadShareList();
-    } catch (err) {
-      $("calc-sec-hint").textContent = `Не удалось загрузить акции: ${err.message}`;
-    }
+    reloadShareList();
+    $("calc-sec-hint").textContent = `${state.shareList.length} тикеров акций из списка · фьючерсы — «Подобрать»`;
   }
 
   function formatBySec(bySec, limit = 40) {
@@ -910,13 +910,14 @@ ${markers}
   }
 
   function drawCharts(perSec, stopper) {
-    if (!perSec?.length) {
+    const failed = state.failedInstruments || [];
+    if (!perSec?.length && !failed.length) {
       $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
       return;
     }
-    const compact = perSec.length > 1;
+    const compact = (perSec?.length || 0) + failed.length > 1;
     const portfolioEvents = stopper?.events || [];
-    let chartSet = perSec;
+    let chartSet = perSec || [];
     let note = "";
     if (perSec.length > MAX_CHARTS) {
       chartSet = [...perSec].sort((a, b) => Math.abs(b.finresp) - Math.abs(a.finresp)).slice(0, MAX_CHARTS);
@@ -925,12 +926,24 @@ ${markers}
     if (portfolioEvents.length) {
       note += `${note ? " " : ""}<span class="note">Верт. черта: SL красная, TP зелёная; тонкая — позиция, жирная — портфель (на всех графиках).</span>`;
     }
-    const blocks = chartSet.map((p) => {
+    const okBlocks = chartSet.map((p) => {
       const vLines = chartStopLines(p.rows, portfolioEvents);
       const svg = buildChartSvg(p.rows, p.finresp, `График ${p.sec}`, compact, vLines);
-      if (!svg) return "";
+      if (!svg) {
+        return `<div class="chart-mini chart-fail"><p class="chart-sec-title">${p.sec}</p><p class="chart-fail-msg">Нет данных для графика в выбранном окне.</p></div>`;
+      }
       return `<div class="chart-mini"><p class="chart-sec-title">${p.sec}</p>${svg}</div>`;
-    }).filter(Boolean);
+    });
+    const failedShown = failed.length > MAX_CHARTS
+      ? failed.slice(0, MAX_CHARTS)
+      : failed;
+    const failBlocks = failedShown.map((f) =>
+      `<div class="chart-mini chart-fail"><p class="chart-sec-title">${f.sec}</p><p class="chart-fail-msg">${f.error}</p></div>`
+    );
+    if (failed.length > MAX_CHARTS) {
+      note += `<p class="note">Пропущено при загрузке: ${failed.length} инстр. (показаны первые ${MAX_CHARTS}).</p>`;
+    }
+    const blocks = [...okBlocks, ...failBlocks].filter(Boolean);
     $("calc-chart").innerHTML = blocks.length
       ? `${note}<div class="chart-stack">${blocks.join("")}</div>`
       : "<p class=\"note\">Нет данных для графика.</p>";
@@ -959,6 +972,9 @@ ${markers}
     $("calc-end-label").textContent = c1;
     const mode = state.bulkMode === "futures" ? "фьючерсы" : state.bulkMode === "shares" ? "все акции" : "выбор";
     let status = `FINRESP: ${c0} — ${c1} | ${perSec.length} инстр. (${mode}) | ${winLen} свечей в окне`;
+    if (state.failedInstruments?.length) {
+      status += ` | пропущено ${state.failedInstruments.length} (нет данных MOEX)`;
+    }
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
     if (opts.optimNote) {
@@ -978,20 +994,20 @@ ${markers}
     const shares = instruments.filter((i) => i.market === "shares").map((i) => i.sec);
     const futures = instruments.filter((i) => i.market === "futures").map((i) => i.sec);
     const packs = [];
+    const failures = [];
     const loadGroup = async (secs, market, label) => {
       if (!secs.length) return;
-      if (secs.length > 12) {
-        packs.push(...await E.loadManyBatched(secs, from, till, interval, market, 6, (done, total, sec) => {
-          if (onProgress) onProgress(done, total, sec, label);
-        }));
-      } else {
-        packs.push(...await E.loadMany(secs, from, till, interval, market));
-      }
+      const conc = secs.length > 12 ? 6 : 1;
+      const r = await E.loadManyDetailed(secs, from, till, interval, market, conc, (done, total, sec) => {
+        if (onProgress) onProgress(done, total, sec, label);
+      });
+      packs.push(...r.packs);
+      failures.push(...r.failures);
     };
     await loadGroup(shares, "shares", "акций");
     await loadGroup(futures, "futures", "фьючерсов");
     packs.sort((a, b) => (a[0]?.sec || "").localeCompare(b[0]?.sec || ""));
-    return packs;
+    return { packs, failures };
   }
 
   async function runWithInstruments(instruments, bulkMode) {
@@ -1012,11 +1028,17 @@ ${markers}
     try {
       let loaded = 0;
       const total = instruments.length;
-      state.packs = await loadInstrumentPacks(instruments, from, till, interval, (done, groupTotal, sec, groupLabel) => {
+      const loadedData = await loadInstrumentPacks(instruments, from, till, interval, (done, groupTotal, sec, groupLabel) => {
         loaded += 1;
         $("calc-status").textContent = `Загрузка ${loaded}/${total} (${groupLabel}): ${sec}`;
       });
-      if (!state.packs.length) throw new Error("MOEX не вернул свечи ни по одному инструменту.");
+      state.packs = loadedData.packs;
+      state.failedInstruments = loadedData.failures;
+      if (!state.packs.length) {
+        const sample = state.failedInstruments.slice(0, 3).map((f) => f.sec).join(", ");
+        const tail = state.failedInstruments.length > 3 ? "…" : "";
+        throw new Error(`MOEX не вернул свечи ни по одному инструменту${sample ? ` (${sample}${tail})` : ""}.`);
+      }
       state.bulkMode = bulkMode;
       setSliderBounds(state.hasWindow);
       render();
@@ -1082,9 +1104,9 @@ ${markers}
   $("calc-sec").addEventListener("change", syncSelectAllCheckbox);
   $("prefix-pick-stocks").addEventListener("click", async () => {
     setBusy(true);
-    $("calc-status").textContent = "Подбор акций по тикерам…";
+    $("calc-status").textContent = "Обновление списка тикеров акций…";
     try {
-      await reloadShareList();
+      reloadShareList();
       $("calc-status").textContent = state.packs.length
         ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
         : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
