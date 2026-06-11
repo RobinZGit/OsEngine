@@ -29,8 +29,8 @@ h2:first-child{margin-top:0;}
 .calc-opt-btn{flex-shrink:0;padding:.42rem .65rem;font-size:.82rem;white-space:nowrap;}
 .calc-opt-btn-active{background:var(--accent);color:#fff;border-color:var(--accent);animation:opt-pulse 1.1s ease-in-out infinite;}
 @keyframes opt-pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.45)}50%{box-shadow:0 0 0 6px rgba(37,99,235,0)}}
-.calc-pick-row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.35rem 0 .65rem;}
 .calc-sec-label-row{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .75rem;margin-bottom:.25rem;max-width:100%;}
+.calc-sec-select-all-row{display:flex;flex-wrap:wrap;gap:.35rem .85rem;flex:0 0 auto;}
 .calc-sec-label-row>label[for="calc-sec"]{margin-bottom:0;flex:0 1 auto;}
 .calc-sec-select-all{font-size:.82rem;color:var(--muted);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;flex:0 0 auto;}
 .calc-sec-select-all input{margin:0;}
@@ -86,14 +86,13 @@ a{color:var(--accent);}
 <div class="calc-field calc-field-wide">
 <div class="calc-sec-label-row">
 <label for="calc-sec">Акции (фьючерсы) — выбор (Ctrl+клик)</label>
-<label class="calc-sec-select-all"><input id="calc-sec-all" type="checkbox"> Выбрать все</label>
+<div class="calc-sec-select-all-row">
+<label class="calc-sec-select-all"><input id="calc-sec-all-shares" type="checkbox"> Выбрать все акции</label>
+<label class="calc-sec-select-all"><input id="calc-sec-all-futures" type="checkbox"> Выбрать все фьючерсы</label>
+</div>
 </div>
 <select id="calc-sec" multiple size="8"></select>
 <p class="calc-sec-hint" id="calc-sec-hint"></p>
-<div class="calc-pick-row">
-<button class="calc-btn calc-btn-secondary" type="button" id="pick-shares" disabled>Выделить акции</button>
-<button class="calc-btn calc-btn-secondary" type="button" id="pick-futures" disabled>Выделить фьючерсы</button>
-</div>
 </div>
 
 <div class="calc-grid">
@@ -409,28 +408,54 @@ a{color:var(--accent);}
     return selectedInstruments().map((i) => i.sec);
   }
 
-  function syncSelectAllCheckbox() {
+  function syncMarketCheckbox(market, cbId) {
     const sel = $("calc-sec");
-    const cb = $("calc-sec-all");
-    if (!cb || !sel.options.length) return;
-    const total = sel.options.length;
-    const n = sel.selectedOptions.length;
-    cb.checked = total > 0 && n === total;
-    cb.indeterminate = n > 0 && n < total;
+    const cb = $(cbId);
+    if (!cb) return;
+    const opts = Array.from(sel.options).filter((o) => o.dataset.market === market);
+    if (!opts.length) {
+      cb.checked = false;
+      cb.indeterminate = false;
+      return;
+    }
+    const n = opts.filter((o) => o.selected).length;
+    cb.checked = n === opts.length;
+    cb.indeterminate = n > 0 && n < opts.length;
   }
 
-  function setSelectAll(checked) {
-    const sel = $("calc-sec");
-    for (const o of sel.options) o.selected = checked;
-    syncSelectAllCheckbox();
+  function syncSelectAllCheckboxes() {
+    syncMarketCheckbox("shares", "calc-sec-all-shares");
+    syncMarketCheckbox("futures", "calc-sec-all-futures");
   }
 
-  function selectByMarket(market) {
+  function setSelectAllMarket(market, checked) {
     const sel = $("calc-sec");
     for (const o of sel.options) {
-      o.selected = o.dataset.market === market;
+      if (o.dataset.market === market) o.selected = checked;
     }
-    syncSelectAllCheckbox();
+    syncSelectAllCheckboxes();
+  }
+
+  function handleMarketCheckboxClick(market, cbId, e) {
+    e.preventDefault();
+    const cb = $(cbId);
+    if (cb.disabled) return;
+    const opts = Array.from($("calc-sec").options).filter((o) => o.dataset.market === market);
+    if (!opts.length) return;
+    const n = opts.filter((o) => o.selected).length;
+    const selectAll = n === 0;
+    setSelectAllMarket(market, selectAll);
+    onSecSelectionChanged();
+  }
+
+  function onSecSelectionChanged() {
+    syncSelectAllCheckboxes();
+    if (enforceDateRange("till")) {
+      $("calc-status").textContent =
+        `Период сужен до ${maxCalcDays($("calc-tf").value, selectedInstruments().length)} дн. для выбранных инструментов.`;
+    } else {
+      updateDateHint();
+    }
   }
 
   function isOptimizing() {
@@ -483,11 +508,11 @@ a{color:var(--accent);}
   function applyUiLocks() {
     const lock = state.uiBusy || isOptimizing();
     $("calc-run").disabled = lock;
-    $("pick-shares").disabled = lock || !state.shareList.length;
-    $("pick-futures").disabled = lock || !state.futuresList.length;
     $("prefix-pick-stocks").disabled = lock;
     $("prefix-pick-futures").disabled = lock;
-    $("calc-sec-all").disabled = lock || !$("calc-sec").options.length;
+    const secOpts = Array.from($("calc-sec").options);
+    $("calc-sec-all-shares").disabled = lock || !secOpts.some((o) => o.dataset.market === "shares");
+    $("calc-sec-all-futures").disabled = lock || !secOpts.some((o) => o.dataset.market === "futures");
   }
 
   function syncOptimButtons() {
@@ -647,7 +672,7 @@ a{color:var(--accent);}
       return;
     }
     if (!state.packs.length) {
-      $("calc-status").textContent = "Сначала загрузите свечи — «Рассчитать» или «Выделить акции/фьючерсы».";
+      $("calc-status").textContent = "Сначала загрузите свечи — нажмите «Рассчитать».";
       return;
     }
     if (state.optim.active) stopOptim();
@@ -708,7 +733,7 @@ a{color:var(--accent);}
     addOptions(state.shareList, "shares");
     addOptions(state.futuresList, "futures");
     sel.disabled = !state.shareList.length && !state.futuresList.length;
-    syncSelectAllCheckbox();
+    syncSelectAllCheckboxes();
   }
 
   function initPrefixFields() {
@@ -720,7 +745,6 @@ a{color:var(--accent);}
     state.shareList = E.listShareTickers($("prefix-stocks").value);
     fillSecSelect();
     updateSecHint();
-    if (!isOptimizing()) $("pick-shares").disabled = !state.shareList.length;
   }
 
   function reloadFuturesList() {
@@ -728,7 +752,6 @@ a{color:var(--accent);}
     state.futuresFromMoex = false;
     fillSecSelect();
     updateSecHint();
-    if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
   }
 
   async function reloadFuturesListFromMoex() {
@@ -736,7 +759,6 @@ a{color:var(--accent);}
     state.futuresFromMoex = true;
     fillSecSelect({ selectFutures: true });
     updateSecHint();
-    if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
     return state.futuresList.length;
   }
 
@@ -1264,34 +1286,6 @@ ${markers}
     } catch (_) { /* status уже выставлен */ }
   }
 
-  async function pickShares() {
-    applyEditorParams();
-    if (!state.shareList.length) {
-      $("calc-status").textContent = "В списке нет акций — проверьте тикеры и нажмите «Подобрать».";
-      return;
-    }
-    selectByMarket("shares");
-    try {
-      await runWithInstruments(selectedInstruments(), "shares");
-    } catch (err) {
-      $("calc-status").textContent = `Ошибка: ${err.message}`;
-    }
-  }
-
-  async function pickFutures() {
-    applyEditorParams();
-    if (!state.futuresList.length) {
-      $("calc-status").textContent = "В списке нет фьючерсов — проверьте префиксы и нажмите «Подобрать».";
-      return;
-    }
-    selectByMarket("futures");
-    try {
-      await runWithInstruments(selectedInstruments(), "futures");
-    } catch (err) {
-      $("calc-status").textContent = `Ошибка: ${err.message}`;
-    }
-  }
-
   fillLogicSelect();
   fillLogicEditor();
   initPrefixFields();
@@ -1299,21 +1293,12 @@ ${markers}
   initInstrumentLists();
   initDates();
   $("calc-run").addEventListener("click", run);
-  $("pick-shares").addEventListener("click", pickShares);
-  $("pick-futures").addEventListener("click", pickFutures);
   OPT_BUTTONS.forEach(({ btnId, kind }) => {
     $(btnId).addEventListener("click", () => toggleOptim(kind));
   });
-  $("calc-sec-all").addEventListener("change", () => setSelectAll($("calc-sec-all").checked));
-  $("calc-sec").addEventListener("change", () => {
-    syncSelectAllCheckbox();
-    if (enforceDateRange("till")) {
-      $("calc-status").textContent =
-        `Период сужен до ${maxCalcDays($("calc-tf").value, selectedInstruments().length)} дн. для выбранных инструментов.`;
-    } else {
-      updateDateHint();
-    }
-  });
+  $("calc-sec-all-shares").addEventListener("click", (e) => handleMarketCheckboxClick("shares", "calc-sec-all-shares", e));
+  $("calc-sec-all-futures").addEventListener("click", (e) => handleMarketCheckboxClick("futures", "calc-sec-all-futures", e));
+  $("calc-sec").addEventListener("change", onSecSelectionChanged);
   $("prefix-pick-stocks").addEventListener("click", () => {
     reloadShareList();
     $("calc-status").textContent = state.packs.length
