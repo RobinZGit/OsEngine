@@ -3,6 +3,12 @@
   "use strict";
 
   const DEFAULT_PARAMS = { LR: 20, Strict: 3, SL: 2, TP: 3 };
+  const DEFAULT_VOLUME = {
+    volumeType: "Deposit percent",
+    volume: 10,
+    deposit: 1000000,
+    maxPositions: 40
+  };
 
   const TREND_REGIME =
     "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
@@ -408,34 +414,79 @@
     return atoms.every((a) => evaluateAtom(a, cache, idx));
   }
 
-  function warmupBars(parsed) {
+  function warmupBars() {
     return 120;
   }
 
-  function simulateLogicLine(candles, parsed, startIdx, endIdx) {
+  function calcTradeVolume(price, volConfig) {
+    const cfg = { ...DEFAULT_VOLUME, ...volConfig };
+    const p = price > 0 ? price : 0;
+    if (p <= 0) return 0;
+    if (cfg.volumeType === "Contracts") return Math.max(0, cfg.volume);
+    if (cfg.volumeType === "Contract currency") return Math.max(0, cfg.volume / p);
+    return Math.max(0, (cfg.deposit * cfg.volume / 100) / p);
+  }
+
+  function maxAbsPosition(price, volConfig) {
+    const lot = calcTradeVolume(price, volConfig);
+    const maxPos = Math.max(1, volConfig?.maxPositions ?? DEFAULT_VOLUME.maxPositions);
+    return lot * maxPos;
+  }
+
+  function pushRow(rows, candle, fields) {
+    rows.push({
+      time: candle.time,
+      close: candle.close,
+      ...fields
+    });
+  }
+
+  function collectChartIndicators(cache, parsed, idx) {
+    const ind = {};
+    const atoms = [...(parsed?.opAtoms || []), ...(parsed?.clAtoms || [])];
+    for (const atom of atoms) {
+      const pm = parseParamsMap(atom.params);
+      if (atom.kind === "sma") {
+        const len = pm.L || parseInt(atom.params, 10) || 100;
+        ind.sma = cache.sma(len)[idx];
+      }
+      if (atom.kind === "linreg") {
+        const len = pm.L || parseInt(atom.params, 10) || 20;
+        const dev = parseFloat(pm.Dev || pm.dev || "2");
+        const lr = cache.linreg(len, dev);
+        ind.linregUp = lr.up[idx];
+        ind.linregDn = lr.down[idx];
+        ind.linregMid = lr.center[idx];
+      }
+    }
+    return ind;
+  }
+
+  function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig) {
     const cache = new IndicatorCache(candles);
     const atr14 = cache.atr(14);
     let pos = 0;
     let cash = 0;
     let entryPrice = null;
-    let buys = 0;
-    let sells = 0;
     const rows = [];
-    const w = Math.max(warmupBars(parsed), 2);
+    const w = Math.max(warmupBars(), 2);
     const from = Math.max(startIdx, w);
     const to = Math.min(endIdx, candles.length - 1);
 
-    const closePos = (price) => {
-      if (pos === 0) return;
+    const flatten = (price) => {
+      if (pos === 0) return 0;
+      const vol = Math.abs(pos);
       cash += pos * price;
-      if (pos > 0) sells += Math.abs(pos);
-      else buys += Math.abs(pos);
       pos = 0;
       entryPrice = null;
+      return vol;
     };
 
     for (let i = from; i <= to; i++) {
       const price = candles[i].close;
+      let buy = 0;
+      let sell = 0;
+
       if (pos !== 0 && (parsed.slAtr > 0 || parsed.tpAtr > 0)) {
         const a = atr14[i];
         if (a != null && a > 0 && entryPrice != null) {
@@ -447,26 +498,30 @@
             if (parsed.slAtr > 0 && price >= entryPrice + parsed.slAtr * a) hit = true;
             else if (parsed.tpAtr > 0 && price <= entryPrice - parsed.tpAtr * a) hit = true;
           }
-          if (hit) closePos(price);
+          if (hit) sell += flatten(price);
         }
       }
 
       const opHit = evaluateExpr(parsed.opAtoms, cache, i);
       const clHit = evaluateExpr(parsed.clAtoms, cache, i);
 
-      if (pos !== 0 && clHit) closePos(price);
+      if (pos !== 0 && clHit) sell += flatten(price);
       if (pos === 0 && opHit) {
-        const lot = 1;
-        pos = parsed.opSide === "long" ? lot : -lot;
-        cash -= pos * price;
-        entryPrice = price;
-        if (pos > 0) buys += lot;
-        else sells += lot;
+        const lot = calcTradeVolume(price, volConfig);
+        const cap = maxAbsPosition(price, volConfig);
+        if (lot > 0 && lot <= cap) {
+          pos = parsed.opSide === "long" ? lot : -lot;
+          cash -= pos * price;
+          entryPrice = price;
+          buy = lot;
+        }
       }
 
-      rows.push({
-        time: candles[i].time,
-        close: price,
+      const ind = collectChartIndicators(cache, parsed, i);
+      pushRow(rows, candles[i], {
+        ...ind,
+        buy,
+        sell,
         pos,
         cash,
         eq: cash + pos * price
@@ -479,35 +534,54 @@
       finresp: last?.eq ?? 0,
       cash: last?.cash ?? 0,
       pos: last?.pos ?? 0,
-      buys,
-      sells
+      buys: rows.reduce((s, r) => s + (r.buy || 0), 0),
+      sells: rows.reduce((s, r) => s + (r.sell || 0), 0)
     };
   }
 
-  function simulateSmaSpread(candles, smaLen, side, startIdx, endIdx) {
+  function simulateSmaSpread(candles, smaLen, side, startIdx, endIdx, volConfig) {
     const closes = candles.map((c) => c.close);
     const sma = smaSeries(closes, smaLen);
-    let cash = 0, pos = 0, buys = 0, sells = 0;
+    let cash = 0;
+    let pos = 0;
+    let buys = 0;
+    let sells = 0;
     const rows = [];
+    const capAt = (price) => maxAbsPosition(price, volConfig);
+
     for (let i = startIdx; i <= endIdx; i++) {
       const price = closes[i];
       const s = sma[i];
-      let buy = 0, sell = 0;
+      let buy = 0;
+      let sell = 0;
       if (s != null) {
         const d = price - s;
+        const scale = calcTradeVolume(price, volConfig) / Math.max(price, 1e-9);
         if (side === "above") {
-          buy = Math.max(d, 0);
-          sell = Math.max(-d, 0);
+          buy = Math.max(d, 0) * scale;
+          sell = Math.max(-d, 0) * scale;
         } else {
-          buy = Math.max(-d, 0);
-          sell = Math.max(d, 0);
+          buy = Math.max(-d, 0) * scale;
+          sell = Math.max(d, 0) * scale;
         }
+        const cap = capAt(price);
+        if (pos + buy - sell > cap) buy = Math.max(0, cap - pos + sell);
+        if (pos + buy - sell < -cap) sell = Math.max(0, pos + buy + cap);
         cash += price * (sell - buy);
         pos += buy - sell;
         buys += buy;
         sells += sell;
       }
-      rows.push({ time: candles[i].time, close: price, sma: s, buy, sell, cash, pos, eq: cash + pos * price });
+      rows.push({
+        time: candles[i].time,
+        close: price,
+        sma: s,
+        buy,
+        sell,
+        cash,
+        pos,
+        eq: cash + pos * price
+      });
     }
     const last = rows.at(-1);
     return { rows, finresp: last?.eq ?? 0, cash: last?.cash ?? 0, pos: last?.pos ?? 0, buys, sells };
@@ -523,12 +597,13 @@
     return { type: "logic_line", parsed: parseLogicLine(line), line };
   }
 
-  function runOnCandles(candles, spec, startIdx, endIdx, params) {
+  function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig) {
     if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, buys: 0, sells: 0 };
+    const vol = { ...DEFAULT_VOLUME, ...volConfig };
     if (spec.type === "sma_spread") {
-      return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx);
+      return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol);
     }
-    return simulateLogicLine(candles, spec.parsed, startIdx, endIdx, params);
+    return simulateLogicLine(candles, spec.parsed, startIdx, endIdx, vol);
   }
 
   async function loadMoexCandles(sec, from, till, interval) {
@@ -585,12 +660,12 @@
     return { finresp, cash, pos, buys, sells, bySec };
   }
 
-  function runMulti(packs, spec, startIdx, endIdx, params) {
+  function runMulti(packs, spec, startIdx, endIdx, params, volConfig) {
     const perSec = packs.map((candles) => {
       const sec = candles[0]?.sec || "?";
       const a = Math.max(0, Math.min(startIdx, candles.length - 1));
       const b = Math.max(a, Math.min(endIdx, candles.length - 1));
-      const r = runOnCandles(candles, spec, a, b, params);
+      const r = runOnCandles(candles, spec, a, b, params, volConfig);
       return { sec, ...r };
     });
     const agg = aggregateFinresp(perSec);
@@ -600,8 +675,10 @@
 
   root.MultiLogicFinrespEngine = {
     DEFAULT_PARAMS,
+    DEFAULT_VOLUME,
     DEFAULT_LOGIC_LINES,
     BUILTIN_META,
+    calcTradeVolume,
     substituteParams,
     parseLogicLine,
     resolveLogicSpec,
