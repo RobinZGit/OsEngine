@@ -841,6 +841,34 @@
     return candles.findIndex((c) => c.time === time);
   }
 
+  function findCandleIndexAtOrBefore(candles, time) {
+    if (!candles?.length || !time) return -1;
+    let idx = -1;
+    for (let i = 0; i < candles.length; i++) {
+      const t = candles[i]?.time;
+      if (!t) continue;
+      if (t <= time) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  function indicesForTimeRange(candles, tStart, tEnd) {
+    if (!candles?.length || !tStart || !tEnd) return null;
+    let a = -1;
+    let b = -1;
+    for (let i = 0; i < candles.length; i++) {
+      const t = candles[i]?.time;
+      if (!t) continue;
+      if (t < tStart) continue;
+      if (t > tEnd) break;
+      if (a < 0) a = i;
+      b = i;
+    }
+    if (a < 0 || b < a) return null;
+    return { a, b };
+  }
+
   function findRowIdxAtOrBefore(rows, time) {
     if (!rows?.length || !time) return -1;
     let idx = -1;
@@ -898,13 +926,18 @@
     return row;
   }
 
-  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endIdx, params, volConfig) {
+  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endTime, params, volConfig) {
     const rowIdx = findRowIdxAtOrBefore(perSecItem.rows, triggerTime);
     if (rowIdx < 0) return;
     const triggerRow = flattenRowAtIdx(perSecItem, rowIdx);
     const head = perSecItem.rows.slice(0, rowIdx);
-    const localEnd = Math.max(0, Math.min(endIdx, candles.length - 1));
-    const candleIdx = findCandleIndexByTime(candles, triggerTime);
+    const localEnd = findCandleIndexAtOrBefore(candles, endTime);
+    if (localEnd < 0) {
+      perSecItem.rows = [...head, triggerRow];
+      recomputePerSecTotals(perSecItem);
+      return;
+    }
+    const candleIdx = findCandleIndexAtOrBefore(candles, triggerTime);
     if (candleIdx < 0 || candleIdx >= localEnd) {
       perSecItem.rows = [...head, triggerRow];
       recomputePerSecTotals(perSecItem);
@@ -924,20 +957,14 @@
     recomputePerSecTotals(perSecItem);
   }
 
-  function applyPortfolioStopper(perSec, packs, spec, startIdx, endIdx, params, volConfig, cfg) {
+  function applyPortfolioStopper(perSec, packs, spec, times, endTime, params, volConfig, cfg) {
     const stopper = { ...DEFAULT_STOPPER, ...cfg };
     const events = [];
     if ((!stopper.useSl && !stopper.useTp) || !perSec.length || !packs.length) {
       return { perSec, stopper: { events } };
     }
 
-    const refCandles = longestPack(packs);
-    const times = [];
-    for (let i = startIdx; i <= endIdx && i < refCandles.length; i++) {
-      const t = refCandles[i]?.time;
-      if (t) times.push(t);
-    }
-    if (!times.length) return { perSec, stopper: { events } };
+    if (!times?.length) return { perSec, stopper: { events } };
 
     let referenceEquity = stopper.refEquity > 0 ? stopper.refEquity : null;
     let scanFrom = 0;
@@ -973,7 +1000,7 @@
 
         const refAtTrigger = referenceEquity;
         for (let s = 0; s < perSec.length; s++) {
-          flattenAndResimTail(perSec[s], packs[s], spec, time, endIdx, params, volConfig);
+          flattenAndResimTail(perSec[s], packs[s], spec, time, endTime, params, volConfig);
         }
         events.push({
           kind,
@@ -1176,7 +1203,166 @@
       }));
   }
 
-  async function loadInstrumentSec(sec, from, till, interval, market) {
+  const CANDLE_CACHE_VERSION = 1;
+  const CANDLE_CACHE_LS_KEY = "MultiLogicFinrespCandleCache";
+
+  function cacheNormDay(value) {
+    if (!value) return "";
+    return String(value).slice(0, 10);
+  }
+
+  function mergeCandleSeries(existing, incoming) {
+    const map = new Map();
+    for (const c of existing || []) {
+      if (c?.time) map.set(c.time, c);
+    }
+    for (const c of incoming || []) {
+      if (c?.time) map.set(c.time, { ...c });
+    }
+    return [...map.values()].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  }
+
+  function createCandleCache(options) {
+    const storageKey = options?.storageKey || CANDLE_CACHE_LS_KEY;
+    let entries = {};
+
+    function loadStorage() {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data?.version === CANDLE_CACHE_VERSION && data.entries) entries = data.entries;
+      } catch (_) {
+        entries = {};
+      }
+    }
+
+    function saveStorage() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({
+          version: CANDLE_CACHE_VERSION,
+          entries,
+          savedAt: new Date().toISOString()
+        }));
+      } catch (err) {
+        if (options?.onStorageError) options.onStorageError(err);
+      }
+    }
+
+    function entryKey(market, sec, interval) {
+      return `${market}:${String(sec || "").trim().toUpperCase()}:${String(interval)}`;
+    }
+
+    function entryCoverage(entry) {
+      if (!entry?.candles?.length) return null;
+      return {
+        from: cacheNormDay(entry.candles[0].time),
+        till: cacheNormDay(entry.candles.at(-1).time)
+      };
+    }
+
+    function entryCovers(entry, from, till) {
+      const cov = entryCoverage(entry);
+      if (!cov) return false;
+      return cov.from <= cacheNormDay(from) && cov.till >= cacheNormDay(till);
+    }
+
+    function filterCandlesByRange(candles, from, till) {
+      const f = cacheNormDay(from);
+      const t = cacheNormDay(till);
+      return candles.filter((c) => {
+        const d = cacheNormDay(c.time);
+        return d >= f && d <= t;
+      });
+    }
+
+    function clonePack(candles, requestedSec, market) {
+      return candles.map((c) => ({ ...c, sec: requestedSec, market }));
+    }
+
+    return {
+      load() {
+        loadStorage();
+      },
+      get(requestedSec, market, interval, from, till, altSec) {
+        const keys = [entryKey(market, requestedSec, interval)];
+        if (altSec) keys.push(entryKey(market, altSec, interval));
+        for (const key of keys) {
+          const entry = entries[key];
+          if (!entry || String(entry.interval) !== String(interval)) continue;
+          if (!entryCovers(entry, from, till)) continue;
+          const filtered = filterCandlesByRange(entry.candles, from, till);
+          if (!filtered.length) continue;
+          return clonePack(filtered, requestedSec, market);
+        }
+        return null;
+      },
+      put(requestedSec, market, interval, moexSec, candles) {
+        if (!candles?.length) return;
+        const key = entryKey(market, requestedSec, interval);
+        const normalized = candles.map((c) => ({
+          ...c,
+          sec: moexSec || requestedSec,
+          market
+        }));
+        const merged = mergeCandleSeries(entries[key]?.candles, normalized);
+        entries[key] = {
+          requestedSec,
+          moexSec: moexSec || requestedSec,
+          market,
+          interval: String(interval),
+          candles: merged,
+          updatedAt: new Date().toISOString()
+        };
+        saveStorage();
+      },
+      clear() {
+        entries = {};
+        try {
+          localStorage.removeItem(storageKey);
+        } catch (_) { /* ignore */ }
+      },
+      exportJson() {
+        return JSON.stringify({
+          version: CANDLE_CACHE_VERSION,
+          entries,
+          exportedAt: new Date().toISOString()
+        });
+      },
+      importJson(jsonStr, merge = true) {
+        const data = typeof jsonStr === "string" ? JSON.parse(jsonStr) : jsonStr;
+        if (data?.version !== CANDLE_CACHE_VERSION || !data.entries) {
+          throw new Error("Неверный формат файла кэша");
+        }
+        if (!merge) entries = {};
+        for (const [key, entry] of Object.entries(data.entries)) {
+          if (!entry?.candles?.length) continue;
+          if (merge && entries[key]?.candles?.length) {
+            entries[key] = {
+              ...entries[key],
+              ...entry,
+              candles: mergeCandleSeries(entries[key].candles, entry.candles)
+            };
+          } else {
+            entries[key] = entry;
+          }
+        }
+        saveStorage();
+        return Object.keys(entries).length;
+      },
+      stats() {
+        let entriesCount = 0;
+        let bars = 0;
+        for (const entry of Object.values(entries)) {
+          entriesCount += 1;
+          bars += entry.candles?.length || 0;
+        }
+        return { entries: entriesCount, bars };
+      }
+    };
+  }
+
+  async function loadInstrumentSec(sec, from, till, interval, market, cache) {
     const requestedSec = sec;
     try {
       let moexSec = sec;
@@ -1186,17 +1372,24 @@
           return { ok: false, error: "нет активного контракта MOEX для префикса", requestedSec };
         }
       }
+      if (cache) {
+        const cached = cache.get(requestedSec, market, interval, from, till, moexSec);
+        if (cached?.length) {
+          return { ok: true, pack: cached, requestedSec, fromCache: true };
+        }
+      }
       const candles = await loadMoexCandles(moexSec, from, till, interval, market);
       if (!candles.length) {
         return { ok: false, error: "нет свечей MOEX за выбранный период", requestedSec };
       }
-      return { ok: true, pack: candles, requestedSec };
+      if (cache) cache.put(requestedSec, market, interval, moexSec, candles);
+      return { ok: true, pack: candles, requestedSec, fromCache: false };
     } catch (err) {
       return { ok: false, error: err?.message || String(err), requestedSec };
     }
   }
 
-  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress) {
+  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress, cache) {
     const packs = [];
     const failures = [];
     const queue = [...secs];
@@ -1206,11 +1399,11 @@
       async () => {
         while (queue.length) {
           const sec = queue.shift();
-          const r = await loadInstrumentSec(sec, from, till, interval, market);
+          const r = await loadInstrumentSec(sec, from, till, interval, market, cache);
           if (r.ok) packs.push(r.pack);
           else failures.push({ sec: r.requestedSec || sec, market, error: r.error });
           done += 1;
-          if (onProgress) onProgress(done, secs.length, sec);
+          if (onProgress) onProgress(done, secs.length, sec, { fromCache: !!r.fromCache });
         }
       }
     );
@@ -1244,26 +1437,67 @@
   }
 
   function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig) {
-    const perSec = packs.map((candles) => {
+    const emptyAgg = aggregateFinresp([]);
+    const ref = longestPack(packs);
+    if (!ref.length) {
+      return {
+        perSec: [],
+        skipped: [],
+        agg: emptyAgg,
+        preStopperAgg: emptyAgg,
+        stopper: { events: [] },
+        a: 0,
+        b: 0
+      };
+    }
+    const aRef = Math.max(0, Math.min(startIdx, ref.length - 1));
+    const bRef = Math.max(aRef, Math.min(endIdx, ref.length - 1));
+    const tStart = ref[aRef]?.time;
+    const tEnd = ref[bRef]?.time;
+    const times = [];
+    for (let i = aRef; i <= bRef; i++) {
+      const t = ref[i]?.time;
+      if (t) times.push(t);
+    }
+
+    const perSec = [];
+    const activePacks = [];
+    const skipped = [];
+    for (const candles of packs) {
       const sec = candles[0]?.sec || "?";
-      const a = Math.max(0, Math.min(startIdx, candles.length - 1));
-      const b = Math.max(a, Math.min(endIdx, candles.length - 1));
-      const r = runOnCandles(candles, spec, a, b, params, volConfig);
-      return { sec, ...r };
-    });
+      const range = indicesForTimeRange(candles, tStart, tEnd);
+      if (!range) {
+        skipped.push({ sec, error: "нет свечей в выбранном окне" });
+        continue;
+      }
+      const r = runOnCandles(candles, spec, range.a, range.b, params, volConfig);
+      if (!r.rows?.length) {
+        skipped.push({ sec, error: "нет данных для расчёта в выбранном окне" });
+        continue;
+      }
+      perSec.push({ sec, ...r });
+      activePacks.push(candles);
+    }
+
     const preStopperAgg = aggregateFinresp(perSec);
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
-      const refLen = longestPack(packs).length || 1;
-      const a = Math.max(0, Math.min(startIdx, refLen - 1));
-      const b = Math.max(a, Math.min(endIdx, refLen - 1));
-      const applied = applyPortfolioStopper(perSec, packs, spec, a, b, params, volConfig, cfg);
+      const applied = applyPortfolioStopper(perSec, activePacks, spec, times, tEnd, params, volConfig, cfg);
       stopper = applied.stopper;
     }
     const agg = aggregateFinresp(perSec);
-    const chartPack = perSec.length === 1 ? perSec[0] : perSec[0];
-    return { perSec, agg, preStopperAgg, stopper, chartRows: chartPack?.rows || [] };
+    return {
+      perSec,
+      skipped,
+      agg,
+      preStopperAgg,
+      stopper,
+      a: aRef,
+      b: bRef,
+      tStart,
+      tEnd
+    };
   }
 
   root.MultiLogicFinrespEngine = {
@@ -1295,6 +1529,8 @@
     expandFuturesSelection,
     futuresMatchesCalcPeriod,
     isFullFuturesSecid,
+    createCandleCache,
+    CANDLE_CACHE_VERSION,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);

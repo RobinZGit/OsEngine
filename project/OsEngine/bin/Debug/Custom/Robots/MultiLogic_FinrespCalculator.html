@@ -270,6 +270,14 @@ a{color:var(--accent);}
 (() => {
   const E = window.MultiLogicFinrespEngine;
   const $ = (id) => document.getElementById(id);
+  if (!E) {
+    const st = $("calc-status");
+    if (st) {
+      st.textContent =
+        "Ошибка: не загружен MultiLogic_FinrespCalculator.engine.js — положите файл рядом с HTML и обновите страницу (Ctrl+F5).";
+    }
+    return;
+  }
   const state = {
     packs: [],
     shareList: [],
@@ -805,7 +813,10 @@ a{color:var(--accent);}
   function fillSecSelect(opts) {
     const options = opts || {};
     const sel = $("calc-sec");
-    const prev = new Set(options.preserveSecs || selectedSecs());
+    const prev = new Set(selectedSecs());
+    if (options.preserveSecs?.length) {
+      for (const id of options.preserveSecs) prev.add(id);
+    }
     sel.innerHTML = "";
     const addOptions = (ids, market) => {
       for (const id of ids) {
@@ -873,7 +884,8 @@ a{color:var(--accent);}
     if (expanded.length) {
       state.futuresList = allContracts;
       state.futuresFromMoex = true;
-      fillSecSelect({ preserveSecs: expanded });
+      const shareSecs = instruments.filter((i) => i.market === "shares").map((i) => i.sec);
+      fillSecSelect({ preserveSecs: [...shareSecs, ...expanded] });
       updateSecHint();
     }
     const shares = instruments.filter((i) => i.market === "shares");
@@ -951,7 +963,11 @@ a{color:var(--accent);}
 
   function updateCacheHint(extra) {
     const el = $("cache-hint");
-    if (!el || !state.candleCache) return;
+    if (!el) return;
+    if (!state.candleCache) {
+      el.textContent = extra ? `Кэш пуст · ${extra}` : "Кэш пуст — при расчёте загрузка с MOEX";
+      return;
+    }
     const s = state.candleCache.stats();
     el.textContent = s.entries
       ? `Кэш: ${s.entries} инстр., ${s.bars.toLocaleString("ru-RU")} свечей${extra ? ` · ${extra}` : ""}`
@@ -975,13 +991,25 @@ a{color:var(--accent);}
   }
 
   function initCandleCache() {
-    state.candleCache = E.createCandleCache({
-      onStorageError: () => {
-        $("calc-status").textContent = "Кэш: не удалось записать в localStorage (лимит?). Сохраните в файл и очистите кэш.";
-      }
-    });
-    state.candleCache.load();
-    updateCacheHint();
+    state.candleCache = null;
+    if (typeof E.createCandleCache !== "function") {
+      updateCacheHint("недоступен — загрузка с MOEX");
+      return;
+    }
+    try {
+      state.candleCache = E.createCandleCache({
+        onStorageError: () => {
+          $("calc-status").textContent =
+            "Кэш: не удалось записать в localStorage (лимит?). Сохраните в файл и очистите кэш.";
+        }
+      });
+      state.candleCache.load();
+      updateCacheHint();
+    } catch (err) {
+      state.candleCache = null;
+      updateCacheHint("ошибка — загрузка с MOEX");
+      console.warn("Candle cache init failed:", err);
+    }
   }
 
   function initDates() {
@@ -1602,7 +1630,7 @@ ${totalBlock}
       const conc = secs.length > 12 ? 6 : 1;
       const r = await E.loadManyDetailed(secs, from, till, interval, market, conc, (done, total, sec, meta) => {
         if (onProgress) onProgress(done, total, sec, label, meta);
-      }, state.candleCache);
+      }, state.candleCache || null);
       packs.push(...r.packs);
       failures.push(...r.failures);
     };
@@ -1680,14 +1708,7 @@ ${totalBlock}
     } catch (_) { /* status уже выставлен */ }
   }
 
-  fillLogicSelect();
-  fillLogicEditor();
-  updatePositionSlHint();
-  initPrefixFields();
-  syncVolumeFields();
-  initInstrumentLists();
-  initDates();
-  initCandleCache();
+  function bindUiEvents() {
   $("calc-run").addEventListener("click", run);
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
@@ -1790,6 +1811,18 @@ ${totalBlock}
   });
   extraParams.addEventListener("toggle", syncExtraParamsToggleLabel);
   syncExtraParamsToggleLabel();
+  }
+
+  fillLogicSelect();
+  fillLogicEditor();
+  updatePositionSlHint();
+  initPrefixFields();
+  syncVolumeFields();
+  initInstrumentLists();
+  initDates();
+  bindUiEvents();
+  initCandleCache();
+  applyUiLocks();
 })();
 </script>
 </body>
