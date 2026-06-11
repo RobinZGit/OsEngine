@@ -118,17 +118,26 @@ a{color:var(--accent);}
 </div>
 <p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
 
+<p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
+<div class="calc-grid">
+<div class="calc-field"><label for="param-sl">SL позиции кратность ATR (@SL)</label>
+<input id="param-sl" type="number" value="2" min="0" max="50" step="0.1" title="0 — без stop-loss"></div>
+<div class="calc-field"><label for="param-tp">TP позиции кратность ATR (@TP)</label>
+<input id="param-tp" type="number" value="3" min="0" max="50" step="0.1" title="0 — без take-profit"></div>
+<div class="calc-field"><label for="param-atr-sl">Длина ATR для SL/TP</label>
+<input id="param-atr-sl" type="number" value="14" min="2" max="200" step="1"></div>
+</div>
+<p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 — отключить соответствующий стоп.</p>
+
 <p class="extra-section">Параметры строки логики</p>
 <div class="calc-grid">
-<div class="calc-field"><label for="param-lr">@LR</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
-<div class="calc-field"><label for="param-sl">@SL ×ATR</label><input id="param-sl" type="number" value="2" min="0" max="50" step="0.1"></div>
-<div class="calc-field"><label for="param-tp">@TP ×ATR</label><input id="param-tp" type="number" value="3" min="0" max="50" step="0.1"></div>
+<div class="calc-field"><label for="param-lr">LinReg длина (@LR)</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
 </div>
 
 <p class="extra-section">Строки L1…L4</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
-<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и SL/TP по ATR. Общепортфельный Stopper не считается.</p>
+<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и SL/TP позиции по ATR (см. выше). Общепортфельный Stopper не считается.</p>
 </details>
 </main>
 </div>
@@ -161,8 +170,9 @@ a{color:var(--accent);}
   function params() {
     return {
       LR: +$("param-lr").value || E.DEFAULT_PARAMS.LR,
-      SL: +$("param-sl").value || 0,
-      TP: +$("param-tp").value || 0
+      SL: Math.max(0, +$("param-sl").value),
+      TP: Math.max(0, +$("param-tp").value),
+      slTpAtrLen: Math.max(2, +$("param-atr-sl").value || E.DEFAULT_PARAMS.slTpAtrLen)
     };
   }
 
@@ -493,7 +503,7 @@ ${markers}
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
-  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "param-sl", "param-tp"].forEach((id) => {
+  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "param-sl", "param-tp", "param-atr-sl"].forEach((id) => {
     $(id).addEventListener("change", render);
     $(id).addEventListener("input", render);
   });

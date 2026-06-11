@@ -2,7 +2,7 @@
 (function (root) {
   "use strict";
 
-  const DEFAULT_PARAMS = { LR: 20, Strict: 3, SL: 2, TP: 3 };
+  const DEFAULT_PARAMS = { LR: 20, Strict: 3, SL: 2, TP: 3, slTpAtrLen: 14 };
   const DEFAULT_VOLUME = {
     volumeType: "Deposit percent",
     volume: 10,
@@ -464,7 +464,8 @@
 
   function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig) {
     const cache = new IndicatorCache(candles);
-    const atr14 = cache.atr(14);
+    const atrLen = parsed.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen;
+    const atrSlTp = cache.atr(atrLen);
     let pos = 0;
     let cash = 0;
     let entryPrice = null;
@@ -488,7 +489,7 @@
       let sell = 0;
 
       if (pos !== 0 && (parsed.slAtr > 0 || parsed.tpAtr > 0)) {
-        const a = atr14[i];
+        const a = atrSlTp[i];
         if (a != null && a > 0 && entryPrice != null) {
           let hit = false;
           if (pos > 0) {
@@ -587,6 +588,14 @@
     return { rows, finresp: last?.eq ?? 0, cash: last?.cash ?? 0, pos: last?.pos ?? 0, buys, sells };
   }
 
+  function applySlTpParams(parsed, params) {
+    const p = { ...DEFAULT_PARAMS, ...params };
+    parsed.slAtr = Math.max(0, Number(p.SL) || 0);
+    parsed.tpAtr = Math.max(0, Number(p.TP) || 0);
+    parsed.slTpAtrLen = Math.max(2, Number(p.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen);
+    return parsed;
+  }
+
   function resolveLogicSpec(logicId, customLines, params) {
     const meta = BUILTIN_META.find((m) => m.id === logicId);
     if (!meta) return null;
@@ -594,7 +603,8 @@
       return { type: "sma_spread", smaLen: meta.smaLen, side: meta.side };
     }
     const line = substituteParams(customLines[meta.key] || DEFAULT_LOGIC_LINES[meta.key], params);
-    return { type: "logic_line", parsed: parseLogicLine(line), line };
+    const parsed = applySlTpParams(parseLogicLine(line), params);
+    return { type: "logic_line", parsed, line };
   }
 
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig) {
