@@ -30,9 +30,9 @@ h2:first-child{margin-top:0;}
 .calc-opt-btn-active{background:var(--accent);color:#fff;border-color:var(--accent);animation:opt-pulse 1.1s ease-in-out infinite;}
 @keyframes opt-pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.45)}50%{box-shadow:0 0 0 6px rgba(37,99,235,0)}}
 .calc-pick-row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.35rem 0 .65rem;}
-.calc-sec-label-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.25rem;}
-.calc-sec-label-row>label[for="calc-sec"]{margin-bottom:0;}
-.calc-sec-select-all{font-size:.82rem;color:var(--muted);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;}
+.calc-sec-label-row{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .75rem;margin-bottom:.25rem;max-width:100%;}
+.calc-sec-label-row>label[for="calc-sec"]{margin-bottom:0;flex:0 1 auto;}
+.calc-sec-select-all{font-size:.82rem;color:var(--muted);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;flex:0 0 auto;}
 .calc-sec-select-all input{margin:0;}
 .calc-sec-hint{font-size:.8rem;color:var(--muted);}
 .calc-field-wide{grid-column:1/-1;}
@@ -57,6 +57,9 @@ details.logic-editor summary{cursor:pointer;font-weight:600;color:#374151;}
 .logic-grid{display:grid;gap:.75rem;margin-top:.75rem;}
 .logic-grid label{font-size:.82rem;color:var(--muted);display:block;margin-bottom:.2rem;}
 .logic-grid textarea{width:100%;min-height:4.5rem;font-family:Consolas,monospace;font-size:.78rem;padding:.45rem;border:1px solid var(--border);border-radius:6px;resize:vertical;}
+.prefix-pick-row{display:flex;gap:.5rem;align-items:stretch;}
+.prefix-pick-row textarea{flex:1;min-width:0;min-height:4.5rem;}
+.prefix-pick-btn{flex:0 0 auto;align-self:flex-end;padding:.48rem .75rem;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
 a{color:var(--accent);}
 </style>
@@ -72,23 +75,13 @@ a{color:var(--accent);}
 <h2>Калькулятор</h2>
 <div class="calc-card" id="finresp-calc">
 
-<p class="extra-section" style="margin-top:0">Акции (фьючерсы) по тикерам</p>
-<div class="logic-grid">
-<div><label for="prefix-stocks">Тикеры акций (через запятую; точное совпадение)</label>
-<textarea id="prefix-stocks" rows="3"></textarea></div>
-<div><label for="prefix-futures">Префиксы корня фьючерсов (через запятую)</label>
-<textarea id="prefix-futures" rows="3"></textarea></div>
-</div>
-<button class="calc-btn calc-btn-secondary" type="button" id="prefix-apply" style="margin:.35rem 0 .75rem">Применить тикеры</button>
-<p class="note" style="margin-top:0">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Применить тикеры» обновляет список ниже, не трогая выделение где возможно.</p>
-
 <div class="calc-field calc-field-wide">
 <div class="calc-sec-label-row">
 <label for="calc-sec">Акции (фьючерсы) — выбор (Ctrl+клик)</label>
 <label class="calc-sec-select-all"><input id="calc-sec-all" type="checkbox"> Выбрать все</label>
 </div>
 <select id="calc-sec" multiple size="8" disabled><option>загрузка списка…</option></select>
-<p class="calc-sec-hint" id="calc-sec-hint">Загрузка списков с MOEX ISS…</p>
+<p class="calc-sec-hint" id="calc-sec-hint">Загрузка акций с MOEX ISS…</p>
 <div class="calc-pick-row">
 <button class="calc-btn calc-btn-secondary" type="button" id="pick-shares" disabled>Выделить акции</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="pick-futures" disabled>Выделить фьючерсы</button>
@@ -126,6 +119,21 @@ a{color:var(--accent);}
 
 <details class="logic-editor" id="extra-params">
 <summary>Дополнительные параметры и логики</summary>
+
+<p class="extra-section">MOEX — тикеры акций и префиксы фьючерсов</p>
+<div class="logic-grid">
+<div><label for="prefix-stocks">Тикеры акций (через запятую; точное совпадение)</label>
+<div class="prefix-pick-row">
+<textarea id="prefix-stocks" rows="3"></textarea>
+<button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-stocks">Подобрать</button>
+</div></div>
+<div><label for="prefix-futures">Префиксы корня фьючерсов (через запятую)</label>
+<div class="prefix-pick-row">
+<textarea id="prefix-futures" rows="3"></textarea>
+<button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-futures">Подобрать</button>
+</div></div>
+</div>
+<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать» перечитывает список выбора (акции или фьючерсы отдельно).</p>
 
 <p class="extra-section">Объём сделки (как в роботе)</p>
 <div class="calc-grid">
@@ -481,8 +489,15 @@ a{color:var(--accent);}
     $("calc-run").disabled = busy || isOptimizing();
     $("pick-shares").disabled = busy || isOptimizing() || !state.shareList.length;
     $("pick-futures").disabled = busy || isOptimizing() || !state.futuresList.length;
+    $("prefix-pick-stocks").disabled = busy || isOptimizing();
+    $("prefix-pick-futures").disabled = busy || isOptimizing();
     $("calc-sec-all").disabled = busy || isOptimizing() || (!$("calc-sec").options.length);
     if (!busy && !isOptimizing()) syncOptimButtons();
+  }
+
+  function updateSecHint() {
+    $("calc-sec-hint").textContent =
+      `${state.shareList.length} акций · ${state.futuresList.length} фьючерсов в списке`;
   }
 
   function fillSecSelect() {
@@ -512,25 +527,26 @@ a{color:var(--accent);}
     $("prefix-futures").value = E.DEFAULT_FUTURES_PREFIXES_RAW;
   }
 
-  async function reloadInstrumentLists() {
-    const [shares, futures] = await Promise.all([
-      E.fetchShareList($("prefix-stocks").value),
-      E.fetchFuturesList($("prefix-futures").value)
-    ]);
-    state.shareList = shares;
-    state.futuresList = futures;
+  async function reloadShareList() {
+    state.shareList = await E.fetchShareList($("prefix-stocks").value);
     fillSecSelect();
-    $("calc-sec-hint").textContent =
-      `${state.shareList.length} акций · ${state.futuresList.length} фьючерсов в списке`;
-    $("pick-shares").disabled = !state.shareList.length;
-    $("pick-futures").disabled = !state.futuresList.length;
+    updateSecHint();
+    if (!isOptimizing()) $("pick-shares").disabled = !state.shareList.length;
+  }
+
+  async function reloadFuturesList() {
+    state.futuresList = await E.fetchFuturesList($("prefix-futures").value);
+    fillSecSelect();
+    updateSecHint();
+    if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
   }
 
   async function initInstrumentLists() {
+    state.futuresList = [];
     try {
-      await reloadInstrumentLists();
+      await reloadShareList();
     } catch (err) {
-      $("calc-sec-hint").textContent = `Не удалось загрузить списки: ${err.message}`;
+      $("calc-sec-hint").textContent = `Не удалось загрузить акции: ${err.message}`;
     }
   }
 
@@ -906,7 +922,7 @@ ${markers}
 
   async function pickShares() {
     if (!state.shareList.length) {
-      $("calc-status").textContent = "В списке нет акций — проверьте тикеры и нажмите «Применить тикеры».";
+      $("calc-status").textContent = "В списке нет акций — проверьте тикеры и нажмите «Подобрать».";
       return;
     }
     selectByMarket("shares");
@@ -919,7 +935,7 @@ ${markers}
 
   async function pickFutures() {
     if (!state.futuresList.length) {
-      $("calc-status").textContent = "В списке нет фьючерсов — проверьте префиксы и нажмите «Применить тикеры».";
+      $("calc-status").textContent = "В списке нет фьючерсов — проверьте префиксы и нажмите «Подобрать».";
       return;
     }
     selectByMarket("futures");
@@ -943,15 +959,32 @@ ${markers}
   $("opt-tp").addEventListener("click", () => toggleOptim("tp"));
   $("calc-sec-all").addEventListener("change", () => setSelectAll($("calc-sec-all").checked));
   $("calc-sec").addEventListener("change", syncSelectAllCheckbox);
-  $("prefix-apply").addEventListener("click", async () => {
+  $("prefix-pick-stocks").addEventListener("click", async () => {
     setBusy(true);
-    $("calc-status").textContent = "Обновление списков акций и фьючерсов…";
+    $("calc-status").textContent = "Подбор акций по тикерам…";
     try {
-      await reloadInstrumentLists();
+      await reloadShareList();
+      $("calc-status").textContent = state.packs.length
+        ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
+        : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
       if (state.packs.length) render();
-      else $("calc-status").textContent = "Списки обновлены. Выберите инструменты и нажмите «Рассчитать».";
     } catch (err) {
-      $("calc-status").textContent = `Ошибка тикеров: ${err.message}`;
+      $("calc-status").textContent = `Ошибка подбора акций: ${err.message}`;
+    } finally {
+      setBusy(false);
+    }
+  });
+  $("prefix-pick-futures").addEventListener("click", async () => {
+    setBusy(true);
+    $("calc-status").textContent = "Подбор фьючерсов по префиксам…";
+    try {
+      await reloadFuturesList();
+      $("calc-status").textContent = state.packs.length
+        ? `Список фьючерсов обновлён (${state.futuresList.length}). FINRESP пересчитан по текущему окну.`
+        : `Список фьючерсов обновлён (${state.futuresList.length}). Выберите инструменты и нажмите «Рассчитать».`;
+      if (state.packs.length) render();
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка подбора фьючерсов: ${err.message}`;
     } finally {
       setBusy(false);
     }
