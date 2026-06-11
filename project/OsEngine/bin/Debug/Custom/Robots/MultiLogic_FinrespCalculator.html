@@ -109,7 +109,6 @@ a{color:var(--accent);}
 <div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
 <div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
 <div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
-<div class="calc-metric"><b>Stopper</b><span id="calc-stopper">—</span></div>
 <div class="calc-metric" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
 </div>
 <div class="range-grid">
@@ -332,18 +331,6 @@ a{color:var(--accent);}
       atrLen,
       refEquity: Math.max(0, +$("stopper-ref").value || 0)
     };
-  }
-
-  function formatStopperSummary(stopper) {
-    if (!stopper?.events?.length) {
-      const cfg = stopperConfig();
-      if (!cfg.useSl && !cfg.useTp) return "выкл.";
-      return "нет срабатываний";
-    }
-    return stopper.events.map((e) => {
-      const label = e.kind === "tp" ? "TP" : "SL";
-      return `${label} @ ${e.time}`;
-    }).join(" · ");
   }
 
   function syncVolumeFields() {
@@ -696,7 +683,11 @@ a{color:var(--accent);}
   }
 
   function refPack() {
-    return state.packs[0] || [];
+    if (!state.packs.length) return [];
+    return state.packs.reduce(
+      (best, p) => ((p?.length || 0) > (best?.length || 0) ? p : best),
+      state.packs[0]
+    );
   }
 
   function findIndexByTime(pack, timeStr) {
@@ -706,6 +697,7 @@ a{color:var(--accent);}
     let best = 0;
     let bestDiff = Infinity;
     for (let i = 0; i < pack.length; i++) {
+      if (!pack[i]?.time) continue;
       const diff = Math.abs(new Date(String(pack[i].time).replace(" ", "T")).getTime() - target);
       if (diff < bestDiff) {
         bestDiff = diff;
@@ -821,7 +813,8 @@ a{color:var(--accent);}
     const plotW = w - left - right;
     const plotH = h - top - bottom;
     const priceKeys = ["close", "sma", "linregUp", "linregDn", "linregMid"];
-    const vals = rows.flatMap((r) => priceKeys.map((k) => r[k]).filter((v) => v != null));
+    const vals = rows.flatMap((r) => priceKeys.map((k) => r?.[k]).filter((v) => v != null));
+    if (!vals.length) return "";
     const min = Math.min(...vals), max = Math.max(...vals);
     const pad = Math.max((max - min) * 0.06, 0.01);
     const lo = min - pad, hi = max + pad;
@@ -844,7 +837,7 @@ a{color:var(--accent);}
     const yLabels = yTicks.map((v) =>
       `<text x="${left - 8}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#64748b" font-family="Consolas,monospace">${axisPrice(v)}</text>`).join("");
     const xLabels = xTickIdx.map((i) =>
-      `<text x="${x(i).toFixed(1)}" y="${h - 10}" text-anchor="middle" font-size="9" fill="#64748b" font-family="Consolas,monospace">${axisTime(rows[i].time)}</text>`).join("");
+      `<text x="${x(i).toFixed(1)}" y="${h - 10}" text-anchor="middle" font-size="9" fill="#64748b" font-family="Consolas,monospace">${axisTime(rows[i]?.time)}</text>`).join("");
     const indLines = [
       rows[0]?.sma != null ? `<polyline fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="5 4" opacity=".85" points="${line("sma")}"/>` : "",
       rows[0]?.linregMid != null ? `<polyline fill="none" stroke="#7c3aed" stroke-width="1" opacity=".7" points="${line("linregMid")}"/>` : "",
@@ -852,6 +845,7 @@ a{color:var(--accent);}
       rows[0]?.linregDn != null ? `<polyline fill="none" stroke="#a78bfa" stroke-width=".9" stroke-dasharray="3 3" opacity=".65" points="${line("linregDn")}"/>` : ""
     ].join("");
     const markers = rows.map((r, i) => {
+      if (!r || r.close == null) return "";
       const parts = [];
       if (r.buy > 0) parts.push(`<circle cx="${x(i).toFixed(1)}" cy="${y(r.close).toFixed(1)}" r="3.2" fill="#16a34a" stroke="#fff" stroke-width=".8"/>`);
       if (r.sell > 0) parts.push(`<circle cx="${x(i).toFixed(1)}" cy="${y(r.close).toFixed(1)}" r="3.2" fill="#dc2626" stroke="#fff" stroke-width=".8"/>`);
@@ -898,13 +892,12 @@ ${markers}
   function applyResult(result, options) {
     const opts = options || {};
     const { perSec, agg, stopper, a, b } = result;
-    const winLen = perSec[0]?.rows?.length ?? 0;
+    const winLen = perSec.reduce((m, p) => Math.max(m, p.rows?.length ?? 0), 0);
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
     $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
-    $("calc-stopper").textContent = formatStopperSummary(stopper);
     $("calc-bysec").textContent = formatBySec(agg.bySec) || "—";
     const c0 = refPack()[a]?.time || "—";
     const c1 = refPack()[b]?.time || "—";

@@ -544,11 +544,17 @@
   }
 
   function pushRow(rows, candle, fields) {
+    if (!candle) return;
     rows.push({
       time: candle.time,
       close: candle.close,
       ...fields
     });
+  }
+
+  function longestPack(packs) {
+    if (!packs?.length) return [];
+    return packs.reduce((best, p) => ((p?.length || 0) > (best?.length || 0) ? p : best), packs[0]);
   }
 
   function collectChartIndicators(cache, parsed, idx) {
@@ -663,8 +669,12 @@
     let sells = 0;
     const rows = [];
     const capAt = (price) => maxAbsPosition(price, volConfig);
+    const from = Math.max(0, startIdx);
+    const to = Math.min(endIdx, candles.length - 1);
 
-    for (let i = startIdx; i <= endIdx; i++) {
+    for (let i = from; i <= to; i++) {
+      const candle = candles[i];
+      if (!candle) continue;
       const price = closes[i];
       const s = sma[i];
       let buy = 0;
@@ -688,14 +698,14 @@
         sells += sell;
       }
       rows.push({
-        time: candles[i].time,
+        time: candle.time,
         close: price,
         sma: s,
         buy,
         sell,
         cash,
         pos,
-        eq: cash + pos * price
+        eq: cash + pos * (price || 0)
       });
     }
     const last = rows.at(-1);
@@ -739,6 +749,7 @@
     if (!rows?.length || !time) return -1;
     let idx = -1;
     for (let i = 0; i < rows.length; i++) {
+      if (!rows[i]?.time) continue;
       if (rows[i].time <= time) idx = i;
       else break;
     }
@@ -754,7 +765,10 @@
     if (!history?.length || index < length) return null;
     let sum = 0;
     for (let i = index - length + 1; i <= index; i++) {
-      sum += Math.abs(history[i].equity - history[i - 1].equity);
+      const cur = history[i];
+      const prev = history[i - 1];
+      if (!cur || !prev) return null;
+      sum += Math.abs(cur.equity - prev.equity);
     }
     return sum / length;
   }
@@ -785,8 +799,9 @@
     if (rowIdx < 0) return;
     const triggerRow = flattenRowAtIdx(perSecItem, rowIdx);
     const head = perSecItem.rows.slice(0, rowIdx);
+    const localEnd = Math.max(0, Math.min(endIdx, candles.length - 1));
     const candleIdx = findCandleIndexByTime(candles, triggerTime);
-    if (candleIdx < 0 || candleIdx >= endIdx) {
+    if (candleIdx < 0 || candleIdx >= localEnd) {
       perSecItem.rows = [...head, triggerRow];
       recomputePerSecTotals(perSecItem);
       return;
@@ -796,7 +811,7 @@
       candles,
       spec,
       candleIdx + 1,
-      endIdx,
+      localEnd,
       params,
       volConfig,
       { initial, skipWarmup: true }
@@ -812,10 +827,11 @@
       return { perSec, stopper: { events } };
     }
 
-    const refCandles = packs[0];
+    const refCandles = longestPack(packs);
     const times = [];
     for (let i = startIdx; i <= endIdx && i < refCandles.length; i++) {
-      times.push(refCandles[i].time);
+      const t = refCandles[i]?.time;
+      if (t) times.push(t);
     }
     if (!times.length) return { perSec, stopper: { events } };
 
@@ -1032,8 +1048,9 @@
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
-      const a = Math.max(0, Math.min(startIdx, (packs[0]?.length || 1) - 1));
-      const b = Math.max(a, Math.min(endIdx, (packs[0]?.length || 1) - 1));
+      const refLen = longestPack(packs).length || 1;
+      const a = Math.max(0, Math.min(startIdx, refLen - 1));
+      const b = Math.max(a, Math.min(endIdx, refLen - 1));
       const applied = applyPortfolioStopper(perSec, packs, spec, a, b, params, volConfig, cfg);
       stopper = applied.stopper;
     }
