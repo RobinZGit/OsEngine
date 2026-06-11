@@ -95,6 +95,8 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .prefix-pick-row{display:flex;gap:.5rem;align-items:stretch;}
 .prefix-pick-row textarea{flex:1;min-width:0;min-height:4.5rem;}
 .prefix-pick-btn{flex:0 0 auto;align-self:flex-end;padding:.48rem .75rem;}
+.cache-btn-row{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.35rem;}
+.cache-row{margin:.75rem 0 0;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
 a{color:var(--accent);}
 </style>
@@ -134,6 +136,17 @@ a{color:var(--accent);}
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
+</div>
+<div class="calc-field calc-field-wide cache-row">
+<label>Кэш свечей MOEX (браузер)</label>
+<div class="cache-btn-row">
+<button class="calc-btn calc-btn-secondary" type="button" id="cache-save-file">Сохранить в файл</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="cache-load-file">Загрузить из файла</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="cache-clear">Очистить кэш</button>
+</div>
+<p class="calc-sec-hint" id="cache-hint">Кэш пуст</p>
+<input type="file" id="cache-file-input" accept=".json,application/json" hidden>
+<p class="note">При «Рассчитать» берутся свечи из кэша, если хватает периода и ТФ; иначе — MOEX, затем дополнение кэша. Файл — резервная копия localStorage.</p>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
@@ -909,6 +922,41 @@ a{color:var(--accent);}
     readLogicEditor();
   }
 
+  function updateCacheHint(extra) {
+    const el = $("cache-hint");
+    if (!el || !state.candleCache) return;
+    const s = state.candleCache.stats();
+    el.textContent = s.entries
+      ? `Кэш: ${s.entries} инстр., ${s.bars.toLocaleString("ru-RU")} свечей${extra ? ` · ${extra}` : ""}`
+      : `Кэш пуст${extra ? ` · ${extra}` : ""}`;
+  }
+
+  function saveCacheToFile() {
+    if (!state.candleCache) return;
+    const s = state.candleCache.stats();
+    if (!s.entries) {
+      $("calc-status").textContent = "Кэш пуст — нечего сохранять.";
+      return;
+    }
+    const blob = new Blob([state.candleCache.exportJson()], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `multilogic_candles_${formatDay(todayDate())}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    $("calc-status").textContent = `Кэш сохранён в файл (${s.entries} инстр., ${s.bars} свечей).`;
+  }
+
+  function initCandleCache() {
+    state.candleCache = E.createCandleCache({
+      onStorageError: () => {
+        $("calc-status").textContent = "Кэш: не удалось записать в localStorage (лимит?). Сохраните в файл и очистите кэш.";
+      }
+    });
+    state.candleCache.load();
+    updateCacheHint();
+  }
+
   function initDates() {
     initDateInputs();
     const { min, max } = dateBounds();
@@ -1458,9 +1506,9 @@ ${totalBlock}
     const loadGroup = async (secs, market, label) => {
       if (!secs.length) return;
       const conc = secs.length > 12 ? 6 : 1;
-      const r = await E.loadManyDetailed(secs, from, till, interval, market, conc, (done, total, sec) => {
-        if (onProgress) onProgress(done, total, sec, label);
-      });
+      const r = await E.loadManyDetailed(secs, from, till, interval, market, conc, (done, total, sec, meta) => {
+        if (onProgress) onProgress(done, total, sec, label, meta);
+      }, state.candleCache);
       packs.push(...r.packs);
       failures.push(...r.failures);
     };
@@ -1490,12 +1538,14 @@ ${totalBlock}
       ? `Период сужен до ${maxD} дн. (${TF_LIMITS[interval]?.label || interval}, ${instruments.length} инстр.). Загрузка ${label}…`
       : `Загрузка ${label}…`;
     try {
-      let loaded = 0;
-      const total = instruments.length;
-      const loadedData = await loadInstrumentPacks(instruments, from, till, interval, (done, groupTotal, sec, groupLabel) => {
-        loaded += 1;
-        $("calc-status").textContent = `Загрузка ${loaded}/${total} (${groupLabel}): ${sec}`;
+      let cacheHits = 0;
+      const loadedData = await loadInstrumentPacks(instruments, from, till, interval, (done, groupTotal, sec, groupLabel, meta) => {
+        if (meta?.fromCache) cacheHits += 1;
+        $("calc-status").textContent = meta?.fromCache
+          ? `Загрузка ${done}/${instruments.length} (${groupLabel}, кэш): ${sec}`
+          : `Загрузка ${done}/${instruments.length} (${groupLabel}): ${sec}`;
       });
+      updateCacheHint(cacheHits ? `MOEX: ${loadedData.packs.length - cacheHits}, кэш: ${cacheHits}` : "");
       state.packs = loadedData.packs;
       state.failedInstruments = loadedData.failures;
       state.windowSkipped = [];
@@ -1542,7 +1592,32 @@ ${totalBlock}
   syncVolumeFields();
   initInstrumentLists();
   initDates();
+  initCandleCache();
   $("calc-run").addEventListener("click", run);
+  $("cache-save-file").addEventListener("click", saveCacheToFile);
+  $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
+  $("cache-file-input").addEventListener("change", async (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file || !state.candleCache) return;
+    try {
+      const text = await file.text();
+      state.candleCache.importJson(text, true);
+      updateCacheHint("загружено из файла");
+      const s = state.candleCache.stats();
+      $("calc-status").textContent = `Кэш загружен из файла: ${s.entries} инстр., ${s.bars} свечей.`;
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка загрузки кэша: ${err.message}`;
+    } finally {
+      ev.target.value = "";
+    }
+  });
+  $("cache-clear").addEventListener("click", () => {
+    if (!state.candleCache) return;
+    if (!window.confirm("Очистить кэш свечей в браузере?")) return;
+    state.candleCache.clear();
+    updateCacheHint("очищен");
+    $("calc-status").textContent = "Кэш свечей очищен.";
+  });
   OPT_BUTTONS.forEach(({ btnId, kind }) => {
     $(btnId).addEventListener("click", () => toggleOptim(kind));
   });

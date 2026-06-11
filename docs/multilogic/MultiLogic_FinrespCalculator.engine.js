@@ -1203,7 +1203,166 @@
       }));
   }
 
-  async function loadInstrumentSec(sec, from, till, interval, market) {
+  const CANDLE_CACHE_VERSION = 1;
+  const CANDLE_CACHE_LS_KEY = "MultiLogicFinrespCandleCache";
+
+  function cacheNormDay(value) {
+    if (!value) return "";
+    return String(value).slice(0, 10);
+  }
+
+  function mergeCandleSeries(existing, incoming) {
+    const map = new Map();
+    for (const c of existing || []) {
+      if (c?.time) map.set(c.time, c);
+    }
+    for (const c of incoming || []) {
+      if (c?.time) map.set(c.time, { ...c });
+    }
+    return [...map.values()].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  }
+
+  function createCandleCache(options) {
+    const storageKey = options?.storageKey || CANDLE_CACHE_LS_KEY;
+    let entries = {};
+
+    function loadStorage() {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data?.version === CANDLE_CACHE_VERSION && data.entries) entries = data.entries;
+      } catch (_) {
+        entries = {};
+      }
+    }
+
+    function saveStorage() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({
+          version: CANDLE_CACHE_VERSION,
+          entries,
+          savedAt: new Date().toISOString()
+        }));
+      } catch (err) {
+        if (options?.onStorageError) options.onStorageError(err);
+      }
+    }
+
+    function entryKey(market, sec, interval) {
+      return `${market}:${String(sec || "").trim().toUpperCase()}:${String(interval)}`;
+    }
+
+    function entryCoverage(entry) {
+      if (!entry?.candles?.length) return null;
+      return {
+        from: cacheNormDay(entry.candles[0].time),
+        till: cacheNormDay(entry.candles.at(-1).time)
+      };
+    }
+
+    function entryCovers(entry, from, till) {
+      const cov = entryCoverage(entry);
+      if (!cov) return false;
+      return cov.from <= cacheNormDay(from) && cov.till >= cacheNormDay(till);
+    }
+
+    function filterCandlesByRange(candles, from, till) {
+      const f = cacheNormDay(from);
+      const t = cacheNormDay(till);
+      return candles.filter((c) => {
+        const d = cacheNormDay(c.time);
+        return d >= f && d <= t;
+      });
+    }
+
+    function clonePack(candles, requestedSec, market) {
+      return candles.map((c) => ({ ...c, sec: requestedSec, market }));
+    }
+
+    return {
+      load() {
+        loadStorage();
+      },
+      get(requestedSec, market, interval, from, till, altSec) {
+        const keys = [entryKey(market, requestedSec, interval)];
+        if (altSec) keys.push(entryKey(market, altSec, interval));
+        for (const key of keys) {
+          const entry = entries[key];
+          if (!entry || String(entry.interval) !== String(interval)) continue;
+          if (!entryCovers(entry, from, till)) continue;
+          const filtered = filterCandlesByRange(entry.candles, from, till);
+          if (!filtered.length) continue;
+          return clonePack(filtered, requestedSec, market);
+        }
+        return null;
+      },
+      put(requestedSec, market, interval, moexSec, candles) {
+        if (!candles?.length) return;
+        const key = entryKey(market, requestedSec, interval);
+        const normalized = candles.map((c) => ({
+          ...c,
+          sec: moexSec || requestedSec,
+          market
+        }));
+        const merged = mergeCandleSeries(entries[key]?.candles, normalized);
+        entries[key] = {
+          requestedSec,
+          moexSec: moexSec || requestedSec,
+          market,
+          interval: String(interval),
+          candles: merged,
+          updatedAt: new Date().toISOString()
+        };
+        saveStorage();
+      },
+      clear() {
+        entries = {};
+        try {
+          localStorage.removeItem(storageKey);
+        } catch (_) { /* ignore */ }
+      },
+      exportJson() {
+        return JSON.stringify({
+          version: CANDLE_CACHE_VERSION,
+          entries,
+          exportedAt: new Date().toISOString()
+        });
+      },
+      importJson(jsonStr, merge = true) {
+        const data = typeof jsonStr === "string" ? JSON.parse(jsonStr) : jsonStr;
+        if (data?.version !== CANDLE_CACHE_VERSION || !data.entries) {
+          throw new Error("Неверный формат файла кэша");
+        }
+        if (!merge) entries = {};
+        for (const [key, entry] of Object.entries(data.entries)) {
+          if (!entry?.candles?.length) continue;
+          if (merge && entries[key]?.candles?.length) {
+            entries[key] = {
+              ...entries[key],
+              ...entry,
+              candles: mergeCandleSeries(entries[key].candles, entry.candles)
+            };
+          } else {
+            entries[key] = entry;
+          }
+        }
+        saveStorage();
+        return Object.keys(entries).length;
+      },
+      stats() {
+        let entriesCount = 0;
+        let bars = 0;
+        for (const entry of Object.values(entries)) {
+          entriesCount += 1;
+          bars += entry.candles?.length || 0;
+        }
+        return { entries: entriesCount, bars };
+      }
+    };
+  }
+
+  async function loadInstrumentSec(sec, from, till, interval, market, cache) {
     const requestedSec = sec;
     try {
       let moexSec = sec;
@@ -1213,17 +1372,24 @@
           return { ok: false, error: "нет активного контракта MOEX для префикса", requestedSec };
         }
       }
+      if (cache) {
+        const cached = cache.get(requestedSec, market, interval, from, till, moexSec);
+        if (cached?.length) {
+          return { ok: true, pack: cached, requestedSec, fromCache: true };
+        }
+      }
       const candles = await loadMoexCandles(moexSec, from, till, interval, market);
       if (!candles.length) {
         return { ok: false, error: "нет свечей MOEX за выбранный период", requestedSec };
       }
-      return { ok: true, pack: candles, requestedSec };
+      if (cache) cache.put(requestedSec, market, interval, moexSec, candles);
+      return { ok: true, pack: candles, requestedSec, fromCache: false };
     } catch (err) {
       return { ok: false, error: err?.message || String(err), requestedSec };
     }
   }
 
-  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress) {
+  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress, cache) {
     const packs = [];
     const failures = [];
     const queue = [...secs];
@@ -1233,11 +1399,11 @@
       async () => {
         while (queue.length) {
           const sec = queue.shift();
-          const r = await loadInstrumentSec(sec, from, till, interval, market);
+          const r = await loadInstrumentSec(sec, from, till, interval, market, cache);
           if (r.ok) packs.push(r.pack);
           else failures.push({ sec: r.requestedSec || sec, market, error: r.error });
           done += 1;
-          if (onProgress) onProgress(done, secs.length, sec);
+          if (onProgress) onProgress(done, secs.length, sec, { fromCache: !!r.fromCache });
         }
       }
     );
@@ -1363,6 +1529,8 @@
     expandFuturesSelection,
     futuresMatchesCalcPeriod,
     isFullFuturesSecid,
+    createCandleCache,
+    CANDLE_CACHE_VERSION,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);
