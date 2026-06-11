@@ -606,16 +606,27 @@
       let buy = 0;
       let sell = 0;
 
+      let posStop = null;
       if (pos !== 0 && (parsed.slAtr > 0 || parsed.tpAtr > 0)) {
         const a = atrSlTp[i];
         if (a != null && a > 0 && entryPrice != null) {
           let hit = false;
           if (pos > 0) {
-            if (parsed.slAtr > 0 && price <= entryPrice - parsed.slAtr * a) hit = true;
-            else if (parsed.tpAtr > 0 && price >= entryPrice + parsed.tpAtr * a) hit = true;
+            if (parsed.slAtr > 0 && price <= entryPrice - parsed.slAtr * a) {
+              hit = true;
+              posStop = "sl";
+            } else if (parsed.tpAtr > 0 && price >= entryPrice + parsed.tpAtr * a) {
+              hit = true;
+              posStop = "tp";
+            }
           } else {
-            if (parsed.slAtr > 0 && price >= entryPrice + parsed.slAtr * a) hit = true;
-            else if (parsed.tpAtr > 0 && price <= entryPrice - parsed.tpAtr * a) hit = true;
+            if (parsed.slAtr > 0 && price >= entryPrice + parsed.slAtr * a) {
+              hit = true;
+              posStop = "sl";
+            } else if (parsed.tpAtr > 0 && price <= entryPrice - parsed.tpAtr * a) {
+              hit = true;
+              posStop = "tp";
+            }
           }
           if (hit) sell += flatten(price);
         }
@@ -641,6 +652,7 @@
         ...ind,
         buy,
         sell,
+        posStop,
         pos,
         cash,
         eq: cash + pos * price
