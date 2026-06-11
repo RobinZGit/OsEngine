@@ -98,6 +98,16 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .cache-btn-row{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.35rem;}
 .cache-row{margin:.75rem 0 0;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
+.tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
+.tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
+.tech-info-head::-webkit-details-marker{display:none;}
+.tech-info-title{font-size:.88rem;font-weight:600;color:#374151;}
+.tech-info-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .35rem;}
+.tech-info-pre{
+  margin:0;padding:.55rem .65rem;max-height:14rem;overflow:auto;
+  font-family:Consolas,monospace;font-size:.72rem;line-height:1.45;
+  background:#fff;border:1px solid var(--border);border-radius:6px;white-space:pre-wrap;word-break:break-word;
+}
 a{color:var(--accent);}
 </style>
 </head>
@@ -155,6 +165,7 @@ a{color:var(--accent);}
 <div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
 </div>
 <p class="calc-sec-hint" id="calc-ann-hint"></p>
+<p class="calc-sec-hint" style="margin:.35rem 0 .15rem">Строка статуса — серый текст ниже FINRESP и % годовых (сообщения о загрузке MOEX, ошибках, окне расчёта):</p>
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
 <div class="calc-result-secondary">
 <div class="calc-metric-secondary"><b>Свечей в окне</b><span id="calc-count">—</span></div>
@@ -261,6 +272,16 @@ a{color:var(--accent);}
 
 <div class="chart-card" id="calc-chart"></div>
 <div class="chart-card" id="calc-chart-equity"></div>
+
+<details class="tech-info-card" id="tech-info-panel" open>
+<summary class="tech-info-head"><span class="tech-info-title">Тех. информация — скопируйте и пришлите при сбое</span></summary>
+<div class="tech-info-actions">
+<button class="calc-btn calc-btn-secondary" type="button" id="tech-info-copy">Копировать</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="tech-info-refresh">Обновить</button>
+</div>
+<pre class="tech-info-pre" id="tech-info-text">загрузка…</pre>
+<p class="note">Обновляется при старте, выборе бумаг и «Рассчитать». Кнопка «Копировать» — весь блок одним текстом.</p>
+</details>
 </div>
 </main>
 </div>
@@ -268,17 +289,122 @@ a{color:var(--accent);}
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const E = window.MultiLogicFinrespEngine;
+  const CALC_PAGE_VERSION = "2026-06-08-tech";
   const $ = (id) => document.getElementById(id);
+  const techLog = {
+    startedAt: new Date().toISOString(),
+    errors: [],
+    lastEvent: "boot"
+  };
+
+  function noteTechError(msg) {
+    const line = `${new Date().toISOString()} ${msg}`;
+    techLog.errors.push(line);
+    if (techLog.errors.length > 16) techLog.errors.shift();
+    updateTechInfo();
+  }
+
+  function buildTechInfoText() {
+    const E = window.MultiLogicFinrespEngine;
+    const st = $("calc-status");
+    const sec = $("calc-sec");
+    const lines = [
+      `pageVersion=${CALC_PAGE_VERSION}`,
+      `startedAt=${techLog.startedAt}`,
+      `lastEvent=${techLog.lastEvent}`,
+      `url=${location.href}`,
+      `online=${navigator.onLine}`,
+      `engineLoaded=${!!E}`,
+      `createCandleCache=${!!E?.createCandleCache}`,
+      `cacheVersion=${E?.CANDLE_CACHE_VERSION ?? "—"}`
+    ];
+    if (calcState) {
+      const selected = typeof selectedInstruments === "function" ? selectedInstruments() : [];
+      const cacheStats = calcState.candleCache?.stats?.();
+      lines.push(
+        `initOk=${!!calcState._initOk}`,
+        `shareList=${calcState.shareList?.length ?? 0}`,
+        `futuresList=${calcState.futuresList?.length ?? 0}`,
+        `futuresFromMoex=${!!calcState.futuresFromMoex}`,
+        `selectOptions=${sec?.options?.length ?? 0}`,
+        `selected=${selected.length}`,
+        `selectedSample=${selected.slice(0, 8).map((i) => i.sec).join(",") || "—"}`,
+        `calcSecDisabled=${!!sec?.disabled}`,
+        `calcRunDisabled=${!!$("calc-run")?.disabled}`,
+        `allSharesCbDisabled=${!!$("calc-sec-all-shares")?.disabled}`,
+        `allFuturesCbDisabled=${!!$("calc-sec-all-futures")?.disabled}`,
+        `uiBusy=${!!calcState.uiBusy}`,
+        `optimizing=${typeof isOptimizing === "function" ? isOptimizing() : false}`,
+        `candleCache=${calcState.candleCache ? "on" : "off"}`,
+        `cacheEntries=${cacheStats?.entries ?? 0}`,
+        `cacheBars=${cacheStats?.bars ?? 0}`,
+        `packs=${calcState.packs?.length ?? 0}`,
+        `loadFailures=${calcState.failedInstruments?.length ?? 0}`,
+        `windowSkipped=${calcState.windowSkipped?.length ?? 0}`,
+        `period=${$("calc-from")?.value || "—"}…${$("calc-till")?.value || "—"}`,
+        `tf=${$("calc-tf")?.value || "—"}`,
+        `logic=${$("calc-logic")?.value || "—"}`,
+        `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
+        `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
+      );
+    }
+    lines.push(`statusLine=${st?.textContent || "—"}`);
+    lines.push(`userAgent=${navigator.userAgent}`);
+    if (techLog.errors.length) {
+      lines.push("errors:");
+      lines.push(...techLog.errors.map((e) => `  ${e}`));
+    }
+    return lines.join("\n");
+  }
+
+  function updateTechInfo(eventName) {
+    if (eventName) techLog.lastEvent = eventName;
+    const el = $("tech-info-text");
+    if (!el) return;
+    el.textContent = buildTechInfoText();
+  }
+
+  window.addEventListener("error", (ev) => {
+    noteTechError(`window.error: ${ev.message || ev.type} @ ${ev.filename || "?"}:${ev.lineno || "?"}`);
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    const msg = ev.reason?.message || String(ev.reason ?? "rejection");
+    noteTechError(`unhandledrejection: ${msg}`);
+  });
+  $("tech-info-copy")?.addEventListener("click", async () => {
+    const text = buildTechInfoText();
+    try {
+      await navigator.clipboard.writeText(text);
+      techLog.lastEvent = "tech-copied";
+      updateTechInfo();
+      const prev = $("calc-status")?.textContent;
+      if ($("calc-status")) {
+        $("calc-status").textContent = "Тех. информация скопирована в буфер обмена.";
+        setTimeout(() => {
+          if ($("calc-status") && prev) $("calc-status").textContent = prev;
+          updateTechInfo("tech-copy-done");
+        }, 1800);
+      }
+    } catch (err) {
+      noteTechError(`clipboard: ${err.message}`);
+    }
+  });
+  $("tech-info-refresh")?.addEventListener("click", () => updateTechInfo("tech-refresh"));
+
+  let calcState = null;
+  const E = window.MultiLogicFinrespEngine;
   if (!E) {
+    noteTechError("engine.js not loaded (MultiLogicFinrespEngine missing)");
     const st = $("calc-status");
     if (st) {
       st.textContent =
         "Ошибка: не загружен MultiLogic_FinrespCalculator.engine.js — положите файл рядом с HTML и обновите страницу (Ctrl+F5).";
     }
+    updateTechInfo("init-fail-no-engine");
     return;
   }
   const state = {
+    _initOk: false,
     packs: [],
     shareList: [],
     futuresList: [],
@@ -304,6 +430,7 @@ a{color:var(--accent);}
       runToken: 0
     }
   };
+  calcState = state;
   const OPT_BUTTONS = [
     { kind: "sl", btnId: "opt-sl", inputId: "param-sl", label: "@SL", position: true },
     { kind: "tp", btnId: "opt-tp", inputId: "param-tp", label: "@TP", position: true },
@@ -559,6 +686,7 @@ a{color:var(--accent);}
       enforceDateRange("till", 0);
       updateDateHint(n);
     }
+    updateTechInfo("selection-changed");
   }
 
   function isOptimizing() {
@@ -1608,6 +1736,7 @@ ${totalBlock}
       status += ` | Опт. ${opts.optimNote}: FINRESP ${fmt(agg.finresp)} ₽ | лучшее ${bestLabel} → ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
+    updateTechInfo("result-applied");
     if (opts.redrawCharts !== false) {
       drawCharts(perSec, stopper);
       drawEquityCharts(a, b);
@@ -1682,11 +1811,13 @@ ${totalBlock}
       render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
+      noteTechError(`runWithInstruments: ${err.message}`);
       $("calc-chart").innerHTML = "";
       $("calc-chart-equity").innerHTML = "";
       throw err;
     } finally {
       setBusy(false);
+      updateTechInfo("run-finished");
     }
   }
 
@@ -1823,6 +1954,8 @@ ${totalBlock}
   bindUiEvents();
   initCandleCache();
   applyUiLocks();
+  state._initOk = true;
+  updateTechInfo("init-ok");
 })();
 </script>
 </body>
