@@ -165,24 +165,34 @@ a{color:var(--accent);}
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-tp" data-opt="tp">Оптимизировать</button>
 </div></div>
 <div class="calc-field"><label for="param-atr-sl">Длина ATR для SL/TP</label>
-<input id="param-atr-sl" type="number" value="14" min="2" max="200" step="1"></div>
+<div class="calc-field-opt-row">
+<input id="param-atr-sl" type="number" value="14" min="2" max="200" step="1">
+<button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-atr-sl">Оптимизировать</button>
+</div></div>
 </div>
-<p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 — отключить соответствующий стоп. «Оптимизировать» перебирает все значения шагом 2&nbsp;%; параметр меняется только при улучшении FINRESP; по окончании перебора или «Остановить» остаётся наилучшее значение.</p>
+<p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без соответствующего стопа; длина ATR ≥ 2 — для расчёта. «Оптимизировать» перебирает шагом 2&nbsp;%, оставляет лучшее FINRESP.</p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
 <div class="calc-grid">
-<div class="calc-field"><label><input id="stopper-sl-on" type="checkbox"> Общепортфельный stop-loss</label></div>
 <div class="calc-field"><label for="stopper-sl-mult">SL кратность ATR</label>
-<input id="stopper-sl-mult" type="number" value="2" min="0" max="50" step="0.1"></div>
-<div class="calc-field"><label><input id="stopper-tp-on" type="checkbox"> Общепортфельный take-profit</label></div>
+<div class="calc-field-opt-row">
+<input id="stopper-sl-mult" type="number" value="2" min="0" max="50" step="0.1" title="0 — без stop-loss">
+<button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-stopper-sl">Оптимизировать</button>
+</div></div>
 <div class="calc-field"><label for="stopper-tp-mult">TP кратность ATR</label>
-<input id="stopper-tp-mult" type="number" value="3" min="0" max="50" step="0.1"></div>
+<div class="calc-field-opt-row">
+<input id="stopper-tp-mult" type="number" value="3" min="0" max="50" step="0.1" title="0 — без take-profit">
+<button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-stopper-tp">Оптимизировать</button>
+</div></div>
 <div class="calc-field"><label for="stopper-atr-len">Длина ATR портфеля для SL/TP</label>
-<input id="stopper-atr-len" type="number" value="14" min="2" max="500" step="1"></div>
+<div class="calc-field-opt-row">
+<input id="stopper-atr-len" type="number" value="14" min="2" max="500" step="1">
+<button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-stopper-atr">Оптимизировать</button>
+</div></div>
 <div class="calc-field"><label for="stopper-ref">Предыдущая сумма (база SL/TP), ₽</label>
 <input id="stopper-ref" type="number" value="0" min="0" step="1000" title="0 — авто: equity на первой свече окна"></div>
 </div>
-<p class="note">Equity = сумма FINRESP по инструментам. ATR<sub>порт</sub> = mean(|Δequity|) за N свечей (как MetaIndicatorEquityCalculator в роботе). SL: equity ≤ база − K×ATR; TP: equity ≥ база + K×ATR. При срабатывании — закрытие всех позиций, база обновляется (режим «Отключено» после триггера).</p>
+<p class="note">Equity = сумма FINRESP по инструментам. ATR<sub>порт</sub> = mean(|Δequity|) за N свечей. SL/TP портфеля действуют, если кратность &gt; 0; длина ATR ≥ 2. При срабатывании — закрытие всех позиций, база обновляется.</p>
 
 <p class="extra-section">Параметры строки логики</p>
 <div class="calc-grid">
@@ -192,7 +202,7 @@ a{color:var(--accent);}
 <p class="extra-section">Строки L1…L4</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
-<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl, SL/TP позиции и общепортфельный Stopper (если включён). Просадка от пика и EOD-flat не считаются.</p>
+<p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и все заполненные стопы (кратность &gt; 0, длина ATR ≥ 2). Просадка от пика и EOD-flat не считаются.</p>
 </details>
 
 <div class="chart-card" id="calc-chart"></div>
@@ -227,8 +237,12 @@ a{color:var(--accent);}
     }
   };
   const OPT_BUTTONS = [
-    { kind: "sl", btnId: "opt-sl", inputId: "param-sl" },
-    { kind: "tp", btnId: "opt-tp", inputId: "param-tp" }
+    { kind: "sl", btnId: "opt-sl", inputId: "param-sl", label: "@SL" },
+    { kind: "tp", btnId: "opt-tp", inputId: "param-tp", label: "@TP" },
+    { kind: "atr-sl", btnId: "opt-atr-sl", inputId: "param-atr-sl", label: "ATR SL/TP", integer: true },
+    { kind: "p-sl", btnId: "opt-stopper-sl", inputId: "stopper-sl-mult", label: "портф. SL" },
+    { kind: "p-tp", btnId: "opt-stopper-tp", inputId: "stopper-tp-mult", label: "портф. TP" },
+    { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true }
   ];
   const MAX_CHARTS = 8;
   const TF_LIMITS = {
@@ -280,11 +294,17 @@ a{color:var(--accent);}
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
   function params() {
+    const sl = Math.max(0, +$("param-sl").value);
+    const tp = Math.max(0, +$("param-tp").value);
+    const atrRaw = +$("param-atr-sl").value;
+    const atrLen = Number.isFinite(atrRaw) && atrRaw >= 2
+      ? Math.round(atrRaw)
+      : ((sl > 0 || tp > 0) ? E.DEFAULT_PARAMS.slTpAtrLen : 2);
     return {
       LR: +$("param-lr").value || E.DEFAULT_PARAMS.LR,
-      SL: Math.max(0, +$("param-sl").value),
-      TP: Math.max(0, +$("param-tp").value),
-      slTpAtrLen: Math.max(2, +$("param-atr-sl").value || E.DEFAULT_PARAMS.slTpAtrLen)
+      SL: sl,
+      TP: tp,
+      slTpAtrLen: atrLen
     };
   }
 
@@ -298,12 +318,18 @@ a{color:var(--accent);}
   }
 
   function stopperConfig() {
+    const slMult = Math.max(0, +$("stopper-sl-mult").value || 0);
+    const tpMult = Math.max(0, +$("stopper-tp-mult").value || 0);
+    const atrRaw = +$("stopper-atr-len").value;
+    const atrLen = Number.isFinite(atrRaw) && atrRaw >= 2
+      ? Math.round(atrRaw)
+      : E.DEFAULT_STOPPER.atrLen;
     return {
-      useSl: $("stopper-sl-on").checked,
-      useTp: $("stopper-tp-on").checked,
-      slMult: Math.max(0, +$("stopper-sl-mult").value || E.DEFAULT_STOPPER.slMult),
-      tpMult: Math.max(0, +$("stopper-tp-mult").value || E.DEFAULT_STOPPER.tpMult),
-      atrLen: Math.max(2, +$("stopper-atr-len").value || E.DEFAULT_STOPPER.atrLen),
+      useSl: slMult > 0,
+      useTp: tpMult > 0,
+      slMult,
+      tpMult,
+      atrLen,
       refEquity: Math.max(0, +$("stopper-ref").value || 0)
     };
   }
@@ -379,21 +405,33 @@ a{color:var(--accent);}
     return Math.max(ref * 0.02, 0.02);
   }
 
-  function enumerateOptimValues(min, max) {
+  function enumerateOptimValues(min, max, integer) {
     const vals = [];
     const seen = new Set();
     let v = min;
     while (v <= max + 1e-9) {
-      const r = roundParam(v);
+      const r = integer ? Math.round(v) : roundParam(v);
       if (!seen.has(r)) {
         seen.add(r);
         vals.push(r);
       }
       if (r >= max) break;
-      v = roundParam(r + optimStepSize(r, min, max));
+      const step = integer
+        ? Math.max(1, Math.round(Math.max(r, 1) * 0.02))
+        : optimStepSize(r, min, max);
+      v = integer ? r + step : roundParam(r + step);
       if (vals.length > 5000) break;
     }
     return vals;
+  }
+
+  function optimMeta(kind) {
+    return OPT_BUTTONS.find((x) => x.kind === kind);
+  }
+
+  function optimDisplayLabel(kind) {
+    const m = optimMeta(kind);
+    return m?.label || kind.toUpperCase();
   }
 
   function stopOptimLabel() {
@@ -411,8 +449,9 @@ a{color:var(--accent);}
       btn.textContent = on ? stopOptimLabel() : "Оптимизировать";
     }
     const lock = isOptimizing();
-    $("param-sl").readOnly = lock;
-    $("param-tp").readOnly = lock;
+    for (const { inputId } of OPT_BUTTONS) {
+      $(inputId).readOnly = lock;
+    }
   }
 
   function startOptimDots() {
@@ -433,14 +472,17 @@ a{color:var(--accent);}
 
   function applyOptimBestValue() {
     if (!state.optim.active) return;
-    const meta = OPT_BUTTONS.find((x) => x.kind === state.optim.active);
-    if (meta) $(meta.inputId).value = String(state.optim.bestValue);
+    const meta = optimMeta(state.optim.active);
+    if (!meta) return;
+    const v = meta.integer ? Math.round(state.optim.bestValue) : state.optim.bestValue;
+    $(meta.inputId).value = String(v);
+    state.optim.bestValue = v;
   }
 
   function finishOptim(token, autoDone) {
     if (token !== state.optim.runToken || !state.optim.active) return;
-    applyOptimBestValue();
     const kind = state.optim.active;
+    applyOptimBestValue();
     state.optim.active = null;
     state.optim.runToken += 1;
     stopOptimDots();
@@ -448,7 +490,7 @@ a{color:var(--accent);}
     render({ redrawCharts: true });
     if (autoDone) {
       $("calc-status").textContent =
-        `Оптимизация ${kind.toUpperCase()} завершена: лучшее значение ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
+        `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
     }
   }
 
@@ -472,7 +514,7 @@ a{color:var(--accent);}
   async function optimLoop(token) {
     if (token !== state.optim.runToken || !state.optim.active) return;
     const kind = state.optim.active;
-    const meta = OPT_BUTTONS.find((x) => x.kind === kind);
+    const meta = optimMeta(kind);
     const input = $(meta.inputId);
 
     if (state.optim.candidateIndex >= state.optim.candidates.length) {
@@ -490,7 +532,7 @@ a{color:var(--accent);}
     }
     input.value = String(state.optim.bestValue);
     const display = input.value === String(candidate) ? trial : calcResult();
-    if (display) applyResult(display, { redrawCharts: false, optimNote: kind.toUpperCase() });
+    if (display) applyResult(display, { redrawCharts: false, optimNote: optimDisplayLabel(kind) });
     await new Promise((r) => setTimeout(r, 40));
     optimLoop(token);
   }
@@ -505,13 +547,14 @@ a{color:var(--accent);}
       return;
     }
     if (state.optim.active) stopOptim();
-    const meta = OPT_BUTTONS.find((x) => x.kind === kind);
+    const meta = optimMeta(kind);
     const input = $(meta.inputId);
     const min = +input.min || 0;
     const max = +input.max || 50;
-    const startValue = roundParam(Math.max(+input.value || 0, min));
+    const rawStart = Math.max(+input.value || 0, min);
+    const startValue = meta.integer ? Math.round(rawStart) : roundParam(rawStart);
     state.optim.active = kind;
-    state.optim.candidates = enumerateOptimValues(min, max);
+    state.optim.candidates = enumerateOptimValues(min, max, !!meta.integer);
     state.optim.candidateIndex = 0;
     state.optim.bestValue = startValue;
     input.value = String(startValue);
@@ -879,7 +922,7 @@ ${markers}
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
     if (opts.optimNote) {
-      status += ` | Опт. ${opts.optimNote}=${state.optim.bestValue}, лучший FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
+      status += ` | Опт. ${opts.optimNote} = ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
     if (opts.redrawCharts !== false) drawCharts(perSec);
@@ -992,8 +1035,9 @@ ${markers}
   $("calc-run").addEventListener("click", run);
   $("pick-shares").addEventListener("click", pickShares);
   $("pick-futures").addEventListener("click", pickFutures);
-  $("opt-sl").addEventListener("click", () => toggleOptim("sl"));
-  $("opt-tp").addEventListener("click", () => toggleOptim("tp"));
+  OPT_BUTTONS.forEach(({ btnId, kind }) => {
+    $(btnId).addEventListener("click", () => toggleOptim(kind));
+  });
   $("calc-sec-all").addEventListener("change", () => setSelectAll($("calc-sec-all").checked));
   $("calc-sec").addEventListener("change", syncSelectAllCheckbox);
   $("prefix-pick-stocks").addEventListener("click", async () => {
@@ -1029,17 +1073,13 @@ ${markers}
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
-  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "param-atr-sl",
-    "stopper-sl-mult", "stopper-tp-mult", "stopper-atr-len", "stopper-ref"].forEach((id) => {
+  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", render);
     $(id).addEventListener("input", render);
   });
-  ["stopper-sl-on", "stopper-tp-on"].forEach((id) => {
-    $(id).addEventListener("change", render);
-  });
-  ["param-sl", "param-tp"].forEach((id) => {
-    $(id).addEventListener("change", () => { if (!isOptimizing()) render(); });
-    $(id).addEventListener("input", () => { if (!isOptimizing()) render(); });
+  OPT_BUTTONS.forEach(({ inputId }) => {
+    $(inputId).addEventListener("change", () => { if (!isOptimizing()) render(); });
+    $(inputId).addEventListener("input", () => { if (!isOptimizing()) render(); });
   });
   $("calc-tf").addEventListener("change", () => {
     enforceDateRange("till");
