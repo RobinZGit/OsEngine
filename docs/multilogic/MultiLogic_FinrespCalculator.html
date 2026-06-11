@@ -38,8 +38,31 @@ h2:first-child{margin-top:0;}
 .calc-field-wide{grid-column:1/-1;}
 .bysec-scroll{max-height:4.5rem;overflow-y:auto;line-height:1.35;}
 .calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
+.calc-result-hero{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.85rem 1rem;
+  margin:1rem 0 .65rem;padding:1.1rem 1.25rem;
+  border:2px solid var(--accent);border-radius:12px;
+  background:linear-gradient(165deg,#e8f0ff 0%,#fff 48%,#f8fbff 100%);
+  box-shadow:0 3px 14px rgba(37,99,235,.14);
+}
+@media (min-width:720px){.calc-result-hero{grid-template-columns:1.5fr 1fr 1fr;}}
+.calc-metric-primary{text-align:center;padding:.25rem .4rem;}
+.calc-metric-primary b{
+  display:block;font-size:1rem;font-weight:700;color:#1e3a5f;
+  margin-bottom:.45rem;letter-spacing:.01em;
+}
+.calc-metric-primary span{
+  font-family:Consolas,monospace;font-weight:800;font-size:1.75rem;line-height:1.15;
+}
+.calc-metric-finresp span{font-size:2.15rem;}
+.calc-result-secondary{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.45rem;margin:.5rem 0 .85rem;
+}
 .calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.5rem;margin:.85rem 0;}
 .calc-metric{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.55rem .7rem;}
+.calc-metric-secondary{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.45rem .6rem;}
+.calc-metric-secondary b{display:block;font-size:.78rem;color:var(--muted);font-weight:500;}
+.calc-metric-secondary span{font-family:Consolas,monospace;font-weight:600;font-size:.92rem;}
 .calc-metric b{display:block;font-size:.82rem;color:var(--muted);font-weight:500;}
 .calc-metric span{font-family:Consolas,monospace;font-weight:700;}
 .range-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin:.6rem 0;}
@@ -109,15 +132,17 @@ a{color:var(--accent);}
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
+<div class="calc-result-hero" aria-label="Итог FINRESP">
+<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric-primary"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
+<div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
+</div>
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
-<div class="calc-result">
-<div class="calc-metric"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
-<div class="calc-metric"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
-<div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
-<div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
-<div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
-<div class="calc-metric" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
+<div class="calc-result-secondary">
+<div class="calc-metric-secondary"><b>Свечей в окне</b><span id="calc-count">—</span></div>
+<div class="calc-metric-secondary"><b>Позиция z</b><span id="calc-pos">—</span></div>
+<div class="calc-metric-secondary"><b>Кэш C</b><span id="calc-cash">—</span></div>
+<div class="calc-metric-secondary" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
 </div>
 <div class="range-grid">
 <div><label for="calc-start">Левая граница</label><input id="calc-start" type="range" min="0" max="0" value="0" disabled><small id="calc-start-label">—</small></div>
