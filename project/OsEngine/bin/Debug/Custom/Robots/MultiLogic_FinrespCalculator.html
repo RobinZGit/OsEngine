@@ -248,9 +248,9 @@ a{color:var(--accent);}
     }
   };
   const OPT_BUTTONS = [
-    { kind: "sl", btnId: "opt-sl", inputId: "param-sl", label: "@SL" },
-    { kind: "tp", btnId: "opt-tp", inputId: "param-tp", label: "@TP" },
-    { kind: "atr-sl", btnId: "opt-atr-sl", inputId: "param-atr-sl", label: "ATR SL/TP", integer: true },
+    { kind: "sl", btnId: "opt-sl", inputId: "param-sl", label: "@SL", position: true },
+    { kind: "tp", btnId: "opt-tp", inputId: "param-tp", label: "@TP", position: true },
+    { kind: "atr-sl", btnId: "opt-atr-sl", inputId: "param-atr-sl", label: "ATR SL/TP", integer: true, position: true },
     { kind: "p-sl", btnId: "opt-stopper-sl", inputId: "stopper-sl-mult", label: "портф. SL" },
     { kind: "p-tp", btnId: "opt-stopper-tp", inputId: "stopper-tp-mult", label: "портф. TP" },
     { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true }
@@ -488,8 +488,9 @@ a{color:var(--accent);}
     syncOptimButtons();
     render({ redrawCharts: true });
     if (autoDone) {
+      const scoreNote = isPositionOptimKind(kind) ? " (FINRESP до портф. Stopper)" : "";
       $("calc-status").textContent =
-        `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽`;
+        `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽${scoreNote}`;
     }
   }
 
@@ -502,6 +503,18 @@ a{color:var(--accent);}
   function optimCandidateValue(kind, value) {
     const meta = optimMeta(kind);
     return meta?.integer ? Math.round(value) : roundParam(value);
+  }
+
+  function isPositionOptimKind(kind) {
+    return !!optimMeta(kind)?.position;
+  }
+
+  function optimScore(trial, kind) {
+    if (!trial) return -Infinity;
+    if (isPositionOptimKind(kind)) {
+      return trial.preStopperAgg?.finresp ?? trial.agg.finresp;
+    }
+    return trial.agg.finresp;
   }
 
   function optimRunContext(kind, value) {
@@ -537,10 +550,10 @@ a{color:var(--accent);}
     const sc = optimCtx?.stopper ?? stopperConfig();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p);
     if (!spec) return null;
-    const { perSec, agg, stopper } = E.runMulti(
+    const { perSec, agg, preStopperAgg, stopper } = E.runMulti(
       state.packs, spec, a, b, p, volConfig(), sc
     );
-    return { perSec, agg, stopper, a, b };
+    return { perSec, agg, preStopperAgg, stopper, a, b };
   }
 
   async function optimLoop(token) {
@@ -557,8 +570,9 @@ a{color:var(--accent);}
     const candidate = state.optim.candidates[state.optim.candidateIndex];
     state.optim.candidateIndex += 1;
     const trial = calcResult(optimRunContext(kind, candidate));
-    if (trial && trial.agg.finresp > state.optim.bestFinresp) {
-      state.optim.bestFinresp = trial.agg.finresp;
+    const score = optimScore(trial, kind);
+    if (trial && score > state.optim.bestFinresp) {
+      state.optim.bestFinresp = score;
       state.optim.bestValue = candidate;
     }
     input.value = String(optimCandidateValue(kind, state.optim.bestValue));
@@ -594,7 +608,7 @@ a{color:var(--accent);}
     state.optim.bestValue = startValue;
     input.value = String(startValue);
     const cur = calcResult(optimRunContext(kind, startValue));
-    state.optim.bestFinresp = cur?.agg.finresp ?? -Infinity;
+    state.optim.bestFinresp = optimScore(cur, kind);
     state.optim.runToken += 1;
     const token = state.optim.runToken;
     startOptimDots();

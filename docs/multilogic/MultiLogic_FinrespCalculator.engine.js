@@ -749,7 +749,8 @@
     if (spec.type === "sma_spread") {
       return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, options);
     }
-    return simulateLogicLine(candles, spec.parsed, startIdx, endIdx, vol, options);
+    const parsed = applySlTpParams({ ...spec.parsed }, params || DEFAULT_PARAMS);
+    return simulateLogicLine(candles, parsed, startIdx, endIdx, vol, options);
   }
 
   function findCandleIndexByTime(candles, time) {
@@ -1101,6 +1102,7 @@
       const r = runOnCandles(candles, spec, a, b, params, volConfig);
       return { sec, ...r };
     });
+    const preStopperAgg = aggregateFinresp(perSec);
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
@@ -1112,7 +1114,7 @@
     }
     const agg = aggregateFinresp(perSec);
     const chartPack = perSec.length === 1 ? perSec[0] : perSec[0];
-    return { perSec, agg, stopper, chartRows: chartPack?.rows || [] };
+    return { perSec, agg, preStopperAgg, stopper, chartRows: chartPack?.rows || [] };
   }
 
   root.MultiLogicFinrespEngine = {
