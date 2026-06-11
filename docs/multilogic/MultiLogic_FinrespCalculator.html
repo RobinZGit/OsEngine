@@ -1222,10 +1222,17 @@ ${markers}
   $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); render(); });
   const extraParams = $("extra-params");
   const extraParamsToggle = $("extra-params-toggle");
-  extraParamsToggle.addEventListener("click", (e) => e.preventDefault());
-  extraParams.addEventListener("toggle", () => {
+  function syncExtraParamsToggleLabel() {
     extraParamsToggle.textContent = extraParams.open ? "Свернуть" : "Развернуть";
+  }
+  extraParamsToggle.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    extraParams.open = !extraParams.open;
+    syncExtraParamsToggleLabel();
   });
+  extraParams.addEventListener("toggle", syncExtraParamsToggleLabel);
+  syncExtraParamsToggleLabel();
 })();
 </script>
 </body>
