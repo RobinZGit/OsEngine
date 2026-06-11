@@ -51,6 +51,8 @@ pre.formula{background:var(--example-bg);border:1px solid var(--example-border);
 .line-sample.sma{background:#d97706;}
 .line-sample.buy{width:.75rem;height:.75rem;background:#16a34a;border-radius:50%;}
 .line-sample.sell{width:.75rem;height:.75rem;background:#dc2626;border-radius:50%;}
+.finresp-card{background:#f8fafc;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:.75rem 1rem;margin:1rem 0;}
+.finresp-value{font-size:1.35rem;font-weight:700;color:#b91c1c;font-family:Consolas,"Courier New",monospace;}
 table.ind{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.92rem;}
 table.ind th,table.ind td{border:1px solid var(--border);padding:.45rem .65rem;text-align:left;vertical-align:top;}
 table.ind th{background:var(--accent-soft);font-weight:600;}
@@ -325,6 +327,59 @@ F_T = (<span class="poly">EQ</span>_SMA)_T
 
 То же как сумма всех свечей:
 F_T = Σ_{k=0..T} p_k·(e_k − b_k) + p_T·Σ_{k=0..T}(b_k − e_k)</pre>
+
+<h3>SBER H1 за последние 3 месяца: FINRESP</h3>
+<div class="finresp-card">
+<p><strong>Источник:</strong> MOEX ISS, <code>SBER</code>, свечи <code>interval=60</code>.</p>
+<p><strong>Период расчёта:</strong> 2026-03-11 06:00 — 2026-06-11 16:00; свечей: <code>1411</code>; торговых свечей после появления SMA(3): <code>1409</code>.</p>
+<p><strong>Параметры:</strong> <code>SMA(3)</code>, <code>mm = 1</code>, Close, без округления лотов, комиссий и проскальзывания.</p>
+<p><strong>Итог:</strong> <span class="finresp-value">FINRESP = −158,36 ₽</span></p>
+<p>На последней свече: <code>z_T = 6,6067</code>, <code>C_T = −2284,32 ₽</code>, <code>p_T = 321,79 ₽</code>, поэтому <code>F_T = C_T + z_T·p_T = −158,36 ₽</code>.</p>
+</div>
+
+<div class="chart-card" aria-label="SBER H1 SMA FINRESP chart">
+<p>
+<span class="legend-line"><span class="line-sample"></span>Close SBER H1</span>
+<span class="legend-line"><span class="line-sample sma"></span>SMA(3)</span>
+<span class="legend-line"><span class="line-sample buy"></span>Buy, маркеры прорежены</span>
+<span class="legend-line"><span class="line-sample sell"></span>Sell, маркеры прорежены</span>
+</p>
+<svg viewBox="0 0 760 300" role="img" aria-labelledby="sber-h1-title sber-h1-desc">
+<title id="sber-h1-title">SBER H1: Close, SMA(3), FINRESP за 3 месяца</title>
+<desc id="sber-h1-desc">Синяя линия показывает часовой Close SBER, оранжевая линия SMA(3), зелёные и красные точки — прореженные маркеры покупок и продаж. FINRESP стратегии: минус 158,36 рубля.</desc>
+<rect x="0" y="0" width="760" height="300" fill="#ffffff"/>
+<line x1="55" y1="22" x2="55" y2="252" stroke="#cbd5e1"/>
+<line x1="55" y1="252" x2="735" y2="252" stroke="#cbd5e1"/>
+<g fill="#64748b" font-size="12" font-family="Segoe UI, sans-serif">
+<text x="20" y="82">325</text><text x="20" y="151">320</text><text x="20" y="220">315</text>
+<text x="55" y="274">11.03</text><text x="305" y="274">апрель</text><text x="530" y="274">май</text><text x="695" y="274">11.06</text>
+<text x="8" y="18">₽</text>
+</g>
+<g stroke="#e2e8f0" stroke-width="1">
+<line x1="55" y1="217.1" x2="735" y2="217.1"/><line x1="55" y1="148.0" x2="735" y2="148.0"/><line x1="55" y1="78.8" x2="735" y2="78.8"/>
+</g>
+<polyline fill="none" stroke="#2563eb" stroke-width="2.3" points="55.0,210.6 56.0,211.8 79.1,192.3 103.2,164.6 127.3,127.9 151.5,185.3 175.6,230.6 199.7,226.1 223.8,202.8 247.9,164.5 272.0,186.3 296.1,192.8 320.2,120.3 344.4,86.4 368.5,79.9 392.6,69.4 416.7,145.2 440.8,140.0 464.9,129.7 489.0,170.1 513.2,74.0 537.3,101.2 561.4,94.2 585.5,115.5 609.6,142.5 633.7,117.2 657.8,106.6 682.0,97.1 706.1,115.9 730.2,122.0 735.0,123.2"/>
+<polyline fill="none" stroke="#d97706" stroke-width="2.3" stroke-dasharray="6 5" points="56.0,212.6 79.1,193.4 103.2,179.9 127.3,132.0 151.5,185.8 175.6,229.5 199.7,221.9 223.8,194.7 247.9,164.3 272.0,189.6 296.1,192.3 320.2,125.1 344.4,84.9 368.5,82.1 392.6,69.5 416.7,147.9 440.8,141.1 464.9,126.4 489.0,166.6 513.2,73.1 537.3,102.1 561.4,93.5 585.5,107.6 609.6,147.8 633.7,119.1 657.8,108.7 682.0,94.6 706.1,106.8 730.2,121.1 735.0,123.5"/>
+<g fill="#16a34a" stroke="#ffffff" stroke-width="2">
+<circle cx="56.0" cy="211.8" r="5"><title>2026-03-11 08:00 Buy 0,06</title></circle>
+<circle cx="113.8" cy="124.9" r="5"><title>2026-03-18 18:00 Buy 0,97</title></circle>
+<circle cx="229.6" cy="218.5" r="5"><title>2026-04-03 22:00 Buy 0,18</title></circle>
+<circle cx="287.5" cy="177.9" r="5"><title>2026-04-11 17:00 Buy 0,01</title></circle>
+<circle cx="345.3" cy="85.3" r="5"><title>2026-04-19 17:00 Buy 0,06</title></circle>
+<circle cx="403.2" cy="96.1" r="5"><title>2026-04-27 14:00 Buy 0,04</title></circle>
+<circle cx="518.9" cy="58.4" r="5"><title>2026-05-14 08:00 Buy 0,17</title></circle>
+<circle cx="576.8" cy="94.3" r="5"><title>2026-05-21 18:00 Buy 0,74</title></circle>
+<circle cx="692.6" cy="117.4" r="5"><title>2026-06-05 20:00 Buy 0,04</title></circle>
+<circle cx="735.0" cy="123.2" r="5"><title>2026-06-11 16:00 Buy 0,02</title></circle>
+</g>
+<g fill="#dc2626" stroke="#ffffff" stroke-width="2">
+<circle cx="171.7" cy="224.5" r="5"><title>2026-03-27 12:00 Sell 0,55</title></circle>
+<circle cx="461.1" cy="142.3" r="5"><title>2026-05-05 14:00 Sell 0,33</title></circle>
+<circle cx="634.7" cy="136.8" r="5"><title>2026-05-29 10:00 Sell 0,68</title></circle>
+</g>
+<text x="510" y="36" fill="#b91c1c" font-size="16" font-weight="700" font-family="Consolas,monospace">FINRESP −158,36 ₽</text>
+</svg>
+</div>
 
 <p>Учебный пример для SBER ниже — раскрытие коэффициентов этих многочленов для 12 закрытий и SMA(3). На каждой свече после появления SMA считаются <code>d_k</code>, затем коэффициенты <code>b_k</code> или <code>e_k</code>, после чего всё суммируется через <code>* ww_ONE</code>.</p>
 
