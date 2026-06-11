@@ -339,7 +339,7 @@ a{color:var(--accent);}
 
   function updateDateHint(instrumentCount) {
     const tf = $("calc-tf").value;
-    const n = Math.max(1, instrumentCount ?? selectedInstruments().length || 1);
+    const n = Math.max(1, instrumentCount ?? (selectedInstruments().length || 1));
     const maxD = maxCalcDays(tf, n);
     $("calc-date-hint").textContent =
       `Календарь: ${DATE_MIN} — сегодня · по умолчанию ${DEFAULT_RANGE_DAYS} дн. · макс. период ~${maxD} дн. (${currentLimit().label}, ${n} инстр.)`;
@@ -827,7 +827,7 @@ a{color:var(--accent);}
 
   function enforceDateRange(anchor = "till", instrumentCount) {
     const tf = $("calc-tf").value;
-    const n = Math.max(1, instrumentCount ?? selectedInstruments().length || 1);
+    const n = Math.max(1, instrumentCount ?? (selectedInstruments().length || 1));
     const maxSpan = maxCalcDays(tf, n);
     const { min, max } = dateBounds();
     let from = parseDay($("calc-from").value);
