@@ -51,7 +51,7 @@ a{color:var(--accent);}
 <header class="help-hdr">
 <h1>MultiLogic — справка по строкам логики</h1>
 <p class="help-sub">Светлая HTML-версия · файл <code>Custom\Robots\MultiLogic_LogicHelp.html</code> · генерируется автоматически из <code>MultiLogic.cs</code></p>
-<p class="help-sub">Версия справки: 8 · обновлено: 10.06.2026 20:30</p>
+<p class="help-sub">Версия справки: 8 · обновлено: 11.06.2026 17:20</p>
 </header>
 <div class="help-layout">
 <nav class="help-toc" aria-label="Содержание">
@@ -213,7 +213,7 @@ a{color:var(--accent);}
 </ul>
 <div class="logic-formula-group">
 <div class="logic-formula"><span class="logic-formula-label">Op: </span><code class="logic-formula-code">(Long(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(AbUp) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk)))</code></div>
-<div class="logic-formula"><span class="logic-formula-label">Cl: </span><code class="logic-formula-code">(Long(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(BlLo)) OnFlip(Close)) <span class="lf-sl">SL</span>[2%] <span class="lf-sl">TP</span>[6%] <span class="lf-note-tag">Note</span>(trend)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Cl: </span><code class="logic-formula-code">(Long(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(BlLo)) OnFlip(Close)) <span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] <span class="lf-note-tag">Note</span>(trend)</code></div>
 </div>
 <ul>
 <li>Индикатор: Ind(параметры)(условие) — 1-я скобка: настройка, 2-я: сигнал (Ab, K&gt;=10, ValUp, &amp;&amp;, ||, !).</li>
@@ -224,7 +224,7 @@ a{color:var(--accent);}
 <ul>
 <li>Long приоритетнее Short, если оба истинны. Buy/Sell — синонимы Long/Short.</li>
 <li>OnFlip в Cl/Op: Close | Flip | Open; параметры (;Entry=…;OnFlat=…) приоритетнее <code>Regime(…)</code>.</li>
-<li>Параметры управления (@…): @Strict, @LR — ссылки на параметры робота на вкладке «Логики».</li>
+<li>Параметры управления (@…): @Strict, @LR, @SL/@TP (×ATR на позицию; 0 — выкл.).</li>
 </ul>
 <h3 class="sec" id="topic-1a">1a) Логические операторы внутри Long(…) / Short(…) и общих предикатов:</h3>
 <h3 class="sec" id="topic-1a">1a) Логические операторы (NOT, &amp;&amp;, || — в стиле JavaScript)</h3>
@@ -329,13 +329,14 @@ a{color:var(--accent);}
 </ul>
 <h3 class="sec" id="topic-4">4) SL / TP (на уровне строки, после Cl):</h3>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code"><span class="lf-sl">SL</span>[2%] <span class="lf-sl">TP</span>[6%]  — процент от входа; <span class="lf-sl">SL</span>[1.5ATR]; <span class="lf-sl">TP</span>[2R] (R — кратность к расстоянию SL).</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] — кратность ATR из параметров «SL/TP позиции кратность ATR» (0 — выкл.).</code></div>
+<div class="logic-formula"><code class="logic-formula-code">Явно: <span class="lf-sl">SL</span>[2%], <span class="lf-sl">SL</span>[1.5ATR], <span class="lf-sl">TP</span>[2R] (R — кратность к расстоянию SL).</code></div>
 </div>
 <ul>
 <li>В одной логике несколько атомов: самый жёсткий SL, самый дальний TP.</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code">ATR для <span class="lf-sl">SL</span>[…ATR] — из первого ATR-атома той же логики.</code></div>
+<div class="logic-formula"><code class="logic-formula-code">ATR для <span class="lf-sl">SL</span>[…ATR]/<span class="lf-sl">TP</span>[…ATR] — из первого ATR-атома той же логики.</code></div>
 </div>
 <h3 class="sec" id="topic-5">5) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.</h3>
 <ul>
@@ -352,11 +353,11 @@ a{color:var(--accent);}
 <li>При Regime=On на одной свече могут сработать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры, не дубли.</li>
 </ul>
 <div class="logic-formula-group">
-<div class="logic-formula"><code class="logic-formula-code">SL/TP в заводских строках не заданы — выход по <span class="lf-cl">Cl</span>[…] индикаторов.</code></div>
+<div class="logic-formula"><code class="logic-formula-code"><span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] — кратность ATR из параметров вкладки «Логики»; 0 = без SL/TP по позиции.</code></div>
 </div>
 <h4 id="def-l1" class="def-logic">L1 — lon-trend (Лонг, тренд)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) Op(Long(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(AbUp) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&gt;=100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig))) Cl(Long(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(BlLo) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&lt;=-100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig)) OnFlip(Close)) <span class="lf-note-tag">Note</span>(lon-trend)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) Op(Long(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(AbUp) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&gt;=100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig))) Cl(Long(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(BlLo) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&lt;=-100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig)) OnFlip(Close)) <span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] <span class="lf-note-tag">Note</span>(lon-trend)</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -372,7 +373,7 @@ a{color:var(--accent);}
 </ul>
 <h4 id="def-l2" class="def-logic">L2 — lon-bokovik (Лонг, боковик)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) Op(Long(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&lt;=10) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig))) Cl(Long(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&gt;=90) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig)) OnFlip(Close)) <span class="lf-note-tag">Note</span>(lon-bokovik)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) Op(Long(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&lt;=10) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig))) Cl(Long(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&gt;=90) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig)) OnFlip(Close)) <span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] <span class="lf-note-tag">Note</span>(lon-bokovik)</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -389,7 +390,7 @@ a{color:var(--accent);}
 </div>
 <h4 id="def-l3" class="def-logic">L3 — short-trend (Шорт, тренд)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) Op(Short(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(BlLo) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&lt;=-100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig))) Cl(Short(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(AbUp) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&gt;=100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig)) OnFlip(Close)) <span class="lf-note-tag">Note</span>(short-trend)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) Op(Short(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(BlLo) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&lt;=-100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig))) Cl(Short(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">LinReg</span>(@LR;Dev=2)(AbUp) <span class="lf-kw">AND</span> <span class="lf-ind">CCI</span>(20;Lmin=100;Smax=-100)(CCI&gt;=100) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig)) OnFlip(Close)) <span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] <span class="lf-note-tag">Note</span>(short-trend)</code></div>
 </div>
 <ul>
 <li>Состав:</li>
@@ -406,7 +407,7 @@ a{color:var(--accent);}
 </div>
 <h4 id="def-l4" class="def-logic">L4 — short-bokovik (Шорт, боковик)</h4>
 <div class="logic-formula-group">
-<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) Op(Short(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&gt;=90) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig))) Cl(Short(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&lt;=10) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig)) OnFlip(Close)) <span class="lf-note-tag">Note</span>(short-bokovik)</code></div>
+<div class="logic-formula"><span class="logic-formula-label">Strict: </span><code class="logic-formula-code">(<span class="lf-param-ref">@Strict</span>) <span class="lf-regime">Regime</span>(LinReg;L=@LR;Dev=2;SlopeLb=3;SlopeDead=0.05%;OnFlip=Close;Entry=FlatOnly) Op(Short(<span class="lf-ind">SMA</span>(100)(Bl) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&gt;=90) <span class="lf-kw">AND</span> <span class="lf-ind">ATR</span>(14;Gr=3%;Lb=5)(GrOk) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&lt;Sig))) Cl(Short(<span class="lf-ind">SMA</span>(100)(Ab) <span class="lf-kw">AND</span> <span class="lf-ind">Stoch</span>(14-3-3;Lmin=90;Smax=10)(K&lt;=10) <span class="lf-kw">AND</span> <span class="lf-ind">MACD</span>(12,26,9)(Macd&gt;Sig)) OnFlip(Close)) <span class="lf-sl">SL</span>[<span class="lf-param-ref">@SL</span>] <span class="lf-sl">TP</span>[<span class="lf-param-ref">@TP</span>] <span class="lf-note-tag">Note</span>(short-bokovik)</code></div>
 </div>
 <ul>
 <li>Состав:</li>

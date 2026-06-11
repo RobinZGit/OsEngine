@@ -55,7 +55,7 @@ a{color:var(--accent);}
 <header class="help-hdr">
 <h1>MultiLogic — база знаний: рынок в терминах многочленов</h1>
 <p class="help-sub">Светлая справка · <code>Custom\Robots\MultiLogic_PolynomialIndicators.html</code></p>
-<p class="help-sub">Операции <span class="op">*</span> (произведение), <span class="op">#</span> и <span class="op">/#</span> (покомпонентное), <span class="op">/</span> (деление многочленов); сдвиг — <span class="delta">δδ</span>(<code>k</code>)</p>
+<p class="help-sub">Операции <span class="op">*</span> (свёртка), <span class="op">#</span> / <span class="op">/#</span> (покомпонентно), <span class="op">/</span> (деление), <span class="op">()</span> (композиция); сдвиг — <span class="delta">δδ</span>(<code>k</code>)</p>
 <div class="legend">
 <span><i class="dot-mkt"></i> <span class="mkt">pp</span> <span class="mkt">oo</span> <span class="mkt">hh</span> <span class="mkt">ll</span> <span class="mkt">vv</span> — рынок (OHLCV)</span>
 <span><i class="dot-deal"></i> <span class="deal">bb</span> <span class="deal">ee</span> — сделки (покупки / продажи)</span>
@@ -105,6 +105,12 @@ a{color:var(--accent);}
 <td>сдвиг на <code>n</code> баров → <span class="coef">(0; …; 0; p₀; p₁; …)</span></td></tr>
 <tr><td><span class="delta">δδ</span>(1)</td>
 <td>сдвиг на 1 бар; то же, что <span class="coef">(0; 1; 0; …)</span></td></tr>
+<tr><td><span class="poly">pp</span>(<span class="poly">qq</span>)</td>
+<td><strong>композиция</strong> (подстановка <span class="poly">qq</span> в <span class="poly">pp</span>): <code>(pp(qq))<sub>n</sub> = Σ<sub>i=0</sub><sup>n</sup> p<sub>i</sub>·(qq<sup>(*i)</sup>)<sub>n</sub></code>, где <code>qq<sup>(*0)</sup>=(1;0;0;…)</code>, <code>qq<sup>(*i)</sup>=qq*qq<sup>(*i−1)</sup></code></td></tr>
+<tr><td><span class="poly">pp</span>(<code>8</code>)</td>
+<td>подстановка <strong>числа</strong> вместо индекса: одно значение <code>Σ<sub>k≥0</sub> p<sub>k</sub>·8<sup>k</sup></code> (порождающий многочлен в точке 8); на баре <code>8</code> — коэффициент <code>p<sub>8</sub></code> или выборка <span class="poly">pp</span> <span class="op">*</span> <span class="delta">δδ</span>(8)</td></tr>
+<tr><td><span class="deal">ff</span>(<code>1</code>)</td>
+<td><span class="deal">ff</span> — доходы/расходы по сделкам на баре; <code>ff(1)=Σ<sub>k</sub> f<sub>k</sub></code> — <strong>общий финрез</strong> (сумма всех коэффициентов)</td></tr>
 </table>
 
 <p class="note"><span class="delta">δδ</span>(<code>k</code>) — короткая запись многочлена «0…010…0». Свёртки: <span class="delta">δδ</span>(<code>i</code>) <span class="op">*</span> <span class="delta">δδ</span>(<code>j</code>) = <span class="delta">δδ</span>(<code>i+j</code>). Примеры: <span class="delta">δδ</span>(2) = <span class="coef">(0; 0; 1; 0; …)</span>, <span class="delta">δδ</span>(3) = <span class="coef">(0; 0; 0; 1; 0; …)</span>.</p>
@@ -115,6 +121,18 @@ a{color:var(--accent);}
 
 <pre class="formula"><span class="poly">ss</span> = <span class="mkt">pp</span> * <span class="poly">ww</span>          весь ряд индикатора сразу
 s_k = k-й коэффициент <span class="poly">ss</span></pre>
+
+<h3>Композиция</h3>
+<p>Запись <span class="poly">pp</span>(<span class="poly">qq</span>) — не покомпонентное умножение, а <strong>подстановка</strong> внутреннего многочлена (композиция рядов). Запись <span class="poly">pp</span>(<code>8</code>) — подстановка скаляра.</p>
+<pre class="formula"><span class="poly">qq</span><sup>(*0)</sup> = <span class="coef">(1; 0; 0; …)</span>
+<span class="poly">qq</span><sup>(*i)</sup> = <span class="poly">qq</span> * <span class="poly">qq</span><sup>(*i−1)</sup>     i ≥ 1
+
+(<span class="poly">pp</span>(<span class="poly">qq</span>))<sub>n</sub> = Σ<sub>i=0</sub><sup>n</sup> p<sub>i</sub> · (<span class="poly">qq</span><sup>(*i)</sup>)<sub>n</sub>
+
+<span class="poly">pp</span>(8) = Σ<sub>k≥0</sub> p<sub>k</sub> · 8<sup>k</sup>              одно число (значение ряда в точке 8)
+
+<span class="poly">pp</span>(<span class="delta">δδ</span>(8)) = <span class="poly">pp</span> * <span class="delta">δδ</span>(8)          сдвиг/выборка: на позиции 8 — p₀, далее p₁, …</pre>
+<p class="note">Пример: если <span class="poly">ss</span> = <span class="mkt">pp</span> <span class="op">*</span> <span class="poly">ww</span>_SMA — это свёртка; <span class="mkt">pp</span>(<span class="poly">ss</span>) — другая операция (композиция коэффициентных рядов). Не путать с <span class="op">#</span>.</p>
 
 <h2 id="simple">2. Простейшие индикаторы</h2>
 
@@ -153,11 +171,11 @@ s_k = (p_k + … + p_{k−N+1}) / N    при k ≥ N−1</pre>
 <span class="poly">ww</span>_ONE = <span class="coef">(1; 1; 1; …)</span>                 единичные веса (нарастающая сумма)
 
 <span class="poly">nn</span> = <span class="poly">qq</span> * <span class="poly">ww</span>_ONE                  n_k = q₀ + … + q_k   (внутри сессии, с нуля дня)
-<span class="poly">ff</span> = <span class="mkt">vv</span> * <span class="poly">ww</span>_ONE                  f_k = v₀ + … + v_k
+<span class="poly">fv</span> = <span class="mkt">vv</span> * <span class="poly">ww</span>_ONE                  f_k = v₀ + … + v_k   (накопленный объём; не путать с <span class="deal">ff</span> сделок)
 
-<span class="poly">ss</span>_VWAP = <span class="poly">nn</span> <span class="op">/#</span> <span class="poly">ff</span>              vwap_k = n_k / f_k</pre>
+<span class="poly">ss</span>_VWAP = <span class="poly">nn</span> <span class="op">/#</span> <span class="poly">fv</span>              vwap_k = n_k / f_k</pre>
 
-<p class="note">Покомпонентное деление — <span class="op">/#</span>, не <span class="op">/</span>: <code>(nn/#ff)<sub>k</sub> = n<sub>k</sub> / f<sub>k</sub></code>. Веса <strong>не фиксированы</strong> заранее — они зависят от объёмов <code>v_j</code> внутри сессии (это не один многочлен <span class="poly">ww</span> как у SMA).</p>
+<p class="note">Покомпонентное деление — <span class="op">/#</span>, не <span class="op">/</span>: <code>(nn/#fv)<sub>k</sub> = n<sub>k</sub> / f<sub>k</sub></code>. Веса <strong>не фиксированы</strong> заранее — они зависят от объёмов <code>v_j</code> внутри сессии (это не один многочлен <span class="poly">ww</span> как у SMA).</p>
 
 <div class="warn">
 <strong>Сброс сессии.</strong> Свёртка с <span class="poly">ww</span>_ONE накапливает с начала ряда. Для VWAP на баре <code>k</code> суммируем только бары <strong>текущего календарного дня</strong> (в OsEngine — <code>TimeStart.Date</code>). Формально: перед суммой обнуляем <span class="poly">qq</span> и <span class="mkt">vv</span> вне сегодняшней сессии или пересчитываем накопление с индекса начала дня.
@@ -251,13 +269,15 @@ RSI_k ≈ 100 − 100 · (1 + k_k)<sup>−1</sup>     на баре k</pre>
 
 <p class="note"><span class="poly">xx</span> и <span class="poly">zz</span> — производные от сделок (синий), как индикаторы; <span class="deal">bb</span> и <span class="deal">ee</span> — исходные объёмы.</p>
 
-<h3>Денежный поток от исполнений (по цене Close)</h3>
-<p>Приближение «вся сделка по <code>p_k</code>»: покупка уменьшает кэш, продажа увеличивает.</p>
-<pre class="formula"><span class="poly">cc</span>_cash = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)        c_k = p_k · (e_k − b_k)
+<h3>Доходы и расходы по сделкам (<span class="deal">ff</span>)</h3>
+<p><span class="deal">ff</span> — многочлен денежного потока на баре (доходы минус расходы от исполнений). Приближение «вся сделка по <code>p_k</code>»: покупка уменьшает кэш, продажа увеличивает.</p>
+<pre class="formula"><span class="deal">ff</span> = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)              f_k = p_k · (e_k − b_k)
 
-<span class="poly">CC</span> = <span class="poly">cc</span>_cash * <span class="poly">ww</span>_ONE              C_k = c₀ + … + c_k   (накопленный кэш от сделок)</pre>
+<span class="deal">ff</span>(1) = Σ<sub>k≥0</sub> f<sub>k</sub> = f₀ + f₁ + … + f<sub>T</sub>     общий финрез (сумма коэффициентов; подстановка 1)
 
-<p class="note">Это <strong>не</strong> полный PnL с открытой позицией: кэш и стоимость позиции учитываются раздельно. Для оценки «в деньгах» при удержании нужен mark-to-market ниже.</p>
+<span class="deal">ff</span>(1) = (<span class="deal">ff</span> * <span class="poly">ww</span>_ONE)<sub>T</sub>            то же на последнем баре T</pre>
+
+<p class="note">Запись <span class="deal">ff</span>(<code>1</code>) — как у <span class="poly">pp</span>(<code>8</code>): порождающий ряд <code>Σ f<sub>k</sub> x<sup>k</sup></code> в точке <code>x=1</code>. Это <strong>не</strong> полный PnL с открытой позицией: кэш и стоимость позиции раздельно. Для удержания — mark-to-market ниже.</p>
 
 <h3>Финансовый результат (mark-to-market)</h3>
 <p>Приращение цены и позиция на <strong>начало</strong> бара (удерживали <code>z_{k−1}</code>, цена изменилась на <code>p_k − p_{k−1}</code>):</p>
@@ -294,9 +314,11 @@ VWAP:    <span class="poly">ss</span> = (<span class="poly">tt</span> <span clas
 Сдвиг:   <span class="delta">δδ</span>(<code>n</code>) = <span class="coef">(0; …; 0; 1; 0; …)</span>,   <span class="mkt">pp</span> * <span class="delta">δδ</span>(<code>n</code>)
 Разность: <span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1)
 
-Сделки:  <span class="deal">bb</span>, <span class="deal">ee</span> — покупки / продажи;  <span class="poly">xx</span> = <span class="deal">bb</span> − <span class="deal">ee</span>;  <span class="poly">zz</span> = <span class="poly">xx</span> * <span class="coef">(1;1;…)</span>
-Кэш:     <span class="poly">cc</span>_cash = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)
-Финрез:  <span class="poly">RR</span> = (<span class="poly">zz</span> * <span class="delta">δδ</span>(1) <span class="op">#</span> (<span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1))) * <span class="coef">(1;1;…)</span>
+Композ.: <span class="poly">pp</span>(<span class="poly">qq</span>) — подстановка ряда;  <span class="poly">pp</span>(8) = Σ p<sub>k</sub>8<sup>k</sup>;  выборка бара: <span class="poly">pp</span> * <span class="delta">δδ</span>(8)
+
+Сделки:  <span class="deal">bb</span>, <span class="deal">ee</span>;  <span class="poly">xx</span> = <span class="deal">bb</span> − <span class="deal">ee</span>;  <span class="poly">zz</span> = <span class="poly">xx</span> * <span class="coef">(1;1;…)</span>
+Поток:   <span class="deal">ff</span> = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)     общий финрез:  <span class="deal">ff</span>(1) = Σ f<sub>k</sub>
+MTM:     <span class="poly">RR</span> = (<span class="poly">zz</span> * <span class="delta">δδ</span>(1) <span class="op">#</span> (<span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1))) * <span class="coef">(1;1;…)</span>
 
 Хвост: s₀…s_{N−2} — не используем</pre>
 
@@ -304,7 +326,7 @@ VWAP:    <span class="poly">ss</span> = (<span class="poly">tt</span> <span clas
 </div>
 
 <footer class="help-ftr">
-MultiLogic · <span class="mkt">pp oo hh ll vv</span> рынок · <span class="deal">bb ee</span> сделки · <span class="poly">ww ss RR</span> индикаторы · <span class="coef">(…; …; …)</span> коэффициенты · OsEngine Custom\Robots
+MultiLogic · <span class="mkt">pp oo hh ll vv</span> рынок · <span class="deal">bb ee ff</span> сделки · <span class="poly">pp(qq)</span> композиция · <span class="deal">ff(1)</span> финрез · OsEngine Custom\Robots
 </footer>
 </body>
 </html>

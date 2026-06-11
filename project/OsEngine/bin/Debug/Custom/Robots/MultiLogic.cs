@@ -69,6 +69,14 @@ namespace OsEngine.Robots.Custom
         /// <summary>Ссылка на параметр «Strict (строгость)» в строках логики (см. LogicLineParser.StrictnessParamToken).</summary>
         public const string StrictnessRef = "@Strict";
 
+        /// <summary>Ссылка на параметр «SL позиции кратность ATR» (см. LogicLineParser.StopLossAtrParamToken).</summary>
+        public const string StopLossAtrRef = "@SL";
+
+        /// <summary>Ссылка на параметр «TP позиции кратность ATR» (см. LogicLineParser.TakeProfitAtrParamToken).</summary>
+        public const string TakeProfitAtrRef = "@TP";
+
+        private const string DefaultLineSlTpSuffix = " SL[" + StopLossAtrRef + "] TP[" + TakeProfitAtrRef + "] ";
+
         public const string StrictPrefix = "Strict(" + StrictnessRef + ") ";
 
         public const string TrendRegimePrefix =
@@ -86,7 +94,7 @@ namespace OsEngine.Robots.Custom
             + "CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)"
             + ")) Cl(Long("
             + "SMA(100)(Bl) AND LinReg(" + LinRegLengthRef + ";Dev=2)(BlLo) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)"
-            + ") OnFlip(Close)) Note(lon-trend)";
+            + ") OnFlip(Close))" + DefaultLineSlTpSuffix + "Note(lon-trend)";
 
         public const string Logic2LongBokovik =
             BokovikRegimePrefix
@@ -94,7 +102,7 @@ namespace OsEngine.Robots.Custom
             + "SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd>Sig)"
             + ")) Cl(Long("
             + "SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND MACD(12,26,9)(Macd<Sig)"
-            + ") OnFlip(Close)) Note(lon-bokovik)";
+            + ") OnFlip(Close))" + DefaultLineSlTpSuffix + "Note(lon-bokovik)";
 
         public const string Logic3ShortTrend =
             TrendRegimePrefix
@@ -103,7 +111,7 @@ namespace OsEngine.Robots.Custom
             + "CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)"
             + ")) Cl(Short("
             + "SMA(100)(Ab) AND LinReg(" + LinRegLengthRef + ";Dev=2)(AbUp) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)"
-            + ") OnFlip(Close)) Note(short-trend)";
+            + ") OnFlip(Close))" + DefaultLineSlTpSuffix + "Note(short-trend)";
 
         public const string Logic4ShortBokovik =
             BokovikRegimePrefix
@@ -111,7 +119,7 @@ namespace OsEngine.Robots.Custom
             + "SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig)"
             + ")) Cl(Short("
             + "SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)"
-            + ") OnFlip(Close)) Note(short-bokovik)";
+            + ") OnFlip(Close))" + DefaultLineSlTpSuffix + "Note(short-bokovik)";
 
         public static readonly string[] SlotFormulas =
         {
@@ -170,7 +178,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Смысл набора: на базе TrendMultiIndicator+CCI — два лонга (тренд и боковик) и два шорта (тренд и боковик).");
             sb.AppendLine("   L1/L3 — Regime MatchSide (вход по наклону LinReg); L2/L4 — Regime FlatOnly (вход во флэте, Stoch от границ).");
             sb.AppendLine("   При Regime=On на одной свече могут сработать L1+L2 (лонг) и L3+L4 (шорт) — разные фильтры, не дубли.");
-            sb.AppendLine("   SL/TP в заводских строках не заданы — выход по Cl[…] индикаторов.");
+            sb.AppendLine("   SL[@SL] TP[@TP] — кратность ATR из параметров вкладки «Логики»; 0 = без SL/TP по позиции.");
             sb.AppendLine();
             AppendDefaultLogicHelpBlock(sb, 1, "lon-trend", "Лонг, тренд", Logic1LongTrend,
                 "Regime MatchSide — Buy при наклоне LinReg вверх; во флэте входов нет.",
@@ -433,6 +441,13 @@ namespace OsEngine.Robots.Custom
         private const int LogicStrictnessMin = 1;
         private const int LogicStrictnessMax = 5;
         private const int LogicStrictnessDefault = 3;
+        private const string LogicPositionStopLossAtrParamName = "SL позиции кратность ATR";
+        private const string LogicPositionTakeProfitAtrParamName = "TP позиции кратность ATR";
+        private const decimal LogicPositionStopLossAtrDefault = 2m;
+        private const decimal LogicPositionTakeProfitAtrDefault = 3m;
+        private const decimal LogicPositionStopTakeAtrMin = 0m;
+        private const decimal LogicPositionStopTakeAtrMax = 20m;
+        private const decimal LogicPositionStopTakeAtrStep = 0.1m;
         private const string MaxPositionsParamName = "Max positions (all tabs)";
         private const string VolumeParamName = "Volume";
         private const string MaxPositionsIncButtonName = "Увеличить: Max positions +5";
@@ -449,23 +464,27 @@ namespace OsEngine.Robots.Custom
         private const string MetaLogicsTabName = "Металогики";
         /// <summary>Вкладка общепортфельных stop-loss / take-profit по сумме портфелей L1…L10.</summary>
         private const string StopperTabName = "Stopper";
-        private const string PortfolioStopLossPercentParamName = "Общепортфельный stop-loss (%)";
-        private const string PortfolioTakeProfitPercentParamName = "Общепортфельный take-profit (%)";
-        private const string StopperSlPercentIncButtonName = "Увеличить: общепортфельный stop-loss (%) +0,1";
-        private const string StopperSlPercentDecButtonName = "Уменьшить: общепортфельный stop-loss (%) −0,1";
-        private const string StopperTpPercentIncButtonName = "Увеличить: общепортфельный take-profit (%) +0,5";
-        private const string StopperTpPercentDecButtonName = "Уменьшить: общепортфельный take-profit (%) −0,5";
-        private const decimal StopperSlPercentDefault = 0.4m;
-        private const decimal StopperTpPercentDefault = 10m;
-        private const decimal StopperSlPercentMin = 0.01m;
-        private const decimal StopperSlPercentMax = 100m;
-        private const decimal StopperSlPercentUiStep = 0.01m;
-        private const decimal StopperTpPercentMin = 0.1m;
-        private const decimal StopperTpPercentMax = 500m;
-        private const decimal StopperTpPercentUiStep = 0.1m;
-        private const decimal StopperSlPercentButtonDelta = 0.1m;
-        private const decimal StopperTpPercentButtonDelta = 0.5m;
-        private const int StopperEquityHistoryCap = 10000;
+        private const string PortfolioStopLossAtrMultParamName = "Общепортфельный stop-loss кратность ATR";
+        private const string PortfolioTakeProfitAtrMultParamName = "Общепортфельный take-profit кратность ATR";
+        private const string PortfolioStopperAtrLenParamName = "Длина ATR портфеля для SL/TP";
+        private const string PortfolioStopperAtrTechParamName = "ATR портфеля L1…L10 (тех.)";
+        private const string PortfolioStopperSlThresholdTechParamName = "Порог SL по ATR (тех.)";
+        private const string PortfolioStopperTpThresholdTechParamName = "Порог TP по ATR (тех.)";
+        private const string StopperSlAtrMultIncButtonName = "Увеличить: общепортфельный stop-loss ATR +0,5";
+        private const string StopperSlAtrMultDecButtonName = "Уменьшить: общепортфельный stop-loss ATR −0,5";
+        private const string StopperTpAtrMultIncButtonName = "Увеличить: общепортфельный take-profit ATR +0,5";
+        private const string StopperTpAtrMultDecButtonName = "Уменьшить: общепортфельный take-profit ATR −0,5";
+        private const decimal StopperSlAtrMultDefault = 2m;
+        private const decimal StopperTpAtrMultDefault = 3m;
+        private const int PortfolioStopperAtrLenDefault = 14;
+        private const decimal StopperSlAtrMultMin = 0.1m;
+        private const decimal StopperSlAtrMultMax = 50m;
+        private const decimal StopperSlAtrMultUiStep = 0.1m;
+        private const decimal StopperTpAtrMultMin = 0.1m;
+        private const decimal StopperTpAtrMultMax = 100m;
+        private const decimal StopperTpAtrMultUiStep = 0.1m;
+        private const decimal StopperSlAtrMultButtonDelta = 0.5m;
+        private const decimal StopperTpAtrMultButtonDelta = 0.5m;
         private const string SignalPortfolioStopperSl = "MultiLogicPortfolioStopSL";
         private const string SignalPortfolioStopperTp = "MultiLogicPortfolioStopTP";
         private const string SignalPortfolioStopperEodFlat = "MultiLogicPortfolioEodFlat";
@@ -482,8 +501,6 @@ namespace OsEngine.Robots.Custom
         private const string StopperEodFlatSellParamName = "Продать всё к времени (ежедневно)";
         private const string StopperEodFlatSellDisabled = "Не продавать";
         private const string UpdateStopperPortfolioBaselineButtonName = "Обновить сумму портфеля SL/TP";
-        private const string PortfolioStopLossRublesParamName = "Либо stop-loss в рублях";
-        private const string PortfolioTakeProfitRublesParamName = "Либо take-profit в рублях";
         /// <summary>После SL/TP: не менять Regime (как бывший false).</summary>
         private const string StopperPostTriggerDisabled = "Отключено";
         /// <summary>После SL/TP: Regime=Off (как бывший true).</summary>
@@ -538,7 +555,7 @@ namespace OsEngine.Robots.Custom
         private const string LogicLineFormatHint =
             "Формат v2: Disabled, Strict(@Strict|1…5), Regime(…) — префиксы; затем Op(…) Cl(…); SL[…] TP[…] Note(…).\n"
             + "Op(Long(Ind(параметры)(условие) AND …) [Short(…)] [общие Ind(…)(…) до Long/Short]) Cl(Long(…) [Short(…)] OnFlip(Close|Flip|Open)).\n"
-            + "Параметры управления: @Strict, @LR (длина LinReg). OnFlip в Cl/Op приоритетнее Regime(…).\n"
+            + "Параметры управления: @Strict, @LR, @SL/@TP (×ATR на позицию; 0 — выкл.). OnFlip в Cl/Op приоритетнее Regime(…).\n"
             + "Long приоритетнее Short, если оба истинны. Пример:\n"
             + "  Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) "
             + "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp))) "
@@ -662,6 +679,8 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterButton _logicLinRegLenDecButton;
         private StrategyParameterButton _logicStrictnessIncButton;
         private StrategyParameterButton _logicStrictnessDecButton;
+        private StrategyParameterDecimal _logicPositionStopLossAtr;
+        private StrategyParameterDecimal _logicPositionTakeProfitAtr;
         /// <summary>Кнопка экспорта JSON-снимка (первая вкладка параметров).</summary>
         private StrategyParameterButton _saveSnapshotButton;
         /// <summary>Кнопка импорта JSON-снимка.</summary>
@@ -686,9 +705,8 @@ namespace OsEngine.Robots.Custom
         private readonly LogicPortfolioRuntime[] _logicPortfolios = new LogicPortfolioRuntime[LogicSlotCount + 1];
         /// <summary>Общая equity L1…L10 и мета-индикаторы по сумме портфелей.</summary>
         private readonly AggregateMetaPortfolioRuntime _aggregateMetaPortfolio = new AggregateMetaPortfolioRuntime();
-        private readonly List<StopperEquitySnapshot> _stopperEquityHistory = new List<StopperEquitySnapshot>();
         private DateTime _stopperLastProtectionCandleTime = DateTime.MinValue;
-        /// <summary>База SL/TP задана кнопкой или после срабатывания Stopper (не lookback).</summary>
+        /// <summary>База SL/TP задана кнопкой, автоинициализацией или после срабатывания Stopper.</summary>
         private bool _stopperReferenceBaselineLocked;
         /// <summary>Есть несохранённые изменения портфелей логик.</summary>
         private bool _logicPortfoliosDirty;
@@ -876,18 +894,20 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _portfolioPrevIndicatorVolumeCalc;
 
         private StrategyParameterBool _usePortfolioStopLoss;
-        private StrategyParameterDecimal _portfolioStopLossPercent;
-        private StrategyParameterDecimal _portfolioStopLossRubles;
-        private StrategyParameterButton _stopperSlPercentIncButton;
-        private StrategyParameterButton _stopperSlPercentDecButton;
+        private StrategyParameterDecimal _portfolioStopLossAtrMult;
+        private StrategyParameterButton _stopperSlAtrMultIncButton;
+        private StrategyParameterButton _stopperSlAtrMultDecButton;
         private StrategyParameterBool _usePortfolioTakeProfit;
-        private StrategyParameterDecimal _portfolioTakeProfitPercent;
-        private StrategyParameterDecimal _portfolioTakeProfitRubles;
+        private StrategyParameterDecimal _portfolioTakeProfitAtrMult;
         private StrategyParameterBool _usePortfolioPeakDrawdownStop;
         private StrategyParameterDecimal _portfolioPeakDrawdownPercent;
         private StrategyParameterDecimal _portfolioPeakValue;
-        private StrategyParameterButton _stopperTpPercentIncButton;
-        private StrategyParameterButton _stopperTpPercentDecButton;
+        private StrategyParameterButton _stopperTpAtrMultIncButton;
+        private StrategyParameterButton _stopperTpAtrMultDecButton;
+        private StrategyParameterInt _portfolioStopperAtrLen;
+        private StrategyParameterDecimal _portfolioStopperAtrTech;
+        private StrategyParameterDecimal _portfolioStopperSlThresholdTech;
+        private StrategyParameterDecimal _portfolioStopperTpThresholdTech;
         private StrategyParameterString _stopperPostTriggerAfterStopLoss;
         private StrategyParameterString _stopperPostTriggerAfterTakeProfit;
         /// <summary>Stopper: пауза реальной торговли, виртуальные сделки в портфелях L1…L10.</summary>
@@ -898,7 +918,6 @@ namespace OsEngine.Robots.Custom
             new Dictionary<string, StopperVirtualPosition>(StringComparer.OrdinalIgnoreCase);
         private StrategyParameterDecimal _portfolioStopperReferenceEquity;
         private StrategyParameterDecimal _portfolioStopperCurrentEquity;
-        private StrategyParameterInt _portfolioStopperLookbackCandles;
         private StrategyParameterString _stopperMonitorTimeFrame;
         private StrategyParameterString _stopperMonitorSecurity;
         private StrategyParameterString _stopperEodFlatSellTime;
@@ -1022,6 +1041,20 @@ namespace OsEngine.Robots.Custom
             _logicStrictnessIncButton.UserClickOnButtonEvent += LogicStrictnessIncButton_UserClickOnButtonEvent;
             _logicStrictnessDecButton = CreateParameterButton(LogicStrictnessDecButtonName, LogicsTabName);
             _logicStrictnessDecButton.UserClickOnButtonEvent += LogicStrictnessDecButton_UserClickOnButtonEvent;
+            _logicPositionStopLossAtr = CreateParameter(
+                LogicPositionStopLossAtrParamName,
+                LogicPositionStopLossAtrDefault,
+                LogicPositionStopTakeAtrMin,
+                LogicPositionStopTakeAtrMax,
+                LogicPositionStopTakeAtrStep,
+                LogicsTabName);
+            _logicPositionTakeProfitAtr = CreateParameter(
+                LogicPositionTakeProfitAtrParamName,
+                LogicPositionTakeProfitAtrDefault,
+                LogicPositionStopTakeAtrMin,
+                LogicPositionStopTakeAtrMax,
+                LogicPositionStopTakeAtrStep,
+                LogicsTabName);
 
             _logic1 = CreateParameter("Логика 1", MultiLogicDefaultLogics.Logic1LongTrend, LogicsTabName);
             _logic2 = CreateParameter("Логика 2", MultiLogicDefaultLogics.Logic2LongBokovik, LogicsTabName);
@@ -1690,10 +1723,10 @@ namespace OsEngine.Robots.Custom
             WireLogicTabButton(
                 UpdateStopperPortfolioBaselineButtonName,
                 UpdateStopperPortfolioBaselineButton_UserClickOnButtonEvent);
-            WireLogicTabButton(StopperSlPercentIncButtonName, StopperSlPercentIncButton_UserClickOnButtonEvent);
-            WireLogicTabButton(StopperSlPercentDecButtonName, StopperSlPercentDecButton_UserClickOnButtonEvent);
-            WireLogicTabButton(StopperTpPercentIncButtonName, StopperTpPercentIncButton_UserClickOnButtonEvent);
-            WireLogicTabButton(StopperTpPercentDecButtonName, StopperTpPercentDecButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperSlAtrMultIncButtonName, StopperSlAtrMultIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperSlAtrMultDecButtonName, StopperSlAtrMultDecButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperTpAtrMultIncButtonName, StopperTpAtrMultIncButton_UserClickOnButtonEvent);
+            WireLogicTabButton(StopperTpAtrMultDecButtonName, StopperTpAtrMultDecButton_UserClickOnButtonEvent);
         }
 
         private void MetaLogicEnableButton_UserClickOnButtonEvent()
@@ -2356,6 +2389,59 @@ namespace OsEngine.Robots.Custom
                 ResolveLogicStrictnessParameter()?.ValueInt ?? LogicStrictnessDefault);
         }
 
+        private StrategyParameterDecimal ResolveLogicPositionStopLossAtrParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == LogicPositionStopLossAtrParamName);
+            return (fromList as StrategyParameterDecimal) ?? _logicPositionStopLossAtr;
+        }
+
+        private StrategyParameterDecimal ResolveLogicPositionTakeProfitAtrParameter()
+        {
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == LogicPositionTakeProfitAtrParamName);
+            return (fromList as StrategyParameterDecimal) ?? _logicPositionTakeProfitAtr;
+        }
+
+        private decimal ReadLogicPositionStopLossAtrCurrent()
+        {
+            ApplyPrefixesFromOpenParameterDialog();
+
+            if (TryReadDecimalParameterFromOpenParameterGui(LogicPositionStopLossAtrParamName, out decimal fromGui))
+            {
+                return ClampLogicPositionStopTakeAtr(fromGui);
+            }
+
+            return ClampLogicPositionStopTakeAtr(
+                ResolveLogicPositionStopLossAtrParameter()?.ValueDecimal ?? LogicPositionStopLossAtrDefault);
+        }
+
+        private decimal ReadLogicPositionTakeProfitAtrCurrent()
+        {
+            ApplyPrefixesFromOpenParameterDialog();
+
+            if (TryReadDecimalParameterFromOpenParameterGui(LogicPositionTakeProfitAtrParamName, out decimal fromGui))
+            {
+                return ClampLogicPositionStopTakeAtr(fromGui);
+            }
+
+            return ClampLogicPositionStopTakeAtr(
+                ResolveLogicPositionTakeProfitAtrParameter()?.ValueDecimal ?? LogicPositionTakeProfitAtrDefault);
+        }
+
+        private static decimal ClampLogicPositionStopTakeAtr(decimal value)
+        {
+            if (value < LogicPositionStopTakeAtrMin)
+            {
+                return LogicPositionStopTakeAtrMin;
+            }
+
+            if (value > LogicPositionStopTakeAtrMax)
+            {
+                return LogicPositionStopTakeAtrMax;
+            }
+
+            return value;
+        }
+
         private static int ParseStrictnessFromLogicSlotsFingerprint(string fingerprint)
         {
             if (string.IsNullOrEmpty(fingerprint))
@@ -2971,6 +3057,8 @@ namespace OsEngine.Robots.Custom
         {
             SyncDefaultLinRegLengthToParser();
             LogicLineParser.DefaultStrictness = ReadLogicStrictnessCurrent();
+            LogicLineParser.DefaultStopLossAtrMult = ReadLogicPositionStopLossAtrCurrent();
+            LogicLineParser.DefaultTakeProfitAtrMult = ReadLogicPositionTakeProfitAtrCurrent();
         }
 
         private string BuildLogicSlotsFingerprint()
@@ -2979,6 +3067,10 @@ namespace OsEngine.Robots.Custom
             sb.Append(_logicLinRegLen?.ValueInt ?? LogicLinRegLengthDefault);
             sb.Append('\u001e');
             sb.Append(_logicStrictness?.ValueInt ?? LogicStrictnessDefault);
+            sb.Append('\u001e');
+            sb.Append(ReadLogicPositionStopLossAtrCurrent().ToString(CultureInfo.InvariantCulture));
+            sb.Append('\u001e');
+            sb.Append(ReadLogicPositionTakeProfitAtrCurrent().ToString(CultureInfo.InvariantCulture));
             sb.Append('\u001e');
             for (int slot = 1; slot <= LogicSlotCount; slot++)
             {
@@ -4130,6 +4222,19 @@ namespace OsEngine.Robots.Custom
                 + "» на 1 (минимум "
                 + LogicStrictnessMin
                 + ") — смягчить пороги в строках логик; сразу обновляет таблицу и график, без «Принять».");
+            Hint(
+                LogicPositionStopLossAtrParamName,
+                "Кратность ATR для токена "
+                + LogicLineParser.StopLossAtrParamToken
+                + " в строке логики (SL[@SL]): значение 2 даёт SL[2ATR]. 0 — SL по позиции отключён. "
+                + "ATR берётся из первого ATR-атома той же логики (как у SL[1.5ATR]). "
+                + "Явное SL[…] в строке имеет приоритет.");
+            Hint(
+                LogicPositionTakeProfitAtrParamName,
+                "Кратность ATR для токена "
+                + LogicLineParser.TakeProfitAtrParamToken
+                + " в строке логики (TP[@TP]): значение 3 даёт TP[3ATR]. 0 — TP по позиции отключён. "
+                + "ATR — из первого ATR-атома логики. Явное TP[…] в строке имеет приоритет.");
             string logicSlotHintSuffix =
                 "\n\nОдинаковый индикатор с теми же параметрами в разных логиках — один экземпляр на графике. "
                 + "Regime=On: вход по Op, выход по Cl. Volume делится поровну между сработавшими логиками на свече.";
@@ -4167,61 +4272,65 @@ namespace OsEngine.Robots.Custom
                 "Окно " + MetaIndicatorPnlSmaAbbrev + " для мета-логики и всех портфельных серий.");
 
             Hint("Общепортфельный stop-loss: включён",
-                "Stopper: просадка суммарной equity L1…L10 от ref (lookback свечей). По умолчанию выкл.");
+                "Stopper: SL по ATR суммарной equity L1…L10. Проверка один раз за цикл «общей свечи» скринера. По умолчанию выкл.");
             Hint(
-                PortfolioStopLossPercentParamName,
-                "Порог SL: equity ≤ ref × (1 − %/100). По умолчанию 0,4. Ref — equity N свечей назад. "
-                + "Кнопки ± меняют только этот %, галочку «включён» не трогают; значение применяется сразу.");
+                PortfolioStopLossAtrMultParamName,
+                "Порог SL: equity ≤ ref − K×ATR_port. ATR_port — среднее |Δequity| за N свечей агрегата L1…L10. "
+                + "По умолчанию K=2. Кнопки ± меняют K, галочку «включён» не трогают.");
             Hint(
-                StopperSlPercentIncButtonName,
+                StopperSlAtrMultIncButtonName,
                 "Увеличить «"
-                + PortfolioStopLossPercentParamName
+                + PortfolioStopLossAtrMultParamName
                 + "» на "
-                + StopperSlPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + StopperSlAtrMultButtonDelta.ToString(CultureInfo.InvariantCulture)
                 + " (макс. "
-                + StopperSlPercentMax.ToString(CultureInfo.InvariantCulture)
+                + StopperSlAtrMultMax.ToString(CultureInfo.InvariantCulture)
                 + ").");
             Hint(
-                StopperSlPercentDecButtonName,
+                StopperSlAtrMultDecButtonName,
                 "Уменьшить «"
-                + PortfolioStopLossPercentParamName
+                + PortfolioStopLossAtrMultParamName
                 + "» на "
-                + StopperSlPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + StopperSlAtrMultButtonDelta.ToString(CultureInfo.InvariantCulture)
                 + " (мин. "
-                + StopperSlPercentMin.ToString(CultureInfo.InvariantCulture)
+                + StopperSlAtrMultMin.ToString(CultureInfo.InvariantCulture)
                 + ").");
+            Hint(
+                PortfolioStopperAtrLenParamName,
+                "Окно ATR по кривой суммарной equity L1…L10 (одна точка за цикл скринера). По умолчанию 14.");
             Hint("Общепортфельный take-profit: включён",
-                "Stopper: рост суммарной equity от ref. По умолчанию выкл.");
+                "Stopper: TP по ATR суммарной equity от ref. Один раз за цикл «общей свечи». По умолчанию выкл.");
             Hint(
-                PortfolioTakeProfitPercentParamName,
-                "Порог TP: equity ≥ ref × (1 + %/100). По умолчанию 10. "
-                + "Кнопки ± меняют только этот %, галочку «включён» не трогают; значение применяется сразу.");
+                PortfolioTakeProfitAtrMultParamName,
+                "Порог TP: equity ≥ ref + K×ATR_port. По умолчанию K=3. "
+                + "Кнопки ± меняют K, галочку «включён» не трогают.");
             Hint(
-                StopperTpPercentIncButtonName,
+                StopperTpAtrMultIncButtonName,
                 "Увеличить «"
-                + PortfolioTakeProfitPercentParamName
+                + PortfolioTakeProfitAtrMultParamName
                 + "» на "
-                + StopperTpPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + StopperTpAtrMultButtonDelta.ToString(CultureInfo.InvariantCulture)
                 + " (макс. "
-                + StopperTpPercentMax.ToString(CultureInfo.InvariantCulture)
+                + StopperTpAtrMultMax.ToString(CultureInfo.InvariantCulture)
                 + ").");
             Hint(
-                StopperTpPercentDecButtonName,
+                StopperTpAtrMultDecButtonName,
                 "Уменьшить «"
-                + PortfolioTakeProfitPercentParamName
+                + PortfolioTakeProfitAtrMultParamName
                 + "» на "
-                + StopperTpPercentButtonDelta.ToString(CultureInfo.InvariantCulture)
+                + StopperTpAtrMultButtonDelta.ToString(CultureInfo.InvariantCulture)
                 + " (мин. "
-                + StopperTpPercentMin.ToString(CultureInfo.InvariantCulture)
+                + StopperTpAtrMultMin.ToString(CultureInfo.InvariantCulture)
                 + ").");
             Hint(
-                PortfolioStopLossRublesParamName,
-                "Альтернатива %: SL при просадке портфеля ≥ N руб от ref (ref − equity). 0 — только %. "
-                + "Срабатывает, если выполнен % или рубли (логика ИЛИ). Портфель уже в рублях на MOEX.");
+                PortfolioStopperAtrTechParamName,
+                "Тех.: ATR_port на последней точке агрегата L1…L10 (руб. за свечу цикла).");
             Hint(
-                PortfolioTakeProfitRublesParamName,
-                "Альтернатива %: TP при прибыли ≥ N руб от ref (equity − ref). 0 — только %. "
-                + "Срабатывает, если выполнен % или рубли (логика ИЛИ).");
+                PortfolioStopperSlThresholdTechParamName,
+                "Тех.: ref − K_sl×ATR_port — уровень общепортфельного stop-loss.");
+            Hint(
+                PortfolioStopperTpThresholdTechParamName,
+                "Тех.: ref + K_tp×ATR_port — уровень общепортфельного take-profit.");
             Hint(StopperPostTriggerAfterStopLossParamName,
                 "После общепортфельного SL — закрыть все позиции.\n"
                 + "Отключено — только закрытие, Regime не меняется.\n"
@@ -4232,13 +4341,10 @@ namespace OsEngine.Robots.Custom
             Hint(StopperPostTriggerAfterTakeProfitParamName,
                 "После общепортфельного TP — то же, что для stop-loss (три режима).");
             Hint(PortfolioStopperReferenceEquityParamName,
-                "База SL/TP или lookback. Может быть отрицательной (плечо). До сделок — депозит; иначе PnL L1…L10.");
+                "База ref для SL/TP по ATR. Автоинициализация при первом цикле; кнопка «Обновить сумму» или срабатывание фиксируют ref.");
             Hint(PortfolioStopperCurrentEquityParamName,
                 "PnL L1…L10 (может быть отрицательным — плечо/убыток); до сделок — депозит тестера/лайва. "
                 + "В фейк-торговле — виртуальные позиции в тех же L1…L10.");
-            Hint("Предыдущая сумма портфеля: lookback (свечей)",
-                "Если база = 0 — ref из N свечей назад (по умолчанию 5). Кнопка SL/TP или срабатывание фиксируют базу. "
-                + "При Min1…Min15 — N = свечи монитора (страница 2), не страницы 1.");
             Hint(
                 StopperMonitorTimeFrameParamName,
                 "«Как основной TF» — Stopper на «общей свече» страницы 1; вкладка «2» удаляется. "
@@ -4497,12 +4603,6 @@ namespace OsEngine.Robots.Custom
 
         #region Stopper: общепортфельный SL/TP
 
-        private sealed class StopperEquitySnapshot
-        {
-            public DateTime CandleTime;
-            public decimal Equity;
-        }
-
         private static string[] BuildStopperEodFlatSellChoices()
         {
             var choices = new string[25];
@@ -4521,46 +4621,39 @@ namespace OsEngine.Robots.Custom
                 "Общепортфельный stop-loss: включён",
                 false,
                 StopperTabName);
-            _portfolioStopLossPercent = CreateParameter(
-                PortfolioStopLossPercentParamName,
-                StopperSlPercentDefault,
-                StopperSlPercentMin,
-                StopperSlPercentMax,
-                StopperSlPercentUiStep,
+            _portfolioStopLossAtrMult = CreateParameter(
+                PortfolioStopLossAtrMultParamName,
+                StopperSlAtrMultDefault,
+                StopperSlAtrMultMin,
+                StopperSlAtrMultMax,
+                StopperSlAtrMultUiStep,
                 StopperTabName);
-            _stopperSlPercentIncButton = CreateParameterButton(StopperSlPercentIncButtonName, StopperTabName);
-            _stopperSlPercentIncButton.UserClickOnButtonEvent += StopperSlPercentIncButton_UserClickOnButtonEvent;
-            _stopperSlPercentDecButton = CreateParameterButton(StopperSlPercentDecButtonName, StopperTabName);
-            _stopperSlPercentDecButton.UserClickOnButtonEvent += StopperSlPercentDecButton_UserClickOnButtonEvent;
-            _portfolioStopLossRubles = CreateParameter(
-                PortfolioStopLossRublesParamName,
-                0m,
-                0m,
-                1_000_000_000_000m,
-                0,
+            _stopperSlAtrMultIncButton = CreateParameterButton(StopperSlAtrMultIncButtonName, StopperTabName);
+            _stopperSlAtrMultIncButton.UserClickOnButtonEvent += StopperSlAtrMultIncButton_UserClickOnButtonEvent;
+            _stopperSlAtrMultDecButton = CreateParameterButton(StopperSlAtrMultDecButtonName, StopperTabName);
+            _stopperSlAtrMultDecButton.UserClickOnButtonEvent += StopperSlAtrMultDecButton_UserClickOnButtonEvent;
+            _portfolioStopperAtrLen = CreateParameter(
+                PortfolioStopperAtrLenParamName,
+                PortfolioStopperAtrLenDefault,
+                2,
+                500,
+                1,
                 StopperTabName);
             _usePortfolioTakeProfit = CreateParameter(
                 "Общепортфельный take-profit: включён",
                 false,
                 StopperTabName);
-            _portfolioTakeProfitPercent = CreateParameter(
-                PortfolioTakeProfitPercentParamName,
-                StopperTpPercentDefault,
-                StopperTpPercentMin,
-                StopperTpPercentMax,
-                StopperTpPercentUiStep,
+            _portfolioTakeProfitAtrMult = CreateParameter(
+                PortfolioTakeProfitAtrMultParamName,
+                StopperTpAtrMultDefault,
+                StopperTpAtrMultMin,
+                StopperTpAtrMultMax,
+                StopperTpAtrMultUiStep,
                 StopperTabName);
-            _stopperTpPercentIncButton = CreateParameterButton(StopperTpPercentIncButtonName, StopperTabName);
-            _stopperTpPercentIncButton.UserClickOnButtonEvent += StopperTpPercentIncButton_UserClickOnButtonEvent;
-            _stopperTpPercentDecButton = CreateParameterButton(StopperTpPercentDecButtonName, StopperTabName);
-            _stopperTpPercentDecButton.UserClickOnButtonEvent += StopperTpPercentDecButton_UserClickOnButtonEvent;
-            _portfolioTakeProfitRubles = CreateParameter(
-                PortfolioTakeProfitRublesParamName,
-                0m,
-                0m,
-                1_000_000_000_000m,
-                0,
-                StopperTabName);
+            _stopperTpAtrMultIncButton = CreateParameterButton(StopperTpAtrMultIncButtonName, StopperTabName);
+            _stopperTpAtrMultIncButton.UserClickOnButtonEvent += StopperTpAtrMultIncButton_UserClickOnButtonEvent;
+            _stopperTpAtrMultDecButton = CreateParameterButton(StopperTpAtrMultDecButtonName, StopperTabName);
+            _stopperTpAtrMultDecButton.UserClickOnButtonEvent += StopperTpAtrMultDecButton_UserClickOnButtonEvent;
             _usePortfolioPeakDrawdownStop = CreateParameter(
                 PortfolioPeakDrawdownEnabledParamName,
                 false,
@@ -4603,12 +4696,26 @@ namespace OsEngine.Robots.Custom
                 1_000_000_000_000m,
                 2,
                 StopperTabName);
-            _portfolioStopperLookbackCandles = CreateParameter(
-                "Предыдущая сумма портфеля: lookback (свечей)",
-                5,
-                1,
-                5000,
-                1,
+            _portfolioStopperAtrTech = CreateParameter(
+                PortfolioStopperAtrTechParamName,
+                0m,
+                0m,
+                1_000_000_000_000m,
+                2,
+                StopperTabName);
+            _portfolioStopperSlThresholdTech = CreateParameter(
+                PortfolioStopperSlThresholdTechParamName,
+                0m,
+                -1_000_000_000_000m,
+                1_000_000_000_000m,
+                2,
+                StopperTabName);
+            _portfolioStopperTpThresholdTech = CreateParameter(
+                PortfolioStopperTpThresholdTechParamName,
+                0m,
+                -1_000_000_000_000m,
+                1_000_000_000_000m,
+                2,
                 StopperTabName);
             _stopperMonitorTimeFrame = CreateParameter(
                 StopperMonitorTimeFrameParamName,
@@ -4631,79 +4738,79 @@ namespace OsEngine.Robots.Custom
                 UpdateStopperPortfolioBaselineButton_UserClickOnButtonEvent;
         }
 
-        private void StopperSlPercentIncButton_UserClickOnButtonEvent()
+        private void StopperSlAtrMultIncButton_UserClickOnButtonEvent()
         {
-            AdjustStopperPercentParameter(
-                PortfolioStopLossPercentParamName,
-                StopperSlPercentButtonDelta,
-                StopperSlPercentMin,
-                StopperSlPercentMax,
-                StopperSlPercentUiStep);
+            AdjustStopperAtrMultParameter(
+                PortfolioStopLossAtrMultParamName,
+                StopperSlAtrMultButtonDelta,
+                StopperSlAtrMultMin,
+                StopperSlAtrMultMax,
+                StopperSlAtrMultUiStep);
         }
 
-        private void StopperSlPercentDecButton_UserClickOnButtonEvent()
+        private void StopperSlAtrMultDecButton_UserClickOnButtonEvent()
         {
-            AdjustStopperPercentParameter(
-                PortfolioStopLossPercentParamName,
-                -StopperSlPercentButtonDelta,
-                StopperSlPercentMin,
-                StopperSlPercentMax,
-                StopperSlPercentUiStep);
+            AdjustStopperAtrMultParameter(
+                PortfolioStopLossAtrMultParamName,
+                -StopperSlAtrMultButtonDelta,
+                StopperSlAtrMultMin,
+                StopperSlAtrMultMax,
+                StopperSlAtrMultUiStep);
         }
 
-        private void StopperTpPercentIncButton_UserClickOnButtonEvent()
+        private void StopperTpAtrMultIncButton_UserClickOnButtonEvent()
         {
-            AdjustStopperPercentParameter(
-                PortfolioTakeProfitPercentParamName,
-                StopperTpPercentButtonDelta,
-                StopperTpPercentMin,
-                StopperTpPercentMax,
-                StopperTpPercentUiStep);
+            AdjustStopperAtrMultParameter(
+                PortfolioTakeProfitAtrMultParamName,
+                StopperTpAtrMultButtonDelta,
+                StopperTpAtrMultMin,
+                StopperTpAtrMultMax,
+                StopperTpAtrMultUiStep);
         }
 
-        private void StopperTpPercentDecButton_UserClickOnButtonEvent()
+        private void StopperTpAtrMultDecButton_UserClickOnButtonEvent()
         {
-            AdjustStopperPercentParameter(
-                PortfolioTakeProfitPercentParamName,
-                -StopperTpPercentButtonDelta,
-                StopperTpPercentMin,
-                StopperTpPercentMax,
-                StopperTpPercentUiStep);
+            AdjustStopperAtrMultParameter(
+                PortfolioTakeProfitAtrMultParamName,
+                -StopperTpAtrMultButtonDelta,
+                StopperTpAtrMultMin,
+                StopperTpAtrMultMax,
+                StopperTpAtrMultUiStep);
         }
 
-        private StrategyParameterDecimal ResolvePortfolioStopLossPercentParameter()
+        private StrategyParameterDecimal ResolvePortfolioStopLossAtrMultParameter()
         {
-            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioStopLossPercentParamName);
-            return (fromList as StrategyParameterDecimal) ?? _portfolioStopLossPercent;
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioStopLossAtrMultParamName);
+            return (fromList as StrategyParameterDecimal) ?? _portfolioStopLossAtrMult;
         }
 
-        private StrategyParameterDecimal ResolvePortfolioTakeProfitPercentParameter()
+        private StrategyParameterDecimal ResolvePortfolioTakeProfitAtrMultParameter()
         {
-            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioTakeProfitPercentParamName);
-            return (fromList as StrategyParameterDecimal) ?? _portfolioTakeProfitPercent;
+            IIStrategyParameter fromList = Parameters?.Find(p => p.Name == PortfolioTakeProfitAtrMultParamName);
+            return (fromList as StrategyParameterDecimal) ?? _portfolioTakeProfitAtrMult;
         }
 
-        private decimal ReadPortfolioStopLossPercentCurrent()
+        private decimal ReadPortfolioStopLossAtrMultCurrent()
         {
-            if (TryReadDecimalParameterFromOpenParameterGui(PortfolioStopLossPercentParamName, out decimal fromGui))
+            if (TryReadDecimalParameterFromOpenParameterGui(PortfolioStopLossAtrMultParamName, out decimal fromGui))
             {
                 return fromGui;
             }
 
-            return ResolvePortfolioStopLossPercentParameter()?.ValueDecimal ?? StopperSlPercentDefault;
+            return ResolvePortfolioStopLossAtrMultParameter()?.ValueDecimal ?? StopperSlAtrMultDefault;
         }
 
-        private decimal ReadPortfolioTakeProfitPercentCurrent()
+        private decimal ReadPortfolioTakeProfitAtrMultCurrent()
         {
-            if (TryReadDecimalParameterFromOpenParameterGui(PortfolioTakeProfitPercentParamName, out decimal fromGui))
+            if (TryReadDecimalParameterFromOpenParameterGui(PortfolioTakeProfitAtrMultParamName, out decimal fromGui))
             {
                 return fromGui;
             }
 
-            return ResolvePortfolioTakeProfitPercentParameter()?.ValueDecimal ?? StopperTpPercentDefault;
+            return ResolvePortfolioTakeProfitAtrMultParameter()?.ValueDecimal ?? StopperTpAtrMultDefault;
         }
 
-        private static decimal ClampAndRoundStopperPercent(decimal value, decimal min, decimal max, decimal step)
+        private static decimal ClampAndRoundStopperAtrMult(decimal value, decimal min, decimal max, decimal step)
         {
             value = Math.Max(min, Math.Min(max, value));
             if (step <= 0m)
@@ -4714,7 +4821,7 @@ namespace OsEngine.Robots.Custom
             return Math.Round(value / step, MidpointRounding.AwayFromZero) * step;
         }
 
-        private void AdjustStopperPercentParameter(
+        private void AdjustStopperAtrMultParameter(
             string parameterName,
             decimal delta,
             decimal min,
@@ -4726,19 +4833,19 @@ namespace OsEngine.Robots.Custom
                 ApplyPrefixesFromOpenParameterDialog();
                 StrategyParameterDecimal param = string.Equals(
                     parameterName,
-                    PortfolioStopLossPercentParamName,
+                    PortfolioStopLossAtrMultParamName,
                     StringComparison.Ordinal)
-                    ? ResolvePortfolioStopLossPercentParameter()
-                    : ResolvePortfolioTakeProfitPercentParameter();
+                    ? ResolvePortfolioStopLossAtrMultParameter()
+                    : ResolvePortfolioTakeProfitAtrMultParameter();
                 if (param == null)
                 {
                     return;
                 }
 
-                decimal current = string.Equals(parameterName, PortfolioStopLossPercentParamName, StringComparison.Ordinal)
-                    ? ReadPortfolioStopLossPercentCurrent()
-                    : ReadPortfolioTakeProfitPercentCurrent();
-                decimal next = ClampAndRoundStopperPercent(current + delta, min, max, step);
+                decimal current = string.Equals(parameterName, PortfolioStopLossAtrMultParamName, StringComparison.Ordinal)
+                    ? ReadPortfolioStopLossAtrMultCurrent()
+                    : ReadPortfolioTakeProfitAtrMultCurrent();
+                decimal next = ClampAndRoundStopperAtrMult(current + delta, min, max, step);
                 if (next == current)
                 {
                     SendNewLogMessage(
@@ -4759,7 +4866,7 @@ namespace OsEngine.Robots.Custom
                     return;
                 }
 
-                ApplyStopperPercentParameterValue(param, parameterName, next);
+                ApplyStopperAtrMultParameterValue(param, parameterName, next);
                 SendNewLogMessage(
                     NameStrategyUniq
                     + " | "
@@ -4777,7 +4884,7 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void ApplyStopperPercentParameterValue(
+        private void ApplyStopperAtrMultParameterValue(
             StrategyParameterDecimal param,
             string parameterName,
             decimal next)
@@ -5047,7 +5154,6 @@ namespace OsEngine.Robots.Custom
             BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
             decimal currentEquity = currentEquityForDisplay ?? TryGetStopperMonitoredEquity(tab);
             SetStrategyParameterDecimalSilent(_portfolioStopperCurrentEquity, currentEquity);
-            ResetStopperEquityHistory(currentEquity, candleTime);
 
             if (saveParameters)
             {
@@ -5055,64 +5161,158 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void ResetStopperEquityHistory(decimal equity, DateTime candleTime)
+        private bool IsPortfolioStopperSlTpEnabled()
         {
-            _stopperEquityHistory.Clear();
-            _stopperEquityHistory.Add(new StopperEquitySnapshot
-            {
-                CandleTime = candleTime,
-                Equity = equity
-            });
+            return (_usePortfolioStopLoss?.ValueBool ?? false)
+                || (_usePortfolioTakeProfit?.ValueBool ?? false);
         }
 
         private bool TryResolveStopperReferenceEquity(out decimal referenceEquity)
         {
-            if (_stopperReferenceBaselineLocked)
+            referenceEquity = _portfolioStopperReferenceEquity?.ValueDecimal ?? 0m;
+            if (referenceEquity == 0m)
             {
-                referenceEquity = _portfolioStopperReferenceEquity.ValueDecimal;
-                if (ShouldUseLogicPortfolioEquityForStopper())
-                {
-                    RecalculateAllLogicPortfolioUnrealized();
-                    BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
-                    decimal monitoredEquity = TryGetStopperMonitoredEquity(tab);
-                    decimal logicEquityRaw = SumLogicPortfolioEquityRaw();
-                    if (IsStaleReferenceVersusMonitoredEquity(
-                            referenceEquity,
-                            monitoredEquity,
-                            logicEquityRaw))
-                    {
-                        _stopperReferenceBaselineLocked = false;
-                        SendNewLogMessage(
-                            NameStrategyUniq
-                            + " | Stopper: «Предыдущая сумма» "
-                            + referenceEquity.ToString(CultureInfo.InvariantCulture)
-                            + " — депозит, а мониторинг уже по PnL L1…L10 ("
-                            + monitoredEquity.ToString(CultureInfo.InvariantCulture)
-                            + "). База сброшена — нажмите «"
-                            + UpdateStopperPortfolioBaselineButtonName
-                            + "» или задайте lookback.",
-                            LogMessageType.User);
-                    }
-                    else
-                    {
-                        return true;
-                    }
-                }
-                else
-                {
-                    return true;
-                }
-            }
-
-            int lookback = Math.Max(1, _portfolioStopperLookbackCandles.ValueInt);
-            if (_stopperEquityHistory.Count <= lookback)
-            {
-                referenceEquity = 0m;
                 return false;
             }
 
-            referenceEquity = _stopperEquityHistory[_stopperEquityHistory.Count - 1 - lookback].Equity;
+            if (_stopperReferenceBaselineLocked && ShouldUseLogicPortfolioEquityForStopper())
+            {
+                RecalculateAllLogicPortfolioUnrealized();
+                BotTabSimple tab = TryGetPortfolioMonitoringReferenceTab();
+                decimal monitoredEquity = TryGetStopperMonitoredEquity(tab);
+                decimal logicEquityRaw = SumLogicPortfolioEquityRaw();
+                if (IsStaleReferenceVersusMonitoredEquity(
+                        referenceEquity,
+                        monitoredEquity,
+                        logicEquityRaw))
+                {
+                    _stopperReferenceBaselineLocked = false;
+                    SendNewLogMessage(
+                        NameStrategyUniq
+                        + " | Stopper: «Предыдущая сумма» "
+                        + referenceEquity.ToString(CultureInfo.InvariantCulture)
+                        + " — депозит, а мониторинг уже по PnL L1…L10 ("
+                        + monitoredEquity.ToString(CultureInfo.InvariantCulture)
+                        + "). База сброшена — нажмите «"
+                        + UpdateStopperPortfolioBaselineButtonName
+                        + "».",
+                        LogMessageType.User);
+                    referenceEquity = 0m;
+                    return false;
+                }
+            }
+
             return true;
+        }
+
+        private MetaIndicatorConfig BuildStopperPortfolioAtrConfig()
+        {
+            return new MetaIndicatorConfig
+            {
+                UseAtr = true,
+                AtrLen = Math.Max(1, _portfolioStopperAtrLen?.ValueInt ?? PortfolioStopperAtrLenDefault)
+            };
+        }
+
+        private bool NeedsStopperAggregatePortfolioHistory()
+        {
+            return IsPortfolioStopperSlTpEnabled();
+        }
+
+        private bool TryCalculatePortfolioAtrForStopper(out decimal portfolioAtr)
+        {
+            portfolioAtr = 0m;
+            IReadOnlyList<LogicPortfolioPoint> history = _aggregateMetaPortfolio.History;
+            if (history == null || history.Count == 0)
+            {
+                return false;
+            }
+
+            int index = history.Count - 1;
+            var meta = new MetaIndicatorValues();
+            MetaIndicatorEquityCalculator.CalculateAt(
+                history,
+                index,
+                BuildStopperPortfolioAtrConfig(),
+                meta);
+            if (!meta.Atr.HasValue || meta.Atr.Value <= 0m)
+            {
+                return false;
+            }
+
+            portfolioAtr = meta.Atr.Value;
+            return true;
+        }
+
+        private void EnsureAggregatePortfolioCandlePointOnce(DateTime candleTime, BotTabSimple refTab)
+        {
+            MetaIndicatorConfig metaCfg = BuildAggregateMetaIndicatorConfig();
+            if (!NeedsStopperAggregatePortfolioHistory() && !metaCfg.HasAnyEnabled)
+            {
+                return;
+            }
+
+            RecalculateAllLogicPortfolioUnrealized();
+            decimal total = GetCombinedLogicPortfolioEquity();
+            bool forcePoint = NeedsStopperAggregatePortfolioHistory();
+
+            if (_aggregateMetaPortfolio.LastCandleTime == candleTime
+                && _aggregateMetaPortfolio.History.Count > 0)
+            {
+                LogicPortfolioPoint last = _aggregateMetaPortfolio.History[_aggregateMetaPortfolio.History.Count - 1];
+                decimal prevEquity = last.Equity - last.Delta;
+                last.Delta = total - prevEquity;
+                last.Equity = total;
+                last.Realized = total;
+                MetaIndicatorEquityCalculator.CalculateAt(
+                    _aggregateMetaPortfolio.History,
+                    _aggregateMetaPortfolio.History.Count - 1,
+                    BuildAggregateMetaIndicatorConfig(),
+                    last.Meta);
+                if (forcePoint)
+                {
+                    MetaIndicatorEquityCalculator.CalculateAt(
+                        _aggregateMetaPortfolio.History,
+                        _aggregateMetaPortfolio.History.Count - 1,
+                        BuildStopperPortfolioAtrConfig(),
+                        last.Meta);
+                }
+
+                return;
+            }
+
+            decimal prevEquityTotal = _aggregateMetaPortfolio.History.Count > 0
+                ? _aggregateMetaPortfolio.History[_aggregateMetaPortfolio.History.Count - 1].Equity
+                : 0m;
+            decimal delta = total - prevEquityTotal;
+            if (!forcePoint
+                && _aggregateMetaPortfolio.History.Count > 0
+                && Math.Abs(delta) < LogicPortfolioCandleMinDelta)
+            {
+                return;
+            }
+
+            string tabKey = refTab != null ? GetLogicPortfolioTabKey(refTab) : "";
+            AppendAggregateMetaPortfolioPoint(
+                "candle",
+                delta,
+                tabKey,
+                "mtm-aggr",
+                candleTime,
+                total);
+        }
+
+        private void RefreshStopperAtrTechDisplay(decimal referenceEquity, decimal portfolioAtr)
+        {
+            SetStrategyParameterDecimalSilent(_portfolioStopperAtrTech, portfolioAtr);
+            decimal slMult = ReadPortfolioStopLossAtrMultCurrent();
+            decimal tpMult = ReadPortfolioTakeProfitAtrMultCurrent();
+            SetStrategyParameterDecimalSilent(
+                _portfolioStopperSlThresholdTech,
+                slMult > 0m ? referenceEquity - slMult * portfolioAtr : 0m);
+            SetStrategyParameterDecimalSilent(
+                _portfolioStopperTpThresholdTech,
+                tpMult > 0m ? referenceEquity + tpMult * portfolioAtr : 0m);
         }
 
         private void SetPortfolioPeakValue(decimal value)
@@ -5232,6 +5432,8 @@ namespace OsEngine.Robots.Custom
                     referenceEquity,
                     currentEquity,
                     out decimal slTriggerLevel,
+                    out decimal slAtrMult,
+                    out decimal slPortfolioAtr,
                     out string slThresholdLabel))
             {
                 return ExecutePortfolioStopperTrigger(
@@ -5240,8 +5442,8 @@ namespace OsEngine.Robots.Custom
                     isTakeProfit: false,
                     referenceEquity,
                     currentEquity,
-                    ReadPortfolioStopLossPercentCurrent(),
-                    _portfolioStopLossRubles.ValueDecimal,
+                    slAtrMult,
+                    slPortfolioAtr,
                     slTriggerLevel,
                     slThresholdLabel);
             }
@@ -5251,6 +5453,8 @@ namespace OsEngine.Robots.Custom
                     referenceEquity,
                     currentEquity,
                     out decimal tpTriggerLevel,
+                    out decimal tpAtrMult,
+                    out decimal tpPortfolioAtr,
                     out string tpThresholdLabel))
             {
                 return ExecutePortfolioStopperTrigger(
@@ -5259,8 +5463,8 @@ namespace OsEngine.Robots.Custom
                     isTakeProfit: true,
                     referenceEquity,
                     currentEquity,
-                    ReadPortfolioTakeProfitPercentCurrent(),
-                    _portfolioTakeProfitRubles.ValueDecimal,
+                    tpAtrMult,
+                    tpPortfolioAtr,
                     tpTriggerLevel,
                     tpThresholdLabel);
             }
@@ -5580,111 +5784,71 @@ namespace OsEngine.Robots.Custom
             decimal referenceEquity,
             decimal currentEquity,
             out decimal triggerLevel,
+            out decimal atrMult,
+            out decimal portfolioAtr,
             out string thresholdLabel)
         {
             triggerLevel = referenceEquity;
+            atrMult = 0m;
+            portfolioAtr = 0m;
             thresholdLabel = "";
 
-            decimal pct = ReadPortfolioStopLossPercentCurrent();
-            decimal rub = _portfolioStopLossRubles?.ValueDecimal ?? 0m;
-            if (pct <= 0m && rub <= 0m)
+            atrMult = ReadPortfolioStopLossAtrMultCurrent();
+            if (atrMult <= 0m)
             {
                 return false;
             }
 
-            bool byPercent = false;
-            bool byRubles = false;
-            decimal pctFloor = referenceEquity;
-            decimal rubFloor = referenceEquity;
-
-            if (pct > 0m)
-            {
-                pctFloor = referenceEquity * (1m - pct / 100m);
-                byPercent = currentEquity <= pctFloor;
-            }
-
-            if (rub > 0m)
-            {
-                rubFloor = referenceEquity - rub;
-                byRubles = currentEquity <= rubFloor;
-            }
-
-            if (!byPercent && !byRubles)
+            if (!TryCalculatePortfolioAtrForStopper(out portfolioAtr))
             {
                 return false;
             }
 
-            triggerLevel = pct > 0m && rub > 0m
-                ? Math.Max(pctFloor, rubFloor)
-                : (pct > 0m ? pctFloor : rubFloor);
-            thresholdLabel = BuildStopperThresholdLabel(pct, rub, isTakeProfit: false);
-            return true;
+            triggerLevel = referenceEquity - atrMult * portfolioAtr;
+            thresholdLabel = BuildStopperAtrThresholdLabel(atrMult, portfolioAtr, isTakeProfit: false);
+            return currentEquity <= triggerLevel;
         }
 
         private bool TryEvaluatePortfolioTakeProfitTrigger(
             decimal referenceEquity,
             decimal currentEquity,
             out decimal triggerLevel,
+            out decimal atrMult,
+            out decimal portfolioAtr,
             out string thresholdLabel)
         {
             triggerLevel = referenceEquity;
+            atrMult = 0m;
+            portfolioAtr = 0m;
             thresholdLabel = "";
 
-            decimal pct = ReadPortfolioTakeProfitPercentCurrent();
-            decimal rub = _portfolioTakeProfitRubles?.ValueDecimal ?? 0m;
-            if (pct <= 0m && rub <= 0m)
+            atrMult = ReadPortfolioTakeProfitAtrMultCurrent();
+            if (atrMult <= 0m)
             {
                 return false;
             }
 
-            bool byPercent = false;
-            bool byRubles = false;
-            decimal pctCeiling = referenceEquity;
-            decimal rubCeiling = referenceEquity;
-
-            if (pct > 0m)
-            {
-                pctCeiling = referenceEquity * (1m + pct / 100m);
-                byPercent = currentEquity >= pctCeiling;
-            }
-
-            if (rub > 0m)
-            {
-                rubCeiling = referenceEquity + rub;
-                byRubles = currentEquity >= rubCeiling;
-            }
-
-            if (!byPercent && !byRubles)
+            if (!TryCalculatePortfolioAtrForStopper(out portfolioAtr))
             {
                 return false;
             }
 
-            triggerLevel = pct > 0m && rub > 0m
-                ? Math.Min(pctCeiling, rubCeiling)
-                : (pct > 0m ? pctCeiling : rubCeiling);
-            thresholdLabel = BuildStopperThresholdLabel(pct, rub, isTakeProfit: true);
-            return true;
+            triggerLevel = referenceEquity + atrMult * portfolioAtr;
+            thresholdLabel = BuildStopperAtrThresholdLabel(atrMult, portfolioAtr, isTakeProfit: true);
+            return currentEquity >= triggerLevel;
         }
 
-        private static string BuildStopperThresholdLabel(decimal thresholdPercent, decimal thresholdRubles, bool isTakeProfit)
+        private static string BuildStopperAtrThresholdLabel(decimal atrMult, decimal portfolioAtr, bool isTakeProfit)
         {
-            var parts = new List<string>();
-            if (thresholdPercent > 0m)
-            {
-                parts.Add(thresholdPercent.ToString(CultureInfo.InvariantCulture) + "%");
-            }
-
-            if (thresholdRubles > 0m)
-            {
-                parts.Add(thresholdRubles.ToString(CultureInfo.InvariantCulture) + " руб");
-            }
-
-            if (parts.Count == 0)
+            if (atrMult <= 0m || portfolioAtr <= 0m)
             {
                 return isTakeProfit ? "take-profit" : "stop-loss";
             }
 
-            return string.Join(" или ", parts);
+            return atrMult.ToString(CultureInfo.InvariantCulture)
+                + "×ATR (ATR="
+                + portfolioAtr.ToString(CultureInfo.InvariantCulture)
+                + ")";
         }
 
         private bool IsStopMonitorSameAsMainTimeFrame()
@@ -6415,6 +6579,7 @@ namespace OsEngine.Robots.Custom
                 refTab = tab;
             }
 
+            EnsureAggregatePortfolioCandlePointOnce(candleTime, refTab);
             RefreshStopperTechEquityDisplayAggregated(refTab, candleTime);
             if (TryManagePortfolioStopperProtection(refTab, candleTime))
             {
@@ -6507,27 +6672,6 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void AppendStopperEquitySnapshot(DateTime candleTime, decimal equity)
-        {
-            if (_stopperEquityHistory.Count > 0
-                && _stopperEquityHistory[_stopperEquityHistory.Count - 1].CandleTime == candleTime)
-            {
-                _stopperEquityHistory[_stopperEquityHistory.Count - 1].Equity = equity;
-                return;
-            }
-
-            _stopperEquityHistory.Add(new StopperEquitySnapshot
-            {
-                CandleTime = candleTime,
-                Equity = equity
-            });
-
-            while (_stopperEquityHistory.Count > StopperEquityHistoryCap)
-            {
-                _stopperEquityHistory.RemoveAt(0);
-            }
-        }
-
         /// <summary>
         /// Тех. параметры сумм портфеля на «общей свече» скринера (после всех вкладок), не на каждой бумаге.
         /// </summary>
@@ -6536,7 +6680,6 @@ namespace OsEngine.Robots.Custom
             RecalculateAllLogicPortfolioUnrealized();
             decimal currentEquity = TryGetStopperMonitoredEquity(tab);
             SetStrategyParameterDecimalSilent(_portfolioStopperCurrentEquity, currentEquity);
-            AppendStopperEquitySnapshot(candleTime, currentEquity);
 
             if (_stopperReferenceBaselineLocked
                 && ShouldUseLogicPortfolioEquityForStopper()
@@ -6558,14 +6701,27 @@ namespace OsEngine.Robots.Custom
                     LogMessageType.User);
             }
 
-            if (!_stopperReferenceBaselineLocked)
+            if ((_portfolioStopperReferenceEquity?.ValueDecimal ?? 0m) == 0m
+                && currentEquity != 0m
+                && IsPortfolioStopperSlTpEnabled())
             {
-                int lookback = Math.Max(1, _portfolioStopperLookbackCandles.ValueInt);
-                if (_stopperEquityHistory.Count > lookback)
-                {
-                    decimal refEquity = _stopperEquityHistory[_stopperEquityHistory.Count - 1 - lookback].Equity;
-                    SetStrategyParameterDecimalSilent(_portfolioStopperReferenceEquity, refEquity);
-                }
+                ApplyStopperReferenceBaseline(
+                    currentEquity,
+                    candleTime,
+                    saveParameters: false,
+                    currentEquityForDisplay: currentEquity);
+            }
+
+            if (TryResolveStopperReferenceEquity(out decimal referenceEquity)
+                && TryCalculatePortfolioAtrForStopper(out decimal portfolioAtr))
+            {
+                RefreshStopperAtrTechDisplay(referenceEquity, portfolioAtr);
+            }
+            else
+            {
+                SetStrategyParameterDecimalSilent(_portfolioStopperAtrTech, 0m);
+                SetStrategyParameterDecimalSilent(_portfolioStopperSlThresholdTech, 0m);
+                SetStrategyParameterDecimalSilent(_portfolioStopperTpThresholdTech, 0m);
             }
         }
 
@@ -6669,6 +6825,8 @@ namespace OsEngine.Robots.Custom
                     MaybeWriteHtmlReport(force: true);
                 }
 
+                EnsureAggregatePortfolioCandlePointOnce(candleTime, refTab);
+
                 if (ShouldRefreshStopperEquityOnAggregatedCandle())
                 {
                     if (!IsStopMonitorScreenerActive())
@@ -6728,8 +6886,8 @@ namespace OsEngine.Robots.Custom
             bool isTakeProfit,
             decimal referenceEquity,
             decimal currentEquity,
-            decimal thresholdPercent,
-            decimal thresholdRubles,
+            decimal thresholdAtrMult,
+            decimal portfolioAtr,
             decimal triggerLevel,
             string thresholdLabel)
         {
@@ -6746,8 +6904,8 @@ namespace OsEngine.Robots.Custom
                 isTakeProfit,
                 referenceEquity,
                 currentEquity,
-                thresholdPercent,
-                thresholdRubles,
+                thresholdAtrMult,
+                portfolioAtr,
                 triggerLevel,
                 thresholdLabel,
                 stopFullyPreview);
@@ -6792,7 +6950,7 @@ namespace OsEngine.Robots.Custom
 
             string kind = isTakeProfit ? "take-profit" : "stop-loss";
             string label = string.IsNullOrWhiteSpace(thresholdLabel)
-                ? thresholdPercent.ToString(CultureInfo.InvariantCulture) + "%"
+                ? BuildStopperAtrThresholdLabel(thresholdAtrMult, portfolioAtr, isTakeProfit)
                 : thresholdLabel;
             string msg = NameStrategyUniq
                 + " | Stopper: общепортфельный "
@@ -10049,7 +10207,6 @@ namespace OsEngine.Robots.Custom
                 _logicPortfoliosDirty = true;
             }
 
-            RefreshAggregateMetaPortfolioOnCandle(tab, candleTime);
         }
 
         private void RecalculateLogicPortfolioUnrealized(int slot)
@@ -14641,6 +14798,8 @@ namespace OsEngine.Robots.Custom
         {
             "Regime",
             LogicLinRegLengthParamName,
+            LogicPositionStopLossAtrParamName,
+            LogicPositionTakeProfitAtrParamName,
             "Max positions (all tabs)",
             "Volume type",
             "Volume",
@@ -14671,16 +14830,17 @@ namespace OsEngine.Robots.Custom
             "Общепортфельный MACD: signal",
             "Предыдущий индикатор. Расчёт объёма позиций",
             "Общепортфельный stop-loss: включён",
-            "Общепортфельный stop-loss (%)",
-            PortfolioStopLossRublesParamName,
+            PortfolioStopLossAtrMultParamName,
+            PortfolioStopperAtrLenParamName,
             "Общепортфельный take-profit: включён",
-            "Общепортфельный take-profit (%)",
-            PortfolioTakeProfitRublesParamName,
+            PortfolioTakeProfitAtrMultParamName,
             StopperPostTriggerAfterStopLossParamName,
             StopperPostTriggerAfterTakeProfitParamName,
             PortfolioStopperReferenceEquityParamName,
             PortfolioStopperCurrentEquityParamName,
-            "Предыдущая сумма портфеля: lookback (свечей)",
+            PortfolioStopperAtrTechParamName,
+            PortfolioStopperSlThresholdTechParamName,
+            PortfolioStopperTpThresholdTechParamName,
             StopperMonitorTimeFrameParamName,
             StopperMonitorSecurityParamName,
             StopperEodFlatSellParamName
@@ -14765,7 +14925,9 @@ namespace OsEngine.Robots.Custom
             public string Kind = "";
             public decimal ReferenceEquity;
             public decimal CurrentEquity;
+            /// <summary>Для SL/TP — кратность ATR; для просадки от пика — %.</summary>
             public decimal ThresholdPercent;
+            public decimal PortfolioAtr;
             public decimal TriggerLevel;
             public decimal PostCloseEquity;
             public bool RegimeStopped;
@@ -15292,8 +15454,8 @@ namespace OsEngine.Robots.Custom
             bool isTakeProfit,
             decimal referenceEquity,
             decimal currentEquity,
-            decimal thresholdPercent,
-            decimal thresholdRubles,
+            decimal thresholdAtrMult,
+            decimal portfolioAtr,
             decimal triggerLevel,
             string thresholdLabel,
             bool regimeStopped)
@@ -15310,8 +15472,8 @@ namespace OsEngine.Robots.Custom
                     isTakeProfit,
                     referenceEquity,
                     currentEquity,
-                    thresholdPercent,
-                    thresholdRubles,
+                    thresholdAtrMult,
+                    portfolioAtr,
                     triggerLevel,
                     thresholdLabel,
                     regimeStopped);
@@ -15323,8 +15485,8 @@ namespace OsEngine.Robots.Custom
             bool isTakeProfit,
             decimal referenceEquity,
             decimal currentEquity,
-            decimal thresholdPercent,
-            decimal thresholdRubles,
+            decimal thresholdAtrMult,
+            decimal portfolioAtr,
             decimal triggerLevel,
             string thresholdLabel,
             bool regimeStopped)
@@ -15341,7 +15503,7 @@ namespace OsEngine.Robots.Custom
             }
 
             string label = string.IsNullOrWhiteSpace(thresholdLabel)
-                ? BuildStopperThresholdLabel(thresholdPercent, thresholdRubles, isTakeProfit)
+                ? BuildStopperAtrThresholdLabel(thresholdAtrMult, portfolioAtr, isTakeProfit)
                 : thresholdLabel;
             string summary = kindLabel
                 + " "
@@ -15363,7 +15525,8 @@ namespace OsEngine.Robots.Custom
                 Kind = kind,
                 ReferenceEquity = referenceEquity,
                 CurrentEquity = currentEquity,
-                ThresholdPercent = thresholdPercent,
+                ThresholdPercent = thresholdAtrMult,
+                PortfolioAtr = portfolioAtr,
                 TriggerLevel = triggerLevel,
                 PostCloseEquity = postCloseEquity,
                 RegimeStopped = regimeStopped,
@@ -16179,7 +16342,7 @@ namespace OsEngine.Robots.Custom
                 || paramName.IndexOf("take-profit", StringComparison.OrdinalIgnoreCase) >= 0
                 || paramName.IndexOf("Stopper", StringComparison.OrdinalIgnoreCase) >= 0
                 || paramName.IndexOf("PnL L1", StringComparison.OrdinalIgnoreCase) >= 0
-                || string.Equals(paramName, "Предыдущая сумма портфеля: lookback (свечей)", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(paramName, PortfolioStopperAtrLenParamName, StringComparison.OrdinalIgnoreCase))
             {
                 return "stopper";
             }
@@ -16327,7 +16490,8 @@ namespace OsEngine.Robots.Custom
                     kind = s.Kind,
                     referenceEquity = s.ReferenceEquity,
                     currentEquity = s.CurrentEquity,
-                    thresholdPercent = s.ThresholdPercent,
+                    thresholdAtrMult = s.ThresholdPercent,
+                    portfolioAtr = s.PortfolioAtr,
                     triggerLevel = s.TriggerLevel,
                     postCloseEquity = s.PostCloseEquity,
                     regimeStopped = s.RegimeStopped,
@@ -16446,7 +16610,7 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("<summary>Общепортфельный Stopper (SL / TP)</summary>");
             sb.AppendLine("<div class=\"fold-body\">");
             sb.AppendLine("<p class=\"sub\">Срабатывания общепортфельного stop-loss и take-profit — <strong>жирным</strong> в таблице ниже.</p>");
-            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"stopper-events\"><thead><tr><th>Время</th><th>Режим</th><th>Тип</th><th>Ref</th><th>Equity</th><th>%</th><th>Порог</th><th>Ref после</th><th>Regime Off</th><th>Описание</th></tr></thead><tbody></tbody></table></div>");
+            sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"stopper-events\"><thead><tr><th>Время</th><th>Режим</th><th>Тип</th><th>Ref</th><th>Equity</th><th>K×ATR</th><th>ATR</th><th>Порог</th><th>Ref после</th><th>Regime Off</th><th>Описание</th></tr></thead><tbody></tbody></table></div>");
             sb.AppendLine("</div></details>");
             sb.AppendLine("<section><h2>Металогика — текущее состояние</h2><div id=\"meta-logic-status\" class=\"sub\"></div>");
             sb.AppendLine("<div class=\"tbl-wrap\"><table id=\"meta-logic-priority\"><thead><tr><th>#</th><th>L</th><th>Note</th><th>PnlSMA avg</th><th>PnlSMA last</th><th>Equity</th><th>Hist</th><th>Готов</th></tr></thead><tbody></tbody></table></div></section>");
@@ -17035,7 +17199,7 @@ namespace OsEngine.Robots.Custom
     var tb=document.querySelector('#stopper-events tbody'); if(!tb)return;
     tb.innerHTML='';
     var list=(rows||[]).slice().reverse();
-    if(!list.length){tb.innerHTML='<tr><td colspan=""10"">— срабатываний пока нет —</td></tr>';return;}
+    if(!list.length){tb.innerHTML='<tr><td colspan=""11"">— срабатываний пока нет —</td></tr>';return;}
     for(var i=0;i<list.length;i++){
       var s=list[i];
       var tr=document.createElement('tr');
@@ -17046,8 +17210,12 @@ namespace OsEngine.Robots.Custom
       else if(s.kind==='portfolio_peak_drawdown'){kindCls='stopper-row-sl';kindLbl='Просадка от пика';}
       else if(s.kind==='portfolio_eod_flat'){kindCls='stopper-row-eod';kindLbl='EOD flat';}
       tr.className='stopper-row '+kindCls;
+      var kAtr=pick(s,'thresholdAtrMult','ThresholdAtrMult');
+      if(kAtr==null)kAtr=pick(s,'thresholdPercent','ThresholdPercent');
+      var atrVal=pick(s,'portfolioAtr','PortfolioAtr');
       var cells=[s.candleTime||'',s.executionModeLabel||'',kindLbl,fmt(s.referenceEquity),fmt(s.currentEquity),
-        s.thresholdPercent!=null?Number(s.thresholdPercent).toLocaleString('ru-RU'):'—',
+        kAtr!=null?Number(kAtr).toLocaleString('ru-RU'):'—',
+        atrVal!=null?fmt(atrVal):'—',
         fmt(s.triggerLevel),fmt(s.postCloseEquity),s.regimeStopped?'да':'нет',s.summary||''];
       for(var j=0;j<cells.length;j++){var td=document.createElement('td');td.textContent=cells[j]==null?'':String(cells[j]);tr.appendChild(td);}
       tb.appendChild(tr);
@@ -18792,6 +18960,16 @@ namespace OsEngine.Robots.Custom
         /// <summary>Strict (строгость) 1…5; 3 — пороги в строке без масштабирования.</summary>
         public static int DefaultStrictness { get; set; } = LogicStrictnessAdjuster.Neutral;
 
+        /// <summary>Кратность ATR для SL[@SL] (0 — выкл.).</summary>
+        public const string StopLossAtrParamToken = "@SL";
+
+        /// <summary>Кратность ATR для TP[@TP] (0 — выкл.).</summary>
+        public const string TakeProfitAtrParamToken = "@TP";
+
+        public static decimal DefaultStopLossAtrMult { get; set; }
+
+        public static decimal DefaultTakeProfitAtrMult { get; set; }
+
         /// <summary>true — токен ссылается на параметр Strict робота.</summary>
         public static bool IsStrictnessParamReference(string raw)
         {
@@ -18866,6 +19044,49 @@ namespace OsEngine.Robots.Custom
             }
 
             return Math.Max(MinLinRegLength, fallbackWhenMissing);
+        }
+
+        public static bool IsStopLossAtrParamReference(string raw)
+        {
+            return !string.IsNullOrWhiteSpace(raw)
+                && raw.Trim().Equals(StopLossAtrParamToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsTakeProfitAtrParamReference(string raw)
+        {
+            return !string.IsNullOrWhiteSpace(raw)
+                && raw.Trim().Equals(TakeProfitAtrParamToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>SL[@SL]/TP[@TP] → «2ATR»; 0 в параметре → пусто (без SL/TP).</summary>
+        public static string ResolveStopTakeExpression(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return "";
+            }
+
+            string text = raw.Trim();
+            if (IsStopLossAtrParamReference(text))
+            {
+                return DefaultStopLossAtrMult > 0m
+                    ? FormatAtrMultiple(DefaultStopLossAtrMult)
+                    : "";
+            }
+
+            if (IsTakeProfitAtrParamReference(text))
+            {
+                return DefaultTakeProfitAtrMult > 0m
+                    ? FormatAtrMultiple(DefaultTakeProfitAtrMult)
+                    : "";
+            }
+
+            return text;
+        }
+
+        private static string FormatAtrMultiple(decimal mult)
+        {
+            return mult.ToString(CultureInfo.InvariantCulture) + "ATR";
         }
 
         /// <summary>
@@ -21342,9 +21563,12 @@ namespace OsEngine.Robots.Custom
             LogicAtom atrAtom = FindFirstAtrAtom(atoms);
             decimal? atrValue = TryGetAtrValue(atrAtom, tab, candleIndex, findIndicator);
 
+            string stopLossExpr = LogicLineParser.ResolveStopTakeExpression(body.StopLoss);
+            string takeProfitExpr = LogicLineParser.ResolveStopTakeExpression(body.TakeProfit);
+
             decimal? stopPrice = null;
-            if (!string.IsNullOrWhiteSpace(body.StopLoss)
-                && TryParseStopTake(body.StopLoss, out ParsedStopTake parsedSl)
+            if (!string.IsNullOrWhiteSpace(stopLossExpr)
+                && TryParseStopTake(stopLossExpr, out ParsedStopTake parsedSl)
                 && parsedSl.Format != StopTakeFormat.None
                 && parsedSl.Format != StopTakeFormat.RiskMultiple)
             {
@@ -21368,8 +21592,8 @@ namespace OsEngine.Robots.Custom
             }
 
             decimal? takePrice = null;
-            if (!string.IsNullOrWhiteSpace(body.TakeProfit)
-                && TryParseStopTake(body.TakeProfit, out ParsedStopTake parsedTp)
+            if (!string.IsNullOrWhiteSpace(takeProfitExpr)
+                && TryParseStopTake(takeProfitExpr, out ParsedStopTake parsedTp)
                 && parsedTp.Format != StopTakeFormat.None)
             {
                 takePrice = TryComputeTakePrice(
@@ -21426,7 +21650,8 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                if (!TryParseStopTake(atom.StopLoss, out ParsedStopTake parsed)
+                string stopLossExpr = LogicLineParser.ResolveStopTakeExpression(atom.StopLoss);
+                if (!TryParseStopTake(stopLossExpr, out ParsedStopTake parsed)
                     || parsed.Format == StopTakeFormat.None
                     || parsed.Format == StopTakeFormat.RiskMultiple)
                 {
@@ -21471,7 +21696,8 @@ namespace OsEngine.Robots.Custom
                     continue;
                 }
 
-                if (!TryParseStopTake(atom.TakeProfit, out ParsedStopTake parsed)
+                string takeProfitExpr = LogicLineParser.ResolveStopTakeExpression(atom.TakeProfit);
+                if (!TryParseStopTake(takeProfitExpr, out ParsedStopTake parsed)
                     || parsed.Format == StopTakeFormat.None)
                 {
                     continue;
@@ -23119,7 +23345,7 @@ namespace OsEngine.Robots.Custom
     public static class MultiLogicHelpBuilder
     {
         /// <summary>Версия HTML-справки; при изменении структуры или текста — увеличить (форсирует перезапись файла).</summary>
-        private const string LogicHelpFormatVersion = "8";
+        private const string LogicHelpFormatVersion = "9";
 
         /// <summary>Текст справки (plain) — источник для HTML; также для отладки.</summary>
         public static string BuildDefaultHelpText()
@@ -23165,12 +23391,12 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("1) Формат v2 — Op(…) и Cl(…) с блоками Long / Short:");
             sb.AppendLine("   Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide)");
             sb.AppendLine("   Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk)))");
-            sb.AppendLine("   Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo)) OnFlip(Close)) SL[2%] TP[6%] Note(trend)");
+            sb.AppendLine("   Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo)) OnFlip(Close)) SL[@SL] TP[@TP] Note(trend)");
             sb.AppendLine("   Индикатор: Ind(параметры)(условие) — 1-я скобка: настройка, 2-я: сигнал (Ab, K>=10, ValUp, &&, ||, !).");
             sb.AppendLine("   Общие фильтры до Long/Short: Op(ATR(14;Gr=3%;Lb=5)(GrOk) Long(…)) — один экземпляр ATR на графике.");
             sb.AppendLine("   Long приоритетнее Short, если оба истинны. Buy/Sell — синонимы Long/Short.");
             sb.AppendLine("   OnFlip в Cl/Op: Close | Flip | Open; параметры (;Entry=…;OnFlat=…) приоритетнее Regime(…).");
-            sb.AppendLine("   Параметры управления (@…): @Strict, @LR — ссылки на параметры робота на вкладке «Логики».");
+            sb.AppendLine("   Параметры управления (@…): @Strict, @LR, @SL/@TP (×ATR на позицию; 0 — выкл.).");
             sb.AppendLine();
             sb.AppendLine("1a) Логические операторы внутри Long(…) / Short(…) и общих предикатов:");
             AppendLogicOperatorsHelp(sb);
@@ -23188,9 +23414,10 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Составные условия с !, NOT, &&, || — см. раздел «1a)».");
             sb.AppendLine();
             sb.AppendLine("4) SL / TP (на уровне строки, после Cl):");
-            sb.AppendLine("   SL[2%] TP[6%]  — процент от входа; SL[1.5ATR]; TP[2R] (R — кратность к расстоянию SL).");
+            sb.AppendLine("   SL[@SL] TP[@TP] — кратность ATR из параметров «SL/TP позиции кратность ATR» (0 — выкл.).");
+            sb.AppendLine("   Явно: SL[2%], SL[1.5ATR], TP[2R] (R — кратность к расстоянию SL).");
             sb.AppendLine("   В одной логике несколько атомов: самый жёсткий SL, самый дальний TP.");
-            sb.AppendLine("   ATR для SL[…ATR] — из первого ATR-атома той же логики.");
+            sb.AppendLine("   ATR для SL[…ATR]/TP[…ATR] — из первого ATR-атома той же логики.");
             sb.AppendLine();
             sb.AppendLine("5) Слоты «Логика 1…10»: при изменении любой строки робот перечитывает все 10 параметров.");
             sb.AppendLine("   Непустая включённая логика — её индикаторы добавляются в общий набор.");
@@ -23237,6 +23464,21 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine("   Нехватка слотов: входят логики с меньшим номером (1 раньше 10), остальные пропускаются.");
             sb.AppendLine("   SL/TP: на закрытии свечи проверяется close vs уровни из SL[…]/TP[…] строки логики позиции.");
             sb.AppendLine("   Пробой SL — закрытие с сигналом …_SL; пробой TP — …_TP; иначе выход по Cl[…].");
+            sb.AppendLine();
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("9) Stopper — общепортфельный SL/TP по ATR (вкладка «Stopper»)");
+            sb.AppendLine("================================================================================");
+            sb.AppendLine("   Мониторинг: суммарная equity L1…L10 (PnL портфелей логик; до сделок — депозит).");
+            sb.AppendLine("   Проверка SL/TP — один раз за цикл «общей свечи» скринера (после всех вкладок страницы 1),");
+            sb.AppendLine("   либо на каждой свече монитора (страница 2), если выбран отдельный TF.");
+            sb.AppendLine("   ATR_port — среднее |Δequity| за N точек агрегата L1…L10 (N = «Длина ATR портфеля для SL/TP»).");
+            sb.AppendLine("   ref — база из «Предыдущая сумма» (кнопка «Обновить сумму портфеля SL/TP» или авто при первом цикле).");
+            sb.AppendLine("   SL: equity ≤ ref − K_sl×ATR_port  (K_sl = «Общепортфельный stop-loss кратность ATR», по умолчанию 2).");
+            sb.AppendLine("   TP: equity ≥ ref + K_tp×ATR_port  (K_tp = «Общепортфельный take-profit кратность ATR», по умолчанию 3).");
+            sb.AppendLine("   Галочки «включён» управляют только активацией; K=0 — порог выключен.");
+            sb.AppendLine("   Тех. поля: ATR портфеля, пороги SL/TP по ATR — только для отображения.");
+            sb.AppendLine("   После срабатывания ref обновляется на equity после закрытия всех позиций.");
+            sb.AppendLine("   HTML-отчёт: журнал Stopper с колонками K×ATR, ATR, порог equity.");
             return sb.ToString();
         }
 
@@ -23819,6 +24061,16 @@ namespace OsEngine.Robots.Custom
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
             encoded = Regex.Replace(
                 encoded,
+                Regex.Escape(LogicLineParser.StopLossAtrParamToken),
+                "<span class=\"lf-param-ref\">" + LogicLineParser.StopLossAtrParamToken + "</span>",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
+                Regex.Escape(LogicLineParser.TakeProfitAtrParamToken),
+                "<span class=\"lf-param-ref\">" + LogicLineParser.TakeProfitAtrParamToken + "</span>",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+            encoded = Regex.Replace(
+                encoded,
                 @"\b(AND|OR|NOT)\b",
                 "<span class=\"lf-kw\">$1</span>",
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -24064,20 +24316,20 @@ namespace OsEngine.Robots.Custom
             sb.AppendLine();
             sb.AppendLine("Вкладка «Stopper» (общепортфельная страховка по сумме L1…L10):");
             sb.AppendLine("  Equity = сумма кривых портфелей всех логик (realized + unrealized MultiLogic_Ln).");
-            sb.AppendLine("  «Общепортфельный stop-loss / take-profit: включён» — по умолчанию выкл.; пороги 0,4% и 10%.");
-            sb.AppendLine("  Ref (предыдущая сумма) = equity ровно N свечей назад (lookback, по умолчанию 5);");
-            sb.AppendLine("  история обновляется на каждом закрытии свечи вкладки скринера.");
-            sb.AppendLine("  SL: current ≤ ref × (1 − SL%); TP: current ≥ ref × (1 + TP%). Ref ≤ 0 — проверка пропускается.");
+            sb.AppendLine("  «Общепортфельный stop-loss / take-profit: включён» — по умолчанию выкл.");
+            sb.AppendLine("  SL/TP по ATR суммарной equity: ATR_port = mean(|Δequity|) за N точек агрегата L1…L10 (N — «Длина ATR портфеля для SL/TP»).");
+            sb.AppendLine("  Ref — «Предыдущая сумма» (кнопка «Обновить сумму портфеля SL/TP» или авто при первом цикле).");
+            sb.AppendLine("  SL: equity ≤ ref − K_sl×ATR_port (K_sl — «Общепортфельный stop-loss кратность ATR», по умолчанию 2).");
+            sb.AppendLine("  TP: equity ≥ ref + K_tp×ATR_port (K_tp — «Общепортфельный take-profit кратность ATR», по умолчанию 3).");
+            sb.AppendLine("  Проверка — один раз за цикл «общей свечи» скринера (страница 1) или на каждой свече монитора (страница 2).");
             sb.AppendLine("  При срабатывании — закрытие всех позиций робота; для SL и TP отдельно: «Отключено», «Останавливать полностью» (Regime=Off),");
             sb.AppendLine("  «Останавливать и возобновлять при достижении текущей суммы в фейк-торговле» (реальные заявки не выставляются, сигналы в L1…L10;");
             sb.AppendLine("  возобновление реальной торговли при equity фейк-портфеля ≥ текущей суммы на момент срабатывания +0,1%).");
-            sb.AppendLine("  Техн. суммы обновляются в начале обработки свечи и после торговли на ней (без SaveParameters).");
-            sb.AppendLine("  «Обновить сумму портфеля SL/TP» — текущая equity в базу; тех. суммы — в начале и после торговли на свече.");
-            sb.AppendLine("  После SL/TP ref = equity после закрытия; база 0 — ref из lookback.");
+            sb.AppendLine("  Тех. поля: текущая/ref сумма, ATR портфеля, пороги SL/TP по ATR — только отображение.");
+            sb.AppendLine("  После SL/TP ref = equity после закрытия всех позиций.");
             sb.AppendLine("  «Stopper: таймфрейм монитора» («Как основной TF» / Min1…Min15): «Как основной TF» — проверка на общей свече страницы 1;");
-            sb.AppendLine("    страница 2 скринера удаляется (вкладка «2» пропадает), робот не нагружается; Min1…Min15 — создаётся вторая страница (оранжевая «2») с «Stopper: бумага монитора»");
-            sb.AppendLine("    (по умолчанию SBER). SL/TP сравнивает текущую сумму L1…L10 с «Предыдущая сумма» на вкладке Stopper");
-            sb.AppendLine("    по CandleFinished страницы 2 (чаще основного TF); lookback N — в свечах монитора, не страницы 1.");
+            sb.AppendLine("    страница 2 скринера удаляется; Min1…Min15 — вторая страница (оранжевая «2») с «Stopper: бумага монитора» (по умолчанию SBER).");
+            sb.AppendLine("  HTML-отчёт: журнал Stopper с K×ATR, ATR и порогом equity.");
             sb.AppendLine();
         }
 
