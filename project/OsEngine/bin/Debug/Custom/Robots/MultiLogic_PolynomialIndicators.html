@@ -10,6 +10,7 @@
   --accent:#2563eb;--accent-soft:#eef4ff;--code-bg:#eef1f6;--example-bg:#f0f7ff;--example-border:#c7daf5;
   --poly:#1d4ed8;
   --mkt:#c026d3;
+  --deal:#ea580c;
   --coef:#b45309;--coef-soft:#fffbeb;
   --delta:#7c3aed;
 }
@@ -20,9 +21,10 @@ body{margin:0;font-family:Segoe UI,system-ui,-apple-system,sans-serif;background
 .help-sub{margin:.2rem 0;color:var(--muted);font-size:.92rem;}
 .legend{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem;margin-top:.75rem;font-size:.9rem;}
 .legend span{display:inline-flex;align-items:center;gap:.35rem;}
-.dot-poly,.dot-mkt,.dot-coef{width:.85rem;height:.85rem;border-radius:3px;display:inline-block;}
+.dot-poly,.dot-mkt,.dot-deal,.dot-coef{width:.85rem;height:.85rem;border-radius:3px;display:inline-block;}
 .dot-poly{background:var(--poly);}
 .dot-mkt{background:var(--mkt);}
+.dot-deal{background:var(--deal);}
 .dot-coef{background:var(--coef);}
 .help-layout{max-width:960px;margin:0 auto;padding:1.25rem 1rem 3rem;}
 .help-main{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:1.5rem 1.75rem 2rem;box-shadow:0 1px 4px rgba(0,0,0,.05);}
@@ -35,6 +37,7 @@ li{margin:.3rem 0;}
 code{font-family:Consolas,Monaco,monospace;background:var(--code-bg);padding:.12em .38em;border-radius:4px;font-size:.88em;}
 .poly{font-weight:700;color:var(--poly);font-family:Consolas,"Courier New",monospace;letter-spacing:.02em;}
 .mkt{font-weight:700;color:var(--mkt);font-family:Consolas,"Courier New",monospace;letter-spacing:.02em;}
+.deal{font-weight:700;color:var(--deal);font-family:Consolas,"Courier New",monospace;letter-spacing:.02em;}
 .coef{font-weight:700;color:var(--coef);font-family:Consolas,"Courier New",monospace;}
 .delta{font-weight:700;color:var(--delta);font-family:"Segoe UI Symbol",Consolas,serif;letter-spacing:.02em;}
 .op{font-weight:700;color:#047857;}
@@ -55,6 +58,7 @@ a{color:var(--accent);}
 <p class="help-sub">Операции <span class="op">*</span> (произведение), <span class="op">#</span> и <span class="op">/#</span> (покомпонентное), <span class="op">/</span> (деление многочленов); сдвиг — <span class="delta">δδ</span>(<code>k</code>)</p>
 <div class="legend">
 <span><i class="dot-mkt"></i> <span class="mkt">pp</span> <span class="mkt">oo</span> <span class="mkt">hh</span> <span class="mkt">ll</span> <span class="mkt">vv</span> — рынок (OHLCV)</span>
+<span><i class="dot-deal"></i> <span class="deal">bb</span> <span class="deal">ee</span> — сделки (покупки / продажи)</span>
 <span><i class="dot-poly"></i> <span class="poly">ww</span> <span class="poly">ss</span> <span class="poly">tt</span> … — индикаторы / производные</span>
 <span><i class="dot-coef"></i> <span class="coef">(1/N; 1/N; …)</span> — коэффициенты</span>
 <span><span class="delta">δδ</span>(<code>k</code>) — дискретная δ, единица на позиции <code>k</code></span>
@@ -71,12 +75,16 @@ a{color:var(--accent);}
 <pre class="formula"><span class="mkt">pp</span> = <span class="coef">(p₀; p₁; p₂; …; p_T)</span>     Close
 <span class="mkt">oo</span> = <span class="coef">(o₀; o₁; …)</span>               Open
 <span class="mkt">hh</span>, <span class="mkt">ll</span>   <span class="coef">(h₀; …)</span>, <span class="coef">(l₀; …)</span>         High, Low
-<span class="mkt">vv</span> = <span class="coef">(v₀; v₁; v₂; …)</span>           Volume</pre>
+<span class="mkt">vv</span> = <span class="coef">(v₀; v₁; v₂; …)</span>           Volume
+<span class="deal">bb</span> = <span class="coef">(b₀; b₁; b₂; …)</span>           объём покупок (Buy) на баре
+<span class="deal">ee</span> = <span class="coef">(e₀; e₁; e₂; …)</span>           объём продаж (sEll) на баре</pre>
 
 <table class="ind">
 <tr><th>Запись</th><th>Смысл</th></tr>
 <tr><td><span class="mkt">pp</span> <span class="mkt">oo</span> <span class="mkt">hh</span> <span class="mkt">ll</span> <span class="mkt">vv</span></td>
 <td>рынок OHLCV (фуксия)</td></tr>
+<tr><td><span class="deal">bb</span>, <span class="deal">ee</span></td>
+<td>объёмы сделок: покупки и продажи (оранжевый); на баре <code>k</code> — <code>b_k</code>, <code>e_k</code></td></tr>
 <tr><td><span class="poly">ww</span>, <span class="poly">ss</span>, <span class="poly">tt</span>, …</td>
 <td>индикатор / производный (синий)</td></tr>
 <tr><td><span class="coef">(a₀; a₁; …)</span></td>
@@ -228,13 +236,52 @@ RSI_k ≈ 100 − 100 · (1 + k_k)<sup>−1</sup>     на баре k</pre>
 <span class="poly">ss</span>_sig  = <span class="poly">ss</span>_macd * <span class="poly">ww</span>_EMA(sig)
 <span class="poly">ss</span>_hist = <span class="poly">ss</span>_macd − <span class="poly">ss</span>_sig</pre>
 
-<h2 id="multilogic">7. Связь с MultiLogic</h2>
+<h2 id="deals">7. Сделки и финансовый результат</h2>
+
+<p>Многочлен сделок — пара объёмов на каждом баре: <span class="deal">bb</span> (покупки) и <span class="deal">ee</span> (продажи). Буквы: <strong>B</strong>uy и s<strong>E</strong>ll; цвет оранжевый — отдельно от свечей <span class="mkt">pp</span>…<span class="mkt">vv</span>, но это тоже «сырые» рыночные величины (кластер / лента), не индикатор.</p>
+
+<p>В OsEngine на кластере: <code>VolumeBuy</code>, <code>VolumeSell</code>; чистый поток на баре: <code>VolumeDelta</code> ≈ <code>b_k − e_k</code>.</p>
+
+<h3>Чистый поток и позиция</h3>
+<pre class="formula"><span class="poly">xx</span> = <span class="deal">bb</span> − <span class="deal">ee</span>                    x_k = b_k − e_k   (дельта объёма на баре)
+
+<span class="poly">ww</span>_ONE = <span class="coef">(1; 1; 1; …)</span>
+
+<span class="poly">zz</span> = <span class="poly">xx</span> * <span class="poly">ww</span>_ONE                  z_k = x₀ + … + x_k   (накопленная позиция в лотах)</pre>
+
+<p class="note"><span class="poly">xx</span> и <span class="poly">zz</span> — производные от сделок (синий), как индикаторы; <span class="deal">bb</span> и <span class="deal">ee</span> — исходные объёмы.</p>
+
+<h3>Денежный поток от исполнений (по цене Close)</h3>
+<p>Приближение «вся сделка по <code>p_k</code>»: покупка уменьшает кэш, продажа увеличивает.</p>
+<pre class="formula"><span class="poly">cc</span>_cash = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)        c_k = p_k · (e_k − b_k)
+
+<span class="poly">CC</span> = <span class="poly">cc</span>_cash * <span class="poly">ww</span>_ONE              C_k = c₀ + … + c_k   (накопленный кэш от сделок)</pre>
+
+<p class="note">Это <strong>не</strong> полный PnL с открытой позицией: кэш и стоимость позиции учитываются раздельно. Для оценки «в деньгах» при удержании нужен mark-to-market ниже.</p>
+
+<h3>Финансовый результат (mark-to-market)</h3>
+<p>Приращение цены и позиция на <strong>начало</strong> бара (удерживали <code>z_{k−1}</code>, цена изменилась на <code>p_k − p_{k−1}</code>):</p>
+<pre class="formula"><span class="poly">Δpp</span> = <span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1)            (Δpp)_k = p_k − p_{k−1}
+
+<span class="poly">zz</span>_open = <span class="poly">zz</span> * <span class="delta">δδ</span>(1)                z_{k−1} на позиции k
+
+<span class="poly">rr</span>_mtm = <span class="poly">zz</span>_open <span class="op">#</span> <span class="poly">Δpp</span>             r_k = z_{k−1} · (p_k − p_{k−1})
+
+<span class="poly">RR</span> = <span class="poly">rr</span>_mtm * <span class="poly">ww</span>_ONE              R_k = r₀ + … + r_k   (накопленный финрез)</pre>
+
+<div class="warn">
+<strong>Ограничения.</strong> (1) Одна цена <span class="mkt">pp</span> на бар — для тиковых сделок нужны свои цены исполнения. (2) <span class="poly">zz</span> — суммарный лот; шорт и лонг в одной формуле — знаковая позиция. (3) Комиссии, проскальзывание, своп — отдельные слагаемые, не выводятся из <span class="mkt">pp</span> и <span class="deal">bb</span>/<span class="deal">ee</span> без дополнительных многочленов. (4) Реализованная прибыль по паре «вход–выход» — рекуррентная логика FIFO/LIFO, не одна свёртка с фиксированным ядром.
+</div>
+
+<p>Связь с объёмом свечи: часто <code>b_k + e_k ≈ v_k</code> (весь оборот бара), но <code>v_k</code> — общий тиковый объём, а <code>b_k</code>, <code>e_k</code> — разбивка по агрессору.</p>
+
+<h2 id="multilogic">8. Связь с MultiLogic</h2>
 
 <p>На баре <code>k</code> — <code>k</code>-й коэффициент <span class="poly">ss</span>. Условия сравнивают <code>p_k</code> или <code>s_k</code> с порогом.</p>
 
 <p><span class="mkt">oo</span> и <span class="mkt">pp</span> — разные многочлены. Тело: <code>(pp − oo)</code>. Close &gt; Open: <code>p_k &gt; o_k</code>.</p>
 
-<h2 id="summary">8. Сводка</h2>
+<h2 id="summary">9. Сводка</h2>
 
 <pre class="formula">Имя:     <span class="mkt">pp</span> = <span class="coef">(p₀; p₁; …; p_T)</span>
 
@@ -247,13 +294,17 @@ VWAP:    <span class="poly">ss</span> = (<span class="poly">tt</span> <span clas
 Сдвиг:   <span class="delta">δδ</span>(<code>n</code>) = <span class="coef">(0; …; 0; 1; 0; …)</span>,   <span class="mkt">pp</span> * <span class="delta">δδ</span>(<code>n</code>)
 Разность: <span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1)
 
+Сделки:  <span class="deal">bb</span>, <span class="deal">ee</span> — покупки / продажи;  <span class="poly">xx</span> = <span class="deal">bb</span> − <span class="deal">ee</span>;  <span class="poly">zz</span> = <span class="poly">xx</span> * <span class="coef">(1;1;…)</span>
+Кэш:     <span class="poly">cc</span>_cash = <span class="mkt">pp</span> <span class="op">#</span> (<span class="deal">ee</span> − <span class="deal">bb</span>)
+Финрез:  <span class="poly">RR</span> = (<span class="poly">zz</span> * <span class="delta">δδ</span>(1) <span class="op">#</span> (<span class="mkt">pp</span> − <span class="mkt">pp</span> * <span class="delta">δδ</span>(1))) * <span class="coef">(1;1;…)</span>
+
 Хвост: s₀…s_{N−2} — не используем</pre>
 
 </main>
 </div>
 
 <footer class="help-ftr">
-MultiLogic · <span class="mkt">pp oo hh ll vv</span> рынок · <span class="poly">ww ss</span> индикаторы · <span class="coef">(…; …; …)</span> коэффициенты · OsEngine Custom\Robots
+MultiLogic · <span class="mkt">pp oo hh ll vv</span> рынок · <span class="deal">bb ee</span> сделки · <span class="poly">ww ss RR</span> индикаторы · <span class="coef">(…; …; …)</span> коэффициенты · OsEngine Custom\Robots
 </footer>
 </body>
 </html>
