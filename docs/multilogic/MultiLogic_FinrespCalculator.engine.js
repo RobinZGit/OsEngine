@@ -616,11 +616,67 @@
     return simulateLogicLine(candles, spec.parsed, startIdx, endIdx, vol);
   }
 
-  async function loadMoexCandles(sec, from, till, interval) {
+  function candlesUrl(sec, market) {
+    if (market === "futures") {
+      return `https://iss.moex.com/iss/engines/futures/markets/forts/securities/${sec}/candles.json`;
+    }
+    return `https://iss.moex.com/iss/engines/stock/markets/shares/securities/${sec}/candles.json`;
+  }
+
+  async function fetchIssSecIds(baseUrl, columns, filterFn) {
+    const ids = [];
+    const seen = new Set();
+    let start = 0;
+    while (true) {
+      const url = new URL(baseUrl);
+      url.searchParams.set("iss.meta", "off");
+      if (columns) url.searchParams.set("securities.columns", columns);
+      url.searchParams.set("start", String(start));
+      const data = await fetch(url).then((r) => {
+        if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
+        return r.json();
+      });
+      const chunk = data?.securities?.data || [];
+      const cols = data?.securities?.columns || [];
+      if (!chunk.length) break;
+      for (const row of chunk) {
+        const obj = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
+        if (filterFn && !filterFn(obj)) continue;
+        const id = obj.SECID;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          ids.push(id);
+        }
+      }
+      if (chunk.length < 100) break;
+      start += chunk.length;
+      if (start > 20000) break;
+    }
+    return ids.sort();
+  }
+
+  async function fetchShareList() {
+    return fetchIssSecIds(
+      "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json",
+      "SECID,STATUS",
+      (o) => o.STATUS === "A"
+    );
+  }
+
+  async function fetchFuturesList() {
+    const today = new Date().toISOString().slice(0, 10);
+    return fetchIssSecIds(
+      "https://iss.moex.com/iss/engines/futures/markets/forts/securities.json",
+      "SECID,ASSETCODE,LASTTRADEDATE,BOARDID",
+      (o) => o.BOARDID === "RFUD" && o.ASSETCODE && String(o.LASTTRADEDATE || "") >= today
+    );
+  }
+
+  async function loadMoexCandles(sec, from, till, interval, market = "shares") {
     const all = [];
     let start = 0;
     while (true) {
-      const url = new URL(`https://iss.moex.com/iss/engines/stock/markets/shares/securities/${sec}/candles.json`);
+      const url = new URL(candlesUrl(sec, market));
       url.search = new URLSearchParams({ from, till, interval, start: String(start) }).toString();
       const data = await fetch(url).then((r) => {
         if (!r.ok) throw new Error(`MOEX HTTP ${r.status} (${sec})`);
@@ -647,12 +703,35 @@
         low: +r[3],
         volume: +r[5],
         time: r[6],
-        sec
+        sec,
+        market
       }));
   }
 
-  async function loadMany(secs, from, till, interval) {
-    const packs = await Promise.all(secs.map((s) => loadMoexCandles(s, from, till, interval)));
+  async function loadMany(secs, from, till, interval, market = "shares") {
+    const packs = await Promise.all(secs.map((s) => loadMoexCandles(s, from, till, interval, market)));
+    return packs.filter((p) => p.length > 0);
+  }
+
+  async function loadManyBatched(secs, from, till, interval, market, concurrency, onProgress) {
+    const packs = [];
+    const queue = [...secs];
+    let done = 0;
+    const workers = Array.from({ length: Math.max(1, concurrency || 6) }, async () => {
+      while (queue.length) {
+        const sec = queue.shift();
+        try {
+          const candles = await loadMoexCandles(sec, from, till, interval, market);
+          if (candles.length) packs.push(candles);
+        } catch (_) {
+          /* пропускаем инструмент без свечей */
+        }
+        done += 1;
+        if (onProgress) onProgress(done, secs.length, sec);
+      }
+    });
+    await Promise.all(workers);
+    packs.sort((a, b) => (a[0]?.sec || "").localeCompare(b[0]?.sec || ""));
     return packs;
   }
 
@@ -695,6 +774,9 @@
     runOnCandles,
     runMulti,
     loadMany,
+    loadManyBatched,
+    fetchShareList,
+    fetchFuturesList,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);

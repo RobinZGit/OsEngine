@@ -22,7 +22,12 @@ h2:first-child{margin-top:0;}
 .calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;}
 .calc-field select[multiple]{min-height:6.5rem;}
 .calc-btn{padding:.48rem .85rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
+.calc-btn-secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);}
 .calc-btn:disabled{opacity:.55;cursor:wait;}
+.calc-pick-row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.35rem 0 .65rem;}
+.calc-sec-hint{font-size:.8rem;color:var(--muted);}
+.calc-field-wide{grid-column:1/-1;}
+.bysec-scroll{max-height:4.5rem;overflow-y:auto;line-height:1.35;}
 .calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
 .calc-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.5rem;margin:.85rem 0;}
 .calc-metric{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:.55rem .7rem;}
@@ -58,19 +63,13 @@ a{color:var(--accent);}
 <h2>Калькулятор</h2>
 <div class="calc-card" id="finresp-calc">
 <div class="calc-grid">
-<div class="calc-field"><label for="calc-sec">Бумаги (Ctrl+клик)</label>
-<select id="calc-sec" multiple size="6">
-<option value="SBER" selected>SBER</option>
-<option value="LKOH">LKOH</option>
-<option value="GAZP">GAZP</option>
-<option value="GMKN">GMKN</option>
-<option value="ROSN">ROSN</option>
-<option value="NVTK">NVTK</option>
-<option value="TATN">TATN</option>
-<option value="PLZL">PLZL</option>
-<option value="YDEX">YDEX</option>
-<option value="VTBR">VTBR</option>
-</select></div>
+<div class="calc-field calc-field-wide"><label for="calc-sec">Акции MOEX TQBR (Ctrl+клик, без фьючерсов)</label>
+<select id="calc-sec" multiple size="8" disabled><option>загрузка списка…</option></select>
+<p class="calc-sec-hint" id="calc-sec-hint">Загрузка акций с MOEX ISS…</p>
+<div class="calc-pick-row">
+<button class="calc-btn calc-btn-secondary" type="button" id="pick-shares" disabled>Подобрать акции</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="pick-futures" disabled>Подобрать фьючерсы</button>
+</div></div>
 <div class="calc-field"><label for="calc-tf">Таймфрейм</label>
 <select id="calc-tf">
 <option value="1">1 мин</option>
@@ -89,7 +88,7 @@ a{color:var(--accent);}
 <div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
 <div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
 <div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
-<div class="calc-metric"><b>По бумагам</b><span id="calc-bysec" style="font-size:.75rem">—</span></div>
+<div class="calc-metric" style="grid-column:1/-1"><b>По инструментам</b><div id="calc-bysec" class="bysec-scroll" style="font-size:.75rem">—</div></div>
 </div>
 <div class="range-grid">
 <div><label for="calc-start">Левая граница</label><input id="calc-start" type="range" min="0" max="0" value="0" disabled><small id="calc-start-label">—</small></div>
@@ -149,12 +148,15 @@ a{color:var(--accent);}
   const $ = (id) => document.getElementById(id);
   const state = {
     packs: [],
+    shareList: [],
+    bulkMode: null,
     movedSlider: "end",
     customLines: { ...E.DEFAULT_LOGIC_LINES },
     anchorStartTime: null,
     anchorEndTime: null,
     hasWindow: false
   };
+  const MAX_CHARTS = 8;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900, defaultDays: 3 },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200, defaultDays: 14 },
@@ -197,7 +199,41 @@ a{color:var(--accent);}
   }
 
   function selectedSecs() {
-    return Array.from($("calc-sec").selectedOptions).map((o) => o.value);
+    return Array.from($("calc-sec").selectedOptions).map((o) => o.value).filter(Boolean);
+  }
+
+  function setBusy(busy) {
+    $("calc-run").disabled = busy;
+    $("pick-shares").disabled = busy || !state.shareList.length;
+    $("pick-futures").disabled = busy;
+  }
+
+  async function initShareList() {
+    try {
+      state.shareList = await E.fetchShareList();
+      const sel = $("calc-sec");
+      sel.innerHTML = "";
+      for (const id of state.shareList) {
+        const o = document.createElement("option");
+        o.value = id;
+        o.textContent = id;
+        if (id === "SBER") o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.disabled = false;
+      $("calc-sec-hint").textContent = `${state.shareList.length} акций TQBR · фьючерсы — кнопкой «Подобрать фьючерсы»`;
+      $("pick-shares").disabled = false;
+      $("pick-futures").disabled = false;
+    } catch (err) {
+      $("calc-sec-hint").textContent = `Не удалось загрузить список акций: ${err.message}`;
+    }
+  }
+
+  function formatBySec(bySec, limit = 40) {
+    const entries = Object.entries(bySec).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    const shown = entries.slice(0, limit).map(([k, v]) => `${k}:${fmt(v)}`).join(" · ");
+    const rest = entries.length - limit;
+    return rest > 0 ? `${shown} · …ещё ${rest}` : shown;
   }
 
   function fillLogicSelect() {
@@ -440,13 +476,19 @@ ${markers}
       return;
     }
     const compact = perSec.length > 1;
-    const blocks = perSec.map((p) => {
+    let chartSet = perSec;
+    let note = "";
+    if (perSec.length > MAX_CHARTS) {
+      chartSet = [...perSec].sort((a, b) => Math.abs(b.finresp) - Math.abs(a.finresp)).slice(0, MAX_CHARTS);
+      note = `<p class="note">Графики для ${perSec.length} инструментов: показаны топ-${MAX_CHARTS} по |FINRESP|. Сводка — в блоке «По инструментам».</p>`;
+    }
+    const blocks = chartSet.map((p) => {
       const svg = buildChartSvg(p.rows, p.finresp, `График ${p.sec}`, compact);
       if (!svg) return "";
       return `<div class="chart-mini"><p class="chart-sec-title">${p.sec}</p>${svg}</div>`;
     }).filter(Boolean);
     $("calc-chart").innerHTML = blocks.length
-      ? `<div class="chart-stack">${blocks.join("")}</div>`
+      ? `${note}<div class="chart-stack">${blocks.join("")}</div>`
       : "<p class=\"note\">Нет данных для графика.</p>";
   }
 
@@ -462,8 +504,7 @@ ${markers}
     $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
-    const bySec = Object.entries(agg.bySec).map(([k, v]) => `${k}:${fmt(v)}`).join(" · ");
-    $("calc-bysec").textContent = bySec || "—";
+    $("calc-bysec").textContent = formatBySec(agg.bySec) || "—";
     const c0 = refPack()[a]?.time || "—";
     const c1 = refPack()[b]?.time || "—";
     state.anchorStartTime = c0 !== "—" ? c0 : state.anchorStartTime;
@@ -471,27 +512,68 @@ ${markers}
     state.hasWindow = c0 !== "—" && c1 !== "—";
     $("calc-start-label").textContent = c0;
     $("calc-end-label").textContent = c1;
-    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} бумаг | ${winLen} свечей в окне`;
+    const mode = state.bulkMode === "futures" ? "фьючерсы" : state.bulkMode === "shares" ? "все акции" : "выбор";
+    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} инстр. (${mode}) | ${winLen} свечей в окне`;
     drawCharts(perSec);
   }
 
-  async function run() {
-    const secs = selectedSecs();
-    if (!secs.length) { $("calc-status").textContent = "Выберите хотя бы одну бумагу."; return; }
-    $("calc-run").disabled = true;
+  async function runWithSecs(secs, market, bulkMode) {
+    if (!secs.length) throw new Error("Список инструментов пуст.");
+    setBusy(true);
     saveWindowAnchor();
     enforceDateRange("till");
-    $("calc-status").textContent = `Загрузка ${secs.join(", ")}…`;
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    const interval = $("calc-tf").value;
+    const label = bulkMode === "futures" ? "фьючерсов" : "акций";
+    $("calc-status").textContent = `Загрузка ${secs.length} ${label}…`;
     try {
-      state.packs = await E.loadMany(secs, $("calc-from").value, $("calc-till").value, $("calc-tf").value);
-      if (!state.packs[0]?.length) throw new Error("MOEX не вернул свечи.");
+      if (secs.length > 12) {
+        state.packs = await E.loadManyBatched(secs, from, till, interval, market, 6, (done, total, sec) => {
+          $("calc-status").textContent = `Загрузка ${done}/${total} (${label}): ${sec}`;
+        });
+      } else {
+        state.packs = await E.loadMany(secs, from, till, interval, market);
+      }
+      if (!state.packs.length) throw new Error("MOEX не вернул свечи ни по одному инструменту.");
+      state.bulkMode = bulkMode;
       setSliderBounds(state.hasWindow);
       render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
       $("calc-chart").innerHTML = "";
+      throw err;
     } finally {
-      $("calc-run").disabled = false;
+      setBusy(false);
+    }
+  }
+
+  async function run() {
+    const secs = selectedSecs();
+    if (!secs.length) { $("calc-status").textContent = "Выберите хотя бы одну акцию."; return; }
+    try {
+      await runWithSecs(secs, "shares", null);
+    } catch (_) { /* status уже выставлен */ }
+  }
+
+  async function pickShares() {
+    if (!state.shareList.length) { $("calc-status").textContent = "Список акций ещё не загружен."; return; }
+    try {
+      await runWithSecs(state.shareList, "shares", "shares");
+    } catch (_) { /* status уже выставлен */ }
+  }
+
+  async function pickFutures() {
+    setBusy(true);
+    $("calc-status").textContent = "Загрузка списка фьючерсов MOEX…";
+    try {
+      const list = await E.fetchFuturesList();
+      if (!list.length) throw new Error("Активные фьючерсы не найдены.");
+      await runWithSecs(list, "futures", "futures");
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка: ${err.message}`;
+      $("calc-chart").innerHTML = "";
+      setBusy(false);
     }
   }
 
@@ -499,7 +581,10 @@ ${markers}
   fillLogicEditor();
   initDates();
   syncVolumeFields();
+  initShareList();
   $("calc-run").addEventListener("click", run);
+  $("pick-shares").addEventListener("click", pickShares);
+  $("pick-futures").addEventListener("click", pickFutures);
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
