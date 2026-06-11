@@ -300,7 +300,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-selectall";
+  const CALC_PAGE_VERSION = "2026-06-08-fix0";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -1865,6 +1865,10 @@ ${totalBlock}
       } else if (skipped > 0) {
         msg = `Часть инструментов без данных в окне (${skipped}) — сдвиньте ползунки или нажмите «Рассчитать».`;
       }
+      $("calc-finresp").textContent = "—";
+      $("calc-ann-simple").textContent = "—";
+      $("calc-ann-compound").textContent = "—";
+      $("calc-count").textContent = "—";
       $("calc-status").textContent = msg;
       noteTechError(`render: ${msg}`);
       return false;
@@ -1885,11 +1889,10 @@ ${totalBlock}
     const failKeys = new Set(failures.map((f) => instrumentKey({ sec: f.sec, market: f.market })));
     const missing = instruments.filter((i) => !byKey.has(instrumentKey(i)));
     const toLoad = periodChanged ? instruments : missing;
-    let doneBase = 0;
 
     if (toLoad.length) {
       const loaded = await loadInstrumentPacks(toLoad, from, till, interval, (done, total, sec, groupLabel, meta) => {
-        if (onProgress) onProgress(doneBase + done, instruments.length, sec, groupLabel, meta);
+        if (onProgress) onProgress(done, total, instruments.length, sec, groupLabel, meta);
       });
       for (const f of loaded.failures) {
         const fk = instrumentKey({ sec: f.sec, market: f.market });
@@ -1899,9 +1902,15 @@ ${totalBlock}
         }
       }
       for (const pack of loaded.packs) {
-        if (pack?.[0]) byKey.set(instrumentKey(pack[0]), pack);
+        if (!pack?.[0]) continue;
+        const key = instrumentKey(pack[0]);
+        byKey.set(key, pack);
+        for (let i = failures.length - 1; i >= 0; i--) {
+          if (instrumentKey({ sec: failures[i].sec, market: failures[i].market }) === key) {
+            failures.splice(i, 1);
+          }
+        }
       }
-      doneBase = toLoad.length;
     }
 
     const wantKeys = new Set(instruments.map(instrumentKey));
@@ -1909,8 +1918,11 @@ ${totalBlock}
       if (!wantKeys.has(key)) byKey.delete(key);
     }
     const packs = orderPacksForInstruments(instruments, byKey);
-    state.lastLoadMeta = { periodKey, keys: [...wantKeys] };
-    return { packs, failures: failures.filter((f) => wantKeys.has(instrumentKey({ sec: f.sec, market: f.market }))) };
+    return {
+      packs,
+      failures: failures.filter((f) => wantKeys.has(instrumentKey({ sec: f.sec, market: f.market }))),
+      periodKey
+    };
   }
 
   async function loadInstrumentPacks(instruments, from, till, interval, onProgress) {
@@ -1964,14 +1976,18 @@ ${totalBlock}
       });
       if (runGen !== state.runGeneration) return;
       updateCacheHint(cacheHits ? `MOEX: ${loadedData.packs.length - cacheHits}, кэш: ${cacheHits}` : "");
+      if (!loadedData.packs.length) {
+        const sample = loadedData.failures.slice(0, 3).map((f) => f.sec).join(", ");
+        const tail = loadedData.failures.length > 3 ? "…" : "";
+        throw new Error(`MOEX не вернул свечи ни по одному инструменту${sample ? ` (${sample}${tail})` : ""}.`);
+      }
       state.packs = loadedData.packs;
       state.failedInstruments = loadedData.failures;
       state.windowSkipped = [];
-      if (!state.packs.length) {
-        const sample = state.failedInstruments.slice(0, 3).map((f) => f.sec).join(", ");
-        const tail = state.failedInstruments.length > 3 ? "…" : "";
-        throw new Error(`MOEX не вернул свечи ни по одному инструменту${sample ? ` (${sample}${tail})` : ""}.`);
-      }
+      state.lastLoadMeta = {
+        periodKey: loadedData.periodKey,
+        keys: instruments.map(instrumentKey)
+      };
       state.bulkMode = bulkMode;
       state.movedSlider = "end";
       setSliderBounds(false);
@@ -1998,6 +2014,7 @@ ${totalBlock}
   }
 
   async function run() {
+    if (state.uiBusy) return;
     applyEditorParams();
     let instruments = selectedInstruments();
     if (!instruments.length) {
@@ -2020,9 +2037,6 @@ ${totalBlock}
       }
       await runWithInstruments(instruments, bulkMode, runGen);
     } catch (_) { /* status уже выставлен */ }
-    finally {
-      releaseRunBusy(runGen);
-    }
   }
 
   function bindUiEvents() {

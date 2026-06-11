@@ -1394,7 +1394,7 @@
       }
       if (cache) {
         const cached = cache.get(requestedSec, market, interval, from, till, moexSec);
-        if (cached?.length) {
+        if (cached?.length >= 3) {
           return { ok: true, pack: cached, requestedSec, fromCache: true };
         }
       }
