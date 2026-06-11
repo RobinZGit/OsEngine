@@ -6,9 +6,9 @@
 
 ### Перенесено
 
-- 4 слота L1–L4, строки логики (по умолчанию как в OsEngine)
+- 4 слота L1–L4, строки логики v2 (по умолчанию как в OsEngine)
 - `@LR` → `LINREG_LEN`, `@Strict` → `STRICTNESS` (1…5)
-- `Strict(@Strict|4)`, `Regime`, `Disabled`, AND-цепочки, Op/Cl, `Side[S]`
+- `Op(Long/Short(…))` `Cl(… OnFlip(Close|Flip))`, `Disabled`, `Strict`, `Regime`
 - Масштабирование порогов при разборе (strict≠3)
 - **VWAP**, **Bollinger** (`Boll` / `Bollinger`), **RSI** (`RSI>=55`, `AbMid`, …)
 - Инверсия (Buy↔Sell **и Op↔Cl**), Regime
