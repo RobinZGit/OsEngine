@@ -10,6 +10,13 @@
     maxPositions: 40
   };
 
+  /** Как MultiLogic.DefaultMoexStockTickerPrefixes — ликвидные акции для «Подобрать акции». */
+  const DEFAULT_LIQUID_SHARE_TICKERS = [
+    "AFLT", "ALRS", "AFKS", "BSPB", "CHMF", "FEES", "GAZP", "GMKN", "HYDR", "IRAO",
+    "LKOH", "MAGN", "MOEX", "MTSS", "MTLRP", "NVTK", "NLMK", "PLZL", "PIKK", "PHOR",
+    "ROSN", "RUAL", "RTKMP", "SBER", "SBERP", "SNGSP", "SNGS", "TATN", "TATNP", "UPRO", "VTBR"
+  ];
+
   const TREND_REGIME =
     "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
   const BOKOVIK_REGIME =
@@ -656,11 +663,20 @@
   }
 
   async function fetchShareList() {
-    return fetchIssSecIds(
-      "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json",
-      "SECID,STATUS",
-      (o) => o.STATUS === "A"
-    );
+    const liquid = new Set(DEFAULT_LIQUID_SHARE_TICKERS);
+    try {
+      const activeOnTqbr = await fetchIssSecIds(
+        "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json",
+        "SECID,STATUS",
+        (o) => o.STATUS === "A" && liquid.has(o.SECID)
+      );
+      const activeSet = new Set(activeOnTqbr);
+      const ordered = DEFAULT_LIQUID_SHARE_TICKERS.filter((t) => activeSet.has(t));
+      if (ordered.length) return ordered;
+    } catch (_) {
+      /* fallback ниже */
+    }
+    return [...DEFAULT_LIQUID_SHARE_TICKERS];
   }
 
   async function fetchFuturesList() {
@@ -775,6 +791,7 @@
     runMulti,
     loadMany,
     loadManyBatched,
+    DEFAULT_LIQUID_SHARE_TICKERS,
     fetchShareList,
     fetchFuturesList,
     smaSeries

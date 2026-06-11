@@ -63,7 +63,7 @@ a{color:var(--accent);}
 <h2>Калькулятор</h2>
 <div class="calc-card" id="finresp-calc">
 <div class="calc-grid">
-<div class="calc-field calc-field-wide"><label for="calc-sec">Акции MOEX TQBR (Ctrl+клик, без фьючерсов)</label>
+<div class="calc-field calc-field-wide"><label for="calc-sec">Ликвидные акции MOEX (как «Подобрать акции» в роботе)</label>
 <select id="calc-sec" multiple size="8" disabled><option>загрузка списка…</option></select>
 <p class="calc-sec-hint" id="calc-sec-hint">Загрузка акций с MOEX ISS…</p>
 <div class="calc-pick-row">
@@ -260,7 +260,7 @@ a{color:var(--accent);}
         sel.appendChild(o);
       }
       sel.disabled = false;
-      $("calc-sec-hint").textContent = `${state.shareList.length} акций TQBR · фьючерсы — кнопкой «Подобрать фьючерсы»`;
+      $("calc-sec-hint").textContent = `${state.shareList.length} ликвидных акций (DefaultMoexStockTickerPrefixes) · фьючерсы — «Подобрать фьючерсы»`;
       $("pick-shares").disabled = false;
       $("pick-futures").disabled = false;
     } catch (err) {
