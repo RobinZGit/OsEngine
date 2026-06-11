@@ -949,18 +949,45 @@
     return listShareTickers(stockPrefixesRaw);
   }
 
+  function listFuturesPrefixes(futuresPrefixesRaw) {
+    return parseTickerPrefixes(futuresPrefixesRaw || DEFAULT_FUTURES_PREFIXES_RAW);
+  }
+
   async function fetchFuturesList(futuresPrefixesRaw) {
-    const prefixes = parseTickerPrefixes(futuresPrefixesRaw || DEFAULT_FUTURES_PREFIXES_RAW);
-    if (!prefixes.length) return [];
+    return listFuturesPrefixes(futuresPrefixesRaw);
+  }
+
+  async function resolveFuturesContract(prefix) {
+    const prefixes = parseTickerPrefixes(prefix);
+    const key = prefixes[0];
+    if (!key) return null;
     const today = new Date().toISOString().slice(0, 10);
-    return fetchIssSecIds(
-      "https://iss.moex.com/iss/engines/futures/markets/forts/securities.json",
-      "SECID,ASSETCODE,LASTTRADEDATE,BOARDID",
-      (o) => o.BOARDID === "RFUD"
-        && o.ASSETCODE
-        && String(o.LASTTRADEDATE || "") >= today
-        && futuresTickerMatches(o.SECID, prefixes)
-    );
+    let front = null;
+    let start = 0;
+    while (true) {
+      const url = new URL("https://iss.moex.com/iss/engines/futures/markets/forts/securities.json");
+      url.searchParams.set("iss.meta", "off");
+      url.searchParams.set("securities.columns", "SECID,ASSETCODE,LASTTRADEDATE,BOARDID");
+      url.searchParams.set("start", String(start));
+      const data = await fetch(url).then((r) => {
+        if (!r.ok) throw new Error(`MOEX HTTP ${r.status}`);
+        return r.json();
+      });
+      const chunk = data?.securities?.data || [];
+      const cols = data?.securities?.columns || [];
+      if (!chunk.length) break;
+      for (const row of chunk) {
+        const o = Object.fromEntries(cols.map((c, i) => [c, row[i]]));
+        if (o.BOARDID !== "RFUD" || !o.ASSETCODE) continue;
+        if (String(o.LASTTRADEDATE || "") < today) continue;
+        if (!futuresTickerMatches(o.SECID, [key])) continue;
+        if (!front || String(o.LASTTRADEDATE) < String(front.LASTTRADEDATE)) front = o;
+      }
+      if (chunk.length < 100) break;
+      start += chunk.length;
+      if (start > 20000) break;
+    }
+    return front?.SECID || null;
   }
 
   async function loadMoexCandles(sec, from, till, interval, market = "shares") {
@@ -1000,14 +1027,22 @@
   }
 
   async function loadInstrumentSec(sec, from, till, interval, market) {
+    const requestedSec = sec;
     try {
-      const candles = await loadMoexCandles(sec, from, till, interval, market);
-      if (!candles.length) {
-        return { ok: false, error: "нет свечей MOEX за выбранный период" };
+      let moexSec = sec;
+      if (market === "futures") {
+        moexSec = await resolveFuturesContract(sec);
+        if (!moexSec) {
+          return { ok: false, error: "нет активного контракта MOEX для префикса", requestedSec };
+        }
       }
-      return { ok: true, pack: candles };
+      const candles = await loadMoexCandles(moexSec, from, till, interval, market);
+      if (!candles.length) {
+        return { ok: false, error: "нет свечей MOEX за выбранный период", requestedSec };
+      }
+      return { ok: true, pack: candles, requestedSec };
     } catch (err) {
-      return { ok: false, error: err?.message || String(err) };
+      return { ok: false, error: err?.message || String(err), requestedSec };
     }
   }
 
@@ -1023,7 +1058,7 @@
           const sec = queue.shift();
           const r = await loadInstrumentSec(sec, from, till, interval, market);
           if (r.ok) packs.push(r.pack);
-          else failures.push({ sec, market, error: r.error });
+          else failures.push({ sec: r.requestedSec || sec, market, error: r.error });
           done += 1;
           if (onProgress) onProgress(done, secs.length, sec);
         }
@@ -1096,6 +1131,8 @@
     loadManyBatched,
     loadManyDetailed,
     listShareTickers,
+    listFuturesPrefixes,
+    resolveFuturesContract,
     DEFAULT_STOCK_TICKERS_RAW,
     DEFAULT_FUTURES_PREFIXES_RAW,
     parseTickerPrefixes,

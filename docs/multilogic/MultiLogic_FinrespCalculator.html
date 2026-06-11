@@ -88,8 +88,8 @@ a{color:var(--accent);}
 <label for="calc-sec">Акции (фьючерсы) — выбор (Ctrl+клик)</label>
 <label class="calc-sec-select-all"><input id="calc-sec-all" type="checkbox"> Выбрать все</label>
 </div>
-<select id="calc-sec" multiple size="8" disabled><option>загрузка списка…</option></select>
-<p class="calc-sec-hint" id="calc-sec-hint">Загрузка акций с MOEX ISS…</p>
+<select id="calc-sec" multiple size="8"></select>
+<p class="calc-sec-hint" id="calc-sec-hint"></p>
 <div class="calc-pick-row">
 <button class="calc-btn calc-btn-secondary" type="button" id="pick-shares" disabled>Выделить акции</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="pick-futures" disabled>Выделить фьючерсы</button>
@@ -143,7 +143,7 @@ a{color:var(--accent);}
 <button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-futures">Подобрать</button>
 </div></div>
 </div>
-<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать» перечитывает список выбора (акции или фьючерсы отдельно).</p>
+<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать» обновляет список выбора из текста поля (без запросов к MOEX). Проверка и свечи — при «Рассчитать».</p>
 
 <p class="extra-section">Объём сделки (как в роботе)</p>
 <div class="calc-grid">
@@ -578,7 +578,7 @@ a{color:var(--accent);}
 
   function updateSecHint() {
     $("calc-sec-hint").textContent =
-      `${state.shareList.length} тикеров акций · ${state.futuresList.length} фьючерсов в списке (проверка MOEX — при расчёте)`;
+      `${state.shareList.length} тикеров акций · ${state.futuresList.length} префиксов фьючерсов из полей (MOEX — при расчёте)`;
   }
 
   function fillSecSelect() {
@@ -615,17 +615,16 @@ a{color:var(--accent);}
     if (!isOptimizing()) $("pick-shares").disabled = !state.shareList.length;
   }
 
-  async function reloadFuturesList() {
-    state.futuresList = await E.fetchFuturesList($("prefix-futures").value);
+  function reloadFuturesList() {
+    state.futuresList = E.listFuturesPrefixes($("prefix-futures").value);
     fillSecSelect();
     updateSecHint();
     if (!isOptimizing()) $("pick-futures").disabled = !state.futuresList.length;
   }
 
   function initInstrumentLists() {
-    state.futuresList = [];
     reloadShareList();
-    $("calc-sec-hint").textContent = `${state.shareList.length} тикеров акций из списка · фьючерсы — «Подобрать»`;
+    reloadFuturesList();
   }
 
   function formatBySec(bySec, limit = 40) {
@@ -1111,35 +1110,19 @@ ${markers}
   });
   $("calc-sec-all").addEventListener("change", () => setSelectAll($("calc-sec-all").checked));
   $("calc-sec").addEventListener("change", syncSelectAllCheckbox);
-  $("prefix-pick-stocks").addEventListener("click", async () => {
-    setBusy(true);
-    $("calc-status").textContent = "Обновление списка тикеров акций…";
-    try {
-      reloadShareList();
-      $("calc-status").textContent = state.packs.length
-        ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
-        : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
-      if (state.packs.length) render();
-    } catch (err) {
-      $("calc-status").textContent = `Ошибка подбора акций: ${err.message}`;
-    } finally {
-      setBusy(false);
-    }
+  $("prefix-pick-stocks").addEventListener("click", () => {
+    reloadShareList();
+    $("calc-status").textContent = state.packs.length
+      ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
+      : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
+    if (state.packs.length) render();
   });
-  $("prefix-pick-futures").addEventListener("click", async () => {
-    setBusy(true);
-    $("calc-status").textContent = "Подбор фьючерсов по префиксам…";
-    try {
-      await reloadFuturesList();
-      $("calc-status").textContent = state.packs.length
-        ? `Список фьючерсов обновлён (${state.futuresList.length}). FINRESP пересчитан по текущему окну.`
-        : `Список фьючерсов обновлён (${state.futuresList.length}). Выберите инструменты и нажмите «Рассчитать».`;
-      if (state.packs.length) render();
-    } catch (err) {
-      $("calc-status").textContent = `Ошибка подбора фьючерсов: ${err.message}`;
-    } finally {
-      setBusy(false);
-    }
+  $("prefix-pick-futures").addEventListener("click", () => {
+    reloadFuturesList();
+    $("calc-status").textContent = state.packs.length
+      ? `Список фьючерсов обновлён (${state.futuresList.length}). FINRESP пересчитан по текущему окну.`
+      : `Список фьючерсов обновлён (${state.futuresList.length}). Выберите инструменты и нажмите «Рассчитать».`;
+    if (state.packs.length) render();
   });
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
