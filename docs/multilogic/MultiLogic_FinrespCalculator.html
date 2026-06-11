@@ -268,6 +268,7 @@ a{color:var(--accent);}
     anchorEndTime: null,
     hasWindow: false,
     failedInstruments: [],
+    windowSkipped: [],
     lastInstruments: [],
     uiBusy: false,
     optim: {
@@ -291,6 +292,7 @@ a{color:var(--accent);}
   ];
   const DATE_MIN = "2020-01-01";
   const DEFAULT_RANGE_DAYS = 30;
+  const DEFAULT_END_LAG_DAYS = 2;
   const MOEX_MINUTES_PER_SESSION = 530;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
@@ -393,7 +395,7 @@ a{color:var(--accent);}
     const lim = currentLimit();
     if (!n) {
       $("calc-date-hint").textContent =
-        `Календарь: ${DATE_MIN} — сегодня · по умолчанию ${DEFAULT_RANGE_DAYS} дн. · сужение периода — при выборе бумаг и ТФ`;
+        `Календарь: ${DATE_MIN} — сегодня · по умолчанию ${DEFAULT_RANGE_DAYS} дн., конец −${DEFAULT_END_LAG_DAYS} дн. · сужение — при выборе бумаг и ТФ`;
       return;
     }
     const maxD = maxCalcDays(tf, n);
@@ -676,10 +678,12 @@ a{color:var(--accent);}
     const sc = optimCtx?.stopper ?? stopperConfig();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p);
     if (!spec) return null;
-    const { perSec, agg, preStopperAgg, stopper } = E.runMulti(
+    const { perSec, agg, preStopperAgg, stopper, skipped } = E.runMulti(
       state.packs, spec, a, b, p, volConfig(), sc
     );
-    return { perSec, agg, preStopperAgg, stopper, a, b };
+    state.windowSkipped = skipped || [];
+    if (!perSec.length) return null;
+    return { perSec, agg, preStopperAgg, stopper, a, b, skipped };
   }
 
   async function optimLoop(token) {
@@ -908,7 +912,8 @@ a{color:var(--accent);}
   function initDates() {
     initDateInputs();
     const { min, max } = dateBounds();
-    const till = max;
+    let till = addDays(max, -DEFAULT_END_LAG_DAYS);
+    if (till < min) till = min;
     let from = addDays(till, -DEFAULT_RANGE_DAYS);
     if (from < min) from = min;
     $("calc-from").value = formatDay(from);
@@ -1124,7 +1129,8 @@ a{color:var(--accent);}
     const plotW = w - left - right;
     const plotH = h - top - bottom;
     const priceKeys = ["close", "sma", "linregUp", "linregDn", "linregMid"];
-    const vals = rows.flatMap((r) => priceKeys.map((k) => r?.[k]).filter((v) => v != null));
+    let vals = rows.flatMap((r) => priceKeys.map((k) => r?.[k]).filter((v) => v != null));
+    if (!vals.length) vals = rows.map((r) => r?.close).filter((v) => v != null);
     if (!vals.length) return "";
     const min = Math.min(...vals), max = Math.max(...vals);
     const pad = Math.max((max - min) * 0.06, 0.01);
@@ -1303,6 +1309,18 @@ ${totalBlock}
 </div>`;
   }
 
+  function chartFailuresForDraw() {
+    const out = new Map();
+    for (const f of state.failedInstruments || []) {
+      out.set(String(f.sec || "").toUpperCase(), f);
+    }
+    for (const f of state.windowSkipped || []) {
+      const key = String(f.sec || "").toUpperCase();
+      if (!out.has(key)) out.set(key, f);
+    }
+    return [...out.values()];
+  }
+
   function chartEntriesForDraw(perSec, failed) {
     const ok = perSec || [];
     const bad = failed || [];
@@ -1341,7 +1359,7 @@ ${totalBlock}
   }
 
   function drawCharts(perSec, stopper) {
-    const failed = state.failedInstruments || [];
+    const failed = chartFailuresForDraw();
     const entries = chartEntriesForDraw(perSec, failed);
     if (!entries.length) {
       $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
@@ -1408,7 +1426,10 @@ ${totalBlock}
     const mode = state.bulkMode === "futures" ? "фьючерсы" : state.bulkMode === "shares" ? "все акции" : "выбор";
     let status = `FINRESP: ${c0} — ${c1} | ${perSec.length} инстр. (${mode}) | ${winLen} свечей в окне`;
     if (state.failedInstruments?.length) {
-      status += ` | пропущено ${state.failedInstruments.length} (нет данных MOEX)`;
+      status += ` | нет MOEX: ${state.failedInstruments.length}`;
+    }
+    if (state.windowSkipped?.length) {
+      status += ` | без окна: ${state.windowSkipped.length}`;
     }
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
@@ -1477,6 +1498,7 @@ ${totalBlock}
       });
       state.packs = loadedData.packs;
       state.failedInstruments = loadedData.failures;
+      state.windowSkipped = [];
       if (!state.packs.length) {
         const sample = state.failedInstruments.slice(0, 3).map((f) => f.sec).join(", ");
         const tail = state.failedInstruments.length > 3 ? "…" : "";

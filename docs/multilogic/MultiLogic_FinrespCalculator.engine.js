@@ -841,6 +841,34 @@
     return candles.findIndex((c) => c.time === time);
   }
 
+  function findCandleIndexAtOrBefore(candles, time) {
+    if (!candles?.length || !time) return -1;
+    let idx = -1;
+    for (let i = 0; i < candles.length; i++) {
+      const t = candles[i]?.time;
+      if (!t) continue;
+      if (t <= time) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  function indicesForTimeRange(candles, tStart, tEnd) {
+    if (!candles?.length || !tStart || !tEnd) return null;
+    let a = -1;
+    let b = -1;
+    for (let i = 0; i < candles.length; i++) {
+      const t = candles[i]?.time;
+      if (!t) continue;
+      if (t < tStart) continue;
+      if (t > tEnd) break;
+      if (a < 0) a = i;
+      b = i;
+    }
+    if (a < 0 || b < a) return null;
+    return { a, b };
+  }
+
   function findRowIdxAtOrBefore(rows, time) {
     if (!rows?.length || !time) return -1;
     let idx = -1;
@@ -898,13 +926,18 @@
     return row;
   }
 
-  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endIdx, params, volConfig) {
+  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endTime, params, volConfig) {
     const rowIdx = findRowIdxAtOrBefore(perSecItem.rows, triggerTime);
     if (rowIdx < 0) return;
     const triggerRow = flattenRowAtIdx(perSecItem, rowIdx);
     const head = perSecItem.rows.slice(0, rowIdx);
-    const localEnd = Math.max(0, Math.min(endIdx, candles.length - 1));
-    const candleIdx = findCandleIndexByTime(candles, triggerTime);
+    const localEnd = findCandleIndexAtOrBefore(candles, endTime);
+    if (localEnd < 0) {
+      perSecItem.rows = [...head, triggerRow];
+      recomputePerSecTotals(perSecItem);
+      return;
+    }
+    const candleIdx = findCandleIndexAtOrBefore(candles, triggerTime);
     if (candleIdx < 0 || candleIdx >= localEnd) {
       perSecItem.rows = [...head, triggerRow];
       recomputePerSecTotals(perSecItem);
@@ -924,20 +957,14 @@
     recomputePerSecTotals(perSecItem);
   }
 
-  function applyPortfolioStopper(perSec, packs, spec, startIdx, endIdx, params, volConfig, cfg) {
+  function applyPortfolioStopper(perSec, packs, spec, times, endTime, params, volConfig, cfg) {
     const stopper = { ...DEFAULT_STOPPER, ...cfg };
     const events = [];
     if ((!stopper.useSl && !stopper.useTp) || !perSec.length || !packs.length) {
       return { perSec, stopper: { events } };
     }
 
-    const refCandles = longestPack(packs);
-    const times = [];
-    for (let i = startIdx; i <= endIdx && i < refCandles.length; i++) {
-      const t = refCandles[i]?.time;
-      if (t) times.push(t);
-    }
-    if (!times.length) return { perSec, stopper: { events } };
+    if (!times?.length) return { perSec, stopper: { events } };
 
     let referenceEquity = stopper.refEquity > 0 ? stopper.refEquity : null;
     let scanFrom = 0;
@@ -973,7 +1000,7 @@
 
         const refAtTrigger = referenceEquity;
         for (let s = 0; s < perSec.length; s++) {
-          flattenAndResimTail(perSec[s], packs[s], spec, time, endIdx, params, volConfig);
+          flattenAndResimTail(perSec[s], packs[s], spec, time, endTime, params, volConfig);
         }
         events.push({
           kind,
@@ -1244,26 +1271,67 @@
   }
 
   function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig) {
-    const perSec = packs.map((candles) => {
+    const emptyAgg = aggregateFinresp([]);
+    const ref = longestPack(packs);
+    if (!ref.length) {
+      return {
+        perSec: [],
+        skipped: [],
+        agg: emptyAgg,
+        preStopperAgg: emptyAgg,
+        stopper: { events: [] },
+        a: 0,
+        b: 0
+      };
+    }
+    const aRef = Math.max(0, Math.min(startIdx, ref.length - 1));
+    const bRef = Math.max(aRef, Math.min(endIdx, ref.length - 1));
+    const tStart = ref[aRef]?.time;
+    const tEnd = ref[bRef]?.time;
+    const times = [];
+    for (let i = aRef; i <= bRef; i++) {
+      const t = ref[i]?.time;
+      if (t) times.push(t);
+    }
+
+    const perSec = [];
+    const activePacks = [];
+    const skipped = [];
+    for (const candles of packs) {
       const sec = candles[0]?.sec || "?";
-      const a = Math.max(0, Math.min(startIdx, candles.length - 1));
-      const b = Math.max(a, Math.min(endIdx, candles.length - 1));
-      const r = runOnCandles(candles, spec, a, b, params, volConfig);
-      return { sec, ...r };
-    });
+      const range = indicesForTimeRange(candles, tStart, tEnd);
+      if (!range) {
+        skipped.push({ sec, error: "нет свечей в выбранном окне" });
+        continue;
+      }
+      const r = runOnCandles(candles, spec, range.a, range.b, params, volConfig);
+      if (!r.rows?.length) {
+        skipped.push({ sec, error: "нет данных для расчёта в выбранном окне" });
+        continue;
+      }
+      perSec.push({ sec, ...r });
+      activePacks.push(candles);
+    }
+
     const preStopperAgg = aggregateFinresp(perSec);
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
-      const refLen = longestPack(packs).length || 1;
-      const a = Math.max(0, Math.min(startIdx, refLen - 1));
-      const b = Math.max(a, Math.min(endIdx, refLen - 1));
-      const applied = applyPortfolioStopper(perSec, packs, spec, a, b, params, volConfig, cfg);
+      const applied = applyPortfolioStopper(perSec, activePacks, spec, times, tEnd, params, volConfig, cfg);
       stopper = applied.stopper;
     }
     const agg = aggregateFinresp(perSec);
-    const chartPack = perSec.length === 1 ? perSec[0] : perSec[0];
-    return { perSec, agg, preStopperAgg, stopper, chartRows: chartPack?.rows || [] };
+    return {
+      perSec,
+      skipped,
+      agg,
+      preStopperAgg,
+      stopper,
+      a: aRef,
+      b: bRef,
+      tStart,
+      tEnd
+    };
   }
 
   root.MultiLogicFinrespEngine = {
