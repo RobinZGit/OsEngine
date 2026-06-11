@@ -32,10 +32,14 @@ h2:first-child{margin-top:0;}
 .range-grid input{width:100%;}
 .chart-card{border:1px solid var(--border);border-radius:10px;padding:.75rem;margin:1rem 0;overflow-x:auto;}
 .chart-card svg{display:block;min-width:720px;max-width:100%;}
+.chart-stack{display:flex;flex-direction:column;gap:.85rem;}
+.chart-mini{padding-bottom:.35rem;border-bottom:1px solid var(--border);}
+.chart-mini:last-child{border-bottom:0;padding-bottom:0;}
+.chart-sec-title{margin:0 0 .4rem;font-size:.88rem;font-weight:600;color:#374151;font-family:Consolas,monospace;}
 details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
 details.logic-editor summary{cursor:pointer;font-weight:600;color:#374151;}
-.drama-section{margin:1rem 0 .5rem;font-size:.95rem;font-weight:600;color:#374151;border-bottom:1px solid var(--border);padding-bottom:.3rem;}
-.drama-section:first-of-type{margin-top:.5rem;}
+.extra-section{margin:1rem 0 .5rem;font-size:.95rem;font-weight:600;color:#374151;border-bottom:1px solid var(--border);padding-bottom:.3rem;}
+.extra-section:first-of-type{margin-top:.5rem;}
 .logic-grid{display:grid;gap:.75rem;margin-top:.75rem;}
 .logic-grid label{font-size:.82rem;color:var(--muted);display:block;margin-bottom:.2rem;}
 .logic-grid textarea{width:100%;min-height:4.5rem;font-family:Consolas,monospace;font-size:.78rem;padding:.45rem;border:1px solid var(--border);border-radius:6px;resize:vertical;}
@@ -82,7 +86,7 @@ a{color:var(--accent);}
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
 <div class="calc-result">
 <div class="calc-metric"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric"><b>Свечи (первая бумага)</b><span id="calc-count">—</span></div>
+<div class="calc-metric"><b>Свечей в окне</b><span id="calc-count">—</span></div>
 <div class="calc-metric"><b>Позиция z</b><span id="calc-pos">—</span></div>
 <div class="calc-metric"><b>Кэш C</b><span id="calc-cash">—</span></div>
 <div class="calc-metric"><b>По бумагам</b><span id="calc-bysec" style="font-size:.75rem">—</span></div>
@@ -94,10 +98,10 @@ a{color:var(--accent);}
 <div class="chart-card" id="calc-chart"></div>
 </div>
 
-<details class="logic-editor" id="dramatica">
-<summary>Драматика — объёмы, параметры и строки логик L1…L4</summary>
+<details class="logic-editor" id="extra-params">
+<summary>Дополнительные параметры и логики</summary>
 
-<p class="drama-section">Объём сделки (как в роботе)</p>
+<p class="extra-section">Объём сделки (как в роботе)</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="vol-type">Volume type</label>
 <select id="vol-type">
@@ -114,14 +118,14 @@ a{color:var(--accent);}
 </div>
 <p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
 
-<p class="drama-section">Параметры строки логики</p>
+<p class="extra-section">Параметры строки логики</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="param-lr">@LR</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
 <div class="calc-field"><label for="param-sl">@SL ×ATR</label><input id="param-sl" type="number" value="2" min="0" max="50" step="0.1"></div>
 <div class="calc-field"><label for="param-tp">@TP ×ATR</label><input id="param-tp" type="number" value="3" min="0" max="50" step="0.1"></div>
 </div>
 
-<p class="drama-section">Строки L1…L4</p>
+<p class="extra-section">Строки L1…L4</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
 <p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и SL/TP по ATR. Общепортфельный Stopper не считается.</p>
@@ -134,7 +138,14 @@ a{color:var(--accent);}
 (() => {
   const E = window.MultiLogicFinrespEngine;
   const $ = (id) => document.getElementById(id);
-  const state = { packs: [], movedSlider: "end", customLines: { ...E.DEFAULT_LOGIC_LINES } };
+  const state = {
+    packs: [],
+    movedSlider: "end",
+    customLines: { ...E.DEFAULT_LOGIC_LINES },
+    anchorStartTime: null,
+    anchorEndTime: null,
+    hasWindow: false
+  };
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900, defaultDays: 3 },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200, defaultDays: 14 },
@@ -235,21 +246,77 @@ a{color:var(--accent);}
     $("calc-till").value = day(till);
   }
 
-  function setSliderBounds() {
-    const n = state.packs[0]?.length || 0;
+  function refPack() {
+    return state.packs[0] || [];
+  }
+
+  function findIndexByTime(pack, timeStr) {
+    if (!timeStr || timeStr === "—" || !pack?.length) return 0;
+    const target = new Date(String(timeStr).replace(" ", "T")).getTime();
+    if (!Number.isFinite(target)) return 0;
+    let best = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < pack.length; i++) {
+      const diff = Math.abs(new Date(String(pack[i].time).replace(" ", "T")).getTime() - target);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  function saveWindowAnchor() {
+    const pack = refPack();
+    if (!pack.length) return;
+    const a = +$("calc-start").value;
+    const b = +$("calc-end").value;
+    state.anchorStartTime = pack[a]?.time ?? null;
+    state.anchorEndTime = pack[b]?.time ?? null;
+    state.hasWindow = state.anchorStartTime != null && state.anchorEndTime != null;
+  }
+
+  function setSliderBounds(preserve = false) {
+    const pack = refPack();
+    const n = pack.length;
     const max = Math.max(0, n - 1);
-    const width = Math.min(max + 1, currentLimit().maxBars);
+    const maxBars = currentLimit().maxBars;
     for (const id of ["calc-start", "calc-end"]) {
       $(id).min = 0;
       $(id).max = max;
       $(id).disabled = max < 2;
     }
-    $("calc-start").value = Math.max(0, max - width + 1);
-    $("calc-end").value = max;
+    if (max < 2) return;
+
+    let a;
+    let b;
+    if (preserve && state.hasWindow) {
+      a = findIndexByTime(pack, state.anchorStartTime);
+      b = findIndexByTime(pack, state.anchorEndTime);
+      if (a > b) [a, b] = [b, a];
+    } else if (preserve && state.packs.length) {
+      a = Math.min(+$("calc-start").value || 0, max);
+      b = Math.min(+$("calc-end").value || max, max);
+    } else {
+      a = Math.max(0, max - maxBars + 1);
+      b = max;
+    }
+
+    if (a > b - 2) a = Math.max(0, b - 2);
+    if (b < a + 2) b = Math.min(max, a + 2);
+    if (b - a + 1 > maxBars) {
+      if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
+      else a = Math.max(0, b - maxBars + 1);
+    }
+    $("calc-start").value = a;
+    $("calc-end").value = b;
+    state.anchorStartTime = pack[a]?.time ?? state.anchorStartTime;
+    state.anchorEndTime = pack[b]?.time ?? state.anchorEndTime;
+    state.hasWindow = true;
   }
 
   function normalizeSliders() {
-    const n = state.packs[0]?.length || 0;
+    const n = refPack().length;
     let a = +$("calc-start").value;
     let b = +$("calc-end").value;
     const max = Math.max(0, n - 1);
@@ -297,12 +364,11 @@ a{color:var(--accent);}
     return s.slice(0, 10);
   }
 
-  function drawChart(rows, finresp) {
-    if (!rows?.length) {
-      $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
-      return;
-    }
-    const w = 820, h = 340, left = 68, right = 28, top = 28, bottom = 58;
+  function buildChartSvg(rows, finresp, title, compact) {
+    if (!rows?.length) return "";
+    const w = 820;
+    const h = compact ? 210 : 340;
+    const left = 68, right = 28, top = compact ? 24 : 28, bottom = 58;
     const plotW = w - left - right;
     const plotH = h - top - bottom;
     const priceKeys = ["close", "sma", "linregUp", "linregDn", "linregMid"];
@@ -321,6 +387,7 @@ a{color:var(--accent);}
     const line = (key) => sample.filter((i) => rows[i][key] != null)
       .map((i) => `${x(i).toFixed(1)},${y(rows[i][key]).toFixed(1)}`).join(" ");
     const color = finresp < 0 ? "#b91c1c" : "#047857";
+    const closeStroke = compact ? 1.4 : 2;
     const gridH = yTicks.map((v) =>
       `<line x1="${left}" y1="${y(v).toFixed(1)}" x2="${w - right}" y2="${y(v).toFixed(1)}" stroke="#e8edf4" stroke-width="1"/>`).join("");
     const gridV = xTickIdx.map((i) =>
@@ -341,20 +408,36 @@ a{color:var(--accent);}
       if (r.sell > 0) parts.push(`<circle cx="${x(i).toFixed(1)}" cy="${y(r.close).toFixed(1)}" r="3.2" fill="#dc2626" stroke="#fff" stroke-width=".8"/>`);
       return parts.join("");
     }).join("");
-    $("calc-chart").innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="График цены и FINRESP">
+    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${title}">
 <rect width="${w}" height="${h}" fill="#fff"/>
 ${gridH}${gridV}
 <line x1="${left}" y1="${top}" x2="${left}" y2="${h - bottom}" stroke="#94a3b8" stroke-width="1.2"/>
 <line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#94a3b8" stroke-width="1.2"/>
 ${yLabels}${xLabels}
-<text x="${left - 10}" y="${top - 10}" text-anchor="end" font-size="10" fill="#475569" font-weight="600">Цена, ₽</text>
+<text x="${left - 10}" y="${top - 8}" text-anchor="end" font-size="10" fill="#475569" font-weight="600">Цена, ₽</text>
 <text x="${(left + w - right) / 2}" y="${h - 1}" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">Время</text>
 ${indLines}
-<polyline fill="none" stroke="#2563eb" stroke-width="2" points="${line("close")}"/>
+<polyline fill="none" stroke="#2563eb" stroke-width="${closeStroke}" points="${line("close")}"/>
 ${markers}
-<text x="${w - right - 4}" y="${top + 14}" text-anchor="end" fill="${color}" font-size="14" font-weight="700" font-family="Consolas,monospace">FINRESP ${fmt(finresp)} ₽</text>
-<text x="${left + 4}" y="${top + 14}" font-size="9" fill="#64748b">● покупка · ● продажа</text>
+<text x="${w - right - 4}" y="${top + 12}" text-anchor="end" fill="${color}" font-size="${compact ? 12 : 14}" font-weight="700" font-family="Consolas,monospace">FINRESP ${fmt(finresp)} ₽</text>
+<text x="${left + 4}" y="${top + 12}" font-size="9" fill="#64748b">● покупка · ● продажа · синяя — Close</text>
 </svg>`;
+  }
+
+  function drawCharts(perSec) {
+    if (!perSec?.length) {
+      $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
+      return;
+    }
+    const compact = perSec.length > 1;
+    const blocks = perSec.map((p) => {
+      const svg = buildChartSvg(p.rows, p.finresp, `График ${p.sec}`, compact);
+      if (!svg) return "";
+      return `<div class="chart-mini"><p class="chart-sec-title">${p.sec}</p>${svg}</div>`;
+    }).filter(Boolean);
+    $("calc-chart").innerHTML = blocks.length
+      ? `<div class="chart-stack">${blocks.join("")}</div>`
+      : "<p class=\"note\">Нет данных для графика.</p>";
   }
 
   function render() {
@@ -362,32 +445,37 @@ ${markers}
     const [a, b] = normalizeSliders();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params());
     if (!spec) return;
-    const { perSec, agg, chartRows } = E.runMulti(state.packs, spec, a, b, params(), volConfig());
+    const { perSec, agg } = E.runMulti(state.packs, spec, a, b, params(), volConfig());
+    const winLen = perSec[0]?.rows?.length ?? 0;
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
-    $("calc-count").textContent = String(chartRows.length);
+    $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
     const bySec = Object.entries(agg.bySec).map(([k, v]) => `${k}:${fmt(v)}`).join(" · ");
     $("calc-bysec").textContent = bySec || "—";
-    const c0 = state.packs[0][a]?.time || "—";
-    const c1 = state.packs[0][b]?.time || "—";
+    const c0 = refPack()[a]?.time || "—";
+    const c1 = refPack()[b]?.time || "—";
+    state.anchorStartTime = c0 !== "—" ? c0 : state.anchorStartTime;
+    state.anchorEndTime = c1 !== "—" ? c1 : state.anchorEndTime;
+    state.hasWindow = c0 !== "—" && c1 !== "—";
     $("calc-start-label").textContent = c0;
     $("calc-end-label").textContent = c1;
-    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} бумаг | ${chartRows.length} свечей в окне`;
-    drawChart(chartRows, agg.finresp);
+    $("calc-status").textContent = `FINRESP: ${c0} — ${c1} | ${perSec.length} бумаг | ${winLen} свечей в окне`;
+    drawCharts(perSec);
   }
 
   async function run() {
     const secs = selectedSecs();
     if (!secs.length) { $("calc-status").textContent = "Выберите хотя бы одну бумагу."; return; }
     $("calc-run").disabled = true;
+    saveWindowAnchor();
     enforceDateRange("till");
     $("calc-status").textContent = `Загрузка ${secs.join(", ")}…`;
     try {
       state.packs = await E.loadMany(secs, $("calc-from").value, $("calc-till").value, $("calc-tf").value);
       if (!state.packs[0]?.length) throw new Error("MOEX не вернул свечи.");
-      setSliderBounds();
+      setSliderBounds(state.hasWindow);
       render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
@@ -410,15 +498,13 @@ ${markers}
     $(id).addEventListener("input", render);
   });
   $("calc-tf").addEventListener("change", () => {
-    const till = parseDay($("calc-till").value);
-    $("calc-from").value = day(addDays(till, -currentLimit().defaultDays));
     enforceDateRange("till");
-    state.packs = [];
+    if (state.packs.length) setSliderBounds(true);
   });
   $("calc-from").addEventListener("change", () => enforceDateRange("from"));
   $("calc-till").addEventListener("change", () => enforceDateRange("till"));
-  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; render(); });
-  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; render(); });
+  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); render(); });
+  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); render(); });
 })();
 </script>
 </body>
