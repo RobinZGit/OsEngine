@@ -63,7 +63,7 @@ a{color:var(--accent);}
 <h2>Калькулятор</h2>
 <div class="calc-card" id="finresp-calc">
 <div class="calc-grid">
-<div class="calc-field calc-field-wide"><label for="calc-sec">Ликвидные акции MOEX (как «Подобрать акции» в роботе)</label>
+<div class="calc-field calc-field-wide"><label for="calc-sec">Акции по тикерам из доп. параметров (Ctrl+клик)</label>
 <select id="calc-sec" multiple size="8" disabled><option>загрузка списка…</option></select>
 <p class="calc-sec-hint" id="calc-sec-hint">Загрузка акций с MOEX ISS…</p>
 <div class="calc-pick-row">
@@ -99,6 +99,16 @@ a{color:var(--accent);}
 
 <details class="logic-editor" id="extra-params">
 <summary>Дополнительные параметры и логики</summary>
+
+<p class="extra-section">MOEX — тикеры акций и префиксы фьючерсов</p>
+<div class="logic-grid">
+<div><label for="prefix-stocks">Тикеры акций (через запятую; точное совпадение)</label>
+<textarea id="prefix-stocks" rows="3"></textarea></div>
+<div><label for="prefix-futures">Префиксы корня фьючерсов (через запятую)</label>
+<textarea id="prefix-futures" rows="3"></textarea></div>
+</div>
+<button class="calc-btn calc-btn-secondary" type="button" id="prefix-apply" style="margin:.35rem 0 .75rem">Применить префиксы</button>
+<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать акции» / «Подобрать фьючерсы» используют эти строки.</p>
 
 <p class="extra-section">Объём сделки (как в роботе)</p>
 <div class="calc-grid">
@@ -247,21 +257,35 @@ a{color:var(--accent);}
     $("pick-futures").disabled = busy;
   }
 
+  function fillSecSelect() {
+    const sel = $("calc-sec");
+    const prev = new Set(selectedSecs());
+    sel.innerHTML = "";
+    for (const id of state.shareList) {
+      const o = document.createElement("option");
+      o.value = id;
+      o.textContent = id;
+      if (prev.has(id) || (prev.size === 0 && id.toUpperCase() === "SBER")) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.disabled = !state.shareList.length;
+  }
+
+  function initPrefixFields() {
+    $("prefix-stocks").value = E.DEFAULT_STOCK_TICKERS_RAW;
+    $("prefix-futures").value = E.DEFAULT_FUTURES_PREFIXES_RAW;
+  }
+
+  async function reloadShareList() {
+    state.shareList = await E.fetchShareList($("prefix-stocks").value);
+    fillSecSelect();
+    $("calc-sec-hint").textContent = `${state.shareList.length} акций по тикерам · фьючерсы — по префиксам, кнопка «Подобрать фьючерсы»`;
+    $("pick-shares").disabled = !state.shareList.length;
+  }
+
   async function initShareList() {
     try {
-      state.shareList = await E.fetchShareList();
-      const sel = $("calc-sec");
-      sel.innerHTML = "";
-      for (const id of state.shareList) {
-        const o = document.createElement("option");
-        o.value = id;
-        o.textContent = id;
-        if (id === "SBER") o.selected = true;
-        sel.appendChild(o);
-      }
-      sel.disabled = false;
-      $("calc-sec-hint").textContent = `${state.shareList.length} ликвидных акций (DefaultMoexStockTickerPrefixes) · фьючерсы — «Подобрать фьючерсы»`;
-      $("pick-shares").disabled = false;
+      await reloadShareList();
       $("pick-futures").disabled = false;
     } catch (err) {
       $("calc-sec-hint").textContent = `Не удалось загрузить список акций: ${err.message}`;
@@ -600,18 +624,21 @@ ${markers}
   }
 
   async function pickShares() {
-    if (!state.shareList.length) { $("calc-status").textContent = "Список акций ещё не загружен."; return; }
     try {
+      await reloadShareList();
+      if (!state.shareList.length) { $("calc-status").textContent = "По тикерам акций ничего не найдено на TQBR."; return; }
       await runWithSecs(state.shareList, "shares", "shares");
-    } catch (_) { /* status уже выставлен */ }
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка: ${err.message}`;
+    }
   }
 
   async function pickFutures() {
     setBusy(true);
-    $("calc-status").textContent = "Загрузка списка фьючерсов MOEX…";
+    $("calc-status").textContent = "Подбор фьючерсов по префиксам…";
     try {
-      const list = await E.fetchFuturesList();
-      if (!list.length) throw new Error("Активные фьючерсы не найдены.");
+      const list = await E.fetchFuturesList($("prefix-futures").value);
+      if (!list.length) throw new Error("По префиксам активные фьючерсы не найдены.");
       await runWithSecs(list, "futures", "futures");
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
@@ -622,12 +649,21 @@ ${markers}
 
   fillLogicSelect();
   fillLogicEditor();
+  initPrefixFields();
   initDates();
   syncVolumeFields();
   initShareList();
   $("calc-run").addEventListener("click", run);
   $("pick-shares").addEventListener("click", pickShares);
   $("pick-futures").addEventListener("click", pickFutures);
+  $("prefix-apply").addEventListener("click", async () => {
+    try {
+      await reloadShareList();
+      if (state.packs.length) render();
+    } catch (err) {
+      $("calc-status").textContent = `Ошибка префиксов: ${err.message}`;
+    }
+  });
   $("logic-apply").addEventListener("click", () => { readLogicEditor(); render(); });
   $("calc-logic").addEventListener("change", render);
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });

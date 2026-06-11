@@ -10,12 +10,107 @@
     maxPositions: 40
   };
 
-  /** Как MultiLogic.DefaultMoexStockTickerPrefixes — ликвидные акции для «Подобрать акции». */
-  const DEFAULT_LIQUID_SHARE_TICKERS = [
-    "AFLT", "ALRS", "AFKS", "BSPB", "CHMF", "FEES", "GAZP", "GMKN", "HYDR", "IRAO",
-    "LKOH", "MAGN", "MOEX", "MTSS", "MTLRP", "NVTK", "NLMK", "PLZL", "PIKK", "PHOR",
-    "ROSN", "RUAL", "RTKMP", "SBER", "SBERP", "SNGSP", "SNGS", "TATN", "TATNP", "UPRO", "VTBR"
-  ];
+  const DEFAULT_STOCK_TICKERS_RAW =
+    "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
+    + "NVTK, NLMK, PLZL, PIKK, PHOR, ROSN, RUAL, RTKMP, SBER, SBERP, SNGSP, SNGS, TATN, TATNP, UPRO, VTBR";
+
+  const DEFAULT_FUTURES_PREFIXES_RAW =
+    "Si,USDRUBF,Eu,EURRUBF,CNY,MX,MM,IMOEXF,RI,BR,BRM,CL,NG,NGM,GD,GLDRUBF,SV,PT,PD,CU,SR,GZ,LK,RN,NK,GN,TT,VB,SN,SG,RL";
+
+  const MOEX_FUTURES_PREFIX_ALIASES = {
+    CNY: ["CR", "CNYRUBF"],
+    SI: ["Si", "SV", "SILV"],
+    RUAL: ["RU"]
+  };
+
+  function parseTickerPrefixes(raw) {
+    const result = [];
+    const seen = new Set();
+    for (const part of String(raw || "").split(",")) {
+      const p = part.trim();
+      if (!p) continue;
+      const key = p.toUpperCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(p);
+    }
+    return result;
+  }
+
+  function tryExtractMoexFortsSeriesBase(ticker) {
+    if (ticker.length < 3) return "";
+    const len = ticker.length;
+    const monthCh = ticker[len - 2];
+    const yearCh = ticker[len - 1];
+    if (!/[A-Za-z]/.test(monthCh) || !/\d/.test(yearCh)) return "";
+    const basePart = ticker.substring(0, len - 2);
+    if (!basePart.length) return "";
+    for (let i = 0; i < basePart.length; i++) {
+      if (!/[A-Za-z]/.test(basePart[i])) return "";
+    }
+    return basePart;
+  }
+
+  function extractFuturesLetterRoot(ticker) {
+    const t = String(ticker || "").trim();
+    if (!t) return "";
+    const dash = t.indexOf("-");
+    if (dash > 0) return t.substring(0, dash).trim();
+    const dot = t.indexOf(".");
+    if (dot > 0) {
+      let allLetters = true;
+      for (let k = 0; k < dot; k++) {
+        if (!/[A-Za-z]/.test(t[k])) { allLetters = false; break; }
+      }
+      if (allLetters) return t.substring(0, dot).trim();
+    }
+    const fortBase = tryExtractMoexFortsSeriesBase(t);
+    if (fortBase) return fortBase;
+    let end = 0;
+    while (end < t.length && /[A-Za-z]/.test(t[end])) end++;
+    return end > 0 ? t.substring(0, end) : "";
+  }
+
+  function expandPrefixWithMoexAliases(userPrefix) {
+    const p = String(userPrefix || "").trim();
+    if (!p) return [];
+    const out = [p];
+    const aliases = MOEX_FUTURES_PREFIX_ALIASES[p.toUpperCase()];
+    if (aliases) out.push(...aliases);
+    return out;
+  }
+
+  function rootMatchesExpandedPrefix(root, expandedPrefix) {
+    if (!root || !expandedPrefix) return false;
+    const r = root;
+    const e = expandedPrefix;
+    if (r.toUpperCase() === e.toUpperCase()) return true;
+    if (e.length <= r.length && r.toUpperCase().startsWith(e.toUpperCase())) return true;
+    if (r.length <= e.length && e.toUpperCase().startsWith(r.toUpperCase())) return true;
+    return false;
+  }
+
+  function stockTickerMatches(secid, prefixes) {
+    const name = String(secid || "").trim().toUpperCase();
+    return prefixes.some((p) => name === String(p).trim().toUpperCase());
+  }
+
+  function futuresTickerMatches(secid, prefixes) {
+    const normalized = String(secid || "").trim();
+    const root = extractFuturesLetterRoot(normalized);
+    if (!root && !normalized) return false;
+    for (const p of prefixes) {
+      for (const expanded of expandPrefixWithMoexAliases(p)) {
+        if (!expanded) continue;
+        if (root && rootMatchesExpandedPrefix(root, expanded)) return true;
+        if (expanded.length <= normalized.length
+          && normalized.toUpperCase().startsWith(expanded.toUpperCase())) return true;
+        if (expanded.length >= 2
+          && normalized.toUpperCase().includes(expanded.toUpperCase())) return true;
+      }
+    }
+    return false;
+  }
 
   const TREND_REGIME =
     "Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) ";
@@ -662,29 +757,34 @@
     return ids.sort();
   }
 
-  async function fetchShareList() {
-    const liquid = new Set(DEFAULT_LIQUID_SHARE_TICKERS);
-    try {
-      const activeOnTqbr = await fetchIssSecIds(
-        "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json",
-        "SECID,STATUS",
-        (o) => o.STATUS === "A" && liquid.has(o.SECID)
-      );
-      const activeSet = new Set(activeOnTqbr);
-      const ordered = DEFAULT_LIQUID_SHARE_TICKERS.filter((t) => activeSet.has(t));
-      if (ordered.length) return ordered;
-    } catch (_) {
-      /* fallback ниже */
+  async function fetchShareList(stockPrefixesRaw) {
+    const prefixes = parseTickerPrefixes(stockPrefixesRaw || DEFAULT_STOCK_TICKERS_RAW);
+    if (!prefixes.length) return [];
+    const activeOnTqbr = await fetchIssSecIds(
+      "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json",
+      "SECID,STATUS",
+      (o) => o.STATUS === "A" && stockTickerMatches(o.SECID, prefixes)
+    );
+    const byUpper = new Map(activeOnTqbr.map((id) => [id.toUpperCase(), id]));
+    const ordered = [];
+    for (const p of prefixes) {
+      const hit = byUpper.get(String(p).trim().toUpperCase());
+      if (hit) ordered.push(hit);
     }
-    return [...DEFAULT_LIQUID_SHARE_TICKERS];
+    return ordered.length ? ordered : activeOnTqbr;
   }
 
-  async function fetchFuturesList() {
+  async function fetchFuturesList(futuresPrefixesRaw) {
+    const prefixes = parseTickerPrefixes(futuresPrefixesRaw || DEFAULT_FUTURES_PREFIXES_RAW);
+    if (!prefixes.length) return [];
     const today = new Date().toISOString().slice(0, 10);
     return fetchIssSecIds(
       "https://iss.moex.com/iss/engines/futures/markets/forts/securities.json",
       "SECID,ASSETCODE,LASTTRADEDATE,BOARDID",
-      (o) => o.BOARDID === "RFUD" && o.ASSETCODE && String(o.LASTTRADEDATE || "") >= today
+      (o) => o.BOARDID === "RFUD"
+        && o.ASSETCODE
+        && String(o.LASTTRADEDATE || "") >= today
+        && futuresTickerMatches(o.SECID, prefixes)
     );
   }
 
@@ -791,7 +891,11 @@
     runMulti,
     loadMany,
     loadManyBatched,
-    DEFAULT_LIQUID_SHARE_TICKERS,
+    DEFAULT_STOCK_TICKERS_RAW,
+    DEFAULT_FUTURES_PREFIXES_RAW,
+    parseTickerPrefixes,
+    stockTickerMatches,
+    futuresTickerMatches,
     fetchShareList,
     fetchFuturesList,
     smaSeries
