@@ -154,6 +154,7 @@ a{color:var(--accent);}
 <div class="calc-metric-primary"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
 <div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
 </div>
+<p class="calc-sec-hint" id="calc-ann-hint"></p>
 <p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
 <div class="calc-result-secondary">
 <div class="calc-metric-secondary"><b>Свечей в окне</b><span id="calc-count">—</span></div>
@@ -322,23 +323,49 @@ a{color:var(--accent);}
     return Number.isFinite(d.getTime()) ? d : null;
   }
 
-  function windowDays(t0, t1) {
+  function calendarDateOnly(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  function calendarDaysBetweenTimes(t0, t1) {
     const d0 = parseMoexTime(t0);
     const d1 = parseMoexTime(t1);
     if (!d0 || !d1) return null;
-    return Math.max(Math.abs(d1 - d0) / 86400000, 1 / 1440);
+    const elapsed = (calendarDateOnly(d1) - calendarDateOnly(d0)) / 86400000;
+    if (elapsed < 1) return null;
+    return elapsed;
+  }
+
+  function calendarDaysBetweenFormDates(fromStr, tillStr) {
+    const d0 = parseDay(fromStr);
+    const d1 = parseDay(tillStr);
+    if (!Number.isFinite(d0.getTime()) || !Number.isFinite(d1.getTime())) return null;
+    const elapsed = Math.round((calendarDateOnly(d1) - calendarDateOnly(d0)) / 86400000);
+    if (elapsed < 1) return null;
+    return elapsed;
+  }
+
+  function robotOperatingDays() {
+    return calendarDaysBetweenFormDates($("calc-from").value, $("calc-till").value);
+  }
+
+  function annualPeriodDays(windowStart, windowEnd) {
+    return robotOperatingDays() ?? calendarDaysBetweenTimes(windowStart, windowEnd);
   }
 
   function annualSimplePct(finresp, deposit, days) {
-    if (!deposit || deposit <= 0 || !days || days <= 0) return null;
-    return (finresp / deposit) * (365 / days) * 100;
+    if (!deposit || deposit <= 0 || !days || days < 1) return null;
+    const profitFraction = finresp / deposit;
+    const elapsedYears = days / 365;
+    return (profitFraction / elapsedYears) * 100;
   }
 
   function annualCompoundPct(finresp, deposit, days) {
-    if (!deposit || deposit <= 0 || !days || days <= 0) return null;
-    const growth = 1 + finresp / deposit;
-    if (growth <= 0) return null;
-    return (Math.pow(growth, 365 / days) - 1) * 100;
+    if (!deposit || deposit <= 0 || !days || days < 1) return null;
+    const ratio = 1 + finresp / deposit;
+    if (ratio <= 0) return null;
+    const elapsedYears = days / 365;
+    return (Math.pow(ratio, 1 / elapsedYears) - 1) * 100;
   }
 
   function setAnnMetric(id, value) {
@@ -1034,6 +1061,40 @@ a{color:var(--accent);}
     return best;
   }
 
+  function findFirstIndexAtOrAfter(pack, timeStr) {
+    if (!pack?.length || !timeStr) return 0;
+    for (let i = 0; i < pack.length; i++) {
+      if (pack[i]?.time && pack[i].time >= timeStr) return i;
+    }
+    return pack.length - 1;
+  }
+
+  function findLastIndexAtOrBefore(pack, timeStr) {
+    if (!pack?.length || !timeStr) return 0;
+    let idx = 0;
+    for (let i = 0; i < pack.length; i++) {
+      if (pack[i]?.time && pack[i].time <= timeStr) idx = i;
+      else if (pack[i]?.time) break;
+    }
+    return idx;
+  }
+
+  function commonTimeRange(packs) {
+    if (!packs?.length) return null;
+    let start = null;
+    let end = null;
+    for (const pack of packs) {
+      if (!pack?.length) continue;
+      const s = pack[0].time;
+      const e = pack.at(-1).time;
+      if (!s || !e) continue;
+      if (!start || s > start) start = s;
+      if (!end || e < end) end = e;
+    }
+    if (!start || !end || start > end) return null;
+    return { start, end };
+  }
+
   function saveWindowAnchor() {
     const pack = refPack();
     if (!pack.length) return;
@@ -1049,6 +1110,7 @@ a{color:var(--accent);}
     const n = pack.length;
     const max = Math.max(0, n - 1);
     const maxBars = currentLimit().maxBars;
+    const common = commonTimeRange(state.packs);
     for (const id of ["calc-start", "calc-end"]) {
       $(id).min = 0;
       $(id).max = max;
@@ -1065,9 +1127,20 @@ a{color:var(--accent);}
     } else if (preserve && state.packs.length) {
       a = Math.min(+$("calc-start").value || 0, max);
       b = Math.min(+$("calc-end").value || max, max);
+    } else if (common) {
+      a = findFirstIndexAtOrAfter(pack, common.start);
+      b = findLastIndexAtOrBefore(pack, common.end);
+      if (b - a + 1 > maxBars) a = Math.max(a, b - maxBars + 1);
     } else {
       a = Math.max(0, max - maxBars + 1);
       b = max;
+    }
+
+    if (common) {
+      const minA = findFirstIndexAtOrAfter(pack, common.start);
+      const maxB = findLastIndexAtOrBefore(pack, common.end);
+      a = Math.max(a, minA);
+      b = Math.min(b, maxB);
     }
 
     if (a > b - 2) a = Math.max(0, b - 2);
@@ -1075,6 +1148,12 @@ a{color:var(--accent);}
     if (b - a + 1 > maxBars) {
       if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
       else a = Math.max(0, b - maxBars + 1);
+    }
+    if (common) {
+      const minA = findFirstIndexAtOrAfter(pack, common.start);
+      const maxB = findLastIndexAtOrBefore(pack, common.end);
+      a = Math.max(a, minA);
+      b = Math.min(b, maxB);
     }
     $("calc-start").value = a;
     $("calc-end").value = b;
@@ -1463,9 +1542,24 @@ ${totalBlock}
     const c0 = refPack()[a]?.time || "—";
     const c1 = refPack()[b]?.time || "—";
     const deposit = volConfig().deposit;
-    const days = windowDays(c0, c1);
+    const days = annualPeriodDays(c0, c1);
     setAnnMetric("calc-ann-simple", annualSimplePct(agg.finresp, deposit, days));
     setAnnMetric("calc-ann-compound", annualCompoundPct(agg.finresp, deposit, days));
+    const annHint = $("calc-ann-hint");
+    if (annHint) {
+      if (days && deposit > 0) {
+        const periodPct = (agg.finresp / deposit) * 100;
+        const windowDays = calendarDaysBetweenTimes(c0, c1);
+        const opDays = robotOperatingDays();
+        const scope = windowDays && opDays && windowDays !== opDays
+          ? `окно ${Math.round(windowDays)} дн., приведение к ${Math.round(opDays)} дн. расчёта`
+          : `${Math.round(days)} календ. дн. расчёта`;
+        annHint.textContent =
+          `База ${fmt(deposit, 0)} ₽ · доходность за ${scope}: ${fmtPct(periodPct)} → % годовых: прибыль/база ÷ (дни/365), как в роботе`;
+      } else {
+        annHint.textContent = "Для % годовых нужны депозит и период ≥ 1 календарного дня.";
+      }
+    }
     state.anchorStartTime = c0 !== "—" ? c0 : state.anchorStartTime;
     state.anchorEndTime = c1 !== "—" ? c1 : state.anchorEndTime;
     state.hasWindow = c0 !== "—" && c1 !== "—";
@@ -1523,7 +1617,6 @@ ${totalBlock}
     if (isOptimizing()) stopOptim();
     setBusy(true);
     state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
-    saveWindowAnchor();
     const periodNarrowed = enforceDateRange("till", instruments.length);
     const from = $("calc-from").value;
     const till = $("calc-till").value;
@@ -1555,7 +1648,9 @@ ${totalBlock}
         throw new Error(`MOEX не вернул свечи ни по одному инструменту${sample ? ` (${sample}${tail})` : ""}.`);
       }
       state.bulkMode = bulkMode;
-      setSliderBounds(state.hasWindow);
+      state.movedSlider = "end";
+      setSliderBounds(false);
+      saveWindowAnchor();
       render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка: ${err.message}`;
