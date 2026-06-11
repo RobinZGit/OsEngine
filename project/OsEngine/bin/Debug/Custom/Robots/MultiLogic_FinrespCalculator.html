@@ -165,7 +165,8 @@ a{color:var(--accent);}
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-atr-sl">Оптимизировать</button>
 </div></div>
 </div>
-<p class="note">Подставляется в строку как SL[@SL] TP[@TP]. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без соответствующего стопа; длина ATR ≥ 2 — для расчёта. «Оптимизировать» перебирает шагом 2&nbsp;%, оставляет лучшее FINRESP.</p>
+<p class="note">Подставляется в строку L1…L4 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
+<p class="note" id="position-sl-hint"></p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
 <div class="calc-grid">
@@ -800,6 +801,25 @@ a{color:var(--accent);}
       sel.appendChild(o);
     }
     if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    else if ([...sel.options].some((o) => o.value === "L1")) sel.value = "L1";
+  }
+
+  function updatePositionSlHint() {
+    const el = $("position-sl-hint");
+    if (!el) return;
+    const meta = E.BUILTIN_META.find((m) => m.id === $("calc-logic").value);
+    if (meta?.type === "sma_spread") {
+      el.textContent = "Логика «Выше/Ниже SMA» — упрощённая модель; стопы по ATR учитываются при ненулевой позиции.";
+    } else if (meta?.type === "logic_line") {
+      el.textContent = "Логика L1…L4: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
+    } else {
+      el.textContent = "";
+    }
+  }
+
+  function renderFromParams() {
+    if (!state.packs.length || isOptimizing()) return;
+    render();
   }
 
   function fillLogicEditor() {
@@ -1307,6 +1327,7 @@ ${markers}
 
   fillLogicSelect();
   fillLogicEditor();
+  updatePositionSlHint();
   initPrefixFields();
   syncVolumeFields();
   initInstrumentLists();
@@ -1344,16 +1365,16 @@ ${markers}
       setBusy(false);
     }
   });
-  $("logic-apply").addEventListener("click", () => { applyEditorParams(); render(); });
-  $("calc-logic").addEventListener("change", render);
+  $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); render(); });
+  $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); render(); });
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
   ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "stopper-ref"].forEach((id) => {
-    $(id).addEventListener("change", render);
-    $(id).addEventListener("input", render);
+    $(id).addEventListener("change", renderFromParams);
+    $(id).addEventListener("input", renderFromParams);
   });
   OPT_BUTTONS.forEach(({ inputId }) => {
-    $(inputId).addEventListener("change", () => { if (!isOptimizing()) render(); });
-    $(inputId).addEventListener("input", () => { if (!isOptimizing()) render(); });
+    $(inputId).addEventListener("change", renderFromParams);
+    $(inputId).addEventListener("input", renderFromParams);
   });
   $("calc-tf").addEventListener("change", () => {
     const n = selectedInstrumentCount();

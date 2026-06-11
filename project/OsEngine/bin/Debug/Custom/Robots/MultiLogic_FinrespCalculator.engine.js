@@ -146,12 +146,12 @@
   };
 
   const BUILTIN_META = [
-    { id: "sma_above", name: "Выше SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "above" },
-    { id: "sma_below", name: "Ниже SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "below" },
     { id: "L1", name: "L1 — лонг, тренд", type: "logic_line", key: "L1" },
     { id: "L2", name: "L2 — лонг, боковик", type: "logic_line", key: "L2" },
     { id: "L3", name: "L3 — шорт, тренд", type: "logic_line", key: "L3" },
-    { id: "L4", name: "L4 — шорт, боковик", type: "logic_line", key: "L4" }
+    { id: "L4", name: "L4 — шорт, боковик", type: "logic_line", key: "L4" },
+    { id: "sma_above", name: "Выше SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "above" },
+    { id: "sma_below", name: "Ниже SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "below" }
   ];
 
   function substituteParams(line, params) {
@@ -254,8 +254,8 @@
     return map;
   }
 
-  function parseLogicLine(line) {
-    const raw = substituteParams(line, {});
+  function parseLogicLine(line, params) {
+    const raw = substituteParams(line, params || DEFAULT_PARAMS);
     const { slAtr, tpAtr } = parseSlTp(raw);
     const body = stripDecor(raw);
     const op = extractBlock(body, "Op");
@@ -672,11 +672,18 @@
 
   function simulateSmaSpread(candles, smaLen, side, startIdx, endIdx, volConfig, options) {
     const opts = options || {};
+    const slAtr = Math.max(0, Number(opts.slAtr) || 0);
+    const tpAtr = Math.max(0, Number(opts.tpAtr) || 0);
+    const atrLen = Math.max(2, Number(opts.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen);
+    const useStops = slAtr > 0 || tpAtr > 0;
+    const cache = useStops ? new IndicatorCache(candles) : null;
+    const atrSlTp = useStops ? cache.atr(atrLen) : null;
     const closes = candles.map((c) => c.close);
     const sma = smaSeries(closes, smaLen);
     const initial = opts.initial || {};
     let cash = initial.cash || 0;
     let pos = initial.pos || 0;
+    let entryPrice = initial.entryPrice ?? null;
     let buys = 0;
     let sells = 0;
     const rows = [];
@@ -691,6 +698,39 @@
       const s = sma[i];
       let buy = 0;
       let sell = 0;
+      let posStop = null;
+      const posBefore = pos;
+
+      if (useStops && pos !== 0 && entryPrice != null) {
+        const a = atrSlTp[i];
+        if (a != null && a > 0) {
+          let hit = false;
+          if (pos > 0) {
+            if (slAtr > 0 && price <= entryPrice - slAtr * a) {
+              hit = true;
+              posStop = "sl";
+            } else if (tpAtr > 0 && price >= entryPrice + tpAtr * a) {
+              hit = true;
+              posStop = "tp";
+            }
+          } else {
+            if (slAtr > 0 && price >= entryPrice + slAtr * a) {
+              hit = true;
+              posStop = "sl";
+            } else if (tpAtr > 0 && price <= entryPrice - tpAtr * a) {
+              hit = true;
+              posStop = "tp";
+            }
+          }
+          if (hit) {
+            cash += pos * price;
+            sells += Math.abs(pos);
+            pos = 0;
+            entryPrice = null;
+          }
+        }
+      }
+
       if (s != null) {
         const d = price - s;
         const scale = calcTradeVolume(price, volConfig) / Math.max(price, 1e-9);
@@ -709,12 +749,20 @@
         buys += buy;
         sells += sell;
       }
+
+      if (pos === 0) {
+        entryPrice = null;
+      } else if (posBefore === 0 || Math.sign(pos) !== Math.sign(posBefore)) {
+        entryPrice = price;
+      }
+
       rows.push({
         time: candle.time,
         close: price,
         sma: s,
         buy,
         sell,
+        posStop,
         cash,
         pos,
         eq: cash + pos * (price || 0)
@@ -735,11 +783,19 @@
   function resolveLogicSpec(logicId, customLines, params) {
     const meta = BUILTIN_META.find((m) => m.id === logicId);
     if (!meta) return null;
+    const p = { ...DEFAULT_PARAMS, ...params };
     if (meta.type === "sma_spread") {
-      return { type: "sma_spread", smaLen: meta.smaLen, side: meta.side };
+      return {
+        type: "sma_spread",
+        smaLen: meta.smaLen,
+        side: meta.side,
+        slAtr: Math.max(0, Number(p.SL) || 0),
+        tpAtr: Math.max(0, Number(p.TP) || 0),
+        slTpAtrLen: Math.max(2, Number(p.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen)
+      };
     }
-    const line = substituteParams(customLines[meta.key] || DEFAULT_LOGIC_LINES[meta.key], params);
-    const parsed = applySlTpParams(parseLogicLine(line), params);
+    const line = substituteParams(customLines[meta.key] || DEFAULT_LOGIC_LINES[meta.key], p);
+    const parsed = applySlTpParams(parseLogicLine(line, p), p);
     return { type: "logic_line", parsed, line };
   }
 
@@ -747,7 +803,12 @@
     if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, buys: 0, sells: 0 };
     const vol = { ...DEFAULT_VOLUME, ...volConfig };
     if (spec.type === "sma_spread") {
-      return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, options);
+      return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, {
+        ...options,
+        slAtr: spec.slAtr,
+        tpAtr: spec.tpAtr,
+        slTpAtrLen: spec.slTpAtrLen
+      });
     }
     const parsed = applySlTpParams({ ...spec.parsed }, params || DEFAULT_PARAMS);
     return simulateLogicLine(candles, parsed, startIdx, endIdx, vol, options);
