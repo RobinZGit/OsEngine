@@ -130,21 +130,6 @@ a{color:var(--accent);}
 <a href="#" class="extra-params-toggle" id="extra-params-toggle" role="button">Развернуть</a>
 </summary>
 
-<p class="extra-section">MOEX — тикеры акций и префиксы фьючерсов</p>
-<div class="logic-grid">
-<div><label for="prefix-stocks">Тикеры акций (через запятую; точное совпадение)</label>
-<div class="prefix-pick-row">
-<textarea id="prefix-stocks" rows="3"></textarea>
-<button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-stocks">Подобрать</button>
-</div></div>
-<div><label for="prefix-futures">Префиксы корня фьючерсов (через запятую)</label>
-<div class="prefix-pick-row">
-<textarea id="prefix-futures" rows="3"></textarea>
-<button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-futures">Подобрать</button>
-</div></div>
-</div>
-<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать» обновляет список выбора из текста поля (без запросов к MOEX). Проверка и свечи — при «Рассчитать».</p>
-
 <p class="extra-section">Объём сделки (как в роботе)</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="vol-type">Volume type</label>
@@ -213,6 +198,21 @@ a{color:var(--accent);}
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
 <p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и все заполненные стопы (кратность &gt; 0, длина ATR ≥ 2). Просадка от пика и EOD-flat не считаются.</p>
+
+<p class="extra-section">MOEX — тикеры акций и префиксы фьючерсов</p>
+<div class="logic-grid">
+<div><label for="prefix-stocks">Тикеры акций (через запятую; точное совпадение)</label>
+<div class="prefix-pick-row">
+<textarea id="prefix-stocks" rows="3"></textarea>
+<button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-stocks">Подобрать</button>
+</div></div>
+<div><label for="prefix-futures">Префиксы корня фьючерсов (через запятую)</label>
+<div class="prefix-pick-row">
+<textarea id="prefix-futures" rows="3"></textarea>
+<button class="calc-btn calc-btn-secondary prefix-pick-btn" type="button" id="prefix-pick-futures">Подобрать</button>
+</div></div>
+</div>
+<p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. «Подобрать» обновляет список выбора из текста поля (без запросов к MOEX). Проверка и свечи — при «Рассчитать».</p>
 </details>
 
 <div class="chart-card" id="calc-chart"></div>
