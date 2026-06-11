@@ -569,29 +569,24 @@ a{color:var(--accent);}
     }
   }
 
-  function applyOptimBestValue() {
-    if (!state.optim.active) return;
-    const meta = optimMeta(state.optim.active);
-    if (!meta) return;
-    const v = optimCandidateValue(state.optim.active, state.optim.bestValue);
-    $(meta.inputId).value = String(v);
-    state.optim.bestValue = v;
-  }
-
   function finishOptim(token, autoDone) {
     if (token !== state.optim.runToken || !state.optim.active) return;
     const kind = state.optim.active;
-    applyOptimBestValue();
-    state.optim.active = null;
+    const meta = optimMeta(kind);
+    const bestValue = optimCandidateValue(kind, state.optim.bestValue);
+    const bestFinresp = state.optim.bestFinresp;
     state.optim.runToken += 1;
+    state.optim.active = null;
+    state.optim.bestValue = bestValue;
     stopOptimDots();
     syncOptimButtons();
-    render({ redrawCharts: true });
-    if (autoDone) {
-      const scoreNote = isPositionOptimKind(kind) ? " (FINRESP до портф. Stopper)" : "";
-      $("calc-status").textContent =
-        `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${state.optim.bestValue}, FINRESP ${fmt(state.optim.bestFinresp)} ₽${scoreNote}`;
-    }
+    if (meta) $(meta.inputId).value = String(bestValue);
+    const result = calcResult(optimRunContext(kind, bestValue));
+    if (result) applyResult(result, { redrawCharts: true });
+    const scoreNote = isPositionOptimKind(kind) ? " (FINRESP до портф. Stopper)" : "";
+    $("calc-status").textContent = autoDone
+      ? `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${bestValue}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`
+      : `Оптимизация ${optimDisplayLabel(kind)} остановлена: лучшее ${bestValue}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`;
   }
 
   function stopOptim() {
@@ -673,7 +668,7 @@ a{color:var(--accent);}
     const score = optimScore(trial, kind);
     if (trial && score > state.optim.bestFinresp) {
       state.optim.bestFinresp = score;
-      state.optim.bestValue = candidate;
+      state.optim.bestValue = optimCandidateValue(kind, candidate);
     }
     const candLabel = optimCandidateValue(kind, candidate);
     input.value = String(candLabel);
