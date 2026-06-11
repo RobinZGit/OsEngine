@@ -300,7 +300,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-fix0";
+  const CALC_PAGE_VERSION = "2026-06-08-selectall-fix";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -445,6 +445,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     windowSkipped: [],
     lastInstruments: [],
     lastLoadMeta: null,
+    prevSelectCount: 0,
     runGeneration: 0,
     runBusyOwner: null,
     uiBusy: false,
@@ -472,6 +473,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const DEFAULT_RANGE_DAYS = 30;
   const DEFAULT_END_LAG_DAYS = 2;
   const MOEX_MINUTES_PER_SESSION = 530;
+  const MIN_WARMUP_BARS = 220;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
@@ -570,8 +572,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function maxCalcDays(tf, instrumentCount) {
     const lim = TF_LIMITS[tf] || TF_LIMITS["60"];
     const n = Math.max(1, instrumentCount || 1);
-    const daysByBars = Math.floor(lim.maxBars / (barsPerTradingDay(tf) * n));
-    return Math.max(1, Math.min(lim.maxDays, daysByBars));
+    const bpd = barsPerTradingDay(tf);
+    const minDays = Math.ceil(MIN_WARMUP_BARS / bpd);
+    const daysByBars = Math.floor(lim.maxBars / (bpd * Math.sqrt(n)));
+    return Math.max(minDays, Math.min(lim.maxDays, daysByBars));
   }
 
   function dateBounds() {
@@ -790,17 +794,23 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function onSecSelectionChanged() {
     syncSelectAllCheckboxes();
     const n = selectedInstrumentCount();
+    const prev = state.prevSelectCount || 0;
     if (n > 0) {
       const narrowed = enforceDateRange("till", n);
       updateDateHint(n);
-      if (narrowed) {
+      if (n < prev && relaxDateRangeForInstrumentCount(n)) {
+        state.lastLoadMeta = null;
         $("calc-status").textContent =
-          `Период сужен до ${maxCalcDays($("calc-tf").value, n)} дн. для выбранных инструментов.`;
+          `Выбор уменьшен — период расширен до ~${maxCalcDays($("calc-tf").value, n)} дн. Нажмите «Рассчитать».`;
+      } else if (narrowed) {
+        $("calc-status").textContent =
+          `Период сужен до ~${maxCalcDays($("calc-tf").value, n)} дн. для выбранных инструментов.`;
       }
     } else {
       enforceDateRange("till", 0);
       updateDateHint(0);
     }
+    state.prevSelectCount = n;
     if (!tryRefreshFromLoadedPacks() && n > 0 && state.packs.length) {
       const instruments = selectedInstruments();
       const byKey = packsByInstrumentKey(state.packs);
@@ -1314,6 +1324,32 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     $("calc-till").value = formatDay(till);
     updateDateHint(n);
     return $("calc-from").value !== beforeFrom || $("calc-till").value !== beforeTill;
+  }
+
+  function relaxDateRangeForInstrumentCount(n) {
+    if (n <= 0) return false;
+    const tf = $("calc-tf").value;
+    const maxSpan = maxCalcDays(tf, n);
+    const { min, max } = dateBounds();
+    let from = parseDay($("calc-from").value);
+    let till = parseDay($("calc-till").value);
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(till.getTime())) return false;
+    const span = Math.round((till - from) / 86400000);
+    if (span >= maxSpan) return false;
+    const beforeFrom = $("calc-from").value;
+    const beforeTill = $("calc-till").value;
+    if (till > max) till = max;
+    from = addDays(till, -maxSpan);
+    if (from < min) {
+      from = min;
+      till = addDays(from, maxSpan);
+      if (till > max) till = max;
+    }
+    if (from > till) from = till;
+    $("calc-from").value = formatDay(from);
+    $("calc-till").value = formatDay(till);
+    updateDateHint(n);
+    return beforeFrom !== $("calc-from").value || beforeTill !== $("calc-till").value;
   }
 
   function refPack() {
@@ -1875,7 +1911,9 @@ ${totalBlock}
       let msg = "Нет результата для выбранного окна.";
       if (!packsN) msg = "Нет загруженных свечей — нажмите «Рассчитать».";
       else if (skipped >= packsN) {
-        msg = "Нет пересечения по времени у выбранных инструментов — измените период или состав списка.";
+        const n = selectedInstrumentCount() || packsN;
+        msg =
+          `Недостаточно истории для расчёта (~${maxCalcDays($("calc-tf").value, n)} дн. при ${n} инстр.) — нажмите «Рассчитать» после смены выбора или уменьшите число бумаг.`;
       } else if (skipped > 0) {
         msg = `Часть инструментов без данных в окне (${skipped}) — сдвиньте ползунки или нажмите «Рассчитать».`;
       }
@@ -1946,7 +1984,7 @@ ${totalBlock}
     const failures = [];
     const loadGroup = async (secs, market, label) => {
       if (!secs.length) return;
-      const conc = secs.length > 12 ? 6 : 1;
+      const conc = secs.length > 12 ? 4 : 1;
       const r = await E.loadManyDetailed(secs, from, till, interval, market, conc, (done, total, sec, meta) => {
         if (onProgress) onProgress(done, total, sec, label, meta);
       }, state.candleCache || null);
@@ -2028,7 +2066,10 @@ ${totalBlock}
   }
 
   async function run() {
-    if (state.uiBusy) return;
+    if (state.uiBusy) {
+      $("calc-status").textContent = "Идёт загрузка… дождитесь завершения или обновите страницу (Ctrl+F5).";
+      return;
+    }
     applyEditorParams();
     let instruments = selectedInstruments();
     if (!instruments.length) {
@@ -2051,6 +2092,9 @@ ${totalBlock}
       }
       await runWithInstruments(instruments, bulkMode, runGen);
     } catch (_) { /* status уже выставлен */ }
+    finally {
+      releaseRunBusy(runGen);
+    }
   }
 
   function bindUiEvents() {
