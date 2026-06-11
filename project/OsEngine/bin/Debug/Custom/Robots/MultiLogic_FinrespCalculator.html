@@ -289,7 +289,7 @@ a{color:var(--accent);}
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-tech";
+  const CALC_PAGE_VERSION = "2026-06-08-recalc";
   const $ = (id) => document.getElementById(id);
   const techLog = {
     startedAt: new Date().toISOString(),
@@ -418,6 +418,8 @@ a{color:var(--accent);}
     failedInstruments: [],
     windowSkipped: [],
     lastInstruments: [],
+    lastLoadMeta: null,
+    runGeneration: 0,
     uiBusy: false,
     optim: {
       active: null,
@@ -641,6 +643,52 @@ a{color:var(--accent);}
     return selectedInstruments().map((i) => i.sec);
   }
 
+  function instrumentKey(inst) {
+    const sec = inst?.sec ?? inst;
+    const market = inst?.market === "futures" ? "futures" : "shares";
+    return `${market}:${String(sec || "").trim().toUpperCase()}`;
+  }
+
+  function loadMetaKey(from, till, interval) {
+    return `${from}|${till}|${interval}`;
+  }
+
+  function packsByInstrumentKey(packs) {
+    const map = new Map();
+    for (const pack of packs || []) {
+      if (pack?.[0]) map.set(instrumentKey(pack[0]), pack);
+    }
+    return map;
+  }
+
+  function orderPacksForInstruments(instruments, byKey) {
+    return instruments.map((i) => byKey.get(instrumentKey(i))).filter(Boolean);
+  }
+
+  function tryRefreshFromLoadedPacks() {
+    if (!state.packs.length || state.uiBusy || isOptimizing()) return false;
+    const instruments = selectedInstruments();
+    if (!instruments.length) return false;
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    const interval = $("calc-tf").value;
+    if (state.lastLoadMeta?.periodKey !== loadMetaKey(from, till, interval)) return false;
+    const byKey = packsByInstrumentKey(state.packs);
+    if (!instruments.every((i) => byKey.has(instrumentKey(i)))) return false;
+    state.packs = orderPacksForInstruments(instruments, byKey);
+    state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
+    state.failedInstruments = (state.failedInstruments || []).filter((f) =>
+      instruments.some((i) => instrumentKey(i) === instrumentKey({ sec: f.sec, market: f.market }))
+    );
+    state.windowSkipped = [];
+    state.movedSlider = "end";
+    setSliderBounds(false);
+    saveWindowAnchor();
+    if (!renderWithStatus()) return false;
+    updateTechInfo("selection-refreshed");
+    return true;
+  }
+
   function syncMarketCheckbox(market, cbId) {
     const sel = $("calc-sec");
     const cb = $(cbId);
@@ -685,6 +733,15 @@ a{color:var(--accent);}
     } else {
       enforceDateRange("till", 0);
       updateDateHint(n);
+    }
+    if (!tryRefreshFromLoadedPacks() && n > 0 && state.packs.length) {
+      const instruments = selectedInstruments();
+      const byKey = packsByInstrumentKey(state.packs);
+      const missing = instruments.filter((i) => !byKey.has(instrumentKey(i)));
+      if (missing.length) {
+        $("calc-status").textContent =
+          `Выбор изменён (+${missing.length} новых) — нажмите «Рассчитать» для загрузки и пересчёта.`;
+      }
     }
     updateTechInfo("selection-changed");
   }
@@ -1743,10 +1800,64 @@ ${totalBlock}
     }
   }
 
-  function render(options) {
+  function renderWithStatus(options) {
     const result = calcResult();
-    if (!result) return;
+    if (!result) {
+      const packsN = state.packs?.length || 0;
+      const skipped = state.windowSkipped?.length || 0;
+      let msg = "Нет результата для выбранного окна.";
+      if (!packsN) msg = "Нет загруженных свечей — нажмите «Рассчитать».";
+      else if (skipped >= packsN) {
+        msg = "Нет пересечения по времени у выбранных инструментов — измените период или состав списка.";
+      } else if (skipped > 0) {
+        msg = `Часть инструментов без данных в окне (${skipped}) — сдвиньте ползунки или нажмите «Рассчитать».`;
+      }
+      $("calc-status").textContent = msg;
+      noteTechError(`render: ${msg}`);
+      return false;
+    }
     applyResult(result, options);
+    return true;
+  }
+
+  function render(options) {
+    return renderWithStatus(options);
+  }
+
+  async function ensureInstrumentPacks(instruments, from, till, interval, onProgress) {
+    const periodKey = loadMetaKey(from, till, interval);
+    const periodChanged = state.lastLoadMeta?.periodKey !== periodKey;
+    const byKey = periodChanged ? new Map() : packsByInstrumentKey(state.packs);
+    const failures = periodChanged ? [] : [...(state.failedInstruments || [])];
+    const failKeys = new Set(failures.map((f) => instrumentKey({ sec: f.sec, market: f.market })));
+    const missing = instruments.filter((i) => !byKey.has(instrumentKey(i)));
+    const toLoad = periodChanged ? instruments : missing;
+    let doneBase = 0;
+
+    if (toLoad.length) {
+      const loaded = await loadInstrumentPacks(toLoad, from, till, interval, (done, total, sec, groupLabel, meta) => {
+        if (onProgress) onProgress(doneBase + done, instruments.length, sec, groupLabel, meta);
+      });
+      for (const f of loaded.failures) {
+        const fk = instrumentKey({ sec: f.sec, market: f.market });
+        if (!failKeys.has(fk)) {
+          failKeys.add(fk);
+          failures.push(f);
+        }
+      }
+      for (const pack of loaded.packs) {
+        if (pack?.[0]) byKey.set(instrumentKey(pack[0]), pack);
+      }
+      doneBase = toLoad.length;
+    }
+
+    const wantKeys = new Set(instruments.map(instrumentKey));
+    for (const key of [...byKey.keys()]) {
+      if (!wantKeys.has(key)) byKey.delete(key);
+    }
+    const packs = orderPacksForInstruments(instruments, byKey);
+    state.lastLoadMeta = { periodKey, keys: [...wantKeys] };
+    return { packs, failures: failures.filter((f) => wantKeys.has(instrumentKey({ sec: f.sec, market: f.market }))) };
   }
 
   async function loadInstrumentPacks(instruments, from, till, interval, onProgress) {
@@ -1769,8 +1880,9 @@ ${totalBlock}
     return { packs, failures };
   }
 
-  async function runWithInstruments(instruments, bulkMode) {
+  async function runWithInstruments(instruments, bulkMode, runGen) {
     if (!instruments.length) throw new Error("Список инструментов пуст.");
+    if (runGen == null) runGen = ++state.runGeneration;
     if (isOptimizing()) stopOptim();
     setBusy(true);
     state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
@@ -1789,12 +1901,14 @@ ${totalBlock}
       : `Загрузка ${label}…`;
     try {
       let cacheHits = 0;
-      const loadedData = await loadInstrumentPacks(instruments, from, till, interval, (done, groupTotal, sec, groupLabel, meta) => {
+      const loadedData = await ensureInstrumentPacks(instruments, from, till, interval, (done, total, sec, groupLabel, meta) => {
+        if (runGen !== state.runGeneration) return;
         if (meta?.fromCache) cacheHits += 1;
         $("calc-status").textContent = meta?.fromCache
-          ? `Загрузка ${done}/${instruments.length} (${groupLabel}, кэш): ${sec}`
-          : `Загрузка ${done}/${instruments.length} (${groupLabel}): ${sec}`;
+          ? `Загрузка ${done}/${total} (${groupLabel}, кэш): ${sec}`
+          : `Загрузка ${done}/${total} (${groupLabel}): ${sec}`;
       });
+      if (runGen !== state.runGeneration) return;
       updateCacheHint(cacheHits ? `MOEX: ${loadedData.packs.length - cacheHits}, кэш: ${cacheHits}` : "");
       state.packs = loadedData.packs;
       state.failedInstruments = loadedData.failures;
@@ -1808,16 +1922,22 @@ ${totalBlock}
       state.movedSlider = "end";
       setSliderBounds(false);
       saveWindowAnchor();
-      render();
+      if (!renderWithStatus()) {
+        $("calc-chart").innerHTML = "";
+        $("calc-chart-equity").innerHTML = "";
+      }
     } catch (err) {
+      if (runGen !== state.runGeneration) return;
       $("calc-status").textContent = `Ошибка: ${err.message}`;
       noteTechError(`runWithInstruments: ${err.message}`);
       $("calc-chart").innerHTML = "";
       $("calc-chart-equity").innerHTML = "";
       throw err;
     } finally {
-      setBusy(false);
-      updateTechInfo("run-finished");
+      if (runGen === state.runGeneration) {
+        setBusy(false);
+        updateTechInfo("run-finished");
+      }
     }
   }
 
@@ -1828,14 +1948,19 @@ ${totalBlock}
       $("calc-status").textContent = "Выберите хотя бы один инструмент в списке.";
       return;
     }
+    const runGen = ++state.runGeneration;
     try {
       if (instruments.some((i) => i.market === "futures")) {
         setBusy(true);
         $("calc-status").textContent = "Подбор фьючерсов MOEX за период расчёта…";
-        instruments = await expandFuturesForCalcPeriod(instruments);
-        setBusy(false);
+        try {
+          instruments = await expandFuturesForCalcPeriod(instruments);
+        } finally {
+          setBusy(false);
+        }
+        if (runGen !== state.runGeneration) return;
       }
-      await runWithInstruments(instruments, null);
+      await runWithInstruments(instruments, null, runGen);
     } catch (_) { /* status уже выставлен */ }
   }
 
