@@ -481,11 +481,6 @@ namespace OsEngine.Robots.Custom
         private const decimal PortfolioPeakDrawdownPercentDefault = 1m;
         private const string StopperEodFlatSellParamName = "Продать всё к времени (ежедневно)";
         private const string StopperEodFlatSellDisabled = "Не продавать";
-        private const string SignificantPeakPauseEnabledParamName = "Пауза после значительного пика: включена";
-        private const string SignificantPeakAnnualPercentParamName = "Значительный пик: % годовых (мин.)";
-        private const string SignificantPeakPauseWidthMultiplierParamName = "Пауза: ширина пика ×";
-        private const decimal SignificantPeakAnnualPercentDefault = 100m;
-        private const decimal SignificantPeakPauseWidthMultiplierDefault = 10m;
         private const string UpdateStopperPortfolioBaselineButtonName = "Обновить сумму портфеля SL/TP";
         private const string PortfolioStopLossRublesParamName = "Либо stop-loss в рублях";
         private const string PortfolioTakeProfitRublesParamName = "Либо take-profit в рублях";
@@ -907,20 +902,11 @@ namespace OsEngine.Robots.Custom
         private StrategyParameterString _stopperMonitorTimeFrame;
         private StrategyParameterString _stopperMonitorSecurity;
         private StrategyParameterString _stopperEodFlatSellTime;
-        private StrategyParameterBool _useSignificantPeakTradingPause;
-        private StrategyParameterDecimal _significantPeakAnnualPercentMin;
-        private StrategyParameterDecimal _significantPeakPauseWidthMultiplier;
         private StrategyParameterButton _updateStopperPortfolioBaselineButton;
         /// <summary>Календарный день последнего EOD flat (не чаще 1 раза в сутки).</summary>
         private DateTime _stopperEodFlatLastFiredTradingDay = DateTime.MinValue;
         /// <summary>День, для которого уже залогирован запрет входов после EOD flat.</summary>
         private DateTime _loggedStopperEodFlatBuyBlockedDay = DateTime.MinValue;
-        /// <summary>До этого времени (время свечи) запрещены новые входы после значительного пика equity.</summary>
-        private DateTime _significantPeakPauseUntil = DateTime.MinValue;
-        /// <summary>Последний обработанный локальный пик (время свечи пика).</summary>
-        private DateTime _significantPeakLastEvaluatedPeakTime = DateTime.MinValue;
-        /// <summary>Для однократного лога активной паузы по значительному пику.</summary>
-        private DateTime _loggedSignificantPeakPauseUntil = DateTime.MinValue;
 
         /// <summary>
         /// Конструктор робота: создаёт скринер, параметры, подписки на события и первичный разбор логик.
@@ -4274,7 +4260,7 @@ namespace OsEngine.Robots.Custom
             Hint(
                 PortfolioPeakDrawdownEnabledParamName,
                 "Скользящий стоп по сумме equity L1…L10 (как в отчёте), не по депозиту тестера: падение на % от пика — "
-                + "закрыть все позиции (без паузы новых входов; пауза — только «Пауза после значительного пика»). "
+                + "закрыть все позиции (новые входы не блокируются). "
                 + "На графике одной логики маркер может не совпадать с её локальным пиком, "
                 + "если другие логики компенсируют. Пик обновляется при новом максимуме суммы.");
             Hint(
@@ -4283,18 +4269,6 @@ namespace OsEngine.Robots.Custom
             Hint(
                 PortfolioPeakValueParamName,
                 "Техн.: максимум equity для «Просадки от пика» (может быть отрицательным при плече); обновляется на новых максимумах.");
-            Hint(
-                SignificantPeakPauseEnabledParamName,
-                "По суммарной equity L1…L10: после локального пика, если рост от впадины до пика "
-                + "даёт ≥ порога % годовых — временно запретить новые входы (выходы по Cl/SL/TP работают). "
-                + "«Просадка от пика» только закрывает позиции и не ставит паузу входов. "
-                + "Длительность паузы = (время пика − время начала пика) × множитель.");
-            Hint(
-                SignificantPeakAnnualPercentParamName,
-                "Пик «значительный», если годовая доходность от впадины до максимума ≥ этого % (по умолчанию 100).");
-            Hint(
-                SignificantPeakPauseWidthMultiplierParamName,
-                "Сколько раз умножить ширину пика (интервал впадина→пик) для длительности паузы входов (по умолчанию 10).");
             Hint("Общепортфельный SMA: включить",
                 "Справочно: SMA по портфельной серии equity; значения — в файлах портфелей и _MetaAggregate.txt.");
             Hint("Общепортфельный SMA: длина", "Период SMA по всем портфельным сериям (L1…L10 и общая).");
@@ -4605,24 +4579,6 @@ namespace OsEngine.Robots.Custom
                 1_000_000_000_000m,
                 2,
                 StopperTabName);
-            _useSignificantPeakTradingPause = CreateParameter(
-                SignificantPeakPauseEnabledParamName,
-                false,
-                StopperTabName);
-            _significantPeakAnnualPercentMin = CreateParameter(
-                SignificantPeakAnnualPercentParamName,
-                SignificantPeakAnnualPercentDefault,
-                1m,
-                10_000m,
-                1m,
-                StopperTabName);
-            _significantPeakPauseWidthMultiplier = CreateParameter(
-                SignificantPeakPauseWidthMultiplierParamName,
-                SignificantPeakPauseWidthMultiplierDefault,
-                0.1m,
-                100m,
-                0.1m,
-                StopperTabName);
             _stopperPostTriggerAfterStopLoss = CreateParameter(
                 StopperPostTriggerAfterStopLossParamName,
                 StopperPostTriggerDisabled,
@@ -4885,7 +4841,6 @@ namespace OsEngine.Robots.Custom
         {
             return IsPortfolioStopperActive()
                 || IsStopperVirtualTradingActive()
-                || (_useSignificantPeakTradingPause?.ValueBool ?? false)
                 || IsStopperEodFlatSellConfigured();
         }
 
@@ -5510,212 +5465,9 @@ namespace OsEngine.Robots.Custom
             return _stopperEodFlatLastFiredTradingDay == candleTime.Date;
         }
 
-        /// <summary>Активна пауза новых входов после значительного пика equity (Stopper).</summary>
-        private bool IsSignificantPeakTradingPaused(DateTime candleTime)
-        {
-            if (_useSignificantPeakTradingPause == null || !_useSignificantPeakTradingPause.ValueBool)
-            {
-                return false;
-            }
-
-            return _significantPeakPauseUntil != DateTime.MinValue && candleTime < _significantPeakPauseUntil;
-        }
-
         private bool IsStopperNewEntryBlocked(DateTime candleTime)
         {
-            return IsStopperEodFlatBuyBlocked(candleTime)
-                || IsSignificantPeakTradingPaused(candleTime);
-        }
-
-        /// <summary>
-        /// На закрытой свече: локальный пик equity (подтверждён следующей свечой) → годовая доходность впадина→пик.
-        /// </summary>
-        private void TryUpdateSignificantPeakPause(DateTime candleTime)
-        {
-            if (_useSignificantPeakTradingPause == null || !_useSignificantPeakTradingPause.ValueBool)
-            {
-                return;
-            }
-
-            if (_stopperEquityHistory.Count < 3)
-            {
-                return;
-            }
-
-            int peakIdx = _stopperEquityHistory.Count - 2;
-            decimal peakEquity = _stopperEquityHistory[peakIdx].Equity;
-            decimal prevEquity = _stopperEquityHistory[peakIdx - 1].Equity;
-            decimal nextEquity = _stopperEquityHistory[peakIdx + 1].Equity;
-            if (!(peakEquity >= prevEquity && peakEquity > nextEquity))
-            {
-                return;
-            }
-
-            DateTime peakTime = _stopperEquityHistory[peakIdx].CandleTime;
-            if (peakTime <= _significantPeakLastEvaluatedPeakTime)
-            {
-                return;
-            }
-
-            _significantPeakLastEvaluatedPeakTime = peakTime;
-
-            int troughIdx = peakIdx;
-            for (int j = peakIdx - 1; j >= 0; j--)
-            {
-                if (_stopperEquityHistory[j].Equity < _stopperEquityHistory[troughIdx].Equity)
-                {
-                    troughIdx = j;
-                }
-                else if (_stopperEquityHistory[j].Equity > _stopperEquityHistory[troughIdx].Equity)
-                {
-                    break;
-                }
-            }
-
-            decimal troughEquity = _stopperEquityHistory[troughIdx].Equity;
-            if (troughEquity <= 0m || peakEquity <= troughEquity)
-            {
-                return;
-            }
-
-            DateTime troughTime = _stopperEquityHistory[troughIdx].CandleTime;
-            if (!TryComputeSignificantPeakAnnualPercent(
-                    troughEquity,
-                    peakEquity,
-                    troughTime,
-                    peakTime,
-                    out double annualPercent))
-            {
-                return;
-            }
-
-            decimal threshold = _significantPeakAnnualPercentMin?.ValueDecimal ?? SignificantPeakAnnualPercentDefault;
-            if (annualPercent < (double)threshold)
-            {
-                return;
-            }
-
-            decimal multiplier = _significantPeakPauseWidthMultiplier?.ValueDecimal ?? SignificantPeakPauseWidthMultiplierDefault;
-            if (multiplier < 0.1m)
-            {
-                multiplier = 0.1m;
-            }
-
-            TimeSpan peakWidth = peakTime - troughTime;
-            if (peakWidth < TimeSpan.Zero)
-            {
-                peakWidth = TimeSpan.Zero;
-            }
-
-            long pauseTicks = (long)(peakWidth.Ticks * (double)multiplier);
-            if (pauseTicks <= 0)
-            {
-                pauseTicks = peakWidth.Ticks > 0 ? peakWidth.Ticks : TimeSpan.FromHours(1).Ticks;
-            }
-
-            DateTime pauseUntil = peakTime + TimeSpan.FromTicks(pauseTicks);
-            if (pauseUntil <= _significantPeakPauseUntil && candleTime < _significantPeakPauseUntil)
-            {
-                return;
-            }
-
-            if (pauseUntil > _significantPeakPauseUntil)
-            {
-                _significantPeakPauseUntil = pauseUntil;
-            }
-
-            _loggedSignificantPeakPauseUntil = DateTime.MinValue;
-            RecordHtmlReportSignificantPeakPause(candleTime, troughEquity, peakEquity, annualPercent, peakWidth, _significantPeakPauseUntil);
-
-            string msg = NameStrategyUniq
-                + " | Stopper: значительный пик equity — ~"
-                + FormatSignificantPeakAnnualPercentForDisplay(annualPercent)
-                + "% годовых (порог "
-                + threshold.ToString(CultureInfo.InvariantCulture)
-                + "%), впадина "
-                + troughEquity.ToString(CultureInfo.InvariantCulture)
-                + " → пик "
-                + peakEquity.ToString(CultureInfo.InvariantCulture)
-                + ", ширина "
-                + peakWidth.ToString(@"d\.hh\:mm", CultureInfo.InvariantCulture)
-                + ", пауза входов до "
-                + _significantPeakPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-                + " (×"
-                + multiplier.ToString(CultureInfo.InvariantCulture)
-                + "); выходы по Cl/SL/TP без изменений.";
-            SendNewLogMessage(msg, LogMessageType.System);
-            SendNewLogMessage(msg, LogMessageType.User);
-        }
-
-        /// <summary>Годовая доходность впадина→пик; без cast в decimal (избегаем OverflowException).</summary>
-        private static bool TryComputeSignificantPeakAnnualPercent(
-            decimal troughEquity,
-            decimal peakEquity,
-            DateTime troughTime,
-            DateTime peakTime,
-            out double annualPercent)
-        {
-            annualPercent = 0.0;
-            if (troughEquity <= 0m || peakEquity <= troughEquity)
-            {
-                return false;
-            }
-
-            double totalReturn = (double)((peakEquity - troughEquity) / troughEquity);
-            if (double.IsNaN(totalReturn) || double.IsInfinity(totalReturn) || totalReturn <= -1.0)
-            {
-                return false;
-            }
-
-            double days = Math.Max((peakTime - troughTime).TotalDays, 1.0 / 24.0);
-            double exponent = 365.0 / days;
-            if (exponent > 10000.0)
-            {
-                exponent = 10000.0;
-            }
-
-            double growthFactor = Math.Pow(1.0 + totalReturn, exponent);
-            if (double.IsNaN(growthFactor) || double.IsNegativeInfinity(growthFactor))
-            {
-                return false;
-            }
-
-            if (double.IsPositiveInfinity(growthFactor))
-            {
-                annualPercent = double.PositiveInfinity;
-                return true;
-            }
-
-            annualPercent = (growthFactor - 1.0) * 100.0;
-            return !double.IsNaN(annualPercent) && !double.IsNegativeInfinity(annualPercent);
-        }
-
-        private static string FormatSignificantPeakAnnualPercentForDisplay(double annualPercent)
-        {
-            if (double.IsPositiveInfinity(annualPercent) || annualPercent > 1_000_000_000_000.0)
-            {
-                return ">1e12";
-            }
-
-            return annualPercent.ToString("F1", CultureInfo.InvariantCulture);
-        }
-
-        private void LogSignificantPeakPauseBlockedOnce(DateTime candleTime)
-        {
-            if (!IsSignificantPeakTradingPaused(candleTime)
-                || _loggedSignificantPeakPauseUntil == _significantPeakPauseUntil)
-            {
-                return;
-            }
-
-            _loggedSignificantPeakPauseUntil = _significantPeakPauseUntil;
-            string msg = NameStrategyUniq
-                + " | Stopper: пауза после значительного пика — новые входы запрещены до "
-                + _significantPeakPauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-                + " (свеча "
-                + candleTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-                + ").";
-            SendNewLogMessage(msg, LogMessageType.System);
+            return IsStopperEodFlatBuyBlocked(candleTime);
         }
 
         private void LogStopperEodFlatBuyBlockedOnce(DateTime candleTime)
@@ -6785,7 +6537,6 @@ namespace OsEngine.Robots.Custom
             decimal currentEquity = TryGetStopperMonitoredEquity(tab);
             SetStrategyParameterDecimalSilent(_portfolioStopperCurrentEquity, currentEquity);
             AppendStopperEquitySnapshot(candleTime, currentEquity);
-            TryUpdateSignificantPeakPause(candleTime);
 
             if (_stopperReferenceBaselineLocked
                 && ShouldUseLogicPortfolioEquityForStopper()
@@ -7143,8 +6894,7 @@ namespace OsEngine.Robots.Custom
         {
             if (_metaLogicEnabled.ValueBool
                 || IsPortfolioStopperActive()
-                || IsStopperVirtualTradingActive()
-                || (_useSignificantPeakTradingPause?.ValueBool ?? false))
+                || IsStopperVirtualTradingActive())
             {
                 return true;
             }
@@ -7164,12 +6914,11 @@ namespace OsEngine.Robots.Custom
                 || (_usePortfolioPeakDrawdownStop?.ValueBool ?? false);
         }
 
-        /// <summary>Equity Stopper / пауза после пика / фейк-торговля — на общей свече скринера.</summary>
+        /// <summary>Equity Stopper / фейк-торговля — на общей свече скринера.</summary>
         private bool ShouldRefreshStopperEquityOnAggregatedCandle()
         {
             return IsPortfolioStopperActive()
-                || IsStopperVirtualTradingActive()
-                || (_useSignificantPeakTradingPause?.ValueBool ?? false);
+                || IsStopperVirtualTradingActive();
         }
 
         /// <summary>
@@ -7298,7 +7047,6 @@ namespace OsEngine.Robots.Custom
             if (entryBlocked)
             {
                 LogStopperEodFlatBuyBlockedOnce(candleTime);
-                LogSignificantPeakPauseBlockedOnce(candleTime);
             }
 
             var entryCandidates = new List<int>();
@@ -15692,51 +15440,6 @@ namespace OsEngine.Robots.Custom
             }
         }
 
-        private void RecordHtmlReportSignificantPeakPause(
-            DateTime candleTime,
-            decimal troughEquity,
-            decimal peakEquity,
-            double annualPercent,
-            TimeSpan peakWidth,
-            DateTime pauseUntil)
-        {
-            if (_htmlReportEnabled == null || !_htmlReportEnabled.ValueBool)
-            {
-                return;
-            }
-
-            lock (_htmlReportRuntimeLock)
-            {
-                TouchHtmlReportExecutionMode(null);
-                HtmlReportExecutionMode mode = ResolveHtmlReportExecutionMode(null);
-                decimal threshold = _significantPeakAnnualPercentMin?.ValueDecimal ?? SignificantPeakAnnualPercentDefault;
-                string summary = "Пауза: значительный пик ~"
-                    + FormatSignificantPeakAnnualPercentForDisplay(annualPercent)
-                    + "% годовых (порог "
-                    + threshold.ToString(CultureInfo.InvariantCulture)
-                    + "%), "
-                    + troughEquity.ToString(CultureInfo.InvariantCulture)
-                    + " → "
-                    + peakEquity.ToString(CultureInfo.InvariantCulture)
-                    + ", ширина "
-                    + peakWidth.ToString(@"d\.hh\:mm", CultureInfo.InvariantCulture)
-                    + ", входы до "
-                    + pauseUntil.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-
-                AddHtmlReportStopperEvent(
-                    candleTime,
-                    "portfolio_significant_peak_pause",
-                    troughEquity,
-                    peakEquity,
-                    threshold,
-                    peakEquity,
-                    peakEquity,
-                    false,
-                    mode,
-                    summary);
-            }
-        }
-
         private void AddHtmlReportStopperEvent(
             DateTime candleTime,
             string kind,
@@ -17341,7 +17044,6 @@ namespace OsEngine.Robots.Custom
       var kindLbl='Stop-loss';
       if(s.kind==='portfolio_take_profit'){kindCls='stopper-row-tp';kindLbl='Take-profit';}
       else if(s.kind==='portfolio_peak_drawdown'){kindCls='stopper-row-sl';kindLbl='Просадка от пика';}
-      else if(s.kind==='portfolio_significant_peak_pause'){kindCls='stopper-row-tp';kindLbl='Пауза: значит. пик';}
       else if(s.kind==='portfolio_eod_flat'){kindCls='stopper-row-eod';kindLbl='EOD flat';}
       tr.className='stopper-row '+kindCls;
       var cells=[s.candleTime||'',s.executionModeLabel||'',kindLbl,fmt(s.referenceEquity),fmt(s.currentEquity),
@@ -17648,15 +17350,14 @@ namespace OsEngine.Robots.Custom
       var ev=events[si];
       var kind=pick(ev,'kind','Kind')||'';
       if(kind!=='portfolio_stop_loss'&&kind!=='portfolio_take_profit'
-        &&kind!=='portfolio_peak_drawdown'&&kind!=='portfolio_significant_peak_pause')continue;
+        &&kind!=='portfolio_peak_drawdown')continue;
       var idx=findSeriesIndexByTime(series,timeKey,pick(ev,'candleTime','CandleTime')||pick(ev,'t','T'));
       var cx=x0+(x1-x0)*idx/(n-1||1);
-      var isTp=kind==='portfolio_take_profit'||kind==='portfolio_significant_peak_pause';
+      var isTp=kind==='portfolio_take_profit';
       var stroke=isTp?'#15803d':'#dc2626';
       var lbl='Общепортф. stop-loss';
       if(kind==='portfolio_take_profit')lbl='Общепортф. take-profit';
       else if(kind==='portfolio_peak_drawdown')lbl='Просадка от пика';
-      else if(kind==='portfolio_significant_peak_pause')lbl='Пауза: значит. пик';
       var hint=(pick(ev,'summary','Summary')||lbl).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\x22/g,'&quot;');
       var sid=pick(ev,'id','Id');
       if(sid==null||sid==='')sid=si+1;
@@ -17954,7 +17655,7 @@ namespace OsEngine.Robots.Custom
     },function(tr,e){
       var ev=pick(e,'eventName','Event','event')||'';
       if(ev==='portfolio_stop_loss'||ev==='portfolio_peak_drawdown'){tr.className='stopper-row stopper-row-sl';}
-      else if(ev==='portfolio_take_profit'||ev==='portfolio_significant_peak_pause'){tr.className='stopper-row stopper-row-tp';}
+      else if(ev==='portfolio_take_profit'){tr.className='stopper-row stopper-row-tp';}
       else if(ev==='portfolio_eod_flat'){tr.className='stopper-row stopper-row-eod';}
     });}catch(e14){console.error(e14);}
   }
