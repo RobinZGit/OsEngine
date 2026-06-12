@@ -26,7 +26,7 @@
     { key: "cci", label: "CCI" },
     { key: "bollinger", label: "Bollinger" },
     { key: "momentum", label: "Momentum" },
-    { key: "evwap", label: "EVWAP" }
+    { key: "vwap", label: "VWAP" }
   ]);
   const INDICATOR_KEYS = INDICATOR_OPTIONS.map((x) => x.key);
   const INDICATOR_KEY_SET = new Set(INDICATOR_KEYS);
@@ -179,10 +179,10 @@
       "Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
       SLTP + "Note(short-bokovik)",
     L5: TREND_REGIME +
-      "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND EVWAP(20)(Ab) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig))) " +
-      "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND EVWAP(20)(Bl) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) " +
-      "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND EVWAP(20)(Bl) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig))) " +
-      "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND EVWAP(20)(Ab) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
+      "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND VWAP()(Ab) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig))) " +
+      "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND VWAP()(Bl) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) " +
+      "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND VWAP()(Bl) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig))) " +
+      "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND VWAP()(Ab) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
       SLTP + "Note(LmaxTrend)"
   };
 
@@ -356,7 +356,7 @@
     const k = String(kind || "").toLowerCase();
     if (k === "bolinger" || k === "boll" || k === "bb" || k === "polenger") return "bollinger";
     if (k === "mom") return "momentum";
-    if (k === "evwma" || k === "vwap") return "evwap";
+    if (k === "vwma") return "vwap";
     return k;
   }
 
@@ -517,24 +517,24 @@
     return out;
   }
 
-  function evwapSeries(candles, len) {
+  function vwapSeries(candles) {
     const out = new Array(candles.length).fill(null);
     let pvSum = 0;
     let volSum = 0;
+    let currentDay = null;
     for (let i = 0; i < candles.length; i++) {
       const c = candles[i];
+      const day = String(c.time || "").slice(0, 10);
+      if (day && day !== currentDay) {
+        currentDay = day;
+        pvSum = 0;
+        volSum = 0;
+      }
       const price = (c.high + c.low + c.close) / 3;
       const vol = Number.isFinite(c.volume) && c.volume > 0 ? c.volume : 1;
       pvSum += price * vol;
       volSum += vol;
-      if (i >= len) {
-        const old = candles[i - len];
-        const oldPrice = (old.high + old.low + old.close) / 3;
-        const oldVol = Number.isFinite(old.volume) && old.volume > 0 ? old.volume : 1;
-        pvSum -= oldPrice * oldVol;
-        volSum -= oldVol;
-      }
-      if (i >= len - 1 && volSum > 0) out[i] = pvSum / volSum;
+      if (volSum > 0) out[i] = pvSum / volSum;
     }
     return out;
   }
@@ -572,7 +572,7 @@
       this._linreg = new Map();
       this._bollinger = new Map();
       this._momentum = new Map();
-      this._evwap = new Map();
+      this._vwap = new Map();
       this._cci = new Map();
       this._macd = new Map();
     }
@@ -604,9 +604,9 @@
       if (!this._momentum.has(len)) this._momentum.set(len, momentumSeries(this.closes, len));
       return this._momentum.get(len);
     }
-    evwap(len) {
-      if (!this._evwap.has(len)) this._evwap.set(len, evwapSeries(this.candles, len));
-      return this._evwap.get(len);
+    vwap() {
+      if (!this._vwap.has("session")) this._vwap.set("session", vwapSeries(this.candles));
+      return this._vwap.get("session");
     }
     cci(len) {
       if (!this._cci.has(len)) this._cci.set(len, cciSeries(this.candles, len));
@@ -712,18 +712,17 @@
       if (v == null) return false;
       return evalThreshold(sig, v, close);
     }
-    if (kind === "evwap") {
-      const len = pm.L || parseInt(atom.params, 10) || 20;
-      const v = cache.evwap(len)[idx];
+    if (kind === "vwap") {
+      const v = cache.vwap()[idx];
       if (v == null) return false;
       if (sigU === "AB") return close > v;
       if (sigU === "BL") return close < v;
       if (sigU === "SLOPEUP" || sigU === "CENTERUP") {
-        const p = cache.evwap(len)[idx - 1];
+        const p = cache.vwap()[idx - 1];
         return p != null && v > p;
       }
       if (sigU === "SLOPEDN" || sigU === "CENTERDN") {
-        const p = cache.evwap(len)[idx - 1];
+        const p = cache.vwap()[idx - 1];
         return p != null && v < p;
       }
       return false;
@@ -839,9 +838,8 @@
         ind.bollingerDn = bb.down[idx];
         ind.bollingerMid = bb.center[idx];
       }
-      if (kind === "evwap") {
-        const len = pm.L || parseInt(atom.params, 10) || 20;
-        ind.evwap = cache.evwap(len)[idx];
+      if (kind === "vwap") {
+        ind.vwap = cache.vwap()[idx];
       }
     }
     return ind;
