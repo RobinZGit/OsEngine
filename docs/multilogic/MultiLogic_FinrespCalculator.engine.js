@@ -1478,8 +1478,9 @@
       }));
   }
 
-  const CANDLE_CACHE_VERSION = 1;
-  const CANDLE_CACHE_LS_KEY = "MultiLogicFinrespCandleCache";
+  const CANDLE_CACHE_VERSION = 2;
+  const CANDLE_CACHE_DB_NAME = "MultiLogicFinrespCandlesDB";
+  const CANDLE_CACHE_STORE = "candles";
 
   function cacheNormDay(value) {
     if (!value) return "";
@@ -1498,30 +1499,63 @@
   }
 
   function createCandleCache(options) {
-    const storageKey = options?.storageKey || CANDLE_CACHE_LS_KEY;
-    let entries = {};
+    const dbName = options?.dbName || CANDLE_CACHE_DB_NAME;
+    const storeName = options?.storeName || CANDLE_CACHE_STORE;
+    let dbPromise = null;
+    let cachedStats = {
+      entries: 0,
+      bars: 0,
+      usage: null,
+      quota: null,
+      storage: "IndexedDB",
+      dbName,
+      ready: false
+    };
 
-    function loadStorage() {
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (data?.version === CANDLE_CACHE_VERSION && data.entries) entries = data.entries;
-      } catch (_) {
-        entries = {};
+    function requireIndexedDb() {
+      if (typeof indexedDB === "undefined") {
+        throw new Error("IndexedDB недоступен в этом браузере");
       }
     }
 
-    function saveStorage() {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify({
-          version: CANDLE_CACHE_VERSION,
-          entries,
-          savedAt: new Date().toISOString()
-        }));
-      } catch (err) {
-        if (options?.onStorageError) options.onStorageError(err);
-      }
+    function openDb() {
+      if (dbPromise) return dbPromise;
+      requireIndexedDb();
+      dbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName, CANDLE_CACHE_VERSION);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(storeName)) {
+            db.createObjectStore(storeName, { keyPath: "key" });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
+        req.onblocked = () => reject(new Error("IndexedDB заблокирован другой вкладкой"));
+      }).catch((err) => {
+        dbPromise = null;
+        throw err;
+      });
+      return dbPromise;
+    }
+
+    function txStore(db, mode) {
+      return db.transaction(storeName, mode).objectStore(storeName);
+    }
+
+    function requestPromise(req) {
+      return new Promise((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
+      });
+    }
+
+    function txDone(tx) {
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("IndexedDB transaction failed"));
+        tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
+      });
     }
 
     function entryKey(market, sec, interval) {
@@ -1555,15 +1589,68 @@
       return candles.map((c) => ({ ...c, sec: requestedSec, market }));
     }
 
+    async function estimateStorage() {
+      if (typeof navigator === "undefined" || !navigator.storage?.estimate) return;
+      try {
+        const est = await navigator.storage.estimate();
+        cachedStats = {
+          ...cachedStats,
+          usage: Number.isFinite(est.usage) ? est.usage : null,
+          quota: Number.isFinite(est.quota) ? est.quota : null
+        };
+      } catch (_) { /* estimate is optional */ }
+    }
+
+    async function recomputeStats() {
+      const db = await openDb();
+      let entriesCount = 0;
+      let bars = 0;
+      await new Promise((resolve, reject) => {
+        const req = txStore(db, "readonly").openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          const entry = cursor.value;
+          entriesCount += 1;
+          bars += entry?.candles?.length || 0;
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error || new Error("IndexedDB cursor failed"));
+      });
+      cachedStats = { ...cachedStats, entries: entriesCount, bars, ready: true };
+      await estimateStorage();
+    }
+
+    async function getEntry(key) {
+      const db = await openDb();
+      return requestPromise(txStore(db, "readonly").get(key));
+    }
+
+    async function putEntry(entry) {
+      const db = await openDb();
+      const tx = db.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).put(entry);
+      await txDone(tx);
+    }
+
+    function normalizeEntryForExport(entry) {
+      if (!entry) return null;
+      const { key, ...rest } = entry;
+      return rest;
+    }
+
     return {
-      load() {
-        loadStorage();
+      async load() {
+        await recomputeStats();
       },
-      get(requestedSec, market, interval, from, till, altSec) {
+      async get(requestedSec, market, interval, from, till, altSec) {
         const keys = [entryKey(market, requestedSec, interval)];
         if (altSec) keys.push(entryKey(market, altSec, interval));
         for (const key of keys) {
-          const entry = entries[key];
+          const entry = await getEntry(key);
           if (!entry || String(entry.interval) !== String(interval)) continue;
           if (!entryCovers(entry, from, till)) continue;
           const filtered = filterCandlesByRange(entry.candles, from, till);
@@ -1572,7 +1659,7 @@
         }
         return null;
       },
-      put(requestedSec, market, interval, moexSec, candles) {
+      async put(requestedSec, market, interval, moexSec, candles) {
         if (!candles?.length) return;
         const key = entryKey(market, requestedSec, interval);
         const normalized = candles.map((c) => ({
@@ -1580,59 +1667,81 @@
           sec: moexSec || requestedSec,
           market
         }));
-        const merged = mergeCandleSeries(entries[key]?.candles, normalized);
-        entries[key] = {
+        const existing = await getEntry(key);
+        const oldBars = existing?.candles?.length || 0;
+        const merged = mergeCandleSeries(existing?.candles, normalized);
+        await putEntry({
+          key,
           requestedSec,
           moexSec: moexSec || requestedSec,
           market,
           interval: String(interval),
           candles: merged,
           updatedAt: new Date().toISOString()
+        });
+        cachedStats = {
+          ...cachedStats,
+          entries: cachedStats.entries + (existing ? 0 : 1),
+          bars: cachedStats.bars - oldBars + merged.length,
+          ready: true
         };
-        saveStorage();
+        estimateStorage();
       },
-      clear() {
-        entries = {};
-        try {
-          localStorage.removeItem(storageKey);
-        } catch (_) { /* ignore */ }
+      async clear() {
+        const db = await openDb();
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).clear();
+        await txDone(tx);
+        cachedStats = { ...cachedStats, entries: 0, bars: 0, ready: true };
+        await estimateStorage();
       },
-      exportJson() {
+      async exportJson() {
+        const db = await openDb();
+        const entries = {};
+        await new Promise((resolve, reject) => {
+          const req = txStore(db, "readonly").openCursor();
+          req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) {
+              resolve();
+              return;
+            }
+            entries[cursor.key] = normalizeEntryForExport(cursor.value);
+            cursor.continue();
+          };
+          req.onerror = () => reject(req.error || new Error("IndexedDB export failed"));
+        });
         return JSON.stringify({
           version: CANDLE_CACHE_VERSION,
           entries,
           exportedAt: new Date().toISOString()
         });
       },
-      importJson(jsonStr, merge = true) {
+      async importJson(jsonStr, merge = true) {
         const data = typeof jsonStr === "string" ? JSON.parse(jsonStr) : jsonStr;
-        if (data?.version !== CANDLE_CACHE_VERSION || !data.entries) {
-          throw new Error("Неверный формат файла кэша");
+        if (!data?.entries || (data.version !== 1 && data.version !== CANDLE_CACHE_VERSION)) {
+          throw new Error("Неверный формат файла базы цен");
         }
-        if (!merge) entries = {};
+        if (!merge) await this.clear();
         for (const [key, entry] of Object.entries(data.entries)) {
           if (!entry?.candles?.length) continue;
-          if (merge && entries[key]?.candles?.length) {
-            entries[key] = {
-              ...entries[key],
+          const existing = merge ? await getEntry(key) : null;
+          if (existing?.candles?.length) {
+            await putEntry({
+              ...existing,
               ...entry,
-              candles: mergeCandleSeries(entries[key].candles, entry.candles)
-            };
+              key,
+              candles: mergeCandleSeries(existing.candles, entry.candles)
+            });
           } else {
-            entries[key] = entry;
+            await putEntry({ ...entry, key });
           }
         }
-        saveStorage();
-        return Object.keys(entries).length;
+        await recomputeStats();
+        return cachedStats.entries;
       },
       stats() {
-        let entriesCount = 0;
-        let bars = 0;
-        for (const entry of Object.values(entries)) {
-          entriesCount += 1;
-          bars += entry.candles?.length || 0;
-        }
-        return { entries: entriesCount, bars };
+        return { ...cachedStats };
       }
     };
   }
@@ -1648,7 +1757,7 @@
         }
       }
       if (cache) {
-        const cached = cache.get(requestedSec, market, interval, from, till, moexSec);
+        const cached = await cache.get(requestedSec, market, interval, from, till, moexSec);
         if (cached?.length >= 3) {
           return { ok: true, pack: cached, requestedSec, fromCache: true };
         }
@@ -1657,7 +1766,7 @@
       if (!candles.length) {
         return { ok: false, error: "нет свечей MOEX за выбранный период", requestedSec };
       }
-      if (cache) cache.put(requestedSec, market, interval, moexSec, candles);
+      if (cache) await cache.put(requestedSec, market, interval, moexSec, candles);
       return { ok: true, pack: candles, requestedSec, fromCache: false };
     } catch (err) {
       return { ok: false, error: err?.message || String(err), requestedSec };

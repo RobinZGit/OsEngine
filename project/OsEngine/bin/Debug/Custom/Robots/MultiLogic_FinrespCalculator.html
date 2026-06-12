@@ -176,15 +176,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <button class="calc-btn calc-btn-secondary" id="calc-select-positive" type="button" disabled title="После расчёта оставить только инструменты с FINRESP ≥ 0">Отобрать FINRESP ≥ 0</button>
 </div>
 <div class="calc-field calc-field-wide cache-row">
-<label>Кэш свечей MOEX (браузер)</label>
+<label>База цен MOEX (IndexedDB браузера)</label>
 <div class="cache-btn-row">
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-save-file">Сохранить в файл</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-load-file">Загрузить из файла</button>
-<button class="calc-btn calc-btn-secondary" type="button" id="cache-clear">Очистить кэш</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="cache-clear">Удалить базу цен</button>
 </div>
-<p class="calc-sec-hint" id="cache-hint">Кэш пуст</p>
+<p class="calc-sec-hint" id="cache-hint">База цен не открыта</p>
 <input type="file" id="cache-file-input" accept=".json,application/json" hidden>
-<p class="note">При «Рассчитать» берутся свечи из кэша, если хватает периода и ТФ; иначе — MOEX, затем дополнение кэша. Файл — резервная копия localStorage.</p>
+<p class="note">При «Рассчитать» свечи берутся из браузерной базы IndexedDB, если хватает периода и ТФ; иначе — MOEX, затем свечи добавляются в базу без перезаписи уже сохранённых дат. Файл — резервная копия/перенос базы.</p>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
@@ -380,9 +380,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `allFuturesCbDisabled=${!!$("calc-sec-all-futures")?.disabled}`,
         `uiBusy=${!!calcState.uiBusy}`,
         `optimizing=${typeof isOptimizing === "function" ? isOptimizing() : false}`,
-        `candleCache=${calcState.candleCache ? "on" : "off"}`,
+        `candleDb=${calcState.candleCache ? "on" : "off"}`,
+        `candleDbName=${cacheStats?.dbName || "—"}`,
+        `candleDbReady=${!!cacheStats?.ready}`,
         `cacheEntries=${cacheStats?.entries ?? 0}`,
         `cacheBars=${cacheStats?.bars ?? 0}`,
+        `storageUsage=${cacheStats?.usage ?? "—"}`,
+        `storageQuota=${cacheStats?.quota ?? "—"}`,
         `packs=${calcState.packs?.length ?? 0}`,
         `loadFailures=${calcState.failedInstruments?.length ?? 0}`,
         `windowSkipped=${calcState.windowSkipped?.length ?? 0}`,
@@ -527,6 +531,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
   const fmtPct = (v) => Number.isFinite(v) ? `${v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : "—";
+  const fmtBytes = (v) => {
+    if (!Number.isFinite(v)) return "—";
+    const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+    let n = v;
+    let u = 0;
+    while (n >= 1024 && u < units.length - 1) {
+      n /= 1024;
+      u += 1;
+    }
+    return `${n.toLocaleString("ru-RU", { maximumFractionDigits: u ? 1 : 0 })} ${units[u]}`;
+  };
 
   function parseMoexTime(t) {
     if (!t || t === "—") return null;
@@ -1414,29 +1429,35 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const el = $("cache-hint");
     if (!el) return;
     if (!state.candleCache) {
-      el.textContent = extra ? `Кэш пуст · ${extra}` : "Кэш пуст — при расчёте загрузка с MOEX";
+      el.textContent = extra ? `База цен недоступна · ${extra}` : "База цен недоступна — при расчёте загрузка с MOEX";
       return;
     }
     const s = state.candleCache.stats();
+    const storage = s.quota
+      ? ` · браузер: ${fmtBytes(s.usage)} / ${fmtBytes(s.quota)}`
+      : "";
+    const prefix = `IndexedDB ${s.dbName || "MultiLogicFinrespCandlesDB"}`;
     el.textContent = s.entries
-      ? `Кэш: ${s.entries} инстр., ${s.bars.toLocaleString("ru-RU")} свечей${extra ? ` · ${extra}` : ""}`
-      : `Кэш пуст${extra ? ` · ${extra}` : ""}`;
+      ? `${prefix}: ${s.entries} инстр./ТФ, ${s.bars.toLocaleString("ru-RU")} свечей${storage}${extra ? ` · ${extra}` : ""}`
+      : `${prefix}: цен нет${storage}${s.ready ? "" : " · открывается…"}${extra ? ` · ${extra}` : ""}`;
   }
 
-  function saveCacheToFile() {
+  async function saveCacheToFile() {
     if (!state.candleCache) return;
     const s = state.candleCache.stats();
     if (!s.entries) {
-      $("calc-status").textContent = "Кэш пуст — нечего сохранять.";
+      $("calc-status").textContent = "База цен пуста — нечего сохранять.";
       return;
     }
-    const blob = new Blob([state.candleCache.exportJson()], { type: "application/json" });
+    $("calc-status").textContent = "Подготовка файла базы цен…";
+    const json = await state.candleCache.exportJson();
+    const blob = new Blob([json], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `multilogic_candles_${formatDay(todayDate())}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
-    $("calc-status").textContent = `Кэш сохранён в файл (${s.entries} инстр., ${s.bars} свечей).`;
+    $("calc-status").textContent = `База цен сохранена в файл (${s.entries} инстр./ТФ, ${s.bars} свечей).`;
   }
 
   function initCandleCache() {
@@ -1449,11 +1470,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       state.candleCache = E.createCandleCache({
         onStorageError: () => {
           $("calc-status").textContent =
-            "Кэш: не удалось записать в localStorage (лимит?). Сохраните в файл и очистите кэш.";
+            "База цен: не удалось записать в IndexedDB (квота браузера?). Сохраните в файл или удалите часть цен.";
         }
       });
-      state.candleCache.load();
-      updateCacheHint();
+      updateCacheHint("открывается");
+      state.candleCache.load()
+        .then(() => {
+          updateCacheHint();
+          updateTechInfo("candle-db-ready");
+        })
+        .catch((err) => {
+          state.candleCache = null;
+          updateCacheHint("ошибка — загрузка с MOEX");
+          noteTechError(`candle-db: ${err.message}`);
+        });
     } catch (err) {
       state.candleCache = null;
       updateCacheHint("ошибка — загрузка с MOEX");
@@ -2303,22 +2333,23 @@ ${totalBlock}
     if (!file || !state.candleCache) return;
     try {
       const text = await file.text();
-      state.candleCache.importJson(text, true);
+      $("calc-status").textContent = "Загрузка файла в базу цен…";
+      await state.candleCache.importJson(text, true);
       updateCacheHint("загружено из файла");
       const s = state.candleCache.stats();
-      $("calc-status").textContent = `Кэш загружен из файла: ${s.entries} инстр., ${s.bars} свечей.`;
+      $("calc-status").textContent = `База цен загружена из файла: ${s.entries} инстр./ТФ, ${s.bars} свечей.`;
     } catch (err) {
-      $("calc-status").textContent = `Ошибка загрузки кэша: ${err.message}`;
+      $("calc-status").textContent = `Ошибка загрузки базы цен: ${err.message}`;
     } finally {
       ev.target.value = "";
     }
   });
-  $("cache-clear").addEventListener("click", () => {
+  $("cache-clear").addEventListener("click", async () => {
     if (!state.candleCache) return;
-    if (!window.confirm("Очистить кэш свечей в браузере?")) return;
-    state.candleCache.clear();
-    updateCacheHint("очищен");
-    $("calc-status").textContent = "Кэш свечей очищен.";
+    if (!window.confirm("Удалить все сохранённые свечи из браузерной базы цен? Это действие нельзя отменить.")) return;
+    await state.candleCache.clear();
+    updateCacheHint("цены удалены");
+    $("calc-status").textContent = "База цен удалена.";
   });
   OPT_BUTTONS.forEach(({ btnId, kind }) => {
     $(btnId).addEventListener("click", () => toggleOptim(kind));
