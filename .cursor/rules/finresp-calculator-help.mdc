@@ -1,0 +1,18 @@
+---
+description: При изменении UI калькулятора FINRESP обновлять справку
+globs:
+  - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.html
+  - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
+  - project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/MultiLogic_FinrespCalculator.html
+  - project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
+---
+
+# FinrespCalculator — справка
+
+При добавлении, переименовании или удалении **контролов** на форме калькулятора:
+
+1. Обновить `docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator_Help.html` — описать все элементы формы.
+2. Синхронизировать копию в `project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/`.
+3. В конце справки обновить строку «Версия справки» и `pageVersion` формы, если менялась.
+
+Справка должна перечислять **все** видимые поля, кнопки, чекбоксы, блоки результатов и режимы кошелька.

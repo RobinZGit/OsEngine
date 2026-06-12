@@ -25,3 +25,7 @@ GitHub Pages: `multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.html`
 ## Перенос
 
 Скопируйте **всю папку** `FinrespCalculator` — расчёт FINRESP и торговля работают без остальных файлов OsEngine.
+
+## Справка
+
+`MultiLogic_FinrespCalculator_Help.html` — описание **всех контролов** формы. При изменении UI калькулятора обновляйте справку в той же папке (и копию в `bin/Debug/Custom/Robots/FinrespCalculator/`).
