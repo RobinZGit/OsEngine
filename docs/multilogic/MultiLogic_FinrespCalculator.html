@@ -16,10 +16,15 @@ body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);col
 h2{font-size:1.2rem;margin:1.5rem 0 .75rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
 h2:first-child{margin-top:0;}
 .note{color:var(--muted);font-size:.93rem;}
+.calc-title-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.8rem;margin:0 0 .75rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
+.calc-title-row h2{margin:0;padding:0;border:0;}
+.account-mode{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;font-size:.86rem;color:var(--muted);}
+.account-mode select{padding:.38rem .5rem;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);}
 .calc-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:1rem;margin:1rem 0;}
 .calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.65rem;align-items:end;}
 .calc-field label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:.25rem;}
 .calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;}
+.calc-field textarea{width:100%;min-height:4.4rem;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;font-family:Consolas,monospace;font-size:.78rem;resize:vertical;}
 .calc-field select[multiple]{min-height:6.5rem;}
 .calc-btn{padding:.48rem .85rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
 .calc-btn-secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);}
@@ -36,6 +41,22 @@ h2:first-child{margin-top:0;}
 .calc-sec-select-all input{margin:0;flex-shrink:0;}
 .calc-sec-hint{font-size:.8rem;color:var(--muted);}
 .calc-field-wide{grid-column:1/-1;}
+.useful-indicators-card{
+  margin:.7rem 0 1rem;padding:.8rem .9rem;
+  border:2px solid var(--accent);border-radius:12px;
+  background:linear-gradient(180deg,#f8fbff 0%,#fff 70%);
+  box-shadow:0 2px 10px rgba(37,99,235,.08);
+}
+.useful-indicators-head{display:flex;justify-content:space-between;align-items:flex-start;gap:.8rem;margin-bottom:.65rem;}
+.useful-indicators-title{font-weight:700;color:#1e3a5f;}
+.useful-indicators-sub{display:block;font-size:.8rem;color:var(--muted);font-weight:400;margin-top:.12rem;}
+.indicator-toggle-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.45rem .75rem;}
+.indicator-toggle{
+  display:flex;align-items:center;gap:.38rem;
+  padding:.38rem .48rem;border:1px solid #c7d2fe;border-radius:8px;
+  background:#fff;color:#273449;font-size:.86rem;cursor:pointer;
+}
+.indicator-toggle input{margin:0;}
 .bysec-scroll{max-height:4.5rem;overflow-y:auto;line-height:1.35;}
 .calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
 .calc-result-hero{
@@ -45,8 +66,7 @@ h2:first-child{margin-top:0;}
   background:linear-gradient(165deg,#e8f0ff 0%,#fff 48%,#f8fbff 100%);
   box-shadow:0 3px 14px rgba(37,99,235,.14);
 }
-@media (min-width:720px){.calc-result-hero{grid-template-columns:1.35fr 1fr 1fr 1fr;}}
-@media (max-width:719px){.calc-result-hero{grid-template-columns:1fr 1fr;}}
+@media (min-width:720px){.calc-result-hero{grid-template-columns:1.5fr 1fr 1fr;}}
 .calc-metric-primary{text-align:center;padding:.25rem .4rem;}
 .calc-metric-primary b{
   display:block;font-size:1rem;font-weight:700;color:#1e3a5f;
@@ -104,6 +124,36 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 }
 .file-protocol-warn b{color:#92400e;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
+.real-account-card{border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fbfcff;}
+.real-account-card[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
+.real-account-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
+.real-account-head::-webkit-details-marker{display:none;}
+.real-account-title{font-size:.9rem;font-weight:600;color:#374151;}
+.real-account-state{font-size:.8rem;color:var(--muted);}
+.real-account-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .35rem;}
+.account-mode--live{color:#7f1d1d;font-weight:700;}
+.account-mode-select--live{border:2px solid #b91c1c !important;background:#fef2f2 !important;color:#7f1d1d !important;font-weight:800;box-shadow:0 0 0 2px rgba(185,28,28,.15);}
+.live-trading-panel{border:3px solid #991b1b;border-radius:12px;background:linear-gradient(180deg,#fef2f2 0%,#fff5f5 48%,#fff 100%);padding:1rem 1.15rem;margin:0 0 1rem;box-shadow:0 4px 16px rgba(153,27,27,.18);}
+.live-trading-banner{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem 1rem;margin-bottom:.45rem;}
+.live-trading-title{font-size:1.18rem;font-weight:800;color:#7f1d1d;letter-spacing:.05em;text-transform:uppercase;}
+.live-trading-badge{font-size:.8rem;font-weight:700;padding:.22rem .6rem;border-radius:999px;background:#991b1b;color:#fff;}
+.live-trading-warn{font-size:.88rem;color:#991b1b;margin:.3rem 0 .8rem;font-weight:600;line-height:1.45;}
+.live-trading-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;}
+.live-trading-btn{padding:.52rem 1rem;border:0;border-radius:8px;font-weight:700;cursor:pointer;font-size:.9rem;}
+.live-trading-btn-start{background:#991b1b;color:#fff;}
+.live-trading-btn-start:hover{background:#7f1d1d;}
+.live-trading-btn-start.live-trading-toggle--active{background:#450a0a;box-shadow:inset 0 0 0 2px #fecaca;}
+.live-trading-btn-sell{background:#fff;color:#991b1b;border:2px solid #991b1b;}
+.live-trading-btn-sell:hover{background:#fef2f2;}
+.live-trading-orders-wrap{border-top:2px solid #fecaca;padding-top:.65rem;}
+.live-trading-orders-head{font-size:.84rem;font-weight:700;color:#7f1d1d;margin-bottom:.4rem;}
+.live-trading-orders{max-height:12rem;overflow:auto;font-size:.8rem;}
+.live-trading-orders-empty{margin:0;color:var(--muted);font-size:.82rem;}
+.live-trading-orders table{width:100%;border-collapse:collapse;}
+.live-trading-orders th,.live-trading-orders td{padding:.28rem .35rem;border-bottom:1px solid #fecaca;text-align:left;vertical-align:top;}
+.live-trading-orders th{color:#7f1d1d;font-size:.76rem;}
+.live-trading-orders .dir-buy{color:#166534;font-weight:600;}
+.live-trading-orders .dir-sell{color:#991b1b;font-weight:600;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -115,9 +165,6 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
   background:#fff;border:1px solid var(--border);border-radius:6px;white-space:pre-wrap;word-break:break-word;
 }
 a{color:var(--accent);}
-.indicators-used-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:.35rem 0 .65rem;}
-.indicators-used-table th,.indicators-used-table td{border:1px solid var(--border);padding:.35rem .5rem;text-align:left;vertical-align:top;}
-.indicators-used-table th{background:#f3f4f6;font-weight:600;}
 </style>
 </head>
 <body>
@@ -128,7 +175,16 @@ a{color:var(--accent);}
 </header>
 <div class="help-layout">
 <main class="help-main">
+<div class="calc-title-row">
 <h2>Калькулятор</h2>
+<label class="account-mode" for="account-mode">Кошелёк:
+<select id="account-mode">
+<option value="paper" selected>Фиктивный кошелёк</option>
+<option value="tbank">T-Bank торговый счёт (депозит)</option>
+<option value="live">Реальная торговля T-Bank</option>
+</select>
+</label>
+</div>
 <div class="file-protocol-warn" id="file-protocol-warn" hidden>
 <b>Открыто как файл (file://)</b> — браузер блокирует загрузку свечей MOEX (CORS).
 Cursor «Open with Browser» и двойной клик по HTML так работают.
@@ -136,6 +192,22 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 или откройте <a href="https://robinzgit.github.io/OsEngine/multilogic/MultiLogic_FinrespCalculator.html">версию на GitHub Pages</a>.
 </div>
 <div class="calc-card" id="finresp-calc">
+
+<div id="live-trading-panel" class="live-trading-panel" hidden>
+<div class="live-trading-banner">
+<strong class="live-trading-title">Реальная торговля</strong>
+<span class="live-trading-badge" id="live-trading-status">остановлена</span>
+</div>
+<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении. «Продать всё по рынку» работает и при остановленной торговле.</p>
+<div class="live-trading-actions">
+<button type="button" class="live-trading-btn live-trading-btn-start" id="live-trading-toggle">Начать торговлю</button>
+<button type="button" class="live-trading-btn live-trading-btn-sell" id="live-trading-sell-all">Продать всё по рынку</button>
+</div>
+<div class="live-trading-orders-wrap">
+<div class="live-trading-orders-head">Заявки в реальном времени</div>
+<div id="live-trading-orders" class="live-trading-orders"></div>
+</div>
+</div>
 
 <div class="calc-field calc-field-wide">
 <div class="calc-sec-head">
@@ -153,35 +225,33 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="calc-tf">Таймфрейм</label>
 <select id="calc-tf">
 <option value="1">1 мин</option>
-<option value="5">5 мин</option>
 <option value="10">10 мин</option>
-<option value="15">15 мин</option>
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
-</select>
-<p class="note" style="margin:.25rem 0 0">MOEX ISS: 1 / 10 / 60 / 24 — напрямую; 5 и 15 мин — сборка из минутных свечей биржи.</p></div>
+</select></div>
+<div class="calc-field"><label for="calc-month">Месяц целиком</label><input id="calc-month" type="month"></div>
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
+<button class="calc-btn calc-btn-secondary" id="calc-select-positive" type="button" disabled title="После расчёта оставить только инструменты с FINRESP ≥ 0">Отобрать FINRESP ≥ 0</button>
 </div>
 <div class="calc-field calc-field-wide cache-row">
-<label>Кэш свечей MOEX (браузер)</label>
+<label>База цен MOEX (IndexedDB браузера)</label>
 <div class="cache-btn-row">
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-save-file">Сохранить в файл</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-load-file">Загрузить из файла</button>
-<button class="calc-btn calc-btn-secondary" type="button" id="cache-clear">Очистить кэш</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="cache-clear">Удалить базу цен</button>
 </div>
-<p class="calc-sec-hint" id="cache-hint">Кэш пуст</p>
+<p class="calc-sec-hint" id="cache-hint">База цен не открыта</p>
 <input type="file" id="cache-file-input" accept=".json,application/json" hidden>
-<p class="note">При «Рассчитать» берутся свечи из кэша, если хватает периода и ТФ; иначе — MOEX, затем дополнение кэша. Файл — резервная копия localStorage.</p>
+<p class="note">При «Рассчитать» свечи берутся из браузерной базы IndexedDB, если хватает периода и ТФ; иначе — MOEX, затем свечи добавляются в базу без перезаписи уже сохранённых дат. Файл — резервная копия/перенос базы.</p>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
-<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ (с комиссией)</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric-primary calc-metric-commission"><b>Комиссии уплачено</b><span id="calc-commission">—</span></div>
-<div class="calc-metric-primary"><b>% годовых, простой (с комиссией)</b><span id="calc-ann-simple">—</span></div>
-<div class="calc-metric-primary"><b>% годовых, сложный (с комиссией)</b><span id="calc-ann-compound">—</span></div>
+<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric-primary"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
+<div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
 </div>
 <p class="calc-sec-hint" id="calc-ann-hint"></p>
 <p class="calc-sec-hint" style="margin:.35rem 0 .15rem">Строка статуса — серый текст ниже FINRESP и % годовых (сообщения о загрузке MOEX, ошибках, окне расчёта):</p>
@@ -217,17 +287,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <input id="vol-deposit" type="number" value="1000000" min="1" step="1000"></div>
 <div class="calc-field"><label for="vol-maxpos">Max positions (all tabs)</label>
 <input id="vol-maxpos" type="number" value="40" min="0" max="200" step="1"></div>
-<div class="calc-field"><label for="commission-type">Commission type (вкладка скринера)</label>
-<select id="commission-type">
-<option value="None">None — без комиссии</option>
-<option value="Percent" selected>Percent — % от оборота</option>
-<option value="OneLotFix">One lot fix — ₽ за лот</option>
-</select></div>
-<div class="calc-field"><label for="commission-value">Commission value</label>
-<input id="commission-value" type="number" value="0.04" min="0" step="0.0001" title="Percent: доли % (0.04 = 0.04%). OneLotFix: ₽ за лот на сторону."></div>
+<div class="calc-field"><label for="vol-commission">Комиссия, % за сделку</label>
+<input id="vol-commission" type="number" value="0" min="0" max="10" step="0.0001" title="Одинаковая комиссия для покупки и продажи; 0 — без комиссии"></div>
 </div>
-<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
-<p class="note">Комиссия: как <code>CommissionType</code> / <code>CommissionValue</code> на вкладке скринера OsEngine — удерживается с кэша на каждой стороне сделки; FINRESP и % годовых в блоке выше уже <strong>с учётом комиссии</strong>.</p>
+<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот. Комиссия вычитается с оборота каждой покупки и продажи.</p>
 
 <p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
 <div class="calc-grid">
@@ -247,7 +310,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-atr-sl">Оптимизировать</button>
 </div></div>
 </div>
-<p class="note">Подставляется в строку L1…L4 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
+<p class="note">Подставляется в строку L1…L5 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
 <p class="note" id="position-sl-hint"></p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
@@ -272,29 +335,25 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="note">Equity = сумма FINRESP по инструментам. ATR<sub>порт</sub> = mean(|Δequity|) за N свечей. SL/TP портфеля действуют, если кратность &gt; 0; длина ATR ≥ 2. При срабатывании — закрытие всех позиций, база обновляется.</p>
 
-<p class="extra-section" id="calc-indicators-used">Используемые индикаторы (L1…L4)</p>
-<p class="note">Справка робота: <a href="MultiLogic_LogicHelp.html#topic-2">параметры Ind(…)</a> · <a href="MultiLogic_LogicHelp.html#topic-3">условия во 2-й скобке</a> · <a href="MultiLogic_LogicHelp.html#topic-6a">L1…L4 по умолчанию</a> · <a href="MultiLogic_PolynomialIndicators.html">многочлены</a>.</p>
-<table class="indicators-used-table" aria-label="Используемые индикаторы L1-L4">
-<thead><tr><th>Индикатор</th><th>Типичные параметры в L1…L4</th><th>Сигналы (примеры)</th></tr></thead>
-<tbody>
-<tr><td><b>SMA</b></td><td>L=100, Src=Close</td><td>Ab — close выше; Bl — ниже</td></tr>
-<tr><td><b>LinReg</b></td><td>L=@LR, Dev=2</td><td>AbUp / BlLo; Regime — наклон и флэт</td></tr>
-<tr><td><b>ATR</b></td><td>14; Gr=3%; Lb=5</td><td>GrOk — рост волатильности; SL/TP позиции × ATR</td></tr>
-<tr><td><b>CCI</b></td><td>20; Lmin=100; Smax=-100</td><td>CCI&gt;=100 / CCI&lt;=-100</td></tr>
-<tr><td><b>MACD</b></td><td>12,26,9</td><td>Macd&gt;Sig / Macd&lt;Sig</td></tr>
-<tr><td><b>Stoch</b></td><td>14-3-3; Lmin=90; Smax=10</td><td>K&lt;=10 / K&gt;=90 (L2, L4)</td></tr>
-<tr><td><b>Regime</b></td><td>LinReg; SlopeLb=3; Entry=MatchSide|FlatOnly</td><td>фильтр тренд / боковик; OnFlip=Close</td></tr>
-<tr><td><b>Strict</b></td><td>@Strict (1…5 на вкладке «Логики»)</td><td>строгость отбора сигналов</td></tr>
-</tbody>
-</table>
-<p class="note">L1/L3 — тренд (CCI + LinReg MatchSide); L2/L4 — боковик (Stoch + Regime FlatOnly). Общепортфельный Stopper — ATR по equity, не по бумаге (см. блок выше).</p>
-
 <p class="extra-section">Параметры строки логики</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="param-lr">LinReg длина (@LR)</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
 </div>
 
-<p class="extra-section">Строки L1…L4</p>
+<p class="extra-section">Используемые индикаторы</p>
+<div class="useful-indicators-card" id="useful-indicators-card">
+<div class="useful-indicators-head">
+<div>
+<span class="useful-indicators-title">Используемые индикаторы</span>
+<span class="useful-indicators-sub">Отключенные индикаторы удаляются из Op/Cl строки до расчета. SL/TP позиции остаются отдельными параметрами.</span>
+</div>
+<button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-indicators">Оптимизировать</button>
+</div>
+<div class="indicator-toggle-grid" id="indicator-toggles"></div>
+<p class="note">По умолчанию выбраны все индикаторы. Оптимизация перебирает все непустые комбинации и оставляет набор с лучшим FINRESP.</p>
+</div>
+
+<p class="extra-section">Строки L1…L5</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
 <p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и все заполненные стопы (кратность &gt; 0, длина ATR ≥ 2). Просадка от пика и EOD-flat не считаются.</p>
@@ -318,6 +377,22 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="chart-card" id="calc-chart"></div>
 <div class="chart-card" id="calc-chart-equity"></div>
 
+<details class="real-account-card" id="tbank-settings">
+<summary class="real-account-head">
+<span class="real-account-title">Реальный счёт T-Bank — депозит и торговля</span>
+<span class="real-account-state" id="tbank-settings-state">не подключено</span>
+</summary>
+<p class="note">Токен нужен для чтения счёта и депозита; для режима «Реальная торговля» — с правом выставления заявок. Шифруется в браузере (AES-GCM + PBKDF2) и хранится только локально. Пароль шифрования не сохраняется.</p>
+<div class="calc-grid">
+<div class="calc-field calc-field-wide"><label for="tbank-token">Токен T-Bank Invest</label><textarea id="tbank-token" autocomplete="off" spellcheck="false" placeholder="Вставьте токен, затем задайте пароль и нажмите «Зашифровать и сохранить»"></textarea></div>
+<div class="calc-field"><label for="tbank-passphrase">Пароль для шифрования/расшифровки</label><input id="tbank-passphrase" type="password" autocomplete="new-password" placeholder="Не сохраняется"></div>
+</div>
+<div class="real-account-actions">
+<button class="calc-btn calc-btn-secondary" type="button" id="tbank-save-token">Зашифровать и сохранить</button>
+</div>
+<p class="calc-status" id="tbank-status">Фиктивный кошелёк работает как раньше. Для T-Bank сохраните токен, затем выберите режим сверху: калькулятор спросит пароль, расшифрует токен, загрузит счёт и возьмёт депозит.</p>
+</details>
+
 <details class="tech-info-card" id="tech-info-panel" open>
 <summary class="tech-info-head"><span class="tech-info-title">Тех. информация — скопируйте и пришлите при сбое</span></summary>
 <div class="tech-info-actions">
@@ -334,7 +409,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-used-indicators";
+  const CALC_PAGE_VERSION = "2026-06-12-live-trading";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -384,15 +459,27 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `allFuturesCbDisabled=${!!$("calc-sec-all-futures")?.disabled}`,
         `uiBusy=${!!calcState.uiBusy}`,
         `optimizing=${typeof isOptimizing === "function" ? isOptimizing() : false}`,
-        `candleCache=${calcState.candleCache ? "on" : "off"}`,
+        `candleDb=${calcState.candleCache ? "on" : "off"}`,
+        `candleDbName=${cacheStats?.dbName || "—"}`,
+        `candleDbReady=${!!cacheStats?.ready}`,
         `cacheEntries=${cacheStats?.entries ?? 0}`,
         `cacheBars=${cacheStats?.bars ?? 0}`,
+        `storageUsage=${cacheStats?.usage ?? "—"}`,
+        `storageQuota=${cacheStats?.quota ?? "—"}`,
         `packs=${calcState.packs?.length ?? 0}`,
         `loadFailures=${calcState.failedInstruments?.length ?? 0}`,
         `windowSkipped=${calcState.windowSkipped?.length ?? 0}`,
         `period=${$("calc-from")?.value || "—"}…${$("calc-till")?.value || "—"}`,
         `tf=${$("calc-tf")?.value || "—"}`,
         `logic=${$("calc-logic")?.value || "—"}`,
+        `indicators=${typeof selectedIndicatorKeys === "function" ? selectedIndicatorKeys().join(",") : "—"}`,
+        `accountMode=${calcState.accountMode || "paper"}`,
+        `tbankTokenStored=${(() => { try { return !!localStorage.getItem("multilogic.finresp.tbank.token.v1"); } catch (_) { return false; } })()}`,
+        `tbankTokenUnlocked=${!!calcState.tbank?.token}`,
+        `tbankAccounts=${calcState.tbank?.accounts?.length ?? 0}`,
+        `tbankAccountSelected=${calcState.tbank?.selectedAccountId ? "yes" : "no"}`,
+        `tbankDepositLoaded=${!!calcState.tbank?.depositLoaded}`,
+        `tbankApiHost=${(() => { try { return localStorage.getItem("multilogic.finresp.tbank.host.v1") || "tinkoff"; } catch (_) { return "tinkoff"; } })()}`,
         `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
         `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
       );
@@ -475,14 +562,33 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     anchorStartTime: null,
     anchorEndTime: null,
     hasWindow: false,
+    userDateRangeTouched: false,
     failedInstruments: [],
     windowSkipped: [],
     lastInstruments: [],
     lastLoadMeta: null,
+    lastResult: null,
     prevSelectCount: 0,
     runGeneration: 0,
     runBusyOwner: null,
     uiBusy: false,
+    restoringConfig: false,
+    restoredSelectedInstruments: [],
+    accountMode: "paper",
+    tbank: {
+      token: null,
+      accounts: [],
+      selectedAccountId: "",
+      depositLoaded: false
+    },
+    live: {
+      active: false,
+      pollTimer: null,
+      orders: [],
+      instrumentCache: new Map(),
+      reconcileBusy: false,
+      lastError: ""
+    },
     optim: {
       active: null,
       bestFinresp: -Infinity,
@@ -495,29 +601,299 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   };
   calcState = state;
+  const INDICATOR_OPTIONS = E.INDICATOR_OPTIONS || [
+    { key: "sma", label: "SMA" },
+    { key: "atr", label: "ATR" },
+    { key: "stoch", label: "Stoch" },
+    { key: "linreg", label: "LinReg" },
+    { key: "macd", label: "MACD" },
+    { key: "cci", label: "CCI" },
+    { key: "bollinger", label: "Bollinger" },
+    { key: "momentum", label: "Momentum" },
+    { key: "vwap", label: "VWAP" }
+  ];
+  const INDICATOR_LABELS = Object.fromEntries(INDICATOR_OPTIONS.map((x) => [x.key, x.label]));
   const OPT_BUTTONS = [
     { kind: "sl", btnId: "opt-sl", inputId: "param-sl", label: "@SL", position: true },
     { kind: "tp", btnId: "opt-tp", inputId: "param-tp", label: "@TP", position: true },
     { kind: "atr-sl", btnId: "opt-atr-sl", inputId: "param-atr-sl", label: "ATR SL/TP", integer: true, position: true },
     { kind: "p-sl", btnId: "opt-stopper-sl", inputId: "stopper-sl-mult", label: "портф. SL" },
     { kind: "p-tp", btnId: "opt-stopper-tp", inputId: "stopper-tp-mult", label: "портф. TP" },
-    { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true }
+    { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true },
+    { kind: "indicators", btnId: "opt-indicators", label: "индикаторы", indicators: true }
   ];
   const DATE_MIN = "2020-01-01";
   const DEFAULT_RANGE_DAYS = 30;
   const DEFAULT_END_LAG_DAYS = 2;
+  const TBANK_REST_BASES = {
+    tinkoff: "https://invest-public-api.tinkoff.ru/rest/tinkoff.public.invest.api.contract.v1.",
+    tbank: "https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1."
+  };
+  const TBANK_TOKEN_STORE_KEY = "multilogic.finresp.tbank.token.v1";
+  const TBANK_ACCOUNT_STORE_KEY = "multilogic.finresp.tbank.account.v1";
+  const TBANK_HOST_STORE_KEY = "multilogic.finresp.tbank.host.v1";
+  const CONFIG_STORE_KEY = "multilogic.finresp.config.v1";
+  const TBANK_CRYPTO_ITERATIONS = 210000;
   const MOEX_MINUTES_PER_SESSION = 530;
   const MIN_WARMUP_BARS = 220;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
-    "5": { label: "5 мин", maxDays: 7, maxBars: 1200, aggFrom: "1 мин MOEX" },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
-    "15": { label: "15 мин", maxDays: 14, maxBars: 1200, aggFrom: "1 мин MOEX" },
     "60": { label: "1 час", maxDays: 93, maxBars: 1500 },
     "24": { label: "1 день", maxDays: 3650, maxBars: 1500 }
   };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
   const fmtPct = (v) => Number.isFinite(v) ? `${v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : "—";
+  const fmtBytes = (v) => {
+    if (!Number.isFinite(v)) return "—";
+    const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+    let n = v;
+    let u = 0;
+    while (n >= 1024 && u < units.length - 1) {
+      n /= 1024;
+      u += 1;
+    }
+    return `${n.toLocaleString("ru-RU", { maximumFractionDigits: u ? 1 : 0 })} ${units[u]}`;
+  };
+
+  const safeStorageGet = (key) => {
+    try { return localStorage.getItem(key) || ""; }
+    catch (_) { return ""; }
+  };
+  const safeStorageSet = (key, value) => {
+    try { localStorage.setItem(key, value); return true; }
+    catch (_) { return false; }
+  };
+  const safeStorageRemove = (key) => {
+    try { localStorage.removeItem(key); return true; }
+    catch (_) { return false; }
+  };
+
+  function readSavedConfig() {
+    const raw = safeStorageGet(CONFIG_STORE_KEY);
+    if (!raw) return null;
+    try {
+      const cfg = JSON.parse(raw);
+      return cfg && cfg.v === 1 ? cfg : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setValueIfExists(id, value) {
+    const el = $(id);
+    if (!el || value == null) return;
+    el.value = String(value);
+  }
+
+  function logicLinesConfig() {
+    const out = {};
+    document.querySelectorAll("#logic-lines textarea").forEach((ta) => {
+      out[ta.dataset.key] = ta.value;
+    });
+    return out;
+  }
+
+  function collectConfig() {
+    return {
+      v: 1,
+      savedAt: new Date().toISOString(),
+      accountMode: $("account-mode")?.value || "paper",
+      timeframe: $("calc-tf")?.value || "60",
+      from: $("calc-from")?.value || "",
+      till: $("calc-till")?.value || "",
+      logic: $("calc-logic")?.value || "",
+      selectedInstruments: selectedInstruments(),
+      volume: {
+        type: $("vol-type")?.value || "Deposit percent",
+        value: $("vol-value")?.value || "",
+        deposit: $("vol-deposit")?.value || "",
+        maxPositions: $("vol-maxpos")?.value || "",
+        commissionPct: $("vol-commission")?.value || "0"
+      },
+      params: {
+        sl: $("param-sl")?.value || "",
+        tp: $("param-tp")?.value || "",
+        atrSl: $("param-atr-sl")?.value || "",
+        lr: $("param-lr")?.value || ""
+      },
+      stopper: {
+        slMult: $("stopper-sl-mult")?.value || "",
+        tpMult: $("stopper-tp-mult")?.value || "",
+        atrLen: $("stopper-atr-len")?.value || "",
+        ref: $("stopper-ref")?.value || ""
+      },
+      prefixes: {
+        stocks: $("prefix-stocks")?.value || "",
+        futures: $("prefix-futures")?.value || ""
+      },
+      indicators: selectedIndicatorKeys(),
+      logicLines: logicLinesConfig()
+    };
+  }
+
+  function saveConfig() {
+    if (state.restoringConfig) return;
+    try {
+      safeStorageSet(CONFIG_STORE_KEY, JSON.stringify(collectConfig()));
+    } catch (err) {
+      noteTechError(`save-config: ${err.message}`);
+    }
+  }
+
+  function applySavedConfig() {
+    const cfg = readSavedConfig();
+    if (!cfg) return false;
+    state.restoringConfig = true;
+    try {
+      if (cfg.accountMode === "tbank" || cfg.accountMode === "paper" || cfg.accountMode === "live") {
+        $("account-mode").value = cfg.accountMode;
+      }
+      setValueIfExists("calc-tf", cfg.timeframe);
+      setValueIfExists("calc-from", cfg.from);
+      setValueIfExists("calc-till", cfg.till);
+      setValueIfExists("calc-logic", cfg.logic);
+      setValueIfExists("vol-type", cfg.volume?.type);
+      setValueIfExists("vol-value", cfg.volume?.value);
+      setValueIfExists("vol-deposit", cfg.volume?.deposit);
+      setValueIfExists("vol-maxpos", cfg.volume?.maxPositions);
+      setValueIfExists("vol-commission", cfg.volume?.commissionPct);
+      setValueIfExists("param-sl", cfg.params?.sl);
+      setValueIfExists("param-tp", cfg.params?.tp);
+      setValueIfExists("param-atr-sl", cfg.params?.atrSl);
+      setValueIfExists("param-lr", cfg.params?.lr);
+      setValueIfExists("stopper-sl-mult", cfg.stopper?.slMult);
+      setValueIfExists("stopper-tp-mult", cfg.stopper?.tpMult);
+      setValueIfExists("stopper-atr-len", cfg.stopper?.atrLen);
+      setValueIfExists("stopper-ref", cfg.stopper?.ref);
+      setValueIfExists("prefix-stocks", cfg.prefixes?.stocks);
+      setValueIfExists("prefix-futures", cfg.prefixes?.futures);
+      if (Array.isArray(cfg.indicators)) applyIndicatorSelection(cfg.indicators);
+      if (cfg.logicLines && typeof cfg.logicLines === "object") {
+        state.customLines = { ...state.customLines, ...cfg.logicLines };
+        fillLogicEditor();
+      }
+      state.restoredSelectedInstruments = Array.isArray(cfg.selectedInstruments) ? cfg.selectedInstruments : [];
+      return true;
+    } finally {
+      state.restoringConfig = false;
+    }
+  }
+
+  function applyRestoredInstrumentSelection() {
+    const saved = state.restoredSelectedInstruments || [];
+    if (!saved.length) return;
+    const keys = new Set(saved.map((i) => `${i.market === "futures" ? "futures" : "shares"}:${String(i.sec || "").trim().toUpperCase()}`));
+    const matched = new Set();
+    for (const o of $("calc-sec").options) {
+      const key = `${o.dataset.market === "futures" ? "futures" : "shares"}:${String(o.value || "").trim().toUpperCase()}`;
+      o.selected = keys.has(key);
+      if (o.selected) matched.add(key);
+    }
+    for (const inst of saved) {
+      const market = inst.market === "futures" ? "futures" : "shares";
+      const sec = String(inst.sec || "").trim();
+      if (!sec) continue;
+      const key = `${market}:${sec.toUpperCase()}`;
+      if (matched.has(key)) continue;
+      const o = document.createElement("option");
+      o.value = sec;
+      o.textContent = market === "futures" ? `${sec} · futures` : sec;
+      o.dataset.market = market;
+      o.selected = true;
+      $("calc-sec").appendChild(o);
+      matched.add(key);
+    }
+    syncSelectAllCheckboxes();
+    state.prevSelectCount = selectedInstrumentCount();
+  }
+
+  function bytesToBase64(bytes) {
+    let s = "";
+    for (const b of bytes) s += String.fromCharCode(b);
+    return btoa(s);
+  }
+
+  function base64ToBytes(value) {
+    const s = atob(value);
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  function cryptoAvailable() {
+    return !!(window.crypto?.subtle && window.crypto?.getRandomValues && window.TextEncoder && window.TextDecoder);
+  }
+
+  async function deriveTbankKey(passphrase, salt, iterations) {
+    const enc = new TextEncoder();
+    const material = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(passphrase),
+      "PBKDF2",
+      false,
+      ["deriveKey"]
+    );
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+      material,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  async function encryptTbankToken(token, passphrase) {
+    if (!cryptoAvailable()) throw new Error("Web Crypto недоступен в этом браузере/режиме.");
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveTbankKey(passphrase, salt, TBANK_CRYPTO_ITERATIONS);
+    const data = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new TextEncoder().encode(token)
+    );
+    return JSON.stringify({
+      v: 1,
+      alg: "AES-GCM",
+      kdf: "PBKDF2-SHA256",
+      iterations: TBANK_CRYPTO_ITERATIONS,
+      salt: bytesToBase64(salt),
+      iv: bytesToBase64(iv),
+      data: bytesToBase64(new Uint8Array(data))
+    });
+  }
+
+  async function decryptTbankToken(payload, passphrase) {
+    if (!cryptoAvailable()) throw new Error("Web Crypto недоступен в этом браузере/режиме.");
+    const box = JSON.parse(payload);
+    if (box?.v !== 1 || !box.salt || !box.iv || !box.data) {
+      throw new Error("Неподдерживаемый формат сохранённого токена.");
+    }
+    const salt = base64ToBytes(box.salt);
+    const iv = base64ToBytes(box.iv);
+    const key = await deriveTbankKey(passphrase, salt, Number(box.iterations) || TBANK_CRYPTO_ITERATIONS);
+    const plain = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      base64ToBytes(box.data)
+    );
+    return new TextDecoder().decode(plain);
+  }
+
+  function moneyValueToNumber(value) {
+    if (!value) return NaN;
+    const units = Number(value.units ?? 0);
+    const nano = Number(value.nano ?? 0);
+    return units + nano / 1000000000;
+  }
+
+  function accountLabel(account) {
+    const name = account.name || "Без названия";
+    const type = account.type || "тип ?";
+    const access = account.accessLevel || account.access_level || "доступ ?";
+    return `${name} · ${type} · ${access} · ${account.id}`;
+  }
 
   function parseMoexTime(t) {
     if (!t || t === "—") return null;
@@ -579,17 +955,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     el.style.color = value < 0 ? "#b91c1c" : "#047857";
   }
-
-  function setCommissionMetric(id, commission) {
-    const el = $(id);
-    if (!Number.isFinite(commission) || commission <= 0) {
-      el.textContent = `${fmt(0)} ₽`;
-      el.style.color = "";
-      return;
-    }
-    el.textContent = `−${fmt(commission)} ₽`;
-    el.style.color = "#b91c1c";
-  }
   const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
   const formatDay = (dt) => {
     const y = dt.getFullYear();
@@ -610,9 +975,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function barsPerTradingDay(tf) {
     if (tf === "1") return MOEX_MINUTES_PER_SESSION;
-    if (tf === "5") return Math.ceil(MOEX_MINUTES_PER_SESSION / 5);
     if (tf === "10") return Math.ceil(MOEX_MINUTES_PER_SESSION / 10);
-    if (tf === "15") return Math.ceil(MOEX_MINUTES_PER_SESSION / 15);
     if (tf === "60") return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
     if (tf === "24") return 1;
     return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
@@ -640,6 +1003,56 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       el.disabled = false;
       el.readOnly = false;
     }
+    const month = $("calc-month");
+    month.min = DATE_MIN.slice(0, 7);
+    month.max = maxStr.slice(0, 7);
+    month.disabled = false;
+  }
+
+  function syncMonthInputFromDates() {
+    const month = $("calc-month");
+    if (!month) return;
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    if (!from || !till || from.slice(0, 7) !== till.slice(0, 7)) {
+      month.value = "";
+      return;
+    }
+
+    const [year, monthNumber] = from.slice(0, 7).split("-").map(Number);
+    const { min, max } = dateBounds();
+    let monthFrom = new Date(year, monthNumber - 1, 1);
+    let monthTill = new Date(year, monthNumber, 0);
+    if (monthFrom < min) monthFrom = min;
+    if (monthTill > max) monthTill = max;
+    month.value = from === formatDay(monthFrom) && till === formatDay(monthTill)
+      ? from.slice(0, 7)
+      : "";
+  }
+
+  function applyMonthSelection() {
+    const value = $("calc-month").value;
+    if (!value) return;
+    const [year, month] = value.split("-").map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return;
+
+    const { min, max } = dateBounds();
+    let from = new Date(year, month - 1, 1);
+    let till = new Date(year, month, 0);
+    if (from < min) from = min;
+    if (till > max) till = max;
+    if (from > till) from = till;
+
+    $("calc-from").value = formatDay(from);
+    $("calc-till").value = formatDay(till);
+    state.userDateRangeTouched = true;
+    const narrowed = enforceDateRange("till", selectedInstrumentCount());
+    clearWindowAnchor();
+    syncMonthInputFromDates();
+    updateDateHint(selectedInstrumentCount());
+    $("calc-status").textContent = narrowed
+      ? "Месяц выбран, но период сужен лимитом таймфрейма/числа инструментов."
+      : "Выбран полный месяц расчёта.";
   }
 
   function selectedInstrumentCount() {
@@ -675,21 +1088,588 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     };
   }
 
-  function commissionConfig() {
-    return E.normalizeCommission({
-      type: $("commission-type").value,
-      value: +$("commission-value").value
-    });
-  }
-
   function volConfig() {
     return {
       volumeType: $("vol-type").value,
       volume: +$("vol-value").value || E.DEFAULT_VOLUME.volume,
       deposit: +$("vol-deposit").value || E.DEFAULT_VOLUME.deposit,
       maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions),
-      commission: commissionConfig()
+      commissionPct: Math.max(0, +$("vol-commission").value || 0)
     };
+  }
+
+  function setTbankStatus(message, isError = false) {
+    const el = $("tbank-status");
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = isError ? "#b91c1c" : "var(--muted)";
+  }
+
+  function syncTbankSettingsState() {
+    const el = $("tbank-settings-state");
+    if (!el) return;
+    const stored = !!safeStorageGet(TBANK_TOKEN_STORE_KEY);
+    const unlocked = !!state.tbank.token;
+    const account = state.tbank.selectedAccountId ? "счёт найден" : "счёт не загружен";
+    const deposit = state.tbank.depositLoaded ? "депозит загружен" : "депозит не загружен";
+    el.textContent = unlocked
+      ? `токен расшифрован · ${account} · ${deposit}`
+      : stored ? "токен сохранён локально, нужен пароль" : "не подключено";
+  }
+
+  function isLiveMode() {
+    return state.accountMode === "live";
+  }
+
+  function isTbankBackedMode() {
+    return state.accountMode === "tbank" || state.accountMode === "live";
+  }
+
+  function readAccountModeFromUi() {
+    const v = $("account-mode")?.value || "paper";
+    if (v === "tbank") return "tbank";
+    if (v === "live") return "live";
+    return "paper";
+  }
+
+  function liveOrderDirectionLabel(direction) {
+    if (direction === "ORDER_DIRECTION_BUY" || direction === 1) return "Покупка";
+    if (direction === "ORDER_DIRECTION_SELL" || direction === 2) return "Продажа";
+    return direction || "—";
+  }
+
+  function liveOrderStatusLabel(status) {
+    const map = {
+      EXECUTION_REPORT_STATUS_UNSPECIFIED: "неизвестно",
+      EXECUTION_REPORT_STATUS_FILL: "исполнена",
+      EXECUTION_REPORT_STATUS_REJECTED: "отклонена",
+      EXECUTION_REPORT_STATUS_CANCELLED: "отменена",
+      EXECUTION_REPORT_STATUS_NEW: "новая",
+      EXECUTION_REPORT_STATUS_PARTIALLYFILL: "частично",
+      EXECUTION_REPORT_STATUS_PENDING: "ожидает"
+    };
+    return map[status] || String(status || "—").replace(/^EXECUTION_REPORT_STATUS_/, "").toLowerCase();
+  }
+
+  function renderLiveOrdersPanel() {
+    const el = $("live-trading-orders");
+    if (!el) return;
+    const orders = state.live.orders || [];
+    if (!orders.length) {
+      el.innerHTML = '<p class="live-trading-orders-empty">Заявок пока нет. После «Начать торговлю» здесь появятся заявки в реальном времени.</p>';
+      return;
+    }
+    const rows = orders.slice().sort((a, b) => {
+      const ta = Date.parse(a.orderDate || a.createdAt || 0) || 0;
+      const tb = Date.parse(b.orderDate || b.createdAt || 0) || 0;
+      return tb - ta;
+    }).map((o) => {
+      const dir = liveOrderDirectionLabel(o.direction);
+      const dirCls = (o.direction === "ORDER_DIRECTION_BUY" || o.direction === 1) ? "dir-buy" : "dir-sell";
+      const ticker = o.ticker || o.figi || o.instrumentUid || "—";
+      const lotsReq = o.lotsRequested ?? o.lots_requested ?? "—";
+      const lotsExec = o.lotsExecuted ?? o.lots_executed ?? "—";
+      const status = liveOrderStatusLabel(o.executionReportStatus || o.orderState);
+      const when = o.orderDate || o.createdAt || "";
+      return `<tr><td>${ticker}</td><td class="${dirCls}">${dir}</td><td>${lotsReq}/${lotsExec}</td><td>${status}</td><td>${when ? new Date(when).toLocaleString("ru-RU") : "—"}</td></tr>`;
+    }).join("");
+    el.innerHTML = `<table><thead><tr><th>Тикер</th><th>Сторона</th><th>Лоты</th><th>Статус</th><th>Время</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function syncLiveTradingUi() {
+    const panel = $("live-trading-panel");
+    const select = $("account-mode");
+    const label = document.querySelector("label.account-mode");
+    const isLive = isLiveMode();
+    if (panel) panel.hidden = !isLive;
+    if (select) select.classList.toggle("account-mode-select--live", isLive);
+    if (label) label.classList.toggle("account-mode--live", isLive);
+    const toggle = $("live-trading-toggle");
+    if (toggle) {
+      toggle.textContent = state.live.active ? "Остановить торговлю" : "Начать торговлю";
+      toggle.classList.toggle("live-trading-toggle--active", state.live.active);
+      toggle.disabled = !isLive;
+    }
+    const sellAll = $("live-trading-sell-all");
+    if (sellAll) sellAll.disabled = !isLive;
+    const status = $("live-trading-status");
+    if (status) {
+      if (state.live.lastError && isLive) status.textContent = `ошибка: ${state.live.lastError}`;
+      else status.textContent = state.live.active ? "торговля активна" : "остановлена";
+    }
+    renderLiveOrdersPanel();
+  }
+
+  function stopLiveTradingPoll() {
+    if (state.live.pollTimer) clearInterval(state.live.pollTimer);
+    state.live.pollTimer = null;
+  }
+
+  function stopLiveTradingOnModeChange() {
+    state.live.active = false;
+    stopLiveTradingPoll();
+    syncLiveTradingUi();
+  }
+
+  async function tbankFindInstrument(sec, market) {
+    const key = `${market}:${String(sec || "").trim().toUpperCase()}`;
+    if (state.live.instrumentCache.has(key)) return state.live.instrumentCache.get(key);
+    const data = await tbankRequest("InstrumentsService/FindInstrument", { query: String(sec || "").trim() });
+    const list = data.instruments || [];
+    const secU = String(sec || "").trim().toUpperCase();
+    let inst = list.find((i) => String(i.ticker || "").toUpperCase() === secU);
+    if (!inst && market === "futures") {
+      inst = list.find((i) => String(i.ticker || "").toUpperCase().startsWith(secU));
+    }
+    if (!inst) inst = list[0] || null;
+    if (inst) state.live.instrumentCache.set(key, inst);
+    return inst || null;
+  }
+
+  async function tbankGetInstrumentById(instrumentId) {
+    if (!instrumentId) return null;
+    const cacheKey = `id:${instrumentId}`;
+    if (state.live.instrumentCache.has(cacheKey)) return state.live.instrumentCache.get(cacheKey);
+    const data = await tbankRequest("InstrumentsService/GetInstrumentBy", {
+      idType: "INSTRUMENT_ID_TYPE_UID",
+      id: instrumentId
+    });
+    const inst = data.instrument || null;
+    if (inst) state.live.instrumentCache.set(cacheKey, inst);
+    return inst;
+  }
+
+  function piecesToLots(pieces, lotSize) {
+    const lot = Math.max(1, +lotSize || 1);
+    const p = Math.abs(+pieces || 0);
+    if (p <= 0) return 0;
+    return Math.max(1, Math.round(p / lot));
+  }
+
+  async function tbankPostMarketOrder(instrumentId, direction, lots) {
+    const qty = Math.max(0, Math.floor(+lots || 0));
+    if (!instrumentId || qty <= 0) return null;
+    const orderId = (crypto.randomUUID && crypto.randomUUID()) || `ml-${Date.now()}`;
+    return tbankRequest("OrdersService/PostOrder", {
+      accountId: state.tbank.selectedAccountId,
+      instrumentId,
+      quantity: String(qty),
+      orderType: "ORDER_TYPE_MARKET",
+      direction,
+      orderId,
+      confirmMarginTrade: true
+    });
+  }
+
+  async function refreshLiveOrders() {
+    if (!isTbankBackedMode() || !state.tbank.token || !state.tbank.selectedAccountId) return;
+    try {
+      const data = await tbankRequest("OrdersService/GetOrders", {
+        accountId: state.tbank.selectedAccountId
+      });
+      state.live.orders = data.orders || [];
+      state.live.lastError = "";
+      renderLiveOrdersPanel();
+    } catch (err) {
+      state.live.lastError = err.message;
+      syncLiveTradingUi();
+      noteTechError(`live-orders: ${err.message}`);
+    }
+  }
+
+  async function tbankPositionsByTicker() {
+    const data = await tbankRequest("OperationsService/GetPositions", {
+      accountId: state.tbank.selectedAccountId
+    });
+    const map = new Map();
+    const ingest = async (items) => {
+      for (const p of items || []) {
+        const instrumentId = p.instrumentUid || p.figi;
+        const pieces = +p.balance || 0;
+        if (!instrumentId || pieces === 0) continue;
+        let meta = await tbankGetInstrumentById(instrumentId);
+        if (!meta) meta = { ticker: p.ticker || instrumentId, lot: p.lot || 1, uid: instrumentId, figi: p.figi };
+        const ticker = String(meta.ticker || p.ticker || "").toUpperCase();
+        if (!ticker) continue;
+        map.set(ticker, {
+          ticker,
+          instrumentId: meta.uid || meta.figi || instrumentId,
+          lot: Math.max(1, +meta.lot || +p.lot || 1),
+          pieces
+        });
+      }
+    };
+    await ingest(data.securities);
+    await ingest(data.futures);
+    return map;
+  }
+
+  async function liveTradingReconcile() {
+    if (!state.live.active || state.live.reconcileBusy) return;
+    if (!state.lastResult?.perSec?.length) return;
+    state.live.reconcileBusy = true;
+    try {
+      const actual = await tbankPositionsByTicker();
+      for (const p of state.lastResult.perSec) {
+        const secU = String(p.sec || "").toUpperCase();
+        const instMeta = selectedInstruments().find((i) => String(i.sec).toUpperCase() === secU);
+        const market = instMeta?.market || "shares";
+        const ti = await tbankFindInstrument(p.sec, market);
+        if (!ti) continue;
+        const instrumentId = ti.uid || ti.figi;
+        const lot = Math.max(1, +ti.lot || 1);
+        const ticker = String(ti.ticker || p.sec).toUpperCase();
+        const targetPieces = +p.pos || 0;
+        const cur = actual.get(ticker);
+        const currentPieces = cur ? +cur.pieces : 0;
+        const delta = targetPieces - currentPieces;
+        if (Math.abs(delta) < lot * 0.45) continue;
+        const lots = piecesToLots(delta, lot);
+        const direction = delta > 0 ? "ORDER_DIRECTION_BUY" : "ORDER_DIRECTION_SELL";
+        await tbankPostMarketOrder(instrumentId, direction, lots);
+      }
+      await refreshLiveOrders();
+    } catch (err) {
+      state.live.lastError = err.message;
+      syncLiveTradingUi();
+      noteTechError(`live-reconcile: ${err.message}`);
+    } finally {
+      state.live.reconcileBusy = false;
+    }
+  }
+
+  function startLiveTradingPoll() {
+    stopLiveTradingPoll();
+    state.live.pollTimer = setInterval(() => {
+      if (!isLiveMode() || !state.live.active) return;
+      refreshLiveOrders();
+      liveTradingReconcile();
+    }, 5000);
+  }
+
+  async function connectTbankForLive() {
+    if (!isLiveMode()) return;
+    if (!(await ensureTbankTokenUnlocked())) return;
+    if (!state.tbank.accounts.length) await loadTbankAccounts();
+    else if (!state.tbank.depositLoaded) await loadTbankDeposit();
+    await refreshLiveOrders();
+    syncLiveTradingUi();
+  }
+
+  async function toggleLiveTrading() {
+    if (!isLiveMode()) return;
+    if (state.live.active) {
+      state.live.active = false;
+      stopLiveTradingPoll();
+      state.live.lastError = "";
+      syncLiveTradingUi();
+      return;
+    }
+    if (!(await ensureTbankTokenUnlocked())) return;
+    if (!state.tbank.selectedAccountId) await loadTbankAccounts();
+    if (!state.tbank.selectedAccountId) {
+      setTbankStatus("Не удалось определить счёт T-Bank для торговли.", true);
+      return;
+    }
+    if (!state.lastResult && state.packs.length) {
+      const trial = calcResult();
+      if (trial) applyResult(trial, { redrawCharts: false });
+    }
+    if (!state.lastResult?.perSec?.length) {
+      $("calc-status").textContent = "Сначала рассчитайте FINRESP по выбранным инструментам, затем начните торговлю.";
+      return;
+    }
+    state.live.active = true;
+    state.live.lastError = "";
+    startLiveTradingPoll();
+    syncLiveTradingUi();
+    await refreshLiveOrders();
+    await liveTradingReconcile();
+  }
+
+  async function sellAllMarketLive() {
+    if (!isLiveMode()) return;
+    const sellBtn = $("live-trading-sell-all");
+    if (sellBtn) sellBtn.disabled = true;
+    try {
+      if (!(await ensureTbankTokenUnlocked())) return;
+      if (!state.tbank.selectedAccountId) await loadTbankAccounts();
+      if (!state.tbank.selectedAccountId) throw new Error("Счёт T-Bank не выбран.");
+      const data = await tbankRequest("OperationsService/GetPositions", {
+        accountId: state.tbank.selectedAccountId
+      });
+      let sent = 0;
+      const closeList = async (items, isFuture) => {
+        for (const p of items || []) {
+          const pieces = +p.balance || 0;
+          if (pieces === 0) continue;
+          const instrumentId = p.instrumentUid || p.figi;
+          let lot = Math.max(1, +p.lot || 1);
+          if (!p.lot) {
+            const meta = await tbankGetInstrumentById(instrumentId);
+            if (meta?.lot) lot = Math.max(1, +meta.lot);
+          }
+          let lots;
+          let direction;
+          if (isFuture) {
+            lots = Math.abs(Math.round(pieces));
+            direction = pieces > 0 ? "ORDER_DIRECTION_SELL" : "ORDER_DIRECTION_BUY";
+          } else {
+            if (pieces <= 0) continue;
+            lots = piecesToLots(pieces, lot);
+            direction = "ORDER_DIRECTION_SELL";
+          }
+          if (lots <= 0) continue;
+          await tbankPostMarketOrder(instrumentId, direction, lots);
+          sent += 1;
+        }
+      };
+      await closeList(data.securities, false);
+      await closeList(data.futures, true);
+      state.live.lastError = "";
+      const status = $("live-trading-status");
+      if (status) status.textContent = sent ? `продано позиций: ${sent}` : "открытых позиций нет";
+      await refreshLiveOrders();
+    } catch (err) {
+      state.live.lastError = err.message;
+      setTbankStatus(`Ошибка продажи по рынку: ${err.message}`, true);
+      noteTechError(`live-sell-all: ${err.message}`);
+    } finally {
+      if (sellBtn) sellBtn.disabled = !isLiveMode();
+      syncLiveTradingUi();
+    }
+  }
+
+  function syncAccountModeUi() {
+    state.accountMode = readAccountModeFromUi();
+    const isTbank = state.accountMode === "tbank";
+    const isLive = isLiveMode();
+    const isTbankBacked = isTbankBackedMode();
+    const deposit = $("vol-deposit");
+    if (deposit) {
+      deposit.readOnly = isTbankBacked;
+      deposit.title = isTbankBacked
+        ? "В режиме T-Bank депозит берётся из выбранного торгового счёта."
+        : "";
+    }
+    const settings = $("tbank-settings");
+    if (isTbankBacked && settings && !state.tbank.depositLoaded) settings.open = true;
+    if (isLive) {
+      setTbankStatus(
+        state.tbank.depositLoaded
+          ? `Режим реальной торговли. Счёт подключён, депозит: ${fmt(+deposit.value || 0, 0)} ₽.`
+          : "Режим реальной торговли. Введите пароль — калькулятор расшифрует токен и подключит тот же счёт T-Bank."
+      );
+    } else if (isTbank) {
+      setTbankStatus(
+        state.tbank.depositLoaded
+          ? `Режим T-Bank активен. Депозит взят со счёта: ${fmt(+deposit.value || 0, 0)} ₽.`
+          : "Режим T-Bank активен. Введите пароль: калькулятор расшифрует токен, загрузит счёт и возьмёт депозит автоматически."
+      );
+    } else {
+      setTbankStatus("Фиктивный кошелёк активен. Поле депозита работает вручную, как раньше.");
+    }
+    syncTbankSettingsState();
+    syncLiveTradingUi();
+  }
+
+  function fillTbankAccounts() {
+    if (!state.tbank.accounts.length) {
+      state.tbank.selectedAccountId = "";
+      syncTbankSettingsState();
+      return;
+    }
+    const saved = state.tbank.selectedAccountId || safeStorageGet(TBANK_ACCOUNT_STORE_KEY);
+    if (saved && state.tbank.accounts.some((a) => a.id === saved)) {
+      state.tbank.selectedAccountId = saved;
+    } else {
+      state.tbank.selectedAccountId = state.tbank.accounts[0]?.id || "";
+    }
+    if (state.tbank.selectedAccountId) safeStorageSet(TBANK_ACCOUNT_STORE_KEY, state.tbank.selectedAccountId);
+    syncTbankSettingsState();
+  }
+
+  function selectedTbankHostId() {
+    const id = safeStorageGet(TBANK_HOST_STORE_KEY) || "tinkoff";
+    return TBANK_REST_BASES[id] ? id : "tinkoff";
+  }
+
+  function setTbankHostId(id) {
+    const safeId = TBANK_REST_BASES[id] ? id : "tinkoff";
+    safeStorageSet(TBANK_HOST_STORE_KEY, safeId);
+    return safeId;
+  }
+
+  function tbankFetchErrorMessage(err, hostId) {
+    const raw = err?.message || String(err || "ошибка сети");
+    if (err instanceof TypeError) {
+      return `Не удалось подключиться к ${hostId}. Это обычно TLS/сертификат, сеть, VPN/провайдер или блокировка браузера. Калькулятор попробовал оба официальных API-хоста автоматически.`;
+    }
+    return raw;
+  }
+
+  async function tbankRequest(serviceMethod, body) {
+    if (!state.tbank.token) throw new Error("Токен не расшифрован.");
+    const firstHost = selectedTbankHostId();
+    const hostIds = [firstHost, ...Object.keys(TBANK_REST_BASES).filter((id) => id !== firstHost)];
+    let lastNetworkError = null;
+    for (const hostId of hostIds) {
+      try {
+        const res = await fetch(`${TBANK_REST_BASES[hostId]}${serviceMethod}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${state.tbank.token}`
+          },
+          body: JSON.stringify(body || {})
+        });
+        const text = await res.text();
+        let data = {};
+        if (text) {
+          try { data = JSON.parse(text); }
+          catch (_) { data = { raw: text }; }
+        }
+        if (!res.ok) {
+          const msg = data.message || data.error || data.raw || `${res.status} ${res.statusText}`;
+          throw new Error(msg);
+        }
+        if (hostId !== firstHost) {
+          setTbankHostId(hostId);
+          setTbankStatus(`Подключение выполнено через резервный API хост: ${hostId}.`);
+        }
+        return data;
+      } catch (err) {
+        if (err instanceof TypeError) {
+          lastNetworkError = new Error(tbankFetchErrorMessage(err, hostId));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastNetworkError || new Error("Не удалось подключиться к API T-Bank.");
+  }
+
+  async function saveTbankToken() {
+    const token = $("tbank-token").value.trim();
+    const passphrase = $("tbank-passphrase").value;
+    if (!token) { setTbankStatus("Введите токен T-Bank Invest.", true); return; }
+    if (passphrase.length < 8) { setTbankStatus("Пароль шифрования должен быть не короче 8 символов.", true); return; }
+    try {
+      const encrypted = await encryptTbankToken(token, passphrase);
+      if (!safeStorageSet(TBANK_TOKEN_STORE_KEY, encrypted)) throw new Error("localStorage недоступен.");
+      state.tbank.token = token;
+      state.tbank.depositLoaded = false;
+      $("tbank-token").value = "";
+      setTbankStatus("Токен зашифрован и сохранён локально. При выборе T-Bank калькулятор сам загрузит счёт и депозит.");
+      syncTbankSettingsState();
+      if (isTbankBackedMode()) connectTbankAndLoadDeposit();
+    } catch (err) {
+      setTbankStatus(`Ошибка сохранения токена: ${err.message}`, true);
+      noteTechError(`tbank-save-token: ${err.message}`);
+    }
+  }
+
+  function getTbankPassphrase() {
+    let passphrase = $("tbank-passphrase").value;
+    if (!passphrase) {
+      passphrase = window.prompt("Введите пароль для расшифровки локального токена T-Bank") || "";
+    }
+    if (passphrase && !$("tbank-passphrase").value) $("tbank-passphrase").value = passphrase;
+    return passphrase;
+  }
+
+  async function ensureTbankTokenUnlocked() {
+    if (state.tbank.token) return true;
+    const payload = safeStorageGet(TBANK_TOKEN_STORE_KEY);
+    const passphrase = getTbankPassphrase();
+    if (!payload) { setTbankStatus("Локально сохранённого токена нет.", true); return; }
+    if (!passphrase) { setTbankStatus("Введите пароль локального шифрования.", true); return; }
+    try {
+      state.tbank.token = await decryptTbankToken(payload, passphrase);
+      state.tbank.depositLoaded = false;
+      setTbankStatus("Токен расшифрован на текущую сессию. Загружаю счёт и депозит…");
+      syncTbankSettingsState();
+      return true;
+    } catch (err) {
+      state.tbank.token = null;
+      setTbankStatus(`Не удалось расшифровать токен: ${err.message}`, true);
+      noteTechError(`tbank-unlock-token: ${err.message}`);
+      return false;
+    }
+  }
+
+  async function loadTbankAccounts() {
+    try {
+      setTbankStatus("Загрузка счетов T-Bank…");
+      const data = await tbankRequest("UsersService/GetAccounts", { status: "ACCOUNT_STATUS_OPEN" });
+      state.tbank.accounts = (data.accounts || []).filter((a) =>
+        !a.status || a.status === "ACCOUNT_STATUS_OPEN" || a.status === 2
+      );
+      if (!state.tbank.accounts.length) throw new Error("Открытые счета не найдены.");
+      fillTbankAccounts();
+      setTbankStatus(`Счёт T-Bank загружен: ${accountLabel(state.tbank.accounts.find((a) => a.id === state.tbank.selectedAccountId) || state.tbank.accounts[0])}. Загружаю депозит…`);
+      if (isTbankBackedMode() && state.tbank.selectedAccountId) await loadTbankDeposit();
+    } catch (err) {
+      setTbankStatus(`Ошибка загрузки счетов: ${err.message}`, true);
+      noteTechError(`tbank-load-accounts: ${err.message}`);
+    }
+  }
+
+  async function loadTbankDeposit() {
+    try {
+      const accountId = state.tbank.selectedAccountId;
+      if (!accountId) throw new Error("Счёт T-Bank не загружен.");
+      state.tbank.selectedAccountId = accountId;
+      safeStorageSet(TBANK_ACCOUNT_STORE_KEY, accountId);
+      setTbankStatus("Загрузка портфеля T-Bank…");
+      const data = await tbankRequest("OperationsService/GetPortfolio", {
+        accountId,
+        currency: "RUB"
+      });
+      const total = data.totalAmountPortfolio || data.total_amount_portfolio;
+      const amount = moneyValueToNumber(total);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("API не вернул положительную стоимость портфеля.");
+      $("vol-deposit").value = String(Math.round(amount));
+      state.tbank.depositLoaded = true;
+      syncAccountModeUi();
+      setTbankStatus(`Депозит загружен из T-Bank: ${fmt(amount, 2)} ₽.`);
+      saveConfig();
+      if (state.packs.length) render();
+    } catch (err) {
+      state.tbank.depositLoaded = false;
+      setTbankStatus(`Ошибка загрузки депозита: ${err.message}`, true);
+      noteTechError(`tbank-load-deposit: ${err.message}`);
+    }
+  }
+
+  async function connectTbankAndLoadDeposit() {
+    if (!isTbankBackedMode()) return;
+    if (!(await ensureTbankTokenUnlocked())) return;
+    if (!state.tbank.accounts.length) {
+      await loadTbankAccounts();
+      return;
+    }
+    if (state.tbank.selectedAccountId) await loadTbankDeposit();
+    if (isLiveMode()) await refreshLiveOrders();
+  }
+
+  function initAccountMode() {
+    $("account-mode").value = "paper";
+    state.accountMode = "paper";
+    setTbankHostId(safeStorageGet(TBANK_HOST_STORE_KEY) || "tinkoff");
+    state.tbank.selectedAccountId = safeStorageGet(TBANK_ACCOUNT_STORE_KEY);
+    fillTbankAccounts();
+    syncAccountModeUi();
+  }
+
+  function requireTbankDepositForRun() {
+    if (!isTbankBackedMode()) return true;
+    if (state.tbank.depositLoaded && (+$("vol-deposit").value || 0) > 0) return true;
+    const msg = "В режиме T-Bank сначала загрузите депозит из выбранного счёта.";
+    $("calc-status").textContent = msg;
+    setTbankStatus(msg, true);
+    $("tbank-settings").open = true;
+    return false;
   }
 
   function stopperConfig() {
@@ -709,6 +1689,52 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     };
   }
 
+  function selectedIndicatorKeys() {
+    const boxes = Array.from(document.querySelectorAll("#indicator-toggles input[type=checkbox]"));
+    if (!boxes.length) return INDICATOR_OPTIONS.map((x) => x.key);
+    return boxes.filter((el) => el.checked).map((el) => el.value).filter(Boolean);
+  }
+
+  function indicatorSelection() {
+    const selected = new Set(selectedIndicatorKeys());
+    const out = {};
+    for (const { key } of INDICATOR_OPTIONS) out[key] = selected.has(key);
+    return out;
+  }
+
+  function normalizeIndicatorCandidate(value) {
+    const keys = INDICATOR_OPTIONS.map((x) => x.key);
+    if (Array.isArray(value)) {
+      const set = new Set(value.map((x) => String(x || "").toLowerCase()));
+      return keys.filter((key) => set.has(key));
+    }
+    if (value && typeof value === "object") {
+      return keys.filter((key) => !!value[key]);
+    }
+    if (typeof value === "string") {
+      return normalizeIndicatorCandidate(value.split(",").map((x) => x.trim()));
+    }
+    return selectedIndicatorKeys();
+  }
+
+  function indicatorCandidateLabel(value) {
+    const keys = normalizeIndicatorCandidate(value);
+    return keys.length ? keys.map((key) => INDICATOR_LABELS[key] || key).join("+") : "нет индикаторов";
+  }
+
+  function applyIndicatorSelection(value) {
+    const keys = new Set(normalizeIndicatorCandidate(value));
+    document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
+      el.checked = keys.has(el.value);
+    });
+  }
+
+  function setIndicatorInputsDisabled(disabled) {
+    document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
+      el.disabled = disabled;
+    });
+  }
+
   function syncVolumeFields() {
     const t = $("vol-type").value;
     $("vol-deposit-wrap").style.display = t === "Deposit percent" ? "" : "none";
@@ -718,6 +1744,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       "Contract currency": "Volume, валюте контракта, ₽"
     };
     $("vol-value-label").textContent = labels[t] || "Volume";
+    syncAccountModeUi();
   }
 
   function selectedInstruments() {
@@ -784,12 +1811,54 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       instruments.some((i) => instrumentKey(i) === instrumentKey({ sec: f.sec, market: f.market }))
     );
     state.windowSkipped = [];
-    state.movedSlider = "end";
-    setSliderBounds(false);
+    setSliderBounds(true);
     saveWindowAnchor();
     if (!renderWithStatus()) return false;
     updateTechInfo("selection-refreshed");
     return true;
+  }
+
+  function selectNonNegativeFinrespInstruments() {
+    if (state.uiBusy || isOptimizing()) return;
+    const result = state.lastResult;
+    if (!result?.perSec?.length) {
+      $("calc-status").textContent = "Сначала нажмите «Рассчитать», чтобы получить FINRESP по инструментам.";
+      return;
+    }
+    const negative = result.perSec.filter((p) => Number(p.finresp) < 0);
+    if (!negative.length) {
+      $("calc-status").textContent = "Инструментов с отрицательным FINRESP нет — выбор не изменён.";
+      return;
+    }
+    const negativeSecs = new Set(negative.map((p) => String(p.sec || "").trim().toUpperCase()));
+    const selectedOptions = Array.from($("calc-sec").selectedOptions);
+    const remainingOptions = selectedOptions.filter((o) => !negativeSecs.has(String(o.value || "").trim().toUpperCase()));
+    if (!remainingOptions.length) {
+      $("calc-status").textContent = "Все рассчитанные инструменты имеют отрицательный FINRESP — выбор не изменён.";
+      return;
+    }
+
+    for (const o of $("calc-sec").options) {
+      if (o.selected && negativeSecs.has(String(o.value || "").trim().toUpperCase())) {
+        o.selected = false;
+      }
+    }
+    syncSelectAllCheckboxes();
+    const instruments = selectedInstruments();
+    state.bulkMode = resolveBulkMode(instruments);
+    state.prevSelectCount = instruments.length;
+    state.lastResult = null;
+    applyUiLocks();
+    const removedLabel = negative.map((p) => `${p.sec}:${fmt(p.finresp)}`).join(" · ");
+    const refreshed = tryRefreshFromLoadedPacks();
+    if (refreshed) {
+      $("calc-status").textContent =
+        `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). FINRESP пересчитан.`;
+    } else {
+      $("calc-status").textContent =
+        `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). Нажмите «Рассчитать» для обновления.`;
+    }
+    saveConfig();
   }
 
   function syncMarketCheckbox(market, cbId) {
@@ -849,13 +1918,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function onSecSelectionChanged() {
+    state.lastResult = null;
+    applyUiLocks();
     syncSelectAllCheckboxes();
     const n = selectedInstrumentCount();
     const prev = state.prevSelectCount || 0;
     if (n > 0) {
       const narrowed = enforceDateRange("till", n);
+      if (narrowed) clearWindowAnchor();
       updateDateHint(n);
-      if (n < prev && relaxDateRangeForInstrumentCount(n)) {
+      if (!state.userDateRangeTouched && n < prev && relaxDateRangeForInstrumentCount(n)) {
+        clearWindowAnchor();
         state.lastLoadMeta = null;
         $("calc-status").textContent =
           `Выбор уменьшен — период расширен до ~${maxCalcDays($("calc-tf").value, n)} дн. Нажмите «Рассчитать».`;
@@ -878,6 +1951,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
     }
     updateTechInfo("selection-changed");
+    saveConfig();
   }
 
   function isOptimizing() {
@@ -913,13 +1987,36 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return vals;
   }
 
+  function enumerateIndicatorSelections() {
+    const keys = INDICATOR_OPTIONS.map((x) => x.key);
+    const vals = [];
+    const fullMask = (1 << keys.length) - 1;
+    for (let mask = fullMask; mask > 0; mask--) {
+      const item = [];
+      for (let i = 0; i < keys.length; i++) {
+        if (mask & (1 << i)) item.push(keys[i]);
+      }
+      vals.push(item);
+    }
+    return vals;
+  }
+
   function optimMeta(kind) {
     return OPT_BUTTONS.find((x) => x.kind === kind);
+  }
+
+  function isIndicatorOptimKind(kind) {
+    return !!optimMeta(kind)?.indicators;
   }
 
   function optimDisplayLabel(kind) {
     const m = optimMeta(kind);
     return m?.label || kind.toUpperCase();
+  }
+
+  function optimValueLabel(kind, value) {
+    if (isIndicatorOptimKind(kind)) return indicatorCandidateLabel(value);
+    return String(optimCandidateValue(kind, value));
   }
 
   function stopOptimLabel() {
@@ -930,11 +2027,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function applyUiLocks() {
     const lock = state.uiBusy || isOptimizing();
     $("calc-run").disabled = lock;
+    $("calc-select-positive").disabled = lock || !state.lastResult?.perSec?.length;
     $("prefix-pick-stocks").disabled = lock;
     $("prefix-pick-futures").disabled = lock;
     const secOpts = Array.from($("calc-sec").options);
     $("calc-sec-all-shares").disabled = lock || !secOpts.some((o) => o.dataset.market === "shares");
     $("calc-sec-all-futures").disabled = lock || !secOpts.some((o) => o.dataset.market === "futures");
+    setIndicatorInputsDisabled(lock);
   }
 
   function syncOptimButtons() {
@@ -948,8 +2047,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     const lock = isOptimizing();
     for (const { inputId } of OPT_BUTTONS) {
-      $(inputId).readOnly = lock;
+      if (inputId) $(inputId).readOnly = lock;
     }
+    setIndicatorInputsDisabled(state.uiBusy || lock);
     applyUiLocks();
   }
 
@@ -974,19 +2074,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const kind = state.optim.active;
     const meta = optimMeta(kind);
     const bestValue = optimCandidateValue(kind, state.optim.bestValue);
+    const bestLabel = optimValueLabel(kind, bestValue);
     const bestFinresp = state.optim.bestFinresp;
     state.optim.runToken += 1;
     state.optim.active = null;
     state.optim.bestValue = bestValue;
     stopOptimDots();
     syncOptimButtons();
-    if (meta) $(meta.inputId).value = String(bestValue);
+    if (meta?.indicators) applyIndicatorSelection(bestValue);
+    else if (meta?.inputId) $(meta.inputId).value = String(bestValue);
     const result = calcResult(optimRunContext(kind, bestValue));
     if (result) applyResult(result, { redrawCharts: true });
     const scoreNote = isPositionOptimKind(kind) ? " (FINRESP до портф. Stopper)" : "";
     $("calc-status").textContent = autoDone
-      ? `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${bestValue}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`
-      : `Оптимизация ${optimDisplayLabel(kind)} остановлена: лучшее ${bestValue}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`;
+      ? `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${bestLabel}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`
+      : `Оптимизация ${optimDisplayLabel(kind)} остановлена: лучшее ${bestLabel}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`;
   }
 
   function stopOptim() {
@@ -997,6 +2099,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function optimCandidateValue(kind, value) {
     const meta = optimMeta(kind);
+    if (meta?.indicators) return normalizeIndicatorCandidate(value);
     return meta?.integer ? Math.round(value) : roundParam(value);
   }
 
@@ -1033,6 +2136,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
       case "p-atr":
         return { params: p, stopper: { ...sc, atrLen: Math.max(2, Math.round(cv)) } };
+      case "indicators":
+        return { params: p, stopper: sc, indicators: cv };
       default:
         return { params: p, stopper: sc };
     }
@@ -1043,7 +2148,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const [a, b] = normalizeSliders();
     const p = optimCtx?.params ?? params();
     const sc = optimCtx?.stopper ?? stopperConfig();
-    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p);
+    const indicators = optimCtx?.indicators ?? indicatorSelection();
+    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
     if (!spec) return null;
     const { perSec, agg, preStopperAgg, stopper, skipped } = E.runMulti(
       state.packs, spec, a, b, p, volConfig(), sc
@@ -1057,7 +2163,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (token !== state.optim.runToken || !state.optim.active) return;
     const kind = state.optim.active;
     const meta = optimMeta(kind);
-    const input = $(meta.inputId);
+    const input = meta.inputId ? $(meta.inputId) : null;
 
     if (state.optim.candidateIndex >= state.optim.candidates.length) {
       finishOptim(token, true);
@@ -1066,14 +2172,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
     const candidate = state.optim.candidates[state.optim.candidateIndex];
     state.optim.candidateIndex += 1;
+    if (meta.indicators) applyIndicatorSelection(candidate);
     const trial = calcResult(optimRunContext(kind, candidate));
     const score = optimScore(trial, kind);
     if (trial && score > state.optim.bestFinresp) {
       state.optim.bestFinresp = score;
       state.optim.bestValue = optimCandidateValue(kind, candidate);
     }
-    const candLabel = optimCandidateValue(kind, candidate);
-    input.value = String(candLabel);
+    const candLabel = optimValueLabel(kind, candidate);
+    if (input) input.value = String(optimCandidateValue(kind, candidate));
     if (trial) {
       applyResult(trial, {
         redrawCharts: false,
@@ -1096,16 +2203,24 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     if (state.optim.active) stopOptim();
     const meta = optimMeta(kind);
-    const input = $(meta.inputId);
-    const min = +input.min || 0;
-    const max = +input.max || 50;
-    const rawStart = Math.max(+input.value || 0, min);
-    const startValue = optimCandidateValue(kind, rawStart);
+    const input = meta.inputId ? $(meta.inputId) : null;
+    let startValue;
+    let candidates;
+    if (meta.indicators) {
+      startValue = optimCandidateValue(kind, selectedIndicatorKeys());
+      candidates = enumerateIndicatorSelections();
+    } else {
+      const min = +input.min || 0;
+      const max = +input.max || 50;
+      const rawStart = Math.max(+input.value || 0, min);
+      startValue = optimCandidateValue(kind, rawStart);
+      candidates = enumerateOptimValues(min, max, !!meta.integer);
+      input.value = String(startValue);
+    }
     state.optim.active = kind;
-    state.optim.candidates = enumerateOptimValues(min, max, !!meta.integer);
+    state.optim.candidates = candidates;
     state.optim.candidateIndex = 0;
     state.optim.bestValue = startValue;
-    input.value = String(startValue);
     const cur = calcResult(optimRunContext(kind, startValue));
     state.optim.bestFinresp = optimScore(cur, kind);
     state.optim.runToken += 1;
@@ -1234,7 +2349,19 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       sel.appendChild(o);
     }
     if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
-    else sel.value = "L1";
+    else sel.value = "L5";
+  }
+
+  function initIndicatorToggles() {
+    const box = $("indicator-toggles");
+    if (!box) return;
+    box.innerHTML = "";
+    for (const { key, label } of INDICATOR_OPTIONS) {
+      const item = document.createElement("label");
+      item.className = "indicator-toggle";
+      item.innerHTML = `<input type="checkbox" value="${key}" checked> <span>${label}</span>`;
+      box.appendChild(item);
+    }
   }
 
   function updatePositionSlHint() {
@@ -1244,13 +2371,14 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (meta?.type === "sma_spread") {
       el.textContent = "Логика «Выше/Ниже SMA» — упрощённая модель; стопы по ATR учитываются при ненулевой позиции.";
     } else if (meta?.type === "logic_line") {
-      el.textContent = "Логика L1…L4: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
+      el.textContent = "Логики L1…L5: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
     } else {
       el.textContent = "";
     }
   }
 
   function renderFromParams() {
+    saveConfig();
     if (!state.packs.length || isOptimizing()) return;
     render();
   }
@@ -1258,7 +2386,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function fillLogicEditor() {
     const box = $("logic-lines");
     box.innerHTML = "";
-    for (const key of ["L1", "L2", "L3", "L4"]) {
+    for (const key of ["L5", "L1", "L2", "L3", "L4"]) {
       const wrap = document.createElement("div");
       wrap.innerHTML = `<label>${key}</label>`;
       const ta = document.createElement("textarea");
@@ -1284,29 +2412,35 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const el = $("cache-hint");
     if (!el) return;
     if (!state.candleCache) {
-      el.textContent = extra ? `Кэш пуст · ${extra}` : "Кэш пуст — при расчёте загрузка с MOEX";
+      el.textContent = extra ? `База цен недоступна · ${extra}` : "База цен недоступна — при расчёте загрузка с MOEX";
       return;
     }
     const s = state.candleCache.stats();
+    const storage = s.quota
+      ? ` · браузер: ${fmtBytes(s.usage)} / ${fmtBytes(s.quota)}`
+      : "";
+    const prefix = `IndexedDB ${s.dbName || "MultiLogicFinrespCandlesDB"}`;
     el.textContent = s.entries
-      ? `Кэш: ${s.entries} инстр., ${s.bars.toLocaleString("ru-RU")} свечей${extra ? ` · ${extra}` : ""}`
-      : `Кэш пуст${extra ? ` · ${extra}` : ""}`;
+      ? `${prefix}: ${s.entries} инстр./ТФ, ${s.bars.toLocaleString("ru-RU")} свечей${storage}${extra ? ` · ${extra}` : ""}`
+      : `${prefix}: цен нет${storage}${s.ready ? "" : " · открывается…"}${extra ? ` · ${extra}` : ""}`;
   }
 
-  function saveCacheToFile() {
+  async function saveCacheToFile() {
     if (!state.candleCache) return;
     const s = state.candleCache.stats();
     if (!s.entries) {
-      $("calc-status").textContent = "Кэш пуст — нечего сохранять.";
+      $("calc-status").textContent = "База цен пуста — нечего сохранять.";
       return;
     }
-    const blob = new Blob([state.candleCache.exportJson()], { type: "application/json" });
+    $("calc-status").textContent = "Подготовка файла базы цен…";
+    const json = await state.candleCache.exportJson();
+    const blob = new Blob([json], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `multilogic_candles_${formatDay(todayDate())}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
-    $("calc-status").textContent = `Кэш сохранён в файл (${s.entries} инстр., ${s.bars} свечей).`;
+    $("calc-status").textContent = `База цен сохранена в файл (${s.entries} инстр./ТФ, ${s.bars} свечей).`;
   }
 
   function initCandleCache() {
@@ -1319,11 +2453,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       state.candleCache = E.createCandleCache({
         onStorageError: () => {
           $("calc-status").textContent =
-            "Кэш: не удалось записать в localStorage (лимит?). Сохраните в файл и очистите кэш.";
+            "База цен: не удалось записать в IndexedDB (квота браузера?). Сохраните в файл или удалите часть цен.";
         }
       });
-      state.candleCache.load();
-      updateCacheHint();
+      updateCacheHint("открывается");
+      state.candleCache.load()
+        .then(() => {
+          updateCacheHint();
+          updateTechInfo("candle-db-ready");
+        })
+        .catch((err) => {
+          state.candleCache = null;
+          updateCacheHint("ошибка — загрузка с MOEX");
+          noteTechError(`candle-db: ${err.message}`);
+        });
     } catch (err) {
       state.candleCache = null;
       updateCacheHint("ошибка — загрузка с MOEX");
@@ -1340,6 +2483,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (from < min) from = min;
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(0);
   }
 
@@ -1379,6 +2523,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(n);
     return $("calc-from").value !== beforeFrom || $("calc-till").value !== beforeTill;
   }
@@ -1405,6 +2550,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (from > till) from = till;
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(n);
     return beforeFrom !== $("calc-from").value || beforeTill !== $("calc-till").value;
   }
@@ -1478,6 +2624,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.hasWindow = state.anchorStartTime != null && state.anchorEndTime != null;
   }
 
+  function clearWindowAnchor() {
+    state.anchorStartTime = null;
+    state.anchorEndTime = null;
+    state.hasWindow = false;
+  }
+
   function setSliderBounds(preserve = false) {
     const pack = refPack();
     const n = pack.length;
@@ -1493,7 +2645,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
     let a;
     let b;
-    if (preserve && state.hasWindow) {
+    const preserveWindow = preserve && state.hasWindow;
+    if (preserveWindow) {
       a = findIndexByTime(pack, state.anchorStartTime);
       b = findIndexByTime(pack, state.anchorEndTime);
       if (a > b) [a, b] = [b, a];
@@ -1518,7 +2671,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
     if (a > b - 2) a = Math.max(0, b - 2);
     if (b < a + 2) b = Math.min(max, a + 2);
-    if (b - a + 1 > maxBars) {
+    if (!preserveWindow && b - a + 1 > maxBars) {
       if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
       else a = Math.max(0, b - maxBars + 1);
     }
@@ -1539,14 +2692,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const n = refPack().length;
     let a = +$("calc-start").value;
     let b = +$("calc-end").value;
-    const max = Math.max(0, n - 1);
-    const maxBars = currentLimit().maxBars;
     if (a > b - 2) a = Math.max(0, b - 2);
     if (b < a + 2) b = Math.min(n - 1, a + 2);
-    if (b - a + 1 > maxBars) {
-      if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
-      else a = Math.max(0, b - maxBars + 1);
-    }
     $("calc-start").value = a;
     $("calc-end").value = b;
     return [a, b];
@@ -1628,7 +2775,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const left = 68, right = 28, top = compact ? 24 : 28, bottom = 58;
     const plotW = w - left - right;
     const plotH = h - top - bottom;
-    const priceKeys = ["close", "sma", "linregUp", "linregDn", "linregMid"];
+    const priceKeys = ["close", "sma", "linregUp", "linregDn", "linregMid", "bollingerUp", "bollingerDn", "bollingerMid", "vwap"];
     let vals = rows.flatMap((r) => priceKeys.map((k) => r?.[k]).filter((v) => v != null));
     if (!vals.length) vals = rows.map((r) => r?.close).filter((v) => v != null);
     if (!vals.length) return "";
@@ -1659,7 +2806,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       rows[0]?.sma != null ? `<polyline fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="5 4" opacity=".85" points="${line("sma")}"/>` : "",
       rows[0]?.linregMid != null ? `<polyline fill="none" stroke="#7c3aed" stroke-width="1" opacity=".7" points="${line("linregMid")}"/>` : "",
       rows[0]?.linregUp != null ? `<polyline fill="none" stroke="#a78bfa" stroke-width=".9" stroke-dasharray="3 3" opacity=".65" points="${line("linregUp")}"/>` : "",
-      rows[0]?.linregDn != null ? `<polyline fill="none" stroke="#a78bfa" stroke-width=".9" stroke-dasharray="3 3" opacity=".65" points="${line("linregDn")}"/>` : ""
+      rows[0]?.linregDn != null ? `<polyline fill="none" stroke="#a78bfa" stroke-width=".9" stroke-dasharray="3 3" opacity=".65" points="${line("linregDn")}"/>` : "",
+      rows[0]?.bollingerMid != null ? `<polyline fill="none" stroke="#0891b2" stroke-width=".9" opacity=".65" points="${line("bollingerMid")}"/>` : "",
+      rows[0]?.bollingerUp != null ? `<polyline fill="none" stroke="#67e8f9" stroke-width=".8" stroke-dasharray="2 3" opacity=".7" points="${line("bollingerUp")}"/>` : "",
+      rows[0]?.bollingerDn != null ? `<polyline fill="none" stroke="#67e8f9" stroke-width=".8" stroke-dasharray="2 3" opacity=".7" points="${line("bollingerDn")}"/>` : "",
+      rows[0]?.vwap != null ? `<polyline fill="none" stroke="#16a34a" stroke-width="1" stroke-dasharray="7 3" opacity=".7" points="${line("vwap")}"/>` : ""
     ].join("");
     const markers = rows.map((r, i) => {
       if (!r || r.close == null) return "";
@@ -1689,8 +2840,8 @@ ${markers}
 </svg>`;
   }
 
-  const LOGIC_EQUITY_KEYS = ["L1", "L2", "L3", "L4"];
-  const LOGIC_EQUITY_COLORS = { L1: "#2563eb", L2: "#d97706", L3: "#7c3aed", L4: "#0891b2" };
+  const LOGIC_EQUITY_KEYS = ["L5", "L1", "L2", "L3", "L4"];
+  const LOGIC_EQUITY_COLORS = { L5: "#047857", L1: "#2563eb", L2: "#d97706", L3: "#7c3aed", L4: "#0891b2" };
   const EQUITY_STOPPER_OFF = { useSl: false, useTp: false, slMult: 0, tpMult: 0, atrLen: 14, refEquity: 0 };
 
   function logicEquityLabel(key) {
@@ -1760,8 +2911,9 @@ ${yLabels}${xLabels}
     const times = pack.slice(a, b + 1).map((c) => c.time).filter(Boolean);
     if (!times.length) return null;
     const runs = {};
+    const indicators = indicatorSelection();
     for (const key of LOGIC_EQUITY_KEYS) {
-      const spec = E.resolveLogicSpec(key, state.customLines, p);
+      const spec = E.resolveLogicSpec(key, state.customLines, p, indicators);
       if (!spec || spec.type !== "logic_line") continue;
       const { perSec } = E.runMulti(state.packs, spec, a, b, p, vol, EQUITY_STOPPER_OFF);
       const rows = E.buildPortfolioEquityRows(perSec, times);
@@ -1798,9 +2950,9 @@ ${yLabels}${xLabels}
     }).filter(Boolean);
     const totalRows = buildTotalEquityRows(runs, times);
     const totalFin = totalRows.length ? totalRows.at(-1).eq : 0;
-    const totalSvg = buildEquityChartSvg(totalRows, totalFin, "Equity Σ L1…L4", false, "#1d4ed8");
+    const totalSvg = buildEquityChartSvg(totalRows, totalFin, "Equity Σ L1…L5", false, "#1d4ed8");
     const totalBlock = totalSvg
-      ? `<div class="chart-equity-total"><p class="chart-sec-title">Общий equity (L1 + L2 + L3 + L4)</p>${totalSvg}</div>`
+      ? `<div class="chart-equity-total"><p class="chart-sec-title">Общий equity (L5 + L1 + L2 + L3 + L4)</p>${totalSvg}</div>`
       : "";
     box.innerHTML = `<div class="chart-equity-section">
 <p class="chart-equity-section-title">Equity по логикам (сумма по выбранным инструментам, без портф. Stopper)</p>
@@ -1905,10 +3057,11 @@ ${totalBlock}
     const opts = options || {};
     const { perSec, stopper, a, b } = result;
     const agg = optimDisplayAgg(result, opts);
+    if (!opts.optimTrial) state.lastResult = result;
+    applyUiLocks();
     const winLen = perSec.reduce((m, p) => Math.max(m, p.rows?.length ?? 0), 0);
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
-    setCommissionMetric("calc-commission", agg.commission || 0);
     $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
@@ -1928,9 +3081,8 @@ ${totalBlock}
         const scope = windowDays && opDays && windowDays !== opDays
           ? `окно ${Math.round(windowDays)} дн., приведение к ${Math.round(opDays)} дн. расчёта`
           : `${Math.round(days)} календ. дн. расчёта`;
-        const commNote = agg.commission > 0 ? ` · комиссии −${fmt(agg.commission)} ₽` : "";
         annHint.textContent =
-          `База ${fmt(deposit, 0)} ₽ · доходность за ${scope}: ${fmtPct(periodPct)} (с комиссией${commNote}) → % годовых: прибыль/база ÷ (дни/365), как в роботе`;
+          `База ${fmt(deposit, 0)} ₽ · доходность за ${scope}: ${fmtPct(periodPct)} → % годовых: прибыль/база ÷ (дни/365), как в роботе`;
       } else {
         annHint.textContent = "Для % годовых нужны депозит и период ≥ 1 календарного дня.";
       }
@@ -1951,7 +3103,7 @@ ${totalBlock}
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
     if (opts.optimNote) {
-      const bestLabel = optimCandidateValue(state.optim.active, state.optim.bestValue);
+      const bestLabel = optimValueLabel(state.optim.active, state.optim.bestValue);
       status += ` | Опт. ${opts.optimNote}: FINRESP ${fmt(agg.finresp)} ₽ | лучшее ${bestLabel} → ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
@@ -1977,10 +3129,11 @@ ${totalBlock}
         msg = `Часть инструментов без данных в окне (${skipped}) — сдвиньте ползунки или нажмите «Рассчитать».`;
       }
       $("calc-finresp").textContent = "—";
-      $("calc-commission").textContent = "—";
       $("calc-ann-simple").textContent = "—";
       $("calc-ann-compound").textContent = "—";
       $("calc-count").textContent = "—";
+      state.lastResult = null;
+      applyUiLocks();
       $("calc-status").textContent = msg;
       noteTechError(`render: ${msg}`);
       return false;
@@ -2101,8 +3254,12 @@ ${totalBlock}
         keys: instruments.map(instrumentKey)
       };
       state.bulkMode = bulkMode;
-      state.movedSlider = "end";
-      setSliderBounds(false);
+      if (!periodNarrowed && state.hasWindow) {
+        setSliderBounds(true);
+      } else {
+        state.movedSlider = "end";
+        setSliderBounds(false);
+      }
       saveWindowAnchor();
       if (!renderWithStatus()) {
         $("calc-chart").innerHTML = "";
@@ -2136,6 +3293,7 @@ ${totalBlock}
       $("calc-status").textContent = "Выберите хотя бы один инструмент в списке.";
       return;
     }
+    if (!requireTbankDepositForRun()) return;
     const runGen = ++state.runGeneration;
     const bulkMode = resolveBulkMode(instruments);
     try {
@@ -2159,6 +3317,21 @@ ${totalBlock}
 
   function bindUiEvents() {
   $("calc-run").addEventListener("click", run);
+  $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
+  $("account-mode").addEventListener("change", () => {
+    if ($("account-mode").value !== "live" && state.live.active) stopLiveTradingOnModeChange();
+    syncAccountModeUi();
+    saveConfig();
+    if (state.accountMode === "tbank" || state.accountMode === "live") {
+      connectTbankAndLoadDeposit();
+      if (state.accountMode === "live") connectTbankForLive();
+      return;
+    }
+    if (state.packs.length && (!isTbankBackedMode() || state.tbank.depositLoaded)) render();
+  });
+  $("live-trading-toggle").addEventListener("click", () => { toggleLiveTrading(); });
+  $("live-trading-sell-all").addEventListener("click", () => { sellAllMarketLive(); });
+  $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
   $("cache-file-input").addEventListener("change", async (ev) => {
@@ -2166,22 +3339,23 @@ ${totalBlock}
     if (!file || !state.candleCache) return;
     try {
       const text = await file.text();
-      state.candleCache.importJson(text, true);
+      $("calc-status").textContent = "Загрузка файла в базу цен…";
+      await state.candleCache.importJson(text, true);
       updateCacheHint("загружено из файла");
       const s = state.candleCache.stats();
-      $("calc-status").textContent = `Кэш загружен из файла: ${s.entries} инстр., ${s.bars} свечей.`;
+      $("calc-status").textContent = `База цен загружена из файла: ${s.entries} инстр./ТФ, ${s.bars} свечей.`;
     } catch (err) {
-      $("calc-status").textContent = `Ошибка загрузки кэша: ${err.message}`;
+      $("calc-status").textContent = `Ошибка загрузки базы цен: ${err.message}`;
     } finally {
       ev.target.value = "";
     }
   });
-  $("cache-clear").addEventListener("click", () => {
+  $("cache-clear").addEventListener("click", async () => {
     if (!state.candleCache) return;
-    if (!window.confirm("Очистить кэш свечей в браузере?")) return;
-    state.candleCache.clear();
-    updateCacheHint("очищен");
-    $("calc-status").textContent = "Кэш свечей очищен.";
+    if (!window.confirm("Удалить все сохранённые свечи из браузерной базы цен? Это действие нельзя отменить.")) return;
+    await state.candleCache.clear();
+    updateCacheHint("цены удалены");
+    $("calc-status").textContent = "База цен удалена.";
   });
   OPT_BUTTONS.forEach(({ btnId, kind }) => {
     $(btnId).addEventListener("click", () => toggleOptim(kind));
@@ -2191,6 +3365,7 @@ ${totalBlock}
   $("calc-sec").addEventListener("change", onSecSelectionChanged);
   $("prefix-pick-stocks").addEventListener("click", () => {
     reloadShareList();
+    saveConfig();
     $("calc-status").textContent = state.packs.length
       ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
       : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
@@ -2208,6 +3383,7 @@ ${totalBlock}
       $("calc-status").textContent = state.packs.length
         ? `Подобрано ${n} контрактов MOEX, выбор обновлён. FINRESP пересчитан по текущему окну.`
         : `Подобрано ${n} контрактов MOEX, выбор обновлён. Нажмите «Рассчитать».`;
+      saveConfig();
       if (state.packs.length) render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка подбора фьючерсов: ${err.message}`;
@@ -2215,23 +3391,29 @@ ${totalBlock}
       setBusy(false);
     }
   });
-  $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); render(); });
-  $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); render(); });
-  $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
-  $("commission-type").addEventListener("change", renderFromParams);
-  $("commission-value").addEventListener("change", renderFromParams);
-  $("commission-value").addEventListener("input", renderFromParams);
-  ["vol-value", "vol-deposit", "vol-maxpos", "commission-value", "param-lr", "stopper-ref"].forEach((id) => {
+  ["prefix-stocks", "prefix-futures"].forEach((id) => {
+    $(id).addEventListener("change", saveConfig);
+    $(id).addEventListener("input", saveConfig);
+  });
+  $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); saveConfig(); render(); });
+  $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); saveConfig(); render(); });
+  $("vol-type").addEventListener("change", () => { syncVolumeFields(); saveConfig(); render(); });
+  ["vol-value", "vol-deposit", "vol-maxpos", "vol-commission", "param-lr", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", renderFromParams);
     $(id).addEventListener("input", renderFromParams);
   });
   OPT_BUTTONS.forEach(({ inputId }) => {
+    if (!inputId) return;
     $(inputId).addEventListener("change", renderFromParams);
     $(inputId).addEventListener("input", renderFromParams);
+  });
+  document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
+    el.addEventListener("change", renderFromParams);
   });
   $("calc-tf").addEventListener("change", () => {
     const n = selectedInstrumentCount();
     if (n > 0 && enforceDateRange("till", n)) {
+      clearWindowAnchor();
       $("calc-status").textContent =
         `Таймфрейм изменён — период сужен до ${maxCalcDays($("calc-tf").value, n)} дн.`;
     } else {
@@ -2239,17 +3421,27 @@ ${totalBlock}
       updateDateHint(n);
     }
     if (state.packs.length) setSliderBounds(true);
+    saveConfig();
   });
+  $("calc-month").addEventListener("change", () => { applyMonthSelection(); saveConfig(); });
   $("calc-from").addEventListener("change", () => {
+    state.userDateRangeTouched = true;
     enforceDateRange("from");
+    clearWindowAnchor();
+    syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
+    saveConfig();
   });
   $("calc-till").addEventListener("change", () => {
+    state.userDateRangeTouched = true;
     enforceDateRange("till");
+    clearWindowAnchor();
+    syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
+    saveConfig();
   });
-  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); render(); });
-  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); render(); });
+  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); saveConfig(); render(); });
+  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); saveConfig(); render(); });
   const extraParams = $("extra-params");
   const extraParamsToggle = $("extra-params-toggle");
   function syncExtraParamsToggleLabel() {
@@ -2267,14 +3459,24 @@ ${totalBlock}
 
   fillLogicSelect();
   fillLogicEditor();
+  initIndicatorToggles();
   updatePositionSlHint();
   initPrefixFields();
+  initAccountMode();
+  initDates();
+  applySavedConfig();
+  fillLogicSelect();
+  updatePositionSlHint();
+  syncMonthInputFromDates();
   syncVolumeFields();
   initInstrumentLists();
-  initDates();
+  applyRestoredInstrumentSelection();
+  updateDateHint(selectedInstrumentCount());
   bindUiEvents();
   initCandleCache();
   applyUiLocks();
+  syncAccountModeUi();
+  if (isTbankBackedMode()) connectTbankAndLoadDeposit();
   state._initOk = true;
   updateTechInfo("init-ok");
 })();
