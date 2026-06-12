@@ -388,7 +388,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <label class="live-order-book-sec-label" for="live-order-book-sec">Инструмент<select id="live-order-book-sec"><option value="">— выберите —</option></select></label>
 <span class="live-order-book-stats" id="live-order-book-stats">выберите бумагу в калькуляторе</span>
 </div>
-<p class="live-order-book-meta" id="live-order-book-hint">Клик по <strong>цене</strong> в таблице — открыть «Заявку» (лимит, та же бумага).</p>
+<p class="live-order-book-meta" id="live-order-book-hint">Двойной клик по <strong>цене</strong> в таблице — развернуть «Заявку» (инструмент стакана, лимит, цена, покупка/продажа).</p>
 <div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент.</p></div>
 </div>
 </details>
@@ -621,7 +621,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-orderbook-sec-inline";
+  const CALC_PAGE_VERSION = "2026-06-08-orderbook-dblclick2";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -1793,8 +1793,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       if (!Number.isFinite(price) || price <= 0) return `<td class="${cls}"></td>`;
       const isPrice = cls === "ob-bid-p" || cls === "ob-ask-p";
       const title = side === "sell"
-        ? "Клик — лимитная заявка на продажу"
-        : "Клик — лимитная заявка на покупку";
+        ? "Двойной клик — лимитная заявка на продажу"
+        : "Двойной клик — лимитная заявка на покупку";
       const pickCls = isPrice ? " live-ob-pick live-ob-price-pick" : "";
       return `<td class="${cls}${pickCls}" data-side="${side}" data-price="${price}" data-lots="${lots ?? ""}" title="${isPrice ? title : ""}">${text}</td>`;
     };
@@ -2351,14 +2351,16 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!Number.isFinite(price) || price <= 0) return;
     const panel = $("live-manual-order-panel");
     if (panel) panel.open = true;
+    syncLiveManualOrderUi();
     const manualSel = $("live-manual-sec");
     if (manualSel && obKey) manualSel.value = obKey;
     $("live-manual-direction").value = side === "sell" ? "sell" : "buy";
     $("live-manual-order-type").value = "limit";
+    const priceWrap = $("live-manual-price-wrap");
+    if (priceWrap) priceWrap.hidden = false;
     $("live-manual-price").value = String(price);
     const lotN = Math.floor(+(lots || 0));
     if (lotN > 0) $("live-manual-qty").value = String(lotN);
-    syncLiveManualOrderUi();
     saveConfig();
     const sideLabel = side === "sell" ? "продажа" : "покупка";
     if (statusEl) {
@@ -2369,7 +2371,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  function onLiveOrderBookPriceClick(ev) {
+  function onLiveOrderBookPriceDblClick(ev) {
     const cell = ev.target?.closest?.(".live-ob-price-pick");
     if (!cell || !isLiveMode()) return;
     ev.preventDefault();
@@ -5158,7 +5160,7 @@ ${totalBlock}
     if ($("live-positions-panel")?.open) startLivePositionsPoll();
     else stopLivePositionsPoll();
   });
-  $("live-order-book-table")?.addEventListener("click", onLiveOrderBookPriceClick);
+  $("live-order-book-table")?.addEventListener("dblclick", onLiveOrderBookPriceDblClick);
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
