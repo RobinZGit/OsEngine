@@ -1374,12 +1374,46 @@
     return idx >= 0 ? perSecItem.rows[idx].eq : 0;
   }
 
+  /**
+   * Оптимизация stopper (вариант 1): equity одного инструмента на каждую свечу times[].
+   * Два указателя по отсортированным rows/time — O(rows + times), без повторного линейного поиска
+   * equityAtTime на каждой итерации цикла stopper × каждый инструмент.
+   */
+  function buildPerSecEquitySeries(rows, times) {
+    if (!times?.length) return [];
+    if (!rows?.length) return times.map(() => 0);
+    const out = new Array(times.length);
+    let rowIdx = -1;
+    let lastEq = 0;
+    for (let t = 0; t < times.length; t++) {
+      const time = times[t];
+      while (rowIdx + 1 < rows.length && rows[rowIdx + 1].time <= time) {
+        rowIdx += 1;
+        lastEq = rows[rowIdx].eq;
+      }
+      out[t] = rowIdx >= 0 ? lastEq : 0;
+    }
+    return out;
+  }
+
+  /** Суммарная equity портфеля и ряды по инструментам — для быстрого сканирования stopper. */
+  function buildPortfolioEquitySeries(perSec, times) {
+    if (!perSec?.length || !times?.length) {
+      return { total: [], perInstrument: [] };
+    }
+    const perInstrument = perSec.map((p) => buildPerSecEquitySeries(p.rows, times));
+    const total = times.map((_, t) => {
+      let sum = 0;
+      for (let s = 0; s < perInstrument.length; s++) sum += perInstrument[s][t] || 0;
+      return sum;
+    });
+    return { total, perInstrument };
+  }
+
   function buildPortfolioEquityRows(perSec, times) {
     if (!perSec?.length || !times?.length) return [];
-    return times.map((time) => ({
-      time,
-      eq: perSec.reduce((sum, p) => sum + equityAtTime(p, time), 0)
-    }));
+    const { total } = buildPortfolioEquitySeries(perSec, times);
+    return times.map((time, i) => ({ time, eq: total[i] }));
   }
 
   function portfolioEquityAtr(history, index, length) {
@@ -1442,6 +1476,8 @@
       entryPrice: null,
       commission: triggerRow.commission || 0
     };
+    // Оптимизация stopper (вариант 2): indicatorCache с первого FINRESP-прохода —
+    // ряды SMA/Stoch/ATR/… уже в памяти, хвост после триггера не пересчитывает индикаторы с нуля.
     const tail = runOnCandles(
       candles,
       spec,
@@ -1470,6 +1506,8 @@
     let scanFrom = 0;
     const equityHistory = [];
     let stopperStep = 0;
+    // Предрасчёт equity по всем инструментам; после триггера пересобираем (rows меняются).
+    let portfolioEq = buildPortfolioEquitySeries(perSec, times);
 
     while (scanFrom < times.length) {
       let triggered = false;
@@ -1481,8 +1519,7 @@
         const time = times[t];
         stopperStep = Math.min(stopperTotal, stopperStep + 1);
         if (onProgress) onProgress(stopperStep, stopperTotal, time);
-        let totalEq = 0;
-        for (const p of perSec) totalEq += equityAtTime(p, time);
+        const totalEq = portfolioEq.total[t] ?? 0;
 
         if (referenceEquity == null) referenceEquity = totalEq;
         equityHistory.push({ equity: totalEq, time });
@@ -1506,7 +1543,10 @@
 
         const refAtTrigger = referenceEquity;
         for (let s = 0; s < perSec.length; s++) {
-          const runOptions = signalPacks?.[s] ? { signalCandles: signalPacks[s] } : undefined;
+          const runOptions = {
+            ...(signalPacks?.[s] ? { signalCandles: signalPacks[s] } : {}),
+            ...(perSec[s].indicatorCache ? { indicatorCache: perSec[s].indicatorCache } : {})
+          };
           flattenAndResimTail(perSec[s], packs[s], spec, time, endTime, params, volConfig, runOptions);
         }
         events.push({
@@ -1517,7 +1557,8 @@
           atr,
           triggerLevel
         });
-        referenceEquity = perSec.reduce((sum, p) => sum + equityAtTime(p, time), 0);
+        portfolioEq = buildPortfolioEquitySeries(perSec, times);
+        referenceEquity = portfolioEq.total[t] ?? totalEq;
         scanFrom = t + 1;
         triggered = true;
         break;
@@ -2420,8 +2461,11 @@
       }
       const unit = workUnits.find((w) => w.pi === pi);
       const signalCandles = signalPacks?.[pi] || candles;
+      // Кэш индикаторов на весь расчёт: FINRESP + хвосты stopper (см. flattenAndResimTail).
+      const indicatorCache = cfg ? new IndicatorCache(signalCandles) : null;
       const runOpts = {
         ...(signalPacks ? { signalCandles } : {}),
+        ...(indicatorCache ? { indicatorCache } : {}),
         shouldCancel: opts.shouldCancel,
         onProgress: unit
           ? (doneInInstrument, instrumentBars, candleTime) => {
@@ -2455,7 +2499,11 @@
           candles[range.b]?.time
         );
       }
-      perSec.push({ sec, ...r });
+      perSec.push({
+        sec,
+        ...r,
+        ...(indicatorCache ? { indicatorCache } : {})
+      });
       activePacks.push(candles);
       if (signalPacks) activeSignalPacks.push(signalCandles);
       if (shouldAbortRun(opts)) break;
@@ -2552,8 +2600,10 @@
       }
       const unit = workUnits.find((w) => w.pi === pi);
       const signalCandles = signalPacks?.[pi] || candles;
+      const indicatorCache = cfg ? new IndicatorCache(signalCandles) : null;
       const runOpts = {
         ...(signalPacks ? { signalCandles } : {}),
+        ...(indicatorCache ? { indicatorCache } : {}),
         yieldUi: true,
         shouldCancel: opts.shouldCancel,
         onProgress: unit
@@ -2585,7 +2635,11 @@
           { phase: "finresp", done: doneBars, total: totalBars, candleTime: candles[range.b]?.time, sec }
         );
       }
-      perSec.push({ sec, ...r });
+      perSec.push({
+        sec,
+        ...r,
+        ...(indicatorCache ? { indicatorCache } : {})
+      });
       activePacks.push(candles);
       if (signalPacks) activeSignalPacks.push(signalCandles);
       if (shouldAbortRun(opts)) break;
