@@ -304,7 +304,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <div class="live-trading-leverage"><b>Плечо</b><span id="live-leverage-value">—</span></div>
 </div>
-<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении.</p>
+<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении. При активной торговле — поток свежих свечей MOEX по выбранным бумагам и ТФ; индикаторы и заявки пересчитываются на каждом цикле.</p>
 <div class="live-trading-toolbar">
 <div class="live-trading-actions">
 <button type="button" class="live-trading-btn live-trading-btn-start" id="live-trading-toggle">Начать торговлю</button>
@@ -544,7 +544,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-live-active-ui";
+  const CALC_PAGE_VERSION = "2026-06-12-live-candle-stream";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -724,6 +724,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       orders: [],
       instrumentCache: new Map(),
       reconcileBusy: false,
+      candleRefreshBusy: false,
+      lastCandleRefreshAt: null,
+      lastCandleBarTime: null,
       lastError: "",
       portfolioValue: null,
       commissionPaid: null,
@@ -1425,7 +1428,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const status = $("live-trading-status");
     if (status) {
       if (state.live.lastError && isLive) status.textContent = `ошибка: ${state.live.lastError}`;
-      else status.textContent = state.live.active ? "торговля активна" : "остановлена";
+      else if (state.live.active) {
+        const bar = state.live.lastCandleBarTime
+          ? String(state.live.lastCandleBarTime).replace("T", " ").slice(0, 16)
+          : "—";
+        const busy = state.live.candleRefreshBusy ? " · загрузка свечей MOEX…" : "";
+        status.textContent = `торговля активна · свечи до ${bar}${busy}`;
+      } else status.textContent = "остановлена";
     }
     renderLivePortfolioStats();
     syncLeverageDisplay();
@@ -1641,14 +1650,111 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function liveReconcileTargets() {
-    if (state.lastResult?.perSec?.length) return state.lastResult.perSec;
-    if (!state.packs.length) return [];
-    const trial = calcResult();
-    if (trial?.perSec?.length) {
-      state.lastResult = trial;
-      return trial.perSec;
+    return state.lastResult?.perSec || [];
+  }
+
+  function liveCandlePollIntervalMs(tf) {
+    if (tf === "1") return 30000;
+    if (tf === "5") return 45000;
+    if (tf === "10" || tf === "15") return 60000;
+    if (tf === "60") return 120000;
+    return 300000;
+  }
+
+  function liveCandleStreamRange(instruments) {
+    const interval = $("calc-tf").value;
+    const n = Math.max(1, instruments?.length || 1);
+    const till = formatDay(todayDate());
+    $("calc-till").value = till;
+    const maxD = maxCalcDays(interval, n);
+    let from = $("calc-from").value;
+    const minFrom = formatDay(addDays(todayDate(), -(maxD - 1)));
+    if (!from || parseDay(from) < parseDay(minFrom)) {
+      from = minFrom;
+      $("calc-from").value = from;
     }
-    return [];
+    return { from, till, interval };
+  }
+
+  function pinLiveWindowToLatestBar() {
+    const pack = refPack();
+    if (!pack.length) return;
+    const max = pack.length - 1;
+    const maxBars = currentLimit().maxBars;
+    let b = max;
+    let a = Math.max(0, b - maxBars + 1);
+    const common = commonTimeRange(state.packs);
+    if (common) {
+      a = Math.max(a, findFirstIndexAtOrAfter(pack, common.start));
+      b = Math.min(b, findLastIndexAtOrBefore(pack, common.end));
+      if (b - a + 1 > maxBars) a = Math.max(a, b - maxBars + 1);
+    }
+    $("calc-start").value = a;
+    $("calc-end").value = b;
+    state.anchorStartTime = pack[a]?.time ?? state.anchorStartTime;
+    state.anchorEndTime = pack[b]?.time ?? state.anchorEndTime;
+    state.hasWindow = true;
+    $("calc-start-label").textContent = pack[a]?.time || "—";
+    $("calc-end-label").textContent = pack[b]?.time || "—";
+  }
+
+  async function refreshLiveCandleStream(options) {
+    const opts = options || {};
+    if (!isLiveMode() || !state.live.active) return false;
+    if (state.live.candleRefreshBusy || state.uiBusy) return false;
+    if (IS_FILE_PROTOCOL) {
+      state.live.lastError = "file:// — нет MOEX";
+      syncLiveTradingUi();
+      return false;
+    }
+    const instruments = selectedInstruments();
+    if (!instruments.length) return false;
+    state.live.candleRefreshBusy = true;
+    syncLiveTradingUi();
+    try {
+      const { from, till, interval } = liveCandleStreamRange(instruments);
+      const byKey = packsByInstrumentKey(state.packs);
+      const refreshed = await E.refreshLiveMoexPacks(
+        instruments,
+        from,
+        till,
+        interval,
+        byKey,
+        state.candleCache || null
+      );
+      state.packs = orderPacksForInstruments(instruments, refreshed.byKey);
+      state.failedInstruments = refreshed.failures;
+      state.lastLoadMeta = {
+        periodKey: loadMetaKey(from, till, interval),
+        keys: instruments.map(instrumentKey)
+      };
+      state.lastInstruments = instruments.map((i) => ({ sec: i.sec, market: i.market }));
+      if (!state.packs.length) {
+        throw new Error("MOEX не вернул свечи по выбранным инструментам.");
+      }
+      state.movedSlider = "end";
+      pinLiveWindowToLatestBar();
+      const result = await calcResultAsync(null, { silent: !!opts.silent });
+      if (!result?.perSec?.length) {
+        throw new Error("Нет сигналов логики на свежих свечах.");
+      }
+      state.lastResult = result;
+      const lastPack = refPack();
+      state.live.lastCandleRefreshAt = new Date().toISOString();
+      state.live.lastCandleBarTime = lastPack.at(-1)?.time || null;
+      state.live.lastError = "";
+      if (!opts.silent) applyResult(result, { redrawCharts: false });
+      syncLiveTradingUi();
+      return true;
+    } catch (err) {
+      state.live.lastError = err.message;
+      syncLiveTradingUi();
+      noteTechError(`live-candles: ${err.message}`);
+      return false;
+    } finally {
+      state.live.candleRefreshBusy = false;
+      syncLiveTradingUi();
+    }
   }
 
   function validateLiveTradingStart() {
@@ -1714,13 +1820,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function startLiveTradingPoll() {
     stopLiveTradingPoll();
-    state.live.pollTimer = setInterval(() => {
-      if (!isLiveMode()) return;
-      refreshLivePortfolioStats();
-      if (!state.live.active) return;
-      refreshLiveOrders();
-      liveTradingReconcile();
-    }, 5000);
+    const runTick = () => {
+      if (!isLiveMode() || !state.live.active) return;
+      if (state.live.candleRefreshBusy || state.live.reconcileBusy) return;
+      refreshLiveCandleStream({ silent: true })
+        .then((ok) => { if (ok) return liveTradingReconcile(); })
+        .catch((err) => {
+          state.live.lastError = err.message;
+          syncLiveTradingUi();
+          noteTechError(`live-tick: ${err.message}`);
+        });
+    };
+    const ms = liveCandlePollIntervalMs($("calc-tf").value);
+    state.live.pollTimer = setInterval(runTick, ms);
+    runTick();
   }
 
   async function connectTbankForLive() {
@@ -1775,6 +1888,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncLiveTradingUi();
     startLiveTradingPoll();
     try {
+      await refreshLiveCandleStream({ silent: false });
       await refreshLiveOrders();
       await liveTradingReconcile();
       syncLiveTradingUi();
@@ -2495,11 +2609,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
-  function runMultiInWorker(packs, spec, a, b, params, volConfig, sc, randomPriceShift) {
+  function runMultiInWorker(packs, spec, a, b, params, volConfig, sc, randomPriceShift, runOptions) {
+    const ro = runOptions || {};
     const worker = getCalcWorker();
     const progressOpts = {
       ...(randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : {}),
-      onProgress: (pct, text) => setCalcProgress(text, pct)
+      ...(ro.silent ? {} : { onProgress: (pct, text) => setCalcProgress(text, pct) })
     };
     if (!worker) {
       return E.runMultiAsync(packs, spec, a, b, params, volConfig, sc, progressOpts);
@@ -2509,7 +2624,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       const onMsg = (e) => {
         if (!e.data || e.data.id !== id) return;
         if (e.data.type === "progress") {
-          setCalcProgress(e.data.text, e.data.pct);
+          if (!ro.silent) setCalcProgress(e.data.text, e.data.pct);
           return;
         }
         worker.removeEventListener("message", onMsg);
@@ -2528,7 +2643,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     });
   }
 
-  async function calcResultAsync(optimCtx) {
+  async function calcResultAsync(optimCtx, runOptions) {
+    const ro = runOptions || {};
     if (!state.packs.length) return null;
     const [a, b] = normalizeSliders();
     const p = optimCtx?.params ?? params();
@@ -2536,18 +2652,24 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const indicators = optimCtx?.indicators ?? indicatorSelection();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
     if (!spec) return null;
-    setCalcProgress("Расчёт FINRESP (фоновый поток)…", 0);
-    await yieldToUi();
+    if (!ro.silent) {
+      setCalcProgress("Расчёт FINRESP (фоновый поток)…", 0);
+      await yieldToUi();
+    }
     let workerOut;
     try {
-      workerOut = await runMultiInWorker(state.packs, spec, a, b, p, volConfig(), sc, randomPriceShiftEnabled());
+      workerOut = await runMultiInWorker(
+        state.packs, spec, a, b, p, volConfig(), sc, randomPriceShiftEnabled(), ro
+      );
     } catch (err) {
       noteTechError(`worker-fallback: ${err.message}`);
-      setCalcProgress("Расчёт FINRESP (основной поток)…", 0);
-      await yieldToUi();
+      if (!ro.silent) {
+        setCalcProgress("Расчёт FINRESP (основной поток)…", 0);
+        await yieldToUi();
+      }
       workerOut = await E.runMultiAsync(state.packs, spec, a, b, p, volConfig(), sc, {
         ...finrespRunOptions(),
-        onProgress: (pct, text) => setCalcProgress(text, pct)
+        ...(ro.silent ? {} : { onProgress: (pct, text) => setCalcProgress(text, pct) })
       });
     }
     const { perSec, agg, preStopperAgg, stopper, skipped } = workerOut;

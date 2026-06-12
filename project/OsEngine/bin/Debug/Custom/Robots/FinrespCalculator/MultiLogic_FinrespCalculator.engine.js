@@ -1976,7 +1976,8 @@
     };
   }
 
-  async function loadInstrumentSec(sec, from, till, interval, market, cache) {
+  async function loadInstrumentSec(sec, from, till, interval, market, cache, options) {
+    const opts = options || {};
     const requestedSec = sec;
     try {
       let moexSec = sec;
@@ -1986,7 +1987,7 @@
           return { ok: false, error: "нет активного контракта MOEX для префикса", requestedSec };
         }
       }
-      if (cache) {
+      if (cache && !opts.forceMoex) {
         const cached = await cache.get(requestedSec, market, interval, from, till, moexSec);
         if (cached?.length >= 3) {
           return { ok: true, pack: cached, requestedSec, fromCache: true };
@@ -2001,6 +2002,38 @@
     } catch (err) {
       return { ok: false, error: err?.message || String(err), requestedSec };
     }
+  }
+
+  async function refreshLiveMoexPacks(instruments, from, till, interval, existingByKey, cache, onProgress) {
+    const byKey = new Map(existingByKey || []);
+    const failures = [];
+    const list = instruments || [];
+    let done = 0;
+    const queue = [...list];
+    const workers = Array.from(
+      { length: Math.max(1, Math.min(4, list.length > 8 ? 4 : 2)) },
+      async () => {
+        while (queue.length) {
+          const inst = queue.shift();
+          if (!inst) continue;
+          const sec = inst.sec;
+          const market = inst.market || "shares";
+          const r = await loadInstrumentSec(sec, from, till, interval, market, cache, { forceMoex: true });
+          done += 1;
+          if (onProgress) onProgress(done, list.length, sec, market, { fromCache: false });
+          if (r.ok) {
+            const key = `${market}:${String(sec || "").trim().toUpperCase()}`;
+            const prev = byKey.get(key) || [];
+            const merged = mergeCandleSeries(prev, r.pack);
+            byKey.set(key, merged.map((c) => ({ ...c, sec, market })));
+          } else {
+            failures.push({ sec: r.requestedSec || sec, market, error: r.error });
+          }
+        }
+      }
+    );
+    await Promise.all(workers);
+    return { byKey, failures };
   }
 
   async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress, cache) {
@@ -2375,6 +2408,9 @@
     loadMany,
     loadManyBatched,
     loadManyDetailed,
+    loadInstrumentSec,
+    refreshLiveMoexPacks,
+    mergeCandleSeries,
     listShareTickers,
     listFuturesPrefixes,
     resolveFuturesContract,
