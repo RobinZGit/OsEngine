@@ -929,7 +929,7 @@
       let sell = 0;
 
       if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
-        opts.onProgress(((i - from + 1) / barSpan) * 100);
+        opts.onProgress(((i - from + 1) / barSpan) * 100, candles[i]?.time);
       }
 
       let posStop = null;
@@ -1004,7 +1004,8 @@
       pos: last?.pos ?? 0,
       commission: commissionPaid,
       buys: rows.reduce((s, r) => s + (r.buy || 0), 0),
-      sells: rows.reduce((s, r) => s + (r.sell || 0), 0)
+      sells: rows.reduce((s, r) => s + (r.sell || 0), 0),
+      entryPrice
     };
   }
 
@@ -1038,7 +1039,7 @@
       const candle = candles[i];
       if (!candle) continue;
       if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
-        opts.onProgress(((i - from + 1) / barSpan) * 100);
+        opts.onProgress(((i - from + 1) / barSpan) * 100, candles[i]?.time);
       }
       const price = tradeCloses[i];
       const signalPrice = signalCloses[i];
@@ -1130,7 +1131,8 @@
       pos: last?.pos ?? 0,
       commission: commissionPaid,
       buys,
-      sells
+      sells,
+      entryPrice
     };
   }
 
@@ -1164,7 +1166,9 @@
   }
 
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
-    if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0 };
+    if (!candles?.length) {
+      return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0, entryPrice: null };
+    }
     if (spec.disabled) return simulateNoSignalRows(candles, startIdx, endIdx, options);
     const vol = normalizedVolConfig(volConfig);
     if (spec.type === "sma_spread") {
@@ -1177,6 +1181,67 @@
     }
     const parsed = applySlTpParams({ ...spec.parsed }, params || DEFAULT_PARAMS);
     return simulateLogicLine(candles, parsed, startIdx, endIdx, vol, options);
+  }
+
+  const YIELD_CHUNK_BARS = 72;
+
+  async function runOnCandlesYielding(candles, spec, startIdx, endIdx, params, volConfig, options) {
+    const opts = options || {};
+    const a = startIdx;
+    const b = endIdx;
+    const span = Math.max(1, b - a + 1);
+    if (!candles?.length || b < a) {
+      return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0, entryPrice: null };
+    }
+
+    let initial = { ...(opts.initial || {}) };
+    const allRows = [];
+    let buys = 0;
+    let sells = 0;
+    let commission = 0;
+    let first = true;
+
+    for (let ca = a; ca <= b; ca += YIELD_CHUNK_BARS) {
+      const cb = Math.min(b, ca + YIELD_CHUNK_BARS - 1);
+      const chunkOpts = {
+        ...opts,
+        initial,
+        skipWarmup: !first || opts.skipWarmup,
+        onProgress: null
+      };
+      const r = runOnCandles(candles, spec, ca, cb, params, volConfig, chunkOpts);
+      if (r.rows?.length) allRows.push(...r.rows);
+      buys += r.buys || 0;
+      sells += r.sells || 0;
+      commission = r.commission ?? commission;
+      const last = r.rows?.at(-1);
+      if (last) {
+        initial = {
+          cash: last.cash,
+          pos: last.pos,
+          commission: last.commission,
+          entryPrice: r.entryPrice ?? initial.entryPrice ?? null
+        };
+      }
+      const doneBars = cb - a + 1;
+      if (typeof opts.onProgress === "function") {
+        opts.onProgress((doneBars / span) * 100, candles[cb]?.time);
+      }
+      if (opts.yieldUi) await delay(0);
+      first = false;
+    }
+
+    const last = allRows.at(-1);
+    return {
+      rows: allRows,
+      finresp: last?.eq ?? 0,
+      cash: last?.cash ?? 0,
+      pos: last?.pos ?? 0,
+      commission,
+      buys,
+      sells,
+      entryPrice: initial.entryPrice ?? null
+    };
   }
 
   function findCandleIndexByTime(candles, time) {
@@ -1992,26 +2057,47 @@
     );
   }
 
+  function delay(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function formatProgressTime(time) {
+    if (!time) return "";
+    const s = String(time).trim();
+    if (s.length >= 16) return s.slice(0, 16);
+    return s;
+  }
+
+  function finrespProgressText(sec, candleTime) {
+    const t = formatProgressTime(candleTime);
+    return t ? `Расчёт FINRESP: ${sec} · ${t}` : `Расчёт FINRESP: ${sec}`;
+  }
+
   function emitRunProgress(options, pct, text) {
     if (typeof options?.onProgress === "function") {
       options.onProgress(Math.max(0, Math.min(100, pct)), text);
     }
   }
 
-  function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, options) {
-    const opts = options || {};
-    const signalPacks = opts.signalPacks;
+  async function emitRunProgressAsync(options, pct, text) {
+    emitRunProgress(options, pct, text);
+    if (options?.yieldUi) await delay(0);
+  }
+
+  function runMultiPlan(packs, startIdx, endIdx) {
     const emptyAgg = aggregateFinresp([]);
     const ref = longestPack(packs);
     if (!ref.length) {
       return {
-        perSec: [],
-        skipped: [],
-        agg: emptyAgg,
-        preStopperAgg: emptyAgg,
-        stopper: { events: [] },
-        a: 0,
-        b: 0
+        empty: true,
+        emptyAgg,
+        aRef: 0,
+        bRef: 0,
+        tStart: null,
+        tEnd: null,
+        times: [],
+        workUnits: [],
+        totalBars: 1
       };
     }
     const aRef = Math.max(0, Math.min(startIdx, ref.length - 1));
@@ -2023,7 +2109,6 @@
       const t = ref[i]?.time;
       if (t) times.push(t);
     }
-
     const workUnits = [];
     for (let pi = 0; pi < packs.length; pi++) {
       const candles = packs[pi];
@@ -2036,15 +2121,43 @@
         range
       });
     }
-    const totalBars = workUnits.reduce((sum, w) => sum + w.bars, 0) || 1;
+    return {
+      empty: false,
+      emptyAgg,
+      aRef,
+      bRef,
+      tStart,
+      tEnd,
+      times,
+      workUnits,
+      totalBars: workUnits.reduce((sum, w) => sum + w.bars, 0) || 1
+    };
+  }
+
+  function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, options) {
+    const opts = options || {};
+    const signalPacks = opts.signalPacks;
+    const plan = runMultiPlan(packs, startIdx, endIdx);
+    if (plan.empty) {
+      return {
+        perSec: [],
+        skipped: [],
+        agg: plan.emptyAgg,
+        preStopperAgg: plan.emptyAgg,
+        stopper: { events: [] },
+        a: 0,
+        b: 0
+      };
+    }
+    const { aRef, bRef, tStart, tEnd, times, workUnits, totalBars } = plan;
     let doneBars = 0;
-
-    emitRunProgress(opts, 0, "Расчёт FINRESP: старт");
-
     const perSec = [];
     const activePacks = [];
     const activeSignalPacks = [];
     const skipped = [];
+
+    emitRunProgress(opts, 0, "Расчёт FINRESP: старт");
+
     for (let pi = 0; pi < packs.length; pi++) {
       const candles = packs[pi];
       const sec = candles[0]?.sec || "?";
@@ -2058,9 +2171,13 @@
       const runOpts = {
         ...(signalPacks ? { signalCandles } : {}),
         onProgress: unit
-          ? (innerPct) => {
+          ? (innerPct, candleTime) => {
             const barFrac = (Math.max(0, Math.min(100, innerPct)) / 100) * unit.bars;
-            emitRunProgress(opts, ((doneBars + barFrac) / totalBars) * 92, `Расчёт FINRESP: ${unit.sec}`);
+            emitRunProgress(
+              opts,
+              ((doneBars + barFrac) / totalBars) * 100,
+              finrespProgressText(unit.sec, candleTime)
+            );
           }
           : undefined
       };
@@ -2071,7 +2188,7 @@
       }
       if (unit) {
         doneBars += unit.bars;
-        emitRunProgress(opts, (doneBars / totalBars) * 92, `Расчёт FINRESP: ${sec}`);
+        emitRunProgress(opts, (doneBars / totalBars) * 100, finrespProgressText(sec, candles[range.b]?.time));
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);
@@ -2082,7 +2199,7 @@
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
-      emitRunProgress(opts, 94, "Расчёт FINRESP: stopper портфеля");
+      emitRunProgress(opts, 99, "Расчёт FINRESP: stopper портфеля");
       const applied = applyPortfolioStopper(
         perSec,
         activePacks,
@@ -2097,6 +2214,101 @@
       stopper = applied.stopper;
     }
     emitRunProgress(opts, 100, "Расчёт FINRESP: готово");
+    const agg = aggregateFinresp(perSec);
+    return {
+      perSec,
+      skipped,
+      agg,
+      preStopperAgg,
+      stopper,
+      a: aRef,
+      b: bRef,
+      tStart,
+      tEnd
+    };
+  }
+
+  async function runMultiAsync(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, options) {
+    const opts = { ...(options || {}), yieldUi: true };
+    const signalPacks = opts.signalPacks;
+    const plan = runMultiPlan(packs, startIdx, endIdx);
+    if (plan.empty) {
+      return {
+        perSec: [],
+        skipped: [],
+        agg: plan.emptyAgg,
+        preStopperAgg: plan.emptyAgg,
+        stopper: { events: [] },
+        a: 0,
+        b: 0
+      };
+    }
+    const { aRef, bRef, tStart, tEnd, times, workUnits, totalBars } = plan;
+    let doneBars = 0;
+    const perSec = [];
+    const activePacks = [];
+    const activeSignalPacks = [];
+    const skipped = [];
+
+    await emitRunProgressAsync(opts, 0, "Расчёт FINRESP: старт");
+
+    for (let pi = 0; pi < packs.length; pi++) {
+      const candles = packs[pi];
+      const sec = candles[0]?.sec || "?";
+      const range = indicesForTimeRange(candles, tStart, tEnd);
+      if (!range) {
+        skipped.push({ sec, error: "нет свечей в выбранном окне" });
+        continue;
+      }
+      const unit = workUnits.find((w) => w.pi === pi);
+      const signalCandles = signalPacks?.[pi] || candles;
+      const runOpts = {
+        ...(signalPacks ? { signalCandles } : {}),
+        yieldUi: true,
+        onProgress: unit
+          ? (innerPct, candleTime) => {
+            const barFrac = (Math.max(0, Math.min(100, innerPct)) / 100) * unit.bars;
+            emitRunProgress(
+              opts,
+              ((doneBars + barFrac) / totalBars) * 100,
+              finrespProgressText(unit.sec, candleTime)
+            );
+          }
+          : undefined
+      };
+      const r = await runOnCandlesYielding(candles, spec, range.a, range.b, params, volConfig, runOpts);
+      if (!r.rows?.length) {
+        skipped.push({ sec, error: "нет данных для расчёта в выбранном окне" });
+        continue;
+      }
+      if (unit) {
+        doneBars += unit.bars;
+        await emitRunProgressAsync(opts, (doneBars / totalBars) * 100, finrespProgressText(sec, candles[range.b]?.time));
+      }
+      perSec.push({ sec, ...r });
+      activePacks.push(candles);
+      if (signalPacks) activeSignalPacks.push(signalCandles);
+    }
+
+    const preStopperAgg = aggregateFinresp(perSec);
+    let stopper = { events: [] };
+    const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
+    if (cfg && perSec.length) {
+      await emitRunProgressAsync(opts, 99, "Расчёт FINRESP: stopper портфеля");
+      const applied = applyPortfolioStopper(
+        perSec,
+        activePacks,
+        spec,
+        times,
+        tEnd,
+        params,
+        volConfig,
+        cfg,
+        signalPacks ? activeSignalPacks : null
+      );
+      stopper = applied.stopper;
+    }
+    await emitRunProgressAsync(opts, 100, "Расчёт FINRESP: готово");
     const agg = aggregateFinresp(perSec);
     return {
       perSec,
@@ -2128,6 +2340,7 @@
     resolveLogicSpec,
     runOnCandles,
     runMulti,
+    runMultiAsync,
     buildPortfolioEquityRows,
     loadMany,
     loadManyBatched,
