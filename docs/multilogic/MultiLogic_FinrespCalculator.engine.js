@@ -18,6 +18,26 @@
     maxPositions: 40,
     commissionPct: 0
   };
+  const DEFAULT_COMMISSION = { type: "Percent", value: 0.04 };
+
+  function normalizeCommission(cfg) {
+    const c = cfg || DEFAULT_COMMISSION;
+    const type = c.type === "OneLotFix" || c.type === "Percent" ? c.type : "None";
+    const value = Math.max(0, Number(c.value) || 0);
+    if (type === "None" || value <= 0) return { type: "None", value: 0 };
+    return { type, value };
+  }
+
+  function tradeCommission(volume, price, commissionCfg) {
+    const cfg = normalizeCommission(commissionCfg);
+    const vol = Math.abs(Number(volume) || 0);
+    const px = Math.max(0, Number(price) || 0);
+    if (vol <= 0 || px <= 0) return 0;
+    if (cfg.type === "Percent") return vol * px * (cfg.value / 100);
+    if (cfg.type === "OneLotFix") return vol * cfg.value;
+    return 0;
+  }
+
   const INDICATOR_OPTIONS = Object.freeze([
     { key: "sma", label: "SMA" },
     { key: "atr", label: "ATR" },
@@ -771,6 +791,9 @@
   }
 
   function commissionCost(price, volume, volConfig) {
+    if (volConfig?.commission) {
+      return tradeCommission(volume, price, volConfig.commission);
+    }
     const pct = Math.max(0, Number(volConfig?.commissionPct) || 0);
     if (!pct || !price || !volume) return 0;
     return Math.abs(price * volume) * pct / 100;
@@ -861,6 +884,7 @@
     let pos = initial.pos || 0;
     let cash = initial.cash || 0;
     let entryPrice = initial.entryPrice ?? null;
+    let commissionPaid = initial.commission || 0;
     const rows = [];
     const w = Math.max(warmupBars(), 2);
     const from = opts.skipWarmup ? Math.max(startIdx, 0) : Math.max(startIdx, w);
@@ -870,7 +894,9 @@
       if (pos === 0) return 0;
       const vol = Math.abs(pos);
       cash += pos * price;
-      cash -= commissionCost(price, vol, volConfig);
+      const comm = commissionCost(price, vol, volConfig);
+      cash -= comm;
+      commissionPaid += comm;
       pos = 0;
       entryPrice = null;
       return vol;
@@ -924,7 +950,9 @@
         if (lot > 0 && lot <= cap) {
           pos = longOpHit ? lot : -lot;
           cash -= pos * price;
-          cash -= commissionCost(price, lot, volConfig);
+          const comm = commissionCost(price, lot, volConfig);
+          cash -= comm;
+          commissionPaid += comm;
           entryPrice = price;
           buy = lot;
         }
@@ -938,6 +966,7 @@
         posStop,
         pos,
         cash,
+        commission: commissionPaid,
         eq: cash + pos * price
       });
     }
@@ -948,6 +977,7 @@
       finresp: last?.eq ?? 0,
       cash: last?.cash ?? 0,
       pos: last?.pos ?? 0,
+      commission: commissionPaid,
       buys: rows.reduce((s, r) => s + (r.buy || 0), 0),
       sells: rows.reduce((s, r) => s + (r.sell || 0), 0)
     };
@@ -967,6 +997,7 @@
     let cash = initial.cash || 0;
     let pos = initial.pos || 0;
     let entryPrice = initial.entryPrice ?? null;
+    let commissionPaid = initial.commission || 0;
     let buys = 0;
     let sells = 0;
     const rows = [];
@@ -1007,7 +1038,9 @@
           }
           if (hit) {
             cash += pos * price;
-            cash -= commissionCost(price, Math.abs(pos), volConfig);
+            const comm = commissionCost(price, Math.abs(pos), volConfig);
+            cash -= comm;
+            commissionPaid += comm;
             sells += Math.abs(pos);
             pos = 0;
             entryPrice = null;
@@ -1029,7 +1062,9 @@
         if (pos + buy - sell > cap) buy = Math.max(0, cap - pos + sell);
         if (pos + buy - sell < -cap) sell = Math.max(0, pos + buy + cap);
         cash += price * (sell - buy);
-        cash -= commissionCost(price, buy + sell, volConfig);
+        const comm = commissionCost(price, buy + sell, volConfig);
+        cash -= comm;
+        commissionPaid += comm;
         pos += buy - sell;
         buys += buy;
         sells += sell;
@@ -1050,11 +1085,20 @@
         posStop,
         cash,
         pos,
+        commission: commissionPaid,
         eq: cash + pos * (price || 0)
       });
     }
     const last = rows.at(-1);
-    return { rows, finresp: last?.eq ?? 0, cash: last?.cash ?? 0, pos: last?.pos ?? 0, buys, sells };
+    return {
+      rows,
+      finresp: last?.eq ?? 0,
+      cash: last?.cash ?? 0,
+      pos: last?.pos ?? 0,
+      commission: commissionPaid,
+      buys,
+      sells
+    };
   }
 
   function applySlTpParams(parsed, params) {
@@ -1176,6 +1220,7 @@
     perSecItem.finresp = last?.eq ?? 0;
     perSecItem.cash = last?.cash ?? 0;
     perSecItem.pos = last?.pos ?? 0;
+    perSecItem.commission = last?.commission ?? 0;
     perSecItem.buys = perSecItem.rows.reduce((s, r) => s + (r.buy || 0), 0);
     perSecItem.sells = perSecItem.rows.reduce((s, r) => s + (r.sell || 0), 0);
   }
@@ -1873,17 +1918,18 @@
   }
 
   function aggregateFinresp(perSecResults) {
-    let finresp = 0, cash = 0, pos = 0, buys = 0, sells = 0;
+    let finresp = 0, cash = 0, pos = 0, commission = 0, buys = 0, sells = 0;
     const bySec = {};
     for (const r of perSecResults) {
       finresp += r.finresp;
       cash += r.cash;
       pos += r.pos;
+      commission += r.commission || 0;
       buys += r.buys;
       sells += r.sells;
       bySec[r.sec] = r.finresp;
     }
-    return { finresp, cash, pos, buys, sells, bySec };
+    return { finresp, cash, pos, commission, buys, sells, bySec };
   }
 
   function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig) {
@@ -1954,6 +2000,9 @@
     DEFAULT_PARAMS,
     DEFAULT_STOPPER,
     DEFAULT_VOLUME,
+    DEFAULT_COMMISSION,
+    normalizeCommission,
+    tradeCommission,
     INDICATOR_OPTIONS,
     DEFAULT_LOGIC_LINES,
     BUILTIN_META,
