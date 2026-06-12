@@ -345,6 +345,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field calc-field-wide"><label for="tbank-token">Токен T-Bank Invest</label><textarea id="tbank-token" autocomplete="off" spellcheck="false" placeholder="Вставьте токен, затем задайте пароль и нажмите «Зашифровать и сохранить»"></textarea></div>
 <div class="calc-field"><label for="tbank-passphrase">Пароль локального шифрования</label><input id="tbank-passphrase" type="password" autocomplete="new-password" placeholder="Не сохраняется"></div>
 <div class="calc-field"><label for="tbank-account">Счёт</label><select id="tbank-account"><option value="">Сначала загрузите счета</option></select></div>
+<div class="calc-field"><label for="tbank-api-host">API хост</label><select id="tbank-api-host">
+<option value="tinkoff" selected>invest-public-api.tinkoff.ru</option>
+<option value="tbank">invest-public-api.tbank.ru</option>
+</select></div>
 </div>
 <div class="real-account-actions">
 <button class="calc-btn calc-btn-secondary" type="button" id="tbank-save-token">Зашифровать и сохранить</button>
@@ -442,6 +446,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `tbankAccounts=${calcState.tbank?.accounts?.length ?? 0}`,
         `tbankAccountSelected=${calcState.tbank?.selectedAccountId ? "yes" : "no"}`,
         `tbankDepositLoaded=${!!calcState.tbank?.depositLoaded}`,
+        `tbankApiHost=${$("tbank-api-host")?.value || "—"}`,
         `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
         `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
       );
@@ -577,9 +582,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const DATE_MIN = "2020-01-01";
   const DEFAULT_RANGE_DAYS = 30;
   const DEFAULT_END_LAG_DAYS = 2;
-  const TBANK_REST_BASE = "https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.";
+  const TBANK_REST_BASES = {
+    tinkoff: "https://invest-public-api.tinkoff.ru/rest/tinkoff.public.invest.api.contract.v1.",
+    tbank: "https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1."
+  };
   const TBANK_TOKEN_STORE_KEY = "multilogic.finresp.tbank.token.v1";
   const TBANK_ACCOUNT_STORE_KEY = "multilogic.finresp.tbank.account.v1";
+  const TBANK_HOST_STORE_KEY = "multilogic.finresp.tbank.host.v1";
   const TBANK_CRYPTO_ITERATIONS = 210000;
   const MOEX_MINUTES_PER_SESSION = 530;
   const MIN_WARMUP_BARS = 220;
@@ -971,27 +980,65 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncTbankSettingsState();
   }
 
+  function selectedTbankHostId() {
+    const id = $("tbank-api-host")?.value || safeStorageGet(TBANK_HOST_STORE_KEY) || "tinkoff";
+    return TBANK_REST_BASES[id] ? id : "tinkoff";
+  }
+
+  function setTbankHostId(id) {
+    const safeId = TBANK_REST_BASES[id] ? id : "tinkoff";
+    if ($("tbank-api-host")) $("tbank-api-host").value = safeId;
+    safeStorageSet(TBANK_HOST_STORE_KEY, safeId);
+    return safeId;
+  }
+
+  function tbankFetchErrorMessage(err, hostId) {
+    const raw = err?.message || String(err || "ошибка сети");
+    if (err instanceof TypeError) {
+      return `Не удалось подключиться к ${hostId}. Это обычно TLS/сертификат, сеть, VPN/провайдер или блокировка браузера. Попробуйте другой API хост ниже и нажмите «Загрузить счета» ещё раз.`;
+    }
+    return raw;
+  }
+
   async function tbankRequest(serviceMethod, body) {
     if (!state.tbank.token) throw new Error("Токен не расшифрован.");
-    const res = await fetch(`${TBANK_REST_BASE}${serviceMethod}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${state.tbank.token}`
-      },
-      body: JSON.stringify(body || {})
-    });
-    const text = await res.text();
-    let data = {};
-    if (text) {
-      try { data = JSON.parse(text); }
-      catch (_) { data = { raw: text }; }
+    const firstHost = selectedTbankHostId();
+    const hostIds = [firstHost, ...Object.keys(TBANK_REST_BASES).filter((id) => id !== firstHost)];
+    let lastNetworkError = null;
+    for (const hostId of hostIds) {
+      try {
+        const res = await fetch(`${TBANK_REST_BASES[hostId]}${serviceMethod}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${state.tbank.token}`
+          },
+          body: JSON.stringify(body || {})
+        });
+        const text = await res.text();
+        let data = {};
+        if (text) {
+          try { data = JSON.parse(text); }
+          catch (_) { data = { raw: text }; }
+        }
+        if (!res.ok) {
+          const msg = data.message || data.error || data.raw || `${res.status} ${res.statusText}`;
+          throw new Error(msg);
+        }
+        if (hostId !== firstHost) {
+          setTbankHostId(hostId);
+          setTbankStatus(`Подключение выполнено через резервный API хост: ${hostId}.`);
+        }
+        return data;
+      } catch (err) {
+        if (err instanceof TypeError) {
+          lastNetworkError = new Error(tbankFetchErrorMessage(err, hostId));
+          continue;
+        }
+        throw err;
+      }
     }
-    if (!res.ok) {
-      const msg = data.message || data.error || data.raw || `${res.status} ${res.statusText}`;
-      throw new Error(msg);
-    }
-    return data;
+    throw lastNetworkError || new Error("Не удалось подключиться к API T-Bank.");
   }
 
   async function saveTbankToken() {
@@ -1054,6 +1101,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       if (!state.tbank.accounts.length) throw new Error("Открытые счета не найдены.");
       fillTbankAccounts();
       setTbankStatus(`Счета загружены: ${state.tbank.accounts.length}. Выберите счёт и загрузите депозит.`);
+      if (state.accountMode === "tbank" && state.tbank.selectedAccountId) await loadTbankDeposit();
     } catch (err) {
       setTbankStatus(`Ошибка загрузки счетов: ${err.message}`, true);
       noteTechError(`tbank-load-accounts: ${err.message}`);
@@ -1089,6 +1137,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function initAccountMode() {
     $("account-mode").value = "paper";
     state.accountMode = "paper";
+    setTbankHostId(safeStorageGet(TBANK_HOST_STORE_KEY) || "tinkoff");
     state.tbank.selectedAccountId = safeStorageGet(TBANK_ACCOUNT_STORE_KEY);
     fillTbankAccounts();
     syncAccountModeUi();
@@ -2749,6 +2798,16 @@ ${totalBlock}
   $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
   $("account-mode").addEventListener("change", () => {
     syncAccountModeUi();
+    if (state.accountMode === "tbank" && state.tbank.token) {
+      if (!state.tbank.accounts.length) {
+        loadTbankAccounts();
+        return;
+      }
+      if (state.tbank.selectedAccountId && !state.tbank.depositLoaded) {
+        loadTbankDeposit();
+        return;
+      }
+    }
     if (state.packs.length && (state.accountMode !== "tbank" || state.tbank.depositLoaded)) render();
   });
   $("tbank-save-token").addEventListener("click", () => saveTbankToken());
@@ -2756,11 +2815,18 @@ ${totalBlock}
   $("tbank-load-accounts").addEventListener("click", () => loadTbankAccounts());
   $("tbank-load-deposit").addEventListener("click", () => loadTbankDeposit());
   $("tbank-forget-token").addEventListener("click", () => forgetTbankToken());
+  $("tbank-api-host").addEventListener("change", () => {
+    setTbankHostId($("tbank-api-host").value);
+    state.tbank.depositLoaded = false;
+    setTbankStatus("API хост изменён. Нажмите «Загрузить счета» или «Взять депозит со счёта» ещё раз.");
+    syncTbankSettingsState();
+  });
   $("tbank-account").addEventListener("change", () => {
     state.tbank.selectedAccountId = $("tbank-account").value;
     state.tbank.depositLoaded = false;
     if (state.tbank.selectedAccountId) safeStorageSet(TBANK_ACCOUNT_STORE_KEY, state.tbank.selectedAccountId);
     syncAccountModeUi();
+    if (state.accountMode === "tbank" && state.tbank.token && state.tbank.selectedAccountId) loadTbankDeposit();
   });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
