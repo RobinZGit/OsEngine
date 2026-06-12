@@ -460,7 +460,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-shift-indicators";
+  const CALC_PAGE_VERSION = "2026-06-12-h1-period";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -696,8 +696,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     "5": { label: "5 мин", maxDays: 7, maxBars: 900 },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
     "15": { label: "15 мин", maxDays: 14, maxBars: 1200 },
-    "60": { label: "1 час", maxDays: 93, maxBars: 1500 },
-    "24": { label: "1 день", maxDays: 3650, maxBars: 1500 }
+    "60": { label: "1 час", maxDays: 99999, maxBars: 999999 },
+    "24": { label: "1 день", maxDays: 99999, maxBars: 999999 }
   };
   const fmt = (v, d = 2) => Number.isFinite(v) ? v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
   const fmtPct = (v) => Number.isFinite(v) ? `${v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %` : "—";
@@ -1092,7 +1092,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
   }
 
+  function isUnlimitedPeriodTf(tf) {
+    return tf === "60" || tf === "24";
+  }
+
+  function calendarSpanDays() {
+    const { min, max } = dateBounds();
+    return Math.max(1, Math.round((max - min) / 86400000));
+  }
+
   function maxCalcDays(tf, instrumentCount) {
+    if (isUnlimitedPeriodTf(tf)) return calendarSpanDays();
     const lim = TF_LIMITS[tf] || TF_LIMITS["60"];
     const n = Math.max(1, instrumentCount || 1);
     const bpd = barsPerTradingDay(tf);
@@ -1177,6 +1187,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!n) {
       $("calc-date-hint").textContent =
         `Календарь: ${DATE_MIN} — сегодня · по умолчанию ${DEFAULT_RANGE_DAYS} дн., конец −${DEFAULT_END_LAG_DAYS} дн. · сужение — при выборе бумаг и ТФ`;
+      return;
+    }
+    if (isUnlimitedPeriodTf(tf)) {
+      $("calc-date-hint").textContent =
+        `Календарь: ${DATE_MIN} — сегодня · для ${lim.label} период не ограничивается (${n} инстр.)`;
       return;
     }
     const maxD = maxCalcDays(tf, n);

@@ -100,7 +100,7 @@ th{background:#f8fafc;width:28%;}
 <h2 id="period">4. Период, логика и кнопки расчёта</h2>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
-<tr><td><strong>Таймфрейм</strong> (<code>calc-tf</code>)</td><td>1, 5, 10, 15, 60 мин, 1 день. 5 и 15 мин собираются из минутных свечей MOEX (агрегация в движке); для них период короче (~7–14 дн.)</td></tr>
+<tr><td><strong>Таймфрейм</strong> (<code>calc-tf</code>)</td><td>1, 5, 10, 15, 60 мин, 1 день. 5 и 15 мин — из минутных свечей (~7–14 дн. макс.). <strong>1 час и 1 день</strong> — любой период в календаре (<code>2020-01-01</code> — сегодня), без автосужения</td></tr>
 <tr><td><strong>Месяц целиком</strong> (<code>calc-month</code>)</td><td>Быстрый выбор календарного месяца — подставляет «Начало» и «Конец»</td></tr>
 <tr><td><strong>Начало</strong> / <strong>Конец</strong></td><td>Даты периода загрузки и расчёта. При смене ТФ или числа инструментов период может автоматически сужаться</td></tr>
 <tr><td><strong>Логика</strong> (<code>calc-logic</code>)</td><td>L1…L5 и встроенные варианты (выше/ниже SMA и т.д.)</td></tr>
@@ -249,7 +249,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>Содержит: версию страницы (<code>pageVersion</code>), режим кошелька, ТФ, период, выбор инструментов, состояние кэша, ошибки MOEX/T-Bank. Обновляется при старте, выборе бумаг и «Рассчитать».</p>
 
-<p class="note">Версия справки: 2026-06-12 (синхронизирована с формой <code>2026-06-12-shift-indicators</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
+<p class="note">Версия справки: 2026-06-12 (синхронизирована с формой <code>2026-06-12-h1-period</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
 
 <div class="btn-row">
 <a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Вернуться в калькулятор</a>
