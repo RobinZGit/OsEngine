@@ -555,7 +555,7 @@ namespace OsEngine.Robots.Custom
         private const string LogicLineFormatHint =
             "Формат v2: Disabled, Strict(@Strict|1…5), Regime(…) — префиксы; затем Op(…) Cl(…); SL[…] TP[…] Note(…).\n"
             + "Op(Long(Ind(параметры)(условие) AND …) [Short(…)] [общие Ind(…)(…) до Long/Short]) Cl(Long(…) [Short(…)] OnFlip(Close|Flip|Open)).\n"
-            + "Параметры управления: @Strict, @LR, @SL/@TP (×ATR на позицию; 0 — выкл.). OnFlip в Cl/Op приоритетнее Regime(…).\n"
+            + "Параметры управления: @Strict, @LR, @SL/@TP (×ATR на позицию; 0 — выкл.), @OBT (стакан, только live). OnFlip в Cl/Op приоритетнее Regime(…).\n"
             + "Long приоритетнее Short, если оба истинны. Пример:\n"
             + "  Strict(@Strict) Regime(LinReg;L=@LR;Dev=2;SlopeLb=3;Entry=MatchSide) "
             + "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp))) "
@@ -18968,6 +18968,9 @@ namespace OsEngine.Robots.Custom
         /// <summary>Кратность ATR для TP[@TP] (0 — выкл.).</summary>
         public const string TakeProfitAtrParamToken = "@TP";
 
+        /// <summary>Фильтр входа по стакану (live T-Bank): Order Book Trend. В строке логики; в FINRESP не применяется.</summary>
+        public const string OrderBookTrendParamToken = "@OBT";
+
         public static decimal DefaultStopLossAtrMult { get; set; }
 
         public static decimal DefaultTakeProfitAtrMult { get; set; }
@@ -18977,6 +18980,13 @@ namespace OsEngine.Robots.Custom
         {
             return !string.IsNullOrWhiteSpace(raw)
                 && raw.Trim().Equals(StrictnessParamToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>true — в строке логики есть маркер @OBT (подтверждение по стакану в live).</summary>
+        public static bool UsesOrderBookTrendMarker(string raw)
+        {
+            return !string.IsNullOrWhiteSpace(raw)
+                && System.Text.RegularExpressions.Regex.IsMatch(raw, @"\B@OBT\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
 
         /// <summary>Строгость 1…5: @Strict → параметр робота, иначе явное число.</summary>
@@ -19230,6 +19240,11 @@ namespace OsEngine.Robots.Custom
             work = ExtractRepeatedTag(work, null, new[] { "Note", "Коммент", "Cm" }, value => body.Comment = value);
             work = ExtractBracketTag(work, "SL", value => body.StopLoss = value);
             work = ExtractBracketTag(work, "TP", value => body.TakeProfit = value);
+            work = System.Text.RegularExpressions.Regex.Replace(
+                work,
+                @"@OBT\s*(\([^)]*\))?\s*",
+                "",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
             return work.Trim();
         }
 

@@ -217,6 +217,9 @@
     { id: "sma_above", name: "Выше SMA — объём |Close−SMA|", type: "sma_spread", smaLen: 3, side: "above" }
   ];
 
+  const ORDER_BOOK_TREND_TOKEN = "@OBT";
+  const DEFAULT_OB_IMBALANCE = 0.12;
+
   function substituteParams(line, params) {
     const p = { ...DEFAULT_PARAMS, ...params };
     return String(line || "")
@@ -226,12 +229,75 @@
       .replace(/@TP/g, String(p.TP));
   }
 
+  function logicUsesObTrend(line) {
+    return /\B@OBT\b/i.test(String(line || ""));
+  }
+
+  /** trend | anti | notrend — по Regime/маркерам в строке логики. */
+  function detectObTrendMode(line, logicKey) {
+    const l = String(line || "");
+    if (/@OBT\s*\(\s*anti\s*\)/i.test(l) || /Entry=FlatOnly/i.test(l)) return "anti";
+    if (/@OBT\s*\(\s*flat\s*\)/i.test(l) || String(logicKey || "") === "L4" || /боковик/i.test(l)) return "notrend";
+    return "trend";
+  }
+
+  function sumOrderBookLevels(ob, depth) {
+    const d = Math.max(1, Math.min(+(depth || 0) || 5, 20));
+    let bidVol = 0;
+    let askVol = 0;
+    for (const b of (ob?.bids || []).slice(0, d)) bidVol += Math.max(0, +(b?.quantity || 0));
+    for (const a of (ob?.asks || []).slice(0, d)) askVol += Math.max(0, +(a?.quantity || 0));
+    return { bidVol, askVol, total: bidVol + askVol };
+  }
+
+  function evaluateOrderBookTrend(ob, tradeSide, mode, minImb) {
+    const thr = Number.isFinite(minImb) ? minImb : DEFAULT_OB_IMBALANCE;
+    const { bidVol, askVol, total } = sumOrderBookLevels(ob, 5);
+    if (total < 1) {
+      return { ok: false, imb: 0, mode, bidVol, askVol, reason: "пустой стакан" };
+    }
+    const imb = (bidVol - askVol) / total;
+    const buy = tradeSide === "buy";
+    if (mode === "anti") {
+      const ok = buy ? imb <= -thr : imb >= thr;
+      return {
+        ok,
+        imb,
+        mode,
+        bidVol,
+        askVol,
+        reason: ok ? "анти-тренд по стакану" : `imb=${imb.toFixed(3)} (нужно ${buy ? "≤" : "≥"}${buy ? -thr : thr})`
+      };
+    }
+    if (mode === "notrend") {
+      const ok = Math.abs(imb) < thr;
+      return {
+        ok,
+        imb,
+        mode,
+        bidVol,
+        askVol,
+        reason: ok ? "боковик по стакану" : `|imb|=${Math.abs(imb).toFixed(3)} (нужно <${thr})`
+      };
+    }
+    const ok = buy ? imb >= thr : imb <= -thr;
+    return {
+      ok,
+      imb,
+      mode,
+      bidVol,
+      askVol,
+      reason: ok ? "тренд по стакану" : `imb=${imb.toFixed(3)} (нужно ${buy ? "≥" : "≤"}${buy ? thr : -thr})`
+    };
+  }
+
   function stripDecor(line) {
     return String(line || "")
       .replace(/Strict\([^)]*\)\s*/gi, "")
       .replace(/Regime\([^)]*\)\s*/gi, "")
       .replace(/OnFlip\([^)]*\)/gi, "")
       .replace(/Note\([^)]*\)/gi, "")
+      .replace(/@OBT\s*(\([^)]*\))?\s*/gi, "")
       .trim();
   }
 
@@ -2469,6 +2535,12 @@
     DEFAULT_LOGIC_LINES,
     BUILTIN_META,
     calcTradeVolume,
+    ORDER_BOOK_TREND_TOKEN,
+    DEFAULT_OB_IMBALANCE,
+    logicUsesObTrend,
+    detectObTrendMode,
+    sumOrderBookLevels,
+    evaluateOrderBookTrend,
     substituteParams,
     parseLogicLine,
     normalizeIndicatorSelection,

@@ -179,7 +179,16 @@ th{background:#f8fafc;width:28%;}
 <tr><td><strong>Рандомный сдвиг цен (±0,1%)</strong></td><td>По умолчанию выкл. При вкл.: OHLC для <em>индикаторов и сигналов Op/Cl</em> случайно сдвигаются в пределах 0,1%. FINRESP, комиссии и цены сделок — всегда по реальным ценам MOEX. Работает во всех режимах кошелька</td></tr>
 </table>
 
-<h3>8.3. SL / TP позиции по ATR</h3>
+<h3>8.3. Стакан (@OBT, только live)</h3>
+<table>
+<tr><th>Элемент</th><th>Назначение</th></tr>
+<tr><td><strong>Подтверждать тренд / анти-тренд / отсутствие тренда по стакану</strong></td><td>По умолчанию <em>выкл</em>. Включает фильтр live-заявок, если в строке L1…L5 есть <code>@OBT</code> (Order Book Trend). В FINRESP по истории не работает — стакана нет</td></tr>
+<tr><td><code>@OBT</code> в логике</td><td>Маркер управления (как @SL): добавьте в строку, напр. <code>… Note(trend) @OBT</code>. Тренд: перевес лотов bid/ask по стороне сделки (топ-5 уровней)</td></tr>
+<tr><td><code>@OBT(anti)</code> / <code>Entry=FlatOnly</code></td><td>Анти-тренд: покупка при перевесе ask, продажа при перевесе bid</td></tr>
+<tr><td><code>@OBT(flat)</code> / L4 (боковик)</td><td>Отсутствие тренда: |imbalance| &lt; порога (~12%)</td></tr>
+</table>
+
+<h3>8.4. SL / TP позиции по ATR</h3>
 <table>
 <tr><th>Поле</th><th>Назначение</th></tr>
 <tr><td><strong>SL позиции (@SL)</strong> + Оптимизировать</td><td>Кратность ATR для stop-loss позиции; 0 — выкл. Кнопка перебирает значения по FINRESP</td></tr>
@@ -188,7 +197,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>Подставляется в строки L1…L5 как SL[@SL] TP[@TP]. Лонг: SL = вход − K×ATR, TP = вход + K×ATR; шорт — наоборот.</p>
 
-<h3>8.4. Общепортфельный Stopper</h3>
+<h3>8.5. Общепортфельный Stopper</h3>
 <table>
 <tr><th>Поле</th><th>Назначение</th></tr>
 <tr><td><strong>SL / TP кратность ATR</strong> + Оптимизировать</td><td>Стопы по суммарному equity портфеля</td></tr>
@@ -197,20 +206,20 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>При срабатывании — закрытие всех позиций по всем инструментам, обновление базы.</p>
 
-<h3>8.5. Параметры строки логики</h3>
+<h3>8.6. Параметры строки логики</h3>
 <table>
 <tr><th>Поле</th><th>Назначение</th></tr>
 <tr><td><strong>LinReg длина (@LR)</strong></td><td>Длина линейной регрессии в строках логики</td></tr>
 </table>
 
-<h3>8.6. Используемые индикаторы</h3>
+<h3>8.7. Используемые индикаторы</h3>
 <p>Чекбоксы SMA, ATR, Stoch, LinReg, Bollinger, VWAP, CCI, MACD, Momentum. Отключённые удаляются из Op/Cl перед расчётом. SL/TP позиции не зависят от этого списка.</p>
 <p><strong>Оптимизировать</strong> (индикаторы) — перебор непустых комбинаций, остаётся набор с лучшим FINRESP.</p>
 
-<h3>8.7. Строки L1…L5</h3>
-<p>Текстовые поля Op/Cl/Regime — как в роботе MultiLogic. <strong>Применить</strong> — подставить @SL, @TP, @LR из полей выше и пересчитать.</p>
+<h3>8.8. Строки L1…L5</h3>
+<p>Текстовые поля Op/Cl/Regime — как в роботе MultiLogic. <strong>Применить</strong> — подставить @SL, @TP, @LR из полей выше и пересчитать. Для live-фильтра стакана добавьте <code>@OBT</code> вручную.</p>
 
-<h3>8.8. MOEX — тикеры и префиксы</h3>
+<h3>8.9. MOEX — тикеры и префиксы</h3>
 <table>
 <tr><th>Поле / кнопка</th><th>Назначение</th></tr>
 <tr><td><strong>Тикеры акций</strong> + <strong>Подобрать</strong></td><td>Список через запятую; «Подобрать» отмечает совпадения в <code>calc-sec</code></td></tr>
@@ -266,7 +275,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>Содержит: версию страницы (<code>pageVersion</code>), режим кошелька, ТФ, период, выбор инструментов, состояние кэша, блок <code>liveApiForbidden</code> (тикер, sec, name, uid — запрещённые для API инструменты), <code>liveReconcile.*</code>, журнал <code>errors:</code> со строками <code>live-forbidden-instrument:</code> (до 128 строк). Обновляется при старте, расчёте, live-торговле и ошибках T-Bank.</p>
 
-<p class="note">Версия справки: 2026-06-08 (синхронизирована с формой <code>2026-06-08-orderbook-1lot</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
+<p class="note">Версия справки: 2026-06-08 (синхронизирована с формой <code>2026-06-08-obt-live</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
 
 <div class="btn-row">
 <a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Вернуться в калькулятор</a>

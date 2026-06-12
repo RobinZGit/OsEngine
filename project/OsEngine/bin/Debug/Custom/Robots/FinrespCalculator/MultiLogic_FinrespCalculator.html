@@ -504,6 +504,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </label>
 <p class="note">Каждый пересчёт: OHLC для индикаторов и сигналов Op/Cl сдвигаются случайно в пределах 0,1%. FINRESP, комиссии и сделки — по реальным ценам MOEX.</p>
 
+<p class="extra-section">Стакан (только реальная торговля)</p>
+<label class="indicator-toggle" for="live-ob-trend-confirm" style="max-width:42rem;margin:.35rem 0 .55rem">
+<input type="checkbox" id="live-ob-trend-confirm">
+<span>Подтверждать тренд / анти-тренд / отсутствие тренда по стакану (<code>@OBT</code> в строке логики)</span>
+</label>
+<p class="note">По умолчанию выключено. Работает <strong>только в live T-Bank</strong>, если в L1…L5 есть <code>@OBT</code> (Order Book Trend). В FINRESP по истории стакана нет — фильтр не применяется. Тренд: перевес bid/ask по стороне сделки; <code>@OBT(anti)</code> или <code>Entry=FlatOnly</code> — анти-тренд; <code>@OBT(flat)</code> или L4 — боковик (|imbalance| мал).</p>
+
 <p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="param-sl">SL позиции кратность ATR (@SL)</label>
@@ -621,7 +628,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-orderbook-1lot";
+  const CALC_PAGE_VERSION = "2026-06-08-obt-live";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -800,6 +807,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
           `liveCandleRefreshBusy=${!!lv.candleRefreshBusy}`,
           `liveReconcileBusy=${!!lv.reconcileBusy}`,
           `liveOrderType=${$("live-order-type")?.value || "—"}`,
+          `liveObTrendConfirm=${!!$("live-ob-trend-confirm")?.checked}`,
+          `logicUsesObTrend=${E.logicUsesObTrend(activeLogicLineRaw())}`,
           `liveOrdersCount=${lv.orders?.length ?? 0}`,
           `liveOpenPositionsCount=${lv.openPositions?.length ?? 0}`,
           `livePortfolioValue=${Number.isFinite(lv.portfolioValue) ? lv.portfolioValue : "—"}`,
@@ -974,7 +983,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       orderBookTimer: null,
       orderBookBusy: false,
       positionsTimer: null,
-      positionsBusy: false
+      positionsBusy: false,
+      obTrendCache: new Map()
     },
     optim: {
       active: null,
@@ -1112,7 +1122,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         },
         orderBook: {
           sec: $("live-order-book-sec")?.value || ""
-        }
+        },
+        obTrendConfirm: !!$("live-ob-trend-confirm")?.checked
       },
       params: {
         sl: $("param-sl")?.value || "",
@@ -1170,6 +1181,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
       setValueIfExists("live-order-type", cfg.live?.orderType);
       setValueIfExists("live-candle-source", cfg.live?.candleSource);
+      if ($("live-ob-trend-confirm")) {
+        $("live-ob-trend-confirm").checked = !!cfg.live?.obTrendConfirm;
+      }
       setValueIfExists("live-manual-direction", cfg.live?.manual?.direction);
       setValueIfExists("live-manual-order-type", cfg.live?.manual?.orderType);
       setValueIfExists("live-manual-qty", cfg.live?.manual?.qty);
@@ -2539,6 +2553,48 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return state.lastResult?.perSec || [];
   }
 
+  function isLiveObTrendGateEnabled() {
+    return isLiveMode() && !!$("live-ob-trend-confirm")?.checked;
+  }
+
+  function activeLogicLineRaw() {
+    const key = $("calc-logic")?.value || "L1";
+    return state.customLines?.[key] || E.DEFAULT_LOGIC_LINES?.[key] || "";
+  }
+
+  function liveObTrendGateRequired() {
+    if (!isLiveObTrendGateEnabled()) return false;
+    return E.logicUsesObTrend(activeLogicLineRaw());
+  }
+
+  async function tbankFetchOrderBookCached(instrumentId) {
+    const cacheKey = String(instrumentId || "");
+    const prev = state.live.obTrendCache.get(cacheKey);
+    const now = Date.now();
+    if (prev?.ob && now - (prev.at || 0) < 2500) return prev.ob;
+    const ob = await tbankRequest("MarketDataService/GetOrderBook", {
+      instrumentId,
+      depth: LIVE_ORDER_BOOK_DEPTH
+    });
+    state.live.obTrendCache.set(cacheKey, { ob, at: now });
+    return ob;
+  }
+
+  async function liveObTrendAllowsOrder(instrumentId, direction) {
+    if (!liveObTrendGateRequired()) return { ok: true, skipped: true };
+    const line = activeLogicLineRaw();
+    const logicKey = $("calc-logic")?.value || "";
+    const mode = E.detectObTrendMode(line, logicKey);
+    const tradeSide = direction === "ORDER_DIRECTION_SELL" ? "sell" : "buy";
+    try {
+      const ob = await tbankFetchOrderBookCached(instrumentId);
+      const verdict = E.evaluateOrderBookTrend(ob, tradeSide, mode);
+      return { ...verdict, mode, tradeSide, logicKey };
+    } catch (err) {
+      return { ok: false, reason: err?.message || String(err), mode, tradeSide, logicKey };
+    }
+  }
+
   function liveCandlePollIntervalMs(tf) {
     if (tf === "1") return 30000;
     if (tf === "5") return 45000;
@@ -2823,6 +2879,22 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
             market,
             apiForbidden: liveIssueIsApiForbidden({ reason: tradable.reason })
           }));
+          continue;
+        }
+        const obGate = await liveObTrendAllowsOrder(instrumentId, direction);
+        if (!obGate.skipped && !obGate.ok) {
+          skipped.push(liveIssueEntry(ticker, p.sec, {
+            reason: `@OBT: ${obGate.reason || "стакан не подтвердил"}`,
+            instrumentId,
+            classCode,
+            instrumentName,
+            market,
+            direction,
+            lots,
+            obTrendMode: obGate.mode,
+            obImb: obGate.imb
+          }));
+          noteLiveTech("live-obt-skip", obGate.reason || "—", `sec=${p.sec} mode=${obGate.mode || "—"} dir=${direction}`);
           continue;
         }
         try {
@@ -5240,6 +5312,7 @@ ${totalBlock}
     el.addEventListener("change", renderFromParams);
   });
   $("random-price-shift")?.addEventListener("change", () => { saveConfig(); renderFromParams(); });
+  $("live-ob-trend-confirm")?.addEventListener("change", () => { saveConfig(); });
   $("calc-tf").addEventListener("change", () => {
     const n = selectedInstrumentCount();
     if (n > 0 && enforceDateRange("till", n)) {
