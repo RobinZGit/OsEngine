@@ -272,9 +272,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="note">Equity = сумма FINRESP по инструментам. ATR<sub>порт</sub> = mean(|Δequity|) за N свечей. SL/TP портфеля действуют, если кратность &gt; 0; длина ATR ≥ 2. При срабатывании — закрытие всех позиций, база обновляется.</p>
 
-<p class="extra-section" id="calc-indicators-used">Индикаторы в стандартных логиках L1…L4</p>
+<p class="extra-section" id="calc-indicators-used">Используемые индикаторы (L1…L4)</p>
 <p class="note">Справка робота: <a href="MultiLogic_LogicHelp.html#topic-2">параметры Ind(…)</a> · <a href="MultiLogic_LogicHelp.html#topic-3">условия во 2-й скобке</a> · <a href="MultiLogic_LogicHelp.html#topic-6a">L1…L4 по умолчанию</a> · <a href="MultiLogic_PolynomialIndicators.html">многочлены</a>.</p>
-<table class="indicators-used-table" aria-label="Индикаторы L1-L4">
+<table class="indicators-used-table" aria-label="Используемые индикаторы L1-L4">
 <thead><tr><th>Индикатор</th><th>Типичные параметры в L1…L4</th><th>Сигналы (примеры)</th></tr></thead>
 <tbody>
 <tr><td><b>SMA</b></td><td>L=100, Src=Close</td><td>Ab — close выше; Bl — ниже</td></tr>
@@ -334,7 +334,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-commission";
+  const CALC_PAGE_VERSION = "2026-06-08-used-indicators";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
