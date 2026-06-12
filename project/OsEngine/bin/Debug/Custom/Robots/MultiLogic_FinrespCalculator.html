@@ -697,6 +697,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     $("calc-till").value = formatDay(till);
     state.userDateRangeTouched = true;
     const narrowed = enforceDateRange("till", selectedInstrumentCount());
+    clearWindowAnchor();
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
     $("calc-status").textContent = narrowed
@@ -884,7 +885,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       instruments.some((i) => instrumentKey(i) === instrumentKey({ sec: f.sec, market: f.market }))
     );
     state.windowSkipped = [];
-    state.movedSlider = "end";
     setSliderBounds(true);
     saveWindowAnchor();
     if (!renderWithStatus()) return false;
@@ -998,8 +998,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const prev = state.prevSelectCount || 0;
     if (n > 0) {
       const narrowed = enforceDateRange("till", n);
+      if (narrowed) clearWindowAnchor();
       updateDateHint(n);
       if (!state.userDateRangeTouched && n < prev && relaxDateRangeForInstrumentCount(n)) {
+        clearWindowAnchor();
         state.lastLoadMeta = null;
         $("calc-status").textContent =
           `Выбор уменьшен — период расширен до ~${maxCalcDays($("calc-tf").value, n)} дн. Нажмите «Рассчитать».`;
@@ -1693,6 +1695,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.hasWindow = state.anchorStartTime != null && state.anchorEndTime != null;
   }
 
+  function clearWindowAnchor() {
+    state.anchorStartTime = null;
+    state.anchorEndTime = null;
+    state.hasWindow = false;
+  }
+
   function setSliderBounds(preserve = false) {
     const pack = refPack();
     const n = pack.length;
@@ -1708,7 +1716,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
     let a;
     let b;
-    if (preserve && state.hasWindow) {
+    const preserveWindow = preserve && state.hasWindow;
+    if (preserveWindow) {
       a = findIndexByTime(pack, state.anchorStartTime);
       b = findIndexByTime(pack, state.anchorEndTime);
       if (a > b) [a, b] = [b, a];
@@ -1733,7 +1742,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
     if (a > b - 2) a = Math.max(0, b - 2);
     if (b < a + 2) b = Math.min(max, a + 2);
-    if (b - a + 1 > maxBars) {
+    if (!preserveWindow && b - a + 1 > maxBars) {
       if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
       else a = Math.max(0, b - maxBars + 1);
     }
@@ -1754,14 +1763,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const n = refPack().length;
     let a = +$("calc-start").value;
     let b = +$("calc-end").value;
-    const max = Math.max(0, n - 1);
-    const maxBars = currentLimit().maxBars;
     if (a > b - 2) a = Math.max(0, b - 2);
     if (b < a + 2) b = Math.min(n - 1, a + 2);
-    if (b - a + 1 > maxBars) {
-      if (state.movedSlider === "start") b = Math.min(max, a + maxBars - 1);
-      else a = Math.max(0, b - maxBars + 1);
-    }
     $("calc-start").value = a;
     $("calc-end").value = b;
     return [a, b];
@@ -2322,8 +2325,12 @@ ${totalBlock}
         keys: instruments.map(instrumentKey)
       };
       state.bulkMode = bulkMode;
-      state.movedSlider = "end";
-      setSliderBounds(false);
+      if (!periodNarrowed && state.hasWindow) {
+        setSliderBounds(true);
+      } else {
+        state.movedSlider = "end";
+        setSliderBounds(false);
+      }
       saveWindowAnchor();
       if (!renderWithStatus()) {
         $("calc-chart").innerHTML = "";
@@ -2456,6 +2463,7 @@ ${totalBlock}
   $("calc-tf").addEventListener("change", () => {
     const n = selectedInstrumentCount();
     if (n > 0 && enforceDateRange("till", n)) {
+      clearWindowAnchor();
       $("calc-status").textContent =
         `Таймфрейм изменён — период сужен до ${maxCalcDays($("calc-tf").value, n)} дн.`;
     } else {
@@ -2468,12 +2476,14 @@ ${totalBlock}
   $("calc-from").addEventListener("change", () => {
     state.userDateRangeTouched = true;
     enforceDateRange("from");
+    clearWindowAnchor();
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
   });
   $("calc-till").addEventListener("change", () => {
     state.userDateRangeTouched = true;
     enforceDateRange("till");
+    clearWindowAnchor();
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
   });
