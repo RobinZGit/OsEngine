@@ -239,6 +239,10 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-ob-pick:hover{background:#fff7ed;}
 .live-ob-grid .ob-bid-p.live-ob-pick:hover,.live-ob-grid .ob-bid-q.live-ob-pick:hover{background:#ecfdf5;}
 .live-ob-grid .ob-ask-p.live-ob-pick:hover,.live-ob-grid .ob-ask-q.live-ob-pick:hover{background:#fef2f2;}
+.live-positions-panel .pos-long{color:#166534;font-weight:600;}
+.live-positions-panel .pos-short{color:#991b1b;font-weight:600;}
+.live-positions-panel .pos-pnl-pos{color:#166534;font-weight:600;}
+.live-positions-panel .pos-pnl-neg{color:#991b1b;font-weight:600;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -370,8 +374,18 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <details class="live-order-book" id="live-order-book-panel">
 <summary class="live-manual-order-summary">Стакан</summary>
 <div class="live-order-book-body">
-<p class="live-order-book-meta" id="live-order-book-meta">Инструмент — из блока «Заявка». Двойной клик по bid/ask — открыть «Заявку» с ценой и стороной.</p>
-<div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент в «Заявка».</p></div>
+<div class="live-manual-order-grid live-order-book-tools">
+<label>Инструмент<select id="live-order-book-sec"><option value="">— выберите бумаги в калькуляторе —</option></select></label>
+</div>
+<p class="live-order-book-meta" id="live-order-book-meta">Двойной клик по bid/ask — открыть «Заявку» с ценой и стороной.</p>
+<div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент.</p></div>
+</div>
+</details>
+<details class="live-order-book live-positions-panel" id="live-positions-panel">
+<summary class="live-manual-order-summary">Позиции</summary>
+<div class="live-order-book-body">
+<p class="live-order-book-meta" id="live-positions-meta">Открытые позиции счёта (робот и ручные заявки). Закрытые не показываются.</p>
+<div id="live-positions-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок в режиме live.</p></div>
 </div>
 </details>
 <div class="live-trading-orders-wrap">
@@ -596,7 +610,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-orderbook-dblclick";
+  const CALC_PAGE_VERSION = "2026-06-08-live-positions";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -776,6 +790,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
           `liveReconcileBusy=${!!lv.reconcileBusy}`,
           `liveOrderType=${$("live-order-type")?.value || "—"}`,
           `liveOrdersCount=${lv.orders?.length ?? 0}`,
+          `liveOpenPositionsCount=${lv.openPositions?.length ?? 0}`,
           `livePortfolioValue=${Number.isFinite(lv.portfolioValue) ? lv.portfolioValue : "—"}`,
           `liveCandleSource=${lv.candleSource || $("live-candle-source")?.value || "—"}`
         );
@@ -940,9 +955,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       portfolioValue: null,
       commissionPaid: null,
       sessionStartedAt: null,
+      sessionPositionBaseline: null,
+      openPositions: [],
+      positionsUpdatedAt: null,
+      positionsError: "",
       statsTimer: null,
       orderBookTimer: null,
-      orderBookBusy: false
+      orderBookBusy: false,
+      positionsTimer: null,
+      positionsBusy: false
     },
     optim: {
       active: null,
@@ -1077,6 +1098,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
           orderType: $("live-manual-order-type")?.value || "market",
           qty: $("live-manual-qty")?.value || "1",
           price: $("live-manual-price")?.value || ""
+        },
+        orderBook: {
+          sec: $("live-order-book-sec")?.value || ""
         }
       },
       params: {
@@ -1140,6 +1164,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setValueIfExists("live-manual-qty", cfg.live?.manual?.qty);
       setValueIfExists("live-manual-price", cfg.live?.manual?.price);
       state.restoredManualSec = cfg.live?.manual?.sec || "";
+      state.restoredOrderBookSec = cfg.live?.orderBook?.sec || cfg.live?.manual?.sec || "";
       setValueIfExists("param-sl", cfg.params?.sl);
       setValueIfExists("param-tp", cfg.params?.tp);
       setValueIfExists("param-atr-sl", cfg.params?.atrSl);
@@ -1676,6 +1701,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     renderLivePortfolioStats();
     syncLeverageDisplay();
     renderLiveOrdersPanel();
+    renderLivePositionsPanel();
     syncLiveManualOrderUi();
   }
 
@@ -1705,6 +1731,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     stopLiveTradingPoll();
     stopLiveStatsPoll();
     stopLiveOrderBookPoll();
+    stopLivePositionsPoll();
     syncLiveTradingUi();
   }
 
@@ -1779,10 +1806,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const metaEl = $("live-order-book-meta");
     if (!panel?.open || !isLiveMode()) return;
     if (state.live.orderBookBusy) return;
-    const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+    const picked = parseLiveManualInstrumentKey($("live-order-book-sec")?.value);
     if (!picked?.sec) {
       renderLiveOrderBookView(null);
-      if (metaEl) metaEl.textContent = "Выберите инструмент в блоке «Заявка».";
+      if (metaEl) metaEl.textContent = "Выберите инструмент.";
       return;
     }
     state.live.orderBookBusy = true;
@@ -1821,6 +1848,162 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
       refreshLiveOrderBook();
     }, LIVE_ORDER_BOOK_POLL_MS);
+  }
+
+  const LIVE_POSITIONS_POLL_MS = 6000;
+
+  function quotationToNumber(q) {
+    if (q == null) return NaN;
+    if (typeof q === "number") return q;
+    return (+q.units || 0) + (+q.nano || 0) / 1e9;
+  }
+
+  function isLiveSessionOpenPosition(ticker, pieces, lot) {
+    if (!pieces) return false;
+    const baseline = state.live.sessionPositionBaseline;
+    if (!baseline) return true;
+    const basePieces = baseline.get(ticker)?.pieces ?? 0;
+    const lotSize = Math.max(1, +lot || 1);
+    return Math.abs(pieces - basePieces) >= lotSize * 0.45;
+  }
+
+  function renderLivePositionsPanel() {
+    const tableEl = $("live-positions-table");
+    const metaEl = $("live-positions-meta");
+    if (!tableEl) return;
+    if (!isLiveMode()) {
+      tableEl.innerHTML = '<p class="live-order-book-empty">Доступно в режиме live.</p>';
+      if (metaEl) metaEl.textContent = "Открытые позиции счёта (робот и ручные заявки). Закрытые не показываются.";
+      return;
+    }
+    if (state.live.positionsError) {
+      if (metaEl) metaEl.textContent = `Ошибка: ${state.live.positionsError}`;
+    } else if (state.live.positionsUpdatedAt) {
+      const ts = new Date(state.live.positionsUpdatedAt).toLocaleTimeString("ru-RU", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      });
+      const sessHint = state.live.sessionPositionBaseline
+        ? " · с начала сессии торговли"
+        : " · все открытые на счёте";
+      if (metaEl) metaEl.textContent = `Обновлено ${ts}${sessHint}`;
+    }
+    const rows = state.live.openPositions || [];
+    if (!rows.length) {
+      tableEl.innerHTML = '<p class="live-order-book-empty">Открытых позиций нет.</p>';
+      return;
+    }
+    let totalSum = 0;
+    let totalPnl = 0;
+    const body = rows.map((r) => {
+      const sideCls = r.side === "short" ? "pos-short" : "pos-long";
+      const sideLabel = r.side === "short" ? "шорт" : (r.side === "long" ? "лонг" : "лонг");
+      const pnlCls = r.pnl > 0 ? "pos-pnl-pos" : (r.pnl < 0 ? "pos-pnl-neg" : "");
+      if (Number.isFinite(r.sum)) totalSum += r.sum;
+      if (Number.isFinite(r.pnl)) totalPnl += r.pnl;
+      return `<tr>
+        <td>${r.ticker}</td>
+        <td class="${sideCls}">${sideLabel}</td>
+        <td>${r.lots}</td>
+        <td>${Number.isFinite(r.avgPrice) ? fmt(r.avgPrice, 2) : "—"}</td>
+        <td>${Number.isFinite(r.curPrice) ? fmt(r.curPrice, 2) : "—"}</td>
+        <td>${Number.isFinite(r.sum) ? fmt(r.sum, 0) : "—"}</td>
+        <td class="${pnlCls}">${Number.isFinite(r.pnl) ? `${r.pnl >= 0 ? "+" : ""}${fmt(r.pnl, 0)}` : "—"}</td>
+      </tr>`;
+    }).join("");
+    const foot = (Number.isFinite(totalSum) || Number.isFinite(totalPnl))
+      ? `<tfoot><tr><th colspan="5">Итого</th><th>${Number.isFinite(totalSum) ? fmt(totalSum, 0) : "—"}</th>`
+        + `<th class="${totalPnl >= 0 ? "pos-pnl-pos" : "pos-pnl-neg"}">${Number.isFinite(totalPnl) ? `${totalPnl >= 0 ? "+" : ""}${fmt(totalPnl, 0)}` : "—"}</th></tr></tfoot>`
+      : "";
+    tableEl.innerHTML = `<table class="live-ob-grid"><thead><tr>
+      <th>Тикер</th><th>Сторона</th><th>Лоты</th><th>Ср. цена</th><th>Тек. цена</th><th>Сумма, ₽</th><th>P/L, ₽</th>
+    </tr></thead><tbody>${body}</tbody>${foot}</table>`;
+  }
+
+  function stopLivePositionsPoll() {
+    if (state.live.positionsTimer) clearInterval(state.live.positionsTimer);
+    state.live.positionsTimer = null;
+  }
+
+  async function refreshLiveOpenPositions() {
+    if (!isLiveMode()) {
+      state.live.openPositions = [];
+      state.live.positionsError = "";
+      renderLivePositionsPanel();
+      return;
+    }
+    if (!state.tbank.token || !state.tbank.selectedAccountId) {
+      renderLivePositionsPanel();
+      return;
+    }
+    if (state.live.positionsBusy) return;
+    state.live.positionsBusy = true;
+    state.live.positionsError = "";
+    try {
+      if (!(await ensureTbankTokenUnlocked())) {
+        state.live.positionsError = "Расшифруйте токен T-Bank.";
+        return;
+      }
+      const accountId = state.tbank.selectedAccountId;
+      const [portData, posData] = await Promise.all([
+        tbankRequest("OperationsService/GetPortfolio", { accountId, currency: "RUB" }),
+        tbankRequest("OperationsService/GetPositions", { accountId })
+      ]);
+      const portById = new Map();
+      for (const p of portData.positions || []) {
+        const id = p.instrumentUid || p.figi;
+        if (id) portById.set(id, p);
+      }
+      const rows = [];
+      const ingest = async (items, isFuture) => {
+        for (const p of items || []) {
+          const pieces = +p.balance || 0;
+          if (!pieces) continue;
+          const instrumentId = p.instrumentUid || p.figi;
+          let meta = null;
+          try {
+            meta = await tbankGetInstrumentById(instrumentId);
+          } catch (_) { /* keep partial row */ }
+          const lot = Math.max(1, +meta?.lot || +p.lot || 1);
+          const ticker = String(meta?.ticker || p.ticker || instrumentId).toUpperCase();
+          if (!isLiveSessionOpenPosition(ticker, pieces, lot)) continue;
+          const port = portById.get(instrumentId);
+          const avgPrice = moneyValueToNumber(port?.averagePositionPrice || port?.averagePositionPriceFifo);
+          const curPrice = moneyValueToNumber(port?.currentPrice);
+          const pnl = quotationToNumber(port?.expectedYield);
+          const lots = isFuture ? Math.abs(Math.round(pieces)) : piecesToLots(pieces, lot);
+          const side = isFuture ? (pieces > 0 ? "long" : "short") : "long";
+          const absPieces = Math.abs(pieces);
+          const sum = Number.isFinite(curPrice) ? absPieces * curPrice : NaN;
+          rows.push({ ticker, side, lots, pieces: absPieces, lot, avgPrice, curPrice, sum, pnl, isFuture });
+        }
+      };
+      await ingest(posData.securities, false);
+      await ingest(posData.futures, true);
+      rows.sort((a, b) => a.ticker.localeCompare(b.ticker, "ru"));
+      state.live.openPositions = rows;
+      state.live.positionsUpdatedAt = Date.now();
+    } catch (err) {
+      state.live.openPositions = [];
+      state.live.positionsError = err?.message || String(err);
+      noteLiveTech("live-positions", state.live.positionsError, `account=${state.tbank.selectedAccountId || "—"}`);
+    } finally {
+      state.live.positionsBusy = false;
+      renderLivePositionsPanel();
+    }
+  }
+
+  function startLivePositionsPoll() {
+    stopLivePositionsPoll();
+    const panel = $("live-positions-panel");
+    if (!panel?.open || !isLiveMode()) return;
+    refreshLiveOpenPositions();
+    state.live.positionsTimer = setInterval(() => {
+      if (!isLiveMode() || !$("live-positions-panel")?.open) {
+        stopLivePositionsPoll();
+        return;
+      }
+      refreshLiveOpenPositions();
+    }, LIVE_POSITIONS_POLL_MS);
   }
 
   function tbankInstField(inst, ...keys) {
@@ -2110,11 +2293,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return { market: raw.slice(0, sep), sec: raw.slice(sep + 1) };
   }
 
-  function fillLiveManualOrderInstruments() {
-    const sel = $("live-manual-sec");
+  function fillLiveTradingInstrumentSelect(sel, restoredKey) {
     if (!sel) return;
-    const prev = sel.value || state.restoredManualSec || "";
-    state.restoredManualSec = "";
+    const prev = sel.value || restoredKey || "";
     const items = selectedInstruments();
     sel.innerHTML = "";
     if (!items.length) {
@@ -2135,16 +2316,26 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
 
+  function fillLiveTradingInstrumentSelects() {
+    fillLiveTradingInstrumentSelect($("live-manual-sec"), state.restoredManualSec);
+    state.restoredManualSec = "";
+    fillLiveTradingInstrumentSelect($("live-order-book-sec"), state.restoredOrderBookSec);
+    state.restoredOrderBookSec = "";
+  }
+
   function fillManualOrderFromOrderBook(side, price, lots) {
-    const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+    const obKey = $("live-order-book-sec")?.value || "";
+    const picked = parseLiveManualInstrumentKey(obKey);
     const statusEl = $("live-manual-order-status");
     if (!picked?.sec) {
-      if (statusEl) statusEl.textContent = "Сначала выберите инструмент в «Заявка».";
+      if (statusEl) statusEl.textContent = "Сначала выберите инструмент в «Стакан».";
       return;
     }
     if (!Number.isFinite(price) || price <= 0) return;
     const panel = $("live-manual-order-panel");
     if (panel) panel.open = true;
+    const manualSel = $("live-manual-sec");
+    if (manualSel && obKey) manualSel.value = obKey;
     $("live-manual-direction").value = side === "sell" ? "sell" : "buy";
     $("live-manual-order-type").value = "limit";
     $("live-manual-price").value = String(price);
@@ -2170,10 +2361,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function syncLiveManualOrderUi() {
-    fillLiveManualOrderInstruments();
+    fillLiveTradingInstrumentSelects();
     const isLive = isLiveMode();
     const lock = state.uiBusy;
-    const ids = ["live-manual-sec", "live-manual-direction", "live-manual-order-type", "live-manual-qty", "live-manual-price", "live-manual-submit"];
+    const ids = ["live-manual-sec", "live-order-book-sec", "live-manual-direction", "live-manual-order-type", "live-manual-qty", "live-manual-price", "live-manual-submit"];
     for (const id of ids) {
       const el = $(id);
       if (el) el.disabled = !isLive || lock;
@@ -2277,6 +2468,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
       state.live.commissionPaid = comm;
       renderLivePortfolioStats();
+      await refreshLiveOpenPositions();
     } catch (err) {
       noteLiveTech("live-portfolio", err.message, `account=${state.tbank.selectedAccountId || "—"}`);
     }
@@ -2722,9 +2914,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       syncLiveTradingUi();
       return;
     }
+    state.live.sessionStartedAt = new Date().toISOString();
+    try {
+      state.live.sessionPositionBaseline = await tbankPositionsByTicker();
+    } catch (err) {
+      state.live.sessionPositionBaseline = null;
+      noteLiveTech("live-session-baseline", err.message);
+    }
     state.live.active = true;
     state.live.lastError = "";
-    state.live.sessionStartedAt = new Date().toISOString();
     syncLiveTradingUi();
     startLiveTradingPoll();
     try {
@@ -4925,15 +5123,20 @@ ${totalBlock}
   $("live-manual-submit").addEventListener("click", () => { placeManualLiveOrder(); });
   $("live-manual-order-type").addEventListener("change", () => { syncLiveManualOrderUi(); saveConfig(); });
   ["live-manual-sec", "live-manual-direction", "live-manual-qty", "live-manual-price"].forEach((id) => {
-    $(id)?.addEventListener("change", () => {
-      saveConfig();
-      if (id === "live-manual-sec" && $("live-order-book-panel")?.open) refreshLiveOrderBook();
-    });
+    $(id)?.addEventListener("change", () => { saveConfig(); });
     $(id)?.addEventListener("input", () => { if (id === "live-manual-qty" || id === "live-manual-price") saveConfig(); });
+  });
+  $("live-order-book-sec")?.addEventListener("change", () => {
+    saveConfig();
+    if ($("live-order-book-panel")?.open) refreshLiveOrderBook();
   });
   $("live-order-book-panel")?.addEventListener("toggle", () => {
     if ($("live-order-book-panel")?.open) startLiveOrderBookPoll();
     else stopLiveOrderBookPoll();
+  });
+  $("live-positions-panel")?.addEventListener("toggle", () => {
+    if ($("live-positions-panel")?.open) startLivePositionsPoll();
+    else stopLivePositionsPoll();
   });
   $("live-order-book-table")?.addEventListener("dblclick", onLiveOrderBookDblClick);
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
