@@ -23,7 +23,10 @@
     { key: "stoch", label: "Stoch" },
     { key: "linreg", label: "LinReg" },
     { key: "macd", label: "MACD" },
-    { key: "cci", label: "CCI" }
+    { key: "cci", label: "CCI" },
+    { key: "bollinger", label: "Bollinger" },
+    { key: "momentum", label: "Momentum" },
+    { key: "evwap", label: "EVWAP" }
   ]);
   const INDICATOR_KEYS = INDICATOR_OPTIONS.map((x) => x.key);
   const INDICATOR_KEY_SET = new Set(INDICATOR_KEYS);
@@ -176,10 +179,10 @@
       "Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
       SLTP + "Note(short-bokovik)",
     L5: TREND_REGIME +
-      "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) " +
-      "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) " +
-      "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) " +
-      "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
+      "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND EVWAP(20)(Ab) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig))) " +
+      "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND EVWAP(20)(Bl) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) " +
+      "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND EVWAP(20)(Bl) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig))) " +
+      "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND EVWAP(20)(Ab) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
       SLTP + "Note(LmaxTrend)"
   };
 
@@ -314,7 +317,7 @@
     for (const key of INDICATOR_KEYS) out[key] = false;
     if (Array.isArray(selection)) {
       for (const key of selection) {
-        const k = String(key || "").toLowerCase();
+        const k = indicatorKey(key);
         if (INDICATOR_KEY_SET.has(k)) out[k] = true;
       }
       return out;
@@ -323,7 +326,10 @@
       return normalizeIndicatorSelection(selection.split(",").map((x) => x.trim()));
     }
     if (typeof selection === "object") {
-      for (const key of INDICATOR_KEYS) out[key] = !!selection[key];
+      for (const [key, value] of Object.entries(selection)) {
+        const k = indicatorKey(key);
+        if (INDICATOR_KEY_SET.has(k)) out[k] = !!value;
+      }
       return out;
     }
     return defaultIndicatorSelection();
@@ -337,13 +343,21 @@
   function filterAtomsByIndicators(atoms, indicatorSelection) {
     const enabled = enabledIndicatorSet(indicatorSelection);
     return (atoms || []).filter((atom) => {
-      const kind = String(atom?.kind || "").toLowerCase();
+      const kind = indicatorKey(atom?.kind);
       return !INDICATOR_KEY_SET.has(kind) || enabled.has(kind);
     });
   }
 
   function isIndicatorEnabled(indicatorSelection, key) {
-    return !!normalizeIndicatorSelection(indicatorSelection)[String(key || "").toLowerCase()];
+    return !!normalizeIndicatorSelection(indicatorSelection)[indicatorKey(key)];
+  }
+
+  function indicatorKey(kind) {
+    const k = String(kind || "").toLowerCase();
+    if (k === "bolinger" || k === "boll" || k === "bb" || k === "polenger") return "bollinger";
+    if (k === "mom") return "momentum";
+    if (k === "evwma" || k === "vwap") return "evwap";
+    return k;
   }
 
   function parseLogicLine(line, params, indicatorSelection) {
@@ -477,6 +491,54 @@
     return { up, center, down };
   }
 
+  function bollingerSeries(closes, len, devMult) {
+    const up = new Array(closes.length).fill(null);
+    const center = new Array(closes.length).fill(null);
+    const down = new Array(closes.length).fill(null);
+    for (let i = len - 1; i < closes.length; i++) {
+      let sum = 0;
+      for (let j = i - len + 1; j <= i; j++) sum += closes[j];
+      const ma = sum / len;
+      let varSum = 0;
+      for (let j = i - len + 1; j <= i; j++) varSum += (closes[j] - ma) ** 2;
+      const std = Math.sqrt(varSum / len);
+      center[i] = ma;
+      up[i] = ma + devMult * std;
+      down[i] = ma - devMult * std;
+    }
+    return { up, center, down };
+  }
+
+  function momentumSeries(closes, len) {
+    const out = new Array(closes.length).fill(null);
+    for (let i = len; i < closes.length; i++) {
+      out[i] = closes[i] - closes[i - len];
+    }
+    return out;
+  }
+
+  function evwapSeries(candles, len) {
+    const out = new Array(candles.length).fill(null);
+    let pvSum = 0;
+    let volSum = 0;
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      const price = (c.high + c.low + c.close) / 3;
+      const vol = Number.isFinite(c.volume) && c.volume > 0 ? c.volume : 1;
+      pvSum += price * vol;
+      volSum += vol;
+      if (i >= len) {
+        const old = candles[i - len];
+        const oldPrice = (old.high + old.low + old.close) / 3;
+        const oldVol = Number.isFinite(old.volume) && old.volume > 0 ? old.volume : 1;
+        pvSum -= oldPrice * oldVol;
+        volSum -= oldVol;
+      }
+      if (i >= len - 1 && volSum > 0) out[i] = pvSum / volSum;
+    }
+    return out;
+  }
+
   function cciSeries(candles, len) {
     const out = new Array(candles.length).fill(null);
     const tp = candles.map((c) => (c.high + c.low + c.close) / 3);
@@ -508,6 +570,9 @@
       this._atr = new Map();
       this._stoch = new Map();
       this._linreg = new Map();
+      this._bollinger = new Map();
+      this._momentum = new Map();
+      this._evwap = new Map();
       this._cci = new Map();
       this._macd = new Map();
     }
@@ -529,6 +594,19 @@
       const key = `${len};${dev}`;
       if (!this._linreg.has(key)) this._linreg.set(key, linRegSeries(this.closes, len, dev));
       return this._linreg.get(key);
+    }
+    bollinger(len, dev) {
+      const key = `${len};${dev}`;
+      if (!this._bollinger.has(key)) this._bollinger.set(key, bollingerSeries(this.closes, len, dev));
+      return this._bollinger.get(key);
+    }
+    momentum(len) {
+      if (!this._momentum.has(len)) this._momentum.set(len, momentumSeries(this.closes, len));
+      return this._momentum.get(len);
+    }
+    evwap(len) {
+      if (!this._evwap.has(len)) this._evwap.set(len, evwapSeries(this.candles, len));
+      return this._evwap.get(len);
     }
     cci(len) {
       if (!this._cci.has(len)) this._cci.set(len, cciSeries(this.candles, len));
@@ -564,14 +642,15 @@
     const pm = parseParamsMap(atom.params);
     const sig = atom.signal.replace(/\s+/g, "");
     const sigU = sig.toUpperCase();
+    const kind = indicatorKey(atom.kind);
 
-    if (atom.kind === "sma") {
+    if (kind === "sma") {
       const len = pm.L || parseInt(atom.params, 10) || 100;
       const v = cache.sma(len)[idx];
       if (v == null) return false;
       return evalThreshold(sigU === "AB" ? "AB" : sigU === "BL" ? "BL" : sig, v, close);
     }
-    if (atom.kind === "atr") {
+    if (kind === "atr") {
       const len = pm.L || 14;
       const lb = parseInt(pm.Lb || pm.lb || "5", 10);
       const gr = parseFloat(String(pm.Gr || pm.gr || "3").replace("%", "")) / 100;
@@ -582,14 +661,14 @@
       if (sigU === "GROK" || sigU.includes("GROK")) return cur >= prev * (1 + gr);
       return false;
     }
-    if (atom.kind === "stoch") {
+    if (kind === "stoch") {
       const k1 = pm.K1 || 14, k2 = pm.K2 || 3, d = pm.D || 3;
       const st = cache.stoch(k1, k2, d);
       const k = st.k[idx];
       if (k == null) return false;
       return evalThreshold(sig, k, close);
     }
-    if (atom.kind === "linreg") {
+    if (kind === "linreg") {
       const len = pm.L || parseInt(atom.params, 10) || 20;
       const dev = parseFloat(pm.Dev || pm.dev || "2");
       const lr = cache.linreg(len, dev);
@@ -607,7 +686,49 @@
       }
       return false;
     }
-    if (atom.kind === "macd") {
+    if (kind === "bollinger") {
+      const len = pm.L || parseInt(atom.params, 10) || 20;
+      const dev = parseFloat(pm.Dev || pm.dev || "2");
+      const bb = cache.bollinger(len, dev);
+      if (sigU === "ABUP") return bb.up[idx] != null && close > bb.up[idx];
+      if (sigU === "BLLO") return bb.down[idx] != null && close < bb.down[idx];
+      if (sigU === "ABLO") return bb.down[idx] != null && close > bb.down[idx];
+      if (sigU === "BLUP") return bb.up[idx] != null && close < bb.up[idx];
+      if (sigU === "AB" || sigU === "ABMID") return bb.center[idx] != null && close > bb.center[idx];
+      if (sigU === "BL" || sigU === "BLMID") return bb.center[idx] != null && close < bb.center[idx];
+      if (sigU === "SLOPEUP" || sigU === "CENTERUP") {
+        const c0 = bb.center[idx - 1], c1 = bb.center[idx];
+        return c0 != null && c1 != null && c1 > c0;
+      }
+      if (sigU === "SLOPEDN" || sigU === "CENTERDN") {
+        const c0 = bb.center[idx - 1], c1 = bb.center[idx];
+        return c0 != null && c1 != null && c1 < c0;
+      }
+      return false;
+    }
+    if (kind === "momentum") {
+      const len = pm.L || parseInt(atom.params, 10) || 10;
+      const v = cache.momentum(len)[idx];
+      if (v == null) return false;
+      return evalThreshold(sig, v, close);
+    }
+    if (kind === "evwap") {
+      const len = pm.L || parseInt(atom.params, 10) || 20;
+      const v = cache.evwap(len)[idx];
+      if (v == null) return false;
+      if (sigU === "AB") return close > v;
+      if (sigU === "BL") return close < v;
+      if (sigU === "SLOPEUP" || sigU === "CENTERUP") {
+        const p = cache.evwap(len)[idx - 1];
+        return p != null && v > p;
+      }
+      if (sigU === "SLOPEDN" || sigU === "CENTERDN") {
+        const p = cache.evwap(len)[idx - 1];
+        return p != null && v < p;
+      }
+      return false;
+    }
+    if (kind === "macd") {
       const fast = pm.fast || 12, slow = pm.slow || 26, signal = pm.signal || 9;
       const md = cache.macd(fast, slow, signal);
       const m = md.macd[idx], s = md.signal[idx];
@@ -616,7 +737,7 @@
       if (sigU === "MACD<SIG") return m < s;
       return false;
     }
-    if (atom.kind === "cci") {
+    if (kind === "cci") {
       const len = pm.L || 20;
       const v = cache.cci(len)[idx];
       if (v == null) return false;
@@ -697,17 +818,30 @@
     const atoms = [...(parsed?.opAtoms || []), ...(parsed?.clAtoms || [])];
     for (const atom of atoms) {
       const pm = parseParamsMap(atom.params);
-      if (atom.kind === "sma") {
+      const kind = indicatorKey(atom.kind);
+      if (kind === "sma") {
         const len = pm.L || parseInt(atom.params, 10) || 100;
         ind.sma = cache.sma(len)[idx];
       }
-      if (atom.kind === "linreg") {
+      if (kind === "linreg") {
         const len = pm.L || parseInt(atom.params, 10) || 20;
         const dev = parseFloat(pm.Dev || pm.dev || "2");
         const lr = cache.linreg(len, dev);
         ind.linregUp = lr.up[idx];
         ind.linregDn = lr.down[idx];
         ind.linregMid = lr.center[idx];
+      }
+      if (kind === "bollinger") {
+        const len = pm.L || parseInt(atom.params, 10) || 20;
+        const dev = parseFloat(pm.Dev || pm.dev || "2");
+        const bb = cache.bollinger(len, dev);
+        ind.bollingerUp = bb.up[idx];
+        ind.bollingerDn = bb.down[idx];
+        ind.bollingerMid = bb.center[idx];
+      }
+      if (kind === "evwap") {
+        const len = pm.L || parseInt(atom.params, 10) || 20;
+        ind.evwap = cache.evwap(len)[idx];
       }
     }
     return ind;
