@@ -261,9 +261,9 @@ th{background:#f8fafc;width:28%;}
 <tr><td><strong>Копировать</strong></td><td>Весь диагностический блок в буфер обмена</td></tr>
 <tr><td><strong>Обновить</strong></td><td>Пересобрать текст вручную</td></tr>
 </table>
-<p>Содержит: версию страницы (<code>pageVersion</code>), режим кошелька, ТФ, период, выбор инструментов, состояние кэша, блок <code>liveReconcile.*</code> (полный список пропущенных и неудачных заявок с uid/classCode), журнал <code>errors:</code> (до 128 строк). Обновляется при старте, расчёте, live-торговле и ошибках T-Bank.</p>
+<p>Содержит: версию страницы (<code>pageVersion</code>), режим кошелька, ТФ, период, выбор инструментов, состояние кэша, блок <code>liveApiForbidden</code> (тикер, sec, name, uid — запрещённые для API инструменты), <code>liveReconcile.*</code>, журнал <code>errors:</code> со строками <code>live-forbidden-instrument:</code> (до 128 строк). Обновляется при старте, расчёте, live-торговле и ошибках T-Bank.</p>
 
-<p class="note">Версия справки: 2026-06-08 (синхронизирована с формой <code>2026-06-08-tbank-live-candles</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
+<p class="note">Версия справки: 2026-06-08 (синхронизирована с формой <code>2026-06-08-forbidden-in-tech</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
 
 <div class="btn-row">
 <a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Вернуться в калькулятор</a>

@@ -550,7 +550,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-tbank-live-candles";
+  const CALC_PAGE_VERSION = "2026-06-08-forbidden-in-tech";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -585,21 +585,70 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return `${item.ticker || item.sec || "?"}: ${item.reason || item.message || "—"}`;
   }
 
+  function liveForbiddenLabel(item) {
+    if (!item || typeof item === "string") return String(item || "?");
+    return String(item.ticker || item.sec || "?");
+  }
+
+  function liveIssueIsApiForbidden(item) {
+    if (!item) return false;
+    if (typeof item === "string") {
+      const t = item.toLowerCase();
+      return t.includes("forbidden") || t.includes("api_trade");
+    }
+    if (item.apiForbidden) return true;
+    const text = `${item.reason || ""} ${item.message || ""}`.toLowerCase();
+    return text.includes("forbidden") || text.includes("api_trade")
+      || text.includes("торговля через api недоступна");
+  }
+
+  function mergeLiveForbiddenIssues(skipped, failed) {
+    const out = [];
+    const seen = new Set();
+    for (const item of [...(skipped || []), ...(failed || [])]) {
+      if (!liveIssueIsApiForbidden(item)) continue;
+      const key = `${liveForbiddenLabel(item)}:${item.instrumentId || ""}:${item.reason || item.message || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+    return out;
+  }
+
+  function formatLiveForbiddenTechLine(item) {
+    const label = liveForbiddenLabel(item);
+    if (typeof item === "string") return `${label} | ${item}`;
+    const name = item.instrumentName || item.name || "—";
+    return `${label} sec=${item.sec || label} name=${name} uid=${item.instrumentId || "—"} class=${item.classCode || "—"} market=${item.market || "—"} | ${item.reason || item.message || "API forbidden"}`;
+  }
+
   function noteLiveReconcileToTech(report) {
     if (!report) return;
     const at = report.at || new Date().toISOString();
-    if (calcState?.live) calcState.live.lastReconcile = report;
+    const forbidden = mergeLiveForbiddenIssues(report.skipped, report.failed);
+    if (calcState?.live) {
+      calcState.live.lastReconcile = report;
+      calcState.live.apiForbiddenInstruments = forbidden;
+    }
     techLog.lastEvent = "live-reconcile";
     if (report.placed > 0) {
       pushTechLogLine(`${at} live-reconcile: placed=${report.placed} targets=${report.targetCount ?? "—"}`);
     }
+    if (forbidden.length) {
+      pushTechLogLine(`${at} live-api-forbidden-count: ${forbidden.length} tickers=${forbidden.map(liveForbiddenLabel).join(",")}`);
+    }
+    for (const f of forbidden) {
+      pushTechLogLine(`${at} live-forbidden-instrument: ${formatLiveForbiddenTechLine(f)}`);
+    }
     for (const s of report.skipped || []) {
+      if (liveIssueIsApiForbidden(s)) continue;
       const extra = typeof s === "object"
         ? `uid=${s.instrumentId || "—"} class=${s.classCode || "—"} market=${s.market || "—"}`
         : "";
       pushTechLogLine(`${at} live-skip: ${liveIssueLine(s)}${extra ? ` | ${extra}` : ""}`);
     }
     for (const f of report.failed || []) {
+      if (liveIssueIsApiForbidden(f)) continue;
       const extra = typeof f === "object"
         ? `uid=${f.instrumentId || "—"} dir=${f.direction || "—"} lots=${f.lots ?? "—"} class=${f.classCode || "—"}`
         : "";
@@ -708,6 +757,19 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
                 : "";
               lines.push(`  ${liveIssueLine(f)}${extra}`);
             }
+          }
+        }
+        const forbidden = lv.apiForbiddenInstruments?.length
+          ? lv.apiForbiddenInstruments
+          : mergeLiveForbiddenIssues(r?.skipped, r?.failed);
+        if (forbidden?.length) {
+          lines.push(
+            `liveApiForbiddenCount=${forbidden.length}`,
+            `liveApiForbiddenTickers=${forbidden.map(liveForbiddenLabel).join(",")}`
+          );
+          lines.push("liveApiForbidden:");
+          for (const f of forbidden) {
+            lines.push(`  ${formatLiveForbiddenTechLine(f)}`);
           }
         }
       }
@@ -826,6 +888,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       candleSource: null,
       lastError: "",
       lastReconcile: null,
+      apiForbiddenInstruments: [],
       portfolioValue: null,
       commissionPaid: null,
       sessionStartedAt: null,
@@ -2133,6 +2196,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         }
         const instrumentId = ti.uid || ti.figi;
         const classCode = tbankInstField(ti, "classCode", "class_code") || "";
+        const instrumentName = tbankInstField(ti, "name") || "";
         const lot = Math.max(1, +ti.lot || 1);
         const ticker = String(ti.ticker || p.sec).toUpperCase();
         const targetPieces = +p.pos || 0;
@@ -2148,7 +2212,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
             reason: tradable.reason,
             instrumentId,
             classCode,
-            market
+            instrumentName,
+            market,
+            apiForbidden: liveIssueIsApiForbidden({ reason: tradable.reason })
           }));
           continue;
         }
@@ -2160,9 +2226,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
             message: err.message,
             instrumentId,
             classCode,
+            instrumentName,
             market,
             direction,
-            lots
+            lots,
+            apiForbidden: liveIssueIsApiForbidden({ message: err.message })
           }));
         }
       }
