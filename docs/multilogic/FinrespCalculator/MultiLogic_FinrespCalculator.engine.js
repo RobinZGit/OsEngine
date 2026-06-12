@@ -792,9 +792,13 @@
 
   function resolveVolCommission(volConfig) {
     const cfg = volConfig?.commission;
-    if (cfg && cfg.type && cfg.type !== "None") return normalizeCommission(cfg);
+    if (cfg != null && typeof cfg === "object" && cfg.type) {
+      return normalizeCommission(cfg);
+    }
     const pct = Number(volConfig?.commissionPct);
-    if (Number.isFinite(pct) && pct > 0) return normalizeCommission({ type: "Percent", value: pct });
+    if (Number.isFinite(pct)) {
+      return normalizeCommission({ type: "Percent", value: pct });
+    }
     return normalizeCommission(DEFAULT_COMMISSION);
   }
 
