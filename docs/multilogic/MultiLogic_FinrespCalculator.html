@@ -173,6 +173,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
+<button class="calc-btn calc-btn-secondary" id="calc-select-positive" type="button" disabled title="После расчёта оставить только инструменты с FINRESP ≥ 0">Отобрать FINRESP ≥ 0</button>
 </div>
 <div class="calc-field calc-field-wide cache-row">
 <label>Кэш свечей MOEX (браузер)</label>
@@ -475,6 +476,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     windowSkipped: [],
     lastInstruments: [],
     lastLoadMeta: null,
+    lastResult: null,
     prevSelectCount: 0,
     runGeneration: 0,
     runBusyOwner: null,
@@ -824,6 +826,47 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return true;
   }
 
+  function selectNonNegativeFinrespInstruments() {
+    if (state.uiBusy || isOptimizing()) return;
+    const result = state.lastResult;
+    if (!result?.perSec?.length) {
+      $("calc-status").textContent = "Сначала нажмите «Рассчитать», чтобы получить FINRESP по инструментам.";
+      return;
+    }
+    const negative = result.perSec.filter((p) => Number(p.finresp) < 0);
+    if (!negative.length) {
+      $("calc-status").textContent = "Инструментов с отрицательным FINRESP нет — выбор не изменён.";
+      return;
+    }
+    const negativeSecs = new Set(negative.map((p) => String(p.sec || "").trim().toUpperCase()));
+    const selectedOptions = Array.from($("calc-sec").selectedOptions);
+    const remainingOptions = selectedOptions.filter((o) => !negativeSecs.has(String(o.value || "").trim().toUpperCase()));
+    if (!remainingOptions.length) {
+      $("calc-status").textContent = "Все рассчитанные инструменты имеют отрицательный FINRESP — выбор не изменён.";
+      return;
+    }
+
+    for (const o of $("calc-sec").options) {
+      if (o.selected && negativeSecs.has(String(o.value || "").trim().toUpperCase())) {
+        o.selected = false;
+      }
+    }
+    syncSelectAllCheckboxes();
+    const instruments = selectedInstruments();
+    state.bulkMode = resolveBulkMode(instruments);
+    state.lastResult = null;
+    applyUiLocks();
+    const removedLabel = negative.map((p) => `${p.sec}:${fmt(p.finresp)}`).join(" · ");
+    const refreshed = tryRefreshFromLoadedPacks();
+    if (refreshed) {
+      $("calc-status").textContent =
+        `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). FINRESP пересчитан.`;
+    } else {
+      $("calc-status").textContent =
+        `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). Нажмите «Рассчитать» для обновления.`;
+    }
+  }
+
   function syncMarketCheckbox(market, cbId) {
     const sel = $("calc-sec");
     const cb = $(cbId);
@@ -881,6 +924,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function onSecSelectionChanged() {
+    state.lastResult = null;
+    applyUiLocks();
     syncSelectAllCheckboxes();
     const n = selectedInstrumentCount();
     const prev = state.prevSelectCount || 0;
@@ -985,6 +1030,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function applyUiLocks() {
     const lock = state.uiBusy || isOptimizing();
     $("calc-run").disabled = lock;
+    $("calc-select-positive").disabled = lock || !state.lastResult?.perSec?.length;
     $("prefix-pick-stocks").disabled = lock;
     $("prefix-pick-futures").disabled = lock;
     const secOpts = Array.from($("calc-sec").options);
@@ -1994,6 +2040,8 @@ ${totalBlock}
     const opts = options || {};
     const { perSec, stopper, a, b } = result;
     const agg = optimDisplayAgg(result, opts);
+    if (!opts.optimTrial) state.lastResult = result;
+    applyUiLocks();
     const winLen = perSec.reduce((m, p) => Math.max(m, p.rows?.length ?? 0), 0);
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
@@ -2067,6 +2115,8 @@ ${totalBlock}
       $("calc-ann-simple").textContent = "—";
       $("calc-ann-compound").textContent = "—";
       $("calc-count").textContent = "—";
+      state.lastResult = null;
+      applyUiLocks();
       $("calc-status").textContent = msg;
       noteTechError(`render: ${msg}`);
       return false;
@@ -2245,6 +2295,7 @@ ${totalBlock}
 
   function bindUiEvents() {
   $("calc-run").addEventListener("click", run);
+  $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
   $("cache-file-input").addEventListener("change", async (ev) => {
