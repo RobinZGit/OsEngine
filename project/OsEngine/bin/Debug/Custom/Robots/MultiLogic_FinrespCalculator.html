@@ -169,6 +169,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
 </select></div>
+<div class="calc-field"><label for="calc-month">Месяц целиком</label><input id="calc-month" type="month"></div>
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
@@ -652,6 +653,55 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       el.disabled = false;
       el.readOnly = false;
     }
+    const month = $("calc-month");
+    month.min = DATE_MIN.slice(0, 7);
+    month.max = maxStr.slice(0, 7);
+    month.disabled = false;
+  }
+
+  function syncMonthInputFromDates() {
+    const month = $("calc-month");
+    if (!month) return;
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    if (!from || !till || from.slice(0, 7) !== till.slice(0, 7)) {
+      month.value = "";
+      return;
+    }
+
+    const [year, monthNumber] = from.slice(0, 7).split("-").map(Number);
+    const { min, max } = dateBounds();
+    let monthFrom = new Date(year, monthNumber - 1, 1);
+    let monthTill = new Date(year, monthNumber, 0);
+    if (monthFrom < min) monthFrom = min;
+    if (monthTill > max) monthTill = max;
+    month.value = from === formatDay(monthFrom) && till === formatDay(monthTill)
+      ? from.slice(0, 7)
+      : "";
+  }
+
+  function applyMonthSelection() {
+    const value = $("calc-month").value;
+    if (!value) return;
+    const [year, month] = value.split("-").map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return;
+
+    const { min, max } = dateBounds();
+    let from = new Date(year, month - 1, 1);
+    let till = new Date(year, month, 0);
+    if (from < min) from = min;
+    if (till > max) till = max;
+    if (from > till) from = till;
+
+    $("calc-from").value = formatDay(from);
+    $("calc-till").value = formatDay(till);
+    state.userDateRangeTouched = true;
+    const narrowed = enforceDateRange("till", selectedInstrumentCount());
+    syncMonthInputFromDates();
+    updateDateHint(selectedInstrumentCount());
+    $("calc-status").textContent = narrowed
+      ? "Месяц выбран, но период сужен лимитом таймфрейма/числа инструментов."
+      : "Выбран полный месяц расчёта.";
   }
 
   function selectedInstrumentCount() {
@@ -1502,6 +1552,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (from < min) from = min;
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(0);
   }
 
@@ -1541,6 +1592,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(n);
     return $("calc-from").value !== beforeFrom || $("calc-till").value !== beforeTill;
   }
@@ -1567,6 +1619,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (from > till) from = till;
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(n);
     return beforeFrom !== $("calc-from").value || beforeTill !== $("calc-till").value;
   }
@@ -2411,14 +2464,17 @@ ${totalBlock}
     }
     if (state.packs.length) setSliderBounds(true);
   });
+  $("calc-month").addEventListener("change", applyMonthSelection);
   $("calc-from").addEventListener("change", () => {
     state.userDateRangeTouched = true;
     enforceDateRange("from");
+    syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
   });
   $("calc-till").addEventListener("change", () => {
     state.userDateRangeTouched = true;
     enforceDateRange("till");
+    syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
   });
   $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); render(); });
