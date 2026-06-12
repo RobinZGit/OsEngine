@@ -114,6 +114,9 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
   background:#fff;border:1px solid var(--border);border-radius:6px;white-space:pre-wrap;word-break:break-word;
 }
 a{color:var(--accent);}
+.indicators-used-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:.35rem 0 .65rem;}
+.indicators-used-table th,.indicators-used-table td{border:1px solid var(--border);padding:.35rem .5rem;text-align:left;vertical-align:top;}
+.indicators-used-table th{background:#f3f4f6;font-weight:600;}
 </style>
 </head>
 <body>
@@ -149,10 +152,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="calc-tf">Таймфрейм</label>
 <select id="calc-tf">
 <option value="1">1 мин</option>
+<option value="5">5 мин</option>
 <option value="10">10 мин</option>
+<option value="15">15 мин</option>
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
-</select></div>
+</select>
+<p class="note" style="margin:.25rem 0 0">MOEX ISS: 1 / 10 / 60 / 24 — напрямую; 5 и 15 мин — сборка из минутных свечей биржи.</p></div>
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
@@ -255,6 +261,23 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="note">Equity = сумма FINRESP по инструментам. ATR<sub>порт</sub> = mean(|Δequity|) за N свечей. SL/TP портфеля действуют, если кратность &gt; 0; длина ATR ≥ 2. При срабатывании — закрытие всех позиций, база обновляется.</p>
 
+<p class="extra-section" id="calc-indicators-used">Индикаторы в стандартных логиках L1…L4</p>
+<p class="note">Справка робота: <a href="MultiLogic_LogicHelp.html#topic-2">параметры Ind(…)</a> · <a href="MultiLogic_LogicHelp.html#topic-3">условия во 2-й скобке</a> · <a href="MultiLogic_LogicHelp.html#topic-6a">L1…L4 по умолчанию</a> · <a href="MultiLogic_PolynomialIndicators.html">многочлены</a>.</p>
+<table class="indicators-used-table" aria-label="Индикаторы L1-L4">
+<thead><tr><th>Индикатор</th><th>Типичные параметры в L1…L4</th><th>Сигналы (примеры)</th></tr></thead>
+<tbody>
+<tr><td><b>SMA</b></td><td>L=100, Src=Close</td><td>Ab — close выше; Bl — ниже</td></tr>
+<tr><td><b>LinReg</b></td><td>L=@LR, Dev=2</td><td>AbUp / BlLo; Regime — наклон и флэт</td></tr>
+<tr><td><b>ATR</b></td><td>14; Gr=3%; Lb=5</td><td>GrOk — рост волатильности; SL/TP позиции × ATR</td></tr>
+<tr><td><b>CCI</b></td><td>20; Lmin=100; Smax=-100</td><td>CCI&gt;=100 / CCI&lt;=-100</td></tr>
+<tr><td><b>MACD</b></td><td>12,26,9</td><td>Macd&gt;Sig / Macd&lt;Sig</td></tr>
+<tr><td><b>Stoch</b></td><td>14-3-3; Lmin=90; Smax=10</td><td>K&lt;=10 / K&gt;=90 (L2, L4)</td></tr>
+<tr><td><b>Regime</b></td><td>LinReg; SlopeLb=3; Entry=MatchSide|FlatOnly</td><td>фильтр тренд / боковик; OnFlip=Close</td></tr>
+<tr><td><b>Strict</b></td><td>@Strict (1…5 на вкладке «Логики»)</td><td>строгость отбора сигналов</td></tr>
+</tbody>
+</table>
+<p class="note">L1/L3 — тренд (CCI + LinReg MatchSide); L2/L4 — боковик (Stoch + Regime FlatOnly). Общепортфельный Stopper — ATR по equity, не по бумаге (см. блок выше).</p>
+
 <p class="extra-section">Параметры строки логики</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="param-lr">LinReg длина (@LR)</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
@@ -300,7 +323,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-selectall-fix";
+  const CALC_PAGE_VERSION = "2026-06-08-tf5-15";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -476,7 +499,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const MIN_WARMUP_BARS = 220;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
+    "5": { label: "5 мин", maxDays: 7, maxBars: 1200, aggFrom: "1 мин MOEX" },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
+    "15": { label: "15 мин", maxDays: 14, maxBars: 1200, aggFrom: "1 мин MOEX" },
     "60": { label: "1 час", maxDays: 93, maxBars: 1500 },
     "24": { label: "1 день", maxDays: 3650, maxBars: 1500 }
   };
@@ -563,7 +588,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function barsPerTradingDay(tf) {
     if (tf === "1") return MOEX_MINUTES_PER_SESSION;
+    if (tf === "5") return Math.ceil(MOEX_MINUTES_PER_SESSION / 5);
     if (tf === "10") return Math.ceil(MOEX_MINUTES_PER_SESSION / 10);
+    if (tf === "15") return Math.ceil(MOEX_MINUTES_PER_SESSION / 15);
     if (tf === "60") return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
     if (tf === "24") return 1;
     return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);

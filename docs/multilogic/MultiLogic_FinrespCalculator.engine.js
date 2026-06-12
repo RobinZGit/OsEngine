@@ -1190,6 +1190,60 @@
     return resolveFuturesMoexSec(secOrPrefix, period);
   }
 
+  const AGGREGATED_INTERVALS = {
+    "5": { moexInterval: "1", minutes: 5 },
+    "15": { moexInterval: "1", minutes: 15 }
+  };
+
+  function resolveIntervalLoad(interval) {
+    const key = String(interval);
+    const agg = AGGREGATED_INTERVALS[key];
+    if (agg) {
+      return { cacheInterval: key, moexInterval: agg.moexInterval, aggMinutes: agg.minutes };
+    }
+    return { cacheInterval: key, moexInterval: key, aggMinutes: 0 };
+  }
+
+  function aggregateCandles(candles, minutes) {
+    if (!candles?.length || minutes <= 1) return candles || [];
+    const ms = minutes * 60 * 1000;
+    const buckets = new Map();
+    for (const c of candles) {
+      const t = new Date(String(c.time).replace(" ", "T")).getTime();
+      if (!Number.isFinite(t)) continue;
+      const key = Math.floor(t / ms);
+      let b = buckets.get(key);
+      if (!b) {
+        buckets.set(key, {
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+          time: c.time,
+          sec: c.sec,
+          market: c.market,
+          key
+        });
+      } else {
+        b.high = Math.max(b.high, c.high);
+        b.low = Math.min(b.low, c.low);
+        b.close = c.close;
+        b.volume += c.volume;
+        b.time = c.time;
+      }
+    }
+    return [...buckets.values()]
+      .sort((a, b) => a.key - b.key)
+      .map(({ key, ...rest }) => rest);
+  }
+
+  async function loadMoexCandlesResolved(sec, from, till, interval, market = "shares") {
+    const { moexInterval, aggMinutes } = resolveIntervalLoad(interval);
+    const raw = await loadMoexCandles(sec, from, till, moexInterval, market);
+    return aggMinutes > 1 ? aggregateCandles(raw, aggMinutes) : raw;
+  }
+
   async function loadMoexCandles(sec, from, till, interval, market = "shares") {
     const all = [];
     let start = 0;
@@ -1398,7 +1452,7 @@
           return { ok: true, pack: cached, requestedSec, fromCache: true };
         }
       }
-      const candles = await loadMoexCandles(moexSec, from, till, interval, market);
+      const candles = await loadMoexCandlesResolved(moexSec, from, till, interval, market);
       if (!candles.length) {
         return { ok: false, error: "нет свечей MOEX за выбранный период", requestedSec };
       }
@@ -1552,6 +1606,8 @@
     createCandleCache,
     CANDLE_CACHE_VERSION,
     moexFileProtocolHint,
+    resolveIntervalLoad,
+    aggregateCandles,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);
