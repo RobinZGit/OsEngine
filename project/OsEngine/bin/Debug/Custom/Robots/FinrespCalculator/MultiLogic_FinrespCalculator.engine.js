@@ -895,7 +895,7 @@
   function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig, options) {
     const opts = options || {};
     const signalCandles = opts.signalCandles || candles;
-    const cache = new IndicatorCache(signalCandles);
+    const cache = opts.indicatorCache || new IndicatorCache(signalCandles);
     const atrLen = parsed.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen;
     const atrSlTp = cache.atr(atrLen);
     const initial = opts.initial || {};
@@ -921,7 +921,9 @@
     };
 
     const barSpan = Math.max(1, to - from + 1);
-    const barProgressStep = Math.max(1, Math.floor(barSpan / 48));
+    const barProgressStep = opts.yieldUi
+      ? Math.max(1, Math.floor(barSpan / 24))
+      : Math.max(1, Math.floor(barSpan / 48));
 
     for (let i = from; i <= to; i++) {
       const price = candles[i].close;
@@ -929,7 +931,7 @@
       let sell = 0;
 
       if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
-        opts.onProgress(((i - from + 1) / barSpan) * 100, candles[i]?.time);
+        opts.onProgress(i - from + 1, barSpan, candles[i]?.time);
       }
 
       let posStop = null;
@@ -1016,11 +1018,11 @@
     const tpAtr = Math.max(0, Number(opts.tpAtr) || 0);
     const atrLen = Math.max(2, Number(opts.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen);
     const useStops = slAtr > 0 || tpAtr > 0;
-    const cache = useStops ? new IndicatorCache(signalCandles) : null;
+    const cache = opts.indicatorCache || (useStops ? new IndicatorCache(signalCandles) : null);
     const atrSlTp = useStops ? cache.atr(atrLen) : null;
     const signalCloses = signalCandles.map((c) => c.close);
     const tradeCloses = candles.map((c) => c.close);
-    const sma = smaSeries(signalCloses, smaLen);
+    const sma = cache ? cache.sma(smaLen) : smaSeries(signalCloses, smaLen);
     const initial = opts.initial || {};
     let cash = initial.cash || 0;
     let pos = initial.pos || 0;
@@ -1033,13 +1035,15 @@
     const from = Math.max(0, startIdx);
     const to = Math.min(endIdx, candles.length - 1);
     const barSpan = Math.max(1, to - from + 1);
-    const barProgressStep = Math.max(1, Math.floor(barSpan / 48));
+    const barProgressStep = opts.yieldUi
+      ? Math.max(1, Math.floor(barSpan / 24))
+      : Math.max(1, Math.floor(barSpan / 48));
 
     for (let i = from; i <= to; i++) {
       const candle = candles[i];
       if (!candle) continue;
       if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
-        opts.onProgress(((i - from + 1) / barSpan) * 100, candles[i]?.time);
+        opts.onProgress(i - from + 1, barSpan, candles[i]?.time);
       }
       const price = tradeCloses[i];
       const signalPrice = signalCloses[i];
@@ -1183,8 +1187,6 @@
     return simulateLogicLine(candles, parsed, startIdx, endIdx, vol, options);
   }
 
-  const YIELD_CHUNK_BARS = 72;
-
   async function runOnCandlesYielding(candles, spec, startIdx, endIdx, params, volConfig, options) {
     const opts = options || {};
     const a = startIdx;
@@ -1194,6 +1196,9 @@
       return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0, entryPrice: null };
     }
 
+    const signalCandles = opts.signalCandles || candles;
+    const indicatorCache = opts.indicatorCache || new IndicatorCache(signalCandles);
+    const chunkSize = yieldChunkSize(span);
     let initial = { ...(opts.initial || {}) };
     const allRows = [];
     let buys = 0;
@@ -1201,13 +1206,21 @@
     let commission = 0;
     let first = true;
 
-    for (let ca = a; ca <= b; ca += YIELD_CHUNK_BARS) {
-      const cb = Math.min(b, ca + YIELD_CHUNK_BARS - 1);
+    for (let ca = a; ca <= b; ca += chunkSize) {
+      const cb = Math.min(b, ca + chunkSize - 1);
       const chunkOpts = {
         ...opts,
+        signalCandles,
+        indicatorCache,
+        yieldUi: !!opts.yieldUi,
         initial,
         skipWarmup: !first || opts.skipWarmup,
-        onProgress: null
+        onProgress: typeof opts.onProgress === "function"
+          ? (doneInChunk, chunkSpan, candleTime) => {
+            const doneInRange = (ca - a) + Math.max(0, Math.min(chunkSpan, doneInChunk));
+            opts.onProgress(doneInRange, span, candleTime);
+          }
+          : null
       };
       const r = runOnCandles(candles, spec, ca, cb, params, volConfig, chunkOpts);
       if (r.rows?.length) allRows.push(...r.rows);
@@ -1223,9 +1236,9 @@
           entryPrice: r.entryPrice ?? initial.entryPrice ?? null
         };
       }
-      const doneBars = cb - a + 1;
+      const doneInRange = cb - a + 1;
       if (typeof opts.onProgress === "function") {
-        opts.onProgress((doneBars / span) * 100, candles[cb]?.time);
+        opts.onProgress(doneInRange, span, candles[cb]?.time);
       }
       if (opts.yieldUi) await delay(0);
       first = false;
@@ -2068,9 +2081,18 @@
     return s;
   }
 
-  function finrespProgressText(sec, candleTime) {
+  function finrespProgressText(sec, doneBars, totalBars, candleTime) {
+    const done = Math.max(0, Math.min(totalBars || 0, Math.round(doneBars || 0)));
+    const total = Math.max(0, Math.round(totalBars || 0));
+    const barsPart = total > 0 ? ` · ${done}/${total} свечей` : "";
     const t = formatProgressTime(candleTime);
-    return t ? `Расчёт FINRESP: ${sec} · ${t}` : `Расчёт FINRESP: ${sec}`;
+    const timePart = t ? ` · ${t}` : "";
+    return `Расчёт FINRESP: ${sec}${barsPart}${timePart}`;
+  }
+
+  function yieldChunkSize(span) {
+    if (span <= 96) return span;
+    return Math.max(24, Math.min(72, Math.floor(span / 14)));
   }
 
   function emitRunProgress(options, pct, text) {
@@ -2171,12 +2193,12 @@
       const runOpts = {
         ...(signalPacks ? { signalCandles } : {}),
         onProgress: unit
-          ? (innerPct, candleTime) => {
-            const barFrac = (Math.max(0, Math.min(100, innerPct)) / 100) * unit.bars;
+          ? (doneInInstrument, instrumentBars, candleTime) => {
+            const absolute = doneBars + Math.max(0, Math.min(instrumentBars, doneInInstrument));
             emitRunProgress(
               opts,
-              ((doneBars + barFrac) / totalBars) * 100,
-              finrespProgressText(unit.sec, candleTime)
+              (absolute / totalBars) * 100,
+              finrespProgressText(unit.sec, absolute, totalBars, candleTime)
             );
           }
           : undefined
@@ -2188,7 +2210,11 @@
       }
       if (unit) {
         doneBars += unit.bars;
-        emitRunProgress(opts, (doneBars / totalBars) * 100, finrespProgressText(sec, candles[range.b]?.time));
+        emitRunProgress(
+          opts,
+          (doneBars / totalBars) * 100,
+          finrespProgressText(sec, doneBars, totalBars, candles[range.b]?.time)
+        );
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);
@@ -2266,12 +2292,12 @@
         ...(signalPacks ? { signalCandles } : {}),
         yieldUi: true,
         onProgress: unit
-          ? (innerPct, candleTime) => {
-            const barFrac = (Math.max(0, Math.min(100, innerPct)) / 100) * unit.bars;
+          ? (doneInInstrument, instrumentBars, candleTime) => {
+            const absolute = doneBars + Math.max(0, Math.min(instrumentBars, doneInInstrument));
             emitRunProgress(
               opts,
-              ((doneBars + barFrac) / totalBars) * 100,
-              finrespProgressText(unit.sec, candleTime)
+              (absolute / totalBars) * 100,
+              finrespProgressText(unit.sec, absolute, totalBars, candleTime)
             );
           }
           : undefined
@@ -2283,7 +2309,11 @@
       }
       if (unit) {
         doneBars += unit.bars;
-        await emitRunProgressAsync(opts, (doneBars / totalBars) * 100, finrespProgressText(sec, candles[range.b]?.time));
+        await emitRunProgressAsync(
+          opts,
+          (doneBars / totalBars) * 100,
+          finrespProgressText(sec, doneBars, totalBars, candles[range.b]?.time)
+        );
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);

@@ -502,7 +502,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-progress-99";
+  const CALC_PAGE_VERSION = "2026-06-12-live-start";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -1595,13 +1595,51 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return map;
   }
 
+  function liveReconcileTargets() {
+    if (state.lastResult?.perSec?.length) return state.lastResult.perSec;
+    if (!state.packs.length) return [];
+    const trial = calcResult();
+    if (trial?.perSec?.length) {
+      state.lastResult = trial;
+      return trial.perSec;
+    }
+    return [];
+  }
+
+  function validateLiveTradingStart() {
+    applyEditorParams();
+    const instruments = selectedInstruments();
+    if (!instruments.length) {
+      return { ok: false, error: "выберите инструменты" };
+    }
+    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params(), indicatorSelection());
+    if (!spec) {
+      return { ok: false, error: "выберите логику" };
+    }
+    if (!requireTbankDepositForRun()) {
+      return { ok: false, error: "загрузите депозит T-Bank" };
+    }
+    const vol = volConfig();
+    if (!(vol.deposit > 0)) {
+      return { ok: false, error: "депозит должен быть > 0" };
+    }
+    if (!(vol.volume > 0)) {
+      return { ok: false, error: "Volume должен быть > 0" };
+    }
+    if (!(vol.maxPositions > 0)) {
+      return { ok: false, error: "Max positions должен быть > 0" };
+    }
+    return { ok: true, instruments, spec, vol };
+  }
+
   async function liveTradingReconcile() {
     if (!state.live.active || state.live.reconcileBusy) return;
-    if (!state.lastResult?.perSec?.length) return;
+    const targets = liveReconcileTargets();
+    if (!targets.length) return;
     state.live.reconcileBusy = true;
     try {
       const actual = await tbankPositionsByTicker();
-      for (const p of state.lastResult.perSec) {
+      for (const p of targets) {
         const secU = String(p.sec || "").toUpperCase();
         const instMeta = selectedInstruments().find((i) => String(i.sec).toUpperCase() === secU);
         const market = instMeta?.market || "shares";
@@ -1679,10 +1717,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       syncLiveTradingUi();
       return;
     }
-    if (!state.lastResult?.perSec?.length) {
-      state.live.lastError = "сначала «Рассчитать»";
-      $("calc-status").textContent =
-        "Сначала рассчитайте FINRESP по выбранным инструментам, затем начните торговлю.";
+    const startCheck = validateLiveTradingStart();
+    if (!startCheck.ok) {
+      state.live.lastError = startCheck.error;
+      $("calc-status").textContent = `Нельзя начать торговлю: ${startCheck.error}.`;
       syncLiveTradingUi();
       return;
     }
