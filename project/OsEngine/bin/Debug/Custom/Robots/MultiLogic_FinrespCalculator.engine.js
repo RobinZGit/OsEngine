@@ -15,27 +15,22 @@
     volumeType: "Deposit percent",
     volume: 10,
     deposit: 1000000,
-    maxPositions: 40
+    maxPositions: 40,
+    commissionPct: 0
   };
-  const DEFAULT_COMMISSION = { type: "Percent", value: 0.04 };
-
-  function normalizeCommission(cfg) {
-    const c = cfg || DEFAULT_COMMISSION;
-    const type = c.type === "OneLotFix" || c.type === "Percent" ? c.type : "None";
-    const value = Math.max(0, Number(c.value) || 0);
-    if (type === "None" || value <= 0) return { type: "None", value: 0 };
-    return { type, value };
-  }
-
-  function tradeCommission(volume, price, commissionCfg) {
-    const cfg = normalizeCommission(commissionCfg);
-    const vol = Math.abs(Number(volume) || 0);
-    const px = Math.max(0, Number(price) || 0);
-    if (vol <= 0 || px <= 0) return 0;
-    if (cfg.type === "Percent") return vol * px * (cfg.value / 100);
-    if (cfg.type === "OneLotFix") return vol * cfg.value;
-    return 0;
-  }
+  const INDICATOR_OPTIONS = Object.freeze([
+    { key: "sma", label: "SMA" },
+    { key: "atr", label: "ATR" },
+    { key: "stoch", label: "Stoch" },
+    { key: "linreg", label: "LinReg" },
+    { key: "macd", label: "MACD" },
+    { key: "cci", label: "CCI" },
+    { key: "bollinger", label: "Bollinger" },
+    { key: "momentum", label: "Momentum" },
+    { key: "vwap", label: "VWAP" }
+  ]);
+  const INDICATOR_KEYS = INDICATOR_OPTIONS.map((x) => x.key);
+  const INDICATOR_KEY_SET = new Set(INDICATOR_KEYS);
 
   const DEFAULT_STOCK_TICKERS_RAW =
     "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
@@ -183,10 +178,17 @@
     L4: BOKOVIK_REGIME +
       "Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) " +
       "Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
-      SLTP + "Note(short-bokovik)"
+      SLTP + "Note(short-bokovik)",
+    L5: TREND_REGIME +
+      "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND VWAP()(Ab) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig))) " +
+      "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND VWAP()(Bl) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) " +
+      "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Bollinger(20;Dev=2)(BlLo) AND VWAP()(Bl) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND Momentum(10)(MOM<0) AND MACD(12,26,9)(Macd<Sig))) " +
+      "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Bollinger(20;Dev=2)(AbUp) AND VWAP()(Ab) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND Momentum(10)(MOM>0) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
+      SLTP + "Note(LmaxTrend)"
   };
 
   const BUILTIN_META = [
+    { id: "L5", name: "L5 — LmaxTrend, лонг+шорт тренд", type: "logic_line", key: "L5" },
     { id: "L1", name: "L1 — лонг, тренд", type: "logic_line", key: "L1" },
     { id: "L2", name: "L2 — лонг, боковик", type: "logic_line", key: "L2" },
     { id: "L3", name: "L3 — шорт, тренд", type: "logic_line", key: "L3" },
@@ -226,20 +228,29 @@
   }
 
   function extractBlock(line, tag) {
-    const re = new RegExp(tag + "\\((Long|Short)\\(", "i");
-    const m = re.exec(line);
-    if (!m) return null;
-    const side = m[1].toLowerCase();
-    let i = m.index + m[0].length;
-    let depth = 1;
-    const start = i;
-    while (i < line.length && depth > 0) {
-      if (line[i] === "(") depth++;
-      else if (line[i] === ")") depth--;
-      i++;
+    return extractBlocks(line, tag)[0] || null;
+  }
+
+  function extractBlocks(line, tag) {
+    const blocks = [];
+    const scanRe = new RegExp(tag + "\\((Long|Short)\\(", "ig");
+    let m = scanRe.exec(line);
+    while (m) {
+      const side = m[1].toLowerCase();
+      let i = m.index + m[0].length;
+      let depth = 1;
+      const start = i;
+      while (i < line.length && depth > 0) {
+        if (line[i] === "(") depth++;
+        else if (line[i] === ")") depth--;
+        i++;
+      }
+      const inner = line.slice(start, i - 1);
+      blocks.push({ side, expr: inner.trim() });
+      scanRe.lastIndex = i;
+      m = scanRe.exec(line);
     }
-    const inner = line.slice(start, i - 1);
-    return { side, expr: inner.trim() };
+    return blocks;
   }
 
   function splitTopLevelAnd(expr) {
@@ -295,19 +306,88 @@
     return map;
   }
 
-  function parseLogicLine(line, params) {
+  function defaultIndicatorSelection() {
+    const out = {};
+    for (const key of INDICATOR_KEYS) out[key] = true;
+    return out;
+  }
+
+  function normalizeIndicatorSelection(selection) {
+    if (selection == null) return defaultIndicatorSelection();
+    const out = {};
+    for (const key of INDICATOR_KEYS) out[key] = false;
+    if (Array.isArray(selection)) {
+      for (const key of selection) {
+        const k = indicatorKey(key);
+        if (INDICATOR_KEY_SET.has(k)) out[k] = true;
+      }
+      return out;
+    }
+    if (typeof selection === "string") {
+      return normalizeIndicatorSelection(selection.split(",").map((x) => x.trim()));
+    }
+    if (typeof selection === "object") {
+      for (const [key, value] of Object.entries(selection)) {
+        const k = indicatorKey(key);
+        if (INDICATOR_KEY_SET.has(k)) out[k] = !!value;
+      }
+      return out;
+    }
+    return defaultIndicatorSelection();
+  }
+
+  function enabledIndicatorSet(selection) {
+    const normalized = normalizeIndicatorSelection(selection);
+    return new Set(INDICATOR_KEYS.filter((key) => normalized[key]));
+  }
+
+  function filterAtomsByIndicators(atoms, indicatorSelection) {
+    const enabled = enabledIndicatorSet(indicatorSelection);
+    return (atoms || []).filter((atom) => {
+      const kind = indicatorKey(atom?.kind);
+      return !INDICATOR_KEY_SET.has(kind) || enabled.has(kind);
+    });
+  }
+
+  function isIndicatorEnabled(indicatorSelection, key) {
+    return !!normalizeIndicatorSelection(indicatorSelection)[indicatorKey(key)];
+  }
+
+  function indicatorKey(kind) {
+    const k = String(kind || "").toLowerCase();
+    if (k === "bolinger" || k === "boll" || k === "bb" || k === "polenger") return "bollinger";
+    if (k === "mom") return "momentum";
+    if (k === "vwma") return "vwap";
+    return k;
+  }
+
+  function parseLogicLine(line, params, indicatorSelection) {
     const raw = substituteParams(line, params || DEFAULT_PARAMS);
     const { slAtr, tpAtr } = parseSlTp(raw);
     const body = stripDecor(raw);
-    const op = extractBlock(body, "Op");
-    const cl = extractBlock(body, "Cl");
+    const opBlocks = extractBlocks(body, "Op");
+    const clBlocks = extractBlocks(body, "Cl");
+    const firstOp = opBlocks[0];
+    const firstCl = clBlocks[0];
+    const atomsForSide = (blocks, side) => blocks
+      .filter((block) => block.side === side)
+      .flatMap((block) => splitTopLevelAnd(block.expr).map(parseAtom).filter(Boolean));
+    const opLongAtoms = filterAtomsByIndicators(atomsForSide(opBlocks, "long"), indicatorSelection);
+    const opShortAtoms = filterAtomsByIndicators(atomsForSide(opBlocks, "short"), indicatorSelection);
+    const clLongAtoms = filterAtomsByIndicators(atomsForSide(clBlocks, "long"), indicatorSelection);
+    const clShortAtoms = filterAtomsByIndicators(atomsForSide(clBlocks, "short"), indicatorSelection);
     return {
       slAtr,
       tpAtr,
-      opSide: op?.side || "long",
-      clSide: cl?.side || op?.side || "long",
-      opAtoms: op ? splitTopLevelAnd(op.expr).map(parseAtom).filter(Boolean) : [],
-      clAtoms: cl ? splitTopLevelAnd(cl.expr).map(parseAtom).filter(Boolean) : []
+      opSide: firstOp?.side || "long",
+      clSide: firstCl?.side || firstOp?.side || "long",
+      opAtoms: [...opLongAtoms, ...opShortAtoms],
+      clAtoms: [...clLongAtoms, ...clShortAtoms],
+      opLongAtoms,
+      opShortAtoms,
+      clLongAtoms,
+      clShortAtoms,
+      indicators: normalizeIndicatorSelection(indicatorSelection)
     };
   }
 
@@ -412,6 +492,54 @@
     return { up, center, down };
   }
 
+  function bollingerSeries(closes, len, devMult) {
+    const up = new Array(closes.length).fill(null);
+    const center = new Array(closes.length).fill(null);
+    const down = new Array(closes.length).fill(null);
+    for (let i = len - 1; i < closes.length; i++) {
+      let sum = 0;
+      for (let j = i - len + 1; j <= i; j++) sum += closes[j];
+      const ma = sum / len;
+      let varSum = 0;
+      for (let j = i - len + 1; j <= i; j++) varSum += (closes[j] - ma) ** 2;
+      const std = Math.sqrt(varSum / len);
+      center[i] = ma;
+      up[i] = ma + devMult * std;
+      down[i] = ma - devMult * std;
+    }
+    return { up, center, down };
+  }
+
+  function momentumSeries(closes, len) {
+    const out = new Array(closes.length).fill(null);
+    for (let i = len; i < closes.length; i++) {
+      out[i] = closes[i] - closes[i - len];
+    }
+    return out;
+  }
+
+  function vwapSeries(candles) {
+    const out = new Array(candles.length).fill(null);
+    let pvSum = 0;
+    let volSum = 0;
+    let currentDay = null;
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      const day = String(c.time || "").slice(0, 10);
+      if (day && day !== currentDay) {
+        currentDay = day;
+        pvSum = 0;
+        volSum = 0;
+      }
+      const price = (c.high + c.low + c.close) / 3;
+      const vol = Number.isFinite(c.volume) && c.volume > 0 ? c.volume : 1;
+      pvSum += price * vol;
+      volSum += vol;
+      if (volSum > 0) out[i] = pvSum / volSum;
+    }
+    return out;
+  }
+
   function cciSeries(candles, len) {
     const out = new Array(candles.length).fill(null);
     const tp = candles.map((c) => (c.high + c.low + c.close) / 3);
@@ -443,6 +571,9 @@
       this._atr = new Map();
       this._stoch = new Map();
       this._linreg = new Map();
+      this._bollinger = new Map();
+      this._momentum = new Map();
+      this._vwap = new Map();
       this._cci = new Map();
       this._macd = new Map();
     }
@@ -464,6 +595,19 @@
       const key = `${len};${dev}`;
       if (!this._linreg.has(key)) this._linreg.set(key, linRegSeries(this.closes, len, dev));
       return this._linreg.get(key);
+    }
+    bollinger(len, dev) {
+      const key = `${len};${dev}`;
+      if (!this._bollinger.has(key)) this._bollinger.set(key, bollingerSeries(this.closes, len, dev));
+      return this._bollinger.get(key);
+    }
+    momentum(len) {
+      if (!this._momentum.has(len)) this._momentum.set(len, momentumSeries(this.closes, len));
+      return this._momentum.get(len);
+    }
+    vwap() {
+      if (!this._vwap.has("session")) this._vwap.set("session", vwapSeries(this.candles));
+      return this._vwap.get("session");
     }
     cci(len) {
       if (!this._cci.has(len)) this._cci.set(len, cciSeries(this.candles, len));
@@ -499,14 +643,15 @@
     const pm = parseParamsMap(atom.params);
     const sig = atom.signal.replace(/\s+/g, "");
     const sigU = sig.toUpperCase();
+    const kind = indicatorKey(atom.kind);
 
-    if (atom.kind === "sma") {
+    if (kind === "sma") {
       const len = pm.L || parseInt(atom.params, 10) || 100;
       const v = cache.sma(len)[idx];
       if (v == null) return false;
       return evalThreshold(sigU === "AB" ? "AB" : sigU === "BL" ? "BL" : sig, v, close);
     }
-    if (atom.kind === "atr") {
+    if (kind === "atr") {
       const len = pm.L || 14;
       const lb = parseInt(pm.Lb || pm.lb || "5", 10);
       const gr = parseFloat(String(pm.Gr || pm.gr || "3").replace("%", "")) / 100;
@@ -517,14 +662,14 @@
       if (sigU === "GROK" || sigU.includes("GROK")) return cur >= prev * (1 + gr);
       return false;
     }
-    if (atom.kind === "stoch") {
+    if (kind === "stoch") {
       const k1 = pm.K1 || 14, k2 = pm.K2 || 3, d = pm.D || 3;
       const st = cache.stoch(k1, k2, d);
       const k = st.k[idx];
       if (k == null) return false;
       return evalThreshold(sig, k, close);
     }
-    if (atom.kind === "linreg") {
+    if (kind === "linreg") {
       const len = pm.L || parseInt(atom.params, 10) || 20;
       const dev = parseFloat(pm.Dev || pm.dev || "2");
       const lr = cache.linreg(len, dev);
@@ -542,7 +687,48 @@
       }
       return false;
     }
-    if (atom.kind === "macd") {
+    if (kind === "bollinger") {
+      const len = pm.L || parseInt(atom.params, 10) || 20;
+      const dev = parseFloat(pm.Dev || pm.dev || "2");
+      const bb = cache.bollinger(len, dev);
+      if (sigU === "ABUP") return bb.up[idx] != null && close > bb.up[idx];
+      if (sigU === "BLLO") return bb.down[idx] != null && close < bb.down[idx];
+      if (sigU === "ABLO") return bb.down[idx] != null && close > bb.down[idx];
+      if (sigU === "BLUP") return bb.up[idx] != null && close < bb.up[idx];
+      if (sigU === "AB" || sigU === "ABMID") return bb.center[idx] != null && close > bb.center[idx];
+      if (sigU === "BL" || sigU === "BLMID") return bb.center[idx] != null && close < bb.center[idx];
+      if (sigU === "SLOPEUP" || sigU === "CENTERUP") {
+        const c0 = bb.center[idx - 1], c1 = bb.center[idx];
+        return c0 != null && c1 != null && c1 > c0;
+      }
+      if (sigU === "SLOPEDN" || sigU === "CENTERDN") {
+        const c0 = bb.center[idx - 1], c1 = bb.center[idx];
+        return c0 != null && c1 != null && c1 < c0;
+      }
+      return false;
+    }
+    if (kind === "momentum") {
+      const len = pm.L || parseInt(atom.params, 10) || 10;
+      const v = cache.momentum(len)[idx];
+      if (v == null) return false;
+      return evalThreshold(sig, v, close);
+    }
+    if (kind === "vwap") {
+      const v = cache.vwap()[idx];
+      if (v == null) return false;
+      if (sigU === "AB") return close > v;
+      if (sigU === "BL") return close < v;
+      if (sigU === "SLOPEUP" || sigU === "CENTERUP") {
+        const p = cache.vwap()[idx - 1];
+        return p != null && v > p;
+      }
+      if (sigU === "SLOPEDN" || sigU === "CENTERDN") {
+        const p = cache.vwap()[idx - 1];
+        return p != null && v < p;
+      }
+      return false;
+    }
+    if (kind === "macd") {
       const fast = pm.fast || 12, slow = pm.slow || 26, signal = pm.signal || 9;
       const md = cache.macd(fast, slow, signal);
       const m = md.macd[idx], s = md.signal[idx];
@@ -551,7 +737,7 @@
       if (sigU === "MACD<SIG") return m < s;
       return false;
     }
-    if (atom.kind === "cci") {
+    if (kind === "cci") {
       const len = pm.L || 20;
       const v = cache.cci(len)[idx];
       if (v == null) return false;
@@ -584,6 +770,12 @@
     return lot * maxPos;
   }
 
+  function commissionCost(price, volume, volConfig) {
+    const pct = Math.max(0, Number(volConfig?.commissionPct) || 0);
+    if (!pct || !price || !volume) return 0;
+    return Math.abs(price * volume) * pct / 100;
+  }
+
   function pushRow(rows, candle, fields) {
     if (!candle) return;
     rows.push({
@@ -591,6 +783,35 @@
       close: candle.close,
       ...fields
     });
+  }
+
+  function simulateNoSignalRows(candles, startIdx, endIdx, options) {
+    const initial = options?.initial || {};
+    const cash = initial.cash || 0;
+    const pos = initial.pos || 0;
+    const rows = [];
+    const from = Math.max(0, startIdx);
+    const to = Math.min(endIdx, candles.length - 1);
+    for (let i = from; i <= to; i++) {
+      const price = candles[i]?.close || 0;
+      pushRow(rows, candles[i], {
+        buy: 0,
+        sell: 0,
+        posStop: null,
+        cash,
+        pos,
+        eq: cash + pos * price
+      });
+    }
+    const last = rows.at(-1);
+    return {
+      rows,
+      finresp: last?.eq ?? 0,
+      cash: last?.cash ?? cash,
+      pos: last?.pos ?? pos,
+      buys: 0,
+      sells: 0
+    };
   }
 
   function longestPack(packs) {
@@ -603,17 +824,29 @@
     const atoms = [...(parsed?.opAtoms || []), ...(parsed?.clAtoms || [])];
     for (const atom of atoms) {
       const pm = parseParamsMap(atom.params);
-      if (atom.kind === "sma") {
+      const kind = indicatorKey(atom.kind);
+      if (kind === "sma") {
         const len = pm.L || parseInt(atom.params, 10) || 100;
         ind.sma = cache.sma(len)[idx];
       }
-      if (atom.kind === "linreg") {
+      if (kind === "linreg") {
         const len = pm.L || parseInt(atom.params, 10) || 20;
         const dev = parseFloat(pm.Dev || pm.dev || "2");
         const lr = cache.linreg(len, dev);
         ind.linregUp = lr.up[idx];
         ind.linregDn = lr.down[idx];
         ind.linregMid = lr.center[idx];
+      }
+      if (kind === "bollinger") {
+        const len = pm.L || parseInt(atom.params, 10) || 20;
+        const dev = parseFloat(pm.Dev || pm.dev || "2");
+        const bb = cache.bollinger(len, dev);
+        ind.bollingerUp = bb.up[idx];
+        ind.bollingerDn = bb.down[idx];
+        ind.bollingerMid = bb.center[idx];
+      }
+      if (kind === "vwap") {
+        ind.vwap = cache.vwap()[idx];
       }
     }
     return ind;
@@ -625,11 +858,9 @@
     const atrLen = parsed.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen;
     const atrSlTp = cache.atr(atrLen);
     const initial = opts.initial || {};
-    const commissionCfg = normalizeCommission(opts.commission || volConfig?.commission);
     let pos = initial.pos || 0;
     let cash = initial.cash || 0;
     let entryPrice = initial.entryPrice ?? null;
-    let commissionPaid = initial.commission || 0;
     const rows = [];
     const w = Math.max(warmupBars(), 2);
     const from = opts.skipWarmup ? Math.max(startIdx, 0) : Math.max(startIdx, w);
@@ -639,9 +870,7 @@
       if (pos === 0) return 0;
       const vol = Math.abs(pos);
       cash += pos * price;
-      const comm = tradeCommission(vol, price, commissionCfg);
-      cash -= comm;
-      commissionPaid += comm;
+      cash -= commissionCost(price, vol, volConfig);
       pos = 0;
       entryPrice = null;
       return vol;
@@ -678,19 +907,24 @@
         }
       }
 
-      const opHit = evaluateExpr(parsed.opAtoms, cache, i);
-      const clHit = evaluateExpr(parsed.clAtoms, cache, i);
+      const opLongAtoms = parsed.opLongAtoms || (parsed.opSide === "long" ? parsed.opAtoms : []);
+      const opShortAtoms = parsed.opShortAtoms || (parsed.opSide === "short" ? parsed.opAtoms : []);
+      const clLongAtoms = parsed.clLongAtoms || (parsed.clSide === "long" ? parsed.clAtoms : []);
+      const clShortAtoms = parsed.clShortAtoms || (parsed.clSide === "short" ? parsed.clAtoms : []);
+      const longOpHit = evaluateExpr(opLongAtoms, cache, i);
+      const shortOpHit = evaluateExpr(opShortAtoms, cache, i);
+      const longClHit = evaluateExpr(clLongAtoms, cache, i);
+      const shortClHit = evaluateExpr(clShortAtoms, cache, i);
 
-      if (pos !== 0 && clHit) sell += flatten(price);
-      if (pos === 0 && opHit) {
+      if (pos > 0 && (longClHit || shortOpHit)) sell += flatten(price);
+      else if (pos < 0 && (shortClHit || longOpHit)) sell += flatten(price);
+      if (pos === 0 && longOpHit !== shortOpHit) {
         const lot = calcTradeVolume(price, volConfig);
         const cap = maxAbsPosition(price, volConfig);
         if (lot > 0 && lot <= cap) {
-          pos = parsed.opSide === "long" ? lot : -lot;
+          pos = longOpHit ? lot : -lot;
           cash -= pos * price;
-          const comm = tradeCommission(lot, price, commissionCfg);
-          cash -= comm;
-          commissionPaid += comm;
+          cash -= commissionCost(price, lot, volConfig);
           entryPrice = price;
           buy = lot;
         }
@@ -704,7 +938,6 @@
         posStop,
         pos,
         cash,
-        commission: commissionPaid,
         eq: cash + pos * price
       });
     }
@@ -715,7 +948,6 @@
       finresp: last?.eq ?? 0,
       cash: last?.cash ?? 0,
       pos: last?.pos ?? 0,
-      commission: commissionPaid,
       buys: rows.reduce((s, r) => s + (r.buy || 0), 0),
       sells: rows.reduce((s, r) => s + (r.sell || 0), 0)
     };
@@ -732,11 +964,9 @@
     const closes = candles.map((c) => c.close);
     const sma = smaSeries(closes, smaLen);
     const initial = opts.initial || {};
-    const commissionCfg = normalizeCommission(opts.commission || volConfig?.commission);
     let cash = initial.cash || 0;
     let pos = initial.pos || 0;
     let entryPrice = initial.entryPrice ?? null;
-    let commissionPaid = initial.commission || 0;
     let buys = 0;
     let sells = 0;
     const rows = [];
@@ -776,12 +1006,9 @@
             }
           }
           if (hit) {
-            const vol = Math.abs(pos);
             cash += pos * price;
-            const comm = tradeCommission(vol, price, commissionCfg);
-            cash -= comm;
-            commissionPaid += comm;
-            sells += vol;
+            cash -= commissionCost(price, Math.abs(pos), volConfig);
+            sells += Math.abs(pos);
             pos = 0;
             entryPrice = null;
           }
@@ -801,17 +1028,8 @@
         const cap = capAt(price);
         if (pos + buy - sell > cap) buy = Math.max(0, cap - pos + sell);
         if (pos + buy - sell < -cap) sell = Math.max(0, pos + buy + cap);
-        if (buy > 0) {
-          const comm = tradeCommission(buy, price, commissionCfg);
-          cash -= comm;
-          commissionPaid += comm;
-        }
-        if (sell > 0) {
-          const comm = tradeCommission(sell, price, commissionCfg);
-          cash -= comm;
-          commissionPaid += comm;
-        }
         cash += price * (sell - buy);
+        cash -= commissionCost(price, buy + sell, volConfig);
         pos += buy - sell;
         buys += buy;
         sells += sell;
@@ -832,20 +1050,11 @@
         posStop,
         cash,
         pos,
-        commission: commissionPaid,
         eq: cash + pos * (price || 0)
       });
     }
     const last = rows.at(-1);
-    return {
-      rows,
-      finresp: last?.eq ?? 0,
-      cash: last?.cash ?? 0,
-      pos: last?.pos ?? 0,
-      commission: commissionPaid,
-      buys,
-      sells
-    };
+    return { rows, finresp: last?.eq ?? 0, cash: last?.cash ?? 0, pos: last?.pos ?? 0, buys, sells };
   }
 
   function applySlTpParams(parsed, params) {
@@ -856,7 +1065,7 @@
     return parsed;
   }
 
-  function resolveLogicSpec(logicId, customLines, params) {
+  function resolveLogicSpec(logicId, customLines, params, indicatorSelection) {
     const meta = BUILTIN_META.find((m) => m.id === logicId);
     if (!meta) return null;
     const p = { ...DEFAULT_PARAMS, ...params };
@@ -867,30 +1076,30 @@
         side: meta.side,
         slAtr: Math.max(0, Number(p.SL) || 0),
         tpAtr: Math.max(0, Number(p.TP) || 0),
-        slTpAtrLen: Math.max(2, Number(p.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen)
+        slTpAtrLen: Math.max(2, Number(p.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen),
+        disabled: !isIndicatorEnabled(indicatorSelection, "sma"),
+        indicators: normalizeIndicatorSelection(indicatorSelection)
       };
     }
     const line = substituteParams(customLines[meta.key] || DEFAULT_LOGIC_LINES[meta.key], p);
-    const parsed = applySlTpParams(parseLogicLine(line, p), p);
+    const parsed = applySlTpParams(parseLogicLine(line, p, indicatorSelection), p);
     return { type: "logic_line", parsed, line };
   }
 
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
-    if (!candles?.length) {
-      return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0 };
-    }
-    const vol = { ...DEFAULT_VOLUME, ...volConfig, commission: normalizeCommission(volConfig?.commission) };
-    const runOpts = { ...options, commission: vol.commission };
+    if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, buys: 0, sells: 0 };
+    if (spec.disabled) return simulateNoSignalRows(candles, startIdx, endIdx, options);
+    const vol = { ...DEFAULT_VOLUME, ...volConfig };
     if (spec.type === "sma_spread") {
       return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, {
-        ...runOpts,
+        ...options,
         slAtr: spec.slAtr,
         tpAtr: spec.tpAtr,
         slTpAtrLen: spec.slTpAtrLen
       });
     }
     const parsed = applySlTpParams({ ...spec.parsed }, params || DEFAULT_PARAMS);
-    return simulateLogicLine(candles, parsed, startIdx, endIdx, vol, runOpts);
+    return simulateLogicLine(candles, parsed, startIdx, endIdx, vol, options);
   }
 
   function findCandleIndexByTime(candles, time) {
@@ -967,25 +1176,19 @@
     perSecItem.finresp = last?.eq ?? 0;
     perSecItem.cash = last?.cash ?? 0;
     perSecItem.pos = last?.pos ?? 0;
-    perSecItem.commission = last?.commission ?? 0;
     perSecItem.buys = perSecItem.rows.reduce((s, r) => s + (r.buy || 0), 0);
     perSecItem.sells = perSecItem.rows.reduce((s, r) => s + (r.sell || 0), 0);
   }
 
-  function flattenRowAtIdx(perSecItem, rowIdx, commissionCfg) {
+  function flattenRowAtIdx(perSecItem, rowIdx, volConfig) {
     const row = { ...perSecItem.rows[rowIdx] };
-    const prevComm = rowIdx > 0 ? (perSecItem.rows[rowIdx - 1]?.commission || 0) : 0;
     if (row.pos !== 0) {
       const price = row.close;
-      const vol = Math.abs(row.pos);
-      const comm = tradeCommission(vol, price, commissionCfg);
-      row.sell = (row.sell || 0) + vol;
-      row.cash += row.pos * price - comm;
-      row.commission = prevComm + comm;
+      row.sell = (row.sell || 0) + Math.abs(row.pos);
+      row.cash += row.pos * price;
+      row.cash -= commissionCost(price, Math.abs(row.pos), volConfig);
       row.pos = 0;
       row.eq = row.cash;
-    } else {
-      row.commission = prevComm;
     }
     return row;
   }
@@ -993,8 +1196,7 @@
   function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endTime, params, volConfig) {
     const rowIdx = findRowIdxAtOrBefore(perSecItem.rows, triggerTime);
     if (rowIdx < 0) return;
-    const commissionCfg = normalizeCommission(volConfig?.commission);
-    const triggerRow = flattenRowAtIdx(perSecItem, rowIdx, commissionCfg);
+    const triggerRow = flattenRowAtIdx(perSecItem, rowIdx, volConfig);
     const head = perSecItem.rows.slice(0, rowIdx);
     const localEnd = findCandleIndexAtOrBefore(candles, endTime);
     if (localEnd < 0) {
@@ -1008,12 +1210,7 @@
       recomputePerSecTotals(perSecItem);
       return;
     }
-    const initial = {
-      pos: 0,
-      cash: triggerRow.cash,
-      entryPrice: null,
-      commission: triggerRow.commission || 0
-    };
+    const initial = { pos: 0, cash: triggerRow.cash, entryPrice: null };
     const tail = runOnCandles(
       candles,
       spec,
@@ -1308,12 +1505,6 @@
       .map(({ key, ...rest }) => rest);
   }
 
-  async function loadMoexCandlesResolved(sec, from, till, interval, market = "shares") {
-    const { moexInterval, aggMinutes } = resolveIntervalLoad(interval);
-    const raw = await loadMoexCandles(sec, from, till, moexInterval, market);
-    return aggMinutes > 1 ? aggregateCandles(raw, aggMinutes) : raw;
-  }
-
   async function loadMoexCandles(sec, from, till, interval, market = "shares") {
     const all = [];
     let start = 0;
@@ -1347,8 +1538,15 @@
       }));
   }
 
-  const CANDLE_CACHE_VERSION = 1;
-  const CANDLE_CACHE_LS_KEY = "MultiLogicFinrespCandleCache";
+  async function loadMoexCandlesResolved(sec, from, till, interval, market = "shares") {
+    const { moexInterval, aggMinutes } = resolveIntervalLoad(interval);
+    const raw = await loadMoexCandles(sec, from, till, moexInterval, market);
+    return aggMinutes > 1 ? aggregateCandles(raw, aggMinutes) : raw;
+  }
+
+  const CANDLE_CACHE_VERSION = 2;
+  const CANDLE_CACHE_DB_NAME = "MultiLogicFinrespCandlesDB";
+  const CANDLE_CACHE_STORE = "candles";
 
   function cacheNormDay(value) {
     if (!value) return "";
@@ -1367,30 +1565,63 @@
   }
 
   function createCandleCache(options) {
-    const storageKey = options?.storageKey || CANDLE_CACHE_LS_KEY;
-    let entries = {};
+    const dbName = options?.dbName || CANDLE_CACHE_DB_NAME;
+    const storeName = options?.storeName || CANDLE_CACHE_STORE;
+    let dbPromise = null;
+    let cachedStats = {
+      entries: 0,
+      bars: 0,
+      usage: null,
+      quota: null,
+      storage: "IndexedDB",
+      dbName,
+      ready: false
+    };
 
-    function loadStorage() {
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (data?.version === CANDLE_CACHE_VERSION && data.entries) entries = data.entries;
-      } catch (_) {
-        entries = {};
+    function requireIndexedDb() {
+      if (typeof indexedDB === "undefined") {
+        throw new Error("IndexedDB недоступен в этом браузере");
       }
     }
 
-    function saveStorage() {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify({
-          version: CANDLE_CACHE_VERSION,
-          entries,
-          savedAt: new Date().toISOString()
-        }));
-      } catch (err) {
-        if (options?.onStorageError) options.onStorageError(err);
-      }
+    function openDb() {
+      if (dbPromise) return dbPromise;
+      requireIndexedDb();
+      dbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName, CANDLE_CACHE_VERSION);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(storeName)) {
+            db.createObjectStore(storeName, { keyPath: "key" });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
+        req.onblocked = () => reject(new Error("IndexedDB заблокирован другой вкладкой"));
+      }).catch((err) => {
+        dbPromise = null;
+        throw err;
+      });
+      return dbPromise;
+    }
+
+    function txStore(db, mode) {
+      return db.transaction(storeName, mode).objectStore(storeName);
+    }
+
+    function requestPromise(req) {
+      return new Promise((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
+      });
+    }
+
+    function txDone(tx) {
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("IndexedDB transaction failed"));
+        tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
+      });
     }
 
     function entryKey(market, sec, interval) {
@@ -1424,15 +1655,68 @@
       return candles.map((c) => ({ ...c, sec: requestedSec, market }));
     }
 
+    async function estimateStorage() {
+      if (typeof navigator === "undefined" || !navigator.storage?.estimate) return;
+      try {
+        const est = await navigator.storage.estimate();
+        cachedStats = {
+          ...cachedStats,
+          usage: Number.isFinite(est.usage) ? est.usage : null,
+          quota: Number.isFinite(est.quota) ? est.quota : null
+        };
+      } catch (_) { /* estimate is optional */ }
+    }
+
+    async function recomputeStats() {
+      const db = await openDb();
+      let entriesCount = 0;
+      let bars = 0;
+      await new Promise((resolve, reject) => {
+        const req = txStore(db, "readonly").openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          const entry = cursor.value;
+          entriesCount += 1;
+          bars += entry?.candles?.length || 0;
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error || new Error("IndexedDB cursor failed"));
+      });
+      cachedStats = { ...cachedStats, entries: entriesCount, bars, ready: true };
+      await estimateStorage();
+    }
+
+    async function getEntry(key) {
+      const db = await openDb();
+      return requestPromise(txStore(db, "readonly").get(key));
+    }
+
+    async function putEntry(entry) {
+      const db = await openDb();
+      const tx = db.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).put(entry);
+      await txDone(tx);
+    }
+
+    function normalizeEntryForExport(entry) {
+      if (!entry) return null;
+      const { key, ...rest } = entry;
+      return rest;
+    }
+
     return {
-      load() {
-        loadStorage();
+      async load() {
+        await recomputeStats();
       },
-      get(requestedSec, market, interval, from, till, altSec) {
+      async get(requestedSec, market, interval, from, till, altSec) {
         const keys = [entryKey(market, requestedSec, interval)];
         if (altSec) keys.push(entryKey(market, altSec, interval));
         for (const key of keys) {
-          const entry = entries[key];
+          const entry = await getEntry(key);
           if (!entry || String(entry.interval) !== String(interval)) continue;
           if (!entryCovers(entry, from, till)) continue;
           const filtered = filterCandlesByRange(entry.candles, from, till);
@@ -1441,7 +1725,7 @@
         }
         return null;
       },
-      put(requestedSec, market, interval, moexSec, candles) {
+      async put(requestedSec, market, interval, moexSec, candles) {
         if (!candles?.length) return;
         const key = entryKey(market, requestedSec, interval);
         const normalized = candles.map((c) => ({
@@ -1449,59 +1733,81 @@
           sec: moexSec || requestedSec,
           market
         }));
-        const merged = mergeCandleSeries(entries[key]?.candles, normalized);
-        entries[key] = {
+        const existing = await getEntry(key);
+        const oldBars = existing?.candles?.length || 0;
+        const merged = mergeCandleSeries(existing?.candles, normalized);
+        await putEntry({
+          key,
           requestedSec,
           moexSec: moexSec || requestedSec,
           market,
           interval: String(interval),
           candles: merged,
           updatedAt: new Date().toISOString()
+        });
+        cachedStats = {
+          ...cachedStats,
+          entries: cachedStats.entries + (existing ? 0 : 1),
+          bars: cachedStats.bars - oldBars + merged.length,
+          ready: true
         };
-        saveStorage();
+        estimateStorage();
       },
-      clear() {
-        entries = {};
-        try {
-          localStorage.removeItem(storageKey);
-        } catch (_) { /* ignore */ }
+      async clear() {
+        const db = await openDb();
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).clear();
+        await txDone(tx);
+        cachedStats = { ...cachedStats, entries: 0, bars: 0, ready: true };
+        await estimateStorage();
       },
-      exportJson() {
+      async exportJson() {
+        const db = await openDb();
+        const entries = {};
+        await new Promise((resolve, reject) => {
+          const req = txStore(db, "readonly").openCursor();
+          req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor) {
+              resolve();
+              return;
+            }
+            entries[cursor.key] = normalizeEntryForExport(cursor.value);
+            cursor.continue();
+          };
+          req.onerror = () => reject(req.error || new Error("IndexedDB export failed"));
+        });
         return JSON.stringify({
           version: CANDLE_CACHE_VERSION,
           entries,
           exportedAt: new Date().toISOString()
         });
       },
-      importJson(jsonStr, merge = true) {
+      async importJson(jsonStr, merge = true) {
         const data = typeof jsonStr === "string" ? JSON.parse(jsonStr) : jsonStr;
-        if (data?.version !== CANDLE_CACHE_VERSION || !data.entries) {
-          throw new Error("Неверный формат файла кэша");
+        if (!data?.entries || (data.version !== 1 && data.version !== CANDLE_CACHE_VERSION)) {
+          throw new Error("Неверный формат файла базы цен");
         }
-        if (!merge) entries = {};
+        if (!merge) await this.clear();
         for (const [key, entry] of Object.entries(data.entries)) {
           if (!entry?.candles?.length) continue;
-          if (merge && entries[key]?.candles?.length) {
-            entries[key] = {
-              ...entries[key],
+          const existing = merge ? await getEntry(key) : null;
+          if (existing?.candles?.length) {
+            await putEntry({
+              ...existing,
               ...entry,
-              candles: mergeCandleSeries(entries[key].candles, entry.candles)
-            };
+              key,
+              candles: mergeCandleSeries(existing.candles, entry.candles)
+            });
           } else {
-            entries[key] = entry;
+            await putEntry({ ...entry, key });
           }
         }
-        saveStorage();
-        return Object.keys(entries).length;
+        await recomputeStats();
+        return cachedStats.entries;
       },
       stats() {
-        let entriesCount = 0;
-        let bars = 0;
-        for (const entry of Object.values(entries)) {
-          entriesCount += 1;
-          bars += entry.candles?.length || 0;
-        }
-        return { entries: entriesCount, bars };
+        return { ...cachedStats };
       }
     };
   }
@@ -1517,7 +1823,7 @@
         }
       }
       if (cache) {
-        const cached = cache.get(requestedSec, market, interval, from, till, moexSec);
+        const cached = await cache.get(requestedSec, market, interval, from, till, moexSec);
         if (cached?.length >= 3) {
           return { ok: true, pack: cached, requestedSec, fromCache: true };
         }
@@ -1526,7 +1832,7 @@
       if (!candles.length) {
         return { ok: false, error: "нет свечей MOEX за выбранный период", requestedSec };
       }
-      if (cache) cache.put(requestedSec, market, interval, moexSec, candles);
+      if (cache) await cache.put(requestedSec, market, interval, moexSec, candles);
       return { ok: true, pack: candles, requestedSec, fromCache: false };
     } catch (err) {
       return { ok: false, error: err?.message || String(err), requestedSec };
@@ -1567,18 +1873,17 @@
   }
 
   function aggregateFinresp(perSecResults) {
-    let finresp = 0, cash = 0, pos = 0, commission = 0, buys = 0, sells = 0;
+    let finresp = 0, cash = 0, pos = 0, buys = 0, sells = 0;
     const bySec = {};
     for (const r of perSecResults) {
       finresp += r.finresp;
       cash += r.cash;
       pos += r.pos;
-      commission += r.commission || 0;
       buys += r.buys;
       sells += r.sells;
       bySec[r.sec] = r.finresp;
     }
-    return { finresp, cash, pos, commission, buys, sells, bySec };
+    return { finresp, cash, pos, buys, sells, bySec };
   }
 
   function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig) {
@@ -1620,7 +1925,7 @@
         skipped.push({ sec, error: "нет данных для расчёта в выбранном окне" });
         continue;
       }
-      perSec.push({ sec, commission: r.commission || 0, ...r });
+      perSec.push({ sec, ...r });
       activePacks.push(candles);
     }
 
@@ -1649,14 +1954,13 @@
     DEFAULT_PARAMS,
     DEFAULT_STOPPER,
     DEFAULT_VOLUME,
-    DEFAULT_COMMISSION,
-    tradeCommission,
-    normalizeCommission,
+    INDICATOR_OPTIONS,
     DEFAULT_LOGIC_LINES,
     BUILTIN_META,
     calcTradeVolume,
     substituteParams,
     parseLogicLine,
+    normalizeIndicatorSelection,
     resolveLogicSpec,
     runOnCandles,
     runMulti,
