@@ -183,6 +183,52 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
   border:2px solid #f87171;background:#fff;
 }
 .live-trading-panel--active .live-trading-orders-wrap{border-top-color:#f87171;}
+.live-sandbox-row{display:flex;align-items:center;gap:.45rem;margin:.15rem 0 .55rem;flex-wrap:wrap;}
+.live-sandbox-label{display:inline-flex;align-items:center;gap:.4rem;font-size:.88rem;font-weight:600;color:#374151;cursor:pointer;user-select:none;}
+.live-sandbox-label input{width:1rem;height:1rem;cursor:pointer;}
+.live-trading-panel--sandbox{
+  border-color:#166534;
+  background:linear-gradient(180deg,#ecfdf5 0%,#f0fdf4 48%,#fff 100%);
+  box-shadow:0 4px 16px rgba(22,101,52,.12);
+}
+.live-trading-panel--sandbox .live-trading-title{color:#14532d;}
+.live-trading-panel--sandbox .live-trading-badge{background:#166534;}
+.live-trading-panel--sandbox .live-trading-warn{color:#166534;}
+.live-trading-panel--sandbox .live-trading-toolbar{border-color:#166534;box-shadow:0 2px 10px rgba(22,101,52,.1);}
+.live-trading-panel--sandbox .live-trading-btn-start{background:#166534;box-shadow:0 3px 10px rgba(22,101,52,.22);}
+.live-trading-panel--sandbox .live-trading-btn-start:hover{background:#14532d;}
+.live-trading-panel--sandbox .live-trading-btn-sell{color:#166534;border-color:#166534;}
+.live-trading-panel--sandbox .live-trading-btn-sell:hover{background:#ecfdf5;}
+.live-trading-panel--sandbox .live-trading-orders-wrap{border-top-color:#bbf7d0;}
+.live-trading-panel--sandbox .live-trading-orders th,.live-trading-panel--sandbox .live-trading-orders td{border-bottom-color:#bbf7d0;}
+.live-trading-panel--sandbox .live-trading-orders th{color:#166534;}
+.live-trading-panel--sandbox .live-trading-stat b{color:#166534;}
+.live-trading-panel--sandbox .live-trading-stat-commission span{color:#15803d;}
+.live-trading-panel--sandbox.live-trading-panel--active{
+  border:4px solid #15803d;
+  background:linear-gradient(180deg,#d1fae5 0%,#ecfdf5 38%,#f0fdf4 100%);
+  box-shadow:0 0 0 3px rgba(34,197,94,.18),0 6px 22px rgba(21,128,61,.28);
+  animation:live-sandbox-panel-pulse 3s ease-in-out infinite;
+}
+.live-trading-panel--sandbox.live-trading-panel--active .live-trading-title{color:#14532d;font-size:1.22rem;text-shadow:none;}
+.live-trading-panel--sandbox.live-trading-panel--active .live-trading-badge{
+  background:linear-gradient(180deg,#22c55e 0%,#16a34a 55%,#15803d 100%);
+  border:2px solid #14532d;box-shadow:0 0 8px rgba(34,197,94,.35);
+  animation:live-sandbox-badge-pulse 2.6s ease-in-out infinite;
+}
+.live-trading-panel--sandbox.live-trading-panel--active .live-trading-toolbar{border-color:#16a34a;background:#f0fdf4;}
+.live-trading-panel--sandbox.live-trading-panel--active .live-trading-leverage span{color:#15803d;}
+.live-trading-panel--sandbox .pos-fake-tag{font-size:.72rem;font-weight:700;color:#15803d;margin-left:.25rem;}
+.live-trading-panel--sandbox .pos-row-closed{opacity:.72;font-style:italic;}
+.live-trading-panel--sandbox .pos-row-closed td{color:#4b5563;}
+@keyframes live-sandbox-panel-pulse{
+  0%,100%{box-shadow:0 0 0 3px rgba(34,197,94,.14),0 6px 22px rgba(21,128,61,.22);}
+  50%{box-shadow:0 0 0 5px rgba(34,197,94,.24),0 8px 26px rgba(21,128,61,.32);}
+}
+@keyframes live-sandbox-badge-pulse{
+  0%,100%{filter:brightness(1);}
+  50%{filter:brightness(1.08);}
+}
 @keyframes live-panel-pulse{
   0%,100%{box-shadow:0 0 0 4px rgba(220,38,38,.22),0 8px 28px rgba(127,0,0,.38);}
   50%{box-shadow:0 0 0 7px rgba(220,38,38,.38),0 10px 34px rgba(127,0,0,.5);}
@@ -360,6 +406,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="live-trading-banner-main">
 <strong class="live-trading-title">Реальная торговля</strong>
 <span class="live-trading-badge" id="live-trading-status">остановлена</span>
+<div class="live-sandbox-row">
+<label class="live-sandbox-label" for="live-sandbox-mode" title="Заявки на биржу не отправляются — только симуляция портфеля и позиций">
+<input type="checkbox" id="live-sandbox-mode"> Песочница (фейк)
+</label>
+</div>
 <span class="live-trading-badge live-page-version-badge" id="live-page-version-badge" title="Версия страницы — для проверки обновления"></span>
 </div>
 <div class="live-trading-leverage"><b>Плечо</b><span id="live-leverage-value">—</span></div>
@@ -385,8 +436,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 </div>
 <div class="live-trading-stats">
-<div class="live-trading-stat"><b>Портфель (все позиции)</b><span id="live-portfolio-value">—</span></div>
-<div class="live-trading-stat live-trading-stat-commission"><b>Комиссии уплачено (реально)</b><span id="live-commission-paid">—</span></div>
+<div class="live-trading-stat"><b id="live-portfolio-label">Портфель (все позиции)</b><span id="live-portfolio-value">—</span></div>
+<div class="live-trading-stat live-trading-stat-commission"><b id="live-commission-label">Комиссии уплачено (реально)</b><span id="live-commission-paid">—</span></div>
 </div>
 <details class="live-manual-order" id="live-manual-order-panel">
 <summary class="live-manual-order-summary">Заявка</summary>
@@ -658,7 +709,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-calc-on-button";
+  const CALC_PAGE_VERSION = "2026-06-08-sandbox";
   const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
   const FINRESP_STALE_MSG = "Параметры изменены — нажмите «Рассчитать».";
   const $ = (id) => document.getElementById(id);
@@ -840,6 +891,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
           `liveReconcileBusy=${!!lv.reconcileBusy}`,
           `liveOrderType=${$("live-order-type")?.value || "—"}`,
           `liveObTrendConfirm=${!!$("live-ob-trend-confirm")?.checked}`,
+          `liveSandboxMode=${!!$("live-sandbox-mode")?.checked}`,
           `logicUsesObTrend=${E.logicUsesObTrend(activeLogicLineRaw())}`,
           `liveOrdersCount=${lv.orders?.length ?? 0}`,
           `liveOpenPositionsCount=${lv.openPositions?.length ?? 0}`,
@@ -1008,7 +1060,16 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       lastReconcile: null,
       apiForbiddenInstruments: [],
       portfolioValue: null,
+      realPortfolioValue: null,
       commissionPaid: null,
+      sandbox: {
+        startPortfolio: null,
+        cashDelta: 0,
+        commissionTotal: 0,
+        open: new Map(),
+        closed: [],
+        orders: []
+      },
       sessionStartedAt: null,
       sessionPositionBaseline: null,
       openPositions: [],
@@ -1160,7 +1221,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         orderBook: {
           sec: $("live-order-book-sec")?.value || ""
         },
-        obTrendConfirm: !!$("live-ob-trend-confirm")?.checked
+        obTrendConfirm: !!$("live-ob-trend-confirm")?.checked,
+        sandboxMode: !!$("live-sandbox-mode")?.checked
       },
       params: {
         sl: $("param-sl")?.value || "",
@@ -1220,6 +1282,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setValueIfExists("live-candle-source", cfg.live?.candleSource);
       if ($("live-ob-trend-confirm")) {
         $("live-ob-trend-confirm").checked = !!cfg.live?.obTrendConfirm;
+      }
+      if ($("live-sandbox-mode")) {
+        $("live-sandbox-mode").checked = !!cfg.live?.sandboxMode;
       }
       setValueIfExists("live-manual-direction", cfg.live?.manual?.direction);
       setValueIfExists("live-manual-order-type", cfg.live?.manual?.orderType);
@@ -1695,9 +1760,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function renderLiveOrdersPanel() {
     const el = $("live-trading-orders");
     if (!el) return;
-    const orders = state.live.orders || [];
+    const orders = isLiveSandbox()
+      ? (ensureSandboxState().orders || [])
+      : (state.live.orders || []);
     if (!orders.length) {
-      el.innerHTML = '<p class="live-trading-orders-empty">Заявок пока нет. После «Начать торговлю» здесь появятся заявки в реальном времени.</p>';
+      el.innerHTML = isLiveSandbox()
+        ? '<p class="live-trading-orders-empty">Фейк-заявок пока нет. Робот и ручные заявки будут симулироваться здесь.</p>'
+        : '<p class="live-trading-orders-empty">Заявок пока нет. После «Начать торговлю» здесь появятся заявки в реальном времени.</p>';
       return;
     }
     const rows = orders.slice().sort((a, b) => {
@@ -1707,13 +1776,14 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }).map((o) => {
       const dir = liveOrderDirectionLabel(o.direction);
       const dirCls = (o.direction === "ORDER_DIRECTION_BUY" || o.direction === 1) ? "dir-buy" : "dir-sell";
-      const ticker = o.ticker || o.figi || o.instrumentUid || "—";
+      const ticker = (o.ticker || o.figi || o.instrumentUid || "—") + (isLiveSandbox() ? ' <span class="pos-fake-tag">(фейк)</span>' : "");
       const lotsReq = o.lotsRequested ?? o.lots_requested ?? "—";
       const lotsExec = o.lotsExecuted ?? o.lots_executed ?? "—";
-      const status = liveOrderStatusLabel(o.executionReportStatus || o.orderState);
+      const status = isLiveSandbox() ? "исполнена (фейк)" : liveOrderStatusLabel(o.executionReportStatus || o.orderState);
       const otype = (o.orderType || "").includes("LIMIT") ? "лимит" : "рынок";
       const when = o.orderDate || o.createdAt || "";
-      return `<tr><td>${ticker}</td><td class="${dirCls}">${dir}</td><td>${otype}</td><td>${lotsReq}/${lotsExec}</td><td>${status}</td><td>${when ? new Date(when).toLocaleString("ru-RU") : "—"}</td></tr>`;
+      const priceHint = Number.isFinite(o.price) ? ` @ ${fmt(o.price, 2)}` : "";
+      return `<tr><td>${ticker}</td><td class="${dirCls}">${dir}</td><td>${otype}${priceHint}</td><td>${lotsReq}/${lotsExec}</td><td>${status}</td><td>${when ? new Date(when).toLocaleString("ru-RU") : "—"}</td></tr>`;
     }).join("");
     el.innerHTML = `<table><thead><tr><th>Тикер</th><th>Сторона</th><th>Тип</th><th>Лоты</th><th>Статус</th><th>Время</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
@@ -1730,9 +1800,29 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const select = $("account-mode");
     const label = document.querySelector("label.account-mode");
     const isLive = isLiveMode();
+    const sandbox = isLiveSandbox();
     if (panel) {
       panel.hidden = !isLive;
       panel.classList.toggle("live-trading-panel--active", isLive && !!state.live.active);
+      panel.classList.toggle("live-trading-panel--sandbox", sandbox);
+    }
+    const warn = panel?.querySelector(".live-trading-warn");
+    if (warn) {
+      warn.textContent = sandbox
+        ? "Песочница (фейк): заявки на биржу не отправляются. Портфель и позиции симулируются от суммы на момент включения галочки; комиссия — по полю Commission % калькулятора."
+        : "Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении. При активной торговле свечи обновляются по выбранному источнику (T-Bank — актуальнее MOEX ISS); индикаторы и заявки пересчитываются на каждом цикле.";
+    }
+    const portfolioLabel = $("live-portfolio-label");
+    if (portfolioLabel) {
+      portfolioLabel.textContent = sandbox ? "Портфель (фейк, симуляция)" : "Портфель (все позиции)";
+    }
+    const commissionLabel = $("live-commission-label");
+    if (commissionLabel) {
+      commissionLabel.textContent = sandbox ? "Комиссии (фейк, модель %)" : "Комиссии уплачено (реально)";
+    }
+    const ordersHead = panel?.querySelector(".live-trading-orders-head");
+    if (ordersHead) {
+      ordersHead.textContent = sandbox ? "Заявки (фейк, симуляция)" : "Заявки в реальном времени";
     }
     if (select) select.classList.toggle("account-mode-select--live", isLive);
     if (label) label.classList.toggle("account-mode--live", isLive);
@@ -1764,9 +1854,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         const busy = state.live.candleRefreshBusy
           ? ` · загрузка свечей ${src}…`
           : "";
+        const sandboxHint = sandbox ? " · песочница (фейк)" : "";
         status.textContent =
-          `торговля активна · ${src} бары до ${bar}${freshHint} · опрос ${polled}${busy}`;
-      } else status.textContent = "остановлена";
+          `торговля активна${sandboxHint} · ${src} бары до ${bar}${freshHint} · опрос ${polled}${busy}`;
+      } else status.textContent = sandbox ? "остановлена · песочница (фейк)" : "остановлена";
     }
     renderLivePortfolioStats();
     syncLeverageDisplay();
@@ -1951,6 +2042,59 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       if (metaEl) metaEl.textContent = "Открытые позиции счёта (робот и ручные заявки). Закрытые не показываются.";
       return;
     }
+    if (isLiveSandbox()) {
+      const sb = ensureSandboxState();
+      if (metaEl) {
+        metaEl.textContent = "Фейк-позиции: открытые и недавно закрытые (заявки на биржу не отправляются). ПКМ — закрыть открытую фейк-позицию.";
+      }
+      const openRows = [...sb.open.values()];
+      const closedRows = sb.closed || [];
+      if (!openRows.length && !closedRows.length) {
+        tableEl.innerHTML = '<p class="live-order-book-empty">Фейк-позиций пока нет.</p>';
+        return;
+      }
+      let openIdx = 0;
+      const openBody = openRows.map((r) => {
+        const idx = openIdx++;
+        const sideCls = r.side === "short" ? "pos-short" : "pos-long";
+        const sideLabel = r.side === "short" ? "шорт" : "лонг";
+        const pnl = r.side === "short"
+          ? (r.avgPrice - (r.curPrice ?? r.avgPrice)) * r.pieces
+          : ((r.curPrice ?? r.avgPrice) - r.avgPrice) * r.pieces;
+        const pnlCls = pnl > 0 ? "pos-pnl-pos" : (pnl < 0 ? "pos-pnl-neg" : "");
+        const sum = Number.isFinite(r.curPrice) ? r.pieces * r.curPrice : NaN;
+        return `<tr class="live-pos-row" data-pos-idx="${idx}" title="ПКМ — закрыть фейк-позицию">
+          <td>${r.ticker}<span class="pos-fake-tag">(фейк)</span></td>
+          <td class="${sideCls}">${sideLabel}</td>
+          <td>${r.lots}</td>
+          <td>${Number.isFinite(r.avgPrice) ? fmt(r.avgPrice, 2) : "—"}</td>
+          <td>${Number.isFinite(r.curPrice) ? fmt(r.curPrice, 2) : "—"}</td>
+          <td>${Number.isFinite(sum) ? fmt(sum, 0) : "—"}</td>
+          <td class="${pnlCls}">${Number.isFinite(pnl) ? `${pnl >= 0 ? "+" : ""}${fmt(pnl, 0)}` : "—"}</td>
+          <td>открыта</td>
+        </tr>`;
+      }).join("");
+      const closedBody = closedRows.slice(0, 40).map((r) => {
+        const sideCls = r.side === "short" ? "pos-short" : "pos-long";
+        const sideLabel = r.side === "short" ? "шорт" : "лонг";
+        const pnlCls = r.pnl > 0 ? "pos-pnl-pos" : (r.pnl < 0 ? "pos-pnl-neg" : "");
+        return `<tr class="pos-row-closed">
+          <td>${r.ticker}<span class="pos-fake-tag">(фейк)</span></td>
+          <td class="${sideCls}">${sideLabel}</td>
+          <td>${r.lots}</td>
+          <td>${Number.isFinite(r.avgPrice) ? fmt(r.avgPrice, 2) : "—"}</td>
+          <td>${Number.isFinite(r.closePrice) ? fmt(r.closePrice, 2) : "—"}</td>
+          <td>${Number.isFinite(r.sum) ? fmt(r.sum, 0) : "—"}</td>
+          <td class="${pnlCls}">${Number.isFinite(r.pnl) ? `${r.pnl >= 0 ? "+" : ""}${fmt(r.pnl, 0)}` : "—"}</td>
+          <td>закрыта</td>
+        </tr>`;
+      }).join("");
+      state.live.openPositions = openRows;
+      tableEl.innerHTML = `<table class="live-ob-grid"><thead><tr>
+        <th>Тикер</th><th>Сторона</th><th>Лоты</th><th>Ср. цена</th><th>Тек. / закр.</th><th>Сумма, ₽</th><th>P/L, ₽</th><th>Статус</th>
+      </tr></thead><tbody>${openBody}${closedBody}</tbody></table>`;
+      return;
+    }
     if (state.live.positionsError) {
       if (metaEl) metaEl.textContent = `Ошибка: ${state.live.positionsError}`;
     } else if (state.live.positionsUpdatedAt) {
@@ -2058,7 +2202,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       if (!tradable.ok) throw new Error(`${row.ticker}: ${tradable.reason}`);
       const sideLabel = direction === "ORDER_DIRECTION_BUY" ? "покупка" : "продажа";
       if (metaEl) metaEl.textContent = `Закрытие ${row.ticker}: ${sideLabel}, ${lots} лот по рынку…`;
-      await tbankPostOrder(instrumentId, direction, lots, sec, { orderType: "market" });
+      await postLiveOrder(instrumentId, direction, lots, sec, { orderType: "market", market: row.market });
       const okText = `Закрыто по рынку: ${row.ticker}, ${sideLabel}, ${lots} лот.`;
       noteLiveTech("live-pos-close", okText, `uid=${instrumentId}`);
       state.live.lastError = "";
@@ -2157,6 +2301,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!isLiveMode()) {
       state.live.openPositions = [];
       state.live.positionsError = "";
+      renderLivePositionsPanel();
+      return;
+    }
+    if (isLiveSandbox()) {
+      state.live.positionsError = "";
+      await updateSandboxPortfolioDisplay();
       renderLivePositionsPanel();
       return;
     }
@@ -2548,6 +2698,283 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  function isLiveSandbox() {
+    return isLiveMode() && !!$("live-sandbox-mode")?.checked;
+  }
+
+  function ensureSandboxState() {
+    if (!state.live.sandbox) {
+      state.live.sandbox = {
+        startPortfolio: null,
+        cashDelta: 0,
+        commissionTotal: 0,
+        open: new Map(),
+        closed: [],
+        orders: []
+      };
+    }
+    if (!(state.live.sandbox.open instanceof Map)) state.live.sandbox.open = new Map();
+    if (!Array.isArray(state.live.sandbox.closed)) state.live.sandbox.closed = [];
+    if (!Array.isArray(state.live.sandbox.orders)) state.live.sandbox.orders = [];
+    return state.live.sandbox;
+  }
+
+  function sandboxPosKey(market, ticker) {
+    return `${market === "futures" ? "futures" : "shares"}:${String(ticker || "").toUpperCase()}`;
+  }
+
+  function sandboxCommissionFee(notional) {
+    return Math.abs(+notional || 0) * (commissionPctValue() / 100);
+  }
+
+  function sandboxPositionsByTicker() {
+    const map = new Map();
+    for (const pos of ensureSandboxState().open.values()) {
+      const pieces = pos.side === "short" ? -Math.abs(+pos.pieces || 0) : Math.abs(+pos.pieces || 0);
+      map.set(pos.ticker, {
+        ticker: pos.ticker,
+        instrumentId: pos.instrumentId,
+        lot: pos.lot,
+        pieces
+      });
+    }
+    return map;
+  }
+
+  function recordSandboxOrder({ ticker, direction, lots, orderType, price }) {
+    const sb = ensureSandboxState();
+    sb.orders.unshift({
+      ticker,
+      direction,
+      lotsRequested: lots,
+      lotsExecuted: lots,
+      orderType: orderType === "limit" ? "ORDER_TYPE_LIMIT" : "ORDER_TYPE_MARKET",
+      executionReportStatus: "EXECUTION_REPORT_STATUS_FILL",
+      orderDate: new Date().toISOString(),
+      fake: true,
+      price
+    });
+    if (sb.orders.length > 200) sb.orders.length = 200;
+  }
+
+  function pushSandboxClosed(pos, closePieces, closePrice) {
+    const sb = ensureSandboxState();
+    const pnl = pos.side === "short"
+      ? (pos.avgPrice - closePrice) * closePieces
+      : (closePrice - pos.avgPrice) * closePieces;
+    sb.closed.unshift({
+      ticker: pos.ticker,
+      sec: pos.sec,
+      market: pos.market,
+      side: pos.side,
+      lots: pos.isFuture ? closePieces : piecesToLots(closePieces, pos.lot),
+      pieces: closePieces,
+      lot: pos.lot,
+      avgPrice: pos.avgPrice,
+      closePrice,
+      curPrice: closePrice,
+      sum: closePieces * closePrice,
+      pnl,
+      closedAt: new Date().toISOString(),
+      isFuture: pos.isFuture,
+      instrumentId: pos.instrumentId,
+      fake: true
+    });
+    if (sb.closed.length > 200) sb.closed.length = 200;
+  }
+
+  function applySandboxSignedDelta(pos, signedDelta, price) {
+    const sb = ensureSandboxState();
+    const key = sandboxPosKey(pos.market, pos.ticker);
+    const cur = sb.open.get(key);
+    if (!cur) {
+      const side = signedDelta > 0 ? "long" : "short";
+      const pieces = Math.abs(signedDelta);
+      sb.open.set(key, {
+        ticker: pos.ticker,
+        sec: pos.sec,
+        market: pos.market,
+        instrumentId: pos.instrumentId,
+        lot: pos.lot,
+        isFuture: pos.isFuture,
+        side,
+        pieces,
+        lots: pos.isFuture ? pieces : piecesToLots(pieces, pos.lot),
+        avgPrice: price,
+        curPrice: price,
+        openedAt: new Date().toISOString(),
+        fake: true
+      });
+      return;
+    }
+    if (cur.side === pos.side) {
+      const newPieces = cur.pieces + Math.abs(signedDelta);
+      cur.avgPrice = (cur.avgPrice * cur.pieces + price * Math.abs(signedDelta)) / newPieces;
+      cur.pieces = newPieces;
+      cur.lots = cur.isFuture ? newPieces : piecesToLots(newPieces, cur.lot);
+      cur.curPrice = price;
+      return;
+    }
+    const closePieces = Math.min(cur.pieces, Math.abs(signedDelta));
+    pushSandboxClosed(cur, closePieces, price);
+    cur.pieces -= closePieces;
+    if (cur.pieces <= 0) sb.open.delete(key);
+    else cur.lots = cur.isFuture ? cur.pieces : piecesToLots(cur.pieces, cur.lot);
+    const remainder = Math.abs(signedDelta) - closePieces;
+    if (remainder > 0) {
+      applySandboxSignedDelta({ ...pos, side: signedDelta > 0 ? "long" : "short" }, signedDelta > 0 ? remainder : -remainder, price);
+    }
+  }
+
+  async function simulateSandboxOrder(instrumentId, direction, lots, secForPrice, options) {
+    const opts = options || {};
+    const qty = Math.max(0, Math.floor(+lots || 0));
+    if (!instrumentId || qty <= 0) return null;
+    const sb = ensureSandboxState();
+    if (!Number.isFinite(sb.startPortfolio)) {
+      sb.startPortfolio = state.live.realPortfolioValue ?? state.live.portfolioValue ?? 0;
+    }
+    const market = opts.market === "futures" ? "futures" : "shares";
+    let meta = null;
+    try { meta = await tbankGetInstrumentById(instrumentId); } catch (_) { /* optional */ }
+    if (!meta) {
+      try { meta = await tbankFindInstrument(secForPrice, market); } catch (_) { /* optional */ }
+    }
+    const lot = Math.max(1, +meta?.lot || 1);
+    const ticker = String(meta?.ticker || secForPrice || "").toUpperCase();
+    const isFuture = market === "futures";
+    const orderType = opts.orderType === "limit" || opts.orderType === "market"
+      ? opts.orderType
+      : liveOrderTypeUi();
+    let price = opts.limitPrice != null && opts.limitPrice !== "" ? +opts.limitPrice : NaN;
+    if (!Number.isFinite(price) || price <= 0) {
+      price = await resolveOrderPrice(instrumentId, secForPrice, market);
+    }
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error(`Нет цены для фейк-заявки (${ticker || secForPrice}).`);
+    }
+    const isBuy = direction === "ORDER_DIRECTION_BUY";
+    const pieceDelta = isFuture
+      ? (isBuy ? qty : -qty)
+      : (isBuy ? qty * lot : -(qty * lot));
+    const notional = Math.abs(pieceDelta) * price;
+    const fee = sandboxCommissionFee(notional);
+    sb.commissionTotal += fee;
+    const key = sandboxPosKey(market, ticker);
+    const cur = sb.open.get(key);
+    const posMeta = { ticker, sec: secForPrice || ticker, market, instrumentId, lot, isFuture };
+
+    if (isBuy) {
+      sb.cashDelta -= notional + fee;
+      applySandboxSignedDelta({ ...posMeta, side: "long" }, pieceDelta, price);
+    } else if (cur?.side === "long" && cur.pieces > 0) {
+      const sellPieces = Math.min(cur.pieces, Math.abs(pieceDelta));
+      if (sellPieces <= 0) throw new Error(`${ticker}: нет лонга для продажи (фейк).`);
+      sb.cashDelta += sellPieces * price - fee;
+      pushSandboxClosed(cur, sellPieces, price);
+      cur.pieces -= sellPieces;
+      if (cur.pieces <= 0) sb.open.delete(key);
+      else cur.lots = isFuture ? cur.pieces : piecesToLots(cur.pieces, lot);
+      const rest = Math.abs(pieceDelta) - sellPieces;
+      if (rest > 0 && isFuture) {
+        sb.cashDelta += rest * price;
+        applySandboxSignedDelta({ ...posMeta, side: "short" }, -rest, price);
+      }
+    } else if (isFuture) {
+      sb.cashDelta += notional - fee;
+      applySandboxSignedDelta({ ...posMeta, side: "short" }, pieceDelta, price);
+    } else {
+      throw new Error(`${ticker}: нет позиции для продажи (фейк).`);
+    }
+
+    recordSandboxOrder({ ticker, direction, lots: qty, orderType, price });
+    await updateSandboxPortfolioDisplay();
+    renderLiveOrdersPanel();
+    renderLivePositionsPanel();
+    noteLiveTech("live-sandbox-order", `${ticker} ${isBuy ? "buy" : "sell"} ${qty} lot @ ${fmt(price, 2)}`);
+    return { orderId: `fake-${Date.now()}`, fake: true };
+  }
+
+  async function postLiveOrder(instrumentId, direction, lots, secForPrice, options) {
+    if (isLiveSandbox()) {
+      return simulateSandboxOrder(instrumentId, direction, lots, secForPrice, options);
+    }
+    return tbankPostOrder(instrumentId, direction, lots, secForPrice, options);
+  }
+
+  async function updateSandboxPortfolioDisplay() {
+    if (!isLiveSandbox()) return;
+    const sb = ensureSandboxState();
+    if (!Number.isFinite(sb.startPortfolio)) {
+      sb.startPortfolio = state.live.realPortfolioValue ?? state.live.portfolioValue ?? 0;
+    }
+    let mtm = 0;
+    for (const pos of sb.open.values()) {
+      let cur = await resolveOrderPrice(pos.instrumentId, pos.sec, pos.market);
+      if (!Number.isFinite(cur)) cur = pos.avgPrice;
+      pos.curPrice = cur;
+      const sign = pos.side === "short" ? -1 : 1;
+      mtm += sign * pos.pieces * cur;
+    }
+    state.live.portfolioValue = (sb.startPortfolio || 0) + (sb.cashDelta || 0) + mtm;
+    state.live.commissionPaid = sb.commissionTotal || 0;
+    renderLivePortfolioStats();
+  }
+
+  async function enableLiveSandbox() {
+    if (!(await ensureTbankTokenUnlocked()) && state.tbank.token) {
+      /* deposit/portfolio may load later */
+    }
+    try {
+      const portfolio = state.tbank.selectedAccountId
+        ? await tbankRequest("OperationsService/GetPortfolio", {
+          accountId: state.tbank.selectedAccountId,
+          currency: "RUB"
+        })
+        : null;
+      state.live.realPortfolioValue = portfolio
+        ? moneyValueToNumber(portfolio.totalAmountPortfolio)
+        : (+$("vol-deposit")?.value || 0);
+    } catch (_) {
+      state.live.realPortfolioValue = state.live.portfolioValue ?? (+$("vol-deposit")?.value || 0);
+    }
+    const sb = ensureSandboxState();
+    sb.startPortfolio = state.live.realPortfolioValue ?? 0;
+    sb.cashDelta = 0;
+    sb.commissionTotal = 0;
+    sb.open.clear();
+    sb.closed.length = 0;
+    sb.orders.length = 0;
+    state.live.portfolioValue = sb.startPortfolio;
+    state.live.commissionPaid = 0;
+    await updateSandboxPortfolioDisplay();
+    renderLiveOrdersPanel();
+    renderLivePositionsPanel();
+    noteLiveTech("live-sandbox", "enabled", `start=${sb.startPortfolio}`);
+  }
+
+  async function disableLiveSandbox() {
+    const sb = ensureSandboxState();
+    sb.startPortfolio = null;
+    sb.cashDelta = 0;
+    sb.commissionTotal = 0;
+    sb.open.clear();
+    sb.closed.length = 0;
+    sb.orders.length = 0;
+    await refreshLivePortfolioStats();
+    await refreshLiveOpenPositions();
+    await refreshLiveOrders();
+    noteLiveTech("live-sandbox", "disabled");
+  }
+
+  async function onLiveSandboxToggle() {
+    const on = !!$("live-sandbox-mode")?.checked;
+    if (on) await enableLiveSandbox();
+    else await disableLiveSandbox();
+    saveConfig();
+    syncLiveTradingUi();
+  }
+
   async function tbankPostOrder(instrumentId, direction, lots, secForPrice, options) {
     const opts = options || {};
     const qty = Math.max(0, Math.floor(+lots || 0));
@@ -2698,7 +3125,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       const tradable = await tbankValidateTradable(instrumentId, ti);
       if (!tradable.ok) throw new Error(`${ticker}: ${tradable.reason}`);
       if (statusEl) statusEl.textContent = `Отправка ${direction === "ORDER_DIRECTION_BUY" ? "покупки" : "продажи"} ${ticker}, ${lots} лот…`;
-      await tbankPostOrder(instrumentId, direction, lots, sec, { orderType, limitPrice, market });
+      await postLiveOrder(instrumentId, direction, lots, sec, { orderType, limitPrice, market });
       const side = direction === "ORDER_DIRECTION_BUY" ? "покупка" : "продажа";
       const otype = orderType === "limit" ? "лимит" : "рынок";
       const okText = `Заявка отправлена: ${ticker}, ${side}, ${lots} лот, ${otype}.`;
@@ -2735,7 +3162,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         cp.style.color = "";
       } else {
         cp.textContent = `−${fmt(state.live.commissionPaid)} ₽`;
-        cp.style.color = "#b91c1c";
+        cp.style.color = isLiveSandbox() ? "#15803d" : "#b91c1c";
       }
     }
   }
@@ -2747,7 +3174,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         accountId: state.tbank.selectedAccountId,
         currency: "RUB"
       });
-      state.live.portfolioValue = moneyValueToNumber(portfolio.totalAmountPortfolio);
+      state.live.realPortfolioValue = moneyValueToNumber(portfolio.totalAmountPortfolio);
+      if (isLiveSandbox()) {
+        await updateSandboxPortfolioDisplay();
+        return;
+      }
+      state.live.portfolioValue = state.live.realPortfolioValue;
       const from = state.live.sessionStartedAt
         || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
       const ops = await tbankRequest("OperationsService/GetOperations", {
@@ -2771,6 +3203,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   async function refreshLiveOrders() {
     if (!isLiveMode() || !state.tbank.token || !state.tbank.selectedAccountId) return;
+    if (isLiveSandbox()) {
+      renderLiveOrdersPanel();
+      await updateSandboxPortfolioDisplay();
+      return;
+    }
     try {
       const data = await tbankRequest("OrdersService/GetOrders", {
         accountId: state.tbank.selectedAccountId
@@ -3105,7 +3542,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const failed = [];
     let placed = 0;
     try {
-      const actual = await tbankPositionsByTicker();
+      const actual = isLiveSandbox() ? sandboxPositionsByTicker() : await tbankPositionsByTicker();
       for (const p of targets) {
         const secU = String(p.sec || "").toUpperCase();
         const instMeta = selectedInstruments().find((i) => String(i.sec).toUpperCase() === secU);
@@ -3162,7 +3599,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
           continue;
         }
         try {
-          await tbankPostOrder(instrumentId, direction, lots, p.sec);
+          await postLiveOrder(instrumentId, direction, lots, p.sec, { market });
           placed += 1;
         } catch (err) {
           failed.push(liveIssueEntry(ticker, p.sec, {
@@ -3295,6 +3732,26 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const sellBtn = $("live-trading-sell-all");
     if (sellBtn) sellBtn.disabled = true;
     try {
+      if (isLiveSandbox()) {
+        const sb = ensureSandboxState();
+        let sent = 0;
+        for (const pos of [...sb.open.values()]) {
+          const direction = closeDirectionForPosition(pos);
+          const lots = Math.max(1, Math.floor(+pos.lots || 0));
+          if (lots <= 0) continue;
+          await postLiveOrder(pos.instrumentId, direction, lots, pos.sec || pos.ticker, {
+            orderType: "market",
+            market: pos.market
+          });
+          sent += 1;
+        }
+        state.live.lastError = sent ? "" : "фейк-позиций нет";
+        const status = $("live-trading-status");
+        if (status) status.textContent = sent ? `закрыто фейк-позиций: ${sent}` : "фейк-позиций нет";
+        renderLiveOrdersPanel();
+        renderLivePositionsPanel();
+        return;
+      }
       if (!(await ensureTbankTokenUnlocked())) return;
       if (!state.tbank.selectedAccountId) await loadTbankAccounts();
       if (!state.tbank.selectedAccountId) throw new Error("Счёт T-Bank не выбран.");
@@ -3341,7 +3798,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
             continue;
           }
           try {
-            await tbankPostOrder(instrumentId, direction, lots, ticker);
+            await postLiveOrder(instrumentId, direction, lots, ticker);
             sent += 1;
           } catch (err) {
             failed.push(liveIssueEntry(ticker, ticker, {
@@ -5639,6 +6096,13 @@ ${totalBlock}
       noteLiveTech("toggleLiveTrading", err.message);
     });
   });
+  $("live-sandbox-mode")?.addEventListener("change", () => {
+    onLiveSandboxToggle().catch((err) => {
+      state.live.lastError = err.message;
+      syncLiveTradingUi();
+      noteLiveTech("live-sandbox-toggle", err.message);
+    });
+  });
   $("live-trading-sell-all").addEventListener("click", () => { sellAllMarketLive(); });
   $("live-manual-submit").addEventListener("click", () => { placeManualLiveOrder(); });
   $("live-manual-order-type").addEventListener("change", () => {
@@ -5874,6 +6338,11 @@ ${totalBlock}
   if (isTbankBackedMode()) connectTbankAndLoadDeposit();
   if (isLiveMode()) {
     refreshLiveManualLimitPrice({ force: true }).catch(() => {});
+    if ($("live-sandbox-mode")?.checked) {
+      enableLiveSandbox().then(() => syncLiveTradingUi()).catch((err) => {
+        noteLiveTech("live-sandbox-init", err.message);
+      });
+    }
   }
   state._initOk = true;
   syncPageVersionBadge();
