@@ -223,6 +223,18 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-manual-order-grid select,.live-manual-order-grid input{padding:.42rem .5rem;border:1px solid #d4a5a5;border-radius:7px;background:#fff;color:#374151;font-size:.88rem;font-weight:600;}
 .live-manual-order-hint{margin:0 0 .5rem;font-size:.8rem;color:var(--muted);min-height:1.1em;}
 .live-manual-submit{display:inline-block;width:auto;min-width:12rem;flex:none;padding:.65rem 1.2rem;font-size:.98rem;}
+.live-order-book{margin:0 0 .75rem;border:1px solid #fecaca;border-radius:8px;background:#fffefb;}
+.live-order-book-body{padding:0 .7rem .7rem;}
+.live-order-book-meta{margin:0 0 .45rem;font-size:.78rem;color:var(--muted);}
+.live-order-book-table{font-size:.78rem;overflow:auto;max-height:14rem;}
+.live-order-book-empty{margin:0;color:var(--muted);font-size:.82rem;}
+.live-ob-grid{width:100%;border-collapse:collapse;}
+.live-ob-grid th,.live-ob-grid td{padding:.22rem .35rem;text-align:right;border-bottom:1px solid #fecaca;}
+.live-ob-grid th{font-size:.72rem;color:#7f1d1d;font-weight:700;}
+.live-ob-grid th:nth-child(1),.live-ob-grid th:nth-child(2){background:#f0fdf4;}
+.live-ob-grid th:nth-child(3),.live-ob-grid th:nth-child(4){background:#fef2f2;}
+.live-ob-grid .ob-bid-p,.live-ob-grid .ob-bid-q{color:#166534;font-weight:600;}
+.live-ob-grid .ob-ask-p,.live-ob-grid .ob-ask-q{color:#991b1b;font-weight:600;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -349,6 +361,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="live-manual-order-hint" id="live-manual-order-status"></p>
 <button type="button" class="live-trading-btn live-trading-btn-start live-manual-submit" id="live-manual-submit">Выставить заявку</button>
+</div>
+</details>
+<details class="live-order-book" id="live-order-book-panel">
+<summary class="live-manual-order-summary">Стакан</summary>
+<div class="live-order-book-body">
+<p class="live-order-book-meta" id="live-order-book-meta">Инструмент — из блока «Заявка». Данные T-Bank GetOrderBook.</p>
+<div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент в «Заявка».</p></div>
 </div>
 </details>
 <div class="live-trading-orders-wrap">
@@ -573,7 +592,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-manual-order";
+  const CALC_PAGE_VERSION = "2026-06-08-order-book";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -915,7 +934,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       portfolioValue: null,
       commissionPaid: null,
       sessionStartedAt: null,
-      statsTimer: null
+      statsTimer: null,
+      orderBookTimer: null,
+      orderBookBusy: false
     },
     optim: {
       active: null,
@@ -1676,7 +1697,116 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.live.active = false;
     stopLiveTradingPoll();
     stopLiveStatsPoll();
+    stopLiveOrderBookPoll();
     syncLiveTradingUi();
+  }
+
+  const LIVE_ORDER_BOOK_DEPTH = 10;
+  const LIVE_ORDER_BOOK_POLL_MS = 4000;
+
+  function orderBookPrice(q) {
+    if (!q) return NaN;
+    return (+q.units || 0) + (+q.nano || 0) / 1e9;
+  }
+
+  function formatOrderBookTime(ts) {
+    if (!ts) return "—";
+    try {
+      return new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch (_) {
+      return "—";
+    }
+  }
+
+  function renderLiveOrderBookView(ob) {
+    const tableEl = $("live-order-book-table");
+    const metaEl = $("live-order-book-meta");
+    if (!tableEl) return;
+    if (!ob) {
+      tableEl.innerHTML = '<p class="live-order-book-empty">—</p>';
+      return;
+    }
+    const bids = (ob.bids || []).slice().sort((a, b) => orderBookPrice(b.price) - orderBookPrice(a.price));
+    const asks = (ob.asks || []).slice().sort((a, b) => orderBookPrice(a.price) - orderBookPrice(b.price));
+    const ticker = ob.ticker || "—";
+    const depth = ob.depth || bids.length || asks.length || LIVE_ORDER_BOOK_DEPTH;
+    const ts = formatOrderBookTime(ob.orderbookTs || ob.time);
+    const spread = bids.length && asks.length
+      ? orderBookPrice(asks[0].price) - orderBookPrice(bids[0].price)
+      : NaN;
+    if (metaEl) {
+      const spreadTxt = Number.isFinite(spread) ? ` · спред ${fmt(spread, 2)}` : "";
+      metaEl.textContent = `${ticker} · глубина ${depth} · ${ts}${spreadTxt}`;
+    }
+    const rows = Math.max(bids.length, asks.length, 1);
+    let html = '<table class="live-ob-grid"><thead><tr><th colspan="2">Покупка (bid)</th><th colspan="2">Продажа (ask)</th></tr>'
+      + '<tr><th>лоты</th><th>цена</th><th>цена</th><th>лоты</th></tr></thead><tbody>';
+    for (let i = 0; i < rows; i++) {
+      const bid = bids[i];
+      const ask = asks[i];
+      html += `<tr>
+        <td class="ob-bid-q">${bid?.quantity ?? ""}</td>
+        <td class="ob-bid-p">${bid ? fmt(orderBookPrice(bid.price), 2) : ""}</td>
+        <td class="ob-ask-p">${ask ? fmt(orderBookPrice(ask.price), 2) : ""}</td>
+        <td class="ob-ask-q">${ask?.quantity ?? ""}</td>
+      </tr>`;
+    }
+    html += "</tbody></table>";
+    tableEl.innerHTML = html;
+  }
+
+  function stopLiveOrderBookPoll() {
+    if (state.live.orderBookTimer) clearInterval(state.live.orderBookTimer);
+    state.live.orderBookTimer = null;
+  }
+
+  async function refreshLiveOrderBook() {
+    const panel = $("live-order-book-panel");
+    const metaEl = $("live-order-book-meta");
+    if (!panel?.open || !isLiveMode()) return;
+    if (state.live.orderBookBusy) return;
+    const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+    if (!picked?.sec) {
+      renderLiveOrderBookView(null);
+      if (metaEl) metaEl.textContent = "Выберите инструмент в блоке «Заявка».";
+      return;
+    }
+    state.live.orderBookBusy = true;
+    try {
+      if (!(await ensureTbankTokenUnlocked())) {
+        if (metaEl) metaEl.textContent = "Расшифруйте токен T-Bank для загрузки стакана.";
+        return;
+      }
+      const ti = await tbankFindInstrument(picked.sec, picked.market);
+      if (!ti) throw new Error(`${picked.sec}: не найден в T-Bank`);
+      const instrumentId = ti.uid || ti.figi;
+      const ob = await tbankRequest("MarketDataService/GetOrderBook", {
+        instrumentId,
+        depth: LIVE_ORDER_BOOK_DEPTH
+      });
+      renderLiveOrderBookView(ob);
+    } catch (err) {
+      renderLiveOrderBookView(null);
+      const msg = err?.message || String(err);
+      if (metaEl) metaEl.textContent = `Ошибка стакана: ${msg}`;
+      noteLiveTech("live-orderbook", msg, `sec=${picked.sec}`);
+    } finally {
+      state.live.orderBookBusy = false;
+    }
+  }
+
+  function startLiveOrderBookPoll() {
+    stopLiveOrderBookPoll();
+    const panel = $("live-order-book-panel");
+    if (!panel?.open || !isLiveMode()) return;
+    refreshLiveOrderBook();
+    state.live.orderBookTimer = setInterval(() => {
+      if (!isLiveMode() || !$("live-order-book-panel")?.open) {
+        stopLiveOrderBookPoll();
+        return;
+      }
+      refreshLiveOrderBook();
+    }, LIVE_ORDER_BOOK_POLL_MS);
   }
 
   function tbankInstField(inst, ...keys) {
@@ -4669,8 +4799,15 @@ ${totalBlock}
   $("live-manual-submit").addEventListener("click", () => { placeManualLiveOrder(); });
   $("live-manual-order-type").addEventListener("change", () => { syncLiveManualOrderUi(); saveConfig(); });
   ["live-manual-sec", "live-manual-direction", "live-manual-qty", "live-manual-price"].forEach((id) => {
-    $(id)?.addEventListener("change", () => { saveConfig(); });
+    $(id)?.addEventListener("change", () => {
+      saveConfig();
+      if (id === "live-manual-sec" && $("live-order-book-panel")?.open) refreshLiveOrderBook();
+    });
     $(id)?.addEventListener("input", () => { if (id === "live-manual-qty" || id === "live-manual-price") saveConfig(); });
+  });
+  $("live-order-book-panel")?.addEventListener("toggle", () => {
+    if ($("live-order-book-panel")?.open) startLiveOrderBookPoll();
+    else stopLiveOrderBookPoll();
   });
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
