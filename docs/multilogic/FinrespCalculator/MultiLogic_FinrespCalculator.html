@@ -105,7 +105,7 @@ h2:first-child{margin-top:0;}
 .chart-equity-total .chart-sec-title{font-size:1rem;color:#1e3a5f;}
 details.logic-editor{border:1px solid var(--border);border-radius:10px;padding:.5rem .85rem;margin:1rem 0;background:#fafbfc;}
 details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
-.extra-params-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.55rem .15rem .7rem;margin:-.5rem -.85rem .35rem;border-bottom:2px solid var(--accent);cursor:pointer;list-style:none;}
+.extra-params-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.55rem .15rem .55rem;margin:-.5rem -.85rem 0;cursor:pointer;list-style:none;}
 .extra-params-head::-webkit-details-marker{display:none;}
 .extra-params-head::marker{content:"";}
 .extra-params-title{font-size:1.18rem;font-weight:700;color:var(--text);letter-spacing:-.01em;}
@@ -138,7 +138,7 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
 .real-account-card{border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fbfcff;}
 .real-account-card[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
-.real-account-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;padding:.55rem .15rem .7rem;margin:-.5rem -.85rem .35rem;border-bottom:2px solid var(--accent);cursor:pointer;list-style:none;}
+.real-account-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;padding:.55rem .15rem .55rem;margin:-.5rem -.85rem 0;cursor:pointer;list-style:none;}
 .real-account-head::-webkit-details-marker{display:none;}
 .real-account-head::marker{content:"";}
 .real-account-title{font-size:1.05rem;font-weight:700;color:var(--text);}
@@ -554,7 +554,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div></div>
 </div>
 <p class="note">Подставляется в строку L1…L5 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
-<p class="note" id="position-sl-hint"></p>
+<p class="note" id="position-sl-hint" hidden></p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
 <div class="calc-grid">
@@ -587,7 +587,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="useful-indicators-card" id="useful-indicators-card">
 <div class="useful-indicators-head">
 <div>
-<span class="useful-indicators-title">Используемые индикаторы</span>
 <span class="useful-indicators-sub">Отключенные индикаторы удаляются из Op/Cl строки до расчета. SL/TP позиции остаются отдельными параметрами.</span>
 </div>
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-indicators">Оптимизировать</button>
@@ -617,8 +616,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <p class="note">Как вкладки «MOEX акции» / «MOEX фьючерсы» в роботе. Акции: «Подобрать» — из текста поля. Фьючерсы: «Подобрать» и «Рассчитать» — контракты MOEX по префиксам и периоду расчёта: экспирация (LASTTRADEDATE) не раньше начала периода, выпуск (FIRSTTRADEDATE) внутри периода; бессрочные (…RUBF, IMOEXF) — по экспирации. При «выбрать все фьючерсы» в расчёт попадают все подходящие серии, не только по одному на префикс.</p>
 </details>
 
-<div class="chart-card" id="calc-chart"></div>
-<div class="chart-card" id="calc-chart-equity"></div>
+<div class="chart-card" id="calc-chart" hidden></div>
+<div class="chart-card" id="calc-chart-equity" hidden></div>
 
 <details class="real-account-card" id="tbank-settings">
 <summary class="real-account-head">
@@ -658,7 +657,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-stopper-opt";
+  const CALC_PAGE_VERSION = "2026-06-08-stop-fix";
   const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
@@ -3386,8 +3385,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         ? "В режиме T-Bank депозит берётся из выбранного торгового счёта."
         : "";
     }
-    const settings = $("tbank-settings");
-    if (isTbankBacked && settings && !state.tbank.depositLoaded) settings.open = true;
     if (isLive) {
       setTbankStatus(
         state.tbank.depositLoaded
@@ -4027,32 +4024,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     };
   }
 
-  function findPackIndexByTime(pack, timeStr) {
-    if (!pack?.length || !timeStr) return null;
-    let idx = -1;
-    for (let i = 0; i < pack.length; i++) {
-      const t = pack[i]?.time;
-      if (!t) continue;
-      if (t <= timeStr) idx = i;
-      else break;
-    }
-    return idx >= 0 ? idx : null;
-  }
-
-  function applyPartialEndFromCheckpoint() {
-    const cp = state.runCheckpoint;
-    const ref = refPack();
-    if (!cp?.lastCandleTime || !ref?.length) return false;
-    const bIdx = findPackIndexByTime(ref, cp.lastCandleTime);
-    if (bIdx == null) return false;
-    const [a] = normalizeSliders();
-    if (bIdx < a) return false;
-    $("calc-end").value = String(bIdx);
-    saveWindowAnchor();
-    $("calc-end-label").textContent = ref[bIdx]?.time || "—";
-    return true;
-  }
-
   function terminateCalcWorker() {
     if (state.calcWorker) {
       try { state.calcWorker.terminate(); } catch (_) { /* ignore */ }
@@ -4060,23 +4031,43 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  function resetFinrespDisplay() {
+    syncChartBox($("calc-chart"), "");
+    syncChartBox($("calc-chart-equity"), "");
+    $("calc-finresp").textContent = "—";
+    $("calc-finresp").style.color = "";
+    setCommissionMetric("calc-commission", 0);
+    $("calc-ann-simple").textContent = "—";
+    $("calc-ann-compound").textContent = "—";
+    $("calc-count").textContent = "—";
+    $("calc-pos").textContent = "—";
+    $("calc-cash").textContent = "—";
+    $("calc-bysec").textContent = "—";
+    const annHint = $("calc-ann-hint");
+    if (annHint) annHint.textContent = "";
+    state.lastResult = null;
+    state.windowSkipped = [];
+    applyUiLocks();
+  }
+
   function requestStopRun() {
     if (!state.uiBusy) return;
     state.runCancelRequested = true;
+    const owner = state.runBusyOwner;
     state.runGeneration++;
     if (state.workerPendingReject) {
       try { state.workerPendingReject(new Error("cancelled")); } catch (_) { /* ignore */ }
       state.workerPendingReject = null;
     }
     terminateCalcWorker();
-    setCalcProgress("Остановка расчёта…", state.runCheckpoint ? CALC_PROGRESS.RUN_MAX - 1 : CALC_PROGRESS.LOAD_MAX);
+    state.runCheckpoint = null;
+    resetFinrespDisplay();
+    $("calc-status").textContent = "Расчёт остановлен.";
+    releaseRunBusy(owner);
+    updateTechInfo("run-cancelled");
   }
 
-  async function applyCancelledRunPartial(runGen, loadedData) {
-    if (!state.runCancelRequested) return;
-    state.runCancelRequested = false;
-    clearCalcProgress();
-    const cp = state.runCheckpoint;
+  async function finishCancelledRun(runGen, loadedData) {
     if (loadedData?.packs?.length) {
       state.packs = loadedData.packs;
       state.failedInstruments = loadedData.failures || [];
@@ -4086,29 +4077,14 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       };
       if (!state.hasWindow) setSliderBounds(false);
     }
+    state.runCancelRequested = false;
     state.runCheckpoint = null;
-    if (!state.packs.length) {
-      $("calc-status").textContent = "Расчёт остановлен — нет загруженных свечей.";
-      return;
-    }
-    const finrespStarted = cp?.phase === "finresp" || cp?.phase === "stopper";
-    if (finrespStarted) applyPartialEndFromCheckpoint();
-    await yieldToUi();
-    const result = calcResult();
-    if (!result) {
-      $("calc-status").textContent = "Расчёт остановлен — нет FINRESP для текущего окна.";
-      return;
-    }
-    applyResult(result);
-    const ref = refPack();
-    const c1 = ref[result.b]?.time || cp?.lastCandleTime || "—";
-    const c0 = ref[result.a]?.time || "—";
-    let status = `Расчёт остановлен · FINRESP до ${c1}`;
-    if (c0 !== "—" && c1 !== "—") status += ` (окно ${c0} — ${c1})`;
-    status += ` · ${result.perSec.length} инстр.`;
-    if (state.failedInstruments?.length) status += ` · нет MOEX: ${state.failedInstruments.length}`;
-    $("calc-status").textContent = status;
+    if (!state.uiBusy) return;
+    resetFinrespDisplay();
+    $("calc-status").textContent = "Расчёт остановлен.";
+    releaseRunBusy(runGen);
     updateTechInfo("run-cancelled");
+    await yieldToUi();
   }
 
   function setFormLocked(lock) {
@@ -4213,6 +4189,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       );
     } catch (err) {
       if (state.runCancelRequested || err?.message === "cancelled") throw err;
+      if (ro.shouldCancel?.()) throw new Error("cancelled");
       noteTechError(`worker-fallback: ${err.message}`);
       if (!ro.silent) {
         setCalcProgress("Расчёт FINRESP (основной поток)…", CALC_PROGRESS.FINRESP_START);
@@ -4577,13 +4554,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const el = $("position-sl-hint");
     if (!el) return;
     const meta = E.BUILTIN_META.find((m) => m.id === $("calc-logic").value);
+    let text = "";
     if (meta?.type === "sma_spread") {
-      el.textContent = "Логика «Выше/Ниже SMA» — упрощённая модель; стопы по ATR учитываются при ненулевой позиции.";
+      text = "Логика «Выше/Ниже SMA» — упрощённая модель; стопы по ATR учитываются при ненулевой позиции.";
     } else if (meta?.type === "logic_line") {
-      el.textContent = "Логики L1…L5: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
-    } else {
-      el.textContent = "";
+      text = "Логики L1…L5: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
     }
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
+  function syncChartBox(box, html) {
+    if (!box) return;
+    box.innerHTML = html ?? "";
+    box.hidden = !String(box.innerHTML).trim();
   }
 
   function renderFromParams() {
@@ -5168,12 +5152,12 @@ ${yLabels}${xLabels}
     const box = $("calc-chart-equity");
     if (!box) return;
     if (!state.packs.length) {
-      box.innerHTML = "";
+      syncChartBox(box, "");
       return;
     }
     const data = calcLogicEquityRuns(a, b);
     if (!data || !Object.keys(data.runs).length) {
-      box.innerHTML = "";
+      syncChartBox(box, "");
       return;
     }
     const { runs, times } = data;
@@ -5189,11 +5173,11 @@ ${yLabels}${xLabels}
     const totalBlock = totalSvg
       ? `<div class="chart-equity-total"><p class="chart-sec-title">Общий equity (L5 + L1 + L2 + L3 + L4)</p>${totalSvg}</div>`
       : "";
-    box.innerHTML = `<div class="chart-equity-section">
+    syncChartBox(box, `<div class="chart-equity-section">
 <p class="chart-equity-section-title">Equity по логикам (сумма по выбранным инструментам, без портф. Stopper)</p>
 <div class="chart-stack">${logicBlocks.join("")}</div>
 ${totalBlock}
-</div>`;
+</div>`);
   }
 
   function chartFailuresForDraw() {
@@ -5248,8 +5232,9 @@ ${totalBlock}
   function drawCharts(perSec, stopper) {
     const failed = chartFailuresForDraw();
     const entries = chartEntriesForDraw(perSec, failed);
+    const chartBox = $("calc-chart");
     if (!entries.length) {
-      $("calc-chart").innerHTML = "<p class=\"note\">Нет данных для графика.</p>";
+      syncChartBox(chartBox, "<p class=\"note\">Нет данных для графика.</p>");
       return;
     }
     const compact = entries.length > 1;
@@ -5275,9 +5260,9 @@ ${totalBlock}
       }
       return `<div class="chart-mini"><p class="chart-sec-title">${p.sec}</p>${svg}</div>`;
     });
-    $("calc-chart").innerHTML = blocks.length
+    syncChartBox(chartBox, blocks.length
       ? `${note}<div class="chart-stack">${blocks.join("")}</div>`
-      : "<p class=\"note\">Нет данных для графика.</p>";
+      : "<p class=\"note\">Нет данных для графика.</p>");
   }
 
   function optimDisplayAgg(result, opts) {
@@ -5470,9 +5455,10 @@ ${totalBlock}
     const shouldCancel = () => isRunCancelled(runGen);
     let partialApplied = false;
     const finishIfCancelled = async (loadedData) => {
-      if (!shouldCancel() || partialApplied) return false;
+      if (partialApplied) return true;
+      if (!isRunCancelled(runGen) && !state.runCancelRequested) return false;
       partialApplied = true;
-      await applyCancelledRunPartial(runGen, loadedData);
+      await finishCancelledRun(runGen, loadedData);
       return true;
     };
     setCalcProgress(periodNarrowed
@@ -5526,8 +5512,8 @@ ${totalBlock}
       }
       if (await finishIfCancelled(loadedData)) return;
       if (!result) {
-        $("calc-chart").innerHTML = "";
-        $("calc-chart-equity").innerHTML = "";
+        syncChartBox($("calc-chart"), "");
+        syncChartBox($("calc-chart-equity"), "");
         const packsN = state.packs?.length || 0;
         const skipped = state.windowSkipped?.length || 0;
         let msg = "Нет результата для выбранного окна.";
@@ -5560,12 +5546,13 @@ ${totalBlock}
       if (runGen !== state.runGeneration) return;
       $("calc-status").textContent = `Ошибка: ${err.message}`;
       noteTechError(`runWithInstruments: ${err.message}`);
-      $("calc-chart").innerHTML = "";
-      $("calc-chart-equity").innerHTML = "";
+      syncChartBox($("calc-chart"), "");
+      syncChartBox($("calc-chart-equity"), "");
       throw err;
     } finally {
-      if (!partialApplied && shouldCancel()) {
-        await finishIfCancelled(loadedData);
+      if (!partialApplied && (isRunCancelled(runGen) || state.runCancelRequested)) {
+        partialApplied = true;
+        await finishCancelledRun(runGen, loadedData);
       }
       state.runCancelRequested = false;
       releaseRunBusy(runGen);
