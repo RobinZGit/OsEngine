@@ -3,7 +3,6 @@
  *Ваши права на использование кода регулируются данной лицензией http://o-s-a.net/doc/license_simple_engine.pdf
 */
 
-using LiteDB;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using OsEngine.Entity;
@@ -113,8 +112,6 @@ namespace OsEngine.Market.Servers.AE
 
                 DeleteWebSocketConnection();
             }
-
-            DisposePriceDatabase();
         }
 
         public DateTime ServerTime { get; set; }
@@ -318,13 +315,6 @@ namespace OsEngine.Market.Servers.AE
         {
             WebSocketQuoteMessage q = JsonConvert.DeserializeObject<WebSocketQuoteMessage>(message, _jsonSettings);
 
-            if (q == null)
-            {
-                return;
-            }
-
-            SaveQuotePrice(q);
-
             Security sec = _securities.Find((s) => s.NameId == q.Ticker);
 
             if (q.Volatility != null) // needs to be before orderbook so MarkIV already available
@@ -398,114 +388,6 @@ namespace OsEngine.Market.Servers.AE
                 newTrade.BidsVolume = q.BidVolume ?? 0;
 
                 NewTradesEvent!(newTrade);
-            }
-        }
-
-        private readonly object _priceDatabaseLocker = new object();
-        private LiteDatabase _priceDatabase;
-        private ILiteCollection<AExchangePriceSnapshot> _priceCollection;
-        private bool _priceDatabaseIsDisabled;
-
-        private void SaveQuotePrice(WebSocketQuoteMessage quote)
-        {
-            if (HasPriceData(quote) == false)
-            {
-                return;
-            }
-
-            try
-            {
-                lock (_priceDatabaseLocker)
-                {
-                    ILiteCollection<AExchangePriceSnapshot> collection = GetPriceCollection();
-
-                    if (collection == null)
-                    {
-                        return;
-                    }
-
-                    collection.Insert(CreatePriceSnapshot(quote));
-                }
-            }
-            catch (Exception exception)
-            {
-                _priceDatabaseIsDisabled = true;
-                SendLogMessage($"AExchangeServer.SaveQuotePrice: {exception}", LogMessageType.Error);
-            }
-        }
-
-        private bool HasPriceData(WebSocketQuoteMessage quote)
-        {
-            return quote != null
-                && string.IsNullOrEmpty(quote.Ticker) == false
-                && (quote.Bid != null
-                    || quote.Ask != null
-                    || quote.LastPrice != null);
-        }
-
-        private ILiteCollection<AExchangePriceSnapshot> GetPriceCollection()
-        {
-            if (_priceDatabaseIsDisabled)
-            {
-                return null;
-            }
-
-            if (_priceCollection != null)
-            {
-                return _priceCollection;
-            }
-
-            string dir = Path.Combine(Directory.GetCurrentDirectory(), "Engine", "DataBases");
-
-            if (Directory.Exists(dir) == false)
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            string path = Path.Combine(dir, "AExchangePrices.db");
-            _priceDatabase = new LiteDatabase(path);
-            _priceCollection = _priceDatabase.GetCollection<AExchangePriceSnapshot>("prices");
-            _priceCollection.EnsureIndex(price => price.Ticker);
-            _priceCollection.EnsureIndex(price => price.Time);
-            _priceCollection.EnsureIndex(price => price.MessageId);
-
-            return _priceCollection;
-        }
-
-        private AExchangePriceSnapshot CreatePriceSnapshot(WebSocketQuoteMessage quote)
-        {
-            DateTime quoteTime = quote.Timestamp == default
-                ? DateTime.UtcNow
-                : quote.Timestamp;
-
-            return new AExchangePriceSnapshot
-            {
-                MessageId = quote.Id,
-                Ticker = quote.Ticker,
-                Time = quoteTime,
-                ReceivedTimeUtc = DateTime.UtcNow,
-                Bid = quote.Bid,
-                BidVolume = quote.BidVolume,
-                Ask = quote.Ask,
-                AskVolume = quote.AskVolume,
-                LastPrice = quote.LastPrice,
-                LastVolume = quote.LastVolume,
-                LastTradeTime = quote.LastTradeTime,
-                Volatility = quote.Volatility
-            };
-        }
-
-        private void DisposePriceDatabase()
-        {
-            lock (_priceDatabaseLocker)
-            {
-                _priceCollection = null;
-
-                if (_priceDatabase != null)
-                {
-                    _priceDatabase.Dispose();
-                    _priceDatabase = null;
-                }
             }
         }
 
@@ -1347,34 +1229,5 @@ namespace OsEngine.Market.Servers.AE
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
 
         #endregion
-    }
-
-    public class AExchangePriceSnapshot
-    {
-        public int Id { get; set; }
-
-        public long MessageId { get; set; }
-
-        public string Ticker { get; set; }
-
-        public DateTime Time { get; set; }
-
-        public DateTime ReceivedTimeUtc { get; set; }
-
-        public decimal? Bid { get; set; }
-
-        public decimal? BidVolume { get; set; }
-
-        public decimal? Ask { get; set; }
-
-        public decimal? AskVolume { get; set; }
-
-        public decimal? LastPrice { get; set; }
-
-        public decimal? LastVolume { get; set; }
-
-        public DateTime? LastTradeTime { get; set; }
-
-        public decimal? Volatility { get; set; }
     }
 }
