@@ -247,8 +247,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <input id="vol-deposit" type="number" value="1000000" min="1" step="1000"></div>
 <div class="calc-field"><label for="vol-maxpos">Max positions (all tabs)</label>
 <input id="vol-maxpos" type="number" value="40" min="0" max="200" step="1"></div>
+<div class="calc-field"><label for="vol-commission">Комиссия, % за сделку</label>
+<input id="vol-commission" type="number" value="0" min="0" max="10" step="0.0001" title="Одинаковая комиссия для покупки и продажи; 0 — без комиссии"></div>
 </div>
-<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
+<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот. Комиссия вычитается с оборота каждой покупки и продажи.</p>
 
 <p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
 <div class="calc-grid">
@@ -530,6 +532,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     runGeneration: 0,
     runBusyOwner: null,
     uiBusy: false,
+    restoringConfig: false,
+    restoredSelectedInstruments: [],
     accountMode: "paper",
     tbank: {
       token: null,
@@ -580,6 +584,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const TBANK_TOKEN_STORE_KEY = "multilogic.finresp.tbank.token.v1";
   const TBANK_ACCOUNT_STORE_KEY = "multilogic.finresp.tbank.account.v1";
   const TBANK_HOST_STORE_KEY = "multilogic.finresp.tbank.host.v1";
+  const CONFIG_STORE_KEY = "multilogic.finresp.config.v1";
   const TBANK_CRYPTO_ITERATIONS = 210000;
   const MOEX_MINUTES_PER_SESSION = 530;
   const MIN_WARMUP_BARS = 220;
@@ -615,6 +620,143 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     try { localStorage.removeItem(key); return true; }
     catch (_) { return false; }
   };
+
+  function readSavedConfig() {
+    const raw = safeStorageGet(CONFIG_STORE_KEY);
+    if (!raw) return null;
+    try {
+      const cfg = JSON.parse(raw);
+      return cfg && cfg.v === 1 ? cfg : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setValueIfExists(id, value) {
+    const el = $(id);
+    if (!el || value == null) return;
+    el.value = String(value);
+  }
+
+  function logicLinesConfig() {
+    const out = {};
+    document.querySelectorAll("#logic-lines textarea").forEach((ta) => {
+      out[ta.dataset.key] = ta.value;
+    });
+    return out;
+  }
+
+  function collectConfig() {
+    return {
+      v: 1,
+      savedAt: new Date().toISOString(),
+      accountMode: $("account-mode")?.value || "paper",
+      timeframe: $("calc-tf")?.value || "60",
+      from: $("calc-from")?.value || "",
+      till: $("calc-till")?.value || "",
+      logic: $("calc-logic")?.value || "",
+      selectedInstruments: selectedInstruments(),
+      volume: {
+        type: $("vol-type")?.value || "Deposit percent",
+        value: $("vol-value")?.value || "",
+        deposit: $("vol-deposit")?.value || "",
+        maxPositions: $("vol-maxpos")?.value || "",
+        commissionPct: $("vol-commission")?.value || "0"
+      },
+      params: {
+        sl: $("param-sl")?.value || "",
+        tp: $("param-tp")?.value || "",
+        atrSl: $("param-atr-sl")?.value || "",
+        lr: $("param-lr")?.value || ""
+      },
+      stopper: {
+        slMult: $("stopper-sl-mult")?.value || "",
+        tpMult: $("stopper-tp-mult")?.value || "",
+        atrLen: $("stopper-atr-len")?.value || "",
+        ref: $("stopper-ref")?.value || ""
+      },
+      prefixes: {
+        stocks: $("prefix-stocks")?.value || "",
+        futures: $("prefix-futures")?.value || ""
+      },
+      indicators: selectedIndicatorKeys(),
+      logicLines: logicLinesConfig()
+    };
+  }
+
+  function saveConfig() {
+    if (state.restoringConfig) return;
+    try {
+      safeStorageSet(CONFIG_STORE_KEY, JSON.stringify(collectConfig()));
+    } catch (err) {
+      noteTechError(`save-config: ${err.message}`);
+    }
+  }
+
+  function applySavedConfig() {
+    const cfg = readSavedConfig();
+    if (!cfg) return false;
+    state.restoringConfig = true;
+    try {
+      if (cfg.accountMode === "tbank" || cfg.accountMode === "paper") $("account-mode").value = cfg.accountMode;
+      setValueIfExists("calc-tf", cfg.timeframe);
+      setValueIfExists("calc-from", cfg.from);
+      setValueIfExists("calc-till", cfg.till);
+      setValueIfExists("calc-logic", cfg.logic);
+      setValueIfExists("vol-type", cfg.volume?.type);
+      setValueIfExists("vol-value", cfg.volume?.value);
+      setValueIfExists("vol-deposit", cfg.volume?.deposit);
+      setValueIfExists("vol-maxpos", cfg.volume?.maxPositions);
+      setValueIfExists("vol-commission", cfg.volume?.commissionPct);
+      setValueIfExists("param-sl", cfg.params?.sl);
+      setValueIfExists("param-tp", cfg.params?.tp);
+      setValueIfExists("param-atr-sl", cfg.params?.atrSl);
+      setValueIfExists("param-lr", cfg.params?.lr);
+      setValueIfExists("stopper-sl-mult", cfg.stopper?.slMult);
+      setValueIfExists("stopper-tp-mult", cfg.stopper?.tpMult);
+      setValueIfExists("stopper-atr-len", cfg.stopper?.atrLen);
+      setValueIfExists("stopper-ref", cfg.stopper?.ref);
+      setValueIfExists("prefix-stocks", cfg.prefixes?.stocks);
+      setValueIfExists("prefix-futures", cfg.prefixes?.futures);
+      if (Array.isArray(cfg.indicators)) applyIndicatorSelection(cfg.indicators);
+      if (cfg.logicLines && typeof cfg.logicLines === "object") {
+        state.customLines = { ...state.customLines, ...cfg.logicLines };
+        fillLogicEditor();
+      }
+      state.restoredSelectedInstruments = Array.isArray(cfg.selectedInstruments) ? cfg.selectedInstruments : [];
+      return true;
+    } finally {
+      state.restoringConfig = false;
+    }
+  }
+
+  function applyRestoredInstrumentSelection() {
+    const saved = state.restoredSelectedInstruments || [];
+    if (!saved.length) return;
+    const keys = new Set(saved.map((i) => `${i.market === "futures" ? "futures" : "shares"}:${String(i.sec || "").trim().toUpperCase()}`));
+    const matched = new Set();
+    for (const o of $("calc-sec").options) {
+      const key = `${o.dataset.market === "futures" ? "futures" : "shares"}:${String(o.value || "").trim().toUpperCase()}`;
+      o.selected = keys.has(key);
+      if (o.selected) matched.add(key);
+    }
+    for (const inst of saved) {
+      const market = inst.market === "futures" ? "futures" : "shares";
+      const sec = String(inst.sec || "").trim();
+      if (!sec) continue;
+      const key = `${market}:${sec.toUpperCase()}`;
+      if (matched.has(key)) continue;
+      const o = document.createElement("option");
+      o.value = sec;
+      o.textContent = market === "futures" ? `${sec} · futures` : sec;
+      o.dataset.market = market;
+      o.selected = true;
+      $("calc-sec").appendChild(o);
+      matched.add(key);
+    }
+    syncSelectAllCheckboxes();
+    state.prevSelectCount = selectedInstrumentCount();
+  }
 
   function bytesToBase64(bytes) {
     let s = "";
@@ -901,7 +1043,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       volumeType: $("vol-type").value,
       volume: +$("vol-value").value || E.DEFAULT_VOLUME.volume,
       deposit: +$("vol-deposit").value || E.DEFAULT_VOLUME.deposit,
-      maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions)
+      maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions),
+      commissionPct: Math.max(0, +$("vol-commission").value || 0)
     };
   }
 
@@ -1108,6 +1251,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       state.tbank.depositLoaded = true;
       syncAccountModeUi();
       setTbankStatus(`Депозит загружен из T-Bank: ${fmt(amount, 2)} ₽.`);
+      saveConfig();
       if (state.packs.length) render();
     } catch (err) {
       state.tbank.depositLoaded = false;
@@ -1331,6 +1475,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       $("calc-status").textContent =
         `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). Нажмите «Рассчитать» для обновления.`;
     }
+    saveConfig();
   }
 
   function syncMarketCheckbox(market, cbId) {
@@ -1423,6 +1568,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
     }
     updateTechInfo("selection-changed");
+    saveConfig();
   }
 
   function isOptimizing() {
@@ -1849,6 +1995,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function renderFromParams() {
+    saveConfig();
     if (!state.packs.length || isOptimizing()) return;
     render();
   }
@@ -2790,13 +2937,14 @@ ${totalBlock}
   $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
   $("account-mode").addEventListener("change", () => {
     syncAccountModeUi();
+    saveConfig();
     if (state.accountMode === "tbank") {
       connectTbankAndLoadDeposit();
       return;
     }
     if (state.packs.length && (state.accountMode !== "tbank" || state.tbank.depositLoaded)) render();
   });
-  $("tbank-save-token").addEventListener("click", () => saveTbankToken());
+  $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
   $("cache-file-input").addEventListener("change", async (ev) => {
@@ -2830,6 +2978,7 @@ ${totalBlock}
   $("calc-sec").addEventListener("change", onSecSelectionChanged);
   $("prefix-pick-stocks").addEventListener("click", () => {
     reloadShareList();
+    saveConfig();
     $("calc-status").textContent = state.packs.length
       ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
       : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
@@ -2847,6 +2996,7 @@ ${totalBlock}
       $("calc-status").textContent = state.packs.length
         ? `Подобрано ${n} контрактов MOEX, выбор обновлён. FINRESP пересчитан по текущему окну.`
         : `Подобрано ${n} контрактов MOEX, выбор обновлён. Нажмите «Рассчитать».`;
+      saveConfig();
       if (state.packs.length) render();
     } catch (err) {
       $("calc-status").textContent = `Ошибка подбора фьючерсов: ${err.message}`;
@@ -2854,10 +3004,14 @@ ${totalBlock}
       setBusy(false);
     }
   });
-  $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); render(); });
-  $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); render(); });
-  $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
-  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "stopper-ref"].forEach((id) => {
+  ["prefix-stocks", "prefix-futures"].forEach((id) => {
+    $(id).addEventListener("change", saveConfig);
+    $(id).addEventListener("input", saveConfig);
+  });
+  $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); saveConfig(); render(); });
+  $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); saveConfig(); render(); });
+  $("vol-type").addEventListener("change", () => { syncVolumeFields(); saveConfig(); render(); });
+  ["vol-value", "vol-deposit", "vol-maxpos", "vol-commission", "param-lr", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", renderFromParams);
     $(id).addEventListener("input", renderFromParams);
   });
@@ -2880,14 +3034,16 @@ ${totalBlock}
       updateDateHint(n);
     }
     if (state.packs.length) setSliderBounds(true);
+    saveConfig();
   });
-  $("calc-month").addEventListener("change", applyMonthSelection);
+  $("calc-month").addEventListener("change", () => { applyMonthSelection(); saveConfig(); });
   $("calc-from").addEventListener("change", () => {
     state.userDateRangeTouched = true;
     enforceDateRange("from");
     clearWindowAnchor();
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
+    saveConfig();
   });
   $("calc-till").addEventListener("change", () => {
     state.userDateRangeTouched = true;
@@ -2895,9 +3051,10 @@ ${totalBlock}
     clearWindowAnchor();
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
+    saveConfig();
   });
-  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); render(); });
-  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); render(); });
+  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); saveConfig(); render(); });
+  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); saveConfig(); render(); });
   const extraParams = $("extra-params");
   const extraParamsToggle = $("extra-params-toggle");
   function syncExtraParamsToggleLabel() {
@@ -2919,9 +3076,15 @@ ${totalBlock}
   updatePositionSlHint();
   initPrefixFields();
   initAccountMode();
+  initDates();
+  applySavedConfig();
+  fillLogicSelect();
+  updatePositionSlHint();
+  syncMonthInputFromDates();
   syncVolumeFields();
   initInstrumentLists();
-  initDates();
+  applyRestoredInstrumentSelection();
+  updateDateHint(selectedInstrumentCount());
   bindUiEvents();
   initCandleCache();
   applyUiLocks();

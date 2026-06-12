@@ -15,7 +15,8 @@
     volumeType: "Deposit percent",
     volume: 10,
     deposit: 1000000,
-    maxPositions: 40
+    maxPositions: 40,
+    commissionPct: 0
   };
   const INDICATOR_OPTIONS = Object.freeze([
     { key: "sma", label: "SMA" },
@@ -769,6 +770,12 @@
     return lot * maxPos;
   }
 
+  function commissionCost(price, volume, volConfig) {
+    const pct = Math.max(0, Number(volConfig?.commissionPct) || 0);
+    if (!pct || !price || !volume) return 0;
+    return Math.abs(price * volume) * pct / 100;
+  }
+
   function pushRow(rows, candle, fields) {
     if (!candle) return;
     rows.push({
@@ -863,6 +870,7 @@
       if (pos === 0) return 0;
       const vol = Math.abs(pos);
       cash += pos * price;
+      cash -= commissionCost(price, vol, volConfig);
       pos = 0;
       entryPrice = null;
       return vol;
@@ -916,6 +924,7 @@
         if (lot > 0 && lot <= cap) {
           pos = longOpHit ? lot : -lot;
           cash -= pos * price;
+          cash -= commissionCost(price, lot, volConfig);
           entryPrice = price;
           buy = lot;
         }
@@ -998,6 +1007,7 @@
           }
           if (hit) {
             cash += pos * price;
+            cash -= commissionCost(price, Math.abs(pos), volConfig);
             sells += Math.abs(pos);
             pos = 0;
             entryPrice = null;
@@ -1019,6 +1029,7 @@
         if (pos + buy - sell > cap) buy = Math.max(0, cap - pos + sell);
         if (pos + buy - sell < -cap) sell = Math.max(0, pos + buy + cap);
         cash += price * (sell - buy);
+        cash -= commissionCost(price, buy + sell, volConfig);
         pos += buy - sell;
         buys += buy;
         sells += sell;
@@ -1169,12 +1180,13 @@
     perSecItem.sells = perSecItem.rows.reduce((s, r) => s + (r.sell || 0), 0);
   }
 
-  function flattenRowAtIdx(perSecItem, rowIdx) {
+  function flattenRowAtIdx(perSecItem, rowIdx, volConfig) {
     const row = { ...perSecItem.rows[rowIdx] };
     if (row.pos !== 0) {
       const price = row.close;
       row.sell = (row.sell || 0) + Math.abs(row.pos);
       row.cash += row.pos * price;
+      row.cash -= commissionCost(price, Math.abs(row.pos), volConfig);
       row.pos = 0;
       row.eq = row.cash;
     }
@@ -1184,7 +1196,7 @@
   function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endTime, params, volConfig) {
     const rowIdx = findRowIdxAtOrBefore(perSecItem.rows, triggerTime);
     if (rowIdx < 0) return;
-    const triggerRow = flattenRowAtIdx(perSecItem, rowIdx);
+    const triggerRow = flattenRowAtIdx(perSecItem, rowIdx, volConfig);
     const head = perSecItem.rows.slice(0, rowIdx);
     const localEnd = findCandleIndexAtOrBefore(candles, endTime);
     if (localEnd < 0) {
