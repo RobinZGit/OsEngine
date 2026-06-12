@@ -2425,7 +2425,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const indicators = optimCtx?.indicators ?? indicatorSelection();
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
     if (!spec) return null;
-    setCalcProgress("Расчёт FINRESP (фоновый поток)…");
+    setCalcProgress("Расчёт FINRESP (фоновый поток)…", 0);
     await yieldToUi();
     let workerOut;
     try {
@@ -3688,7 +3688,6 @@ ${totalBlock}
         setSliderBounds(false);
       }
       saveWindowAnchor();
-      setCalcProgress("Расчёт FINRESP и построение графиков…", 100);
       await yieldToUi();
       const result = await calcResultAsync();
       if (runGen !== state.runGeneration) return;
@@ -3749,7 +3748,7 @@ ${totalBlock}
       if (instruments.some((i) => i.market === "futures")) {
         state.runBusyOwner = runGen;
         setBusy(true);
-        setCalcProgress("Подбор фьючерсов MOEX за период расчёта…");
+        setCalcProgress("Подбор фьючерсов MOEX за период расчёта…", 0);
         try {
           instruments = await expandFuturesForCalcPeriod(instruments);
         } finally {
