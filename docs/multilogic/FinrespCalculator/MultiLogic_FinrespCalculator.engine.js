@@ -894,7 +894,8 @@
 
   function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig, options) {
     const opts = options || {};
-    const cache = new IndicatorCache(candles);
+    const signalCandles = opts.signalCandles || candles;
+    const cache = new IndicatorCache(signalCandles);
     const atrLen = parsed.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen;
     const atrSlTp = cache.atr(atrLen);
     const initial = opts.initial || {};
@@ -1002,14 +1003,16 @@
 
   function simulateSmaSpread(candles, smaLen, side, startIdx, endIdx, volConfig, options) {
     const opts = options || {};
+    const signalCandles = opts.signalCandles || candles;
     const slAtr = Math.max(0, Number(opts.slAtr) || 0);
     const tpAtr = Math.max(0, Number(opts.tpAtr) || 0);
     const atrLen = Math.max(2, Number(opts.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen);
     const useStops = slAtr > 0 || tpAtr > 0;
-    const cache = useStops ? new IndicatorCache(candles) : null;
+    const cache = useStops ? new IndicatorCache(signalCandles) : null;
     const atrSlTp = useStops ? cache.atr(atrLen) : null;
-    const closes = candles.map((c) => c.close);
-    const sma = smaSeries(closes, smaLen);
+    const signalCloses = signalCandles.map((c) => c.close);
+    const tradeCloses = candles.map((c) => c.close);
+    const sma = smaSeries(signalCloses, smaLen);
     const initial = opts.initial || {};
     let cash = initial.cash || 0;
     let pos = initial.pos || 0;
@@ -1025,7 +1028,8 @@
     for (let i = from; i <= to; i++) {
       const candle = candles[i];
       if (!candle) continue;
-      const price = closes[i];
+      const price = tradeCloses[i];
+      const signalPrice = signalCloses[i];
       const s = sma[i];
       let buy = 0;
       let sell = 0;
@@ -1066,7 +1070,7 @@
       }
 
       if (s != null) {
-        const d = price - s;
+        const d = signalPrice - s;
         const scale = calcTradeVolume(price, volConfig) / Math.max(price, 1e-9);
         if (side === "above") {
           buy = Math.max(d, 0) * scale;
@@ -1257,7 +1261,7 @@
     return row;
   }
 
-  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endTime, params, volConfig) {
+  function flattenAndResimTail(perSecItem, candles, spec, triggerTime, endTime, params, volConfig, runOptions) {
     const rowIdx = findRowIdxAtOrBefore(perSecItem.rows, triggerTime);
     if (rowIdx < 0) return;
     const triggerRow = flattenRowAtIdx(perSecItem, rowIdx, volConfig);
@@ -1287,13 +1291,13 @@
       localEnd,
       params,
       volConfig,
-      { initial, skipWarmup: true }
+      { initial, skipWarmup: true, ...(runOptions || {}) }
     );
     perSecItem.rows = [...head, triggerRow, ...tail.rows];
     recomputePerSecTotals(perSecItem);
   }
 
-  function applyPortfolioStopper(perSec, packs, spec, times, endTime, params, volConfig, cfg) {
+  function applyPortfolioStopper(perSec, packs, spec, times, endTime, params, volConfig, cfg, signalPacks) {
     const stopper = { ...DEFAULT_STOPPER, ...cfg };
     const events = [];
     if ((!stopper.useSl && !stopper.useTp) || !perSec.length || !packs.length) {
@@ -1336,7 +1340,8 @@
 
         const refAtTrigger = referenceEquity;
         for (let s = 0; s < perSec.length; s++) {
-          flattenAndResimTail(perSec[s], packs[s], spec, time, endTime, params, volConfig);
+          const runOptions = signalPacks?.[s] ? { signalCandles: signalPacks[s] } : undefined;
+          flattenAndResimTail(perSec[s], packs[s], spec, time, endTime, params, volConfig, runOptions);
         }
         events.push({
           kind,
@@ -1956,7 +1961,27 @@
     return { finresp, cash, pos, commission, buys, sells, bySec };
   }
 
-  function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig) {
+  const RANDOM_PRICE_SHIFT_MAX = 0.001;
+
+  function applyRandomPriceShift(packs, maxPct = RANDOM_PRICE_SHIFT_MAX) {
+    if (!packs?.length || maxPct <= 0) return packs;
+    return packs.map((pack) =>
+      pack.map((c) => {
+        const r = (Math.random() * 2 - 1) * maxPct;
+        const m = 1 + r;
+        const open = c.open * m;
+        const close = c.close * m;
+        let high = c.high * m;
+        let low = c.low * m;
+        high = Math.max(high, open, close);
+        low = Math.min(low, open, close);
+        return { ...c, open, high, low, close };
+      })
+    );
+  }
+
+  function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, options) {
+    const signalPacks = options?.signalPacks;
     const emptyAgg = aggregateFinresp([]);
     const ref = longestPack(packs);
     if (!ref.length) {
@@ -1982,28 +2007,43 @@
 
     const perSec = [];
     const activePacks = [];
+    const activeSignalPacks = [];
     const skipped = [];
-    for (const candles of packs) {
+    for (let pi = 0; pi < packs.length; pi++) {
+      const candles = packs[pi];
       const sec = candles[0]?.sec || "?";
       const range = indicesForTimeRange(candles, tStart, tEnd);
       if (!range) {
         skipped.push({ sec, error: "нет свечей в выбранном окне" });
         continue;
       }
-      const r = runOnCandles(candles, spec, range.a, range.b, params, volConfig);
+      const signalCandles = signalPacks?.[pi] || candles;
+      const runOpts = signalPacks ? { signalCandles } : undefined;
+      const r = runOnCandles(candles, spec, range.a, range.b, params, volConfig, runOpts);
       if (!r.rows?.length) {
         skipped.push({ sec, error: "нет данных для расчёта в выбранном окне" });
         continue;
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);
+      if (signalPacks) activeSignalPacks.push(signalCandles);
     }
 
     const preStopperAgg = aggregateFinresp(perSec);
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
-      const applied = applyPortfolioStopper(perSec, activePacks, spec, times, tEnd, params, volConfig, cfg);
+      const applied = applyPortfolioStopper(
+        perSec,
+        activePacks,
+        spec,
+        times,
+        tEnd,
+        params,
+        volConfig,
+        cfg,
+        signalPacks ? activeSignalPacks : null
+      );
       stopper = applied.stopper;
     }
     const agg = aggregateFinresp(perSec);
@@ -2059,6 +2099,8 @@
     moexFileProtocolHint,
     resolveIntervalLoad,
     aggregateCandles,
+    applyRandomPriceShift,
+    RANDOM_PRICE_SHIFT_MAX,
     smaSeries
   };
 })(typeof window !== "undefined" ? window : globalThis);

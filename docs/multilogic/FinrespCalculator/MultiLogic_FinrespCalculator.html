@@ -336,6 +336,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
 <p class="note">Комиссия: <strong>Commission, %</strong> от суммы каждой сделки (|цена × объём|); удерживается при покупке и продаже. FINRESP и % годовых в блоке выше уже <strong>с учётом комиссии</strong>.</p>
 
+<p class="extra-section">Устойчивость расчёта</p>
+<label class="indicator-toggle" for="random-price-shift" style="max-width:36rem;margin:.35rem 0 .55rem">
+<input type="checkbox" id="random-price-shift">
+<span>Рандомный сдвиг цен (до ±0,1%) при расчёте индикаторов</span>
+</label>
+<p class="note">Каждый пересчёт: OHLC для индикаторов и сигналов Op/Cl сдвигаются случайно в пределах 0,1%. FINRESP, комиссии и сделки — по реальным ценам MOEX.</p>
+
 <p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
 <div class="calc-grid">
 <div class="calc-field"><label for="param-sl">SL позиции кратность ATR (@SL)</label>
@@ -453,7 +460,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-commission-zero";
+  const CALC_PAGE_VERSION = "2026-06-12-shift-indicators";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -781,7 +788,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         futures: $("prefix-futures")?.value || ""
       },
       indicators: selectedIndicatorKeys(),
-      logicLines: logicLinesConfig()
+      logicLines: logicLinesConfig(),
+      randomPriceShift: !!$("random-price-shift")?.checked
     };
   }
 
@@ -826,6 +834,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setValueIfExists("stopper-tp-mult", cfg.stopper?.tpMult);
       setValueIfExists("stopper-atr-len", cfg.stopper?.atrLen);
       setValueIfExists("stopper-ref", cfg.stopper?.ref);
+      if ($("random-price-shift")) {
+        $("random-price-shift").checked = !!cfg.randomPriceShift;
+      }
       setValueIfExists("prefix-stocks", cfg.prefixes?.stocks);
       setValueIfExists("prefix-futures", cfg.prefixes?.futures);
       if (Array.isArray(cfg.indicators)) applyIndicatorSelection(cfg.indicators);
@@ -1219,6 +1230,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function isLiveMode() {
     return state.accountMode === "live";
+  }
+
+  function randomPriceShiftEnabled() {
+    return !!$("random-price-shift")?.checked;
+  }
+
+  function signalPacksForCalc() {
+    if (!randomPriceShiftEnabled()) return null;
+    return E.applyRandomPriceShift(state.packs);
+  }
+
+  function finrespRunOptions() {
+    const signalPacks = signalPacksForCalc();
+    return signalPacks ? { signalPacks } : undefined;
   }
 
   function isTbankBackedMode() {
@@ -2370,7 +2395,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
     if (!spec) return null;
     const { perSec, agg, preStopperAgg, stopper, skipped } = E.runMulti(
-      state.packs, spec, a, b, p, volConfig(), sc
+      state.packs, spec, a, b, p, volConfig(), sc, finrespRunOptions()
     );
     state.windowSkipped = skipped || [];
     if (!perSec.length) return null;
@@ -3133,7 +3158,7 @@ ${yLabels}${xLabels}
     for (const key of LOGIC_EQUITY_KEYS) {
       const spec = E.resolveLogicSpec(key, state.customLines, p, indicators);
       if (!spec || spec.type !== "logic_line") continue;
-      const { perSec } = E.runMulti(state.packs, spec, a, b, p, vol, EQUITY_STOPPER_OFF);
+      const { perSec } = E.runMulti(state.packs, spec, a, b, p, vol, EQUITY_STOPPER_OFF, finrespRunOptions());
       const rows = E.buildPortfolioEquityRows(perSec, times);
       runs[key] = { rows, finresp: rows.length ? rows.at(-1).eq : 0 };
     }
@@ -3321,6 +3346,7 @@ ${totalBlock}
     }
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
+    if (randomPriceShiftEnabled()) status += " | сдвиг индикаторов ±0,1%";
     if (opts.optimNote) {
       const bestLabel = optimValueLabel(state.optim.active, state.optim.bestValue);
       status += ` | Опт. ${opts.optimNote}: FINRESP ${fmt(agg.finresp)} ₽ | лучшее ${bestLabel} → ${fmt(state.optim.bestFinresp)} ₽`;
@@ -3631,6 +3657,7 @@ ${totalBlock}
   document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
     el.addEventListener("change", renderFromParams);
   });
+  $("random-price-shift")?.addEventListener("change", () => { saveConfig(); renderFromParams(); });
   $("calc-tf").addEventListener("change", () => {
     const n = selectedInstrumentCount();
     if (n > 0 && enforceDateRange("till", n)) {
