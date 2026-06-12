@@ -343,21 +343,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <p class="note">Токен используется только для чтения списка счетов и стоимости портфеля. Он шифруется в браузере через Web Crypto (AES-GCM + PBKDF2) и сохраняется только локально на этом устройстве. Пароль шифрования не сохраняется.</p>
 <div class="calc-grid">
 <div class="calc-field calc-field-wide"><label for="tbank-token">Токен T-Bank Invest</label><textarea id="tbank-token" autocomplete="off" spellcheck="false" placeholder="Вставьте токен, затем задайте пароль и нажмите «Зашифровать и сохранить»"></textarea></div>
-<div class="calc-field"><label for="tbank-passphrase">Пароль локального шифрования</label><input id="tbank-passphrase" type="password" autocomplete="new-password" placeholder="Не сохраняется"></div>
-<div class="calc-field"><label for="tbank-account">Счёт</label><select id="tbank-account"><option value="">Сначала загрузите счета</option></select></div>
-<div class="calc-field"><label for="tbank-api-host">API хост</label><select id="tbank-api-host">
-<option value="tinkoff" selected>invest-public-api.tinkoff.ru</option>
-<option value="tbank">invest-public-api.tbank.ru</option>
-</select></div>
+<div class="calc-field"><label for="tbank-passphrase">Пароль для шифрования/расшифровки</label><input id="tbank-passphrase" type="password" autocomplete="new-password" placeholder="Не сохраняется"></div>
 </div>
 <div class="real-account-actions">
 <button class="calc-btn calc-btn-secondary" type="button" id="tbank-save-token">Зашифровать и сохранить</button>
-<button class="calc-btn calc-btn-secondary" type="button" id="tbank-unlock-token">Расшифровать</button>
-<button class="calc-btn calc-btn-secondary" type="button" id="tbank-load-accounts">Загрузить счета</button>
-<button class="calc-btn" type="button" id="tbank-load-deposit">Взять депозит со счёта</button>
-<button class="calc-btn calc-btn-secondary" type="button" id="tbank-forget-token">Удалить локальный токен</button>
 </div>
-<p class="calc-status" id="tbank-status">Фиктивный кошелёк работает как раньше. Для T-Bank выберите режим сверху, сохраните или расшифруйте токен, загрузите счёт и депозит.</p>
+<p class="calc-status" id="tbank-status">Фиктивный кошелёк работает как раньше. Для T-Bank сохраните токен, затем выберите режим сверху: калькулятор спросит пароль, расшифрует токен, загрузит счёт и возьмёт депозит.</p>
 </details>
 
 <details class="tech-info-card" id="tech-info-panel" open>
@@ -446,7 +437,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `tbankAccounts=${calcState.tbank?.accounts?.length ?? 0}`,
         `tbankAccountSelected=${calcState.tbank?.selectedAccountId ? "yes" : "no"}`,
         `tbankDepositLoaded=${!!calcState.tbank?.depositLoaded}`,
-        `tbankApiHost=${$("tbank-api-host")?.value || "—"}`,
+        `tbankApiHost=${(() => { try { return localStorage.getItem("multilogic.finresp.tbank.host.v1") || "tinkoff"; } catch (_) { return "tinkoff"; } })()}`,
         `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
         `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
       );
@@ -926,7 +917,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!el) return;
     const stored = !!safeStorageGet(TBANK_TOKEN_STORE_KEY);
     const unlocked = !!state.tbank.token;
-    const account = state.tbank.selectedAccountId ? "счёт выбран" : "счёт не выбран";
+    const account = state.tbank.selectedAccountId ? "счёт найден" : "счёт не загружен";
     const deposit = state.tbank.depositLoaded ? "депозит загружен" : "депозит не загружен";
     el.textContent = unlocked
       ? `токен расшифрован · ${account} · ${deposit}`
@@ -949,7 +940,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setTbankStatus(
         state.tbank.depositLoaded
           ? `Режим T-Bank активен. Депозит взят со счёта: ${fmt(+deposit.value || 0, 0)} ₽.`
-          : "Режим T-Bank активен. Расшифруйте/сохраните токен, загрузите счета и нажмите «Взять депозит со счёта»."
+          : "Режим T-Bank активен. Введите пароль: калькулятор расшифрует токен, загрузит счёт и возьмёт депозит автоматически."
       );
     } else {
       setTbankStatus("Фиктивный кошелёк активен. Поле депозита работает вручную, как раньше.");
@@ -958,36 +949,28 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function fillTbankAccounts() {
-    const select = $("tbank-account");
-    if (!select) return;
-    select.innerHTML = "";
     if (!state.tbank.accounts.length) {
-      select.append(new Option("Сначала загрузите счета", ""));
+      state.tbank.selectedAccountId = "";
+      syncTbankSettingsState();
       return;
-    }
-    for (const account of state.tbank.accounts) {
-      select.append(new Option(accountLabel(account), account.id));
     }
     const saved = state.tbank.selectedAccountId || safeStorageGet(TBANK_ACCOUNT_STORE_KEY);
     if (saved && state.tbank.accounts.some((a) => a.id === saved)) {
-      select.value = saved;
       state.tbank.selectedAccountId = saved;
     } else {
-      select.value = state.tbank.accounts[0]?.id || "";
-      state.tbank.selectedAccountId = select.value;
+      state.tbank.selectedAccountId = state.tbank.accounts[0]?.id || "";
     }
     if (state.tbank.selectedAccountId) safeStorageSet(TBANK_ACCOUNT_STORE_KEY, state.tbank.selectedAccountId);
     syncTbankSettingsState();
   }
 
   function selectedTbankHostId() {
-    const id = $("tbank-api-host")?.value || safeStorageGet(TBANK_HOST_STORE_KEY) || "tinkoff";
+    const id = safeStorageGet(TBANK_HOST_STORE_KEY) || "tinkoff";
     return TBANK_REST_BASES[id] ? id : "tinkoff";
   }
 
   function setTbankHostId(id) {
     const safeId = TBANK_REST_BASES[id] ? id : "tinkoff";
-    if ($("tbank-api-host")) $("tbank-api-host").value = safeId;
     safeStorageSet(TBANK_HOST_STORE_KEY, safeId);
     return safeId;
   }
@@ -995,7 +978,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function tbankFetchErrorMessage(err, hostId) {
     const raw = err?.message || String(err || "ошибка сети");
     if (err instanceof TypeError) {
-      return `Не удалось подключиться к ${hostId}. Это обычно TLS/сертификат, сеть, VPN/провайдер или блокировка браузера. Попробуйте другой API хост ниже и нажмите «Загрузить счета» ещё раз.`;
+      return `Не удалось подключиться к ${hostId}. Это обычно TLS/сертификат, сеть, VPN/провайдер или блокировка браузера. Калькулятор попробовал оба официальных API-хоста автоматически.`;
     }
     return raw;
   }
@@ -1052,43 +1035,42 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       state.tbank.token = token;
       state.tbank.depositLoaded = false;
       $("tbank-token").value = "";
-      setTbankStatus("Токен зашифрован и сохранён локально. Теперь можно загрузить счета.");
+      setTbankStatus("Токен зашифрован и сохранён локально. При выборе T-Bank калькулятор сам загрузит счёт и депозит.");
       syncTbankSettingsState();
+      if (state.accountMode === "tbank") connectTbankAndLoadDeposit();
     } catch (err) {
       setTbankStatus(`Ошибка сохранения токена: ${err.message}`, true);
       noteTechError(`tbank-save-token: ${err.message}`);
     }
   }
 
-  async function unlockTbankToken() {
+  function getTbankPassphrase() {
+    let passphrase = $("tbank-passphrase").value;
+    if (!passphrase) {
+      passphrase = window.prompt("Введите пароль для расшифровки локального токена T-Bank") || "";
+    }
+    if (passphrase && !$("tbank-passphrase").value) $("tbank-passphrase").value = passphrase;
+    return passphrase;
+  }
+
+  async function ensureTbankTokenUnlocked() {
+    if (state.tbank.token) return true;
     const payload = safeStorageGet(TBANK_TOKEN_STORE_KEY);
-    const passphrase = $("tbank-passphrase").value;
+    const passphrase = getTbankPassphrase();
     if (!payload) { setTbankStatus("Локально сохранённого токена нет.", true); return; }
     if (!passphrase) { setTbankStatus("Введите пароль локального шифрования.", true); return; }
     try {
       state.tbank.token = await decryptTbankToken(payload, passphrase);
       state.tbank.depositLoaded = false;
-      setTbankStatus("Токен расшифрован на текущую сессию. Можно загрузить счета.");
+      setTbankStatus("Токен расшифрован на текущую сессию. Загружаю счёт и депозит…");
       syncTbankSettingsState();
+      return true;
     } catch (err) {
       state.tbank.token = null;
       setTbankStatus(`Не удалось расшифровать токен: ${err.message}`, true);
       noteTechError(`tbank-unlock-token: ${err.message}`);
+      return false;
     }
-  }
-
-  function forgetTbankToken() {
-    safeStorageRemove(TBANK_TOKEN_STORE_KEY);
-    safeStorageRemove(TBANK_ACCOUNT_STORE_KEY);
-    state.tbank.token = null;
-    state.tbank.accounts = [];
-    state.tbank.selectedAccountId = "";
-    state.tbank.depositLoaded = false;
-    $("tbank-token").value = "";
-    $("tbank-passphrase").value = "";
-    fillTbankAccounts();
-    setTbankStatus("Локально сохранённый токен и выбранный счёт удалены.");
-    syncTbankSettingsState();
   }
 
   async function loadTbankAccounts() {
@@ -1100,7 +1082,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       );
       if (!state.tbank.accounts.length) throw new Error("Открытые счета не найдены.");
       fillTbankAccounts();
-      setTbankStatus(`Счета загружены: ${state.tbank.accounts.length}. Выберите счёт и загрузите депозит.`);
+      setTbankStatus(`Счёт T-Bank загружен: ${accountLabel(state.tbank.accounts.find((a) => a.id === state.tbank.selectedAccountId) || state.tbank.accounts[0])}. Загружаю депозит…`);
       if (state.accountMode === "tbank" && state.tbank.selectedAccountId) await loadTbankDeposit();
     } catch (err) {
       setTbankStatus(`Ошибка загрузки счетов: ${err.message}`, true);
@@ -1110,8 +1092,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   async function loadTbankDeposit() {
     try {
-      const accountId = $("tbank-account").value || state.tbank.selectedAccountId;
-      if (!accountId) throw new Error("Выберите счёт T-Bank.");
+      const accountId = state.tbank.selectedAccountId;
+      if (!accountId) throw new Error("Счёт T-Bank не загружен.");
       state.tbank.selectedAccountId = accountId;
       safeStorageSet(TBANK_ACCOUNT_STORE_KEY, accountId);
       setTbankStatus("Загрузка портфеля T-Bank…");
@@ -1132,6 +1114,16 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setTbankStatus(`Ошибка загрузки депозита: ${err.message}`, true);
       noteTechError(`tbank-load-deposit: ${err.message}`);
     }
+  }
+
+  async function connectTbankAndLoadDeposit() {
+    if (state.accountMode !== "tbank") return;
+    if (!(await ensureTbankTokenUnlocked())) return;
+    if (!state.tbank.accounts.length) {
+      await loadTbankAccounts();
+      return;
+    }
+    if (state.tbank.selectedAccountId) await loadTbankDeposit();
   }
 
   function initAccountMode() {
@@ -2798,36 +2790,13 @@ ${totalBlock}
   $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
   $("account-mode").addEventListener("change", () => {
     syncAccountModeUi();
-    if (state.accountMode === "tbank" && state.tbank.token) {
-      if (!state.tbank.accounts.length) {
-        loadTbankAccounts();
-        return;
-      }
-      if (state.tbank.selectedAccountId && !state.tbank.depositLoaded) {
-        loadTbankDeposit();
-        return;
-      }
+    if (state.accountMode === "tbank") {
+      connectTbankAndLoadDeposit();
+      return;
     }
     if (state.packs.length && (state.accountMode !== "tbank" || state.tbank.depositLoaded)) render();
   });
   $("tbank-save-token").addEventListener("click", () => saveTbankToken());
-  $("tbank-unlock-token").addEventListener("click", () => unlockTbankToken());
-  $("tbank-load-accounts").addEventListener("click", () => loadTbankAccounts());
-  $("tbank-load-deposit").addEventListener("click", () => loadTbankDeposit());
-  $("tbank-forget-token").addEventListener("click", () => forgetTbankToken());
-  $("tbank-api-host").addEventListener("change", () => {
-    setTbankHostId($("tbank-api-host").value);
-    state.tbank.depositLoaded = false;
-    setTbankStatus("API хост изменён. Нажмите «Загрузить счета» или «Взять депозит со счёта» ещё раз.");
-    syncTbankSettingsState();
-  });
-  $("tbank-account").addEventListener("change", () => {
-    state.tbank.selectedAccountId = $("tbank-account").value;
-    state.tbank.depositLoaded = false;
-    if (state.tbank.selectedAccountId) safeStorageSet(TBANK_ACCOUNT_STORE_KEY, state.tbank.selectedAccountId);
-    syncAccountModeUi();
-    if (state.accountMode === "tbank" && state.tbank.token && state.tbank.selectedAccountId) loadTbankDeposit();
-  });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
   $("cache-file-input").addEventListener("change", async (ev) => {
