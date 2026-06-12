@@ -20,6 +20,7 @@ h2:first-child{margin-top:0;}
 .note{color:var(--muted);font-size:.93rem;}
 .calc-title-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.8rem;margin:0 0 .75rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
 .calc-title-row h2{margin:0;padding:0;border:0;}
+.calc-page-version{font-size:.78rem;color:var(--muted);font-family:Consolas,monospace;font-weight:500;white-space:nowrap;}
 .account-mode{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;font-size:.86rem;color:var(--muted);}
 .account-mode select{padding:.38rem .5rem;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);}
 .calc-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:1rem;margin:1rem 0;}
@@ -335,7 +336,7 @@ body.calc-running .help-ftr{opacity:.75;}
 <div class="help-layout">
 <main class="help-main">
 <div class="calc-title-row">
-<h2>Калькулятор</h2>
+<h2>Калькулятор <span class="calc-page-version" id="calc-page-version-badge" title="Версия страницы — для проверки обновления"></span></h2>
 <div class="calc-title-actions" style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem;">
 <a class="calc-btn calc-btn-secondary" href="MultiLogic_FinrespCalculator_Help.html" title="Справка по калькулятору">Справка</a>
 <label class="account-mode" for="account-mode">Кошелёк:
@@ -1716,6 +1717,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     el.innerHTML = `<table><thead><tr><th>Тикер</th><th>Сторона</th><th>Тип</th><th>Лоты</th><th>Статус</th><th>Время</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
+  function syncPageVersionBadge() {
+    const mainBadge = $("calc-page-version-badge");
+    if (mainBadge) mainBadge.textContent = `v ${CALC_PAGE_VERSION}`;
+    const liveBadge = $("live-page-version-badge");
+    if (liveBadge) liveBadge.textContent = CALC_PAGE_VERSION;
+  }
+
   function syncLiveTradingUi() {
     const panel = $("live-trading-panel");
     const select = $("account-mode");
@@ -1735,8 +1743,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     const sellAll = $("live-trading-sell-all");
     if (sellAll) sellAll.disabled = !isLive || state.uiBusy;
-    const verBadge = $("live-page-version-badge");
-    if (verBadge) verBadge.textContent = CALC_PAGE_VERSION;
+    syncPageVersionBadge();
     const status = $("live-trading-status");
     if (status) {
       if (state.live.lastError && isLive) {
@@ -5830,6 +5837,7 @@ ${totalBlock}
     refreshLiveManualLimitPrice({ force: true }).catch(() => {});
   }
   state._initOk = true;
+  syncPageVersionBadge();
   updateTechInfo("init-ok");
 })();
 </script>
