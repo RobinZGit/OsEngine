@@ -790,13 +790,23 @@
     return lot * maxPos;
   }
 
+  function resolveVolCommission(volConfig) {
+    const cfg = volConfig?.commission;
+    if (cfg && cfg.type && cfg.type !== "None") return normalizeCommission(cfg);
+    const pct = Number(volConfig?.commissionPct);
+    if (Number.isFinite(pct) && pct > 0) return normalizeCommission({ type: "Percent", value: pct });
+    return normalizeCommission(DEFAULT_COMMISSION);
+  }
+
+  function normalizedVolConfig(volConfig) {
+    const vol = { ...DEFAULT_VOLUME, ...volConfig };
+    vol.commission = resolveVolCommission(vol);
+    return vol;
+  }
+
   function commissionCost(price, volume, volConfig) {
-    if (volConfig?.commission) {
-      return tradeCommission(volume, price, volConfig.commission);
-    }
-    const pct = Math.max(0, Number(volConfig?.commissionPct) || 0);
-    if (!pct || !price || !volume) return 0;
-    return Math.abs(price * volume) * pct / 100;
+    const vol = volConfig?.commission ? volConfig : normalizedVolConfig(volConfig);
+    return tradeCommission(volume, price, vol.commission);
   }
 
   function pushRow(rows, candle, fields) {
@@ -812,6 +822,7 @@
     const initial = options?.initial || {};
     const cash = initial.cash || 0;
     const pos = initial.pos || 0;
+    const commissionPaid = initial.commission || 0;
     const rows = [];
     const from = Math.max(0, startIdx);
     const to = Math.min(endIdx, candles.length - 1);
@@ -823,6 +834,7 @@
         posStop: null,
         cash,
         pos,
+        commission: commissionPaid,
         eq: cash + pos * price
       });
     }
@@ -832,6 +844,7 @@
       finresp: last?.eq ?? 0,
       cash: last?.cash ?? cash,
       pos: last?.pos ?? pos,
+      commission: commissionPaid,
       buys: 0,
       sells: 0
     };
@@ -1131,9 +1144,9 @@
   }
 
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
-    if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, buys: 0, sells: 0 };
+    if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0 };
     if (spec.disabled) return simulateNoSignalRows(candles, startIdx, endIdx, options);
-    const vol = { ...DEFAULT_VOLUME, ...volConfig };
+    const vol = normalizedVolConfig(volConfig);
     if (spec.type === "sma_spread") {
       return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, {
         ...options,
@@ -1231,7 +1244,9 @@
       const price = row.close;
       row.sell = (row.sell || 0) + Math.abs(row.pos);
       row.cash += row.pos * price;
-      row.cash -= commissionCost(price, Math.abs(row.pos), volConfig);
+      const comm = commissionCost(price, Math.abs(row.pos), volConfig);
+      row.cash -= comm;
+      row.commission = (row.commission || 0) + comm;
       row.pos = 0;
       row.eq = row.cash;
     }
@@ -1255,7 +1270,12 @@
       recomputePerSecTotals(perSecItem);
       return;
     }
-    const initial = { pos: 0, cash: triggerRow.cash, entryPrice: null };
+    const initial = {
+      pos: 0,
+      cash: triggerRow.cash,
+      entryPrice: null,
+      commission: triggerRow.commission || 0
+    };
     const tail = runOnCandles(
       candles,
       spec,
