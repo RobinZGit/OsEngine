@@ -1445,12 +1445,53 @@
     return resolveFuturesMoexSec(secOrPrefix, period);
   }
 
+  function isSyntheticMoexInterval(interval) {
+    const value = String(interval);
+    return value === "5" || value === "15";
+  }
+
+  function formatMoexDateTime(date) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
+  }
+
+  function aggregateMinuteCandles(candles, intervalMinutes) {
+    if (!candles?.length || intervalMinutes <= 1) return candles || [];
+    const groups = new Map();
+    const sorted = [...candles].sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
+
+    for (const candle of sorted) {
+      const time = new Date(String(candle.time || "").replace(" ", "T"));
+      if (!Number.isFinite(time.getTime())) continue;
+
+      const bucket = new Date(time);
+      bucket.setSeconds(0, 0);
+      bucket.setMinutes(Math.floor(bucket.getMinutes() / intervalMinutes) * intervalMinutes);
+      const key = formatMoexDateTime(bucket);
+      let group = groups.get(key);
+
+      if (!group) {
+        group = { ...candle, time: key };
+        groups.set(key, group);
+        continue;
+      }
+
+      group.close = candle.close;
+      group.high = Math.max(group.high, candle.high);
+      group.low = Math.min(group.low, candle.low);
+      group.volume += candle.volume;
+    }
+
+    return [...groups.values()];
+  }
+
   async function loadMoexCandles(sec, from, till, interval, market = "shares") {
+    const requestInterval = isSyntheticMoexInterval(interval) ? "1" : interval;
     const all = [];
     let start = 0;
     while (true) {
       const url = new URL(candlesUrl(sec, market));
-      url.search = new URLSearchParams({ from, till, interval, start: String(start) }).toString();
+      url.search = new URLSearchParams({ from, till, interval: requestInterval, start: String(start) }).toString();
       const data = await moexFetchJson(url, sec);
       const chunk = data?.candles?.data || [];
       if (!chunk.length) break;
@@ -1460,7 +1501,7 @@
       if (start > 20000) break;
     }
     const seen = new Set();
-    return all
+    const candles = all
       .filter((r) => {
         if (seen.has(r[6])) return false;
         seen.add(r[6]);
@@ -1476,6 +1517,9 @@
         sec,
         market
       }));
+    return isSyntheticMoexInterval(interval)
+      ? aggregateMinuteCandles(candles, Number(interval))
+      : candles;
   }
 
   const CANDLE_CACHE_VERSION = 2;

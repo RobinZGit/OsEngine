@@ -165,7 +165,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="calc-tf">Таймфрейм</label>
 <select id="calc-tf">
 <option value="1">1 мин</option>
+<option value="5">5 мин</option>
 <option value="10">10 мин</option>
+<option value="15">15 мин</option>
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
 </select></div>
@@ -526,7 +528,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const MIN_WARMUP_BARS = 220;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
+    "5": { label: "5 мин", maxDays: 15, maxBars: 1000 },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
+    "15": { label: "15 мин", maxDays: 45, maxBars: 1300 },
     "60": { label: "1 час", maxDays: 93, maxBars: 1500 },
     "24": { label: "1 день", maxDays: 3650, maxBars: 1500 }
   };
@@ -624,7 +628,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function barsPerTradingDay(tf) {
     if (tf === "1") return MOEX_MINUTES_PER_SESSION;
+    if (tf === "5") return Math.ceil(MOEX_MINUTES_PER_SESSION / 5);
     if (tf === "10") return Math.ceil(MOEX_MINUTES_PER_SESSION / 10);
+    if (tf === "15") return Math.ceil(MOEX_MINUTES_PER_SESSION / 15);
     if (tf === "60") return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
     if (tf === "24") return 1;
     return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
