@@ -476,6 +476,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     anchorStartTime: null,
     anchorEndTime: null,
     hasWindow: false,
+    userDateRangeTouched: false,
     failedInstruments: [],
     windowSkipped: [],
     lastInstruments: [],
@@ -834,7 +835,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     );
     state.windowSkipped = [];
     state.movedSlider = "end";
-    setSliderBounds(false);
+    setSliderBounds(true);
     saveWindowAnchor();
     if (!renderWithStatus()) return false;
     updateTechInfo("selection-refreshed");
@@ -869,6 +870,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncSelectAllCheckboxes();
     const instruments = selectedInstruments();
     state.bulkMode = resolveBulkMode(instruments);
+    state.prevSelectCount = instruments.length;
     state.lastResult = null;
     applyUiLocks();
     const removedLabel = negative.map((p) => `${p.sec}:${fmt(p.finresp)}`).join(" · ");
@@ -947,7 +949,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (n > 0) {
       const narrowed = enforceDateRange("till", n);
       updateDateHint(n);
-      if (n < prev && relaxDateRangeForInstrumentCount(n)) {
+      if (!state.userDateRangeTouched && n < prev && relaxDateRangeForInstrumentCount(n)) {
         state.lastLoadMeta = null;
         $("calc-status").textContent =
           `Выбор уменьшен — период расширен до ~${maxCalcDays($("calc-tf").value, n)} дн. Нажмите «Рассчитать».`;
@@ -2410,10 +2412,12 @@ ${totalBlock}
     if (state.packs.length) setSliderBounds(true);
   });
   $("calc-from").addEventListener("change", () => {
+    state.userDateRangeTouched = true;
     enforceDateRange("from");
     updateDateHint(selectedInstrumentCount());
   });
   $("calc-till").addEventListener("change", () => {
+    state.userDateRangeTouched = true;
     enforceDateRange("till");
     updateDateHint(selectedInstrumentCount());
   });
