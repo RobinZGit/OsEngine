@@ -45,7 +45,8 @@ h2:first-child{margin-top:0;}
   background:linear-gradient(165deg,#e8f0ff 0%,#fff 48%,#f8fbff 100%);
   box-shadow:0 3px 14px rgba(37,99,235,.14);
 }
-@media (min-width:720px){.calc-result-hero{grid-template-columns:1.5fr 1fr 1fr;}}
+@media (min-width:720px){.calc-result-hero{grid-template-columns:1.35fr 1fr 1fr 1fr;}}
+@media (max-width:719px){.calc-result-hero{grid-template-columns:1fr 1fr;}}
 .calc-metric-primary{text-align:center;padding:.25rem .4rem;}
 .calc-metric-primary b{
   display:block;font-size:1rem;font-weight:700;color:#1e3a5f;
@@ -177,9 +178,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
-<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric-primary"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
-<div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
+<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ (с комиссией)</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric-primary calc-metric-commission"><b>Комиссии уплачено</b><span id="calc-commission">—</span></div>
+<div class="calc-metric-primary"><b>% годовых, простой (с комиссией)</b><span id="calc-ann-simple">—</span></div>
+<div class="calc-metric-primary"><b>% годовых, сложный (с комиссией)</b><span id="calc-ann-compound">—</span></div>
 </div>
 <p class="calc-sec-hint" id="calc-ann-hint"></p>
 <p class="calc-sec-hint" style="margin:.35rem 0 .15rem">Строка статуса — серый текст ниже FINRESP и % годовых (сообщения о загрузке MOEX, ошибках, окне расчёта):</p>
@@ -215,8 +217,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <input id="vol-deposit" type="number" value="1000000" min="1" step="1000"></div>
 <div class="calc-field"><label for="vol-maxpos">Max positions (all tabs)</label>
 <input id="vol-maxpos" type="number" value="40" min="0" max="200" step="1"></div>
+<div class="calc-field"><label for="commission-type">Commission type (вкладка скринера)</label>
+<select id="commission-type">
+<option value="None">None — без комиссии</option>
+<option value="Percent" selected>Percent — % от оборота</option>
+<option value="OneLotFix">One lot fix — ₽ за лот</option>
+</select></div>
+<div class="calc-field"><label for="commission-value">Commission value</label>
+<input id="commission-value" type="number" value="0.04" min="0" step="0.0001" title="Percent: доли % (0.04 = 0.04%). OneLotFix: ₽ за лот на сторону."></div>
 </div>
 <p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
+<p class="note">Комиссия: как <code>CommissionType</code> / <code>CommissionValue</code> на вкладке скринера OsEngine — удерживается с кэша на каждой стороне сделки; FINRESP и % годовых в блоке выше уже <strong>с учётом комиссии</strong>.</p>
 
 <p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
 <div class="calc-grid">
@@ -323,7 +334,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-tf5-15";
+  const CALC_PAGE_VERSION = "2026-06-08-commission";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -568,6 +579,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     el.style.color = value < 0 ? "#b91c1c" : "#047857";
   }
+
+  function setCommissionMetric(id, commission) {
+    const el = $(id);
+    if (!Number.isFinite(commission) || commission <= 0) {
+      el.textContent = `${fmt(0)} ₽`;
+      el.style.color = "";
+      return;
+    }
+    el.textContent = `−${fmt(commission)} ₽`;
+    el.style.color = "#b91c1c";
+  }
   const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
   const formatDay = (dt) => {
     const y = dt.getFullYear();
@@ -653,12 +675,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     };
   }
 
+  function commissionConfig() {
+    return E.normalizeCommission({
+      type: $("commission-type").value,
+      value: +$("commission-value").value
+    });
+  }
+
   function volConfig() {
     return {
       volumeType: $("vol-type").value,
       volume: +$("vol-value").value || E.DEFAULT_VOLUME.volume,
       deposit: +$("vol-deposit").value || E.DEFAULT_VOLUME.deposit,
-      maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions)
+      maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions),
+      commission: commissionConfig()
     };
   }
 
@@ -1878,6 +1908,7 @@ ${totalBlock}
     const winLen = perSec.reduce((m, p) => Math.max(m, p.rows?.length ?? 0), 0);
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
+    setCommissionMetric("calc-commission", agg.commission || 0);
     $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
@@ -1897,8 +1928,9 @@ ${totalBlock}
         const scope = windowDays && opDays && windowDays !== opDays
           ? `окно ${Math.round(windowDays)} дн., приведение к ${Math.round(opDays)} дн. расчёта`
           : `${Math.round(days)} календ. дн. расчёта`;
+        const commNote = agg.commission > 0 ? ` · комиссии −${fmt(agg.commission)} ₽` : "";
         annHint.textContent =
-          `База ${fmt(deposit, 0)} ₽ · доходность за ${scope}: ${fmtPct(periodPct)} → % годовых: прибыль/база ÷ (дни/365), как в роботе`;
+          `База ${fmt(deposit, 0)} ₽ · доходность за ${scope}: ${fmtPct(periodPct)} (с комиссией${commNote}) → % годовых: прибыль/база ÷ (дни/365), как в роботе`;
       } else {
         annHint.textContent = "Для % годовых нужны депозит и период ≥ 1 календарного дня.";
       }
@@ -1945,6 +1977,7 @@ ${totalBlock}
         msg = `Часть инструментов без данных в окне (${skipped}) — сдвиньте ползунки или нажмите «Рассчитать».`;
       }
       $("calc-finresp").textContent = "—";
+      $("calc-commission").textContent = "—";
       $("calc-ann-simple").textContent = "—";
       $("calc-ann-compound").textContent = "—";
       $("calc-count").textContent = "—";
@@ -2185,7 +2218,10 @@ ${totalBlock}
   $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); render(); });
   $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); render(); });
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); render(); });
-  ["vol-value", "vol-deposit", "vol-maxpos", "param-lr", "stopper-ref"].forEach((id) => {
+  $("commission-type").addEventListener("change", renderFromParams);
+  $("commission-value").addEventListener("change", renderFromParams);
+  $("commission-value").addEventListener("input", renderFromParams);
+  ["vol-value", "vol-deposit", "vol-maxpos", "commission-value", "param-lr", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", renderFromParams);
     $(id).addEventListener("input", renderFromParams);
   });
