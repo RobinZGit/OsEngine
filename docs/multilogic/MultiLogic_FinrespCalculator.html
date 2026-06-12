@@ -246,7 +246,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-atr-sl">Оптимизировать</button>
 </div></div>
 </div>
-<p class="note">Подставляется в строку L1…L4 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
+<p class="note">Подставляется в строку L1…L5 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
 <p class="note" id="position-sl-hint"></p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
@@ -289,7 +289,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <p class="note">По умолчанию выбраны все индикаторы. Оптимизация перебирает все непустые комбинации и оставляет набор с лучшим FINRESP.</p>
 </div>
 
-<p class="extra-section">Строки L1…L4</p>
+<p class="extra-section">Строки L1…L5</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
 <p class="note">Regime/Strict не блокируют вход — учитываются Op/Cl и все заполненные стопы (кратность &gt; 0, длина ATR ≥ 2). Просадка от пика и EOD-flat не считаются.</p>
@@ -1303,7 +1303,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       sel.appendChild(o);
     }
     if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
-    else sel.value = "L1";
+    else sel.value = "L5";
   }
 
   function initIndicatorToggles() {
@@ -1325,7 +1325,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (meta?.type === "sma_spread") {
       el.textContent = "Логика «Выше/Ниже SMA» — упрощённая модель; стопы по ATR учитываются при ненулевой позиции.";
     } else if (meta?.type === "logic_line") {
-      el.textContent = "Логика L1…L4: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
+      el.textContent = "Логики L1…L5: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
     } else {
       el.textContent = "";
     }
@@ -1339,7 +1339,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function fillLogicEditor() {
     const box = $("logic-lines");
     box.innerHTML = "";
-    for (const key of ["L1", "L2", "L3", "L4"]) {
+    for (const key of ["L5", "L1", "L2", "L3", "L4"]) {
       const wrap = document.createElement("div");
       wrap.innerHTML = `<label>${key}</label>`;
       const ta = document.createElement("textarea");
@@ -1770,8 +1770,8 @@ ${markers}
 </svg>`;
   }
 
-  const LOGIC_EQUITY_KEYS = ["L1", "L2", "L3", "L4"];
-  const LOGIC_EQUITY_COLORS = { L1: "#2563eb", L2: "#d97706", L3: "#7c3aed", L4: "#0891b2" };
+  const LOGIC_EQUITY_KEYS = ["L5", "L1", "L2", "L3", "L4"];
+  const LOGIC_EQUITY_COLORS = { L5: "#047857", L1: "#2563eb", L2: "#d97706", L3: "#7c3aed", L4: "#0891b2" };
   const EQUITY_STOPPER_OFF = { useSl: false, useTp: false, slMult: 0, tpMult: 0, atrLen: 14, refEquity: 0 };
 
   function logicEquityLabel(key) {
@@ -1880,9 +1880,9 @@ ${yLabels}${xLabels}
     }).filter(Boolean);
     const totalRows = buildTotalEquityRows(runs, times);
     const totalFin = totalRows.length ? totalRows.at(-1).eq : 0;
-    const totalSvg = buildEquityChartSvg(totalRows, totalFin, "Equity Σ L1…L4", false, "#1d4ed8");
+    const totalSvg = buildEquityChartSvg(totalRows, totalFin, "Equity Σ L1…L5", false, "#1d4ed8");
     const totalBlock = totalSvg
-      ? `<div class="chart-equity-total"><p class="chart-sec-title">Общий equity (L1 + L2 + L3 + L4)</p>${totalSvg}</div>`
+      ? `<div class="chart-equity-total"><p class="chart-sec-title">Общий equity (L5 + L1 + L2 + L3 + L4)</p>${totalSvg}</div>`
       : "";
     box.innerHTML = `<div class="chart-equity-section">
 <p class="chart-equity-section-title">Equity по логикам (сумма по выбранным инструментам, без портф. Stopper)</p>

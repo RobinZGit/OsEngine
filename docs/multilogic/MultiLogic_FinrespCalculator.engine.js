@@ -174,10 +174,17 @@
     L4: BOKOVIK_REGIME +
       "Op(Short(SMA(100)(Bl) AND Stoch(14-3-3;Lmin=90;Smax=10)(K>=90) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND MACD(12,26,9)(Macd<Sig))) " +
       "Cl(Short(SMA(100)(Ab) AND Stoch(14-3-3;Lmin=90;Smax=10)(K<=10) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
-      SLTP + "Note(short-bokovik)"
+      SLTP + "Note(short-bokovik)",
+    L5: TREND_REGIME +
+      "Op(Long(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig))) " +
+      "Cl(Long(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig)) OnFlip(Close)) " +
+      "Op(Short(SMA(100)(Bl) AND LinReg(@LR;Dev=2)(BlLo) AND ATR(14;Gr=3%;Lb=5)(GrOk) AND Stoch(14-3-3;Lmin=80;Smax=20)(K<=20) AND CCI(20;Lmin=100;Smax=-100)(CCI<=-100) AND MACD(12,26,9)(Macd<Sig))) " +
+      "Cl(Short(SMA(100)(Ab) AND LinReg(@LR;Dev=2)(AbUp) AND Stoch(14-3-3;Lmin=80;Smax=20)(K>=80) AND CCI(20;Lmin=100;Smax=-100)(CCI>=100) AND MACD(12,26,9)(Macd>Sig)) OnFlip(Close))" +
+      SLTP + "Note(LmaxTrend)"
   };
 
   const BUILTIN_META = [
+    { id: "L5", name: "L5 — LmaxTrend, лонг+шорт тренд", type: "logic_line", key: "L5" },
     { id: "L1", name: "L1 — лонг, тренд", type: "logic_line", key: "L1" },
     { id: "L2", name: "L2 — лонг, боковик", type: "logic_line", key: "L2" },
     { id: "L3", name: "L3 — шорт, тренд", type: "logic_line", key: "L3" },
@@ -217,20 +224,29 @@
   }
 
   function extractBlock(line, tag) {
-    const re = new RegExp(tag + "\\((Long|Short)\\(", "i");
-    const m = re.exec(line);
-    if (!m) return null;
-    const side = m[1].toLowerCase();
-    let i = m.index + m[0].length;
-    let depth = 1;
-    const start = i;
-    while (i < line.length && depth > 0) {
-      if (line[i] === "(") depth++;
-      else if (line[i] === ")") depth--;
-      i++;
+    return extractBlocks(line, tag)[0] || null;
+  }
+
+  function extractBlocks(line, tag) {
+    const blocks = [];
+    const scanRe = new RegExp(tag + "\\((Long|Short)\\(", "ig");
+    let m = scanRe.exec(line);
+    while (m) {
+      const side = m[1].toLowerCase();
+      let i = m.index + m[0].length;
+      let depth = 1;
+      const start = i;
+      while (i < line.length && depth > 0) {
+        if (line[i] === "(") depth++;
+        else if (line[i] === ")") depth--;
+        i++;
+      }
+      const inner = line.slice(start, i - 1);
+      blocks.push({ side, expr: inner.trim() });
+      scanRe.lastIndex = i;
+      m = scanRe.exec(line);
     }
-    const inner = line.slice(start, i - 1);
-    return { side, expr: inner.trim() };
+    return blocks;
   }
 
   function splitTopLevelAnd(expr) {
@@ -334,17 +350,28 @@
     const raw = substituteParams(line, params || DEFAULT_PARAMS);
     const { slAtr, tpAtr } = parseSlTp(raw);
     const body = stripDecor(raw);
-    const op = extractBlock(body, "Op");
-    const cl = extractBlock(body, "Cl");
-    const opAtoms = op ? splitTopLevelAnd(op.expr).map(parseAtom).filter(Boolean) : [];
-    const clAtoms = cl ? splitTopLevelAnd(cl.expr).map(parseAtom).filter(Boolean) : [];
+    const opBlocks = extractBlocks(body, "Op");
+    const clBlocks = extractBlocks(body, "Cl");
+    const firstOp = opBlocks[0];
+    const firstCl = clBlocks[0];
+    const atomsForSide = (blocks, side) => blocks
+      .filter((block) => block.side === side)
+      .flatMap((block) => splitTopLevelAnd(block.expr).map(parseAtom).filter(Boolean));
+    const opLongAtoms = filterAtomsByIndicators(atomsForSide(opBlocks, "long"), indicatorSelection);
+    const opShortAtoms = filterAtomsByIndicators(atomsForSide(opBlocks, "short"), indicatorSelection);
+    const clLongAtoms = filterAtomsByIndicators(atomsForSide(clBlocks, "long"), indicatorSelection);
+    const clShortAtoms = filterAtomsByIndicators(atomsForSide(clBlocks, "short"), indicatorSelection);
     return {
       slAtr,
       tpAtr,
-      opSide: op?.side || "long",
-      clSide: cl?.side || op?.side || "long",
-      opAtoms: filterAtomsByIndicators(opAtoms, indicatorSelection),
-      clAtoms: filterAtomsByIndicators(clAtoms, indicatorSelection),
+      opSide: firstOp?.side || "long",
+      clSide: firstCl?.side || firstOp?.side || "long",
+      opAtoms: [...opLongAtoms, ...opShortAtoms],
+      clAtoms: [...clLongAtoms, ...clShortAtoms],
+      opLongAtoms,
+      opShortAtoms,
+      clLongAtoms,
+      clShortAtoms,
       indicators: normalizeIndicatorSelection(indicatorSelection)
     };
   }
@@ -740,15 +767,22 @@
         }
       }
 
-      const opHit = evaluateExpr(parsed.opAtoms, cache, i);
-      const clHit = evaluateExpr(parsed.clAtoms, cache, i);
+      const opLongAtoms = parsed.opLongAtoms || (parsed.opSide === "long" ? parsed.opAtoms : []);
+      const opShortAtoms = parsed.opShortAtoms || (parsed.opSide === "short" ? parsed.opAtoms : []);
+      const clLongAtoms = parsed.clLongAtoms || (parsed.clSide === "long" ? parsed.clAtoms : []);
+      const clShortAtoms = parsed.clShortAtoms || (parsed.clSide === "short" ? parsed.clAtoms : []);
+      const longOpHit = evaluateExpr(opLongAtoms, cache, i);
+      const shortOpHit = evaluateExpr(opShortAtoms, cache, i);
+      const longClHit = evaluateExpr(clLongAtoms, cache, i);
+      const shortClHit = evaluateExpr(clShortAtoms, cache, i);
 
-      if (pos !== 0 && clHit) sell += flatten(price);
-      if (pos === 0 && opHit) {
+      if (pos > 0 && (longClHit || shortOpHit)) sell += flatten(price);
+      else if (pos < 0 && (shortClHit || longOpHit)) sell += flatten(price);
+      if (pos === 0 && longOpHit !== shortOpHit) {
         const lot = calcTradeVolume(price, volConfig);
         const cap = maxAbsPosition(price, volConfig);
         if (lot > 0 && lot <= cap) {
-          pos = parsed.opSide === "long" ? lot : -lot;
+          pos = longOpHit ? lot : -lot;
           cash -= pos * price;
           entryPrice = price;
           buy = lot;
