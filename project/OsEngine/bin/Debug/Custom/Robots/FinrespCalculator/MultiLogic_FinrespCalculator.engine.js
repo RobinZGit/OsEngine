@@ -1708,6 +1708,78 @@
     return aggMinutes > 1 ? aggregateCandles(raw, aggMinutes) : raw;
   }
 
+  function quotationToNumber(q) {
+    if (!q) return 0;
+    return Number(q.units ?? 0) + Number(q.nano ?? 0) / 1e9;
+  }
+
+  function tbankTimeToMs(time) {
+    if (!time) return NaN;
+    if (typeof time === "string") return new Date(time).getTime();
+    if (time.seconds != null) {
+      return Number(time.seconds) * 1000 + Math.floor(Number(time.nanos || 0) / 1e6);
+    }
+    return NaN;
+  }
+
+  function formatCandleTimeMsk(ms) {
+    if (!Number.isFinite(ms)) return "";
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Moscow",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).formatToParts(new Date(ms));
+    const g = (t) => parts.find((p) => p.type === t)?.value || "00";
+    return `${g("year")}-${g("month")}-${g("day")} ${g("hour")}:${g("minute")}:${g("second")}`;
+  }
+
+  function tbankIntervalForCalcTf(tf) {
+    const map = {
+      "1": "CANDLE_INTERVAL_1_MIN",
+      "5": "CANDLE_INTERVAL_5_MIN",
+      "10": "CANDLE_INTERVAL_10_MIN",
+      "15": "CANDLE_INTERVAL_15_MIN",
+      "60": "CANDLE_INTERVAL_HOUR",
+      "24": "CANDLE_INTERVAL_DAY"
+    };
+    return map[String(tf)] || "CANDLE_INTERVAL_HOUR";
+  }
+
+  function tbankCandleChunkDays(tf) {
+    if (String(tf) === "24") return 365;
+    if (String(tf) === "60") return 7;
+    return 1;
+  }
+
+  function liveTbankTailHours(tf) {
+    const map = { "1": 8, "5": 24, "10": 36, "15": 48, "60": 168, "24": 720 };
+    return map[String(tf)] || 24;
+  }
+
+  function parseTbankHistoricCandles(candles, sec, market) {
+    const out = [];
+    for (const c of candles || []) {
+      const ms = tbankTimeToMs(c.time);
+      if (!Number.isFinite(ms)) continue;
+      out.push({
+        open: quotationToNumber(c.open),
+        high: quotationToNumber(c.high),
+        low: quotationToNumber(c.low),
+        close: quotationToNumber(c.close),
+        volume: Number(c.volume ?? 0),
+        time: formatCandleTimeMsk(ms),
+        sec,
+        market
+      });
+    }
+    return out.sort((a, b) => a.time.localeCompare(b.time));
+  }
+
   const CANDLE_CACHE_VERSION = 2;
   const CANDLE_CACHE_DB_NAME = "MultiLogicFinrespCandlesDB";
   const CANDLE_CACHE_STORE = "candles";
@@ -2429,6 +2501,13 @@
     moexFileProtocolHint,
     resolveIntervalLoad,
     aggregateCandles,
+    quotationToNumber,
+    tbankTimeToMs,
+    formatCandleTimeMsk,
+    tbankIntervalForCalcTf,
+    tbankCandleChunkDays,
+    liveTbankTailHours,
+    parseTbankHistoricCandles,
     applyRandomPriceShift,
     RANDOM_PRICE_SHIFT_MAX,
     smaSeries

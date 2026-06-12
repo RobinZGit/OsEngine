@@ -304,7 +304,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <div class="live-trading-leverage"><b>Плечо</b><span id="live-leverage-value">—</span></div>
 </div>
-<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении. При активной торговле — поток свежих свечей MOEX по выбранным бумагам и ТФ; индикаторы и заявки пересчитываются на каждом цикле.</p>
+<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении. При активной торговле свечи обновляются по выбранному источнику (T-Bank — актуальнее MOEX ISS); индикаторы и заявки пересчитываются на каждом цикле.</p>
 <div class="live-trading-toolbar">
 <div class="live-trading-actions">
 <button type="button" class="live-trading-btn live-trading-btn-start" id="live-trading-toggle">Начать торговлю</button>
@@ -315,6 +315,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <select id="live-order-type">
 <option value="market" selected>Рыночная</option>
 <option value="limit">Лимитная</option>
+</select>
+<label for="live-candle-source">Свечи live</label>
+<select id="live-candle-source" title="T-Bank — свежие бары с брокера; MOEX ISS — бесплатно, но с задержкой 10–20 мин">
+<option value="auto" selected>T-Bank (если токен)</option>
+<option value="tbank">Только T-Bank</option>
+<option value="moex">Только MOEX ISS</option>
 </select>
 </div>
 </div>
@@ -544,19 +550,62 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-live-candle-stream";
+  const CALC_PAGE_VERSION = "2026-06-08-tbank-live-candles";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
+  const TECH_LOG_MAX_ERRORS = 128;
+
   const techLog = {
     startedAt: new Date().toISOString(),
     errors: [],
     lastEvent: "boot"
   };
 
-  function noteTechError(msg) {
-    const line = `${new Date().toISOString()} ${msg}`;
+  function pushTechLogLine(line) {
     techLog.errors.push(line);
-    if (techLog.errors.length > 16) techLog.errors.shift();
+    while (techLog.errors.length > TECH_LOG_MAX_ERRORS) techLog.errors.shift();
+  }
+
+  function noteTechError(msg) {
+    pushTechLogLine(`${new Date().toISOString()} ${msg}`);
+    updateTechInfo();
+  }
+
+  function noteLiveTech(tag, msg, extra) {
+    const at = new Date().toISOString();
+    const suffix = extra ? ` | ${extra}` : "";
+    pushTechLogLine(`${at} ${tag}: ${msg}${suffix}`);
+    techLog.lastEvent = tag;
+    updateTechInfo();
+  }
+
+  function liveIssueLine(item) {
+    if (!item) return "—";
+    if (typeof item === "string") return item;
+    return `${item.ticker || item.sec || "?"}: ${item.reason || item.message || "—"}`;
+  }
+
+  function noteLiveReconcileToTech(report) {
+    if (!report) return;
+    const at = report.at || new Date().toISOString();
+    if (calcState?.live) calcState.live.lastReconcile = report;
+    techLog.lastEvent = "live-reconcile";
+    if (report.placed > 0) {
+      pushTechLogLine(`${at} live-reconcile: placed=${report.placed} targets=${report.targetCount ?? "—"}`);
+    }
+    for (const s of report.skipped || []) {
+      const extra = typeof s === "object"
+        ? `uid=${s.instrumentId || "—"} class=${s.classCode || "—"} market=${s.market || "—"}`
+        : "";
+      pushTechLogLine(`${at} live-skip: ${liveIssueLine(s)}${extra ? ` | ${extra}` : ""}`);
+    }
+    for (const f of report.failed || []) {
+      const extra = typeof f === "object"
+        ? `uid=${f.instrumentId || "—"} dir=${f.direction || "—"} lots=${f.lots ?? "—"} class=${f.classCode || "—"}`
+        : "";
+      pushTechLogLine(`${at} live-fail: ${liveIssueLine(f)}${extra ? ` | ${extra}` : ""}`);
+    }
+    if (report.fatal) pushTechLogLine(`${at} live-reconcile-fatal: ${report.fatal}`);
     updateTechInfo();
   }
 
@@ -618,7 +667,52 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
         `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
       );
+      const lv = calcState.live;
+      if (lv) {
+        lines.push(
+          `liveActive=${!!lv.active}`,
+          `liveLastError=${lv.lastError || "—"}`,
+          `liveSessionStarted=${lv.sessionStartedAt || "—"}`,
+          `liveLastCandleBar=${lv.lastCandleBarTime || "—"}`,
+          `liveLastCandleRefresh=${lv.lastCandleRefreshAt || "—"}`,
+          `liveCandleRefreshBusy=${!!lv.candleRefreshBusy}`,
+          `liveReconcileBusy=${!!lv.reconcileBusy}`,
+          `liveOrderType=${$("live-order-type")?.value || "—"}`,
+          `liveOrdersCount=${lv.orders?.length ?? 0}`,
+          `livePortfolioValue=${Number.isFinite(lv.portfolioValue) ? lv.portfolioValue : "—"}`,
+          `liveCandleSource=${lv.candleSource || $("live-candle-source")?.value || "—"}`
+        );
+        const r = lv.lastReconcile;
+        if (r) {
+          lines.push(
+            `liveReconcileAt=${r.at || "—"}`,
+            `liveReconcilePlaced=${r.placed ?? 0}`,
+            `liveReconcileSkipped=${r.skipped?.length ?? 0}`,
+            `liveReconcileFailed=${r.failed?.length ?? 0}`,
+            `liveReconcileTargets=${r.targetCount ?? "—"}`
+          );
+          if (r.skipped?.length) {
+            lines.push("liveReconcile.skipped:");
+            for (const s of r.skipped) {
+              const extra = typeof s === "object" && s.instrumentId
+                ? ` uid=${s.instrumentId} class=${s.classCode || "—"} market=${s.market || "—"}`
+                : "";
+              lines.push(`  ${liveIssueLine(s)}${extra}`);
+            }
+          }
+          if (r.failed?.length) {
+            lines.push("liveReconcile.failed:");
+            for (const f of r.failed) {
+              const extra = typeof f === "object"
+                ? ` uid=${f.instrumentId || "—"} dir=${f.direction || "—"} lots=${f.lots ?? "—"} class=${f.classCode || "—"}`
+                : "";
+              lines.push(`  ${liveIssueLine(f)}${extra}`);
+            }
+          }
+        }
+      }
     }
+    lines.push(`liveTradingStatus=${$("live-trading-status")?.textContent || "—"}`);
     lines.push(`statusLine=${st?.textContent || "—"}`);
     lines.push(`userAgent=${navigator.userAgent}`);
     if (techLog.errors.length) {
@@ -723,11 +817,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       pollTimer: null,
       orders: [],
       instrumentCache: new Map(),
+      tradingStatusCache: new Map(),
       reconcileBusy: false,
       candleRefreshBusy: false,
       lastCandleRefreshAt: null,
       lastCandleBarTime: null,
+      lastCandleBarTimeFresh: null,
+      candleSource: null,
       lastError: "",
+      lastReconcile: null,
       portfolioValue: null,
       commissionPaid: null,
       sessionStartedAt: null,
@@ -858,7 +956,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         commissionPct: $("commission-pct")?.value || "0.04"
       },
       live: {
-        orderType: $("live-order-type")?.value || "market"
+        orderType: $("live-order-type")?.value || "market",
+        candleSource: $("live-candle-source")?.value || "auto"
       },
       params: {
         sl: $("param-sl")?.value || "",
@@ -915,6 +1014,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         setValueIfExists("commission-pct", cfg.volume.commissionValue);
       }
       setValueIfExists("live-order-type", cfg.live?.orderType);
+      setValueIfExists("live-candle-source", cfg.live?.candleSource);
       setValueIfExists("param-sl", cfg.params?.sl);
       setValueIfExists("param-tp", cfg.params?.tp);
       setValueIfExists("param-atr-sl", cfg.params?.atrSl);
@@ -1427,13 +1527,24 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (sellAll) sellAll.disabled = !isLive || state.uiBusy;
     const status = $("live-trading-status");
     if (status) {
-      if (state.live.lastError && isLive) status.textContent = `ошибка: ${state.live.lastError}`;
+      if (state.live.lastError && isLive) {
+        const warnOnly = state.live.lastError.startsWith("пропущено")
+          && !state.live.lastError.includes("ошибки заявок");
+        status.textContent = `${warnOnly ? "внимание" : "ошибка"}: ${state.live.lastError}`;
+      }
       else if (state.live.active) {
-        const bar = state.live.lastCandleBarTime
-          ? String(state.live.lastCandleBarTime).replace("T", " ").slice(0, 16)
-          : "—";
-        const busy = state.live.candleRefreshBusy ? " · загрузка свечей MOEX…" : "";
-        status.textContent = `торговля активна · свечи до ${bar}${busy}`;
+        const { calcEnd, freshest } = liveMoexBarTimes(state.packs);
+        const bar = formatMoexBarTime(calcEnd || state.live.lastCandleBarTime);
+        const freshHint = freshest && calcEnd && freshest > calcEnd
+          ? ` (самый свежий тикер ${formatMoexBarTime(freshest)})`
+          : "";
+        const polled = formatLiveRefreshClock(state.live.lastCandleRefreshAt);
+        const src = state.live.candleSource === "tbank" ? "T-Bank" : "MOEX";
+        const busy = state.live.candleRefreshBusy
+          ? ` · загрузка свечей ${src}…`
+          : "";
+        status.textContent =
+          `торговля активна · ${src} бары до ${bar}${freshHint} · опрос ${polled}${busy}`;
       } else status.textContent = "остановлена";
     }
     renderLivePortfolioStats();
@@ -1469,19 +1580,111 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncLiveTradingUi();
   }
 
+  function tbankInstField(inst, ...keys) {
+    if (!inst) return undefined;
+    for (const k of keys) {
+      if (inst[k] !== undefined && inst[k] !== null) return inst[k];
+    }
+    return undefined;
+  }
+
+  function tbankInstApiTradable(inst) {
+    const v = tbankInstField(inst, "apiTradeAvailableFlag", "api_trade_available_flag");
+    return v === undefined ? null : !!v;
+  }
+
+  function scoreTbankInstrument(inst, market) {
+    let s = 0;
+    const cc = String(tbankInstField(inst, "classCode", "class_code") || "").toUpperCase();
+    const kind = String(tbankInstField(inst, "instrumentType", "instrument_type", "instrumentKind") || "").toUpperCase();
+    const apiOk = tbankInstApiTradable(inst);
+    if (apiOk === true) s += 200;
+    if (apiOk === false) s -= 100;
+    if (market === "shares") {
+      if (cc === "TQBR") s += 80;
+      else if (cc === "TQTF") s += 40;
+      if (kind.includes("SHARE")) s += 30;
+    }
+    if (market === "futures") {
+      if (cc === "SPBFUT" || cc.includes("FUT")) s += 80;
+    }
+    return s;
+  }
+
+  function pickTbankInstrument(list, sec, market) {
+    const secU = String(sec || "").trim().toUpperCase();
+    let pool = (list || []).filter((i) => String(i.ticker || "").toUpperCase() === secU);
+    if (!pool.length && market === "futures") {
+      pool = (list || []).filter((i) => String(i.ticker || "").toUpperCase().startsWith(secU));
+    }
+    if (!pool.length) pool = list || [];
+    if (!pool.length) return null;
+    return pool.slice().sort((a, b) => scoreTbankInstrument(b, market) - scoreTbankInstrument(a, market))[0];
+  }
+
   async function tbankFindInstrument(sec, market) {
     const key = `${market}:${String(sec || "").trim().toUpperCase()}`;
     if (state.live.instrumentCache.has(key)) return state.live.instrumentCache.get(key);
     const data = await tbankRequest("InstrumentsService/FindInstrument", { query: String(sec || "").trim() });
-    const list = data.instruments || [];
-    const secU = String(sec || "").trim().toUpperCase();
-    let inst = list.find((i) => String(i.ticker || "").toUpperCase() === secU);
-    if (!inst && market === "futures") {
-      inst = list.find((i) => String(i.ticker || "").toUpperCase().startsWith(secU));
-    }
-    if (!inst) inst = list[0] || null;
+    const inst = pickTbankInstrument(data.instruments || [], sec, market);
     if (inst) state.live.instrumentCache.set(key, inst);
     return inst || null;
+  }
+
+  async function tbankGetTradingStatus(instrumentId) {
+    if (!instrumentId) return null;
+    const cacheKey = `ts:${instrumentId}`;
+    if (state.live.tradingStatusCache.has(cacheKey)) return state.live.tradingStatusCache.get(cacheKey);
+    const data = await tbankRequest("MarketDataService/GetTradingStatus", { instrumentId });
+    if (data) state.live.tradingStatusCache.set(cacheKey, data);
+    return data || null;
+  }
+
+  function tradingStatusApiOk(ts) {
+    return !!(ts?.apiTradeAvailableFlag ?? ts?.api_trade_available_flag);
+  }
+
+  function tradingStatusOrderOk(ts) {
+    const isLimit = liveOrderTypeUi() === "limit";
+    const flag = isLimit
+      ? (ts?.limitOrderAvailableFlag ?? ts?.limit_order_available_flag)
+      : (ts?.marketOrderAvailableFlag ?? ts?.market_order_available_flag);
+    return flag !== false;
+  }
+
+  async function tbankValidateTradable(instrumentId, instMeta) {
+    const apiFromInst = tbankInstApiTradable(instMeta);
+    if (apiFromInst === false) {
+      return { ok: false, reason: "торговля через API недоступна для инструмента" };
+    }
+    const ts = await tbankGetTradingStatus(instrumentId);
+    if (!ts) return { ok: false, reason: "нет статуса торговли" };
+    if (!tradingStatusApiOk(ts)) {
+      return { ok: false, reason: "торговля через API недоступна (api_trade_available_flag)" };
+    }
+    if (!tradingStatusOrderOk(ts)) {
+      const ot = liveOrderTypeUi() === "limit" ? "лимитные" : "рыночные";
+      return { ok: false, reason: `${ot} заявки сейчас недоступны` };
+    }
+    return { ok: true };
+  }
+
+  function summarizeLiveReconcileIssues(skipped, failed, maxItems) {
+    const n = Math.max(1, +maxItems || 4);
+    const parts = [];
+    if (skipped.length) {
+      const head = skipped.slice(0, n).map(liveIssueLine).join("; ");
+      parts.push(`пропущено без API (${skipped.length}): ${head}${skipped.length > n ? "…" : ""}`);
+    }
+    if (failed.length) {
+      const head = failed.slice(0, n).map(liveIssueLine).join("; ");
+      parts.push(`ошибки заявок (${failed.length}): ${head}${failed.length > n ? "…" : ""}`);
+    }
+    return parts.join(" · ");
+  }
+
+  function liveIssueEntry(ticker, sec, fields) {
+    return { ticker, sec: sec || ticker, ...fields };
   }
 
   async function tbankGetInstrumentById(instrumentId) {
@@ -1522,6 +1725,97 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const lp = (data.lastPrices || [])[0];
     if (!lp?.price) return null;
     return (+lp.price.units || 0) + (+lp.price.nano || 0) / 1e9;
+  }
+
+  function liveCandleSourceUi() {
+    return $("live-candle-source")?.value || "auto";
+  }
+
+  function resolveLiveCandleSource() {
+    const ui = liveCandleSourceUi();
+    if (ui === "moex") return "moex";
+    if (ui === "tbank") return state.tbank.token ? "tbank" : "moex";
+    return state.tbank.token ? "tbank" : "moex";
+  }
+
+  function liveTbankTailFromDate(fromStr, tillStr, interval) {
+    const tillD = parseDay(tillStr);
+    tillD.setHours(23, 59, 59, 999);
+    const now = new Date();
+    const end = tillD > now ? now : tillD;
+    const hours = E.liveTbankTailHours(interval);
+    const tailStart = new Date(end.getTime() - hours * 3600 * 1000);
+    const fromD = parseDay(fromStr);
+    return fromD > tailStart ? fromD : tailStart;
+  }
+
+  async function tbankFetchCandlesRange(instrumentId, fromDate, toDate, interval) {
+    const chunkDays = E.tbankCandleChunkDays(interval);
+    const candleInterval = E.tbankIntervalForCalcTf(interval);
+    const out = [];
+    let cursor = new Date(fromDate);
+    const end = new Date(toDate);
+    if (end.getHours() === 0 && end.getMinutes() === 0) end.setHours(23, 59, 59, 999);
+    while (cursor <= end) {
+      const chunkEnd = new Date(cursor);
+      chunkEnd.setDate(chunkEnd.getDate() + chunkDays - 1);
+      chunkEnd.setHours(23, 59, 59, 999);
+      const toChunk = chunkEnd > end ? end : chunkEnd;
+      const data = await tbankRequest("MarketDataService/GetCandles", {
+        instrumentId,
+        from: cursor.toISOString(),
+        to: toChunk.toISOString(),
+        interval: candleInterval
+      });
+      out.push(...(data.candles || []));
+      cursor = new Date(toChunk.getTime() + 1000);
+    }
+    return out;
+  }
+
+  async function refreshLiveTbankTail(instruments, from, till, interval, existingByKey) {
+    if (!(await ensureTbankTokenUnlocked())) {
+      throw new Error("Токен T-Bank не расшифрован — свечи T-Bank недоступны.");
+    }
+    const byKey = new Map(existingByKey || []);
+    const failures = [];
+    const list = instruments || [];
+    const tailFrom = liveTbankTailFromDate(from, till, interval);
+    const tillEnd = parseDay(till);
+    tillEnd.setHours(23, 59, 59, 999);
+    const queue = [...list];
+    const workers = Array.from(
+      { length: Math.max(1, Math.min(3, list.length > 6 ? 3 : 2)) },
+      async () => {
+        while (queue.length) {
+          const inst = queue.shift();
+          if (!inst) continue;
+          const sec = inst.sec;
+          const market = inst.market || "shares";
+          const key = `${market}:${String(sec || "").trim().toUpperCase()}`;
+          try {
+            const ti = await tbankFindInstrument(sec, market);
+            if (!ti) {
+              failures.push({ sec, market, error: "не найден в T-Bank" });
+              continue;
+            }
+            const instrumentId = ti.uid || ti.figi;
+            const raw = await tbankFetchCandlesRange(instrumentId, tailFrom, tillEnd, interval);
+            const pack = E.parseTbankHistoricCandles(raw, sec, market);
+            if (!pack.length) {
+              failures.push({ sec, market, error: "T-Bank не вернул свечи за хвост периода" });
+              continue;
+            }
+            const prev = byKey.get(key) || [];
+            byKey.set(key, E.mergeCandleSeries(prev, pack));
+          } catch (err) {
+            failures.push({ sec, market, error: err?.message || String(err) });
+          }
+        }
+      }
+    );
+    await Promise.all(workers);
+    return { byKey, failures };
   }
 
   function packLastClose(sec) {
@@ -1601,7 +1895,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       state.live.commissionPaid = comm;
       renderLivePortfolioStats();
     } catch (err) {
-      noteTechError(`live-portfolio: ${err.message}`);
+      noteLiveTech("live-portfolio", err.message, `account=${state.tbank.selectedAccountId || "—"}`);
     }
   }
 
@@ -1618,7 +1912,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     } catch (err) {
       state.live.lastError = err.message;
       syncLiveTradingUi();
-      noteTechError(`live-orders: ${err.message}`);
+      noteLiveTech("live-orders", err.message, `account=${state.tbank.selectedAccountId || "—"}`);
     }
   }
 
@@ -1714,16 +2008,44 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     try {
       const { from, till, interval } = liveCandleStreamRange(instruments);
       const byKey = packsByInstrumentKey(state.packs);
-      const refreshed = await E.refreshLiveMoexPacks(
-        instruments,
-        from,
-        till,
-        interval,
-        byKey,
-        state.candleCache || null
-      );
+      const candleSource = resolveLiveCandleSource();
+      let refreshed;
+      if (candleSource === "tbank") {
+        if (!state.packs.length) {
+          const moexBoot = await E.refreshLiveMoexPacks(
+            instruments,
+            from,
+            till,
+            interval,
+            byKey,
+            state.candleCache || null
+          );
+          refreshed = await refreshLiveTbankTail(instruments, from, till, interval, moexBoot.byKey);
+          refreshed.failures = [...(moexBoot.failures || []), ...(refreshed.failures || [])];
+        } else {
+          refreshed = await refreshLiveTbankTail(instruments, from, till, interval, byKey);
+        }
+        state.live.candleSource = "tbank";
+      } else {
+        refreshed = await E.refreshLiveMoexPacks(
+          instruments,
+          from,
+          till,
+          interval,
+          byKey,
+          state.candleCache || null
+        );
+        state.live.candleSource = "moex";
+      }
       state.packs = orderPacksForInstruments(instruments, refreshed.byKey);
       state.failedInstruments = refreshed.failures;
+      if (refreshed.failures?.length) {
+        noteLiveTech(
+          "live-candles-partial",
+          refreshed.failures.map((f) => `${f.sec}: ${f.error}`).join("; "),
+          `source=${state.live.candleSource}`
+        );
+      }
       state.lastLoadMeta = {
         periodKey: loadMetaKey(from, till, interval),
         keys: instruments.map(instrumentKey)
@@ -1739,9 +2061,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         throw new Error("Нет сигналов логики на свежих свечах.");
       }
       state.lastResult = result;
-      const lastPack = refPack();
+      const barTimes = liveMoexBarTimes(state.packs);
       state.live.lastCandleRefreshAt = new Date().toISOString();
-      state.live.lastCandleBarTime = lastPack.at(-1)?.time || null;
+      state.live.lastCandleBarTime = barTimes.calcEnd || barTimes.freshest || null;
+      state.live.lastCandleBarTimeFresh = barTimes.freshest || null;
       state.live.lastError = "";
       if (!opts.silent) applyResult(result, { redrawCharts: false });
       syncLiveTradingUi();
@@ -1749,7 +2072,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     } catch (err) {
       state.live.lastError = err.message;
       syncLiveTradingUi();
-      noteTechError(`live-candles: ${err.message}`);
+      noteLiveTech("live-candles", err.message, `instruments=${selectedInstruments().length} tf=${$("calc-tf")?.value || "—"}`);
       return false;
     } finally {
       state.live.candleRefreshBusy = false;
@@ -1788,15 +2111,28 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const targets = liveReconcileTargets();
     if (!targets.length) return;
     state.live.reconcileBusy = true;
+    const skipped = [];
+    const failed = [];
+    let placed = 0;
     try {
       const actual = await tbankPositionsByTicker();
       for (const p of targets) {
         const secU = String(p.sec || "").toUpperCase();
         const instMeta = selectedInstruments().find((i) => String(i.sec).toUpperCase() === secU);
         const market = instMeta?.market || "shares";
-        const ti = await tbankFindInstrument(p.sec, market);
-        if (!ti) continue;
+        let ti;
+        try {
+          ti = await tbankFindInstrument(p.sec, market);
+        } catch (err) {
+          failed.push(liveIssueEntry(p.sec, p.sec, { message: err.message, market }));
+          continue;
+        }
+        if (!ti) {
+          skipped.push(liveIssueEntry(p.sec, p.sec, { reason: "не найден в T-Bank", market }));
+          continue;
+        }
         const instrumentId = ti.uid || ti.figi;
+        const classCode = tbankInstField(ti, "classCode", "class_code") || "";
         const lot = Math.max(1, +ti.lot || 1);
         const ticker = String(ti.ticker || p.sec).toUpperCase();
         const targetPieces = +p.pos || 0;
@@ -1806,15 +2142,53 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         if (Math.abs(delta) < lot * 0.45) continue;
         const lots = piecesToLots(delta, lot);
         const direction = delta > 0 ? "ORDER_DIRECTION_BUY" : "ORDER_DIRECTION_SELL";
-        await tbankPostOrder(instrumentId, direction, lots, p.sec);
+        const tradable = await tbankValidateTradable(instrumentId, ti);
+        if (!tradable.ok) {
+          skipped.push(liveIssueEntry(ticker, p.sec, {
+            reason: tradable.reason,
+            instrumentId,
+            classCode,
+            market
+          }));
+          continue;
+        }
+        try {
+          await tbankPostOrder(instrumentId, direction, lots, p.sec);
+          placed += 1;
+        } catch (err) {
+          failed.push(liveIssueEntry(ticker, p.sec, {
+            message: err.message,
+            instrumentId,
+            classCode,
+            market,
+            direction,
+            lots
+          }));
+        }
       }
+      const issueText = summarizeLiveReconcileIssues(skipped, failed);
+      state.live.lastError = issueText;
+      noteLiveReconcileToTech({
+        at: new Date().toISOString(),
+        placed,
+        skipped,
+        failed,
+        targetCount: targets.length
+      });
       await refreshLiveOrders();
     } catch (err) {
       state.live.lastError = err.message;
-      syncLiveTradingUi();
-      noteTechError(`live-reconcile: ${err.message}`);
+      noteLiveReconcileToTech({
+        at: new Date().toISOString(),
+        placed: 0,
+        skipped: [],
+        failed: [],
+        targetCount: targets.length,
+        fatal: err.message
+      });
     } finally {
       state.live.reconcileBusy = false;
+      syncLiveTradingUi();
     }
   }
 
@@ -1828,7 +2202,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         .catch((err) => {
           state.live.lastError = err.message;
           syncLiveTradingUi();
-          noteTechError(`live-tick: ${err.message}`);
+          noteLiveTech("live-tick", err.message, `tf=${$("calc-tf")?.value || "—"}`);
         });
     };
     const ms = liveCandlePollIntervalMs($("calc-tf").value);
@@ -1895,7 +2269,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     } catch (err) {
       state.live.lastError = err.message;
       syncLiveTradingUi();
-      noteTechError(`toggleLiveTrading: ${err.message}`);
+      noteLiveTech("toggleLiveTrading", err.message);
     }
   }
 
@@ -1911,15 +2285,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         accountId: state.tbank.selectedAccountId
       });
       let sent = 0;
+      const skipped = [];
+      const failed = [];
       const closeList = async (items, isFuture) => {
         for (const p of items || []) {
           const pieces = +p.balance || 0;
           if (pieces === 0) continue;
           const instrumentId = p.instrumentUid || p.figi;
           let lot = Math.max(1, +p.lot || 1);
-          if (!p.lot) {
-            const meta = await tbankGetInstrumentById(instrumentId);
-            if (meta?.lot) lot = Math.max(1, +meta.lot);
+          let meta = null;
+          try {
+            meta = await tbankGetInstrumentById(instrumentId);
+            if (!p.lot && meta?.lot) lot = Math.max(1, +meta.lot);
+          } catch (err) {
+            failed.push(liveIssueEntry(instrumentId, instrumentId, { message: err.message }));
+            continue;
           }
           let lots;
           let direction;
@@ -1932,22 +2312,52 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
             direction = "ORDER_DIRECTION_SELL";
           }
           if (lots <= 0) continue;
-          const meta = await tbankGetInstrumentById(instrumentId);
           const ticker = meta?.ticker || instrumentId;
-          await tbankPostOrder(instrumentId, direction, lots, ticker);
-          sent += 1;
+          const classCode = tbankInstField(meta, "classCode", "class_code") || "";
+          const tradable = await tbankValidateTradable(instrumentId, meta);
+          if (!tradable.ok) {
+            skipped.push(liveIssueEntry(ticker, ticker, {
+              reason: tradable.reason,
+              instrumentId,
+              classCode
+            }));
+            continue;
+          }
+          try {
+            await tbankPostOrder(instrumentId, direction, lots, ticker);
+            sent += 1;
+          } catch (err) {
+            failed.push(liveIssueEntry(ticker, ticker, {
+              message: err.message,
+              instrumentId,
+              classCode,
+              direction,
+              lots
+            }));
+          }
         }
       };
       await closeList(data.securities, false);
       await closeList(data.futures, true);
-      state.live.lastError = "";
+      const issueText = summarizeLiveReconcileIssues(skipped, failed);
+      state.live.lastError = issueText;
+      noteLiveReconcileToTech({
+        at: new Date().toISOString(),
+        placed: sent,
+        skipped,
+        failed,
+        targetCount: (data.securities?.length || 0) + (data.futures?.length || 0)
+      });
       const status = $("live-trading-status");
-      if (status) status.textContent = sent ? `продано позиций: ${sent}` : "открытых позиций нет";
+      if (status) {
+        if (sent) status.textContent = issueText ? `продано позиций: ${sent} · ${issueText}` : `продано позиций: ${sent}`;
+        else status.textContent = issueText || "открытых позиций нет";
+      }
       await refreshLiveOrders();
     } catch (err) {
       state.live.lastError = err.message;
       setTbankStatus(`Ошибка продажи по рынку: ${err.message}`, true);
-      noteTechError(`live-sell-all: ${err.message}`);
+      noteLiveTech("live-sell-all", err.message);
     } finally {
       if (sellBtn) sellBtn.disabled = !isLiveMode();
       syncLiveTradingUi();
@@ -3271,6 +3681,32 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return { start, end };
   }
 
+  /** MOEX ISS: begin of bar (MSK), not wall clock; calc uses common end (laggiest ticker). */
+  function liveMoexBarTimes(packs) {
+    const list = packs || [];
+    let freshest = null;
+    for (const pack of list) {
+      const t = pack?.at(-1)?.time;
+      if (t && (!freshest || t > freshest)) freshest = t;
+    }
+    const common = commonTimeRange(list);
+    return { calcEnd: common?.end || freshest, freshest };
+  }
+
+  function formatMoexBarTime(timeStr) {
+    if (!timeStr) return "—";
+    return String(timeStr).replace("T", " ").slice(0, 16);
+  }
+
+  function formatLiveRefreshClock(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    } catch (_) {
+      return "—";
+    }
+  }
+
   function saveWindowAnchor() {
     const pack = refPack();
     if (!pack.length) return;
@@ -4016,7 +4452,7 @@ ${totalBlock}
     toggleLiveTrading().catch((err) => {
       state.live.lastError = err.message;
       syncLiveTradingUi();
-      noteTechError(`toggleLiveTrading: ${err.message}`);
+      noteLiveTech("toggleLiveTrading", err.message);
     });
   });
   $("live-trading-sell-all").addEventListener("click", () => { sellAllMarketLive(); });
@@ -4088,6 +4524,7 @@ ${totalBlock}
   $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); saveConfig(); render(); });
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); saveConfig(); render(); });
   $("live-order-type").addEventListener("change", () => { saveConfig(); syncLiveTradingUi(); });
+  $("live-candle-source").addEventListener("change", () => { saveConfig(); syncLiveTradingUi(); });
   ["vol-value", "vol-deposit", "vol-maxpos", "commission-pct", "param-lr", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", () => { syncLeverageDisplay(); renderFromParams(); });
     $(id).addEventListener("input", () => { syncLeverageDisplay(); renderFromParams(); });
