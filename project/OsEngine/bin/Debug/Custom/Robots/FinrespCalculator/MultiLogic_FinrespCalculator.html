@@ -235,6 +235,10 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-ob-grid th:nth-child(3),.live-ob-grid th:nth-child(4){background:#fef2f2;}
 .live-ob-grid .ob-bid-p,.live-ob-grid .ob-bid-q{color:#166534;font-weight:600;}
 .live-ob-grid .ob-ask-p,.live-ob-grid .ob-ask-q{color:#991b1b;font-weight:600;}
+.live-ob-pick{cursor:pointer;}
+.live-ob-pick:hover{background:#fff7ed;}
+.live-ob-grid .ob-bid-p.live-ob-pick:hover,.live-ob-grid .ob-bid-q.live-ob-pick:hover{background:#ecfdf5;}
+.live-ob-grid .ob-ask-p.live-ob-pick:hover,.live-ob-grid .ob-ask-q.live-ob-pick:hover{background:#fef2f2;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -366,7 +370,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <details class="live-order-book" id="live-order-book-panel">
 <summary class="live-manual-order-summary">Стакан</summary>
 <div class="live-order-book-body">
-<p class="live-order-book-meta" id="live-order-book-meta">Инструмент — из блока «Заявка». Данные T-Bank GetOrderBook.</p>
+<p class="live-order-book-meta" id="live-order-book-meta">Инструмент — из блока «Заявка». Двойной клик по bid/ask — открыть «Заявку» с ценой и стороной.</p>
 <div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент в «Заявка».</p></div>
 </div>
 </details>
@@ -592,7 +596,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-live-finresp-window";
+  const CALC_PAGE_VERSION = "2026-06-08-orderbook-dblclick";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -1744,14 +1748,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const rows = Math.max(bids.length, asks.length, 1);
     let html = '<table class="live-ob-grid"><thead><tr><th colspan="2">Покупка (bid)</th><th colspan="2">Продажа (ask)</th></tr>'
       + '<tr><th>лоты</th><th>цена</th><th>цена</th><th>лоты</th></tr></thead><tbody>';
+    const pickCell = (side, price, lots, cls, text) => {
+      if (!Number.isFinite(price) || price <= 0) return `<td class="${cls}"></td>`;
+      const title = side === "sell" ? "Двойной клик — заявка на продажу" : "Двойной клик — заявка на покупку";
+      return `<td class="${cls} live-ob-pick" data-side="${side}" data-price="${price}" data-lots="${lots ?? ""}" title="${title}">${text}</td>`;
+    };
     for (let i = 0; i < rows; i++) {
       const bid = bids[i];
       const ask = asks[i];
+      const bidPrice = bid ? orderBookPrice(bid.price) : NaN;
+      const askPrice = ask ? orderBookPrice(ask.price) : NaN;
       html += `<tr>
-        <td class="ob-bid-q">${bid?.quantity ?? ""}</td>
-        <td class="ob-bid-p">${bid ? fmt(orderBookPrice(bid.price), 2) : ""}</td>
-        <td class="ob-ask-p">${ask ? fmt(orderBookPrice(ask.price), 2) : ""}</td>
-        <td class="ob-ask-q">${ask?.quantity ?? ""}</td>
+        ${pickCell("buy", bidPrice, bid?.quantity, "ob-bid-q", bid?.quantity ?? "")}
+        ${pickCell("buy", bidPrice, bid?.quantity, "ob-bid-p", bid ? fmt(bidPrice, 2) : "")}
+        ${pickCell("sell", askPrice, ask?.quantity, "ob-ask-p", ask ? fmt(askPrice, 2) : "")}
+        ${pickCell("sell", askPrice, ask?.quantity, "ob-ask-q", ask?.quantity ?? "")}
       </tr>`;
     }
     html += "</tbody></table>";
@@ -2122,6 +2133,40 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     sel.disabled = !isLiveMode() || state.uiBusy;
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  }
+
+  function fillManualOrderFromOrderBook(side, price, lots) {
+    const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+    const statusEl = $("live-manual-order-status");
+    if (!picked?.sec) {
+      if (statusEl) statusEl.textContent = "Сначала выберите инструмент в «Заявка».";
+      return;
+    }
+    if (!Number.isFinite(price) || price <= 0) return;
+    const panel = $("live-manual-order-panel");
+    if (panel) panel.open = true;
+    $("live-manual-direction").value = side === "sell" ? "sell" : "buy";
+    $("live-manual-order-type").value = "limit";
+    $("live-manual-price").value = String(price);
+    const lotN = Math.floor(+(lots || 0));
+    if (lotN > 0) $("live-manual-qty").value = String(lotN);
+    syncLiveManualOrderUi();
+    saveConfig();
+    const sideLabel = side === "sell" ? "продажа" : "покупка";
+    if (statusEl) {
+      statusEl.textContent = `Из стакана: ${picked.sec}, ${sideLabel}, лимит ${fmt(price, 2)} ₽`
+        + (lotN > 0 ? `, ${lotN} лот` : "")
+        + ". Нажмите «Выставить заявку».";
+    }
+    panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function onLiveOrderBookDblClick(ev) {
+    const cell = ev.target?.closest?.(".live-ob-pick");
+    if (!cell || !isLiveMode()) return;
+    const side = cell.dataset.side === "sell" ? "sell" : "buy";
+    const price = +cell.dataset.price;
+    fillManualOrderFromOrderBook(side, price, cell.dataset.lots);
   }
 
   function syncLiveManualOrderUi() {
@@ -4890,6 +4935,7 @@ ${totalBlock}
     if ($("live-order-book-panel")?.open) startLiveOrderBookPoll();
     else stopLiveOrderBookPoll();
   });
+  $("live-order-book-table")?.addEventListener("dblclick", onLiveOrderBookDblClick);
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
