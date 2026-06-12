@@ -621,7 +621,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-orderbook-dblclick2";
+  const CALC_PAGE_VERSION = "2026-06-08-orderbook-1lot";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -2340,7 +2340,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.restoredOrderBookSec = "";
   }
 
-  function fillManualOrderFromOrderBook(side, price, lots) {
+  function fillManualOrderFromOrderBook(side, price) {
     const obKey = $("live-order-book-sec")?.value || "";
     const picked = parseLiveManualInstrumentKey(obKey);
     const statusEl = $("live-manual-order-status");
@@ -2359,14 +2359,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const priceWrap = $("live-manual-price-wrap");
     if (priceWrap) priceWrap.hidden = false;
     $("live-manual-price").value = String(price);
-    const lotN = Math.floor(+(lots || 0));
-    if (lotN > 0) $("live-manual-qty").value = String(lotN);
+    $("live-manual-qty").value = "1";
     saveConfig();
     const sideLabel = side === "sell" ? "продажа" : "покупка";
     if (statusEl) {
-      statusEl.textContent = `Из стакана: ${picked.sec}, ${sideLabel}, лимит ${fmt(price, 2)} ₽`
-        + (lotN > 0 ? `, ${lotN} лот` : "")
-        + ". Нажмите «Выставить заявку».";
+      statusEl.textContent = `Из стакана: ${picked.sec}, ${sideLabel}, лимит ${fmt(price, 2)} ₽, 1 лот. Нажмите «Выставить заявку».`;
     }
     panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
@@ -2377,7 +2374,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     ev.preventDefault();
     const side = cell.dataset.side === "sell" ? "sell" : "buy";
     const price = +cell.dataset.price;
-    fillManualOrderFromOrderBook(side, price, cell.dataset.lots);
+    fillManualOrderFromOrderBook(side, price);
   }
 
   function syncLiveManualOrderUi() {
