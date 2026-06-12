@@ -214,6 +214,15 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-trading-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:.35rem .55rem;flex:0 1 auto;}
 .live-trading-controls label{font-size:.8rem;color:#7f1d1d;font-weight:600;}
 .live-trading-controls select{padding:.42rem .55rem;border:1px solid #d4a5a5;border-radius:7px;background:#fff;color:#7f1d1d;font-weight:600;font-size:.88rem;}
+.live-manual-order{margin:0 0 .75rem;border:1px solid #fecaca;border-radius:8px;background:#fffefb;}
+.live-manual-order-summary{cursor:pointer;padding:.55rem .7rem;font-size:.88rem;font-weight:700;color:#7f1d1d;list-style:none;}
+.live-manual-order-summary::-webkit-details-marker{display:none;}
+.live-manual-order-body{padding:0 .7rem .7rem;}
+.live-manual-order-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.5rem .65rem;align-items:end;margin-bottom:.55rem;}
+.live-manual-order-grid label{display:flex;flex-direction:column;gap:.2rem;font-size:.78rem;font-weight:600;color:#7f1d1d;}
+.live-manual-order-grid select,.live-manual-order-grid input{padding:.42rem .5rem;border:1px solid #d4a5a5;border-radius:7px;background:#fff;color:#374151;font-size:.88rem;font-weight:600;}
+.live-manual-order-hint{margin:0 0 .5rem;font-size:.8rem;color:var(--muted);min-height:1.1em;}
+.live-manual-submit{display:inline-block;width:auto;min-width:12rem;flex:none;padding:.65rem 1.2rem;font-size:.98rem;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -328,6 +337,20 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="live-trading-stat"><b>Портфель (все позиции)</b><span id="live-portfolio-value">—</span></div>
 <div class="live-trading-stat live-trading-stat-commission"><b>Комиссии уплачено (реально)</b><span id="live-commission-paid">—</span></div>
 </div>
+<details class="live-manual-order" id="live-manual-order-panel">
+<summary class="live-manual-order-summary">Заявка</summary>
+<div class="live-manual-order-body">
+<div class="live-manual-order-grid">
+<label>Инструмент<select id="live-manual-sec"><option value="">— выберите бумаги в калькуляторе —</option></select></label>
+<label>Сторона<select id="live-manual-direction"><option value="buy" selected>Покупка</option><option value="sell">Продажа</option></select></label>
+<label>Тип<select id="live-manual-order-type"><option value="market" selected>Рыночная</option><option value="limit">Лимитная</option></select></label>
+<label>Лоты<input id="live-manual-qty" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+<label id="live-manual-price-wrap" hidden>Цена, ₽<input id="live-manual-price" type="number" min="0" step="0.01" placeholder="авто из рынка" inputmode="decimal"></label>
+</div>
+<p class="live-manual-order-hint" id="live-manual-order-status"></p>
+<button type="button" class="live-trading-btn live-trading-btn-start live-manual-submit" id="live-manual-submit">Выставить заявку</button>
+</div>
+</details>
 <div class="live-trading-orders-wrap">
 <div class="live-trading-orders-head">Заявки в реальном времени</div>
 <div id="live-trading-orders" class="live-trading-orders"></div>
@@ -550,7 +573,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-forbidden-in-tech";
+  const CALC_PAGE_VERSION = "2026-06-08-manual-order";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -1020,7 +1043,14 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       },
       live: {
         orderType: $("live-order-type")?.value || "market",
-        candleSource: $("live-candle-source")?.value || "auto"
+        candleSource: $("live-candle-source")?.value || "auto",
+        manual: {
+          sec: $("live-manual-sec")?.value || "",
+          direction: $("live-manual-direction")?.value || "buy",
+          orderType: $("live-manual-order-type")?.value || "market",
+          qty: $("live-manual-qty")?.value || "1",
+          price: $("live-manual-price")?.value || ""
+        }
       },
       params: {
         sl: $("param-sl")?.value || "",
@@ -1078,6 +1108,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
       setValueIfExists("live-order-type", cfg.live?.orderType);
       setValueIfExists("live-candle-source", cfg.live?.candleSource);
+      setValueIfExists("live-manual-direction", cfg.live?.manual?.direction);
+      setValueIfExists("live-manual-order-type", cfg.live?.manual?.orderType);
+      setValueIfExists("live-manual-qty", cfg.live?.manual?.qty);
+      setValueIfExists("live-manual-price", cfg.live?.manual?.price);
+      state.restoredManualSec = cfg.live?.manual?.sec || "";
       setValueIfExists("param-sl", cfg.params?.sl);
       setValueIfExists("param-tp", cfg.params?.tp);
       setValueIfExists("param-atr-sl", cfg.params?.atrSl);
@@ -1613,6 +1648,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     renderLivePortfolioStats();
     syncLeverageDisplay();
     renderLiveOrdersPanel();
+    syncLiveManualOrderUi();
   }
 
   function stopLiveTradingPoll() {
@@ -1892,10 +1928,14 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return packLastClose(sec) ?? await tbankGetLastPrice(instrumentId);
   }
 
-  async function tbankPostOrder(instrumentId, direction, lots, secForPrice) {
+  async function tbankPostOrder(instrumentId, direction, lots, secForPrice, options) {
+    const opts = options || {};
     const qty = Math.max(0, Math.floor(+lots || 0));
     if (!instrumentId || qty <= 0) return null;
     const orderId = (crypto.randomUUID && crypto.randomUUID()) || `ml-${Date.now()}`;
+    const orderType = opts.orderType === "limit" || opts.orderType === "market"
+      ? opts.orderType
+      : liveOrderTypeUi();
     const body = {
       accountId: state.tbank.selectedAccountId,
       instrumentId,
@@ -1904,8 +1944,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       orderId,
       confirmMarginTrade: true
     };
-    if (liveOrderTypeUi() === "limit") {
-      const price = await resolveOrderPrice(instrumentId, secForPrice);
+    if (orderType === "limit") {
+      let price = opts.limitPrice != null && opts.limitPrice !== "" ? +opts.limitPrice : NaN;
+      if (!Number.isFinite(price) || price <= 0) {
+        price = await resolveOrderPrice(instrumentId, secForPrice);
+      }
       if (!price) throw new Error(`Нет цены для лимитной заявки (${secForPrice || instrumentId}).`);
       body.orderType = "ORDER_TYPE_LIMIT";
       body.price = quotationFromNumber(price);
@@ -1913,6 +1956,105 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       body.orderType = "ORDER_TYPE_MARKET";
     }
     return tbankRequest("OrdersService/PostOrder", body);
+  }
+
+  function parseLiveManualInstrumentKey(key) {
+    const raw = String(key || "").trim();
+    if (!raw) return null;
+    const sep = raw.indexOf(":");
+    if (sep <= 0) return { market: "shares", sec: raw };
+    return { market: raw.slice(0, sep), sec: raw.slice(sep + 1) };
+  }
+
+  function fillLiveManualOrderInstruments() {
+    const sel = $("live-manual-sec");
+    if (!sel) return;
+    const prev = sel.value || state.restoredManualSec || "";
+    state.restoredManualSec = "";
+    const items = selectedInstruments();
+    sel.innerHTML = "";
+    if (!items.length) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = "— выберите бумаги в калькуляторе —";
+      sel.appendChild(o);
+      sel.disabled = true;
+      return;
+    }
+    for (const i of items) {
+      const o = document.createElement("option");
+      o.value = `${i.market}:${i.sec}`;
+      o.textContent = i.market === "futures" ? `${i.sec} (фьюч)` : i.sec;
+      sel.appendChild(o);
+    }
+    sel.disabled = !isLiveMode() || state.uiBusy;
+    if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  }
+
+  function syncLiveManualOrderUi() {
+    fillLiveManualOrderInstruments();
+    const isLive = isLiveMode();
+    const lock = state.uiBusy;
+    const ids = ["live-manual-sec", "live-manual-direction", "live-manual-order-type", "live-manual-qty", "live-manual-price", "live-manual-submit"];
+    for (const id of ids) {
+      const el = $(id);
+      if (el) el.disabled = !isLive || lock;
+    }
+    const isLimit = $("live-manual-order-type")?.value === "limit";
+    const priceWrap = $("live-manual-price-wrap");
+    if (priceWrap) priceWrap.hidden = !isLimit;
+  }
+
+  async function placeManualLiveOrder() {
+    if (!isLiveMode()) return;
+    const statusEl = $("live-manual-order-status");
+    const btn = $("live-manual-submit");
+    if (btn) btn.disabled = true;
+    try {
+      if (!(await ensureTbankTokenUnlocked())) {
+        if (statusEl) statusEl.textContent = "Расшифруйте токен T-Bank.";
+        return;
+      }
+      if (!state.tbank.selectedAccountId) await loadTbankAccounts();
+      if (!state.tbank.selectedAccountId) throw new Error("Счёт T-Bank не выбран.");
+      const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+      if (!picked?.sec) throw new Error("Выберите инструмент из списка калькулятора.");
+      const { sec, market } = picked;
+      const direction = $("live-manual-direction")?.value === "sell"
+        ? "ORDER_DIRECTION_SELL"
+        : "ORDER_DIRECTION_BUY";
+      const lots = Math.max(0, Math.floor(+($("live-manual-qty")?.value || 0)));
+      if (lots <= 0) throw new Error("Укажите количество лотов больше 0.");
+      const orderType = $("live-manual-order-type")?.value === "limit" ? "limit" : "market";
+      const limitPrice = $("live-manual-price")?.value || "";
+      const ti = await tbankFindInstrument(sec, market);
+      if (!ti) throw new Error(`${sec}: не найден в T-Bank.`);
+      const instrumentId = ti.uid || ti.figi;
+      const ticker = String(ti.ticker || sec).toUpperCase();
+      const tradable = await tbankValidateTradable(instrumentId, ti);
+      if (!tradable.ok) throw new Error(`${ticker}: ${tradable.reason}`);
+      if (statusEl) statusEl.textContent = `Отправка ${direction === "ORDER_DIRECTION_BUY" ? "покупки" : "продажи"} ${ticker}, ${lots} лот…`;
+      await tbankPostOrder(instrumentId, direction, lots, sec, { orderType, limitPrice });
+      const side = direction === "ORDER_DIRECTION_BUY" ? "покупка" : "продажа";
+      const otype = orderType === "limit" ? "лимит" : "рынок";
+      const okText = `Заявка отправлена: ${ticker}, ${side}, ${lots} лот, ${otype}.`;
+      if (statusEl) statusEl.textContent = okText;
+      state.live.lastError = "";
+      noteLiveTech("live-manual-order", okText, `sec=${sec} uid=${instrumentId}`);
+      saveConfig();
+      await refreshLiveOrders();
+      await refreshLivePortfolioStats();
+      syncLiveTradingUi();
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (statusEl) statusEl.textContent = `Ошибка: ${msg}`;
+      state.live.lastError = msg;
+      noteLiveTech("live-manual-order", msg);
+      syncLiveTradingUi();
+    } finally {
+      if (btn) btn.disabled = !isLiveMode() || state.uiBusy;
+      syncLiveManualOrderUi();
+    }
   }
 
   function renderLivePortfolioStats() {
@@ -4524,6 +4666,12 @@ ${totalBlock}
     });
   });
   $("live-trading-sell-all").addEventListener("click", () => { sellAllMarketLive(); });
+  $("live-manual-submit").addEventListener("click", () => { placeManualLiveOrder(); });
+  $("live-manual-order-type").addEventListener("change", () => { syncLiveManualOrderUi(); saveConfig(); });
+  ["live-manual-sec", "live-manual-direction", "live-manual-qty", "live-manual-price"].forEach((id) => {
+    $(id)?.addEventListener("change", () => { saveConfig(); });
+    $(id)?.addEventListener("input", () => { if (id === "live-manual-qty" || id === "live-manual-price") saveConfig(); });
+  });
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
