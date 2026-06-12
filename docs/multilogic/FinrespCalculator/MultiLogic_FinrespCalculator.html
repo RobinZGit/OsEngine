@@ -502,7 +502,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-live-toggle-fix";
+  const CALC_PAGE_VERSION = "2026-06-12-progress-99";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -2351,19 +2351,28 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   }
 
-  function setCalcProgress(message, pct) {
+  function setCalcProgress(message, pct, opts) {
+    const options = opts || {};
     const text = String(message || "").trim() || "…";
     const el = $("calc-progress-text");
     const pctEl = $("calc-progress-pct");
     const hasPct = Number.isFinite(pct);
-    const p = hasPct ? Math.round(Math.max(0, Math.min(100, pct))) : null;
+    let p = hasPct ? Math.round(Math.max(0, Math.min(100, pct))) : null;
+    if (hasPct && !options.final) p = Math.min(99, p);
     const pctLabel = hasPct ? `${p}%` : "";
     if (el) el.textContent = hasPct ? `${text} — ${pctLabel}` : text;
     if (pctEl) pctEl.textContent = pctLabel;
     const banner = $("calc-progress-banner");
     if (banner) banner.hidden = false;
-    const st = $("calc-status");
-    if (st) st.textContent = hasPct ? `${text} — ${pctLabel}` : text;
+    if (!options.final) {
+      const st = $("calc-status");
+      if (st) st.textContent = hasPct ? `${text} — ${pctLabel}` : text;
+    }
+  }
+
+  async function finishCalcProgress(message) {
+    setCalcProgress(message || "Расчёт завершён", 100, { final: true });
+    await yieldToUi();
   }
 
   function clearCalcProgress() {
@@ -3736,6 +3745,7 @@ ${totalBlock}
           $("calc-status").textContent +=
             ` Загружено ${state.packs.length}/${instruments.length}; ошибок MOEX: ${loadedData.failures.length}.`;
         }
+        if (runGen === state.runGeneration) await finishCalcProgress("Расчёт завершён");
       }
     } catch (err) {
       if (runGen !== state.runGeneration) return;

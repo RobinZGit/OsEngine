@@ -2075,7 +2075,7 @@
 
   function emitRunProgress(options, pct, text) {
     if (typeof options?.onProgress === "function") {
-      options.onProgress(Math.max(0, Math.min(100, pct)), text);
+      options.onProgress(Math.max(0, Math.min(99, pct)), text);
     }
   }
 
@@ -2213,7 +2213,7 @@
       );
       stopper = applied.stopper;
     }
-    emitRunProgress(opts, 100, "Расчёт FINRESP: готово");
+    emitRunProgress(opts, 99, "Расчёт FINRESP: готово");
     const agg = aggregateFinresp(perSec);
     return {
       perSec,
@@ -2308,7 +2308,7 @@
       );
       stopper = applied.stopper;
     }
-    await emitRunProgressAsync(opts, 100, "Расчёт FINRESP: готово");
+    await emitRunProgressAsync(opts, 99, "Расчёт FINRESP: готово");
     const agg = aggregateFinresp(perSec);
     return {
       perSec,
