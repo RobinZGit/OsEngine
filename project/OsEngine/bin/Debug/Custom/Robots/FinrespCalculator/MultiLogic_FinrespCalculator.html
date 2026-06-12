@@ -453,7 +453,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-tf-5-15";
+  const CALC_PAGE_VERSION = "2026-06-12-leverage-unitless";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -1045,7 +1045,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function syncLeverageDisplay() {
     const amount = calcLeverageAmount();
-    const text = Number.isFinite(amount) && amount > 0 ? `${fmt(amount, 0)} ₽` : "—";
+    const text = Number.isFinite(amount) && amount > 0 ? fmt(amount, 2) : "—";
     const volEl = $("vol-leverage-value");
     const liveEl = $("live-leverage-value");
     if (volEl) volEl.textContent = text;
