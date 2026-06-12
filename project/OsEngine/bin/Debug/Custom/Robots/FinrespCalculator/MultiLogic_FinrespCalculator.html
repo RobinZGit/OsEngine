@@ -211,6 +211,9 @@ body.calc-running .help-main{
   opacity:.9;pointer-events:none;user-select:none;
   filter:saturate(.92);transition:opacity .2s ease;
 }
+body.calc-running .live-trading-panel{
+  pointer-events:auto;opacity:1;filter:none;user-select:auto;
+}
 body.calc-running .calc-progress-banner{pointer-events:auto;}
 body.calc-running .help-ftr{opacity:.75;}
 </style>
@@ -250,7 +253,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 Запустите в этой папке <code>serve-calculator.ps1</code> (откроется <code>http://127.0.0.1:8765/…</code>)
 или откройте <a href="https://robinzgit.github.io/OsEngine/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.html">версию на GitHub Pages</a>.
 </div>
-<div class="calc-card" id="finresp-calc">
 
 <div id="live-trading-panel" class="live-trading-panel" hidden>
 <div class="live-trading-banner">
@@ -283,6 +285,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div id="live-trading-orders" class="live-trading-orders"></div>
 </div>
 </div>
+
+<div class="calc-card" id="finresp-calc">
 
 <div class="calc-field calc-field-wide">
 <div class="calc-sec-head">
@@ -498,7 +502,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-finresp-period-pct";
+  const CALC_PAGE_VERSION = "2026-06-12-live-toggle-fix";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -1369,10 +1373,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (toggle) {
       toggle.textContent = state.live.active ? "Остановить торговлю" : "Начать торговлю";
       toggle.classList.toggle("live-trading-toggle--active", state.live.active);
-      toggle.disabled = !isLive;
+      toggle.disabled = !isLive || state.uiBusy;
     }
     const sellAll = $("live-trading-sell-all");
-    if (sellAll) sellAll.disabled = !isLive;
+    if (sellAll) sellAll.disabled = !isLive || state.uiBusy;
     const status = $("live-trading-status");
     if (status) {
       if (state.live.lastError && isLive) status.textContent = `ошибка: ${state.live.lastError}`;
@@ -1649,6 +1653,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   async function toggleLiveTrading() {
     if (!isLiveMode()) return;
+    if (state.uiBusy) {
+      state.live.lastError = "дождитесь окончания расчёта";
+      syncLiveTradingUi();
+      return;
+    }
     if (state.live.active) {
       state.live.active = false;
       stopLiveTradingPoll();
@@ -1656,27 +1665,41 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       syncLiveTradingUi();
       return;
     }
-    if (!(await ensureTbankTokenUnlocked())) return;
-    if (!state.tbank.selectedAccountId) await loadTbankAccounts();
-    if (!state.tbank.selectedAccountId) {
-      setTbankStatus("Не удалось определить счёт T-Bank для торговли.", true);
+    state.live.lastError = "";
+    syncLiveTradingUi();
+    if (!(await ensureTbankTokenUnlocked())) {
+      state.live.lastError = "нужен токен и пароль";
+      syncLiveTradingUi();
       return;
     }
-    if (!state.lastResult && state.packs.length) {
-      const trial = calcResult();
-      if (trial) applyResult(trial, { redrawCharts: false });
+    if (!state.tbank.selectedAccountId) await loadTbankAccounts();
+    if (!state.tbank.selectedAccountId) {
+      state.live.lastError = "нет счёта T-Bank";
+      setTbankStatus("Не удалось определить счёт T-Bank для торговли.", true);
+      syncLiveTradingUi();
+      return;
     }
     if (!state.lastResult?.perSec?.length) {
-      $("calc-status").textContent = "Сначала рассчитайте FINRESP по выбранным инструментам, затем начните торговлю.";
+      state.live.lastError = "сначала «Рассчитать»";
+      $("calc-status").textContent =
+        "Сначала рассчитайте FINRESP по выбранным инструментам, затем начните торговлю.";
+      syncLiveTradingUi();
       return;
     }
     state.live.active = true;
     state.live.lastError = "";
     state.live.sessionStartedAt = new Date().toISOString();
-    startLiveTradingPoll();
     syncLiveTradingUi();
-    await refreshLiveOrders();
-    await liveTradingReconcile();
+    startLiveTradingPoll();
+    try {
+      await refreshLiveOrders();
+      await liveTradingReconcile();
+      syncLiveTradingUi();
+    } catch (err) {
+      state.live.lastError = err.message;
+      syncLiveTradingUi();
+      noteTechError(`toggleLiveTrading: ${err.message}`);
+    }
   }
 
   async function sellAllMarketLive() {
@@ -1878,8 +1901,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (state.tbank.token) return true;
     const payload = safeStorageGet(TBANK_TOKEN_STORE_KEY);
     const passphrase = getTbankPassphrase();
-    if (!payload) { setTbankStatus("Локально сохранённого токена нет.", true); return; }
-    if (!passphrase) { setTbankStatus("Введите пароль локального шифрования.", true); return; }
+    if (!payload) { setTbankStatus("Локально сохранённого токена нет.", true); return false; }
+    if (!passphrase) { setTbankStatus("Введите пароль локального шифрования.", true); return false; }
     try {
       state.tbank.token = await decryptTbankToken(payload, passphrase);
       state.tbank.depositLoaded = false;
@@ -2444,6 +2467,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function applyUiLocks() {
     const lock = state.uiBusy || isOptimizing();
     setFormLocked(state.uiBusy);
+    syncLiveTradingUi();
     $("calc-run").disabled = lock;
     $("calc-select-positive").disabled = lock || !state.lastResult?.perSec?.length;
     $("prefix-pick-stocks").disabled = lock;
@@ -3773,7 +3797,13 @@ ${totalBlock}
     }
     if (state.packs.length && (!isTbankBackedMode() || state.tbank.depositLoaded)) render();
   });
-  $("live-trading-toggle").addEventListener("click", () => { toggleLiveTrading(); });
+  $("live-trading-toggle").addEventListener("click", () => {
+    toggleLiveTrading().catch((err) => {
+      state.live.lastError = err.message;
+      syncLiveTradingUi();
+      noteTechError(`toggleLiveTrading: ${err.message}`);
+    });
+  });
   $("live-trading-sell-all").addEventListener("click", () => { sellAllMarketLive(); });
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
