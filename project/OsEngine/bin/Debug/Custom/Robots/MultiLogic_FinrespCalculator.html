@@ -36,6 +36,22 @@ h2:first-child{margin-top:0;}
 .calc-sec-select-all input{margin:0;flex-shrink:0;}
 .calc-sec-hint{font-size:.8rem;color:var(--muted);}
 .calc-field-wide{grid-column:1/-1;}
+.useful-indicators-card{
+  margin:.7rem 0 1rem;padding:.8rem .9rem;
+  border:2px solid var(--accent);border-radius:12px;
+  background:linear-gradient(180deg,#f8fbff 0%,#fff 70%);
+  box-shadow:0 2px 10px rgba(37,99,235,.08);
+}
+.useful-indicators-head{display:flex;justify-content:space-between;align-items:flex-start;gap:.8rem;margin-bottom:.65rem;}
+.useful-indicators-title{font-weight:700;color:#1e3a5f;}
+.useful-indicators-sub{display:block;font-size:.8rem;color:var(--muted);font-weight:400;margin-top:.12rem;}
+.indicator-toggle-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.45rem .75rem;}
+.indicator-toggle{
+  display:flex;align-items:center;gap:.38rem;
+  padding:.38rem .48rem;border:1px solid #c7d2fe;border-radius:8px;
+  background:#fff;color:#273449;font-size:.86rem;cursor:pointer;
+}
+.indicator-toggle input{margin:0;}
 .bysec-scroll{max-height:4.5rem;overflow-y:auto;line-height:1.35;}
 .calc-status{font-size:.9rem;color:var(--muted);margin:.65rem 0 0;}
 .calc-result-hero{
@@ -260,6 +276,19 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="param-lr">LinReg длина (@LR)</label><input id="param-lr" type="number" value="20" min="2" max="500"></div>
 </div>
 
+<p class="extra-section">Полезные индикаторы</p>
+<div class="useful-indicators-card" id="useful-indicators-card">
+<div class="useful-indicators-head">
+<div>
+<span class="useful-indicators-title">Полезные индикаторы</span>
+<span class="useful-indicators-sub">Отключенные индикаторы удаляются из Op/Cl строки до расчета. SL/TP позиции остаются отдельными параметрами.</span>
+</div>
+<button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-indicators">Оптимизировать</button>
+</div>
+<div class="indicator-toggle-grid" id="indicator-toggles"></div>
+<p class="note">По умолчанию выбраны все индикаторы. Оптимизация перебирает все непустые комбинации и оставляет набор с лучшим FINRESP.</p>
+</div>
+
 <p class="extra-section">Строки L1…L4</p>
 <div class="logic-grid" id="logic-lines"></div>
 <button class="calc-btn" type="button" id="logic-apply" style="margin-top:.5rem">Применить</button>
@@ -300,7 +329,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-selectall-fix";
+  const CALC_PAGE_VERSION = "2026-06-12-useful-indicators";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -359,6 +388,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `period=${$("calc-from")?.value || "—"}…${$("calc-till")?.value || "—"}`,
         `tf=${$("calc-tf")?.value || "—"}`,
         `logic=${$("calc-logic")?.value || "—"}`,
+        `indicators=${typeof selectedIndicatorKeys === "function" ? selectedIndicatorKeys().join(",") : "—"}`,
         `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
         `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
       );
@@ -461,13 +491,23 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   };
   calcState = state;
+  const INDICATOR_OPTIONS = E.INDICATOR_OPTIONS || [
+    { key: "sma", label: "SMA" },
+    { key: "atr", label: "ATR" },
+    { key: "stoch", label: "Stoch" },
+    { key: "linreg", label: "LinReg" },
+    { key: "macd", label: "MACD" },
+    { key: "cci", label: "CCI" }
+  ];
+  const INDICATOR_LABELS = Object.fromEntries(INDICATOR_OPTIONS.map((x) => [x.key, x.label]));
   const OPT_BUTTONS = [
     { kind: "sl", btnId: "opt-sl", inputId: "param-sl", label: "@SL", position: true },
     { kind: "tp", btnId: "opt-tp", inputId: "param-tp", label: "@TP", position: true },
     { kind: "atr-sl", btnId: "opt-atr-sl", inputId: "param-atr-sl", label: "ATR SL/TP", integer: true, position: true },
     { kind: "p-sl", btnId: "opt-stopper-sl", inputId: "stopper-sl-mult", label: "портф. SL" },
     { kind: "p-tp", btnId: "opt-stopper-tp", inputId: "stopper-tp-mult", label: "портф. TP" },
-    { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true }
+    { kind: "p-atr", btnId: "opt-stopper-atr", inputId: "stopper-atr-len", label: "портф. ATR", integer: true },
+    { kind: "indicators", btnId: "opt-indicators", label: "индикаторы", indicators: true }
   ];
   const DATE_MIN = "2020-01-01";
   const DEFAULT_RANGE_DAYS = 30;
@@ -650,6 +690,52 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       atrLen,
       refEquity: Math.max(0, +$("stopper-ref").value || 0)
     };
+  }
+
+  function selectedIndicatorKeys() {
+    const boxes = Array.from(document.querySelectorAll("#indicator-toggles input[type=checkbox]"));
+    if (!boxes.length) return INDICATOR_OPTIONS.map((x) => x.key);
+    return boxes.filter((el) => el.checked).map((el) => el.value).filter(Boolean);
+  }
+
+  function indicatorSelection() {
+    const selected = new Set(selectedIndicatorKeys());
+    const out = {};
+    for (const { key } of INDICATOR_OPTIONS) out[key] = selected.has(key);
+    return out;
+  }
+
+  function normalizeIndicatorCandidate(value) {
+    const keys = INDICATOR_OPTIONS.map((x) => x.key);
+    if (Array.isArray(value)) {
+      const set = new Set(value.map((x) => String(x || "").toLowerCase()));
+      return keys.filter((key) => set.has(key));
+    }
+    if (value && typeof value === "object") {
+      return keys.filter((key) => !!value[key]);
+    }
+    if (typeof value === "string") {
+      return normalizeIndicatorCandidate(value.split(",").map((x) => x.trim()));
+    }
+    return selectedIndicatorKeys();
+  }
+
+  function indicatorCandidateLabel(value) {
+    const keys = normalizeIndicatorCandidate(value);
+    return keys.length ? keys.map((key) => INDICATOR_LABELS[key] || key).join("+") : "нет индикаторов";
+  }
+
+  function applyIndicatorSelection(value) {
+    const keys = new Set(normalizeIndicatorCandidate(value));
+    document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
+      el.checked = keys.has(el.value);
+    });
+  }
+
+  function setIndicatorInputsDisabled(disabled) {
+    document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
+      el.disabled = disabled;
+    });
   }
 
   function syncVolumeFields() {
@@ -856,13 +942,36 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return vals;
   }
 
+  function enumerateIndicatorSelections() {
+    const keys = INDICATOR_OPTIONS.map((x) => x.key);
+    const vals = [];
+    const fullMask = (1 << keys.length) - 1;
+    for (let mask = fullMask; mask > 0; mask--) {
+      const item = [];
+      for (let i = 0; i < keys.length; i++) {
+        if (mask & (1 << i)) item.push(keys[i]);
+      }
+      vals.push(item);
+    }
+    return vals;
+  }
+
   function optimMeta(kind) {
     return OPT_BUTTONS.find((x) => x.kind === kind);
+  }
+
+  function isIndicatorOptimKind(kind) {
+    return !!optimMeta(kind)?.indicators;
   }
 
   function optimDisplayLabel(kind) {
     const m = optimMeta(kind);
     return m?.label || kind.toUpperCase();
+  }
+
+  function optimValueLabel(kind, value) {
+    if (isIndicatorOptimKind(kind)) return indicatorCandidateLabel(value);
+    return String(optimCandidateValue(kind, value));
   }
 
   function stopOptimLabel() {
@@ -878,6 +987,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const secOpts = Array.from($("calc-sec").options);
     $("calc-sec-all-shares").disabled = lock || !secOpts.some((o) => o.dataset.market === "shares");
     $("calc-sec-all-futures").disabled = lock || !secOpts.some((o) => o.dataset.market === "futures");
+    setIndicatorInputsDisabled(lock);
   }
 
   function syncOptimButtons() {
@@ -891,8 +1001,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     const lock = isOptimizing();
     for (const { inputId } of OPT_BUTTONS) {
-      $(inputId).readOnly = lock;
+      if (inputId) $(inputId).readOnly = lock;
     }
+    setIndicatorInputsDisabled(state.uiBusy || lock);
     applyUiLocks();
   }
 
@@ -917,19 +1028,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const kind = state.optim.active;
     const meta = optimMeta(kind);
     const bestValue = optimCandidateValue(kind, state.optim.bestValue);
+    const bestLabel = optimValueLabel(kind, bestValue);
     const bestFinresp = state.optim.bestFinresp;
     state.optim.runToken += 1;
     state.optim.active = null;
     state.optim.bestValue = bestValue;
     stopOptimDots();
     syncOptimButtons();
-    if (meta) $(meta.inputId).value = String(bestValue);
+    if (meta?.indicators) applyIndicatorSelection(bestValue);
+    else if (meta?.inputId) $(meta.inputId).value = String(bestValue);
     const result = calcResult(optimRunContext(kind, bestValue));
     if (result) applyResult(result, { redrawCharts: true });
     const scoreNote = isPositionOptimKind(kind) ? " (FINRESP до портф. Stopper)" : "";
     $("calc-status").textContent = autoDone
-      ? `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${bestValue}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`
-      : `Оптимизация ${optimDisplayLabel(kind)} остановлена: лучшее ${bestValue}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`;
+      ? `Оптимизация ${optimDisplayLabel(kind)} завершена: лучшее ${bestLabel}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`
+      : `Оптимизация ${optimDisplayLabel(kind)} остановлена: лучшее ${bestLabel}, FINRESP ${fmt(bestFinresp)} ₽${scoreNote}`;
   }
 
   function stopOptim() {
@@ -940,6 +1053,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function optimCandidateValue(kind, value) {
     const meta = optimMeta(kind);
+    if (meta?.indicators) return normalizeIndicatorCandidate(value);
     return meta?.integer ? Math.round(value) : roundParam(value);
   }
 
@@ -976,6 +1090,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       }
       case "p-atr":
         return { params: p, stopper: { ...sc, atrLen: Math.max(2, Math.round(cv)) } };
+      case "indicators":
+        return { params: p, stopper: sc, indicators: cv };
       default:
         return { params: p, stopper: sc };
     }
@@ -986,7 +1102,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const [a, b] = normalizeSliders();
     const p = optimCtx?.params ?? params();
     const sc = optimCtx?.stopper ?? stopperConfig();
-    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p);
+    const indicators = optimCtx?.indicators ?? indicatorSelection();
+    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
     if (!spec) return null;
     const { perSec, agg, preStopperAgg, stopper, skipped } = E.runMulti(
       state.packs, spec, a, b, p, volConfig(), sc
@@ -1000,7 +1117,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (token !== state.optim.runToken || !state.optim.active) return;
     const kind = state.optim.active;
     const meta = optimMeta(kind);
-    const input = $(meta.inputId);
+    const input = meta.inputId ? $(meta.inputId) : null;
 
     if (state.optim.candidateIndex >= state.optim.candidates.length) {
       finishOptim(token, true);
@@ -1009,14 +1126,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
     const candidate = state.optim.candidates[state.optim.candidateIndex];
     state.optim.candidateIndex += 1;
+    if (meta.indicators) applyIndicatorSelection(candidate);
     const trial = calcResult(optimRunContext(kind, candidate));
     const score = optimScore(trial, kind);
     if (trial && score > state.optim.bestFinresp) {
       state.optim.bestFinresp = score;
       state.optim.bestValue = optimCandidateValue(kind, candidate);
     }
-    const candLabel = optimCandidateValue(kind, candidate);
-    input.value = String(candLabel);
+    const candLabel = optimValueLabel(kind, candidate);
+    if (input) input.value = String(optimCandidateValue(kind, candidate));
     if (trial) {
       applyResult(trial, {
         redrawCharts: false,
@@ -1039,16 +1157,24 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     if (state.optim.active) stopOptim();
     const meta = optimMeta(kind);
-    const input = $(meta.inputId);
-    const min = +input.min || 0;
-    const max = +input.max || 50;
-    const rawStart = Math.max(+input.value || 0, min);
-    const startValue = optimCandidateValue(kind, rawStart);
+    const input = meta.inputId ? $(meta.inputId) : null;
+    let startValue;
+    let candidates;
+    if (meta.indicators) {
+      startValue = optimCandidateValue(kind, selectedIndicatorKeys());
+      candidates = enumerateIndicatorSelections();
+    } else {
+      const min = +input.min || 0;
+      const max = +input.max || 50;
+      const rawStart = Math.max(+input.value || 0, min);
+      startValue = optimCandidateValue(kind, rawStart);
+      candidates = enumerateOptimValues(min, max, !!meta.integer);
+      input.value = String(startValue);
+    }
     state.optim.active = kind;
-    state.optim.candidates = enumerateOptimValues(min, max, !!meta.integer);
+    state.optim.candidates = candidates;
     state.optim.candidateIndex = 0;
     state.optim.bestValue = startValue;
-    input.value = String(startValue);
     const cur = calcResult(optimRunContext(kind, startValue));
     state.optim.bestFinresp = optimScore(cur, kind);
     state.optim.runToken += 1;
@@ -1178,6 +1304,18 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
     else sel.value = "L1";
+  }
+
+  function initIndicatorToggles() {
+    const box = $("indicator-toggles");
+    if (!box) return;
+    box.innerHTML = "";
+    for (const { key, label } of INDICATOR_OPTIONS) {
+      const item = document.createElement("label");
+      item.className = "indicator-toggle";
+      item.innerHTML = `<input type="checkbox" value="${key}" checked> <span>${label}</span>`;
+      box.appendChild(item);
+    }
   }
 
   function updatePositionSlHint() {
@@ -1703,8 +1841,9 @@ ${yLabels}${xLabels}
     const times = pack.slice(a, b + 1).map((c) => c.time).filter(Boolean);
     if (!times.length) return null;
     const runs = {};
+    const indicators = indicatorSelection();
     for (const key of LOGIC_EQUITY_KEYS) {
-      const spec = E.resolveLogicSpec(key, state.customLines, p);
+      const spec = E.resolveLogicSpec(key, state.customLines, p, indicators);
       if (!spec || spec.type !== "logic_line") continue;
       const { perSec } = E.runMulti(state.packs, spec, a, b, p, vol, EQUITY_STOPPER_OFF);
       const rows = E.buildPortfolioEquityRows(perSec, times);
@@ -1892,7 +2031,7 @@ ${totalBlock}
     if (stopper?.events?.length) status += ` | Stopper: ${stopper.events.length} сраб.`;
     else if (stopperConfig().useSl || stopperConfig().useTp) status += " | Stopper вкл.";
     if (opts.optimNote) {
-      const bestLabel = optimCandidateValue(state.optim.active, state.optim.bestValue);
+      const bestLabel = optimValueLabel(state.optim.active, state.optim.bestValue);
       status += ` | Опт. ${opts.optimNote}: FINRESP ${fmt(agg.finresp)} ₽ | лучшее ${bestLabel} → ${fmt(state.optim.bestFinresp)} ₽`;
     }
     $("calc-status").textContent = status;
@@ -2163,8 +2302,12 @@ ${totalBlock}
     $(id).addEventListener("input", renderFromParams);
   });
   OPT_BUTTONS.forEach(({ inputId }) => {
+    if (!inputId) return;
     $(inputId).addEventListener("change", renderFromParams);
     $(inputId).addEventListener("input", renderFromParams);
+  });
+  document.querySelectorAll("#indicator-toggles input[type=checkbox]").forEach((el) => {
+    el.addEventListener("change", renderFromParams);
   });
   $("calc-tf").addEventListener("change", () => {
     const n = selectedInstrumentCount();
@@ -2204,6 +2347,7 @@ ${totalBlock}
 
   fillLogicSelect();
   fillLogicEditor();
+  initIndicatorToggles();
   updatePositionSlHint();
   initPrefixFields();
   syncVolumeFields();

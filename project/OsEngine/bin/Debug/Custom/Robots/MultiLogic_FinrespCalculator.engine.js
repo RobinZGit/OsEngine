@@ -17,6 +17,16 @@
     deposit: 1000000,
     maxPositions: 40
   };
+  const INDICATOR_OPTIONS = Object.freeze([
+    { key: "sma", label: "SMA" },
+    { key: "atr", label: "ATR" },
+    { key: "stoch", label: "Stoch" },
+    { key: "linreg", label: "LinReg" },
+    { key: "macd", label: "MACD" },
+    { key: "cci", label: "CCI" }
+  ]);
+  const INDICATOR_KEYS = INDICATOR_OPTIONS.map((x) => x.key);
+  const INDICATOR_KEY_SET = new Set(INDICATOR_KEYS);
 
   const DEFAULT_STOCK_TICKERS_RAW =
     "AFLT, ALRS, AFKS, BSPB, CHMF, FEES, GAZP, GMKN, HYDR, IRAO, LKOH, MAGN, MOEX, MTSS, MTLRP, "
@@ -276,19 +286,66 @@
     return map;
   }
 
-  function parseLogicLine(line, params) {
+  function defaultIndicatorSelection() {
+    const out = {};
+    for (const key of INDICATOR_KEYS) out[key] = true;
+    return out;
+  }
+
+  function normalizeIndicatorSelection(selection) {
+    if (selection == null) return defaultIndicatorSelection();
+    const out = {};
+    for (const key of INDICATOR_KEYS) out[key] = false;
+    if (Array.isArray(selection)) {
+      for (const key of selection) {
+        const k = String(key || "").toLowerCase();
+        if (INDICATOR_KEY_SET.has(k)) out[k] = true;
+      }
+      return out;
+    }
+    if (typeof selection === "string") {
+      return normalizeIndicatorSelection(selection.split(",").map((x) => x.trim()));
+    }
+    if (typeof selection === "object") {
+      for (const key of INDICATOR_KEYS) out[key] = !!selection[key];
+      return out;
+    }
+    return defaultIndicatorSelection();
+  }
+
+  function enabledIndicatorSet(selection) {
+    const normalized = normalizeIndicatorSelection(selection);
+    return new Set(INDICATOR_KEYS.filter((key) => normalized[key]));
+  }
+
+  function filterAtomsByIndicators(atoms, indicatorSelection) {
+    const enabled = enabledIndicatorSet(indicatorSelection);
+    return (atoms || []).filter((atom) => {
+      const kind = String(atom?.kind || "").toLowerCase();
+      return !INDICATOR_KEY_SET.has(kind) || enabled.has(kind);
+    });
+  }
+
+  function isIndicatorEnabled(indicatorSelection, key) {
+    return !!normalizeIndicatorSelection(indicatorSelection)[String(key || "").toLowerCase()];
+  }
+
+  function parseLogicLine(line, params, indicatorSelection) {
     const raw = substituteParams(line, params || DEFAULT_PARAMS);
     const { slAtr, tpAtr } = parseSlTp(raw);
     const body = stripDecor(raw);
     const op = extractBlock(body, "Op");
     const cl = extractBlock(body, "Cl");
+    const opAtoms = op ? splitTopLevelAnd(op.expr).map(parseAtom).filter(Boolean) : [];
+    const clAtoms = cl ? splitTopLevelAnd(cl.expr).map(parseAtom).filter(Boolean) : [];
     return {
       slAtr,
       tpAtr,
       opSide: op?.side || "long",
       clSide: cl?.side || op?.side || "long",
-      opAtoms: op ? splitTopLevelAnd(op.expr).map(parseAtom).filter(Boolean) : [],
-      clAtoms: cl ? splitTopLevelAnd(cl.expr).map(parseAtom).filter(Boolean) : []
+      opAtoms: filterAtomsByIndicators(opAtoms, indicatorSelection),
+      clAtoms: filterAtomsByIndicators(clAtoms, indicatorSelection),
+      indicators: normalizeIndicatorSelection(indicatorSelection)
     };
   }
 
@@ -574,6 +631,35 @@
     });
   }
 
+  function simulateNoSignalRows(candles, startIdx, endIdx, options) {
+    const initial = options?.initial || {};
+    const cash = initial.cash || 0;
+    const pos = initial.pos || 0;
+    const rows = [];
+    const from = Math.max(0, startIdx);
+    const to = Math.min(endIdx, candles.length - 1);
+    for (let i = from; i <= to; i++) {
+      const price = candles[i]?.close || 0;
+      pushRow(rows, candles[i], {
+        buy: 0,
+        sell: 0,
+        posStop: null,
+        cash,
+        pos,
+        eq: cash + pos * price
+      });
+    }
+    const last = rows.at(-1);
+    return {
+      rows,
+      finresp: last?.eq ?? 0,
+      cash: last?.cash ?? cash,
+      pos: last?.pos ?? pos,
+      buys: 0,
+      sells: 0
+    };
+  }
+
   function longestPack(packs) {
     if (!packs?.length) return [];
     return packs.reduce((best, p) => ((p?.length || 0) > (best?.length || 0) ? p : best), packs[0]);
@@ -802,7 +888,7 @@
     return parsed;
   }
 
-  function resolveLogicSpec(logicId, customLines, params) {
+  function resolveLogicSpec(logicId, customLines, params, indicatorSelection) {
     const meta = BUILTIN_META.find((m) => m.id === logicId);
     if (!meta) return null;
     const p = { ...DEFAULT_PARAMS, ...params };
@@ -813,16 +899,19 @@
         side: meta.side,
         slAtr: Math.max(0, Number(p.SL) || 0),
         tpAtr: Math.max(0, Number(p.TP) || 0),
-        slTpAtrLen: Math.max(2, Number(p.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen)
+        slTpAtrLen: Math.max(2, Number(p.slTpAtrLen) || DEFAULT_PARAMS.slTpAtrLen),
+        disabled: !isIndicatorEnabled(indicatorSelection, "sma"),
+        indicators: normalizeIndicatorSelection(indicatorSelection)
       };
     }
     const line = substituteParams(customLines[meta.key] || DEFAULT_LOGIC_LINES[meta.key], p);
-    const parsed = applySlTpParams(parseLogicLine(line, p), p);
+    const parsed = applySlTpParams(parseLogicLine(line, p, indicatorSelection), p);
     return { type: "logic_line", parsed, line };
   }
 
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
     if (!candles?.length) return { rows: [], finresp: 0, cash: 0, pos: 0, buys: 0, sells: 0 };
+    if (spec.disabled) return simulateNoSignalRows(candles, startIdx, endIdx, options);
     const vol = { ...DEFAULT_VOLUME, ...volConfig };
     if (spec.type === "sma_spread") {
       return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, {
@@ -1524,11 +1613,13 @@
     DEFAULT_PARAMS,
     DEFAULT_STOPPER,
     DEFAULT_VOLUME,
+    INDICATOR_OPTIONS,
     DEFAULT_LOGIC_LINES,
     BUILTIN_META,
     calcTradeVolume,
     substituteParams,
     parseLogicLine,
+    normalizeIndicatorSelection,
     resolveLogicSpec,
     runOnCandles,
     runMulti,
