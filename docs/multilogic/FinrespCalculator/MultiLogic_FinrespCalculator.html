@@ -230,9 +230,10 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-order-book-meta{margin:0 0 .45rem;font-size:.78rem;color:var(--muted);}
 .live-order-book-table{font-size:.78rem;overflow:auto;max-height:14rem;}
 .live-order-book-empty{margin:0;color:var(--muted);font-size:.82rem;}
-.live-order-book-tools{margin-bottom:.55rem;padding:.55rem .65rem;border:2px solid #991b1b;border-radius:8px;background:#fff;}
-.live-order-book-tools label{font-size:.82rem;font-weight:700;color:#7f1d1d;}
-.live-order-book-tools select{min-width:11rem;font-size:.92rem;}
+.live-order-book-head{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem .65rem;margin:0 0 .45rem;padding:.5rem .6rem;border:2px solid #991b1b;border-radius:8px;background:#fff;}
+.live-order-book-sec-label{display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem;font-weight:700;color:#7f1d1d;margin:0;white-space:nowrap;}
+.live-order-book-sec-label select{min-width:8rem;max-width:100%;padding:.4rem .55rem;border:1px solid #991b1b;border-radius:7px;font-size:.95rem;font-weight:700;color:#374151;background:#fffefb;cursor:pointer;}
+.live-order-book-stats{font-size:.78rem;color:var(--muted);flex:1 1 auto;}
 .live-ob-price-pick{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;}
 .live-ob-price-pick:hover{font-weight:800;}
 .live-page-version-badge{background:#450a0a;font-size:.72rem;font-weight:600;margin-left:.35rem;}
@@ -383,10 +384,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <details class="live-order-book" id="live-order-book-panel">
 <summary class="live-manual-order-summary">Стакан</summary>
 <div class="live-order-book-body">
-<div class="live-manual-order-grid live-order-book-tools">
-<label>Инструмент<select id="live-order-book-sec"><option value="">— выберите бумаги в калькуляторе —</option></select></label>
+<div class="live-order-book-head" id="live-order-book-head">
+<label class="live-order-book-sec-label" for="live-order-book-sec">Инструмент<select id="live-order-book-sec"><option value="">— выберите —</option></select></label>
+<span class="live-order-book-stats" id="live-order-book-stats">выберите бумагу в калькуляторе</span>
 </div>
-<p class="live-order-book-meta" id="live-order-book-meta">Выберите инструмент выше. Клик по <strong>цене</strong> в стакане — открыть «Заявку» (лимит, та же бумага).</p>
+<p class="live-order-book-meta" id="live-order-book-hint">Клик по <strong>цене</strong> в таблице — открыть «Заявку» (лимит, та же бумага).</p>
 <div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент.</p></div>
 </div>
 </details>
@@ -619,7 +621,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-orderbook-click";
+  const CALC_PAGE_VERSION = "2026-06-08-orderbook-sec-inline";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -1763,9 +1765,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  function setLiveOrderBookStats(text) {
+    const statsEl = $("live-order-book-stats");
+    if (statsEl) statsEl.textContent = text || "—";
+  }
+
   function renderLiveOrderBookView(ob) {
     const tableEl = $("live-order-book-table");
-    const metaEl = $("live-order-book-meta");
     if (!tableEl) return;
     if (!ob) {
       tableEl.innerHTML = '<p class="live-order-book-empty">—</p>';
@@ -1773,16 +1779,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     const bids = (ob.bids || []).slice().sort((a, b) => orderBookPrice(b.price) - orderBookPrice(a.price));
     const asks = (ob.asks || []).slice().sort((a, b) => orderBookPrice(a.price) - orderBookPrice(b.price));
-    const ticker = ob.ticker || "—";
     const depth = ob.depth || bids.length || asks.length || LIVE_ORDER_BOOK_DEPTH;
     const ts = formatOrderBookTime(ob.orderbookTs || ob.time);
     const spread = bids.length && asks.length
       ? orderBookPrice(asks[0].price) - orderBookPrice(bids[0].price)
       : NaN;
-    if (metaEl) {
-      const spreadTxt = Number.isFinite(spread) ? ` · спред ${fmt(spread, 2)}` : "";
-      metaEl.textContent = `${ticker} · глубина ${depth} · ${ts}${spreadTxt}`;
-    }
+    const spreadTxt = Number.isFinite(spread) ? ` · спред ${fmt(spread, 2)}` : "";
+    setLiveOrderBookStats(`глубина ${depth} · ${ts}${spreadTxt}`);
     const rows = Math.max(bids.length, asks.length, 1);
     let html = '<table class="live-ob-grid"><thead><tr><th colspan="2">Покупка (bid)</th><th colspan="2">Продажа (ask)</th></tr>'
       + '<tr><th>лоты</th><th>цена</th><th>цена</th><th>лоты</th></tr></thead><tbody>';
@@ -1818,19 +1821,18 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   async function refreshLiveOrderBook() {
     const panel = $("live-order-book-panel");
-    const metaEl = $("live-order-book-meta");
     if (!panel?.open || !isLiveMode()) return;
     if (state.live.orderBookBusy) return;
     const picked = parseLiveManualInstrumentKey($("live-order-book-sec")?.value);
     if (!picked?.sec) {
       renderLiveOrderBookView(null);
-      if (metaEl) metaEl.textContent = "Выберите инструмент.";
+      setLiveOrderBookStats("выберите инструмент в списке слева");
       return;
     }
     state.live.orderBookBusy = true;
     try {
       if (!(await ensureTbankTokenUnlocked())) {
-        if (metaEl) metaEl.textContent = "Расшифруйте токен T-Bank для загрузки стакана.";
+        setLiveOrderBookStats("расшифруйте токен T-Bank");
         return;
       }
       const ti = await tbankFindInstrument(picked.sec, picked.market);
@@ -1844,7 +1846,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     } catch (err) {
       renderLiveOrderBookView(null);
       const msg = err?.message || String(err);
-      if (metaEl) metaEl.textContent = `Ошибка стакана: ${msg}`;
+      setLiveOrderBookStats(`ошибка: ${msg}`);
       noteLiveTech("live-orderbook", msg, `sec=${picked.sec}`);
     } finally {
       state.live.orderBookBusy = false;
@@ -2374,17 +2376,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const side = cell.dataset.side === "sell" ? "sell" : "buy";
     const price = +cell.dataset.price;
     fillManualOrderFromOrderBook(side, price, cell.dataset.lots);
-  }
-
-  function syncLiveOrderBookSummarySec() {
-    const picked = parseLiveManualInstrumentKey($("live-order-book-sec")?.value);
-    const metaEl = $("live-order-book-meta");
-    if (metaEl && !state.live.orderBookBusy && picked?.sec) {
-      const hint = "Клик по цене — открыть «Заявку» (лимит).";
-      if (!metaEl.textContent.includes("глубина") && !metaEl.textContent.includes("Ошибка")) {
-        metaEl.textContent = `${picked.sec} · ${hint}`;
-      }
-    }
   }
 
   function syncLiveManualOrderUi() {
@@ -5155,13 +5146,11 @@ ${totalBlock}
   });
   $("live-order-book-sec")?.addEventListener("change", () => {
     saveConfig();
-    syncLiveOrderBookSummarySec();
     if ($("live-order-book-panel")?.open) refreshLiveOrderBook();
   });
   $("live-order-book-panel")?.addEventListener("toggle", () => {
     if ($("live-order-book-panel")?.open) {
       fillLiveTradingInstrumentSelects();
-      syncLiveOrderBookSummarySec();
       startLiveOrderBookPoll();
     } else stopLiveOrderBookPoll();
   });
