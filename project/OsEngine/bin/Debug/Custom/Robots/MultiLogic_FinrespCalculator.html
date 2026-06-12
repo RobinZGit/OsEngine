@@ -176,7 +176,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <button class="calc-btn calc-btn-secondary" id="calc-select-positive" type="button" disabled title="После расчёта оставить только инструменты с FINRESP ≥ 0">Отобрать FINRESP ≥ 0</button>
 </div>
 <div class="calc-field calc-field-wide cache-row">
-<label>База цен MOEX (IndexedDB браузера)</label>
+<label>Локальная база цен MultiLogic (IndexedDB браузера)</label>
 <div class="cache-btn-row">
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-save-file">Сохранить в файл</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-load-file">Загрузить из файла</button>
@@ -184,7 +184,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="calc-sec-hint" id="cache-hint">База цен не открыта</p>
 <input type="file" id="cache-file-input" accept=".json,application/json" hidden>
-<p class="note">При «Рассчитать» свечи берутся из браузерной базы IndexedDB, если хватает периода и ТФ; иначе — MOEX, затем свечи добавляются в базу без перезаписи уже сохранённых дат. Файл — резервная копия/перенос базы.</p>
+<p class="note">При «Рассчитать» свечи берутся из локальной базы IndexedDB этого HTML-калькулятора, если хватает бумаги, периода и ТФ; иначе — MOEX, затем свечи добавляются в эту же базу без перезаписи уже сохранённых дат. Это не localStorage и не файлы/базы реальных роботов OsEngine. Файл — только резервная копия/перенос базы калькулятора.</p>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
