@@ -66,7 +66,8 @@ h2:first-child{margin-top:0;}
   background:linear-gradient(165deg,#e8f0ff 0%,#fff 48%,#f8fbff 100%);
   box-shadow:0 3px 14px rgba(37,99,235,.14);
 }
-@media (min-width:720px){.calc-result-hero{grid-template-columns:1.5fr 1fr 1fr;}}
+@media (min-width:720px){.calc-result-hero{grid-template-columns:1.4fr 1fr 1fr 1fr;}}
+.calc-metric-commission span{font-size:1.55rem;}
 .calc-metric-primary{text-align:center;padding:.25rem .4rem;}
 .calc-metric-primary b{
   display:block;font-size:1rem;font-weight:700;color:#1e3a5f;
@@ -154,6 +155,13 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-trading-orders th{color:#7f1d1d;font-size:.76rem;}
 .live-trading-orders .dir-buy{color:#166534;font-weight:600;}
 .live-trading-orders .dir-sell{color:#991b1b;font-weight:600;}
+.live-trading-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.55rem .85rem;margin:.2rem 0 .75rem;padding:.65rem .75rem;border:2px solid #fecaca;border-radius:9px;background:#fff;}
+.live-trading-stat b{display:block;font-size:.78rem;color:#7f1d1d;margin-bottom:.2rem;}
+.live-trading-stat span{font-family:Consolas,monospace;font-weight:800;font-size:1.15rem;color:#1a1d26;}
+.live-trading-stat-commission span{color:#b91c1c;}
+.live-trading-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:.55rem 1rem;margin-bottom:.65rem;}
+.live-trading-controls label{font-size:.82rem;color:#7f1d1d;font-weight:600;}
+.live-trading-controls select{padding:.38rem .5rem;border:2px solid #991b1b;border-radius:7px;background:#fff;color:#7f1d1d;font-weight:600;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -198,10 +206,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <strong class="live-trading-title">Реальная торговля</strong>
 <span class="live-trading-badge" id="live-trading-status">остановлена</span>
 </div>
-<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении. «Продать всё по рынку» работает и при остановленной торговле.</p>
+<p class="live-trading-warn">Реальные заявки на бирже. Тот же счёт T-Bank и токен с правом торговли (не только чтение). Пароль запрашивается при подключении.</p>
+<div class="live-trading-stats">
+<div class="live-trading-stat"><b>Портфель (все позиции)</b><span id="live-portfolio-value">—</span></div>
+<div class="live-trading-stat live-trading-stat-commission"><b>Комиссии уплачено (реально)</b><span id="live-commission-paid">—</span></div>
+</div>
+<div class="live-trading-controls">
+<label for="live-order-type">Тип заявки</label>
+<select id="live-order-type">
+<option value="market" selected>Рыночная</option>
+<option value="limit">Лимитная</option>
+</select>
+</div>
 <div class="live-trading-actions">
 <button type="button" class="live-trading-btn live-trading-btn-start" id="live-trading-toggle">Начать торговлю</button>
-<button type="button" class="live-trading-btn live-trading-btn-sell" id="live-trading-sell-all">Продать всё по рынку</button>
+<button type="button" class="live-trading-btn live-trading-btn-sell" id="live-trading-sell-all">Продать всё</button>
 </div>
 <div class="live-trading-orders-wrap">
 <div class="live-trading-orders-head">Заявки в реальном времени</div>
@@ -249,9 +268,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
-<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ</b><span id="calc-finresp">—</span></div>
-<div class="calc-metric-primary"><b>% годовых (простой)</b><span id="calc-ann-simple">—</span></div>
-<div class="calc-metric-primary"><b>% годовых (сложный)</b><span id="calc-ann-compound">—</span></div>
+<div class="calc-metric-primary calc-metric-finresp"><b>FINRESP Σ (с комиссией)</b><span id="calc-finresp">—</span></div>
+<div class="calc-metric-primary calc-metric-commission"><b>Комиссии уплачено</b><span id="calc-commission">—</span></div>
+<div class="calc-metric-primary"><b>% годовых, простой (с комиссией)</b><span id="calc-ann-simple">—</span></div>
+<div class="calc-metric-primary"><b>% годовых, сложный (с комиссией)</b><span id="calc-ann-compound">—</span></div>
 </div>
 <p class="calc-sec-hint" id="calc-ann-hint"></p>
 <p class="calc-sec-hint" style="margin:.35rem 0 .15rem">Строка статуса — серый текст ниже FINRESP и % годовых (сообщения о загрузке MOEX, ошибках, окне расчёта):</p>
@@ -287,10 +307,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <input id="vol-deposit" type="number" value="1000000" min="1" step="1000"></div>
 <div class="calc-field"><label for="vol-maxpos">Max positions (all tabs)</label>
 <input id="vol-maxpos" type="number" value="40" min="0" max="200" step="1"></div>
-<div class="calc-field"><label for="vol-commission">Комиссия, % за сделку</label>
-<input id="vol-commission" type="number" value="0" min="0" max="10" step="0.0001" title="Одинаковая комиссия для покупки и продажи; 0 — без комиссии"></div>
+<div class="calc-field"><label for="commission-type">Commission type (вкладка скринера)</label>
+<select id="commission-type">
+<option value="None">None — без комиссии</option>
+<option value="Percent" selected>Percent — % от оборота</option>
+<option value="OneLotFix">OneLotFix — ₽ за лот</option>
+</select></div>
+<div class="calc-field"><label for="commission-value">Commission value</label>
+<input id="commission-value" type="number" value="0.04" min="0" step="0.0001" title="Percent: доли % (0.04 = 0.04%). OneLotFix: ₽ за лот на сторону."></div>
 </div>
-<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот. Комиссия вычитается с оборота каждой покупки и продажи.</p>
+<p class="note">Deposit percent: лот = (депозит × Volume / 100) / цена. Contracts: фиксированный лот. Contract currency: Volume / цена. Лимит позиции: Max positions × лот.</p>
+<p class="note">Комиссия: как <code>CommissionType</code> / <code>CommissionValue</code> на вкладке скринера OsEngine — удерживается с кэша на каждой стороне сделки; FINRESP и % годовых в блоке выше уже <strong>с учётом комиссии</strong>.</p>
 
 <p class="extra-section">SL / TP позиции по ATR (вкладка «Логики» робота)</p>
 <div class="calc-grid">
@@ -409,7 +436,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-live-trading";
+  const CALC_PAGE_VERSION = "2026-06-12-commissions-live";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -587,7 +614,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       orders: [],
       instrumentCache: new Map(),
       reconcileBusy: false,
-      lastError: ""
+      lastError: "",
+      portfolioValue: null,
+      commissionPaid: null,
+      sessionStartedAt: null,
+      statsTimer: null
     },
     optim: {
       active: null,
@@ -709,7 +740,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         value: $("vol-value")?.value || "",
         deposit: $("vol-deposit")?.value || "",
         maxPositions: $("vol-maxpos")?.value || "",
-        commissionPct: $("vol-commission")?.value || "0"
+        commissionType: $("commission-type")?.value || "Percent",
+        commissionValue: $("commission-value")?.value || "0.04"
+      },
+      live: {
+        orderType: $("live-order-type")?.value || "market"
       },
       params: {
         sl: $("param-sl")?.value || "",
@@ -757,7 +792,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setValueIfExists("vol-value", cfg.volume?.value);
       setValueIfExists("vol-deposit", cfg.volume?.deposit);
       setValueIfExists("vol-maxpos", cfg.volume?.maxPositions);
-      setValueIfExists("vol-commission", cfg.volume?.commissionPct);
+      if (cfg.volume?.commissionType) setValueIfExists("commission-type", cfg.volume.commissionType);
+      else if (cfg.volume?.commissionPct && +cfg.volume.commissionPct > 0) {
+        setValueIfExists("commission-type", "Percent");
+        setValueIfExists("commission-value", cfg.volume.commissionPct);
+      }
+      setValueIfExists("commission-value", cfg.volume?.commissionValue);
+      setValueIfExists("live-order-type", cfg.live?.orderType);
       setValueIfExists("param-sl", cfg.params?.sl);
       setValueIfExists("param-tp", cfg.params?.tp);
       setValueIfExists("param-atr-sl", cfg.params?.atrSl);
@@ -955,6 +996,25 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     el.style.color = value < 0 ? "#b91c1c" : "#047857";
   }
+
+  function setCommissionMetric(id, commission) {
+    const el = $(id);
+    if (!el) return;
+    if (!Number.isFinite(commission) || commission <= 0) {
+      el.textContent = `${fmt(0)} ₽`;
+      el.style.color = "";
+      return;
+    }
+    el.textContent = `−${fmt(commission)} ₽`;
+    el.style.color = "#b91c1c";
+  }
+
+  function commissionConfig() {
+    return E.normalizeCommission({
+      type: $("commission-type")?.value || "None",
+      value: +$("commission-value")?.value || 0
+    });
+  }
   const currentLimit = () => TF_LIMITS[$("calc-tf").value] || TF_LIMITS["60"];
   const formatDay = (dt) => {
     const y = dt.getFullYear();
@@ -1094,7 +1154,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       volume: +$("vol-value").value || E.DEFAULT_VOLUME.volume,
       deposit: +$("vol-deposit").value || E.DEFAULT_VOLUME.deposit,
       maxPositions: Math.max(0, +$("vol-maxpos").value ?? E.DEFAULT_VOLUME.maxPositions),
-      commissionPct: Math.max(0, +$("vol-commission").value || 0)
+      commission: commissionConfig()
     };
   }
 
@@ -1170,10 +1230,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       const lotsReq = o.lotsRequested ?? o.lots_requested ?? "—";
       const lotsExec = o.lotsExecuted ?? o.lots_executed ?? "—";
       const status = liveOrderStatusLabel(o.executionReportStatus || o.orderState);
+      const otype = (o.orderType || "").includes("LIMIT") ? "лимит" : "рынок";
       const when = o.orderDate || o.createdAt || "";
-      return `<tr><td>${ticker}</td><td class="${dirCls}">${dir}</td><td>${lotsReq}/${lotsExec}</td><td>${status}</td><td>${when ? new Date(when).toLocaleString("ru-RU") : "—"}</td></tr>`;
+      return `<tr><td>${ticker}</td><td class="${dirCls}">${dir}</td><td>${otype}</td><td>${lotsReq}/${lotsExec}</td><td>${status}</td><td>${when ? new Date(when).toLocaleString("ru-RU") : "—"}</td></tr>`;
     }).join("");
-    el.innerHTML = `<table><thead><tr><th>Тикер</th><th>Сторона</th><th>Лоты</th><th>Статус</th><th>Время</th></tr></thead><tbody>${rows}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Тикер</th><th>Сторона</th><th>Тип</th><th>Лоты</th><th>Статус</th><th>Время</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function syncLiveTradingUi() {
@@ -1197,6 +1258,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       if (state.live.lastError && isLive) status.textContent = `ошибка: ${state.live.lastError}`;
       else status.textContent = state.live.active ? "торговля активна" : "остановлена";
     }
+    renderLivePortfolioStats();
     renderLiveOrdersPanel();
   }
 
@@ -1205,9 +1267,26 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.live.pollTimer = null;
   }
 
+  function stopLiveStatsPoll() {
+    if (state.live.statsTimer) clearInterval(state.live.statsTimer);
+    state.live.statsTimer = null;
+  }
+
+  function startLiveStatsPoll() {
+    stopLiveStatsPoll();
+    state.live.statsTimer = setInterval(() => {
+      if (!isLiveMode()) {
+        stopLiveStatsPoll();
+        return;
+      }
+      refreshLivePortfolioStats();
+    }, 8000);
+  }
+
   function stopLiveTradingOnModeChange() {
     state.live.active = false;
     stopLiveTradingPoll();
+    stopLiveStatsPoll();
     syncLiveTradingUi();
   }
 
@@ -1246,29 +1325,116 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return Math.max(1, Math.round(p / lot));
   }
 
-  async function tbankPostMarketOrder(instrumentId, direction, lots) {
+  function liveOrderTypeUi() {
+    return $("live-order-type")?.value === "limit" ? "limit" : "market";
+  }
+
+  function quotationFromNumber(price) {
+    const p = Math.max(0, +price || 0);
+    const units = Math.floor(p);
+    const nano = Math.round((p - units) * 1e9);
+    return { units: String(units), nano };
+  }
+
+  async function tbankGetLastPrice(instrumentId) {
+    const data = await tbankRequest("MarketDataService/GetLastPrices", {
+      instrumentId: [instrumentId]
+    });
+    const lp = (data.lastPrices || [])[0];
+    if (!lp?.price) return null;
+    return (+lp.price.units || 0) + (+lp.price.nano || 0) / 1e9;
+  }
+
+  function packLastClose(sec) {
+    const secU = String(sec || "").trim().toUpperCase();
+    const pack = state.packs.find((p) => String(p[0]?.sec || "").toUpperCase() === secU);
+    const close = pack?.at(-1)?.close;
+    return Number.isFinite(close) && close > 0 ? close : null;
+  }
+
+  async function resolveOrderPrice(instrumentId, sec) {
+    return packLastClose(sec) ?? await tbankGetLastPrice(instrumentId);
+  }
+
+  async function tbankPostOrder(instrumentId, direction, lots, secForPrice) {
     const qty = Math.max(0, Math.floor(+lots || 0));
     if (!instrumentId || qty <= 0) return null;
     const orderId = (crypto.randomUUID && crypto.randomUUID()) || `ml-${Date.now()}`;
-    return tbankRequest("OrdersService/PostOrder", {
+    const body = {
       accountId: state.tbank.selectedAccountId,
       instrumentId,
       quantity: String(qty),
-      orderType: "ORDER_TYPE_MARKET",
       direction,
       orderId,
       confirmMarginTrade: true
-    });
+    };
+    if (liveOrderTypeUi() === "limit") {
+      const price = await resolveOrderPrice(instrumentId, secForPrice);
+      if (!price) throw new Error(`Нет цены для лимитной заявки (${secForPrice || instrumentId}).`);
+      body.orderType = "ORDER_TYPE_LIMIT";
+      body.price = quotationFromNumber(price);
+    } else {
+      body.orderType = "ORDER_TYPE_MARKET";
+    }
+    return tbankRequest("OrdersService/PostOrder", body);
+  }
+
+  function renderLivePortfolioStats() {
+    const pv = $("live-portfolio-value");
+    const cp = $("live-commission-paid");
+    if (pv) {
+      pv.textContent = Number.isFinite(state.live.portfolioValue)
+        ? `${fmt(state.live.portfolioValue, 0)} ₽`
+        : "—";
+    }
+    if (cp) {
+      if (!Number.isFinite(state.live.commissionPaid) || state.live.commissionPaid <= 0) {
+        cp.textContent = `${fmt(0)} ₽`;
+        cp.style.color = "";
+      } else {
+        cp.textContent = `−${fmt(state.live.commissionPaid)} ₽`;
+        cp.style.color = "#b91c1c";
+      }
+    }
+  }
+
+  async function refreshLivePortfolioStats() {
+    if (!isLiveMode() || !state.tbank.token || !state.tbank.selectedAccountId) return;
+    try {
+      const portfolio = await tbankRequest("OperationsService/GetPortfolio", {
+        accountId: state.tbank.selectedAccountId,
+        currency: "RUB"
+      });
+      state.live.portfolioValue = moneyValueToNumber(portfolio.totalAmountPortfolio);
+      const from = state.live.sessionStartedAt
+        || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const ops = await tbankRequest("OperationsService/GetOperations", {
+        accountId: state.tbank.selectedAccountId,
+        from,
+        to: new Date().toISOString(),
+        state: "OPERATION_STATE_EXECUTED"
+      });
+      let comm = 0;
+      for (const op of ops.operations || []) {
+        const fee = moneyValueToNumber(op.commission);
+        if (fee) comm += Math.abs(fee);
+      }
+      state.live.commissionPaid = comm;
+      renderLivePortfolioStats();
+    } catch (err) {
+      noteTechError(`live-portfolio: ${err.message}`);
+    }
   }
 
   async function refreshLiveOrders() {
-    if (!isTbankBackedMode() || !state.tbank.token || !state.tbank.selectedAccountId) return;
+    if (!isLiveMode() || !state.tbank.token || !state.tbank.selectedAccountId) return;
     try {
       const data = await tbankRequest("OrdersService/GetOrders", {
         accountId: state.tbank.selectedAccountId
       });
       state.live.orders = data.orders || [];
       state.live.lastError = "";
+      await refreshLivePortfolioStats();
       renderLiveOrdersPanel();
     } catch (err) {
       state.live.lastError = err.message;
@@ -1326,7 +1492,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         if (Math.abs(delta) < lot * 0.45) continue;
         const lots = piecesToLots(delta, lot);
         const direction = delta > 0 ? "ORDER_DIRECTION_BUY" : "ORDER_DIRECTION_SELL";
-        await tbankPostMarketOrder(instrumentId, direction, lots);
+        await tbankPostOrder(instrumentId, direction, lots, p.sec);
       }
       await refreshLiveOrders();
     } catch (err) {
@@ -1341,7 +1507,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function startLiveTradingPoll() {
     stopLiveTradingPoll();
     state.live.pollTimer = setInterval(() => {
-      if (!isLiveMode() || !state.live.active) return;
+      if (!isLiveMode()) return;
+      refreshLivePortfolioStats();
+      if (!state.live.active) return;
       refreshLiveOrders();
       liveTradingReconcile();
     }, 5000);
@@ -1353,6 +1521,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!state.tbank.accounts.length) await loadTbankAccounts();
     else if (!state.tbank.depositLoaded) await loadTbankDeposit();
     await refreshLiveOrders();
+    await refreshLivePortfolioStats();
+    startLiveStatsPoll();
     syncLiveTradingUi();
   }
 
@@ -1381,6 +1551,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     state.live.active = true;
     state.live.lastError = "";
+    state.live.sessionStartedAt = new Date().toISOString();
     startLiveTradingPoll();
     syncLiveTradingUi();
     await refreshLiveOrders();
@@ -1420,7 +1591,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
             direction = "ORDER_DIRECTION_SELL";
           }
           if (lots <= 0) continue;
-          await tbankPostMarketOrder(instrumentId, direction, lots);
+          const meta = await tbankGetInstrumentById(instrumentId);
+          const ticker = meta?.ticker || instrumentId;
+          await tbankPostOrder(instrumentId, direction, lots, ticker);
           sent += 1;
         }
       };
@@ -1470,6 +1643,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setTbankStatus("Фиктивный кошелёк активен. Поле депозита работает вручную, как раньше.");
     }
     syncTbankSettingsState();
+    if (isLive) startLiveStatsPoll();
+    else stopLiveStatsPoll();
     syncLiveTradingUi();
   }
 
@@ -3062,6 +3237,7 @@ ${totalBlock}
     const winLen = perSec.reduce((m, p) => Math.max(m, p.rows?.length ?? 0), 0);
     $("calc-finresp").textContent = `${fmt(agg.finresp)} ₽`;
     $("calc-finresp").style.color = agg.finresp < 0 ? "#b91c1c" : "#047857";
+    setCommissionMetric("calc-commission", agg.commission || 0);
     $("calc-count").textContent = String(winLen);
     $("calc-pos").textContent = fmt(agg.pos, 4);
     $("calc-cash").textContent = `${fmt(agg.cash)} ₽`;
@@ -3129,6 +3305,7 @@ ${totalBlock}
         msg = `Часть инструментов без данных в окне (${skipped}) — сдвиньте ползунки или нажмите «Рассчитать».`;
       }
       $("calc-finresp").textContent = "—";
+      $("calc-commission").textContent = "—";
       $("calc-ann-simple").textContent = "—";
       $("calc-ann-compound").textContent = "—";
       $("calc-count").textContent = "—";
@@ -3398,7 +3575,9 @@ ${totalBlock}
   $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); saveConfig(); render(); });
   $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); saveConfig(); render(); });
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); saveConfig(); render(); });
-  ["vol-value", "vol-deposit", "vol-maxpos", "vol-commission", "param-lr", "stopper-ref"].forEach((id) => {
+  $("commission-type").addEventListener("change", () => { renderFromParams(); saveConfig(); });
+  $("live-order-type").addEventListener("change", () => { saveConfig(); syncLiveTradingUi(); });
+  ["vol-value", "vol-deposit", "vol-maxpos", "commission-value", "param-lr", "stopper-ref"].forEach((id) => {
     $(id).addEventListener("change", renderFromParams);
     $(id).addEventListener("input", renderFromParams);
   });
