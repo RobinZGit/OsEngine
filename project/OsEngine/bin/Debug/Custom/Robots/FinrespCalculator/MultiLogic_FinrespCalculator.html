@@ -331,7 +331,7 @@ body.calc-running .help-ftr{opacity:.75;}
 <header class="help-hdr">
 <h1>MultiLogic — калькулятор FINRESP</h1>
 <p class="help-sub"><a href="../index.html">документация</a> · <a href="MultiLogic_FinrespCalculator_Help.html">справка калькулятора</a> · <a href="../MultiLogic_LogicHelp.html">справка по роботу</a> · <a href="../MultiLogic_PolynomialIndicators.html">многочлены</a></p>
-<p class="help-sub">Свечи MOEX ISS → индикаторы → Op/Cl → FINRESP на выбранном окне. Ползунки пересчитывают сразу. Без сохранения в файл.</p>
+<p class="help-sub">Свечи MOEX ISS → индикаторы → Op/Cl → FINRESP на выбранном окне. Расчёт только по кнопке «Рассчитать». Без сохранения в файл.</p>
 </header>
 <div class="help-layout">
 <main class="help-main">
@@ -481,7 +481,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="calc-sec-hint" id="calc-ann-hint"></p>
 <p class="calc-sec-hint" style="margin:.35rem 0 .15rem">Строка статуса — серый текст ниже FINRESP и % годовых (сообщения о загрузке MOEX, ошибках, окне расчёта):</p>
-<p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать». Двигайте ползунки окна — FINRESP обновится.</p>
+<p class="calc-status" id="calc-status">Выберите бумаги и логику, нажмите «Рассчитать».</p>
 <div class="calc-result-secondary">
 <div class="calc-metric-secondary"><b>Свечей в окне</b><span id="calc-count">—</span></div>
 <div class="calc-metric-secondary"><b>Позиция z</b><span id="calc-pos">—</span></div>
@@ -554,7 +554,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <button class="calc-btn calc-btn-secondary calc-opt-btn" type="button" id="opt-atr-sl">Оптимизировать</button>
 </div></div>
 </div>
-<p class="note">Подставляется в строку L1…L5 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После загрузки свечей FINRESP пересчитывается при изменении полей; «Рассчитать» — только перезагрузка MOEX.</p>
+<p class="note">Подставляется в строку L1…L5 как SL[@SL] TP[@TP] и в расчёт для всех логик. Для лонга: SL = вход − K×ATR, TP = вход + K×ATR; для шорта наоборот. 0 у кратности — без стопа. После изменения полей нажмите «Рассчитать».</p>
 <p class="note" id="position-sl-hint" hidden></p>
 
 <p class="extra-section">Общепортфельный Stopper (вкладка «Stopper» робота)</p>
@@ -658,8 +658,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-stop-fix";
+  const CALC_PAGE_VERSION = "2026-06-08-calc-on-button";
   const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
+  const FINRESP_STALE_MSG = "Параметры изменены — нажмите «Рассчитать».";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -3575,7 +3576,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       syncAccountModeUi();
       setTbankStatus(`Депозит загружен из T-Bank: ${fmt(amount, 2)} ₽.`);
       saveConfig();
-      if (state.packs.length) render();
+      if (state.packs.length) invalidateFinrespResult();
     } catch (err) {
       state.tbank.depositLoaded = false;
       setTbankStatus(`Ошибка загрузки депозита: ${err.message}`, true);
@@ -3755,7 +3756,6 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.windowSkipped = [];
     setSliderBounds(true);
     saveWindowAnchor();
-    if (!renderWithStatus()) return false;
     updateTechInfo("selection-refreshed");
     return true;
   }
@@ -3795,7 +3795,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const refreshed = tryRefreshFromLoadedPacks();
     if (refreshed) {
       $("calc-status").textContent =
-        `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). FINRESP пересчитан.`;
+        `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). Нажмите «Рассчитать».`;
     } else {
       $("calc-status").textContent =
         `Отбор выполнен: удалено ${negative.length} инстр. с FINRESP < 0 (${removedLabel}). Нажмите «Рассчитать» для обновления.`;
@@ -3860,7 +3860,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function onSecSelectionChanged() {
-    state.lastResult = null;
+    invalidateFinrespResult(false);
     applyUiLocks();
     syncSelectAllCheckboxes();
     const n = selectedInstrumentCount();
@@ -3883,13 +3883,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       updateDateHint(0);
     }
     state.prevSelectCount = n;
-    if (!tryRefreshFromLoadedPacks() && n > 0 && state.packs.length) {
+    if (tryRefreshFromLoadedPacks()) {
+      if (n > 0 && state.packs.length) invalidateFinrespResult();
+    } else if (n > 0 && state.packs.length) {
       const instruments = selectedInstruments();
       const byKey = packsByInstrumentKey(state.packs);
       const missing = instruments.filter((i) => !byKey.has(instrumentKey(i)));
       if (missing.length) {
         $("calc-status").textContent =
           `Выбор изменён (+${missing.length} новых) — нажмите «Рассчитать» для загрузки и пересчёта.`;
+      } else {
+        invalidateFinrespResult();
       }
     }
     updateTechInfo("selection-changed");
@@ -4055,6 +4059,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     state.lastResult = null;
     state.windowSkipped = [];
     applyUiLocks();
+  }
+
+  function invalidateFinrespResult(message) {
+    if (isOptimizing()) return;
+    resetFinrespDisplay();
+    if (message !== false) {
+      $("calc-status").textContent = message || FINRESP_STALE_MSG;
+    }
+  }
+
+  function invalidateFormChange(options) {
+    const opts = options || {};
+    if (!opts.skipSave) saveConfig();
+    if (isOptimizing()) return;
+    invalidateFinrespResult(opts.message);
   }
 
   function requestStopRun() {
@@ -4578,9 +4597,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function renderFromParams() {
-    saveConfig();
-    if (!state.packs.length || isOptimizing()) return;
-    render();
+    invalidateFormChange();
   }
 
   function fillLogicEditor() {
@@ -5613,7 +5630,7 @@ ${totalBlock}
       if (state.accountMode === "live") connectTbankForLive();
       return;
     }
-    if (state.packs.length && (!isTbankBackedMode() || state.tbank.depositLoaded)) render();
+    if (state.packs.length && (!isTbankBackedMode() || state.tbank.depositLoaded)) invalidateFinrespResult();
   });
   $("live-trading-toggle").addEventListener("click", () => {
     toggleLiveTrading().catch((err) => {
@@ -5712,9 +5729,9 @@ ${totalBlock}
     reloadShareList();
     saveConfig();
     $("calc-status").textContent = state.packs.length
-      ? `Список акций обновлён (${state.shareList.length}). FINRESP пересчитан по текущему окну.`
+      ? `Список акций обновлён (${state.shareList.length}). Нажмите «Рассчитать».`
       : `Список акций обновлён (${state.shareList.length}). Выберите инструменты и нажмите «Рассчитать».`;
-    if (state.packs.length) render();
+    if (state.packs.length) invalidateFinrespResult(false);
   });
   $("prefix-pick-futures").addEventListener("click", async () => {
     setBusy(true);
@@ -5726,10 +5743,10 @@ ${totalBlock}
         return;
       }
       $("calc-status").textContent = state.packs.length
-        ? `Подобрано ${n} контрактов MOEX, выбор обновлён. FINRESP пересчитан по текущему окну.`
+        ? `Подобрано ${n} контрактов MOEX, выбор обновлён. Нажмите «Рассчитать».`
         : `Подобрано ${n} контрактов MOEX, выбор обновлён. Нажмите «Рассчитать».`;
       saveConfig();
-      if (state.packs.length) render();
+      if (state.packs.length) invalidateFinrespResult(false);
     } catch (err) {
       $("calc-status").textContent = `Ошибка подбора фьючерсов: ${err.message}`;
     } finally {
@@ -5740,9 +5757,16 @@ ${totalBlock}
     $(id).addEventListener("change", saveConfig);
     $(id).addEventListener("input", saveConfig);
   });
-  $("logic-apply").addEventListener("click", () => { applyEditorParams(); updatePositionSlHint(); saveConfig(); render(); });
-  $("calc-logic").addEventListener("change", () => { updatePositionSlHint(); saveConfig(); render(); });
-  $("vol-type").addEventListener("change", () => { syncVolumeFields(); saveConfig(); render(); });
+  $("logic-apply").addEventListener("click", () => {
+    applyEditorParams();
+    updatePositionSlHint();
+    invalidateFormChange();
+  });
+  $("calc-logic").addEventListener("change", () => {
+    updatePositionSlHint();
+    invalidateFormChange();
+  });
+  $("vol-type").addEventListener("change", () => { syncVolumeFields(); invalidateFormChange(); });
   $("live-order-type").addEventListener("change", () => { saveConfig(); syncLiveTradingUi(); });
   $("live-candle-source").addEventListener("change", () => { saveConfig(); syncLiveTradingUi(); });
   ["vol-value", "vol-deposit", "vol-maxpos", "commission-pct", "param-lr", "stopper-ref"].forEach((id) => {
@@ -5771,8 +5795,13 @@ ${totalBlock}
     }
     if (state.packs.length) setSliderBounds(true);
     saveConfig();
+    if (state.packs.length) invalidateFinrespResult();
   });
-  $("calc-month").addEventListener("change", () => { applyMonthSelection(); saveConfig(); });
+  $("calc-month").addEventListener("change", () => {
+    applyMonthSelection();
+    saveConfig();
+    if (state.packs.length) invalidateFinrespResult();
+  });
   $("calc-from").addEventListener("change", () => {
     state.userDateRangeTouched = true;
     enforceDateRange("from");
@@ -5780,6 +5809,7 @@ ${totalBlock}
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
     saveConfig();
+    if (state.packs.length) invalidateFinrespResult();
   });
   $("calc-till").addEventListener("change", () => {
     state.userDateRangeTouched = true;
@@ -5788,9 +5818,18 @@ ${totalBlock}
     syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
     saveConfig();
+    if (state.packs.length) invalidateFinrespResult();
   });
-  $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); saveConfig(); render(); });
-  $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); saveConfig(); render(); });
+  $("calc-start").addEventListener("input", () => {
+    state.movedSlider = "start";
+    saveWindowAnchor();
+    invalidateFormChange();
+  });
+  $("calc-end").addEventListener("input", () => {
+    state.movedSlider = "end";
+    saveWindowAnchor();
+    invalidateFormChange();
+  });
   function bindCollapsibleToggle(detailsId, toggleId) {
     const details = $(detailsId);
     const toggle = $(toggleId);
