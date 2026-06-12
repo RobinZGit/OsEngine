@@ -165,10 +165,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="calc-tf">Таймфрейм</label>
 <select id="calc-tf">
 <option value="1">1 мин</option>
+<option value="5">5 мин</option>
 <option value="10">10 мин</option>
+<option value="15">15 мин</option>
 <option value="60" selected>1 час</option>
 <option value="24">1 день</option>
 </select></div>
+<div class="calc-field"><label for="calc-month">Месяц целиком</label><input id="calc-month" type="month"></div>
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
@@ -176,7 +179,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <button class="calc-btn calc-btn-secondary" id="calc-select-positive" type="button" disabled title="После расчёта оставить только инструменты с FINRESP ≥ 0">Отобрать FINRESP ≥ 0</button>
 </div>
 <div class="calc-field calc-field-wide cache-row">
-<label>База цен MOEX (IndexedDB браузера)</label>
+<label>Локальная база цен MultiLogic (IndexedDB браузера)</label>
 <div class="cache-btn-row">
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-save-file">Сохранить в файл</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="cache-load-file">Загрузить из файла</button>
@@ -184,7 +187,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 </div>
 <p class="calc-sec-hint" id="cache-hint">База цен не открыта</p>
 <input type="file" id="cache-file-input" accept=".json,application/json" hidden>
-<p class="note">При «Рассчитать» свечи берутся из браузерной базы IndexedDB, если хватает периода и ТФ; иначе — MOEX, затем свечи добавляются в базу без перезаписи уже сохранённых дат. Файл — резервная копия/перенос базы.</p>
+<p class="note">При «Рассчитать» свечи берутся из локальной базы IndexedDB этого HTML-калькулятора, если хватает бумаги, периода и ТФ; иначе — MOEX, затем свечи добавляются в эту же базу без перезаписи уже сохранённых дат. Это не localStorage и не файлы/базы реальных роботов OsEngine. Файл — только резервная копия/перенос базы калькулятора.</p>
 </div>
 <p class="calc-sec-hint" id="calc-date-hint"></p>
 <div class="calc-result-hero" aria-label="Итог FINRESP">
@@ -476,6 +479,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     anchorStartTime: null,
     anchorEndTime: null,
     hasWindow: false,
+    userDateRangeTouched: false,
     failedInstruments: [],
     windowSkipped: [],
     lastInstruments: [],
@@ -525,7 +529,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const MIN_WARMUP_BARS = 220;
   const TF_LIMITS = {
     "1": { label: "1 мин", maxDays: 7, maxBars: 900 },
+    "5": { label: "5 мин", maxDays: 15, maxBars: 1000 },
     "10": { label: "10 мин", maxDays: 31, maxBars: 1200 },
+    "15": { label: "15 мин", maxDays: 45, maxBars: 1300 },
     "60": { label: "1 час", maxDays: 93, maxBars: 1500 },
     "24": { label: "1 день", maxDays: 3650, maxBars: 1500 }
   };
@@ -623,7 +629,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function barsPerTradingDay(tf) {
     if (tf === "1") return MOEX_MINUTES_PER_SESSION;
+    if (tf === "5") return Math.ceil(MOEX_MINUTES_PER_SESSION / 5);
     if (tf === "10") return Math.ceil(MOEX_MINUTES_PER_SESSION / 10);
+    if (tf === "15") return Math.ceil(MOEX_MINUTES_PER_SESSION / 15);
     if (tf === "60") return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
     if (tf === "24") return 1;
     return Math.ceil(MOEX_MINUTES_PER_SESSION / 60);
@@ -651,6 +659,55 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       el.disabled = false;
       el.readOnly = false;
     }
+    const month = $("calc-month");
+    month.min = DATE_MIN.slice(0, 7);
+    month.max = maxStr.slice(0, 7);
+    month.disabled = false;
+  }
+
+  function syncMonthInputFromDates() {
+    const month = $("calc-month");
+    if (!month) return;
+    const from = $("calc-from").value;
+    const till = $("calc-till").value;
+    if (!from || !till || from.slice(0, 7) !== till.slice(0, 7)) {
+      month.value = "";
+      return;
+    }
+
+    const [year, monthNumber] = from.slice(0, 7).split("-").map(Number);
+    const { min, max } = dateBounds();
+    let monthFrom = new Date(year, monthNumber - 1, 1);
+    let monthTill = new Date(year, monthNumber, 0);
+    if (monthFrom < min) monthFrom = min;
+    if (monthTill > max) monthTill = max;
+    month.value = from === formatDay(monthFrom) && till === formatDay(monthTill)
+      ? from.slice(0, 7)
+      : "";
+  }
+
+  function applyMonthSelection() {
+    const value = $("calc-month").value;
+    if (!value) return;
+    const [year, month] = value.split("-").map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return;
+
+    const { min, max } = dateBounds();
+    let from = new Date(year, month - 1, 1);
+    let till = new Date(year, month, 0);
+    if (from < min) from = min;
+    if (till > max) till = max;
+    if (from > till) from = till;
+
+    $("calc-from").value = formatDay(from);
+    $("calc-till").value = formatDay(till);
+    state.userDateRangeTouched = true;
+    const narrowed = enforceDateRange("till", selectedInstrumentCount());
+    syncMonthInputFromDates();
+    updateDateHint(selectedInstrumentCount());
+    $("calc-status").textContent = narrowed
+      ? "Месяц выбран, но период сужен лимитом таймфрейма/числа инструментов."
+      : "Выбран полный месяц расчёта.";
   }
 
   function selectedInstrumentCount() {
@@ -834,7 +891,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     );
     state.windowSkipped = [];
     state.movedSlider = "end";
-    setSliderBounds(false);
+    setSliderBounds(true);
     saveWindowAnchor();
     if (!renderWithStatus()) return false;
     updateTechInfo("selection-refreshed");
@@ -869,6 +926,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncSelectAllCheckboxes();
     const instruments = selectedInstruments();
     state.bulkMode = resolveBulkMode(instruments);
+    state.prevSelectCount = instruments.length;
     state.lastResult = null;
     applyUiLocks();
     const removedLabel = negative.map((p) => `${p.sec}:${fmt(p.finresp)}`).join(" · ");
@@ -947,7 +1005,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (n > 0) {
       const narrowed = enforceDateRange("till", n);
       updateDateHint(n);
-      if (n < prev && relaxDateRangeForInstrumentCount(n)) {
+      if (!state.userDateRangeTouched && n < prev && relaxDateRangeForInstrumentCount(n)) {
         state.lastLoadMeta = null;
         $("calc-status").textContent =
           `Выбор уменьшен — период расширен до ~${maxCalcDays($("calc-tf").value, n)} дн. Нажмите «Рассчитать».`;
@@ -1500,6 +1558,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (from < min) from = min;
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(0);
   }
 
@@ -1539,6 +1598,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(n);
     return $("calc-from").value !== beforeFrom || $("calc-till").value !== beforeTill;
   }
@@ -1565,6 +1625,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (from > till) from = till;
     $("calc-from").value = formatDay(from);
     $("calc-till").value = formatDay(till);
+    syncMonthInputFromDates();
     updateDateHint(n);
     return beforeFrom !== $("calc-from").value || beforeTill !== $("calc-till").value;
   }
@@ -2409,12 +2470,17 @@ ${totalBlock}
     }
     if (state.packs.length) setSliderBounds(true);
   });
+  $("calc-month").addEventListener("change", applyMonthSelection);
   $("calc-from").addEventListener("change", () => {
+    state.userDateRangeTouched = true;
     enforceDateRange("from");
+    syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
   });
   $("calc-till").addEventListener("change", () => {
+    state.userDateRangeTouched = true;
     enforceDateRange("till");
+    syncMonthInputFromDates();
     updateDateHint(selectedInstrumentCount());
   });
   $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); render(); });
