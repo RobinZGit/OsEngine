@@ -143,7 +143,49 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .real-account-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .35rem;}
 .account-mode--live{color:#7f1d1d;font-weight:700;}
 .account-mode-select--live{border:2px solid #b91c1c !important;background:#fef2f2 !important;color:#7f1d1d !important;font-weight:800;box-shadow:0 0 0 2px rgba(185,28,28,.15);}
-.live-trading-panel{border:3px solid #991b1b;border-radius:12px;background:linear-gradient(180deg,#fef2f2 0%,#fff5f5 48%,#fff 100%);padding:1rem 1.15rem;margin:0 0 1rem;box-shadow:0 4px 16px rgba(153,27,27,.18);}
+.live-trading-panel{
+  border:3px solid #991b1b;border-radius:12px;
+  background:linear-gradient(180deg,#fef2f2 0%,#fff5f5 48%,#fff 100%);
+  padding:1rem 1.15rem;margin:0 0 1rem;box-shadow:0 4px 16px rgba(153,27,27,.18);
+  transition:border-color .2s ease,box-shadow .2s ease,background .2s ease;
+}
+.live-trading-panel--active{
+  border:5px solid #7f0000;
+  background:linear-gradient(180deg,#fecaca 0%,#fee2e2 38%,#fff1f2 100%);
+  box-shadow:0 0 0 4px rgba(220,38,38,.28),0 8px 28px rgba(127,0,0,.42);
+  animation:live-panel-pulse 2.4s ease-in-out infinite;
+}
+.live-trading-panel--active .live-trading-title{
+  font-size:1.32rem;color:#450a0a;letter-spacing:.08em;
+  text-shadow:0 1px 0 rgba(255,255,255,.55);
+}
+.live-trading-panel--active .live-trading-badge{
+  font-size:.92rem;font-weight:900;padding:.35rem .85rem;
+  background:linear-gradient(180deg,#ef4444 0%,#b91c1c 55%,#7f1d1d 100%);
+  border:2px solid #450a0a;box-shadow:0 0 12px rgba(239,68,68,.55);
+  animation:live-badge-blink 1.8s ease-in-out infinite;
+}
+.live-trading-panel--active .live-trading-warn{
+  color:#7f1d1d;font-size:.95rem;font-weight:800;
+}
+.live-trading-panel--active .live-trading-toolbar{
+  border:3px solid #b91c1c;background:#fff5f5;
+  box-shadow:inset 0 0 0 1px #fecaca,0 4px 14px rgba(185,28,28,.22);
+}
+.live-trading-panel--active .live-trading-leverage{color:#450a0a;font-size:1rem;}
+.live-trading-panel--active .live-trading-leverage span{font-size:1.18rem;color:#b91c1c;}
+.live-trading-panel--active .live-trading-stats{
+  border:2px solid #f87171;background:#fff;
+}
+.live-trading-panel--active .live-trading-orders-wrap{border-top-color:#f87171;}
+@keyframes live-panel-pulse{
+  0%,100%{box-shadow:0 0 0 4px rgba(220,38,38,.22),0 8px 28px rgba(127,0,0,.38);}
+  50%{box-shadow:0 0 0 7px rgba(220,38,38,.38),0 10px 34px rgba(127,0,0,.5);}
+}
+@keyframes live-badge-blink{
+  0%,100%{filter:brightness(1);}
+  50%{filter:brightness(1.15);}
+}
 .live-trading-banner{display:flex;flex-wrap:wrap;align-items:flex-start;gap:.55rem 1rem;margin-bottom:.45rem;}
 .live-trading-title{font-size:1.18rem;font-weight:800;color:#7f1d1d;letter-spacing:.05em;text-transform:uppercase;}
 .live-trading-badge{font-size:.8rem;font-weight:700;padding:.22rem .6rem;border-radius:999px;background:#991b1b;color:#fff;}
@@ -502,7 +544,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-live-start";
+  const CALC_PAGE_VERSION = "2026-06-12-live-active-ui";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -1366,7 +1408,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const select = $("account-mode");
     const label = document.querySelector("label.account-mode");
     const isLive = isLiveMode();
-    if (panel) panel.hidden = !isLive;
+    if (panel) {
+      panel.hidden = !isLive;
+      panel.classList.toggle("live-trading-panel--active", isLive && !!state.live.active);
+    }
     if (select) select.classList.toggle("account-mode-select--live", isLive);
     if (label) label.classList.toggle("account-mode--live", isLive);
     const toggle = $("live-trading-toggle");
