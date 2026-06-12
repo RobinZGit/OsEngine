@@ -16,10 +16,15 @@ body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);col
 h2{font-size:1.2rem;margin:1.5rem 0 .75rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
 h2:first-child{margin-top:0;}
 .note{color:var(--muted);font-size:.93rem;}
+.calc-title-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.8rem;margin:0 0 .75rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
+.calc-title-row h2{margin:0;padding:0;border:0;}
+.account-mode{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;font-size:.86rem;color:var(--muted);}
+.account-mode select{padding:.38rem .5rem;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--text);}
 .calc-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:1rem;margin:1rem 0;}
 .calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.65rem;align-items:end;}
 .calc-field label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:.25rem;}
 .calc-field select,.calc-field input{width:100%;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;}
+.calc-field textarea{width:100%;min-height:4.4rem;padding:.42rem .5rem;border:1px solid var(--border);border-radius:7px;font-family:Consolas,monospace;font-size:.78rem;resize:vertical;}
 .calc-field select[multiple]{min-height:6.5rem;}
 .calc-btn{padding:.48rem .85rem;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
 .calc-btn-secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);}
@@ -119,6 +124,13 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 }
 .file-protocol-warn b{color:#92400e;}
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
+.real-account-card{border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fbfcff;}
+.real-account-card[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
+.real-account-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
+.real-account-head::-webkit-details-marker{display:none;}
+.real-account-title{font-size:.9rem;font-weight:600;color:#374151;}
+.real-account-state{font-size:.8rem;color:var(--muted);}
+.real-account-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .35rem;}
 .tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
 .tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
@@ -140,7 +152,15 @@ a{color:var(--accent);}
 </header>
 <div class="help-layout">
 <main class="help-main">
+<div class="calc-title-row">
 <h2>Калькулятор</h2>
+<label class="account-mode" for="account-mode">Кошелёк:
+<select id="account-mode">
+<option value="paper" selected>Фиктивный кошелёк</option>
+<option value="tbank">T-Bank торговый счёт</option>
+</select>
+</label>
+</div>
 <div class="file-protocol-warn" id="file-protocol-warn" hidden>
 <b>Открыто как файл (file://)</b> — браузер блокирует загрузку свечей MOEX (CORS).
 Cursor «Open with Browser» и двойной клик по HTML так работают.
@@ -315,6 +335,27 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="chart-card" id="calc-chart"></div>
 <div class="chart-card" id="calc-chart-equity"></div>
 
+<details class="real-account-card" id="tbank-settings">
+<summary class="real-account-head">
+<span class="real-account-title">Реальный счёт T-Bank — только чтение депозита</span>
+<span class="real-account-state" id="tbank-settings-state">не подключено</span>
+</summary>
+<p class="note">Токен используется только для чтения списка счетов и стоимости портфеля. Он шифруется в браузере через Web Crypto (AES-GCM + PBKDF2) и сохраняется только локально на этом устройстве. Пароль шифрования не сохраняется.</p>
+<div class="calc-grid">
+<div class="calc-field calc-field-wide"><label for="tbank-token">Токен T-Bank Invest</label><textarea id="tbank-token" autocomplete="off" spellcheck="false" placeholder="Вставьте токен, затем задайте пароль и нажмите «Зашифровать и сохранить»"></textarea></div>
+<div class="calc-field"><label for="tbank-passphrase">Пароль локального шифрования</label><input id="tbank-passphrase" type="password" autocomplete="new-password" placeholder="Не сохраняется"></div>
+<div class="calc-field"><label for="tbank-account">Счёт</label><select id="tbank-account"><option value="">Сначала загрузите счета</option></select></div>
+</div>
+<div class="real-account-actions">
+<button class="calc-btn calc-btn-secondary" type="button" id="tbank-save-token">Зашифровать и сохранить</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="tbank-unlock-token">Расшифровать</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="tbank-load-accounts">Загрузить счета</button>
+<button class="calc-btn" type="button" id="tbank-load-deposit">Взять депозит со счёта</button>
+<button class="calc-btn calc-btn-secondary" type="button" id="tbank-forget-token">Удалить локальный токен</button>
+</div>
+<p class="calc-status" id="tbank-status">Фиктивный кошелёк работает как раньше. Для T-Bank выберите режим сверху, сохраните или расшифруйте токен, загрузите счёт и депозит.</p>
+</details>
+
 <details class="tech-info-card" id="tech-info-panel" open>
 <summary class="tech-info-head"><span class="tech-info-title">Тех. информация — скопируйте и пришлите при сбое</span></summary>
 <div class="tech-info-actions">
@@ -395,6 +436,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `tf=${$("calc-tf")?.value || "—"}`,
         `logic=${$("calc-logic")?.value || "—"}`,
         `indicators=${typeof selectedIndicatorKeys === "function" ? selectedIndicatorKeys().join(",") : "—"}`,
+        `accountMode=${calcState.accountMode || "paper"}`,
+        `tbankTokenStored=${(() => { try { return !!localStorage.getItem("multilogic.finresp.tbank.token.v1"); } catch (_) { return false; } })()}`,
+        `tbankTokenUnlocked=${!!calcState.tbank?.token}`,
+        `tbankAccounts=${calcState.tbank?.accounts?.length ?? 0}`,
+        `tbankAccountSelected=${calcState.tbank?.selectedAccountId ? "yes" : "no"}`,
+        `tbankDepositLoaded=${!!calcState.tbank?.depositLoaded}`,
         `prefixStocksLen=${($("prefix-stocks")?.value || "").length}`,
         `prefixFuturesLen=${($("prefix-futures")?.value || "").length}`
       );
@@ -487,6 +534,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     runGeneration: 0,
     runBusyOwner: null,
     uiBusy: false,
+    accountMode: "paper",
+    tbank: {
+      token: null,
+      accounts: [],
+      selectedAccountId: "",
+      depositLoaded: false
+    },
     optim: {
       active: null,
       bestFinresp: -Infinity,
@@ -523,6 +577,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   const DATE_MIN = "2020-01-01";
   const DEFAULT_RANGE_DAYS = 30;
   const DEFAULT_END_LAG_DAYS = 2;
+  const TBANK_REST_BASE = "https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.";
+  const TBANK_TOKEN_STORE_KEY = "multilogic.finresp.tbank.token.v1";
+  const TBANK_ACCOUNT_STORE_KEY = "multilogic.finresp.tbank.account.v1";
+  const TBANK_CRYPTO_ITERATIONS = 210000;
   const MOEX_MINUTES_PER_SESSION = 530;
   const MIN_WARMUP_BARS = 220;
   const TF_LIMITS = {
@@ -544,6 +602,106 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     return `${n.toLocaleString("ru-RU", { maximumFractionDigits: u ? 1 : 0 })} ${units[u]}`;
   };
+
+  const safeStorageGet = (key) => {
+    try { return localStorage.getItem(key) || ""; }
+    catch (_) { return ""; }
+  };
+  const safeStorageSet = (key, value) => {
+    try { localStorage.setItem(key, value); return true; }
+    catch (_) { return false; }
+  };
+  const safeStorageRemove = (key) => {
+    try { localStorage.removeItem(key); return true; }
+    catch (_) { return false; }
+  };
+
+  function bytesToBase64(bytes) {
+    let s = "";
+    for (const b of bytes) s += String.fromCharCode(b);
+    return btoa(s);
+  }
+
+  function base64ToBytes(value) {
+    const s = atob(value);
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  function cryptoAvailable() {
+    return !!(window.crypto?.subtle && window.crypto?.getRandomValues && window.TextEncoder && window.TextDecoder);
+  }
+
+  async function deriveTbankKey(passphrase, salt, iterations) {
+    const enc = new TextEncoder();
+    const material = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(passphrase),
+      "PBKDF2",
+      false,
+      ["deriveKey"]
+    );
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+      material,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  async function encryptTbankToken(token, passphrase) {
+    if (!cryptoAvailable()) throw new Error("Web Crypto недоступен в этом браузере/режиме.");
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveTbankKey(passphrase, salt, TBANK_CRYPTO_ITERATIONS);
+    const data = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new TextEncoder().encode(token)
+    );
+    return JSON.stringify({
+      v: 1,
+      alg: "AES-GCM",
+      kdf: "PBKDF2-SHA256",
+      iterations: TBANK_CRYPTO_ITERATIONS,
+      salt: bytesToBase64(salt),
+      iv: bytesToBase64(iv),
+      data: bytesToBase64(new Uint8Array(data))
+    });
+  }
+
+  async function decryptTbankToken(payload, passphrase) {
+    if (!cryptoAvailable()) throw new Error("Web Crypto недоступен в этом браузере/режиме.");
+    const box = JSON.parse(payload);
+    if (box?.v !== 1 || !box.salt || !box.iv || !box.data) {
+      throw new Error("Неподдерживаемый формат сохранённого токена.");
+    }
+    const salt = base64ToBytes(box.salt);
+    const iv = base64ToBytes(box.iv);
+    const key = await deriveTbankKey(passphrase, salt, Number(box.iterations) || TBANK_CRYPTO_ITERATIONS);
+    const plain = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      base64ToBytes(box.data)
+    );
+    return new TextDecoder().decode(plain);
+  }
+
+  function moneyValueToNumber(value) {
+    if (!value) return NaN;
+    const units = Number(value.units ?? 0);
+    const nano = Number(value.nano ?? 0);
+    return units + nano / 1000000000;
+  }
+
+  function accountLabel(account) {
+    const name = account.name || "Без названия";
+    const type = account.type || "тип ?";
+    const access = account.accessLevel || account.access_level || "доступ ?";
+    return `${name} · ${type} · ${access} · ${account.id}`;
+  }
 
   function parseMoexTime(t) {
     if (!t || t === "—") return null;
@@ -747,6 +905,205 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     };
   }
 
+  function setTbankStatus(message, isError = false) {
+    const el = $("tbank-status");
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = isError ? "#b91c1c" : "var(--muted)";
+  }
+
+  function syncTbankSettingsState() {
+    const el = $("tbank-settings-state");
+    if (!el) return;
+    const stored = !!safeStorageGet(TBANK_TOKEN_STORE_KEY);
+    const unlocked = !!state.tbank.token;
+    const account = state.tbank.selectedAccountId ? "счёт выбран" : "счёт не выбран";
+    const deposit = state.tbank.depositLoaded ? "депозит загружен" : "депозит не загружен";
+    el.textContent = unlocked
+      ? `токен расшифрован · ${account} · ${deposit}`
+      : stored ? "токен сохранён локально, нужен пароль" : "не подключено";
+  }
+
+  function syncAccountModeUi() {
+    state.accountMode = $("account-mode")?.value === "tbank" ? "tbank" : "paper";
+    const isTbank = state.accountMode === "tbank";
+    const deposit = $("vol-deposit");
+    if (deposit) {
+      deposit.readOnly = isTbank;
+      deposit.title = isTbank
+        ? "В режиме T-Bank депозит берётся из выбранного торгового счёта."
+        : "";
+    }
+    const settings = $("tbank-settings");
+    if (isTbank && settings && !state.tbank.depositLoaded) settings.open = true;
+    if (isTbank) {
+      setTbankStatus(
+        state.tbank.depositLoaded
+          ? `Режим T-Bank активен. Депозит взят со счёта: ${fmt(+deposit.value || 0, 0)} ₽.`
+          : "Режим T-Bank активен. Расшифруйте/сохраните токен, загрузите счета и нажмите «Взять депозит со счёта»."
+      );
+    } else {
+      setTbankStatus("Фиктивный кошелёк активен. Поле депозита работает вручную, как раньше.");
+    }
+    syncTbankSettingsState();
+  }
+
+  function fillTbankAccounts() {
+    const select = $("tbank-account");
+    if (!select) return;
+    select.innerHTML = "";
+    if (!state.tbank.accounts.length) {
+      select.append(new Option("Сначала загрузите счета", ""));
+      return;
+    }
+    for (const account of state.tbank.accounts) {
+      select.append(new Option(accountLabel(account), account.id));
+    }
+    const saved = state.tbank.selectedAccountId || safeStorageGet(TBANK_ACCOUNT_STORE_KEY);
+    if (saved && state.tbank.accounts.some((a) => a.id === saved)) {
+      select.value = saved;
+      state.tbank.selectedAccountId = saved;
+    } else {
+      select.value = state.tbank.accounts[0]?.id || "";
+      state.tbank.selectedAccountId = select.value;
+    }
+    if (state.tbank.selectedAccountId) safeStorageSet(TBANK_ACCOUNT_STORE_KEY, state.tbank.selectedAccountId);
+    syncTbankSettingsState();
+  }
+
+  async function tbankRequest(serviceMethod, body) {
+    if (!state.tbank.token) throw new Error("Токен не расшифрован.");
+    const res = await fetch(`${TBANK_REST_BASE}${serviceMethod}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${state.tbank.token}`
+      },
+      body: JSON.stringify(body || {})
+    });
+    const text = await res.text();
+    let data = {};
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (_) { data = { raw: text }; }
+    }
+    if (!res.ok) {
+      const msg = data.message || data.error || data.raw || `${res.status} ${res.statusText}`;
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  async function saveTbankToken() {
+    const token = $("tbank-token").value.trim();
+    const passphrase = $("tbank-passphrase").value;
+    if (!token) { setTbankStatus("Введите токен T-Bank Invest.", true); return; }
+    if (passphrase.length < 8) { setTbankStatus("Пароль шифрования должен быть не короче 8 символов.", true); return; }
+    try {
+      const encrypted = await encryptTbankToken(token, passphrase);
+      if (!safeStorageSet(TBANK_TOKEN_STORE_KEY, encrypted)) throw new Error("localStorage недоступен.");
+      state.tbank.token = token;
+      state.tbank.depositLoaded = false;
+      $("tbank-token").value = "";
+      setTbankStatus("Токен зашифрован и сохранён локально. Теперь можно загрузить счета.");
+      syncTbankSettingsState();
+    } catch (err) {
+      setTbankStatus(`Ошибка сохранения токена: ${err.message}`, true);
+      noteTechError(`tbank-save-token: ${err.message}`);
+    }
+  }
+
+  async function unlockTbankToken() {
+    const payload = safeStorageGet(TBANK_TOKEN_STORE_KEY);
+    const passphrase = $("tbank-passphrase").value;
+    if (!payload) { setTbankStatus("Локально сохранённого токена нет.", true); return; }
+    if (!passphrase) { setTbankStatus("Введите пароль локального шифрования.", true); return; }
+    try {
+      state.tbank.token = await decryptTbankToken(payload, passphrase);
+      state.tbank.depositLoaded = false;
+      setTbankStatus("Токен расшифрован на текущую сессию. Можно загрузить счета.");
+      syncTbankSettingsState();
+    } catch (err) {
+      state.tbank.token = null;
+      setTbankStatus(`Не удалось расшифровать токен: ${err.message}`, true);
+      noteTechError(`tbank-unlock-token: ${err.message}`);
+    }
+  }
+
+  function forgetTbankToken() {
+    safeStorageRemove(TBANK_TOKEN_STORE_KEY);
+    safeStorageRemove(TBANK_ACCOUNT_STORE_KEY);
+    state.tbank.token = null;
+    state.tbank.accounts = [];
+    state.tbank.selectedAccountId = "";
+    state.tbank.depositLoaded = false;
+    $("tbank-token").value = "";
+    $("tbank-passphrase").value = "";
+    fillTbankAccounts();
+    setTbankStatus("Локально сохранённый токен и выбранный счёт удалены.");
+    syncTbankSettingsState();
+  }
+
+  async function loadTbankAccounts() {
+    try {
+      setTbankStatus("Загрузка счетов T-Bank…");
+      const data = await tbankRequest("UsersService/GetAccounts", { status: "ACCOUNT_STATUS_OPEN" });
+      state.tbank.accounts = (data.accounts || []).filter((a) =>
+        !a.status || a.status === "ACCOUNT_STATUS_OPEN" || a.status === 2
+      );
+      if (!state.tbank.accounts.length) throw new Error("Открытые счета не найдены.");
+      fillTbankAccounts();
+      setTbankStatus(`Счета загружены: ${state.tbank.accounts.length}. Выберите счёт и загрузите депозит.`);
+    } catch (err) {
+      setTbankStatus(`Ошибка загрузки счетов: ${err.message}`, true);
+      noteTechError(`tbank-load-accounts: ${err.message}`);
+    }
+  }
+
+  async function loadTbankDeposit() {
+    try {
+      const accountId = $("tbank-account").value || state.tbank.selectedAccountId;
+      if (!accountId) throw new Error("Выберите счёт T-Bank.");
+      state.tbank.selectedAccountId = accountId;
+      safeStorageSet(TBANK_ACCOUNT_STORE_KEY, accountId);
+      setTbankStatus("Загрузка портфеля T-Bank…");
+      const data = await tbankRequest("OperationsService/GetPortfolio", {
+        accountId,
+        currency: "RUB"
+      });
+      const total = data.totalAmountPortfolio || data.total_amount_portfolio;
+      const amount = moneyValueToNumber(total);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("API не вернул положительную стоимость портфеля.");
+      $("vol-deposit").value = String(Math.round(amount));
+      state.tbank.depositLoaded = true;
+      syncAccountModeUi();
+      setTbankStatus(`Депозит загружен из T-Bank: ${fmt(amount, 2)} ₽.`);
+      if (state.packs.length) render();
+    } catch (err) {
+      state.tbank.depositLoaded = false;
+      setTbankStatus(`Ошибка загрузки депозита: ${err.message}`, true);
+      noteTechError(`tbank-load-deposit: ${err.message}`);
+    }
+  }
+
+  function initAccountMode() {
+    $("account-mode").value = "paper";
+    state.accountMode = "paper";
+    state.tbank.selectedAccountId = safeStorageGet(TBANK_ACCOUNT_STORE_KEY);
+    fillTbankAccounts();
+    syncAccountModeUi();
+  }
+
+  function requireTbankDepositForRun() {
+    if (state.accountMode !== "tbank") return true;
+    if (state.tbank.depositLoaded && (+$("vol-deposit").value || 0) > 0) return true;
+    const msg = "В режиме T-Bank сначала загрузите депозит из выбранного счёта.";
+    $("calc-status").textContent = msg;
+    setTbankStatus(msg, true);
+    $("tbank-settings").open = true;
+    return false;
+  }
+
   function stopperConfig() {
     const slMult = Math.max(0, +$("stopper-sl-mult").value || 0);
     const tpMult = Math.max(0, +$("stopper-tp-mult").value || 0);
@@ -819,6 +1176,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       "Contract currency": "Volume, валюте контракта, ₽"
     };
     $("vol-value-label").textContent = labels[t] || "Volume";
+    syncAccountModeUi();
   }
 
   function selectedInstruments() {
@@ -2364,6 +2722,7 @@ ${totalBlock}
       $("calc-status").textContent = "Выберите хотя бы один инструмент в списке.";
       return;
     }
+    if (!requireTbankDepositForRun()) return;
     const runGen = ++state.runGeneration;
     const bulkMode = resolveBulkMode(instruments);
     try {
@@ -2388,6 +2747,21 @@ ${totalBlock}
   function bindUiEvents() {
   $("calc-run").addEventListener("click", run);
   $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
+  $("account-mode").addEventListener("change", () => {
+    syncAccountModeUi();
+    if (state.packs.length && (state.accountMode !== "tbank" || state.tbank.depositLoaded)) render();
+  });
+  $("tbank-save-token").addEventListener("click", () => saveTbankToken());
+  $("tbank-unlock-token").addEventListener("click", () => unlockTbankToken());
+  $("tbank-load-accounts").addEventListener("click", () => loadTbankAccounts());
+  $("tbank-load-deposit").addEventListener("click", () => loadTbankDeposit());
+  $("tbank-forget-token").addEventListener("click", () => forgetTbankToken());
+  $("tbank-account").addEventListener("change", () => {
+    state.tbank.selectedAccountId = $("tbank-account").value;
+    state.tbank.depositLoaded = false;
+    if (state.tbank.selectedAccountId) safeStorageSet(TBANK_ACCOUNT_STORE_KEY, state.tbank.selectedAccountId);
+    syncAccountModeUi();
+  });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
   $("cache-file-input").addEventListener("change", async (ev) => {
@@ -2509,6 +2883,7 @@ ${totalBlock}
   initIndicatorToggles();
   updatePositionSlHint();
   initPrefixFields();
+  initAccountMode();
   syncVolumeFields();
   initInstrumentLists();
   initDates();
