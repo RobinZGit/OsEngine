@@ -221,6 +221,13 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-trading-panel--sandbox .pos-fake-tag{font-size:.72rem;font-weight:700;color:#15803d;margin-left:.25rem;}
 .live-trading-panel--sandbox .pos-row-closed{opacity:.72;font-style:italic;}
 .live-trading-panel--sandbox .pos-row-closed td{color:#4b5563;}
+.calc-logic-row{margin:.35rem 0 .65rem;}
+.calc-logic-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.35rem .75rem;margin-bottom:.35rem;}
+.calc-logic-head label{font-weight:600;margin:0;}
+.calc-logic-selected{flex:1 1 100%;font-size:.82rem;color:var(--muted);line-height:1.45;}
+.calc-logic-multi{width:100%;min-height:5rem;padding:.35rem .45rem;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:.92rem;line-height:1.35;}
+.calc-logic-multi option{padding:.28rem .35rem;border-radius:4px;}
+.calc-logic-multi option:checked{background:#dbeafe;color:#1e3a8a;font-weight:600;}
 @keyframes live-sandbox-panel-pulse{
   0%,100%{box-shadow:0 0 0 3px rgba(34,197,94,.14),0 6px 22px rgba(21,128,61,.22);}
   50%{box-shadow:0 0 0 5px rgba(34,197,94,.24),0 8px 26px rgba(21,128,61,.32);}
@@ -508,9 +515,16 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="calc-field"><label for="calc-month">Месяц целиком</label><input id="calc-month" type="month"></div>
 <div class="calc-field"><label for="calc-from">Начало</label><input id="calc-from" type="date" min="2020-01-01"></div>
 <div class="calc-field"><label for="calc-till">Конец</label><input id="calc-till" type="date" min="2020-01-01"></div>
-<div class="calc-field"><label for="calc-logic">Логика</label><select id="calc-logic"></select></div>
 <button class="calc-btn" id="calc-run" type="button">Рассчитать</button>
 <button class="calc-btn calc-btn-secondary" id="calc-select-positive" type="button" disabled title="После расчёта оставить только инструменты с FINRESP ≥ 0">Отобрать FINRESP ≥ 0</button>
+</div>
+<div class="calc-field calc-field-wide calc-logic-row">
+<div class="calc-logic-head">
+<label for="calc-logic">Логика (Ctrl+клик — несколько; приоритет сверху вниз)</label>
+</div>
+<p class="calc-logic-selected" id="calc-logic-selected">—</p>
+<select id="calc-logic" class="calc-logic-multi" multiple size="5"></select>
+<p class="calc-sec-hint" id="calc-logic-hint">При нескольких логиках на каждой свече сначала проверяются сигналы верхней выбранной, затем следующей (как слоты L1…L5 в MultiLogic).</p>
 </div>
 <div class="calc-field calc-field-wide cache-row">
 <label>База цен MOEX (IndexedDB браузера)</label>
@@ -709,7 +723,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-sandbox";
+  const CALC_PAGE_VERSION = "2026-06-08-multi-logic";
   const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
   const FINRESP_STALE_MSG = "Параметры изменены — нажмите «Рассчитать».";
   const $ = (id) => document.getElementById(id);
@@ -867,7 +881,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         `windowSkippedSample=${(calcState.windowSkipped || []).slice(0, 6).map((f) => `${f.sec}:${f.error}`).join("; ") || "—"}`,
         `period=${$("calc-from")?.value || "—"}…${$("calc-till")?.value || "—"}`,
         `tf=${$("calc-tf")?.value || "—"}`,
-        `logic=${$("calc-logic")?.value || "—"}`,
+        `logic=${selectedLogicIds().join(",") || "—"}`,
         `indicators=${typeof selectedIndicatorKeys === "function" ? selectedIndicatorKeys().join(",") : "—"}`,
         `accountMode=${calcState.accountMode || "paper"}`,
         `tbankTokenStored=${(() => { try { return !!localStorage.getItem("multilogic.finresp.tbank.token.v1"); } catch (_) { return false; } })()}`,
@@ -1037,6 +1051,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     uiBusy: false,
     restoringConfig: false,
     restoredSelectedInstruments: [],
+    restoredLogicIds: null,
     accountMode: "paper",
     tbank: {
       token: null,
@@ -1199,7 +1214,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       timeframe: $("calc-tf")?.value || "60",
       from: $("calc-from")?.value || "",
       till: $("calc-till")?.value || "",
-      logic: $("calc-logic")?.value || "",
+      logic: primaryLogicId(),
+      logics: selectedLogicIds(),
       selectedInstruments: selectedInstruments(),
       volume: {
         type: $("vol-type")?.value || "Deposit percent",
@@ -1266,7 +1282,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       setValueIfExists("calc-tf", cfg.timeframe);
       setValueIfExists("calc-from", cfg.from);
       setValueIfExists("calc-till", cfg.till);
-      setValueIfExists("calc-logic", cfg.logic);
+      state.restoredLogicIds = Array.isArray(cfg.logics) && cfg.logics.length
+        ? cfg.logics.filter(Boolean)
+        : (cfg.logic ? [cfg.logic] : null);
       setValueIfExists("vol-type", cfg.volume?.type);
       setValueIfExists("vol-value", cfg.volume?.value);
       setValueIfExists("vol-deposit", cfg.volume?.deposit);
@@ -3259,7 +3277,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function activeLogicLineRaw() {
-    const key = $("calc-logic")?.value || "L1";
+    const key = primaryLogicId();
     return state.customLines?.[key] || E.DEFAULT_LOGIC_LINES?.[key] || "";
   }
 
@@ -3284,7 +3302,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   async function liveObTrendAllowsOrder(instrumentId, direction) {
     if (!liveObTrendGateRequired()) return { ok: true, skipped: true };
     const line = activeLogicLineRaw();
-    const logicKey = $("calc-logic")?.value || "";
+    const logicKey = primaryLogicId();
     const mode = E.detectObTrendMode(line, logicKey);
     const tradeSide = direction === "ORDER_DIRECTION_SELL" ? "sell" : "buy";
     try {
@@ -3513,7 +3531,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!instruments.length) {
       return { ok: false, error: "выберите инструменты" };
     }
-    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, params(), indicatorSelection());
+    const spec = resolveCalcLogicSpec(params(), indicatorSelection());
     if (!spec) {
       return { ok: false, error: "выберите логику" };
     }
@@ -4659,7 +4677,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const p = optimCtx?.params ?? params();
     const sc = optimCtx?.stopper ?? stopperConfig();
     const indicators = optimCtx?.indicators ?? indicatorSelection();
-    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
+    const spec = resolveCalcLogicSpec(p, indicators);
     if (!spec) return null;
     if (!ro.silent) {
       setCalcProgress("Расчёт FINRESP (фоновый поток)…", CALC_PROGRESS.FINRESP_START);
@@ -4817,7 +4835,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const p = optimCtx?.params ?? params();
     const sc = optimCtx?.stopper ?? stopperConfig();
     const indicators = optimCtx?.indicators ?? indicatorSelection();
-    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
+    const spec = resolveCalcLogicSpec(p, indicators);
     if (!spec) return null;
     const { perSec, agg, preStopperAgg, stopper, skipped } = E.runMulti(
       state.packs, spec, a, b, p, volConfig(), sc, finrespRunOptions()
@@ -5007,9 +5025,67 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return rest > 0 ? `${shown} · …ещё ${rest}` : shown;
   }
 
+  function selectedLogicIds() {
+    const sel = $("calc-logic");
+    if (!sel) return ["L5"];
+    const ids = [...sel.selectedOptions].map((o) => o.value).filter(Boolean);
+    return ids.length ? ids : (sel.value ? [sel.value] : ["L5"]);
+  }
+
+  function primaryLogicId() {
+    return selectedLogicIds()[0] || "L5";
+  }
+
+  function applySavedLogicSelection(cfg) {
+    const sel = $("calc-logic");
+    if (!sel) return;
+    const ids = Array.isArray(cfg?.logics) && cfg.logics.length
+      ? cfg.logics.filter(Boolean)
+      : (cfg?.logic ? [cfg.logic] : ["L5"]);
+    const allowed = new Set([...sel.options].map((o) => o.value));
+    const pick = ids.filter((id) => allowed.has(id));
+    for (const o of sel.options) {
+      o.selected = pick.includes(o.value);
+    }
+    if (!pick.length && sel.options.length) {
+      const fallback = allowed.has("L5") ? "L5" : sel.options[0].value;
+      for (const o of sel.options) o.selected = o.value === fallback;
+    }
+    syncLogicSelectedHint();
+  }
+
+  function syncLogicSelectSize() {
+    const sel = $("calc-logic");
+    if (!sel) return;
+    const selectedN = selectedLogicIds().length;
+    const optN = sel.options.length || 1;
+    sel.size = Math.min(12, Math.max(5, selectedN + 1, Math.min(optN, 8)));
+  }
+
+  function syncLogicSelectedHint() {
+    const el = $("calc-logic-selected");
+    const sel = $("calc-logic");
+    if (!el || !sel) return;
+    const ids = selectedLogicIds();
+    if (!ids.length) {
+      el.textContent = "— не выбрано (по умолчанию L5)";
+    } else if (ids.length === 1) {
+      const name = E.BUILTIN_META.find((m) => m.id === ids[0])?.name || ids[0];
+      el.textContent = `Выбрана: ${name}`;
+    } else {
+      const names = ids.map((id) => E.BUILTIN_META.find((m) => m.id === id)?.name || id);
+      el.textContent = `Выбрано ${ids.length} (порядок): ${names.join(" → ")}`;
+    }
+    syncLogicSelectSize();
+  }
+
+  function resolveCalcLogicSpec(p, indicators) {
+    return E.resolveLogicSpecStack(selectedLogicIds(), state.customLines, p, indicators);
+  }
+
   function fillLogicSelect() {
     const sel = $("calc-logic");
-    const cur = sel.value;
+    const prev = selectedLogicIds();
     sel.innerHTML = "";
     for (const m of E.BUILTIN_META) {
       const o = document.createElement("option");
@@ -5017,8 +5093,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       o.textContent = m.name;
       sel.appendChild(o);
     }
-    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
-    else sel.value = "L5";
+    const allowed = new Set([...sel.options].map((o) => o.value));
+    const pick = prev.filter((id) => allowed.has(id));
+    for (const o of sel.options) {
+      o.selected = pick.includes(o.value);
+    }
+    if (!pick.length) {
+      const fallback = allowed.has("L5") ? "L5" : sel.options[0]?.value;
+      for (const o of sel.options) o.selected = o.value === fallback;
+    }
+    if (state.restoredLogicIds?.length) {
+      applySavedLogicSelection({ logics: state.restoredLogicIds });
+      state.restoredLogicIds = null;
+    } else {
+      syncLogicSelectedHint();
+    }
   }
 
   function initIndicatorToggles() {
@@ -5036,9 +5125,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   function updatePositionSlHint() {
     const el = $("position-sl-hint");
     if (!el) return;
-    const meta = E.BUILTIN_META.find((m) => m.id === $("calc-logic").value);
+    const ids = selectedLogicIds();
+    const meta = E.BUILTIN_META.find((m) => m.id === primaryLogicId());
     let text = "";
-    if (meta?.type === "sma_spread") {
+    if (ids.length > 1) {
+      text = `Выбрано ${ids.length} логик: на вход проверяются по порядку сверху вниз; выход и SL/TP — у логики, открывшей позицию.`;
+    } else if (meta?.type === "sma_spread") {
       text = "Логика «Выше/Ниже SMA» — упрощённая модель; стопы по ATR учитываются при ненулевой позиции.";
     } else if (meta?.type === "logic_line") {
       text = "Логики L1…L5: стопы позиции по ATR (@SL / @TP) применяются при открытой позиции.";
@@ -6228,6 +6320,7 @@ ${totalBlock}
   });
   $("calc-logic").addEventListener("change", () => {
     updatePositionSlHint();
+    syncLogicSelectedHint();
     invalidateFormChange();
   });
   $("vol-type").addEventListener("change", () => { syncVolumeFields(); invalidateFormChange(); });

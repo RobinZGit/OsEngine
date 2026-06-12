@@ -958,6 +958,152 @@
     return ind;
   }
 
+  function logicLineBarSignals(parsed, cache, i) {
+    const opLongAtoms = parsed.opLongAtoms || (parsed.opSide === "long" ? parsed.opAtoms : []);
+    const opShortAtoms = parsed.opShortAtoms || (parsed.opSide === "short" ? parsed.opAtoms : []);
+    const clLongAtoms = parsed.clLongAtoms || (parsed.clSide === "long" ? parsed.clAtoms : []);
+    const clShortAtoms = parsed.clShortAtoms || (parsed.clSide === "short" ? parsed.clAtoms : []);
+    return {
+      longOpHit: evaluateExpr(opLongAtoms, cache, i),
+      shortOpHit: evaluateExpr(opShortAtoms, cache, i),
+      longClHit: evaluateExpr(clLongAtoms, cache, i),
+      shortClHit: evaluateExpr(clShortAtoms, cache, i)
+    };
+  }
+
+  function simulateMultiLogicStack(candles, specs, startIdx, endIdx, volConfig, options, params) {
+    const opts = options || {};
+    const logicSpecs = (specs || []).filter((s) => s && s.type === "logic_line" && !s.disabled);
+    if (!logicSpecs.length) return simulateNoSignalRows(candles, startIdx, endIdx, options);
+    if (logicSpecs.length === 1) {
+      const parsed = applySlTpParams({ ...logicSpecs[0].parsed }, params || DEFAULT_PARAMS);
+      return simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig, options);
+    }
+    const p = { ...DEFAULT_PARAMS, ...params };
+    const parsedList = logicSpecs.map((s) => applySlTpParams({ ...s.parsed }, p));
+    const signalCandles = opts.signalCandles || candles;
+    const cache = opts.indicatorCache || new IndicatorCache(signalCandles);
+    const atrLenSet = new Set(parsedList.map((x) => x.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen));
+    const atrByLen = new Map([...atrLenSet].map((len) => [len, cache.atr(len)]));
+    const initial = opts.initial || {};
+    let pos = initial.pos || 0;
+    let cash = initial.cash || 0;
+    let entryPrice = initial.entryPrice ?? null;
+    let commissionPaid = initial.commission || 0;
+    let activeIdx = -1;
+    const rows = [];
+    const w = Math.max(warmupBars(), 2);
+    const from = opts.skipWarmup ? Math.max(startIdx, 0) : Math.max(startIdx, w);
+    const to = Math.min(endIdx, candles.length - 1);
+    const barSpan = Math.max(1, to - from + 1);
+    const barProgressStep = opts.yieldUi
+      ? Math.max(1, Math.floor(barSpan / 24))
+      : Math.max(1, Math.floor(barSpan / 48));
+
+    const flatten = (price) => {
+      if (pos === 0) return 0;
+      const vol = Math.abs(pos);
+      cash += pos * price;
+      const comm = commissionCost(price, vol, volConfig);
+      cash -= comm;
+      commissionPaid += comm;
+      pos = 0;
+      entryPrice = null;
+      activeIdx = -1;
+      return vol;
+    };
+
+    for (let i = from; i <= to; i++) {
+      if (typeof opts.shouldCancel === "function" && opts.shouldCancel()) break;
+      const price = candles[i].close;
+      let buy = 0;
+      let sell = 0;
+      let posStop = null;
+
+      if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
+        opts.onProgress(i - from + 1, barSpan, candles[i]?.time);
+      }
+
+      if (pos !== 0 && activeIdx >= 0 && activeIdx < parsedList.length) {
+        const parsed = parsedList[activeIdx];
+        if (parsed.slAtr > 0 || parsed.tpAtr > 0) {
+          const a = atrByLen.get(parsed.slTpAtrLen || DEFAULT_PARAMS.slTpAtrLen)?.[i];
+          if (a != null && a > 0 && entryPrice != null) {
+            let hit = false;
+            if (pos > 0) {
+              if (parsed.slAtr > 0 && price <= entryPrice - parsed.slAtr * a) {
+                hit = true;
+                posStop = "sl";
+              } else if (parsed.tpAtr > 0 && price >= entryPrice + parsed.tpAtr * a) {
+                hit = true;
+                posStop = "tp";
+              }
+            } else {
+              if (parsed.slAtr > 0 && price >= entryPrice + parsed.slAtr * a) {
+                hit = true;
+                posStop = "sl";
+              } else if (parsed.tpAtr > 0 && price <= entryPrice - parsed.tpAtr * a) {
+                hit = true;
+                posStop = "tp";
+              }
+            }
+            if (hit) sell += flatten(price);
+          }
+        }
+        if (pos !== 0) {
+          const sig = logicLineBarSignals(parsed, cache, i);
+          if (pos > 0 && (sig.longClHit || sig.shortOpHit)) sell += flatten(price);
+          else if (pos < 0 && (sig.shortClHit || sig.longOpHit)) sell += flatten(price);
+        }
+      }
+
+      if (pos === 0) {
+        activeIdx = -1;
+        for (let si = 0; si < parsedList.length; si++) {
+          const sig = logicLineBarSignals(parsedList[si], cache, i);
+          if (sig.longOpHit === sig.shortOpHit) continue;
+          const lot = calcTradeVolume(price, volConfig);
+          const cap = maxAbsPosition(price, volConfig);
+          if (lot <= 0 || lot > cap) continue;
+          pos = sig.longOpHit ? lot : -lot;
+          cash -= pos * price;
+          const comm = commissionCost(price, lot, volConfig);
+          cash -= comm;
+          commissionPaid += comm;
+          entryPrice = price;
+          buy = lot;
+          activeIdx = si;
+          break;
+        }
+      }
+
+      const chartParsed = activeIdx >= 0 ? parsedList[activeIdx] : parsedList[0];
+      const ind = collectChartIndicators(cache, chartParsed, i);
+      pushRow(rows, candles[i], {
+        ...ind,
+        buy,
+        sell,
+        posStop,
+        pos,
+        cash,
+        commission: commissionPaid,
+        eq: cash + pos * price
+      });
+    }
+
+    const last = rows.at(-1);
+    return {
+      rows,
+      finresp: last?.eq ?? 0,
+      cash: last?.cash ?? 0,
+      pos: last?.pos ?? 0,
+      commission: commissionPaid,
+      buys: rows.reduce((s, r) => s + (r.buy || 0), 0),
+      sells: rows.reduce((s, r) => s + (r.sell || 0), 0),
+      entryPrice
+    };
+  }
+
   function simulateLogicLine(candles, parsed, startIdx, endIdx, volConfig, options) {
     const opts = options || {};
     const signalCandles = opts.signalCandles || candles;
@@ -1233,15 +1379,31 @@
     }
     const line = substituteParams(customLines[meta.key] || DEFAULT_LOGIC_LINES[meta.key], p);
     const parsed = applySlTpParams(parseLogicLine(line, p, indicatorSelection), p);
-    return { type: "logic_line", parsed, line };
+    return { type: "logic_line", parsed, line, logicId: meta.id };
+  }
+
+  function resolveLogicSpecStack(logicIds, customLines, params, indicatorSelection) {
+    const ids = (Array.isArray(logicIds) ? logicIds : [logicIds]).map(String).filter(Boolean);
+    if (!ids.length) return null;
+    const specs = ids.map((id) => resolveLogicSpec(id, customLines, params, indicatorSelection)).filter(Boolean);
+    if (!specs.length) return null;
+    const logicSpecs = specs.filter((s) => s.type === "logic_line" && !s.disabled);
+    if (specs.length === 1) return specs[0];
+    if (logicSpecs.length >= 2) {
+      return { type: "multi_logic", specs: logicSpecs, logicIds: logicSpecs.map((s) => s.logicId).filter(Boolean) };
+    }
+    return specs[0];
   }
 
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
     if (!candles?.length) {
       return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0, entryPrice: null };
     }
-    if (spec.disabled) return simulateNoSignalRows(candles, startIdx, endIdx, options);
+    if (!spec || spec.disabled) return simulateNoSignalRows(candles, startIdx, endIdx, options);
     const vol = normalizedVolConfig(volConfig);
+    if (spec.type === "multi_logic") {
+      return simulateMultiLogicStack(candles, spec.specs, startIdx, endIdx, vol, options, params);
+    }
     if (spec.type === "sma_spread") {
       return simulateSmaSpread(candles, spec.smaLen, spec.side, startIdx, endIdx, vol, {
         ...options,
@@ -2719,6 +2881,7 @@
     parseLogicLine,
     normalizeIndicatorSelection,
     resolveLogicSpec,
+    resolveLogicSpecStack,
     runOnCandles,
     runMulti,
     runMultiAsync,

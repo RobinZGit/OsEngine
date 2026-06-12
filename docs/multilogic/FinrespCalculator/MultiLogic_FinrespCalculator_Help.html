@@ -117,7 +117,7 @@ th{background:#f8fafc;width:28%;}
 <tr><td><strong>Таймфрейм</strong> (<code>calc-tf</code>)</td><td>1, 5, 10, 15, 60 мин, 1 день. 5 и 15 мин — из минутных свечей (~7–14 дн. макс.). <strong>1 час и 1 день</strong> — любой период в календаре (<code>2020-01-01</code> — сегодня), без автосужения</td></tr>
 <tr><td><strong>Месяц целиком</strong> (<code>calc-month</code>)</td><td>Быстрый выбор календарного месяца — подставляет «Начало» и «Конец»</td></tr>
 <tr><td><strong>Начало</strong> / <strong>Конец</strong></td><td>Даты периода загрузки и расчёта. При смене ТФ или числа инструментов период может автоматически сужаться</td></tr>
-<tr><td><strong>Логика</strong> (<code>calc-logic</code>)</td><td>L1…L5 и встроенные варианты (выше/ниже SMA и т.д.)</td></tr>
+<tr><td><strong>Логика</strong> (<code>calc-logic</code>)</td><td>На всю ширину карточки, <strong>под</strong> кнопками «Рассчитать» / «Отобрать FINRESP ≥ 0». Список с <strong>множественным выбором</strong> (Ctrl+клик): L1…L5 и встроенные SMA. Высота списка растёт с числом выбранных. Строка «Выбрано N (порядок): …» показывает порядок приоритета. При нескольких логиках L1…L5 на каждой свече сначала проверяется верхняя в списке, затем следующая (как слоты MultiLogic); выход и SL/TP — у логики, открывшей позицию. «Выше/Ниже SMA» при комбинации с L1…L5 не входит в стек — оставьте одну SMA или одну L-логику</td></tr>
 <tr><td><strong>Рассчитать</strong></td><td>Загрузить/дочитать свечи MOEX (или из IndexedDB), пересчитать FINRESP. Изменение SL/TP, объёма, комиссии и ползунков — <em>без</em> повторной загрузки MOEX</td></tr>
 <tr><td><strong>Отобрать FINRESP ≥ 0</strong></td><td>После расчёта оставить в списке только инструменты с неотрицательным FINRESP в текущем окне</td></tr>
 </table>
@@ -286,7 +286,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>Содержит: версию страницы (<code>pageVersion</code>), режим кошелька, ТФ, период, выбор инструментов, состояние кэша, live-поля (<code>liveObTrendConfirm</code>, <code>logicUsesObTrend</code>, <code>liveOpenPositionsCount</code>, источник свечей), блок <code>liveApiForbidden</code> (тикер, sec, name, uid — запрещённые для API инструменты), <code>liveReconcile.*</code> (в т.ч. пропуски по <code>@OBT</code>), журнал <code>errors:</code> со строками <code>live-forbidden-instrument:</code>, <code>live-obt-skip</code>, <code>live-orderbook</code> (до 128 строк). Обновляется при старте, расчёте, live-торговле и ошибках T-Bank.</p>
 
-<p class="note">Версия справки: 2026-06-08 (синхронизирована с формой <code>2026-06-08-sandbox</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
+<p class="note">Версия справки: 2026-06-08 (синхронизирована с формой <code>2026-06-08-multi-logic</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
 
 <div class="btn-row">
 <a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Вернуться в калькулятор</a>
