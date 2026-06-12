@@ -8,6 +8,7 @@
 |------|------------|
 | `MultiLogic_FinrespCalculator.html` | Калькулятор (UI) |
 | `MultiLogic_FinrespCalculator.engine.js` | Движок расчёта и MOEX |
+| `MultiLogic_FinrespCalculator.worker.js` | Web Worker для расчёта FINRESP без блокировки UI |
 | `MultiLogic_FinrespCalculator_Help.html` | Справка |
 | `serve-calculator.ps1` | Локальный HTTP-сервер (MOEX) |
 | `price-cache/` | Резервные копии базы цен (JSON) |

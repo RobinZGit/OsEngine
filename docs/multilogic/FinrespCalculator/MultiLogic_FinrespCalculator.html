@@ -183,9 +183,41 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
   background:#fff;border:1px solid var(--border);border-radius:6px;white-space:pre-wrap;word-break:break-word;
 }
 a{color:var(--accent);}
+.calc-progress-banner{
+  position:sticky;top:0;z-index:2000;
+  background:linear-gradient(90deg,#1e3a8a 0%,#2563eb 45%,#1d4ed8 100%);
+  background-size:200% 100%;animation:calc-progress-bg 2.2s ease-in-out infinite;
+  color:#fff;padding:.7rem 1.1rem;box-shadow:0 3px 14px rgba(37,99,235,.4);
+  border-bottom:2px solid #93c5fd;
+}
+.calc-progress-banner-inner{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .85rem;font-size:.95rem;}
+.calc-progress-banner strong{font-weight:800;letter-spacing:.02em;}
+#calc-progress-text{font-weight:500;opacity:.95;}
+.calc-progress-spinner{
+  display:inline-block;width:1.05rem;height:1.05rem;flex-shrink:0;
+  border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
+  animation:calc-spin .75s linear infinite;
+}
+@keyframes calc-spin{to{transform:rotate(360deg)}}
+@keyframes calc-progress-bg{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+body.calc-running{--bg:#e5edf9;--accent-soft:#dbeafe;}
+body.calc-running .help-hdr{background:linear-gradient(180deg,#eff6ff 0%,#dbeafe 100%);}
+body.calc-running .help-main{
+  opacity:.9;pointer-events:none;user-select:none;
+  filter:saturate(.92);transition:opacity .2s ease;
+}
+body.calc-running .calc-progress-banner{pointer-events:auto;}
+body.calc-running .help-ftr{opacity:.75;}
 </style>
 </head>
 <body>
+<div id="calc-progress-banner" class="calc-progress-banner" hidden role="status" aria-live="polite" aria-busy="true">
+<div class="calc-progress-banner-inner">
+<span class="calc-progress-spinner" aria-hidden="true"></span>
+<strong>Идёт расчёт</strong>
+<span id="calc-progress-text">Подготовка…</span>
+</div>
+</div>
 <header class="help-hdr">
 <h1>MultiLogic — калькулятор FINRESP</h1>
 <p class="help-sub"><a href="../index.html">документация</a> · <a href="MultiLogic_FinrespCalculator_Help.html">справка калькулятора</a> · <a href="../MultiLogic_LogicHelp.html">справка по роботу</a> · <a href="../MultiLogic_PolynomialIndicators.html">многочлены</a></p>
@@ -460,7 +492,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-h1-period";
+  const CALC_PAGE_VERSION = "2026-06-12-calc-progress";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -621,6 +653,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     lastResult: null,
     prevSelectCount: 0,
     runGeneration: 0,
+    workerRequestId: 0,
+    calcWorker: null,
     runBusyOwner: null,
     uiBusy: false,
     restoringConfig: false,
@@ -2282,8 +2316,112 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return `Остановить${dots}`;
   }
 
+  const CALC_LOCK_SELECTOR = "#finresp-calc input, #finresp-calc select, #finresp-calc textarea, #finresp-calc button, #account-mode";
+
+  function yieldToUi() {
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  }
+
+  function setCalcProgress(message) {
+    const text = String(message || "").trim() || "…";
+    const el = $("calc-progress-text");
+    if (el) el.textContent = text;
+    const banner = $("calc-progress-banner");
+    if (banner) banner.hidden = false;
+    $("calc-status").textContent = text;
+  }
+
+  function clearCalcProgress() {
+    const banner = $("calc-progress-banner");
+    if (banner) {
+      banner.hidden = true;
+      banner.setAttribute("aria-busy", "false");
+    }
+  }
+
+  function setFormLocked(lock) {
+    document.body.classList.toggle("calc-running", !!lock);
+    const banner = $("calc-progress-banner");
+    if (banner) banner.setAttribute("aria-busy", lock ? "true" : "false");
+    document.querySelectorAll(CALC_LOCK_SELECTOR).forEach((el) => {
+      if (lock) {
+        if (el.dataset.calcLockPrev == null) el.dataset.calcLockPrev = el.disabled ? "1" : "0";
+        el.disabled = true;
+      } else if (el.dataset.calcLockPrev != null) {
+        el.disabled = el.dataset.calcLockPrev === "1";
+        delete el.dataset.calcLockPrev;
+      }
+    });
+  }
+
+  function getCalcWorker() {
+    if (state.calcWorker) return state.calcWorker;
+    if (typeof Worker === "undefined") return null;
+    try {
+      state.calcWorker = new Worker("MultiLogic_FinrespCalculator.worker.js");
+      return state.calcWorker;
+    } catch (err) {
+      noteTechError(`worker-init: ${err.message}`);
+      return null;
+    }
+  }
+
+  function runMultiInWorker(packs, spec, a, b, params, volConfig, sc, randomPriceShift) {
+    const worker = getCalcWorker();
+    if (!worker) {
+      return Promise.resolve(E.runMulti(
+        packs, spec, a, b, params, volConfig, sc,
+        randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : undefined
+      ));
+    }
+    const id = ++state.workerRequestId;
+    return new Promise((resolve, reject) => {
+      const onMsg = (e) => {
+        if (!e.data || e.data.id !== id) return;
+        worker.removeEventListener("message", onMsg);
+        worker.removeEventListener("error", onErr);
+        if (e.data.ok) resolve(e.data.result);
+        else reject(new Error(e.data.error || "worker failed"));
+      };
+      const onErr = (err) => {
+        worker.removeEventListener("message", onMsg);
+        worker.removeEventListener("error", onErr);
+        reject(err);
+      };
+      worker.addEventListener("message", onMsg);
+      worker.addEventListener("error", onErr);
+      worker.postMessage({ id, packs, spec, startIdx: a, endIdx: b, params, volConfig, stopperConfig: sc, randomPriceShift: !!randomPriceShift });
+    });
+  }
+
+  async function calcResultAsync(optimCtx) {
+    if (!state.packs.length) return null;
+    const [a, b] = normalizeSliders();
+    const p = optimCtx?.params ?? params();
+    const sc = optimCtx?.stopper ?? stopperConfig();
+    const indicators = optimCtx?.indicators ?? indicatorSelection();
+    const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
+    if (!spec) return null;
+    setCalcProgress("Расчёт FINRESP (фоновый поток)…");
+    await yieldToUi();
+    let workerOut;
+    try {
+      workerOut = await runMultiInWorker(state.packs, spec, a, b, p, volConfig(), sc, randomPriceShiftEnabled());
+    } catch (err) {
+      noteTechError(`worker-fallback: ${err.message}`);
+      setCalcProgress("Расчёт FINRESP (основной поток)…");
+      await yieldToUi();
+      workerOut = E.runMulti(state.packs, spec, a, b, p, volConfig(), sc, finrespRunOptions());
+    }
+    const { perSec, agg, preStopperAgg, stopper, skipped } = workerOut;
+    state.windowSkipped = skipped || [];
+    if (!perSec?.length) return null;
+    return { perSec, agg, preStopperAgg, stopper, a, b, skipped };
+  }
+
   function applyUiLocks() {
     const lock = state.uiBusy || isOptimizing();
+    setFormLocked(state.uiBusy);
     $("calc-run").disabled = lock;
     $("calc-select-positive").disabled = lock || !state.lastResult?.perSec?.length;
     $("prefix-pick-stocks").disabled = lock;
@@ -2490,6 +2628,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function setBusy(busy) {
     state.uiBusy = busy;
+    if (!busy) clearCalcProgress();
     applyUiLocks();
     if (!state.uiBusy && !isOptimizing()) syncOptimButtons();
   }
@@ -3488,17 +3627,18 @@ ${totalBlock}
       ? `${nShares} акц. + ${nFutures} фьюч.`
       : nFutures ? `${nFutures} фьючерсов` : `${nShares} акций`;
     const maxD = maxCalcDays(interval, instruments.length);
-    $("calc-status").textContent = periodNarrowed
-      ? `Период сужен до ${maxD} дн. (${TF_LIMITS[interval]?.label || interval}, ${instruments.length} инстр.). Загрузка ${label}…`
-      : `Загрузка ${label}…`;
+    setCalcProgress(periodNarrowed
+      ? `Период сужен до ${maxD} дн. · загрузка цен MOEX: ${label}…`
+      : `Загрузка цен MOEX: ${label}…`);
+    await yieldToUi();
     try {
       let cacheHits = 0;
       const loadedData = await ensureInstrumentPacks(instruments, from, till, interval, (done, total, sec, groupLabel, meta) => {
         if (runGen !== state.runGeneration) return;
         if (meta?.fromCache) cacheHits += 1;
-        $("calc-status").textContent = meta?.fromCache
-          ? `Загрузка ${done}/${total} (${groupLabel}, кэш): ${sec}`
-          : `Загрузка ${done}/${total} (${groupLabel}): ${sec}`;
+        setCalcProgress(meta?.fromCache
+          ? `Загрузка цен ${done}/${total} (${groupLabel}, кэш): ${sec}`
+          : `Загрузка цен ${done}/${total} (${groupLabel}): ${sec}`);
       });
       if (runGen !== state.runGeneration) return;
       updateCacheHint(cacheHits ? `MOEX: ${loadedData.packs.length - cacheHits}, кэш: ${cacheHits}` : "");
@@ -3522,9 +3662,31 @@ ${totalBlock}
         setSliderBounds(false);
       }
       saveWindowAnchor();
-      if (!renderWithStatus()) {
+      setCalcProgress("Расчёт FINRESP и построение графиков…");
+      await yieldToUi();
+      const result = await calcResultAsync();
+      if (runGen !== state.runGeneration) return;
+      if (!result) {
         $("calc-chart").innerHTML = "";
         $("calc-chart-equity").innerHTML = "";
+        const packsN = state.packs?.length || 0;
+        const skipped = state.windowSkipped?.length || 0;
+        let msg = "Нет результата для выбранного окна.";
+        if (!packsN) msg = "Нет загруженных свечей.";
+        else if (skipped >= packsN) {
+          msg = `Недостаточно истории для расчёта (~${maxCalcDays($("calc-tf").value, instruments.length)} дн.).`;
+        }
+        $("calc-finresp").textContent = "—";
+        $("calc-commission").textContent = "—";
+        $("calc-ann-simple").textContent = "—";
+        $("calc-ann-compound").textContent = "—";
+        state.lastResult = null;
+        setCalcProgress(msg);
+        if (instruments.length > 1 && loadedData.failures.length) {
+          $("calc-status").textContent += ` Загружено ${state.packs.length}/${instruments.length}; ошибок MOEX: ${loadedData.failures.length}.`;
+        }
+      } else {
+        applyResult(result);
         if (instruments.length > 1 && loadedData.failures.length) {
           $("calc-status").textContent +=
             ` Загружено ${state.packs.length}/${instruments.length}; ошибок MOEX: ${loadedData.failures.length}.`;
@@ -3545,7 +3707,7 @@ ${totalBlock}
 
   async function run() {
     if (state.uiBusy) {
-      $("calc-status").textContent = "Идёт загрузка… дождитесь завершения или обновите страницу (Ctrl+F5).";
+      setCalcProgress("Идёт расчёт — дождитесь завершения…");
       return;
     }
     applyEditorParams();
@@ -3561,7 +3723,7 @@ ${totalBlock}
       if (instruments.some((i) => i.market === "futures")) {
         state.runBusyOwner = runGen;
         setBusy(true);
-        $("calc-status").textContent = "Подбор фьючерсов MOEX за период расчёта…";
+        setCalcProgress("Подбор фьючерсов MOEX за период расчёта…");
         try {
           instruments = await expandFuturesForCalcPeriod(instruments);
         } finally {

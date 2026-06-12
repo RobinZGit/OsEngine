@@ -52,6 +52,7 @@ th{background:#f8fafc;width:28%;}
 
 <nav class="toc" aria-label="Содержание">
 <strong>Содержание:</strong>
+<a href="#progress">Индикатор расчёта</a> ·
 <a href="#start">Запуск</a> ·
 <a href="#header">Шапка</a> ·
 <a href="#instruments">Инструменты</a> ·
@@ -66,7 +67,17 @@ th{background:#f8fafc;width:28%;}
 <a href="#tech">Тех. информация</a>
 </nav>
 
-<h2 id="start">1. Запуск</h2>
+<h2 id="progress">1. Индикатор расчёта</h2>
+<p>При нажатии <strong>Рассчитать</strong> вверху страницы появляется синяя полоса <strong>«Идёт расчёт»</strong> с текущим этапом:</p>
+<ul>
+<li>подбор фьючерсов MOEX (если есть фьючерсы);</li>
+<li>загрузка цен MOEX / чтение кэша IndexedDB (с прогрессом по инструментам);</li>
+<li>расчёт FINRESP в <strong>фоновом потоке</strong> (Web Worker), чтобы форма оставалась прокручиваемой;</li>
+<li>построение графиков.</li>
+</ul>
+<p>На время расчёта тема страницы слегка меняется, все поля и кнопки формы <strong>заблокированы</strong>. После завершения блокировка снимается.</p>
+
+<h2 id="start">2. Запуск</h2>
 <p>Калькулятор — <code>MultiLogic_FinrespCalculator.html</code> + <code>MultiLogic_FinrespCalculator.engine.js</code> в одной папке. Для MOEX нужен <strong>http://</strong>, не <code>file://</code>.</p>
 <ul>
 <li><strong>Локально:</strong> <code>serve-calculator.ps1</code> → <code>http://127.0.0.1:8765/MultiLogic_FinrespCalculator.html</code></li>
@@ -75,7 +86,7 @@ th{background:#f8fafc;width:28%;}
 </ul>
 <p class="note">При открытии через <code>file://</code> появляется жёлтое предупреждение — свечи MOEX не загрузятся.</p>
 
-<h2 id="header">2. Шапка и режим кошелька</h2>
+<h2 id="header">3. Шапка и режим кошелька</h2>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
 <tr><td>Ссылки в шапке</td><td>Общая документация, эта справка, справка по роботу, многочлены</td></tr>
@@ -87,7 +98,7 @@ th{background:#f8fafc;width:28%;}
 </td></tr>
 </table>
 
-<h2 id="instruments">3. Выбор инструментов</h2>
+<h2 id="instruments">4. Выбор инструментов</h2>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
 <tr><td><strong>Акции (фьючерсы) — выбор</strong> (<code>calc-sec</code>)</td><td>Список с множественным выбором (Ctrl+клик). Акции и фьючерсы MOEX в одном списке</td></tr>
@@ -97,7 +108,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p class="note">Список заполняется из полей «Тикеры акций» и «Префиксы фьючерсов» в доп. параметрах (кнопки «Подобрать»).</p>
 
-<h2 id="period">4. Период, логика и кнопки расчёта</h2>
+<h2 id="period">5. Период, логика и кнопки расчёта</h2>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
 <tr><td><strong>Таймфрейм</strong> (<code>calc-tf</code>)</td><td>1, 5, 10, 15, 60 мин, 1 день. 5 и 15 мин — из минутных свечей (~7–14 дн. макс.). <strong>1 час и 1 день</strong> — любой период в календаре (<code>2020-01-01</code> — сегодня), без автосужения</td></tr>
@@ -109,7 +120,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p class="note" id="calc-date-hint-ref">Серая подсказка под датами — лимит дней для выбранного ТФ и числа бумаг.</p>
 
-<h2 id="cache">5. База цен MOEX</h2>
+<h2 id="cache">6. База цен MOEX</h2>
 <table>
 <tr><th>Кнопка</th><th>Назначение</th></tr>
 <tr><td><strong>Сохранить в файл</strong></td><td>JSON-резервная копия IndexedDB (удобно положить в <code>price-cache/</code>)</td></tr>
@@ -118,7 +129,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>При «Рассчитать»: сначала кэш, если хватает периода и ТФ; иначе — запрос MOEX ISS, дополнение кэша без затирания уже сохранённых дат.</p>
 
-<h2 id="results">6. Блок результатов</h2>
+<h2 id="results">7. Блок результатов</h2>
 <h3>Основные показатели (крупный блок)</h3>
 <table>
 <tr><th>Поле</th><th>Назначение</th></tr>
@@ -140,7 +151,7 @@ th{background:#f8fafc;width:28%;}
 
 <p><strong>Строка статуса</strong> (серый текст) — загрузка MOEX, ошибки, число инструментов, срабатывания Stopper, режим «сдвиг индикаторов ±0,1%».</p>
 
-<h2 id="window">7. Ползунки окна</h2>
+<h2 id="window">8. Ползунки окна</h2>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
 <tr><td><strong>Левая граница</strong> (<code>calc-start</code>)</td><td>Начало окна расчёта FINRESP по времени свечей</td></tr>
@@ -148,7 +159,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>Под ползунками — даты/время выбранных границ. Пересчёт мгновенный, без повторной загрузки MOEX.</p>
 
-<h2 id="extra">8. Дополнительные параметры и логики</h2>
+<h2 id="extra">9. Дополнительные параметры и логики</h2>
 <p>Блок сворачивается/разворачивается по заголовку «Дополнительные параметры и логики».</p>
 
 <h3>8.1. Объём сделки</h3>
@@ -209,14 +220,14 @@ th{background:#f8fafc;width:28%;}
 <h3>Кнопки «Оптимизировать»</h3>
 <p>При нажатии перебираются допустимые значения параметра (или комбинации индикаторов); в поле подставляется лучшее по FINRESP в текущем окне. Повторное нажатие — остановка. Во время оптимизации поля блокируются.</p>
 
-<h2 id="charts">9. Графики</h2>
+<h2 id="charts">10. Графики</h2>
 <table>
 <tr><th>Блок</th><th>Назначение</th></tr>
 <tr><td><strong>Графики по инструментам</strong> (<code>calc-chart</code>)</td><td>Mini-графики цены, индикаторов, сделок по каждой бумаге в окне</td></tr>
 <tr><td><strong>Equity портфеля</strong> (<code>calc-chart-equity</code>)</td><td>Суммарная кривая equity и сравнение логик L1…L5</td></tr>
 </table>
 
-<h2 id="tbank">10. Реальный счёт T-Bank</h2>
+<h2 id="tbank">11. Реальный счёт T-Bank</h2>
 <p>Сворачиваемый блок внизу формы (не путать с выбором «Кошелёк» вверху).</p>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
@@ -227,7 +238,7 @@ th{background:#f8fafc;width:28%;}
 <tr><td>Строка статуса T-Bank</td><td>Подсказки по режиму paper / T-Bank / live</td></tr>
 </table>
 
-<h2 id="live">11. Блок «Реальная торговля»</h2>
+<h2 id="live">12. Блок «Реальная торговля»</h2>
 <div class="warn-box"><strong>Внимание:</strong> реальные деньги на бирже. Виден только при кошельке «Реальная торговля T-Bank».</div>
 <table>
 <tr><th>Элемент</th><th>Назначение</th></tr>
@@ -241,7 +252,7 @@ th{background:#f8fafc;width:28%;}
 <tr><td><strong>Заявки в реальном времени</strong></td><td>Таблица активных и недавних заявок</td></tr>
 </table>
 
-<h2 id="tech">12. Тех. информация</h2>
+<h2 id="tech">13. Тех. информация</h2>
 <table>
 <tr><th>Кнопка</th><th>Назначение</th></tr>
 <tr><td><strong>Копировать</strong></td><td>Весь диагностический блок в буфер обмена</td></tr>
@@ -249,7 +260,7 @@ th{background:#f8fafc;width:28%;}
 </table>
 <p>Содержит: версию страницы (<code>pageVersion</code>), режим кошелька, ТФ, период, выбор инструментов, состояние кэша, ошибки MOEX/T-Bank. Обновляется при старте, выборе бумаг и «Рассчитать».</p>
 
-<p class="note">Версия справки: 2026-06-12 (синхронизирована с формой <code>2026-06-12-h1-period</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
+<p class="note">Версия справки: 2026-06-12 (синхронизирована с формой <code>2026-06-12-calc-progress</code>) · при изменении контролов калькулятора обновляйте <code>MultiLogic_FinrespCalculator_Help.html</code></p>
 
 <div class="btn-row">
 <a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Вернуться в калькулятор</a>

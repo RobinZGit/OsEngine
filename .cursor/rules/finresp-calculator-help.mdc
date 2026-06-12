@@ -3,6 +3,7 @@ description: При изменении UI калькулятора FINRESP об�
 globs:
   - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.html
   - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
+  - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.worker.js
   - project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/MultiLogic_FinrespCalculator.html
   - project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
 ---
