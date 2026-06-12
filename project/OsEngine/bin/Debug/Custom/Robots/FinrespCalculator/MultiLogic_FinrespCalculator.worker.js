@@ -8,8 +8,8 @@ self.onmessage = async (e) => {
     if (!E?.runMultiAsync) throw new Error("engine not loaded in worker");
     const runOpts = {
       ...(randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : {}),
-      onProgress: (pct, text) => {
-        self.postMessage({ id, type: "progress", pct, text });
+      onProgress: (pct, text, detail) => {
+        self.postMessage({ id, type: "progress", pct, text, detail: detail || null });
       }
     };
     const result = await E.runMultiAsync(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, runOpts);

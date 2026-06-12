@@ -138,9 +138,11 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
 .real-account-card{border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fbfcff;}
 .real-account-card[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
-.real-account-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
+.real-account-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;padding:.55rem .15rem .7rem;margin:-.5rem -.85rem .35rem;border-bottom:2px solid var(--accent);cursor:pointer;list-style:none;}
 .real-account-head::-webkit-details-marker{display:none;}
-.real-account-title{font-size:.9rem;font-weight:600;color:#374151;}
+.real-account-head::marker{content:"";}
+.real-account-title{font-size:1.05rem;font-weight:700;color:var(--text);}
+.real-account-head-right{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem;flex-shrink:0;}
 .real-account-state{font-size:.8rem;color:var(--muted);}
 .real-account-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .35rem;}
 .account-mode--live{color:#7f1d1d;font-weight:700;}
@@ -252,10 +254,18 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-positions-panel .pos-short{color:#991b1b;font-weight:600;}
 .live-positions-panel .pos-pnl-pos{color:#166534;font-weight:600;}
 .live-positions-panel .pos-pnl-neg{color:#991b1b;font-weight:600;}
-.tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.65rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
-.tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;list-style:none;}
+.live-pos-row{cursor:context-menu;}
+.live-pos-row:hover{background:#fff7ed;}
+.live-positions-menu{position:fixed;z-index:3000;display:none;background:#fff;border:2px solid #991b1b;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:12rem;padding:.25rem 0;}
+.live-positions-menu.open{display:block;}
+.live-positions-menu button{display:block;width:100%;text-align:left;padding:.48rem .8rem;border:0;background:transparent;font-size:.88rem;font-weight:600;cursor:pointer;color:#374151;}
+.live-positions-menu button:hover{background:#fef2f2;color:#991b1b;}
+.tech-info-card{border:1px dashed var(--border);border-radius:10px;padding:.5rem .85rem;margin:1.25rem 0 0;background:#fafbfc;}
+.tech-info-card[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px 6px rgba(37,99,235,.08);}
+.tech-info-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;padding:.55rem .15rem .7rem;margin:-.5rem -.85rem .35rem;border-bottom:2px solid var(--border);cursor:pointer;list-style:none;}
 .tech-info-head::-webkit-details-marker{display:none;}
-.tech-info-title{font-size:.88rem;font-weight:600;color:#374151;}
+.tech-info-head::marker{content:"";}
+.tech-info-title{font-size:.95rem;font-weight:600;color:#374151;}
 .tech-info-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .35rem;}
 .tech-info-pre{
   margin:0;padding:.55rem .65rem;max-height:14rem;overflow:auto;
@@ -271,13 +281,20 @@ a{color:var(--accent);}
   border-bottom:2px solid #93c5fd;
 }
 .calc-progress-banner-inner{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .85rem;font-size:.95rem;}
-.calc-progress-banner strong{font-weight:800;letter-spacing:.02em;}
-#calc-progress-text{font-weight:500;opacity:.95;}
-.calc-progress-pct{
-  display:inline-block;min-width:3.1rem;padding:.12rem .5rem;border-radius:999px;
-  background:rgba(255,255,255,.2);font-weight:800;font-family:Consolas,monospace;font-size:1rem;
+.calc-progress-banner strong{font-weight:800;letter-spacing:.02em;flex:0 0 auto;}
+.calc-progress-bar-wrap{
+  flex:1 1 7rem;min-width:5.5rem;max-width:16rem;height:.58rem;
+  background:rgba(255,255,255,.28);border-radius:999px;overflow:hidden;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.12);
 }
-.calc-progress-pct:empty{display:none;}
+.calc-progress-bar-fill{height:100%;width:0%;background:#fff;border-radius:999px;transition:width .18s ease;}
+#calc-progress-text{font-weight:500;opacity:.95;flex:1 1 12rem;min-width:8rem;}
+.calc-progress-stop{
+  margin-left:auto;flex:0 0 auto;padding:.45rem 1rem;border:2px solid #fff;border-radius:8px;
+  background:rgba(255,255,255,.12);color:#fff;font-weight:800;font-size:.88rem;cursor:pointer;
+}
+.calc-progress-stop:hover{background:#fff;color:#1d4ed8;}
+.calc-progress-stop:disabled{opacity:.45;cursor:not-allowed;}
 .calc-progress-spinner{
   display:inline-block;width:1.05rem;height:1.05rem;flex-shrink:0;
   border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
@@ -303,8 +320,11 @@ body.calc-running .help-ftr{opacity:.75;}
 <div class="calc-progress-banner-inner">
 <span class="calc-progress-spinner" aria-hidden="true"></span>
 <strong>Идёт расчёт</strong>
-<span id="calc-progress-pct" class="calc-progress-pct"></span>
+<div class="calc-progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="calc-progress-bar-wrap">
+<div id="calc-progress-bar" class="calc-progress-bar-fill"></div>
+</div>
 <span id="calc-progress-text">Подготовка…</span>
+<button type="button" class="calc-progress-stop" id="calc-progress-stop" hidden>Остановить</button>
 </div>
 </div>
 <header class="help-hdr">
@@ -395,8 +415,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <details class="live-order-book live-positions-panel" id="live-positions-panel">
 <summary class="live-manual-order-summary">Позиции</summary>
 <div class="live-order-book-body">
-<p class="live-order-book-meta" id="live-positions-meta">Открытые позиции счёта (робот и ручные заявки). Закрытые не показываются.</p>
+<p class="live-order-book-meta" id="live-positions-meta">Открытые позиции счёта (робот и ручные заявки). ПКМ или долгое нажатие по строке — закрыть позицию (лонг или шорт).</p>
 <div id="live-positions-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок в режиме live.</p></div>
+<div id="live-positions-menu" class="live-positions-menu" hidden>
+<button type="button" data-action="market" id="live-pos-menu-market">Закрыть по рынку</button>
+<button type="button" data-action="limit" id="live-pos-menu-limit">Закрыть лимитом</button>
+</div>
 </div>
 </details>
 <div class="live-trading-orders-wrap">
@@ -599,7 +623,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <details class="real-account-card" id="tbank-settings">
 <summary class="real-account-head">
 <span class="real-account-title">Реальный счёт T-Bank — депозит и торговля</span>
+<span class="real-account-head-right">
 <span class="real-account-state" id="tbank-settings-state">не подключено</span>
+<a href="#" class="extra-params-toggle" id="tbank-settings-toggle" role="button">Развернуть</a>
+</span>
 </summary>
 <p class="note">Токен нужен для чтения счёта и депозита; для режима «Реальная торговля» — с правом выставления заявок. Шифруется в браузере (AES-GCM + PBKDF2) и хранится только локально. Пароль шифрования не сохраняется.</p>
 <div class="calc-grid">
@@ -612,8 +639,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <p class="calc-status" id="tbank-status">Фиктивный кошелёк работает как раньше. Для T-Bank сохраните токен, затем выберите режим сверху: калькулятор спросит пароль, расшифрует токен, загрузит счёт и возьмёт депозит.</p>
 </details>
 
-<details class="tech-info-card" id="tech-info-panel" open>
-<summary class="tech-info-head"><span class="tech-info-title">Тех. информация — скопируйте и пришлите при сбое</span></summary>
+<details class="tech-info-card" id="tech-info-panel">
+<summary class="tech-info-head">
+<span class="tech-info-title">Тех. информация — скопируйте и пришлите при сбое</span>
+<a href="#" class="extra-params-toggle" id="tech-info-toggle" role="button">Развернуть</a>
+</summary>
 <div class="tech-info-actions">
 <button class="calc-btn calc-btn-secondary" type="button" id="tech-info-copy">Копировать</button>
 <button class="calc-btn calc-btn-secondary" type="button" id="tech-info-refresh">Обновить</button>
@@ -628,7 +658,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-obt-live";
+  const CALC_PAGE_VERSION = "2026-06-08-stop-run";
+  const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -944,8 +975,11 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     lastResult: null,
     prevSelectCount: 0,
     runGeneration: 0,
+    runCancelRequested: false,
+    runCheckpoint: null,
     workerRequestId: 0,
     calcWorker: null,
+    workerPendingReject: null,
     runBusyOwner: null,
     uiBusy: false,
     restoringConfig: false,
@@ -984,7 +1018,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       orderBookBusy: false,
       positionsTimer: null,
       positionsBusy: false,
-      obTrendCache: new Map()
+      obTrendCache: new Map(),
+      positionsMenuIdx: null,
+      manualPriceSec: ""
     },
     optim: {
       active: null,
@@ -1899,6 +1935,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function renderLivePositionsPanel() {
+    hideLivePositionsMenu();
     const tableEl = $("live-positions-table");
     const metaEl = $("live-positions-meta");
     if (!tableEl) return;
@@ -1925,13 +1962,13 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     let totalSum = 0;
     let totalPnl = 0;
-    const body = rows.map((r) => {
+    const body = rows.map((r, idx) => {
       const sideCls = r.side === "short" ? "pos-short" : "pos-long";
       const sideLabel = r.side === "short" ? "шорт" : (r.side === "long" ? "лонг" : "лонг");
       const pnlCls = r.pnl > 0 ? "pos-pnl-pos" : (r.pnl < 0 ? "pos-pnl-neg" : "");
       if (Number.isFinite(r.sum)) totalSum += r.sum;
       if (Number.isFinite(r.pnl)) totalPnl += r.pnl;
-      return `<tr>
+      return `<tr class="live-pos-row" data-pos-idx="${idx}" title="ПКМ — закрыть позицию">
         <td>${r.ticker}</td>
         <td class="${sideCls}">${sideLabel}</td>
         <td>${r.lots}</td>
@@ -1948,6 +1985,160 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     tableEl.innerHTML = `<table class="live-ob-grid"><thead><tr>
       <th>Тикер</th><th>Сторона</th><th>Лоты</th><th>Ср. цена</th><th>Тек. цена</th><th>Сумма, ₽</th><th>P/L, ₽</th>
     </tr></thead><tbody>${body}</tbody>${foot}</table>`;
+  }
+
+  function closeDirectionForPosition(row) {
+    if (!row) return null;
+    return row.side === "short" ? "ORDER_DIRECTION_BUY" : "ORDER_DIRECTION_SELL";
+  }
+
+  function resolveLivePositionInstrumentKey(row) {
+    if (!row) return "";
+    const market = row.market || (row.isFuture ? "futures" : "shares");
+    const sec = row.sec || row.ticker;
+    return `${market}:${sec}`;
+  }
+
+  function hideLivePositionsMenu() {
+    const menu = $("live-positions-menu");
+    if (!menu) return;
+    menu.classList.remove("open");
+    menu.hidden = true;
+    state.live.positionsMenuIdx = null;
+  }
+
+  function showLivePositionsMenu(clientX, clientY, idx) {
+    const menu = $("live-positions-menu");
+    const row = state.live.openPositions?.[idx];
+    if (!menu || !row) return;
+    state.live.positionsMenuIdx = idx;
+    menu.hidden = false;
+    menu.classList.add("open");
+    const pad = 6;
+    menu.style.left = `${clientX}px`;
+    menu.style.top = `${clientY}px`;
+    const rect = menu.getBoundingClientRect();
+    let x = clientX;
+    let y = clientY;
+    if (rect.right > window.innerWidth) x = Math.max(pad, window.innerWidth - rect.width - pad);
+    if (rect.bottom > window.innerHeight) y = Math.max(pad, window.innerHeight - rect.height - pad);
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+  }
+
+  function getLivePositionMenuRow() {
+    const idx = state.live.positionsMenuIdx;
+    if (idx == null) return null;
+    return state.live.openPositions?.[idx] || null;
+  }
+
+  async function closeLivePositionAtMarket(row) {
+    if (!row || !isLiveMode()) return;
+    const metaEl = $("live-positions-meta");
+    try {
+      if (!(await ensureTbankTokenUnlocked())) throw new Error("Расшифруйте токен T-Bank.");
+      if (!state.tbank.selectedAccountId) await loadTbankAccounts();
+      if (!state.tbank.selectedAccountId) throw new Error("Счёт T-Bank не выбран.");
+      const direction = closeDirectionForPosition(row);
+      const lots = Math.max(1, Math.floor(+row.lots || 0));
+      if (lots <= 0) throw new Error("Нет лотов для закрытия.");
+      const instrumentId = row.instrumentId;
+      if (!instrumentId) throw new Error("Нет идентификатора инструмента.");
+      const sec = row.sec || row.ticker;
+      let meta = null;
+      try { meta = await tbankGetInstrumentById(instrumentId); } catch (_) { /* optional */ }
+      const tradable = await tbankValidateTradable(instrumentId, meta, "market");
+      if (!tradable.ok) throw new Error(`${row.ticker}: ${tradable.reason}`);
+      const sideLabel = direction === "ORDER_DIRECTION_BUY" ? "покупка" : "продажа";
+      if (metaEl) metaEl.textContent = `Закрытие ${row.ticker}: ${sideLabel}, ${lots} лот по рынку…`;
+      await tbankPostOrder(instrumentId, direction, lots, sec, { orderType: "market" });
+      const okText = `Закрыто по рынку: ${row.ticker}, ${sideLabel}, ${lots} лот.`;
+      noteLiveTech("live-pos-close", okText, `uid=${instrumentId}`);
+      state.live.lastError = "";
+      await refreshLiveOpenPositions();
+      await refreshLiveOrders();
+      await refreshLivePortfolioStats();
+      syncLiveTradingUi();
+    } catch (err) {
+      const msg = err?.message || String(err);
+      state.live.lastError = msg;
+      noteLiveTech("live-pos-close", msg);
+      if (metaEl) metaEl.textContent = `Ошибка закрытия: ${msg}`;
+      syncLiveTradingUi();
+    }
+  }
+
+  function fillManualOrderFromPosition(row) {
+    if (!row) return;
+    const key = resolveLivePositionInstrumentKey(row);
+    const closeSide = row.side === "short" ? "buy" : "sell";
+    const price = row.curPrice;
+    const panel = $("live-manual-order-panel");
+    if (panel) panel.open = true;
+    syncLiveManualOrderUi();
+    const manualSel = $("live-manual-sec");
+    fillLiveTradingInstrumentSelects();
+    if (manualSel) {
+      if ([...manualSel.options].some((o) => o.value === key)) {
+        manualSel.value = key;
+      } else {
+        const o = document.createElement("option");
+        o.value = key;
+        o.textContent = row.isFuture ? `${row.ticker} (фьюч)` : row.ticker;
+        manualSel.appendChild(o);
+        manualSel.value = key;
+      }
+    }
+    $("live-manual-direction").value = closeSide;
+    $("live-manual-order-type").value = "limit";
+    const priceWrap = $("live-manual-price-wrap");
+    if (priceWrap) priceWrap.hidden = false;
+    if (Number.isFinite(price) && price > 0) $("live-manual-price").value = String(price);
+    state.live.manualPriceSec = key;
+    $("live-manual-qty").value = String(Math.max(1, Math.floor(+row.lots || 1)));
+    saveConfig();
+    const statusEl = $("live-manual-order-status");
+    const sideLabel = closeSide === "sell" ? "продажа" : "покупка";
+    if (statusEl) {
+      statusEl.textContent = `Закрытие позиции: ${row.ticker}, ${sideLabel}, лимит ${Number.isFinite(price) ? fmt(price, 2) : "—"} ₽, ${row.lots} лот. Нажмите «Выставить заявку».`;
+    }
+    panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  let livePosLongPressTimer = null;
+
+  function onLivePositionsTableContextMenu(ev) {
+    const tr = ev.target?.closest?.(".live-pos-row");
+    if (!tr || !isLiveMode()) return;
+    ev.preventDefault();
+    const idx = +tr.dataset.posIdx;
+    if (!Number.isFinite(idx)) return;
+    showLivePositionsMenu(ev.clientX, ev.clientY, idx);
+  }
+
+  function onLivePositionsPointerDown(ev) {
+    const tr = ev.target?.closest?.(".live-pos-row");
+    if (!tr || !isLiveMode() || ev.button !== 0) return;
+    clearTimeout(livePosLongPressTimer);
+    livePosLongPressTimer = setTimeout(() => {
+      const idx = +tr.dataset.posIdx;
+      if (!Number.isFinite(idx)) return;
+      const rect = tr.getBoundingClientRect();
+      showLivePositionsMenu(rect.left + rect.width / 2, rect.top + rect.height / 2, idx);
+    }, 550);
+  }
+
+  function onLivePositionsPointerEnd() {
+    clearTimeout(livePosLongPressTimer);
+    livePosLongPressTimer = null;
+  }
+
+  function onLivePositionsMenuAction(action) {
+    const row = getLivePositionMenuRow();
+    hideLivePositionsMenu();
+    if (!row) return;
+    if (action === "market") closeLivePositionAtMarket(row);
+    else if (action === "limit") fillManualOrderFromPosition(row);
   }
 
   function stopLivePositionsPoll() {
@@ -2005,7 +2196,22 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
           const side = isFuture ? (pieces > 0 ? "long" : "short") : "long";
           const absPieces = Math.abs(pieces);
           const sum = Number.isFinite(curPrice) ? absPieces * curPrice : NaN;
-          rows.push({ ticker, side, lots, pieces: absPieces, lot, avgPrice, curPrice, sum, pnl, isFuture });
+          const market = isFuture ? "futures" : "shares";
+          rows.push({
+            ticker,
+            side,
+            lots,
+            pieces: absPieces,
+            lot,
+            avgPrice,
+            curPrice,
+            sum,
+            pnl,
+            isFuture,
+            instrumentId,
+            market,
+            sec: ticker
+          });
         }
       };
       await ingest(posData.securities, false);
@@ -2101,15 +2307,15 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return !!(ts?.apiTradeAvailableFlag ?? ts?.api_trade_available_flag);
   }
 
-  function tradingStatusOrderOk(ts) {
-    const isLimit = liveOrderTypeUi() === "limit";
+  function tradingStatusOrderOk(ts, orderTypeOverride) {
+    const isLimit = (orderTypeOverride || liveOrderTypeUi()) === "limit";
     const flag = isLimit
       ? (ts?.limitOrderAvailableFlag ?? ts?.limit_order_available_flag)
       : (ts?.marketOrderAvailableFlag ?? ts?.market_order_available_flag);
     return flag !== false;
   }
 
-  async function tbankValidateTradable(instrumentId, instMeta) {
+  async function tbankValidateTradable(instrumentId, instMeta, orderTypeOverride) {
     const apiFromInst = tbankInstApiTradable(instMeta);
     if (apiFromInst === false) {
       return { ok: false, reason: "торговля через API недоступна для инструмента" };
@@ -2119,8 +2325,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (!tradingStatusApiOk(ts)) {
       return { ok: false, reason: "торговля через API недоступна (api_trade_available_flag)" };
     }
-    if (!tradingStatusOrderOk(ts)) {
-      const ot = liveOrderTypeUi() === "limit" ? "лимитные" : "рыночные";
+    const orderType = orderTypeOverride || liveOrderTypeUi();
+    if (!tradingStatusOrderOk(ts, orderType)) {
+      const ot = orderType === "limit" ? "лимитные" : "рыночные";
       return { ok: false, reason: `${ot} заявки сейчас недоступны` };
     }
     return { ok: true };
@@ -2275,15 +2482,63 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return { byKey, failures };
   }
 
-  function packLastClose(sec) {
+  function packLastClose(sec, market) {
     const secU = String(sec || "").trim().toUpperCase();
-    const pack = state.packs.find((p) => String(p[0]?.sec || "").toUpperCase() === secU);
+    const mkt = market === "futures" ? "futures" : "shares";
+    const key = `${mkt}:${secU}`;
+    let pack = state.packs.find((p) => instrumentKey(p[0]) === key);
+    if (!pack) pack = state.packs.find((p) => String(p[0]?.sec || "").toUpperCase() === secU);
     const close = pack?.at(-1)?.close;
     return Number.isFinite(close) && close > 0 ? close : null;
   }
 
-  async function resolveOrderPrice(instrumentId, sec) {
-    return packLastClose(sec) ?? await tbankGetLastPrice(instrumentId);
+  async function resolveOrderPrice(instrumentId, sec, market) {
+    return packLastClose(sec, market) ?? await tbankGetLastPrice(instrumentId);
+  }
+
+  async function refreshLiveManualLimitPrice(opts) {
+    const options = opts || {};
+    if (!isLiveMode()) return;
+    if ($("live-manual-order-type")?.value !== "limit") return;
+    const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+    const priceEl = $("live-manual-price");
+    if (!priceEl) return;
+    if (!picked?.sec) {
+      if (options.force) {
+        priceEl.value = "";
+        state.live.manualPriceSec = "";
+      }
+      return;
+    }
+    const secKey = `${picked.market}:${picked.sec}`;
+    if (!options.force && state.live.manualPriceSec === secKey && priceEl.value) return;
+    let price = packLastClose(picked.sec, picked.market);
+    let source = price ? "свечи" : "";
+    if (!price && state.tbank.token) {
+      try {
+        if (await ensureTbankTokenUnlocked()) {
+          const ti = await tbankFindInstrument(picked.sec, picked.market);
+          if (ti) {
+            const instrumentId = ti.uid || ti.figi;
+            price = await tbankGetLastPrice(instrumentId);
+            if (price) source = "T-Bank";
+          }
+        }
+      } catch (_) { /* optional */ }
+    }
+    if (Number.isFinite(price) && price > 0) {
+      priceEl.value = String(price);
+      state.live.manualPriceSec = secKey;
+      if (options.showStatus) {
+        const statusEl = $("live-manual-order-status");
+        if (statusEl) statusEl.textContent = `Цена ${picked.sec} из ${source}: ${fmt(price, 2)} ₽`;
+      }
+      if (!state.restoringConfig) saveConfig();
+    } else if (options.force) {
+      priceEl.value = "";
+      state.live.manualPriceSec = secKey;
+      if (!state.restoringConfig) saveConfig();
+    }
   }
 
   async function tbankPostOrder(instrumentId, direction, lots, secForPrice, options) {
@@ -2305,7 +2560,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (orderType === "limit") {
       let price = opts.limitPrice != null && opts.limitPrice !== "" ? +opts.limitPrice : NaN;
       if (!Number.isFinite(price) || price <= 0) {
-        price = await resolveOrderPrice(instrumentId, secForPrice);
+        const mkt = opts.market === "futures" ? "futures" : "shares";
+        price = await resolveOrderPrice(instrumentId, secForPrice, mkt);
       }
       if (!price) throw new Error(`Нет цены для лимитной заявки (${secForPrice || instrumentId}).`);
       body.orderType = "ORDER_TYPE_LIMIT";
@@ -2373,6 +2629,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const priceWrap = $("live-manual-price-wrap");
     if (priceWrap) priceWrap.hidden = false;
     $("live-manual-price").value = String(price);
+    state.live.manualPriceSec = obKey;
     $("live-manual-qty").value = "1";
     saveConfig();
     const sideLabel = side === "sell" ? "продажа" : "покупка";
@@ -2434,7 +2691,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       const tradable = await tbankValidateTradable(instrumentId, ti);
       if (!tradable.ok) throw new Error(`${ticker}: ${tradable.reason}`);
       if (statusEl) statusEl.textContent = `Отправка ${direction === "ORDER_DIRECTION_BUY" ? "покупки" : "продажи"} ${ticker}, ${lots} лот…`;
-      await tbankPostOrder(instrumentId, direction, lots, sec, { orderType, limitPrice });
+      await tbankPostOrder(instrumentId, direction, lots, sec, { orderType, limitPrice, market });
       const side = direction === "ORDER_DIRECTION_BUY" ? "покупка" : "продажа";
       const otype = orderType === "limit" ? "лимит" : "рынок";
       const okText = `Заявка отправлена: ${ticker}, ${side}, ${lots} лот, ${otype}.`;
@@ -3711,17 +3968,25 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   }
 
+  function mapLoadProgressPct(done, total) {
+    const t = Math.max(1, +total || 1);
+    const d = Math.max(0, Math.min(t, +done || 0));
+    return Math.round((d / t) * CALC_PROGRESS.LOAD_MAX);
+  }
+
   function setCalcProgress(message, pct, opts) {
     const options = opts || {};
     const text = String(message || "").trim() || "…";
     const el = $("calc-progress-text");
-    const pctEl = $("calc-progress-pct");
+    const bar = $("calc-progress-bar");
+    const barWrap = $("calc-progress-bar-wrap");
     const hasPct = Number.isFinite(pct);
     let p = hasPct ? Math.round(Math.max(0, Math.min(100, pct))) : null;
-    if (hasPct && !options.final) p = Math.min(99, p);
+    if (hasPct && !options.final) p = Math.min(CALC_PROGRESS.RUN_MAX, p);
     const pctLabel = hasPct ? `${p}%` : "";
     if (el) el.textContent = hasPct ? `${text} — ${pctLabel}` : text;
-    if (pctEl) pctEl.textContent = pctLabel;
+    if (bar) bar.style.width = hasPct ? `${p}%` : "0%";
+    if (barWrap && hasPct) barWrap.setAttribute("aria-valuenow", String(p));
     const banner = $("calc-progress-banner");
     if (banner) banner.hidden = false;
     if (!options.final) {
@@ -3741,14 +4006,120 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       banner.hidden = true;
       banner.setAttribute("aria-busy", "false");
     }
-    const pctEl = $("calc-progress-pct");
-    if (pctEl) pctEl.textContent = "";
+    const bar = $("calc-progress-bar");
+    if (bar) bar.style.width = "0%";
+    const barWrap = $("calc-progress-bar-wrap");
+    if (barWrap) barWrap.setAttribute("aria-valuenow", "0");
+  }
+
+  function isRunCancelled(runGen) {
+    return state.runCancelRequested || (runGen != null && runGen !== state.runGeneration);
+  }
+
+  function trackRunCheckpoint(detail) {
+    if (!detail) return;
+    state.runCheckpoint = {
+      phase: detail.phase || state.runCheckpoint?.phase || "",
+      lastCandleTime: detail.candleTime || state.runCheckpoint?.lastCandleTime || null,
+      lastSec: detail.sec || state.runCheckpoint?.lastSec || "",
+      done: detail.done ?? state.runCheckpoint?.done,
+      total: detail.total ?? state.runCheckpoint?.total
+    };
+  }
+
+  function findPackIndexByTime(pack, timeStr) {
+    if (!pack?.length || !timeStr) return null;
+    let idx = -1;
+    for (let i = 0; i < pack.length; i++) {
+      const t = pack[i]?.time;
+      if (!t) continue;
+      if (t <= timeStr) idx = i;
+      else break;
+    }
+    return idx >= 0 ? idx : null;
+  }
+
+  function applyPartialEndFromCheckpoint() {
+    const cp = state.runCheckpoint;
+    const ref = refPack();
+    if (!cp?.lastCandleTime || !ref?.length) return false;
+    const bIdx = findPackIndexByTime(ref, cp.lastCandleTime);
+    if (bIdx == null) return false;
+    const [a] = normalizeSliders();
+    if (bIdx < a) return false;
+    $("calc-end").value = String(bIdx);
+    saveWindowAnchor();
+    $("calc-end-label").textContent = ref[bIdx]?.time || "—";
+    return true;
+  }
+
+  function terminateCalcWorker() {
+    if (state.calcWorker) {
+      try { state.calcWorker.terminate(); } catch (_) { /* ignore */ }
+      state.calcWorker = null;
+    }
+  }
+
+  function requestStopRun() {
+    if (!state.uiBusy) return;
+    state.runCancelRequested = true;
+    state.runGeneration++;
+    if (state.workerPendingReject) {
+      try { state.workerPendingReject(new Error("cancelled")); } catch (_) { /* ignore */ }
+      state.workerPendingReject = null;
+    }
+    terminateCalcWorker();
+    setCalcProgress("Остановка расчёта…", state.runCheckpoint ? CALC_PROGRESS.RUN_MAX - 1 : CALC_PROGRESS.LOAD_MAX);
+  }
+
+  async function applyCancelledRunPartial(runGen, loadedData) {
+    if (!state.runCancelRequested) return;
+    state.runCancelRequested = false;
+    clearCalcProgress();
+    const cp = state.runCheckpoint;
+    if (loadedData?.packs?.length) {
+      state.packs = loadedData.packs;
+      state.failedInstruments = loadedData.failures || [];
+      state.lastLoadMeta = {
+        periodKey: loadedData.periodKey,
+        keys: (state.lastInstruments || []).map(instrumentKey)
+      };
+      if (!state.hasWindow) setSliderBounds(false);
+    }
+    state.runCheckpoint = null;
+    if (!state.packs.length) {
+      $("calc-status").textContent = "Расчёт остановлен — нет загруженных свечей.";
+      return;
+    }
+    const finrespStarted = cp?.phase === "finresp" || cp?.phase === "stopper";
+    if (finrespStarted) applyPartialEndFromCheckpoint();
+    await yieldToUi();
+    const result = calcResult();
+    if (!result) {
+      $("calc-status").textContent = "Расчёт остановлен — нет FINRESP для текущего окна.";
+      return;
+    }
+    applyResult(result);
+    const ref = refPack();
+    const c1 = ref[result.b]?.time || cp?.lastCandleTime || "—";
+    const c0 = ref[result.a]?.time || "—";
+    let status = `Расчёт остановлен · FINRESP до ${c1}`;
+    if (c0 !== "—" && c1 !== "—") status += ` (окно ${c0} — ${c1})`;
+    status += ` · ${result.perSec.length} инстр.`;
+    if (state.failedInstruments?.length) status += ` · нет MOEX: ${state.failedInstruments.length}`;
+    $("calc-status").textContent = status;
+    updateTechInfo("run-cancelled");
   }
 
   function setFormLocked(lock) {
     document.body.classList.toggle("calc-running", !!lock);
     const banner = $("calc-progress-banner");
     if (banner) banner.setAttribute("aria-busy", lock ? "true" : "false");
+    const stopBtn = $("calc-progress-stop");
+    if (stopBtn) {
+      stopBtn.hidden = !lock;
+      stopBtn.disabled = !lock;
+    }
     document.querySelectorAll(CALC_LOCK_SELECTOR).forEach((el) => {
       if (lock) {
         if (el.dataset.calcLockPrev == null) el.dataset.calcLockPrev = el.disabled ? "1" : "0";
@@ -3772,32 +4143,48 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  function buildRunProgressHandler(runOptions) {
+    const ro = runOptions || {};
+    if (ro.silent) return null;
+    return (pct, text, detail) => {
+      trackRunCheckpoint(detail);
+      setCalcProgress(text, pct);
+    };
+  }
+
   function runMultiInWorker(packs, spec, a, b, params, volConfig, sc, randomPriceShift, runOptions) {
     const ro = runOptions || {};
     const worker = getCalcWorker();
     const progressOpts = {
       ...(randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : {}),
-      ...(ro.silent ? {} : { onProgress: (pct, text) => setCalcProgress(text, pct) })
+      shouldCancel: ro.shouldCancel,
+      ...(ro.silent ? {} : { onProgress: buildRunProgressHandler(ro) })
     };
     if (!worker) {
       return E.runMultiAsync(packs, spec, a, b, params, volConfig, sc, progressOpts);
     }
     const id = ++state.workerRequestId;
     return new Promise((resolve, reject) => {
+      state.workerPendingReject = reject;
       const onMsg = (e) => {
         if (!e.data || e.data.id !== id) return;
         if (e.data.type === "progress") {
-          if (!ro.silent) setCalcProgress(e.data.text, e.data.pct);
+          if (!ro.silent) {
+            trackRunCheckpoint(e.data.detail);
+            setCalcProgress(e.data.text, e.data.pct);
+          }
           return;
         }
         worker.removeEventListener("message", onMsg);
         worker.removeEventListener("error", onErr);
+        state.workerPendingReject = null;
         if (e.data.ok) resolve(e.data.result);
         else reject(new Error(e.data.error || "worker failed"));
       };
       const onErr = (err) => {
         worker.removeEventListener("message", onMsg);
         worker.removeEventListener("error", onErr);
+        state.workerPendingReject = null;
         reject(err);
       };
       worker.addEventListener("message", onMsg);
@@ -3816,7 +4203,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     const spec = E.resolveLogicSpec($("calc-logic").value, state.customLines, p, indicators);
     if (!spec) return null;
     if (!ro.silent) {
-      setCalcProgress("Расчёт FINRESP (фоновый поток)…", 0);
+      setCalcProgress("Расчёт FINRESP (фоновый поток)…", CALC_PROGRESS.FINRESP_START);
       await yieldToUi();
     }
     let workerOut;
@@ -3825,14 +4212,16 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
         state.packs, spec, a, b, p, volConfig(), sc, randomPriceShiftEnabled(), ro
       );
     } catch (err) {
+      if (state.runCancelRequested || err?.message === "cancelled") throw err;
       noteTechError(`worker-fallback: ${err.message}`);
       if (!ro.silent) {
-        setCalcProgress("Расчёт FINRESP (основной поток)…", 0);
+        setCalcProgress("Расчёт FINRESP (основной поток)…", CALC_PROGRESS.FINRESP_START);
         await yieldToUi();
       }
       workerOut = await E.runMultiAsync(state.packs, spec, a, b, p, volConfig(), sc, {
         ...finrespRunOptions(),
-        ...(ro.silent ? {} : { onProgress: (pct, text) => setCalcProgress(text, pct) })
+        shouldCancel: ro.shouldCancel,
+        ...(ro.silent ? {} : { onProgress: buildRunProgressHandler(ro) })
       });
     }
     const { perSec, agg, preStopperAgg, stopper, skipped } = workerOut;
@@ -4995,7 +5384,7 @@ ${totalBlock}
     return renderWithStatus(options);
   }
 
-  async function ensureInstrumentPacks(instruments, from, till, interval, onProgress) {
+  async function ensureInstrumentPacks(instruments, from, till, interval, onProgress, shouldCancel) {
     const periodKey = loadMetaKey(from, till, interval);
     const periodChanged = state.lastLoadMeta?.periodKey !== periodKey;
     const byKey = periodChanged ? new Map() : packsByInstrumentKey(state.packs);
@@ -5007,7 +5396,7 @@ ${totalBlock}
     if (toLoad.length) {
       const loaded = await loadInstrumentPacks(toLoad, from, till, interval, (done, total, sec, groupLabel, meta) => {
         if (onProgress) onProgress(done, total, sec, groupLabel, meta);
-      });
+      }, shouldCancel);
       for (const f of loaded.failures) {
         const fk = instrumentKey({ sec: f.sec, market: f.market });
         if (!failKeys.has(fk)) {
@@ -5039,7 +5428,7 @@ ${totalBlock}
     };
   }
 
-  async function loadInstrumentPacks(instruments, from, till, interval, onProgress) {
+  async function loadInstrumentPacks(instruments, from, till, interval, onProgress, shouldCancel) {
     const shares = instruments.filter((i) => i.market === "shares").map((i) => i.sec);
     const futures = instruments.filter((i) => i.market === "futures").map((i) => i.sec);
     const packs = [];
@@ -5049,7 +5438,7 @@ ${totalBlock}
       const conc = secs.length > 12 ? 4 : 1;
       const r = await E.loadManyDetailed(secs, from, till, interval, market, conc, (done, total, sec, meta) => {
         if (onProgress) onProgress(done, total, sec, label, meta);
-      }, state.candleCache || null);
+      }, state.candleCache || null, shouldCancel);
       packs.push(...r.packs);
       failures.push(...r.failures);
     };
@@ -5076,20 +5465,32 @@ ${totalBlock}
       ? `${nShares} акц. + ${nFutures} фьюч.`
       : nFutures ? `${nFutures} фьючерсов` : `${nShares} акций`;
     const maxD = maxCalcDays(interval, instruments.length);
+    state.runCancelRequested = false;
+    state.runCheckpoint = null;
+    const shouldCancel = () => isRunCancelled(runGen);
+    let partialApplied = false;
+    const finishIfCancelled = async (loadedData) => {
+      if (!shouldCancel() || partialApplied) return false;
+      partialApplied = true;
+      await applyCancelledRunPartial(runGen, loadedData);
+      return true;
+    };
     setCalcProgress(periodNarrowed
       ? `Период сужен до ${maxD} дн. · идёт загрузка цен MOEX: ${label}`
       : `Идёт загрузка цен MOEX: ${label}`, 0);
     await yieldToUi();
+    let loadedData = null;
     try {
       let cacheHits = 0;
-      const loadedData = await ensureInstrumentPacks(instruments, from, till, interval, (done, total, sec, groupLabel, meta) => {
-        if (runGen !== state.runGeneration) return;
+      loadedData = await ensureInstrumentPacks(instruments, from, till, interval, (done, total, sec, groupLabel, meta) => {
+        if (shouldCancel()) return;
         if (meta?.fromCache) cacheHits += 1;
-        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const pct = mapLoadProgressPct(done, total);
         const src = meta?.fromCache ? "кэш" : "MOEX";
+        trackRunCheckpoint({ phase: "load", done, total, sec });
         setCalcProgress(`Идёт загрузка цен MOEX (${groupLabel}, ${src}): ${sec}`, pct);
-      });
-      if (runGen !== state.runGeneration) return;
+      }, shouldCancel);
+      if (await finishIfCancelled(loadedData)) return;
       updateCacheHint(cacheHits ? `MOEX: ${loadedData.packs.length - cacheHits}, кэш: ${cacheHits}` : "");
       if (!loadedData.packs.length) {
         const sample = loadedData.failures.slice(0, 3).map((f) => f.sec).join(", ");
@@ -5111,9 +5512,19 @@ ${totalBlock}
         setSliderBounds(false);
       }
       saveWindowAnchor();
+      setCalcProgress("Загрузка цен завершена · расчёт FINRESP", CALC_PROGRESS.FINRESP_START);
       await yieldToUi();
-      const result = await calcResultAsync();
-      if (runGen !== state.runGeneration) return;
+      let result;
+      try {
+        result = await calcResultAsync(null, { shouldCancel });
+      } catch (err) {
+        if (shouldCancel() || err?.message === "cancelled") {
+          await finishIfCancelled(loadedData);
+          return;
+        }
+        throw err;
+      }
+      if (await finishIfCancelled(loadedData)) return;
       if (!result) {
         $("calc-chart").innerHTML = "";
         $("calc-chart-equity").innerHTML = "";
@@ -5142,6 +5553,10 @@ ${totalBlock}
         if (runGen === state.runGeneration) await finishCalcProgress("Расчёт завершён");
       }
     } catch (err) {
+      if (shouldCancel() || err?.message === "cancelled") {
+        await finishIfCancelled(loadedData);
+        return;
+      }
       if (runGen !== state.runGeneration) return;
       $("calc-status").textContent = `Ошибка: ${err.message}`;
       noteTechError(`runWithInstruments: ${err.message}`);
@@ -5149,6 +5564,10 @@ ${totalBlock}
       $("calc-chart-equity").innerHTML = "";
       throw err;
     } finally {
+      if (!partialApplied && shouldCancel()) {
+        await finishIfCancelled(loadedData);
+      }
+      state.runCancelRequested = false;
       releaseRunBusy(runGen);
       if (runGen === state.runGeneration) updateTechInfo("run-finished");
     }
@@ -5189,6 +5608,7 @@ ${totalBlock}
 
   function bindUiEvents() {
   $("calc-run").addEventListener("click", run);
+  $("calc-progress-stop")?.addEventListener("click", () => { requestStopRun(); });
   $("calc-select-positive").addEventListener("click", selectNonNegativeFinrespInstruments);
   $("account-mode").addEventListener("change", () => {
     if ($("account-mode").value !== "live" && state.live.active) stopLiveTradingOnModeChange();
@@ -5210,10 +5630,26 @@ ${totalBlock}
   });
   $("live-trading-sell-all").addEventListener("click", () => { sellAllMarketLive(); });
   $("live-manual-submit").addEventListener("click", () => { placeManualLiveOrder(); });
-  $("live-manual-order-type").addEventListener("change", () => { syncLiveManualOrderUi(); saveConfig(); });
-  ["live-manual-sec", "live-manual-direction", "live-manual-qty", "live-manual-price"].forEach((id) => {
+  $("live-manual-order-type").addEventListener("change", () => {
+    syncLiveManualOrderUi();
+    refreshLiveManualLimitPrice({ force: true, showStatus: true }).catch(() => {});
+    saveConfig();
+  });
+  $("live-manual-sec")?.addEventListener("change", () => {
+    refreshLiveManualLimitPrice({ force: true, showStatus: true }).catch(() => {});
+    saveConfig();
+  });
+  ["live-manual-direction", "live-manual-qty", "live-manual-price"].forEach((id) => {
     $(id)?.addEventListener("change", () => { saveConfig(); });
-    $(id)?.addEventListener("input", () => { if (id === "live-manual-qty" || id === "live-manual-price") saveConfig(); });
+    $(id)?.addEventListener("input", () => {
+      if (id === "live-manual-qty" || id === "live-manual-price") {
+        if (id === "live-manual-price") {
+          const picked = parseLiveManualInstrumentKey($("live-manual-sec")?.value);
+          if (picked?.sec) state.live.manualPriceSec = `${picked.market}:${picked.sec}`;
+        }
+        saveConfig();
+      }
+    });
   });
   $("live-order-book-sec")?.addEventListener("change", () => {
     saveConfig();
@@ -5227,8 +5663,24 @@ ${totalBlock}
   });
   $("live-positions-panel")?.addEventListener("toggle", () => {
     if ($("live-positions-panel")?.open) startLivePositionsPoll();
-    else stopLivePositionsPoll();
+    else {
+      stopLivePositionsPoll();
+      hideLivePositionsMenu();
+    }
   });
+  $("live-positions-table")?.addEventListener("contextmenu", onLivePositionsTableContextMenu);
+  $("live-positions-table")?.addEventListener("pointerdown", onLivePositionsPointerDown);
+  $("live-positions-table")?.addEventListener("pointerup", onLivePositionsPointerEnd);
+  $("live-positions-table")?.addEventListener("pointercancel", onLivePositionsPointerEnd);
+  $("live-positions-table")?.addEventListener("pointerleave", onLivePositionsPointerEnd);
+  $("live-pos-menu-market")?.addEventListener("click", () => onLivePositionsMenuAction("market"));
+  $("live-pos-menu-limit")?.addEventListener("click", () => onLivePositionsMenuAction("limit"));
+  document.addEventListener("click", (ev) => {
+    if (!$("live-positions-menu")?.classList.contains("open")) return;
+    if (ev.target?.closest?.("#live-positions-menu")) return;
+    hideLivePositionsMenu();
+  });
+  document.addEventListener("scroll", () => hideLivePositionsMenu(), true);
   $("live-order-book-table")?.addEventListener("dblclick", onLiveOrderBookPriceDblClick);
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
@@ -5345,19 +5797,25 @@ ${totalBlock}
   });
   $("calc-start").addEventListener("input", () => { state.movedSlider = "start"; saveWindowAnchor(); saveConfig(); render(); });
   $("calc-end").addEventListener("input", () => { state.movedSlider = "end"; saveWindowAnchor(); saveConfig(); render(); });
-  const extraParams = $("extra-params");
-  const extraParamsToggle = $("extra-params-toggle");
-  function syncExtraParamsToggleLabel() {
-    extraParamsToggle.textContent = extraParams.open ? "Свернуть" : "Развернуть";
+  function bindCollapsibleToggle(detailsId, toggleId) {
+    const details = $(detailsId);
+    const toggle = $(toggleId);
+    if (!details || !toggle) return;
+    function syncLabel() {
+      toggle.textContent = details.open ? "Свернуть" : "Развернуть";
+    }
+    toggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      details.open = !details.open;
+      syncLabel();
+    });
+    details.addEventListener("toggle", syncLabel);
+    syncLabel();
   }
-  extraParamsToggle.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    extraParams.open = !extraParams.open;
-    syncExtraParamsToggleLabel();
-  });
-  extraParams.addEventListener("toggle", syncExtraParamsToggleLabel);
-  syncExtraParamsToggleLabel();
+  bindCollapsibleToggle("extra-params", "extra-params-toggle");
+  bindCollapsibleToggle("tbank-settings", "tbank-settings-toggle");
+  bindCollapsibleToggle("tech-info-panel", "tech-info-toggle");
   }
 
   fillLogicSelect();
@@ -5381,6 +5839,9 @@ ${totalBlock}
   applyUiLocks();
   syncAccountModeUi();
   if (isTbankBackedMode()) connectTbankAndLoadDeposit();
+  if (isLiveMode()) {
+    refreshLiveManualLimitPrice({ force: true }).catch(() => {});
+  }
   state._initOk = true;
   updateTechInfo("init-ok");
 })();

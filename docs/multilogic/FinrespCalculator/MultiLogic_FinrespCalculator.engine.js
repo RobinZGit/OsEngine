@@ -992,6 +992,7 @@
       : Math.max(1, Math.floor(barSpan / 48));
 
     for (let i = from; i <= to; i++) {
+      if (typeof opts.shouldCancel === "function" && opts.shouldCancel()) break;
       const price = candles[i].close;
       let buy = 0;
       let sell = 0;
@@ -1273,6 +1274,7 @@
     let first = true;
 
     for (let ca = a; ca <= b; ca += chunkSize) {
+      if (typeof opts.shouldCancel === "function" && opts.shouldCancel()) break;
       const cb = Math.min(b, ca + chunkSize - 1);
       const chunkOpts = {
         ...opts,
@@ -1453,9 +1455,11 @@
     recomputePerSecTotals(perSecItem);
   }
 
-  function applyPortfolioStopper(perSec, packs, spec, times, endTime, params, volConfig, cfg, signalPacks) {
+  function applyPortfolioStopper(perSec, packs, spec, times, endTime, params, volConfig, cfg, signalPacks, progressOpts) {
     const stopper = { ...DEFAULT_STOPPER, ...cfg };
     const events = [];
+    const onProgress = progressOpts?.onProgress;
+    const stopperTotal = Math.max(1, times?.length || 1);
     if ((!stopper.useSl && !stopper.useTp) || !perSec.length || !packs.length) {
       return { perSec, stopper: { events } };
     }
@@ -1465,12 +1469,18 @@
     let referenceEquity = stopper.refEquity > 0 ? stopper.refEquity : null;
     let scanFrom = 0;
     const equityHistory = [];
+    let stopperStep = 0;
 
     while (scanFrom < times.length) {
       let triggered = false;
 
       for (let t = scanFrom; t < times.length; t++) {
+        if (typeof progressOpts?.shouldCancel === "function" && progressOpts.shouldCancel()) {
+          return { perSec, stopper: { events, referenceEquity, cancelled: true } };
+        }
         const time = times[t];
+        stopperStep = Math.min(stopperTotal, stopperStep + 1);
+        if (onProgress) onProgress(stopperStep, stopperTotal, time);
         let totalEq = 0;
         for (const p of perSec) totalEq += equityAtTime(p, time);
 
@@ -2174,7 +2184,7 @@
     return { byKey, failures };
   }
 
-  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress, cache) {
+  async function loadManyDetailed(secs, from, till, interval, market = "shares", concurrency, onProgress, cache, shouldCancel) {
     const packs = [];
     const failures = [];
     const queue = [...secs];
@@ -2183,7 +2193,9 @@
       { length: Math.max(1, concurrency && secs.length > 12 ? concurrency : 1) },
       async () => {
         while (queue.length) {
+          if (typeof shouldCancel === "function" && shouldCancel()) break;
           const sec = queue.shift();
+          if (!sec) break;
           const r = await loadInstrumentSec(sec, from, till, interval, market, cache);
           if (r.ok) packs.push(r.pack);
           else failures.push({ sec: r.requestedSec || sec, market, error: r.error });
@@ -2261,19 +2273,62 @@
     return `Расчёт FINRESP: ${sec}${barsPart}${timePart}`;
   }
 
+  function stopperProgressText(doneBars, totalBars, candleTime) {
+    const done = Math.max(0, Math.min(totalBars || 0, Math.round(doneBars || 0)));
+    const total = Math.max(0, Math.round(totalBars || 0));
+    const barsPart = total > 0 ? ` · ${done}/${total} свечей` : "";
+    const t = formatProgressTime(candleTime);
+    const timePart = t ? ` · ${t}` : "";
+    return `Stopper портфеля${barsPart}${timePart}`;
+  }
+
   function yieldChunkSize(span) {
     if (span <= 96) return span;
     return Math.max(24, Math.min(72, Math.floor(span / 14)));
   }
 
-  function emitRunProgress(options, pct, text) {
+  const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
+
+  function lerpCalcProgress(from, to, fraction) {
+    const f = Math.max(0, Math.min(1, +fraction || 0));
+    return from + (to - from) * f;
+  }
+
+  function emitFinrespPhaseProgress(options, done, total, text, finrespEnd, sec, candleTime) {
+    const end = finrespEnd ?? CALC_PROGRESS.FINRESP_MAX;
+    const t = Math.max(1, +total || 1);
+    const d = Math.max(0, Math.min(t, +done || 0));
+    emitRunProgress(
+      options,
+      lerpCalcProgress(CALC_PROGRESS.FINRESP_START, end, d / t),
+      text,
+      { phase: "finresp", done: d, total: t, candleTime: candleTime || null, sec: sec || "" }
+    );
+  }
+
+  function emitStopperPhaseProgress(options, done, total, text, candleTime) {
+    const t = Math.max(1, +total || 1);
+    const d = Math.max(0, Math.min(t, +done || 0));
+    emitRunProgress(
+      options,
+      lerpCalcProgress(CALC_PROGRESS.FINRESP_MAX, CALC_PROGRESS.RUN_MAX, d / t),
+      text,
+      { phase: "stopper", done: d, total: t, candleTime: candleTime || null, sec: "" }
+    );
+  }
+
+  function emitRunProgress(options, pct, text, detail) {
     if (typeof options?.onProgress === "function") {
-      options.onProgress(Math.max(0, Math.min(99, pct)), text);
+      options.onProgress(Math.max(0, Math.min(CALC_PROGRESS.RUN_MAX, pct)), text, detail || null);
     }
   }
 
-  async function emitRunProgressAsync(options, pct, text) {
-    emitRunProgress(options, pct, text);
+  function shouldAbortRun(options) {
+    return typeof options?.shouldCancel === "function" && options.shouldCancel();
+  }
+
+  async function emitRunProgressAsync(options, pct, text, detail) {
+    emitRunProgress(options, pct, text, detail);
     if (options?.yieldUi) await delay(0);
   }
 
@@ -2343,15 +2398,19 @@
       };
     }
     const { aRef, bRef, tStart, tEnd, times, workUnits, totalBars } = plan;
+    const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
+    const stopperBars = cfg ? Math.max(1, times?.length || 1) : 0;
+    const finrespEnd = cfg ? CALC_PROGRESS.FINRESP_MAX : CALC_PROGRESS.RUN_MAX;
     let doneBars = 0;
     const perSec = [];
     const activePacks = [];
     const activeSignalPacks = [];
     const skipped = [];
 
-    emitRunProgress(opts, 0, "Расчёт FINRESP: старт");
+    emitFinrespPhaseProgress(opts, 0, totalBars, "Расчёт FINRESP: старт", finrespEnd, "", null);
 
     for (let pi = 0; pi < packs.length; pi++) {
+      if (shouldAbortRun(opts)) break;
       const candles = packs[pi];
       const sec = candles[0]?.sec || "?";
       const range = indicesForTimeRange(candles, tStart, tEnd);
@@ -2363,13 +2422,18 @@
       const signalCandles = signalPacks?.[pi] || candles;
       const runOpts = {
         ...(signalPacks ? { signalCandles } : {}),
+        shouldCancel: opts.shouldCancel,
         onProgress: unit
           ? (doneInInstrument, instrumentBars, candleTime) => {
             const absolute = doneBars + Math.max(0, Math.min(instrumentBars, doneInInstrument));
-            emitRunProgress(
+            emitFinrespPhaseProgress(
               opts,
-              (absolute / totalBars) * 100,
-              finrespProgressText(unit.sec, absolute, totalBars, candleTime)
+              absolute,
+              totalBars,
+              finrespProgressText(unit.sec, absolute, totalBars, candleTime),
+              finrespEnd,
+              unit.sec,
+              candleTime
             );
           }
           : undefined
@@ -2381,22 +2445,25 @@
       }
       if (unit) {
         doneBars += unit.bars;
-        emitRunProgress(
+        emitFinrespPhaseProgress(
           opts,
-          (doneBars / totalBars) * 100,
-          finrespProgressText(sec, doneBars, totalBars, candles[range.b]?.time)
+          doneBars,
+          totalBars,
+          finrespProgressText(sec, doneBars, totalBars, candles[range.b]?.time),
+          finrespEnd,
+          sec,
+          candles[range.b]?.time
         );
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);
       if (signalPacks) activeSignalPacks.push(signalCandles);
+      if (shouldAbortRun(opts)) break;
     }
 
     const preStopperAgg = aggregateFinresp(perSec);
     let stopper = { events: [] };
-    const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
-    if (cfg && perSec.length) {
-      emitRunProgress(opts, 99, "Расчёт FINRESP: stopper портфеля");
+    if (!shouldAbortRun(opts) && cfg && perSec.length) {
       const applied = applyPortfolioStopper(
         perSec,
         activePacks,
@@ -2406,11 +2473,32 @@
         params,
         volConfig,
         cfg,
-        signalPacks ? activeSignalPacks : null
+        signalPacks ? activeSignalPacks : null,
+        {
+          shouldCancel: opts.shouldCancel,
+          onProgress: (doneInStopper, stopperTotal, candleTime) => {
+            emitStopperPhaseProgress(
+              opts,
+              doneInStopper,
+              stopperTotal,
+              stopperProgressText(doneInStopper, stopperTotal, candleTime),
+              candleTime
+            );
+          }
+        }
       );
       stopper = applied.stopper;
+      emitStopperPhaseProgress(
+        opts,
+        stopperBars,
+        stopperBars,
+        stopperProgressText(stopperBars, stopperBars, times.at(-1)),
+        times.at(-1)
+      );
     }
-    emitRunProgress(opts, 99, "Расчёт FINRESP: готово");
+    if (!shouldAbortRun(opts)) {
+      emitRunProgress(opts, CALC_PROGRESS.RUN_MAX, "Расчёт FINRESP: готово");
+    }
     const agg = aggregateFinresp(perSec);
     return {
       perSec,
@@ -2418,6 +2506,7 @@
       agg,
       preStopperAgg,
       stopper,
+      cancelled: shouldAbortRun(opts),
       a: aRef,
       b: bRef,
       tStart,
@@ -2441,15 +2530,19 @@
       };
     }
     const { aRef, bRef, tStart, tEnd, times, workUnits, totalBars } = plan;
+    const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
+    const stopperBars = cfg ? Math.max(1, times?.length || 1) : 0;
+    const finrespEnd = cfg ? CALC_PROGRESS.FINRESP_MAX : CALC_PROGRESS.RUN_MAX;
     let doneBars = 0;
     const perSec = [];
     const activePacks = [];
     const activeSignalPacks = [];
     const skipped = [];
 
-    await emitRunProgressAsync(opts, 0, "Расчёт FINRESP: старт");
+    await emitRunProgressAsync(opts, CALC_PROGRESS.FINRESP_START, "Расчёт FINRESP: старт", { phase: "finresp", done: 0, total: totalBars });
 
     for (let pi = 0; pi < packs.length; pi++) {
+      if (shouldAbortRun(opts)) break;
       const candles = packs[pi];
       const sec = candles[0]?.sec || "?";
       const range = indicesForTimeRange(candles, tStart, tEnd);
@@ -2462,13 +2555,18 @@
       const runOpts = {
         ...(signalPacks ? { signalCandles } : {}),
         yieldUi: true,
+        shouldCancel: opts.shouldCancel,
         onProgress: unit
           ? (doneInInstrument, instrumentBars, candleTime) => {
             const absolute = doneBars + Math.max(0, Math.min(instrumentBars, doneInInstrument));
-            emitRunProgress(
+            emitFinrespPhaseProgress(
               opts,
-              (absolute / totalBars) * 100,
-              finrespProgressText(unit.sec, absolute, totalBars, candleTime)
+              absolute,
+              totalBars,
+              finrespProgressText(unit.sec, absolute, totalBars, candleTime),
+              finrespEnd,
+              unit.sec,
+              candleTime
             );
           }
           : undefined
@@ -2482,20 +2580,20 @@
         doneBars += unit.bars;
         await emitRunProgressAsync(
           opts,
-          (doneBars / totalBars) * 100,
-          finrespProgressText(sec, doneBars, totalBars, candles[range.b]?.time)
+          lerpCalcProgress(CALC_PROGRESS.FINRESP_START, finrespEnd, doneBars / totalBars),
+          finrespProgressText(sec, doneBars, totalBars, candles[range.b]?.time),
+          { phase: "finresp", done: doneBars, total: totalBars, candleTime: candles[range.b]?.time, sec }
         );
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);
       if (signalPacks) activeSignalPacks.push(signalCandles);
+      if (shouldAbortRun(opts)) break;
     }
 
     const preStopperAgg = aggregateFinresp(perSec);
     let stopper = { events: [] };
-    const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
-    if (cfg && perSec.length) {
-      await emitRunProgressAsync(opts, 99, "Расчёт FINRESP: stopper портфеля");
+    if (!shouldAbortRun(opts) && cfg && perSec.length) {
       const applied = applyPortfolioStopper(
         perSec,
         activePacks,
@@ -2505,11 +2603,31 @@
         params,
         volConfig,
         cfg,
-        signalPacks ? activeSignalPacks : null
+        signalPacks ? activeSignalPacks : null,
+        {
+          shouldCancel: opts.shouldCancel,
+          onProgress: (doneInStopper, stopperTotal, candleTime) => {
+            emitStopperPhaseProgress(
+              opts,
+              doneInStopper,
+              stopperTotal,
+              stopperProgressText(doneInStopper, stopperTotal, candleTime),
+              candleTime
+            );
+          }
+        }
       );
       stopper = applied.stopper;
+      await emitRunProgressAsync(
+        opts,
+        lerpCalcProgress(CALC_PROGRESS.FINRESP_MAX, CALC_PROGRESS.RUN_MAX, 1),
+        stopperProgressText(stopperBars, stopperBars, times.at(-1)),
+        { phase: "stopper", done: stopperBars, total: stopperBars, candleTime: times.at(-1) }
+      );
     }
-    await emitRunProgressAsync(opts, 99, "Расчёт FINRESP: готово");
+    if (!shouldAbortRun(opts)) {
+      await emitRunProgressAsync(opts, CALC_PROGRESS.RUN_MAX, "Расчёт FINRESP: готово");
+    }
     const agg = aggregateFinresp(perSec);
     return {
       perSec,
@@ -2517,6 +2635,7 @@
       agg,
       preStopperAgg,
       stopper,
+      cancelled: shouldAbortRun(opts),
       a: aRef,
       b: bRef,
       tStart,
@@ -2525,6 +2644,7 @@
   }
 
   root.MultiLogicFinrespEngine = {
+    CALC_PROGRESS,
     DEFAULT_PARAMS,
     DEFAULT_STOPPER,
     DEFAULT_VOLUME,
