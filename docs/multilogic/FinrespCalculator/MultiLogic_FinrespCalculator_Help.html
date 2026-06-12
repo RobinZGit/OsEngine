@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiLogic — справка по калькулятору FINRESP</title>
+<style>
+:root{--bg:#f4f6fa;--paper:#fff;--text:#1a1d26;--muted:#5c6370;--border:#dde2eb;--accent:#2563eb;--accent-soft:#eef4ff;--warn:#991b1b;--warn-soft:#fef2f2;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;font-size:15px;}
+.help-hdr{background:linear-gradient(180deg,#fff 0%,var(--accent-soft) 100%);border-bottom:1px solid var(--border);padding:1.5rem 1.75rem 1.25rem;}
+.help-hdr h1{margin:0 0 .4rem;font-size:1.65rem;}
+.help-sub{margin:.2rem 0;color:var(--muted);font-size:.92rem;}
+.help-layout{max-width:960px;margin:0 auto;padding:1.25rem 1rem 3rem;}
+.help-main{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:1.5rem 1.75rem 2rem;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+h2{font-size:1.2rem;margin:1.6rem 0 .7rem;padding-bottom:.35rem;border-bottom:2px solid var(--accent);}
+h2:first-child{margin-top:0;}
+h3{font-size:1.02rem;margin:1.1rem 0 .45rem;color:#374151;}
+p,ul{margin:.55rem 0;}
+ul{padding-left:1.35rem;}
+li{margin:.28rem 0;}
+code{font-family:Consolas,monospace;background:#eef1f6;padding:.1em .35em;border-radius:4px;font-size:.88em;}
+.note{color:var(--muted);font-size:.93rem;}
+.warn-box{margin:1rem 0;padding:.85rem 1rem;border:2px solid var(--warn);border-radius:10px;background:var(--warn-soft);color:#7f1d1d;font-size:.92rem;}
+.btn-row{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0;}
+.calc-btn{display:inline-block;padding:.5rem .9rem;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;text-decoration:none;}
+.calc-btn-secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);}
+a{color:var(--accent);}
+.help-ftr{text-align:center;padding:1.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;margin:.65rem 0 1rem;font-size:.9rem;}
+th,td{border:1px solid var(--border);padding:.4rem .55rem;text-align:left;vertical-align:top;}
+th{background:#f8fafc;}
+</style>
+</head>
+<body>
+<header class="help-hdr">
+<h1>Справка — калькулятор FINRESP</h1>
+<p class="help-sub">Папка <code>Custom\Robots\FinrespCalculator\</code> · самодостаточный набор для расчёта и реальной торговли</p>
+<p class="help-sub"><a href="MultiLogic_FinrespCalculator.html">← Открыть калькулятор</a></p>
+</header>
+<div class="help-layout">
+<main class="help-main">
+
+<div class="btn-row">
+<a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Калькулятор</a>
+<a class="calc-btn calc-btn-secondary" href="price-cache/">Папка базы цен</a>
+</div>
+
+<h2 id="start">1. Запуск</h2>
+<p>Калькулятор — одна HTML-страница + <code>MultiLogic_FinrespCalculator.engine.js</code> в этой же папке. Для загрузки свечей MOEX нужен <strong>http://</strong>, не <code>file://</code>.</p>
+<ul>
+<li><strong>Локально:</strong> запустите <code>serve-calculator.ps1</code> → откроется <code>http://127.0.0.1:8765/MultiLogic_FinrespCalculator.html</code></li>
+<li><strong>GitHub Pages:</strong> <a href="https://robinzgit.github.io/OsEngine/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.html">онлайн-версия</a></li>
+<li><strong>Копия папки:</strong> скопируйте всю папку <code>FinrespCalculator</code> — расчёт FINRESP и торговля T-Bank работают без остальных файлов OsEngine</li>
+</ul>
+
+<h2 id="calc">2. Расчёт FINRESP (фиктивный кошелёк)</h2>
+<ol>
+<li>Выберите акции/фьючерсы (Ctrl+клик), таймфрейм и период.</li>
+<li>Выберите логику L1…L5, при необходимости отредактируйте строки в доп. параметрах.</li>
+<li>Нажмите <strong>Рассчитать</strong> — свечи MOEX ISS загрузятся в браузерную базу (IndexedDB).</li>
+<li>Двигайте ползунки окна — FINRESP и % годовых пересчитываются сразу.</li>
+</ol>
+<p>В блоке результата:</p>
+<ul>
+<li><strong>FINRESP Σ (с комиссией)</strong> — итог по портфелю инструментов с учётом комиссии</li>
+<li><strong>Комиссии уплачено</strong> — сумма удержанных комиссий (отображается как −X ₽)</li>
+<li><strong>% годовых</strong> — простой и сложный, от депозита и календарного периода окна</li>
+</ul>
+
+<h2 id="volume">3. Объём, плечо, комиссия</h2>
+<table>
+<tr><th>Параметр</th><th>Описание</th></tr>
+<tr><td>Volume type</td><td>Deposit percent / Contracts / Contract currency — как во вкладке объёма робота</td></tr>
+<tr><td>Volume</td><td>% депозита, число контрактов или сумма в валюте контракта</td></tr>
+<tr><td>Депозит (Prime)</td><td>База для расчёта лота и % годовых</td></tr>
+<tr><td><strong>Плечо</strong></td><td><code>Volume × Депозит / 100</code> (₽) — показывается справа от блока «Объём сделки» и в реальной торговле</td></tr>
+<tr><td><strong>Commission, %</strong></td><td>Процент от суммы каждой сделки (покупка и продажа). 0.04 = 0.04%</td></tr>
+</table>
+
+<h2 id="cache">4. База цен</h2>
+<p>Свечи хранятся в <strong>IndexedDB</strong> браузера. Резервная копия — файлы JSON в подпапке <code>price-cache/</code>:</p>
+<ul>
+<li><strong>Сохранить в файл</strong> — выгрузить базу в JSON (положите файл в <code>price-cache/</code>)</li>
+<li><strong>Загрузить из файла</strong> — восстановить или перенести базу на другой ПК</li>
+<li><strong>Удалить базу цен</strong> — очистить IndexedDB</li>
+</ul>
+<p class="note">При переносе папки на другой компьютер загрузите сохранённый JSON из <code>price-cache/</code> через «Загрузить из файла».</p>
+
+<h2 id="tbank">5. T-Bank: депозит и реальная торговля</h2>
+<p>Режимы кошелька (вверху страницы):</p>
+<table>
+<tr><th>Режим</th><th>Назначение</th></tr>
+<tr><td>Фиктивный кошелёк</td><td>Только расчёт FINRESP, депозит вручную</td></tr>
+<tr><td>T-Bank торговый счёт</td><td>Депозит подтягивается с API (только чтение портфеля)</td></tr>
+<tr><td>Реальная торговля T-Bank</td><td>Заявки на бирже; нужен токен с правом торговли</td></tr>
+</table>
+<p>Токен шифруется в браузере (AES-GCM + PBKDF2), пароль не сохраняется. При выборе T-Bank введите пароль для расшифровки токена.</p>
+
+<h2 id="live">6. Блок «Реальная торговля»</h2>
+<div class="warn-box"><strong>Внимание:</strong> реальные деньги на бирже. Перед «Начать торговлю» проверьте логику, объём и список инструментов.</div>
+<ul>
+<li><strong>Начать торговлю / Остановить торговлю</strong> — синхронизация позиций с расчётом FINRESP; заявки в таблице ниже</li>
+<li><strong>Продать всё</strong> — закрыть все позиции (работает и при остановленной торговле)</li>
+<li><strong>Тип заявки</strong> — рыночная или лимитная (лимит по последней цене из расчёта или last price T-Bank)</li>
+<li><strong>Портфель</strong> — стоимость счёта с позициями (GetPortfolio)</li>
+<li><strong>Комиссии уплачено (реально)</strong> — комиссии брокера из операций T-Bank</li>
+</ul>
+
+<h2 id="params">7. Дополнительные параметры</h2>
+<ul>
+<li>SL/TP позиции по ATR (@SL, @TP) — как вкладка «Логики» робота</li>
+<li>Общепортфельный Stopper — SL/TP по equity портфеля</li>
+<li>Используемые индикаторы — отключённые убираются из Op/Cl до расчёта</li>
+<li>Строки L1…L5 — редактируемые; «Применить» подставляет @SL/@TP/@LR</li>
+<li>MOEX тикеры и префиксы фьючерсов — как вкладки робота</li>
+</ul>
+
+<h2 id="tech">8. Диагностика</h2>
+<p>Блок <strong>«Тех. информация»</strong> внизу калькулятора — скопируйте при сбое (версия страницы, выбор инструментов, ошибки MOEX/T-Bank).</p>
+<p class="note">Версия справки: 2026-06-12 · файл <code>MultiLogic_FinrespCalculator_Help.html</code></p>
+
+<div class="btn-row">
+<a class="calc-btn" href="MultiLogic_FinrespCalculator.html">Вернуться в калькулятор</a>
+</div>
+</main>
+</div>
+<footer class="help-ftr">MultiLogic FINRESP · <code>Custom\Robots\FinrespCalculator\</code></footer>
+</body>
+</html>
