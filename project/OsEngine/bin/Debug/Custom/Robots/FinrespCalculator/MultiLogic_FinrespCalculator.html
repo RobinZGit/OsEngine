@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>MultiLogic — калькулятор FINRESP</title>
 <style>
 :root{--bg:#f4f6fa;--paper:#fff;--text:#1a1d26;--muted:#5c6370;--border:#dde2eb;--accent:#2563eb;--accent-soft:#eef4ff;--code-bg:#eef1f6;}
@@ -228,6 +230,12 @@ details.logic-editor[open]{background:#fff;border-color:#c7d2fe;box-shadow:0 1px
 .live-order-book-meta{margin:0 0 .45rem;font-size:.78rem;color:var(--muted);}
 .live-order-book-table{font-size:.78rem;overflow:auto;max-height:14rem;}
 .live-order-book-empty{margin:0;color:var(--muted);font-size:.82rem;}
+.live-order-book-tools{margin-bottom:.55rem;padding:.55rem .65rem;border:2px solid #991b1b;border-radius:8px;background:#fff;}
+.live-order-book-tools label{font-size:.82rem;font-weight:700;color:#7f1d1d;}
+.live-order-book-tools select{min-width:11rem;font-size:.92rem;}
+.live-ob-price-pick{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;}
+.live-ob-price-pick:hover{font-weight:800;}
+.live-page-version-badge{background:#450a0a;font-size:.72rem;font-weight:600;margin-left:.35rem;}
 .live-ob-grid{width:100%;border-collapse:collapse;}
 .live-ob-grid th,.live-ob-grid td{padding:.22rem .35rem;text-align:right;border-bottom:1px solid #fecaca;}
 .live-ob-grid th{font-size:.72rem;color:#7f1d1d;font-weight:700;}
@@ -330,6 +338,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="live-trading-banner-main">
 <strong class="live-trading-title">Реальная торговля</strong>
 <span class="live-trading-badge" id="live-trading-status">остановлена</span>
+<span class="live-trading-badge live-page-version-badge" id="live-page-version-badge" title="Версия страницы — для проверки обновления"></span>
 </div>
 <div class="live-trading-leverage"><b>Плечо</b><span id="live-leverage-value">—</span></div>
 </div>
@@ -377,7 +386,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <div class="live-manual-order-grid live-order-book-tools">
 <label>Инструмент<select id="live-order-book-sec"><option value="">— выберите бумаги в калькуляторе —</option></select></label>
 </div>
-<p class="live-order-book-meta" id="live-order-book-meta">Двойной клик по bid/ask — открыть «Заявку» с ценой и стороной.</p>
+<p class="live-order-book-meta" id="live-order-book-meta">Выберите инструмент выше. Клик по <strong>цене</strong> в стакане — открыть «Заявку» (лимит, та же бумага).</p>
 <div id="live-order-book-table" class="live-order-book-table"><p class="live-order-book-empty">Разверните блок и выберите инструмент.</p></div>
 </div>
 </details>
@@ -610,7 +619,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-08-live-positions";
+  const CALC_PAGE_VERSION = "2026-06-08-orderbook-click";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const TECH_LOG_MAX_ERRORS = 128;
@@ -1675,6 +1684,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
     const sellAll = $("live-trading-sell-all");
     if (sellAll) sellAll.disabled = !isLive || state.uiBusy;
+    const verBadge = $("live-page-version-badge");
+    if (verBadge) verBadge.textContent = CALC_PAGE_VERSION;
     const status = $("live-trading-status");
     if (status) {
       if (state.live.lastError && isLive) {
@@ -1777,8 +1788,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       + '<tr><th>лоты</th><th>цена</th><th>цена</th><th>лоты</th></tr></thead><tbody>';
     const pickCell = (side, price, lots, cls, text) => {
       if (!Number.isFinite(price) || price <= 0) return `<td class="${cls}"></td>`;
-      const title = side === "sell" ? "Двойной клик — заявка на продажу" : "Двойной клик — заявка на покупку";
-      return `<td class="${cls} live-ob-pick" data-side="${side}" data-price="${price}" data-lots="${lots ?? ""}" title="${title}">${text}</td>`;
+      const isPrice = cls === "ob-bid-p" || cls === "ob-ask-p";
+      const title = side === "sell"
+        ? "Клик — лимитная заявка на продажу"
+        : "Клик — лимитная заявка на покупку";
+      const pickCls = isPrice ? " live-ob-pick live-ob-price-pick" : "";
+      return `<td class="${cls}${pickCls}" data-side="${side}" data-price="${price}" data-lots="${lots ?? ""}" title="${isPrice ? title : ""}">${text}</td>`;
     };
     for (let i = 0; i < rows; i++) {
       const bid = bids[i];
@@ -2352,12 +2367,24 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     panel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  function onLiveOrderBookDblClick(ev) {
-    const cell = ev.target?.closest?.(".live-ob-pick");
+  function onLiveOrderBookPriceClick(ev) {
+    const cell = ev.target?.closest?.(".live-ob-price-pick");
     if (!cell || !isLiveMode()) return;
+    ev.preventDefault();
     const side = cell.dataset.side === "sell" ? "sell" : "buy";
     const price = +cell.dataset.price;
     fillManualOrderFromOrderBook(side, price, cell.dataset.lots);
+  }
+
+  function syncLiveOrderBookSummarySec() {
+    const picked = parseLiveManualInstrumentKey($("live-order-book-sec")?.value);
+    const metaEl = $("live-order-book-meta");
+    if (metaEl && !state.live.orderBookBusy && picked?.sec) {
+      const hint = "Клик по цене — открыть «Заявку» (лимит).";
+      if (!metaEl.textContent.includes("глубина") && !metaEl.textContent.includes("Ошибка")) {
+        metaEl.textContent = `${picked.sec} · ${hint}`;
+      }
+    }
   }
 
   function syncLiveManualOrderUi() {
@@ -5128,17 +5155,21 @@ ${totalBlock}
   });
   $("live-order-book-sec")?.addEventListener("change", () => {
     saveConfig();
+    syncLiveOrderBookSummarySec();
     if ($("live-order-book-panel")?.open) refreshLiveOrderBook();
   });
   $("live-order-book-panel")?.addEventListener("toggle", () => {
-    if ($("live-order-book-panel")?.open) startLiveOrderBookPoll();
-    else stopLiveOrderBookPoll();
+    if ($("live-order-book-panel")?.open) {
+      fillLiveTradingInstrumentSelects();
+      syncLiveOrderBookSummarySec();
+      startLiveOrderBookPoll();
+    } else stopLiveOrderBookPoll();
   });
   $("live-positions-panel")?.addEventListener("toggle", () => {
     if ($("live-positions-panel")?.open) startLivePositionsPoll();
     else stopLivePositionsPoll();
   });
-  $("live-order-book-table")?.addEventListener("dblclick", onLiveOrderBookDblClick);
+  $("live-order-book-table")?.addEventListener("click", onLiveOrderBookPriceClick);
   $("tbank-save-token").addEventListener("click", () => { saveConfig(); saveTbankToken(); });
   $("cache-save-file").addEventListener("click", saveCacheToFile);
   $("cache-load-file").addEventListener("click", () => $("cache-file-input").click());
