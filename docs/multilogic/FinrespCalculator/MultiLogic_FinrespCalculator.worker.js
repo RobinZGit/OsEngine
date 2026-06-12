@@ -6,7 +6,12 @@ self.onmessage = (e) => {
   try {
     const E = self.MultiLogicFinrespEngine;
     if (!E?.runMulti) throw new Error("engine not loaded in worker");
-    const runOpts = randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : undefined;
+    const runOpts = {
+      ...(randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : {}),
+      onProgress: (pct, text) => {
+        self.postMessage({ id, type: "progress", pct, text });
+      }
+    };
     const result = E.runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, runOpts);
     self.postMessage({ id, ok: true, result });
   } catch (err) {

@@ -193,6 +193,11 @@ a{color:var(--accent);}
 .calc-progress-banner-inner{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .85rem;font-size:.95rem;}
 .calc-progress-banner strong{font-weight:800;letter-spacing:.02em;}
 #calc-progress-text{font-weight:500;opacity:.95;}
+.calc-progress-pct{
+  display:inline-block;min-width:3.1rem;padding:.12rem .5rem;border-radius:999px;
+  background:rgba(255,255,255,.2);font-weight:800;font-family:Consolas,monospace;font-size:1rem;
+}
+.calc-progress-pct:empty{display:none;}
 .calc-progress-spinner{
   display:inline-block;width:1.05rem;height:1.05rem;flex-shrink:0;
   border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
@@ -215,6 +220,7 @@ body.calc-running .help-ftr{opacity:.75;}
 <div class="calc-progress-banner-inner">
 <span class="calc-progress-spinner" aria-hidden="true"></span>
 <strong>Идёт расчёт</strong>
+<span id="calc-progress-pct" class="calc-progress-pct"></span>
 <span id="calc-progress-text">Подготовка…</span>
 </div>
 </div>
@@ -492,7 +498,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
 (() => {
-  const CALC_PAGE_VERSION = "2026-06-12-calc-progress";
+  const CALC_PAGE_VERSION = "2026-06-12-calc-pct";
   const $ = (id) => document.getElementById(id);
   const IS_FILE_PROTOCOL = location.protocol === "file:";
   const techLog = {
@@ -2322,13 +2328,23 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   }
 
-  function setCalcProgress(message) {
+  function setCalcProgress(message, pct) {
     const text = String(message || "").trim() || "…";
     const el = $("calc-progress-text");
+    const pctEl = $("calc-progress-pct");
     if (el) el.textContent = text;
+    if (pctEl) {
+      if (Number.isFinite(pct)) {
+        const p = Math.round(Math.max(0, Math.min(100, pct)));
+        pctEl.textContent = `${p}%`;
+      } else {
+        pctEl.textContent = "";
+      }
+    }
     const banner = $("calc-progress-banner");
     if (banner) banner.hidden = false;
-    $("calc-status").textContent = text;
+    const statusPct = Number.isFinite(pct) ? ` (${Math.round(pct)}%)` : "";
+    $("calc-status").textContent = `${text}${statusPct}`;
   }
 
   function clearCalcProgress() {
@@ -2337,6 +2353,8 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       banner.hidden = true;
       banner.setAttribute("aria-busy", "false");
     }
+    const pctEl = $("calc-progress-pct");
+    if (pctEl) pctEl.textContent = "";
   }
 
   function setFormLocked(lock) {
@@ -2368,16 +2386,21 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 
   function runMultiInWorker(packs, spec, a, b, params, volConfig, sc, randomPriceShift) {
     const worker = getCalcWorker();
+    const progressOpts = {
+      ...(randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : {}),
+      onProgress: (pct, text) => setCalcProgress(text, pct)
+    };
     if (!worker) {
-      return Promise.resolve(E.runMulti(
-        packs, spec, a, b, params, volConfig, sc,
-        randomPriceShift ? { signalPacks: E.applyRandomPriceShift(packs) } : undefined
-      ));
+      return Promise.resolve(E.runMulti(packs, spec, a, b, params, volConfig, sc, progressOpts));
     }
     const id = ++state.workerRequestId;
     return new Promise((resolve, reject) => {
       const onMsg = (e) => {
         if (!e.data || e.data.id !== id) return;
+        if (e.data.type === "progress") {
+          setCalcProgress(e.data.text, e.data.pct);
+          return;
+        }
         worker.removeEventListener("message", onMsg);
         worker.removeEventListener("error", onErr);
         if (e.data.ok) resolve(e.data.result);
@@ -2409,9 +2432,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
       workerOut = await runMultiInWorker(state.packs, spec, a, b, p, volConfig(), sc, randomPriceShiftEnabled());
     } catch (err) {
       noteTechError(`worker-fallback: ${err.message}`);
-      setCalcProgress("Расчёт FINRESP (основной поток)…");
+      setCalcProgress("Расчёт FINRESP (основной поток)…", 0);
       await yieldToUi();
-      workerOut = E.runMulti(state.packs, spec, a, b, p, volConfig(), sc, finrespRunOptions());
+      workerOut = E.runMulti(state.packs, spec, a, b, p, volConfig(), sc, {
+        ...finrespRunOptions(),
+        onProgress: (pct, text) => setCalcProgress(text, pct)
+      });
     }
     const { perSec, agg, preStopperAgg, stopper, skipped } = workerOut;
     state.windowSkipped = skipped || [];
@@ -3628,17 +3654,17 @@ ${totalBlock}
       : nFutures ? `${nFutures} фьючерсов` : `${nShares} акций`;
     const maxD = maxCalcDays(interval, instruments.length);
     setCalcProgress(periodNarrowed
-      ? `Период сужен до ${maxD} дн. · загрузка цен MOEX: ${label}…`
-      : `Загрузка цен MOEX: ${label}…`);
+      ? `Период сужен до ${maxD} дн. · идёт загрузка цен MOEX: ${label}`
+      : `Идёт загрузка цен MOEX: ${label}`, 0);
     await yieldToUi();
     try {
       let cacheHits = 0;
       const loadedData = await ensureInstrumentPacks(instruments, from, till, interval, (done, total, sec, groupLabel, meta) => {
         if (runGen !== state.runGeneration) return;
         if (meta?.fromCache) cacheHits += 1;
-        setCalcProgress(meta?.fromCache
-          ? `Загрузка цен ${done}/${total} (${groupLabel}, кэш): ${sec}`
-          : `Загрузка цен ${done}/${total} (${groupLabel}): ${sec}`);
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const src = meta?.fromCache ? "кэш" : "MOEX";
+        setCalcProgress(`Идёт загрузка цен MOEX (${groupLabel}, ${src}): ${sec}`, pct);
       });
       if (runGen !== state.runGeneration) return;
       updateCacheHint(cacheHits ? `MOEX: ${loadedData.packs.length - cacheHits}, кэш: ${cacheHits}` : "");
@@ -3662,7 +3688,7 @@ ${totalBlock}
         setSliderBounds(false);
       }
       saveWindowAnchor();
-      setCalcProgress("Расчёт FINRESP и построение графиков…");
+      setCalcProgress("Расчёт FINRESP и построение графиков…", 100);
       await yieldToUi();
       const result = await calcResultAsync();
       if (runGen !== state.runGeneration) return;

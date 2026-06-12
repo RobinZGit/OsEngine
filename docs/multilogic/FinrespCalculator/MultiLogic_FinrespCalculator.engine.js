@@ -920,10 +920,17 @@
       return vol;
     };
 
+    const barSpan = Math.max(1, to - from + 1);
+    const barProgressStep = Math.max(1, Math.floor(barSpan / 48));
+
     for (let i = from; i <= to; i++) {
       const price = candles[i].close;
       let buy = 0;
       let sell = 0;
+
+      if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
+        opts.onProgress(((i - from + 1) / barSpan) * 100);
+      }
 
       let posStop = null;
       if (pos !== 0 && (parsed.slAtr > 0 || parsed.tpAtr > 0)) {
@@ -1024,10 +1031,15 @@
     const capAt = (price) => maxAbsPosition(price, volConfig);
     const from = Math.max(0, startIdx);
     const to = Math.min(endIdx, candles.length - 1);
+    const barSpan = Math.max(1, to - from + 1);
+    const barProgressStep = Math.max(1, Math.floor(barSpan / 48));
 
     for (let i = from; i <= to; i++) {
       const candle = candles[i];
       if (!candle) continue;
+      if (typeof opts.onProgress === "function" && (i === to || (i - from) % barProgressStep === 0)) {
+        opts.onProgress(((i - from + 1) / barSpan) * 100);
+      }
       const price = tradeCloses[i];
       const signalPrice = signalCloses[i];
       const s = sma[i];
@@ -1980,8 +1992,15 @@
     );
   }
 
+  function emitRunProgress(options, pct, text) {
+    if (typeof options?.onProgress === "function") {
+      options.onProgress(Math.max(0, Math.min(100, pct)), text);
+    }
+  }
+
   function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, options) {
-    const signalPacks = options?.signalPacks;
+    const opts = options || {};
+    const signalPacks = opts.signalPacks;
     const emptyAgg = aggregateFinresp([]);
     const ref = longestPack(packs);
     if (!ref.length) {
@@ -2005,6 +2024,23 @@
       if (t) times.push(t);
     }
 
+    const workUnits = [];
+    for (let pi = 0; pi < packs.length; pi++) {
+      const candles = packs[pi];
+      const range = indicesForTimeRange(candles, tStart, tEnd);
+      if (!range) continue;
+      workUnits.push({
+        pi,
+        sec: candles[0]?.sec || "?",
+        bars: Math.max(1, range.b - range.a + 1),
+        range
+      });
+    }
+    const totalBars = workUnits.reduce((sum, w) => sum + w.bars, 0) || 1;
+    let doneBars = 0;
+
+    emitRunProgress(opts, 0, "Расчёт FINRESP: старт");
+
     const perSec = [];
     const activePacks = [];
     const activeSignalPacks = [];
@@ -2017,12 +2053,25 @@
         skipped.push({ sec, error: "нет свечей в выбранном окне" });
         continue;
       }
+      const unit = workUnits.find((w) => w.pi === pi);
       const signalCandles = signalPacks?.[pi] || candles;
-      const runOpts = signalPacks ? { signalCandles } : undefined;
+      const runOpts = {
+        ...(signalPacks ? { signalCandles } : {}),
+        onProgress: unit
+          ? (innerPct) => {
+            const barFrac = (Math.max(0, Math.min(100, innerPct)) / 100) * unit.bars;
+            emitRunProgress(opts, ((doneBars + barFrac) / totalBars) * 92, `Расчёт FINRESP: ${unit.sec}`);
+          }
+          : undefined
+      };
       const r = runOnCandles(candles, spec, range.a, range.b, params, volConfig, runOpts);
       if (!r.rows?.length) {
         skipped.push({ sec, error: "нет данных для расчёта в выбранном окне" });
         continue;
+      }
+      if (unit) {
+        doneBars += unit.bars;
+        emitRunProgress(opts, (doneBars / totalBars) * 92, `Расчёт FINRESP: ${sec}`);
       }
       perSec.push({ sec, ...r });
       activePacks.push(candles);
@@ -2033,6 +2082,7 @@
     let stopper = { events: [] };
     const cfg = stopperConfig && (stopperConfig.useSl || stopperConfig.useTp) ? stopperConfig : null;
     if (cfg && perSec.length) {
+      emitRunProgress(opts, 94, "Расчёт FINRESP: stopper портфеля");
       const applied = applyPortfolioStopper(
         perSec,
         activePacks,
@@ -2046,6 +2096,7 @@
       );
       stopper = applied.stopper;
     }
+    emitRunProgress(opts, 100, "Расчёт FINRESP: готово");
     const agg = aggregateFinresp(perSec);
     return {
       perSec,
