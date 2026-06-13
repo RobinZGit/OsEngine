@@ -722,6 +722,16 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
 <footer class="help-ftr">MultiLogic FINRESP · OsEngine Custom\Robots</footer>
 <script src="MultiLogic_FinrespCalculator.engine.js"></script>
 <script>
+/*
+ * UI и оркестрация калькулятора FINRESP (HTML + state + T-Bank live).
+ *
+ * Процедура / функция в JavaScript:
+ *   — обе пишутся как function name() { … }
+ *   — «функция» возвращает результат через return (selectedLogicIds, calcResultAsync, …)
+ *   — «процедура» только меняет state/DOM и ничего не возвращает (invalidateFormChange, syncLiveTradingUi, …)
+ *
+ * Блоки ниже помечены комментариями // === … ===
+ */
 (() => {
   const CALC_PAGE_VERSION = "2026-06-08-multi-logic";
   const CALC_PROGRESS = { LOAD_MAX: 33, FINRESP_START: 33, FINRESP_MAX: 66, RUN_MAX: 99 };
@@ -2716,10 +2726,14 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  // === Live: песочница (фейк) — симуляция заявок без T-Bank PostOrder ===
+
+  /** Функция: включена ли галочка «Песочница (фейк)» в режиме live. */
   function isLiveSandbox() {
     return isLiveMode() && !!$("live-sandbox-mode")?.checked;
   }
 
+  /** Функция: объект state.live.sandbox (Map открытых, массивы closed/orders). */
   function ensureSandboxState() {
     if (!state.live.sandbox) {
       state.live.sandbox = {
@@ -2737,14 +2751,17 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return state.live.sandbox;
   }
 
+  /** Функция: ключ позиции в Map песочницы (market:ticker). */
   function sandboxPosKey(market, ticker) {
     return `${market === "futures" ? "futures" : "shares"}:${String(ticker || "").toUpperCase()}`;
   }
 
+  /** Функция: комиссия фейк-сделки по полю Commission % калькулятора. */
   function sandboxCommissionFee(notional) {
     return Math.abs(+notional || 0) * (commissionPctValue() / 100);
   }
 
+  /** Функция: фейк-позиции в формате tbankPositionsByTicker для reconcile робота. */
   function sandboxPositionsByTicker() {
     const map = new Map();
     for (const pos of ensureSandboxState().open.values()) {
@@ -2759,6 +2776,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return map;
   }
 
+  /** Процедура: добавить запись в журнал фейк-заявок (до 200 шт.). */
   function recordSandboxOrder({ ticker, direction, lots, orderType, price }) {
     const sb = ensureSandboxState();
     sb.orders.unshift({
@@ -2775,6 +2793,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (sb.orders.length > 200) sb.orders.length = 200;
   }
 
+  /** Процедура: перенести закрытый объём в sb.closed с расчётом P/L. */
   function pushSandboxClosed(pos, closePieces, closePrice) {
     const sb = ensureSandboxState();
     const pnl = pos.side === "short"
@@ -2801,6 +2820,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     if (sb.closed.length > 200) sb.closed.length = 200;
   }
 
+  /**
+   * Процедура: изменить открытую фейк-позицию на signedDelta лотов/штук по price
+   * (открытие, усреднение, частичное закрытие, переворот).
+   */
   function applySandboxSignedDelta(pos, signedDelta, price) {
     const sb = ensureSandboxState();
     const key = sandboxPosKey(pos.market, pos.ticker);
@@ -2844,6 +2867,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  /**
+   * Процедура (async): исполнить заявку в песочнице — цена как у реальной,
+   * правка cashDelta/open/closed/commissionTotal, без API брокера.
+   */
   async function simulateSandboxOrder(instrumentId, direction, lots, secForPrice, options) {
     const opts = options || {};
     const qty = Math.max(0, Math.floor(+lots || 0));
@@ -2913,6 +2940,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return { orderId: `fake-${Date.now()}`, fake: true };
   }
 
+  /** Функция (async): PostOrder брокера или simulateSandboxOrder, если включена песочница. */
   async function postLiveOrder(instrumentId, direction, lots, secForPrice, options) {
     if (isLiveSandbox()) {
       return simulateSandboxOrder(instrumentId, direction, lots, secForPrice, options);
@@ -2920,6 +2948,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return tbankPostOrder(instrumentId, direction, lots, secForPrice, options);
   }
 
+  /** Процедура (async): пересчитать live-portfolio-value из startPortfolio + cashDelta + MTM открытых фейк-поз. */
   async function updateSandboxPortfolioDisplay() {
     if (!isLiveSandbox()) return;
     const sb = ensureSandboxState();
@@ -2939,6 +2968,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     renderLivePortfolioStats();
   }
 
+  /** Процедура (async): включить песочницу — зафиксировать startPortfolio, очистить фейк-состояние. */
   async function enableLiveSandbox() {
     if (!(await ensureTbankTokenUnlocked()) && state.tbank.token) {
       /* deposit/portfolio may load later */
@@ -2971,6 +3001,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     noteLiveTech("live-sandbox", "enabled", `start=${sb.startPortfolio}`);
   }
 
+  /** Процедура (async): выключить песочницу — очистить фейк, вернуть реальный портфель T-Bank. */
   async function disableLiveSandbox() {
     const sb = ensureSandboxState();
     sb.startPortfolio = null;
@@ -2985,6 +3016,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     noteLiveTech("live-sandbox", "disabled");
   }
 
+  /** Процедура (async): обработчик галочки «Песочница (фейк)». */
   async function onLiveSandboxToggle() {
     const on = !!$("live-sandbox-mode")?.checked;
     if (on) await enableLiveSandbox();
@@ -4518,6 +4550,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
   }
 
   function resetFinrespDisplay() {
+    /* Процедура: очистить FINRESP, графики и lastResult без пересчёта. */
     syncChartBox($("calc-chart"), "");
     syncChartBox($("calc-chart-equity"), "");
     $("calc-finresp").textContent = "—";
@@ -4536,6 +4569,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     applyUiLocks();
   }
 
+  // === FINRESP: сброс при изменении формы (без автопересчёта) ===
+
+  /** Процедура: сбросить отображение FINRESP; опционально — текст в calc-status. */
   function invalidateFinrespResult(message) {
     if (isOptimizing()) return;
     resetFinrespDisplay();
@@ -4544,6 +4580,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     }
   }
 
+  /** Процедура: сохранить config и пометить результат устаревшим (ждём «Рассчитать»). */
   function invalidateFormChange(options) {
     const opts = options || {};
     if (!opts.skipSave) saveConfig();
@@ -4670,6 +4707,10 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     });
   }
 
+  /**
+   * Функция (async): полный расчёт FINRESP по state.packs и окну ползунков.
+   * Берёт spec из resolveCalcLogicSpec; worker или E.runMultiAsync.
+   */
   async function calcResultAsync(optimCtx, runOptions) {
     const ro = runOptions || {};
     if (!state.packs.length) return null;
@@ -5025,6 +5066,9 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return rest > 0 ? `${shown} · …ещё ${rest}` : shown;
   }
 
+  // === Выбор логики (calc-logic, множественный) ===
+
+  /** Функция: id выбранных логик в порядке приоритета (верх списка = первая). */
   function selectedLogicIds() {
     const sel = $("calc-logic");
     if (!sel) return ["L5"];
@@ -5032,10 +5076,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     return ids.length ? ids : (sel.value ? [sel.value] : ["L5"]);
   }
 
+  /** Функция: первая логика в списке (для @OBT, подсказок, live). */
   function primaryLogicId() {
     return selectedLogicIds()[0] || "L5";
   }
 
+  /** Процедура: восстановить selectedOptions из config.logics / config.logic. */
   function applySavedLogicSelection(cfg) {
     const sel = $("calc-logic");
     if (!sel) return;
@@ -5054,6 +5100,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncLogicSelectedHint();
   }
 
+  /** Процедура: атрибут size у select — чтобы были видны все выбранные строки. */
   function syncLogicSelectSize() {
     const sel = $("calc-logic");
     if (!sel) return;
@@ -5062,6 +5109,7 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     sel.size = Math.min(12, Math.max(5, selectedN + 1, Math.min(optN, 8)));
   }
 
+  /** Процедура: текст «Выбрано N (порядок): …» над списком логик. */
   function syncLogicSelectedHint() {
     const el = $("calc-logic-selected");
     const sel = $("calc-logic");
@@ -5079,10 +5127,12 @@ Cursor «Open with Browser» и двойной клик по HTML так раб�
     syncLogicSelectSize();
   }
 
+  /** Функция: spec для расчёта — одна логика или multi_logic (engine.resolveLogicSpecStack). */
   function resolveCalcLogicSpec(p, indicators) {
     return E.resolveLogicSpecStack(selectedLogicIds(), state.customLines, p, indicators);
   }
 
+  /** Процедура: заполнить #calc-logic из BUILTIN_META, сохранить текущий выбор. */
   function fillLogicSelect() {
     const sel = $("calc-logic");
     const prev = selectedLogicIds();

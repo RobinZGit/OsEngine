@@ -1,4 +1,17 @@
-/* MultiLogic FINRESP calculator engine (browser). No persistence. */
+/*
+ * MultiLogic FINRESP calculator engine (browser). No persistence.
+ *
+ * Термины (как в Pascal/VBA и в этом файле):
+ *   — «функция» — подпрограмма, возвращающая значение (return);
+ *   — «процедура» — подпрограмма без результата (void); в JS тоже function, но без return.
+ *
+ * Основные блоки:
+ *   parseLogicLine / resolveLogicSpec — разбор строки Op/Cl и сборка spec для симуляции;
+ *   simulateLogicLine — одна логика L1…L5 на свечах;
+ *   simulateMultiLogicStack — несколько L-логик по приоритету (как слоты MultiLogic);
+ *   runMulti / runMultiAsync — портфель инструментов + portfolio stopper;
+ *   loadManyDetailed — загрузка свечей MOEX.
+ */
 (function (root) {
   "use strict";
 
@@ -958,6 +971,10 @@
     return ind;
   }
 
+  /**
+   * Сигналы одной строки логики на баре i: вход long/short (Op) и выход (Cl).
+   * @returns {{ longOpHit, shortOpHit, longClHit, shortClHit }}
+   */
   function logicLineBarSignals(parsed, cache, i) {
     const opLongAtoms = parsed.opLongAtoms || (parsed.opSide === "long" ? parsed.opAtoms : []);
     const opShortAtoms = parsed.opShortAtoms || (parsed.opSide === "short" ? parsed.opAtoms : []);
@@ -971,6 +988,13 @@
     };
   }
 
+  /**
+   * Симуляция нескольких L1…L5 на одном инструменте (стек по приоритету).
+   * Порядок specs[] = порядок выбора в UI (сверху вниз).
+   * На каждом баре: если позиции нет — перебор логик до первого входа;
+   * если позиция открыта — SL/TP и Cl только у activeIdx (логика, открывшая сделку).
+   * @param {object[]} specs — элементы resolveLogicSpec с type === "logic_line"
+   */
   function simulateMultiLogicStack(candles, specs, startIdx, endIdx, volConfig, options, params) {
     const opts = options || {};
     const logicSpecs = (specs || []).filter((s) => s && s.type === "logic_line" && !s.disabled);
@@ -1361,6 +1385,10 @@
     return parsed;
   }
 
+  /**
+   * Одна встроенная или пользовательская логика → spec для runOnCandles.
+   * @param {string} logicId — id из BUILTIN_META (L1…L5, sma_below, …)
+   */
   function resolveLogicSpec(logicId, customLines, params, indicatorSelection) {
     const meta = BUILTIN_META.find((m) => m.id === logicId);
     if (!meta) return null;
@@ -1382,6 +1410,12 @@
     return { type: "logic_line", parsed, line, logicId: meta.id };
   }
 
+  /**
+   * Несколько выбранных логик → один spec.
+   * 2+ logic_line → { type: "multi_logic", specs, logicIds };
+   * одна логика или SMA → обычный spec (sma_spread / logic_line).
+   * SMA не смешивается в стек с L1…L5 — при нескольких id берётся первая допустимая одиночная.
+   */
   function resolveLogicSpecStack(logicIds, customLines, params, indicatorSelection) {
     const ids = (Array.isArray(logicIds) ? logicIds : [logicIds]).map(String).filter(Boolean);
     if (!ids.length) return null;
@@ -1395,6 +1429,10 @@
     return specs[0];
   }
 
+  /**
+   * Прогон spec по одному ряду свечей (один инструмент, окно startIdx…endIdx).
+   * multi_logic → simulateMultiLogicStack; logic_line → simulateLogicLine; sma_spread → simulateSmaSpread.
+   */
   function runOnCandles(candles, spec, startIdx, endIdx, params, volConfig, options) {
     if (!candles?.length) {
       return { rows: [], finresp: 0, cash: 0, pos: 0, commission: 0, buys: 0, sells: 0, entryPrice: null };
@@ -2585,6 +2623,10 @@
     };
   }
 
+  /**
+   * FINRESP по всем packs: по каждому инструменту runOnCandles, затем aggregateFinresp
+   * и опционально applyPortfolioStopper (портфельный @SL/@TP по equity).
+   */
   function runMulti(packs, spec, startIdx, endIdx, params, volConfig, stopperConfig, options) {
     const opts = options || {};
     const signalPacks = opts.signalPacks;
