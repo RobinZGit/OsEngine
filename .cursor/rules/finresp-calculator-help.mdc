@@ -1,19 +1,19 @@
 ---
-description: При изменении UI калькулятора FINRESP обновлять справку
+description: При изменении UI калькулятора FINRESP обновлять справку (репозиторий MultiLogicTrade)
 globs:
-  - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.html
-  - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
-  - docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator.worker.js
-  - project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/MultiLogic_FinrespCalculator.html
-  - project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
+  - ../MultiLogicTrade/FinrespCalculator/MultiLogic_FinrespCalculator.html
+  - ../MultiLogicTrade/FinrespCalculator/MultiLogic_FinrespCalculator.engine.js
+  - ../MultiLogicTrade/FinrespCalculator/MultiLogic_FinrespCalculator.worker.js
 ---
 
 # FinrespCalculator — справка
 
-При добавлении, переименовании или удалении **контролов** на форме калькулятора:
+Калькулятор перенесён в репозиторий **MultiLogicTrade** (`../MultiLogicTrade/` или https://github.com/RobinZGit/MultiLogicTrade).
 
-1. Обновить `docs/multilogic/FinrespCalculator/MultiLogic_FinrespCalculator_Help.html` — описать все элементы формы.
-2. Синхронизировать копию в `project/OsEngine/bin/Debug/Custom/Robots/FinrespCalculator/`.
-3. В конце справки обновить строку «Версия справки» и `pageVersion` формы, если менялась.
+При изменении контролов формы:
 
-Справка должна перечислять **все** видимые поля, кнопки, чекбоксы, блоки результатов и режимы кошелька.
+1. Обновить `FinrespCalculator/MultiLogic_FinrespCalculator_Help.html` в MultiLogicTrade.
+2. Обновить `CALC_PAGE_VERSION` и строку «Версия справки» в конце help.
+3. Коммит и push в MultiLogicTrade; GitHub Pages: https://robinzgit.github.io/MultiLogicTrade/
+
+Справка должна перечислять все видимые поля, кнопки, чекбоксы, блоки результатов и режимы кошелька.
