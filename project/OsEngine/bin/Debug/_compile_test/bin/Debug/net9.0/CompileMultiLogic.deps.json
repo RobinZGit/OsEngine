@@ -1,0 +1,493 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "CompileMultiLogic/1.0.0": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis.CSharp": "4.13.0",
+          "OsEngine": "2.0.1.5"
+        },
+        "runtime": {
+          "CompileMultiLogic.dll": {}
+        }
+      },
+      "Microsoft.CodeAnalysis.Common/4.13.0": {
+        "runtime": {
+          "lib/net9.0/Microsoft.CodeAnalysis.dll": {
+            "assemblyVersion": "4.13.0.0",
+            "fileVersion": "4.1300.25.12011"
+          }
+        },
+        "resources": {
+          "lib/net9.0/cs/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net9.0/de/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net9.0/es/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net9.0/fr/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net9.0/it/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net9.0/ja/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net9.0/ko/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net9.0/pl/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net9.0/pt-BR/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net9.0/ru/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net9.0/tr/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net9.0/zh-Hans/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net9.0/zh-Hant/Microsoft.CodeAnalysis.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.CodeAnalysis.CSharp/4.13.0": {
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Common": "4.13.0"
+        },
+        "runtime": {
+          "lib/net9.0/Microsoft.CodeAnalysis.CSharp.dll": {
+            "assemblyVersion": "4.13.0.0",
+            "fileVersion": "4.1300.25.12011"
+          }
+        },
+        "resources": {
+          "lib/net9.0/cs/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/net9.0/de/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "de"
+          },
+          "lib/net9.0/es/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "es"
+          },
+          "lib/net9.0/fr/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/net9.0/it/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "it"
+          },
+          "lib/net9.0/ja/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/net9.0/ko/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/net9.0/pl/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/net9.0/pt-BR/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/net9.0/ru/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/net9.0/tr/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/net9.0/zh-Hans/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/net9.0/zh-Hant/Microsoft.CodeAnalysis.CSharp.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "OsEngine/2.0.1.5": {
+        "runtime": {
+          "OsEngine.dll": {
+            "assemblyVersion": "2.0.1.5",
+            "fileVersion": "2.0.1.5"
+          }
+        }
+      },
+      "Google.Protobuf/3.31.0.0": {
+        "runtime": {
+          "Google.Protobuf.dll": {
+            "assemblyVersion": "3.31.0.0",
+            "fileVersion": "3.31.0.0"
+          }
+        }
+      },
+      "WinForms.DataVisualization/1.0.0.0": {
+        "runtime": {
+          "WinForms.DataVisualization.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.10.0.0"
+          }
+        }
+      },
+      "Newtonsoft.Json/13.0.0.0": {
+        "runtime": {
+          "Newtonsoft.Json.dll": {
+            "assemblyVersion": "13.0.0.0",
+            "fileVersion": "13.0.3.27908"
+          }
+        }
+      },
+      "FinamApi/1.0.0.0": {
+        "runtime": {
+          "FinamApi.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "RestSharp/105.2.3.0": {
+        "runtime": {
+          "RestSharp.dll": {
+            "assemblyVersion": "105.2.3.0",
+            "fileVersion": "105.2.3.0"
+          }
+        }
+      },
+      "LiteDB/5.0.19.0": {
+        "runtime": {
+          "LiteDB.dll": {
+            "assemblyVersion": "5.0.19.0",
+            "fileVersion": "5.0.19.0"
+          }
+        }
+      },
+      "BytesRoad.Net.Ftp/2.0.0.0": {
+        "runtime": {
+          "BytesRoad.Net.Ftp.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TInvestApi/1.0.0.0": {
+        "runtime": {
+          "TInvestApi.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Grpc.Core.Api/2.0.0.0": {
+        "runtime": {
+          "Grpc.Core.Api.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.71.0.0"
+          }
+        }
+      },
+      "Grpc.Net.Client/2.0.0.0": {
+        "runtime": {
+          "Grpc.Net.Client.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.71.0.0"
+          }
+        }
+      },
+      "WTelegramClient/4.3.4.0": {
+        "runtime": {
+          "WTelegramClient.dll": {
+            "assemblyVersion": "4.3.4.0",
+            "fileVersion": "4.3.4.0"
+          }
+        }
+      },
+      "System.ServiceModel.Syndication/9.0.0.5": {
+        "runtime": {
+          "System.ServiceModel.Syndication.dll": {
+            "assemblyVersion": "9.0.0.5",
+            "fileVersion": "9.0.525.21509"
+          }
+        }
+      },
+      "QUIKSharp/2.0.0.0": {
+        "runtime": {
+          "QUIKSharp.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "cgate_net64/5.10.0.36987": {
+        "runtime": {
+          "cgate_net64.dll": {
+            "assemblyVersion": "5.10.0.36987",
+            "fileVersion": "5.10.0.608"
+          }
+        }
+      },
+      "OpenFAST/1.1.3.0": {
+        "runtime": {
+          "OpenFAST.dll": {
+            "assemblyVersion": "1.1.3.0",
+            "fileVersion": "1.1.3.0"
+          }
+        }
+      },
+      "MtApi5/2.0.1.0": {
+        "runtime": {
+          "MtApi5.dll": {
+            "assemblyVersion": "2.0.1.0",
+            "fileVersion": "2.0.1.0"
+          }
+        }
+      },
+      "Microsoft.Web.WebView2.Wpf/1.0.3240.44": {
+        "runtime": {
+          "Microsoft.Web.WebView2.Wpf.dll": {
+            "assemblyVersion": "1.0.3240.44",
+            "fileVersion": "1.0.3240.44"
+          }
+        }
+      },
+      "Microsoft.Web.WebView2.Core/1.0.3240.44": {
+        "runtime": {
+          "Microsoft.Web.WebView2.Core.dll": {
+            "assemblyVersion": "1.0.3240.44",
+            "fileVersion": "1.0.3240.44"
+          }
+        }
+      },
+      "Google.Api.CommonProtos/2.16.0.0": {
+        "runtime": {
+          "Google.Api.CommonProtos.dll": {
+            "assemblyVersion": "2.16.0.0",
+            "fileVersion": "2.16.0.0"
+          }
+        }
+      },
+      "NSec.Cryptography/25.4.0.0": {
+        "runtime": {
+          "NSec.Cryptography.dll": {
+            "assemblyVersion": "25.4.0.0",
+            "fileVersion": "25.4.0.0"
+          }
+        }
+      },
+      "Jayrock.Json/0.9.16530.0": {
+        "runtime": {
+          "Jayrock.Json.dll": {
+            "assemblyVersion": "0.9.16530.0",
+            "fileVersion": "0.9.17418.1141"
+          }
+        }
+      },
+      "WinForms.DataVisualization.Utilities/1.0.0.0": {
+        "runtime": {
+          "WinForms.DataVisualization.Utilities.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.10.0.0"
+          }
+        }
+      },
+      "Grpc.Net.Common/2.0.0.0": {
+        "runtime": {
+          "Grpc.Net.Common.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.71.0.0"
+          }
+        }
+      },
+      "BytesRoad.Net.Sockets/2.0.0.0": {
+        "runtime": {
+          "BytesRoad.Net.Sockets.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "Microsoft.Extensions.Logging.Abstractions/6.0.0.0": {
+        "runtime": {
+          "Microsoft.Extensions.Logging.Abstractions.dll": {
+            "assemblyVersion": "6.0.0.0",
+            "fileVersion": "6.0.21.52210"
+          }
+        }
+      },
+      "MtClient/1.0.0.0": {
+        "runtime": {
+          "MtClient.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "CompileMultiLogic/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.CodeAnalysis.Common/4.13.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-T8nRl4mAUY4mhdYM4U2ra2vP2EL+ol8Yqwo0gwC/V55vmlXq9NxdIkZJynTpTL1uX/jHijJ90AeOEx4lf7OwzQ==",
+      "path": "microsoft.codeanalysis.common/4.13.0",
+      "hashPath": "microsoft.codeanalysis.common.4.13.0.nupkg.sha512"
+    },
+    "Microsoft.CodeAnalysis.CSharp/4.13.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-BsH7Vijbj9IL7Fj4k/ysZSVyLGFqr75wmdFGwCKWJvSjnA1xwPaQ3hkB2BQdHOt5CpEYA6Q0I6Oo5sDTDHqHsg==",
+      "path": "microsoft.codeanalysis.csharp/4.13.0",
+      "hashPath": "microsoft.codeanalysis.csharp.4.13.0.nupkg.sha512"
+    },
+    "OsEngine/2.0.1.5": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Google.Protobuf/3.31.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "WinForms.DataVisualization/1.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Newtonsoft.Json/13.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "FinamApi/1.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "RestSharp/105.2.3.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "LiteDB/5.0.19.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "BytesRoad.Net.Ftp/2.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TInvestApi/1.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Grpc.Core.Api/2.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Grpc.Net.Client/2.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "WTelegramClient/4.3.4.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "System.ServiceModel.Syndication/9.0.0.5": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "QUIKSharp/2.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "cgate_net64/5.10.0.36987": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "OpenFAST/1.1.3.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "MtApi5/2.0.1.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.Web.WebView2.Wpf/1.0.3240.44": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.Web.WebView2.Core/1.0.3240.44": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Google.Api.CommonProtos/2.16.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "NSec.Cryptography/25.4.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Jayrock.Json/0.9.16530.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "WinForms.DataVisualization.Utilities/1.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Grpc.Net.Common/2.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "BytesRoad.Net.Sockets/2.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.Extensions.Logging.Abstractions/6.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "MtClient/1.0.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

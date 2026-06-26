@@ -1,0 +1,18 @@
+{
+  "FormatVersion": "1",
+  "RobotType": "MultiLogic",
+  "StrategyName": "multilogic",
+  "ExportedAtUtc": "2026-06-08T06:03:53.7450176Z",
+  "LogicLines": [
+    "Regime(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Op[Ab] Cl[Bl]) AND (NOT Stoch(14-3-3;Lmin=55;Smax=45) Op[K>=55] Cl[K<=45]) AND (LinReg(50;Dev=2) Op[AbUp] Cl[BlLo]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI>=100] Cl[CCI<=-100]) AND (MACD(12,26,9) Op[Macd>Sig] Cl[Macd<Sig] Note(lon-trend))",
+    "Regime(LinReg;L=50;Dev=2;SlopeLb=3;OnFlip=Close;Entry=MatchSide) (SMA(100) Side[S] Op[Bl] Cl[Ab]) AND (NOT Stoch(14-3-3;Lmin=55;Smax=45) Op[K<=45] Cl[K>=55]) AND (LinReg(50;Dev=2) Op[BlLo] Cl[AbUp]) AND (ATR(14;Gr=3%;Lb=5) Op[GrOk] Cl[-]) AND (CCI(20;Lmin=100;Smax=-100) Op[CCI<=-100] Cl[CCI>=100]) AND (MACD(12,26,9) Op[Macd<Sig] Cl[Macd>Sig] Note(short-trend))",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ]
+}

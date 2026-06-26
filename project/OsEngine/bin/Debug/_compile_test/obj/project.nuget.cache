@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "dgSpecHash": "85t1TAAH+iU=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Сергей\\VsCodeProjects\\OsEngine\\project\\OsEngine\\bin\\Debug\\_compile_test\\CompileMultiLogic.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.codeanalysis.analyzers\\3.11.0\\microsoft.codeanalysis.analyzers.3.11.0.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.codeanalysis.common\\4.13.0\\microsoft.codeanalysis.common.4.13.0.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.codeanalysis.csharp\\4.13.0\\microsoft.codeanalysis.csharp.4.13.0.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\system.collections.immutable\\8.0.0\\system.collections.immutable.8.0.0.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\system.reflection.metadata\\8.0.0\\system.reflection.metadata.8.0.0.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.netcore.app.ref\\9.0.13\\microsoft.netcore.app.ref.9.0.13.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.windowsdesktop.app.ref\\9.0.13\\microsoft.windowsdesktop.app.ref.9.0.13.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.aspnetcore.app.ref\\9.0.13\\microsoft.aspnetcore.app.ref.9.0.13.nupkg.sha512",
+    "C:\\Users\\Сергей\\AppData\\Local\\Temp\\cursor-sandbox-cache\\0f20788962b644d6fcb5627a0d26957b\\nuget\\microsoft.netcore.app.host.win-x64\\9.0.13\\microsoft.netcore.app.host.win-x64.9.0.13.nupkg.sha512"
+  ],
+  "logs": []
+}
