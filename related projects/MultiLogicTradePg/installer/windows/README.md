@@ -35,7 +35,7 @@ database, installs npm packages, and creates launch shortcuts.
    111
    ```
 
-4. Deploys the database from scratch when the installer task is selected.
+4. Always deploys the database from scratch.
    Setup first searches local PostgreSQL ports (`5432`, an existing `api\.env`
    `PGPORT`, and nearby ports) using user `postgres` and password `111`. If it
    finds an existing `multilogictrade`, it resets that exact server. Otherwise it
@@ -88,9 +88,9 @@ When an existing MultiLogicTradePg installation is detected, setup asks:
 - **No** — install over the existing folder.
 - **Cancel** — stop setup.
 
-The database-reset task is checked by default. When selected, setup recreates the
-`multilogictrade` database by name on the selected local PostgreSQL port and
-deletes previous data. The selected port is written to `api\.env`.
+Every installation recreates the `multilogictrade` database by name on the
+selected local PostgreSQL port and deletes previous data. The selected port is
+written to `api\.env`.
 
 ## Build the `.exe`
 

@@ -33,7 +33,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-Name: "resetdb"; Description: "Развернуть базу данных с нуля (00 -> 01 -> 02, пароль PostgreSQL 111)"; GroupDescription: "База данных:"; Flags: checkedonce
 
 [Files]
 Source: "{#SourceRoot}\00_create_database.sql"; DestDir: "{app}"; Flags: ignoreversion
@@ -53,17 +52,9 @@ Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{cmd}"; Par
 Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"; Tasks: desktopicon
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\windows\scripts\install.ps1"" -InstallDir ""{app}"" -PostgresPassword ""111"" -ResetDatabase:{code:GetResetDatabaseFlag}"; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg..."; Flags: waituntilterminated
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\windows\scripts\install.ps1"" -InstallDir ""{app}"" -PostgresPassword ""111"""; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg..."; Flags: waituntilterminated
 
 [Code]
-function GetResetDatabaseFlag(Param: String): String;
-begin
-  if WizardIsTaskSelected('resetdb') then
-    Result := '$true'
-  else
-    Result := '$false';
-end;
-
 function StripQuotes(Value: String): String;
 begin
   Result := Value;

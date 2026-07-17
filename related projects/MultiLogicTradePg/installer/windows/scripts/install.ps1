@@ -11,7 +11,6 @@
 param(
     [string] $InstallDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path,
     [string] $PostgresPassword = "111",
-    [bool] $ResetDatabase = $true,
     [string] $PostgresMajor = "15",
     [switch] $SkipDependencyInstall
 )
@@ -487,11 +486,6 @@ try {
             [string] $Psql,
             [bool] $HttpExtensionReady
         )
-        if (-not $ResetDatabase) {
-            Write-Host "    Развёртывание БД пропущено по выбору пользователя." -ForegroundColor Yellow
-            return
-        }
-
         Write-Step "Сброс базы данных по имени"
         Write-Host "    psql:     $Psql" -ForegroundColor DarkGray
         Write-Host "    host:     $script:PostgresHost" -ForegroundColor DarkGray

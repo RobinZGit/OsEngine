@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-17 — installer ищет локальный PostgreSQL с `multilogictrade`, сбрасывает найденный порт и пишет PGPORT
+**Последнее обновление:** 2026-07-17 — installer всегда сбрасывает `multilogictrade`, checkbox reset удалён
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -189,6 +189,7 @@
 82. **Fix launcher v2/v3:** после повтора ошибки большой PowerShell-wrapper отменён; возвращён старый рабочий `.bat` flow (одно окно, API в фоне, Angular в foreground), но файл сделан ASCII-only/CRLF и исправлено отложенное открытие браузера без вложенного `start \"\"`, которое давало `The system cannot find the file \\.`.
 83. **Fix installer admin responsibilities:** `MultiLogic_Trade_Progress_Start.bat` больше не выполняет `npm install`; он только проверяет `api\web node_modules` и локальный Angular CLI. Все npm-пакеты ставятся post-install скриптом от администратора, установка падает, если `node_modules` не создан.
 84. **Fix reset БД:** installer больше не полагается на `00` для reset; post-install ищет локальный PostgreSQL (`5432`, существующий `api\.env PGPORT`, `5433..5440`) с пользователем `postgres`/паролем `111`, выбирает порт, где уже есть `multilogictrade`, удаляет базу по имени через terminate + `DROP DATABASE IF EXISTS ... WITH (FORCE)`, проверяет отсутствие/создание базы, накатывает `01 -> 02` и записывает выбранный `PGPORT` в `api\.env`.
+85. **Reset всегда:** checkbox `resetdb` удалён из Inno Setup; post-install больше не принимает `-ResetDatabase` и всегда сбрасывает/пересоздаёт `multilogictrade` при установке.
 
 ### Автотесты
 
@@ -246,6 +247,7 @@
 - [x] Fix launcher v3: вернуть старый рабочий `.bat` flow, исправить delayed browser opener и сохранить ASCII/CRLF (2026-07-17).
 - [x] Installer-only npm install; launcher без npm install; reset БД по имени с `DROP ... WITH (FORCE)` и проверкой (2026-07-17).
 - [x] Reset БД ищет существующий `multilogictrade` на локальных портах PostgreSQL и пишет найденный `PGPORT` в `api\.env` (2026-07-17).
+- [x] Убрать optional reset checkbox: каждая установка всегда пересоздаёт `multilogictrade` (2026-07-17).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -266,6 +268,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-17 | Installer reset is mandatory: removed resetdb task/flag; every setup recreates multilogictrade |
 | 2026-07-17 | Installer DB target fix: find local port containing multilogictrade; reset it; write PGPORT |
 | 2026-07-17 | Installer admin fix: npm only during setup; launcher checks node_modules; DB reset by name with FORCE |
 | 2026-07-17 | Fix installer launcher v3: old working bat flow restored; fixed delayed browser start; rebuilt Setup.exe |
@@ -443,3 +446,4 @@
 92. Повтор того же лога (`'--no-fund' is not recognized`, `Unknown argument: port`) + старый bat в source поднимает API/Angular, но пишет `The system cannot find the file \\.` — вернуть старый рабочий `.bat` flow, исправить delayed browser opener, не переустанавливать npm при наличии `node_modules`.
 93. «Can the installer itself install packages as administrator, not when the batch file is launched? ... why old logic remains after reset?» — убрать npm install из bat, сделать npm обязательным в installer, reset базы по имени с FORCE и логом host/port/db.
 94. «Connect to PostgreSQL user/server `postgres`, password `111`; delete database completely and roll scripts again. If installer could connect, why could it not delete?» — искать локальный PostgreSQL-порт, где реально есть `multilogictrade`, сбрасывать именно его и записывать выбранный порт в `api\.env`.
+95. «Did you put it in main? He still did not update/delete the database.» — подтвердить main и сделать reset БД безусловным при каждой установке.
