@@ -1,0 +1,249 @@
+:host {
+  display: block;
+}
+
+.papers-sub-block {
+  margin-top: 0.55rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.25rem 0.65rem 0.55rem;
+  background: #fff;
+}
+
+.papers-sub-block summary {
+  list-style: none;
+}
+
+.papers-sub-block summary::-webkit-details-marker {
+  display: none;
+}
+
+.signals-chevron {
+  display: inline-block;
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #374151;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.signals-chevron.open {
+  transform: rotate(90deg);
+}
+
+.signals-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+}
+
+.signals-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.papers-mode-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.btn-chart-mode {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.btn-chart-mode.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.paper-equity-host {
+  margin-top: 0.35rem;
+}
+
+.pnl-deposit-pct {
+  margin-left: 0.25rem;
+  font-weight: 600;
+  font-size: 0.85em;
+  opacity: 0.9;
+}
+
+.signals-title {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.paper-item-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.paper-item-toggle:hover {
+  background: #f8fafc;
+}
+
+.papers-count {
+  margin-left: 0.35rem;
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.papers-body {
+  padding-top: 0.35rem;
+}
+
+.papers-empty {
+  padding: 0.5rem 0.25rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.papers-list {
+  max-height: min(560px, 55vh);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.paper-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.paper-item-open {
+  border-color: #93c5fd;
+}
+
+.paper-name-muted {
+  margin-left: 0.35rem;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.paper-pnl {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.paper-comm {
+  margin-left: 0.45rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+}
+
+.paper-trades-meta {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.paper-chart-wrap {
+  padding: 0.35rem 0.5rem 0.6rem;
+  border-top: 1px solid #eef2f7;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.paper-chart-wrap app-logic-backtest-ratings {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.paper-chart-host {
+  display: block;
+  width: 100%;
+  height: 380px;
+  min-height: 380px;
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  /* visible — иначе fullscreen (position:fixed) может клипиться */
+  overflow: visible;
+}
+
+.paper-chart-host app-price-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Жёсткая высота shell — иначе canvas часто 0px во вложенных панелях */
+.paper-chart-host ::ng-deep .chart-shell:not(.chart-shell--fullscreen) {
+  height: 100% !important;
+  min-height: 380px;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* Кнопка полного экрана всегда видна в узкой панели бумаг */
+.paper-chart-host ::ng-deep .chart-btn-expand {
+  display: inline-flex !important;
+}
+
+.paper-chart-host ::ng-deep .chart-btn-expand-text {
+  display: inline !important;
+}
+
+.paper-chart-status {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.paper-chart-error {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  color: #b45309;
+  font-weight: 600;
+}
+
+.paper-chart-legend {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.trade-pnl-pos {
+  color: #15803d;
+}
+
+.trade-pnl-neg {
+  color: #b91c1c;
+}

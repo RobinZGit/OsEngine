@@ -1,0 +1,337 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <aside
+    class="panel"
+    [class.panel-wide]="panelWide"
+    [class.panel-diagram]="activeTab === 'diagram'"
+    aria-label="Структура базы данных"
+  >
+    <header class="panel-header">
+      <div>
+        <h2>Структура базы данных</h2>
+        @if (schema) {
+          <p class="meta">{{ schema.database }} · схема {{ schema.schema }}</p>
+          @if (schemaMode === 'offline') {
+            <p class="offline-note">{{ schema.sourceNote }}</p>
+          }
+        }
+      </div>
+      <div class="panel-actions">
+        <button type="button" class="icon-btn" title="Обновить" (click)="loadSchema()">↻</button>
+        <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
+      </div>
+    </header>
+
+    @if (schema && !loading) {
+      <nav class="tabs" aria-label="Вкладки структуры">
+        <button
+          type="button"
+          class="tab"
+          [class.active]="activeTab === 'tree'"
+          (click)="setTab('tree')"
+        >
+          Дерево
+        </button>
+        <button
+          type="button"
+          class="tab"
+          [class.active]="activeTab === 'diagram'"
+          (click)="setTab('diagram')"
+        >
+          Диаграмма
+          @if (diagram) {
+            <span class="tab-count">{{ diagram.links.length }} FK</span>
+          }
+        </button>
+      </nav>
+    }
+
+    <div class="panel-body" [class.panel-body-diagram]="activeTab === 'diagram'">
+      @if (loading) {
+        <p class="status">Загрузка структуры…</p>
+      }
+
+      @if (error) {
+        <p class="error">{{ error }}</p>
+      }
+
+      @if (schema && !loading && activeTab === 'tree') {
+        <ul class="tree root">
+          <li class="section">
+            <button type="button" class="tree-node section-node tables" (click)="toggleRoot('root:tables', $event)">
+              <span class="caret">{{ isExpanded('root:tables') ? '▼' : '▶' }}</span>
+              <span class="section-label">Таблицы</span>
+              <span class="count">{{ schema.tables.length }}</span>
+            </button>
+            @if (isExpanded('root:tables')) {
+              <ul class="tree nested">
+                @for (table of schema.tables; track table.name) {
+                  <li>
+                    <button
+                      type="button"
+                      class="tree-node table-node"
+                      [attr.data-table]="table.name"
+                      (click)="toggleTable(table.name, $event)"
+                    >
+                      <span class="caret">{{ isExpanded('table:' + table.name) ? '▼' : '▶' }}</span>
+                      <span class="table-name">{{ table.name }}</span>
+                    </button>
+                    @if (table.comment) {
+                      <p class="table-comment">{{ table.comment }}</p>
+                    }
+                    @if (isExpanded('table:' + table.name)) {
+                      <ul class="tree nested">
+                        <li>
+                          <button
+                            type="button"
+                            class="tree-node sub"
+                            (click)="toggleTablePart(table.name, 'cols', $event)"
+                          >
+                            <span class="caret">{{ isExpanded('table:' + table.name + ':cols') ? '▼' : '▶' }}</span>
+                            Поля
+                            <span class="count">{{ table.columns.length }}</span>
+                          </button>
+                          @if (isExpanded('table:' + table.name + ':cols')) {
+                            <ul class="field-list">
+                              @for (col of table.columns; track col.name) {
+                                <li class="field-row">
+                                  <div class="field-main">
+                                    <span class="col-name">{{ col.name }}</span>
+                                    <span class="col-type">{{ col.type }}</span>
+                                    <span class="col-null" [class.required]="!col.nullable">
+                                      {{ col.nullable ? 'NULL' : 'NOT NULL' }}
+                                    </span>
+                                    @if (col.default) {
+                                      <span class="col-default">= {{ col.default }}</span>
+                                    }
+                                  </div>
+                                  @if (col.comment) {
+                                    <div class="col-comment">{{ col.comment }}</div>
+                                  }
+                                </li>
+                              }
+                            </ul>
+                          }
+                        </li>
+                        <li>
+                          <button
+                            type="button"
+                            class="tree-node sub"
+                            (click)="toggleTablePart(table.name, 'idx', $event)"
+                          >
+                            <span class="caret">{{ isExpanded('table:' + table.name + ':idx') ? '▼' : '▶' }}</span>
+                            Индексы
+                            <span class="count">{{ table.indexes.length }}</span>
+                          </button>
+                          @if (isExpanded('table:' + table.name + ':idx')) {
+                            <ul class="tree leaf-list">
+                              @for (idx of table.indexes; track idx.name) {
+                                <li class="leaf mono">
+                                  <span class="idx-name">{{ idx.name }}</span>
+                                  <span class="idx-def">{{ idx.definition }}</span>
+                                </li>
+                              } @empty {
+                                <li class="leaf muted">—</li>
+                              }
+                            </ul>
+                          }
+                        </li>
+                        <li>
+                          <button
+                            type="button"
+                            class="tree-node sub"
+                            (click)="toggleTablePart(table.name, 'con', $event)"
+                          >
+                            <span class="caret">{{ isExpanded('table:' + table.name + ':con') ? '▼' : '▶' }}</span>
+                            Ограничения
+                            <span class="count">{{ table.constraints.length }}</span>
+                          </button>
+                          @if (isExpanded('table:' + table.name + ':con')) {
+                            <ul class="tree leaf-list">
+                              @for (con of table.constraints; track con.name) {
+                                <li class="leaf mono">
+                                  <span class="con-type">{{ con.type }}</span>
+                                  {{ con.name }}: {{ con.definition }}
+                                </li>
+                              } @empty {
+                                <li class="leaf muted">—</li>
+                              }
+                            </ul>
+                          }
+                        </li>
+                      </ul>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+          </li>
+
+          <li class="section">
+            <button type="button" class="tree-node section-node functions" (click)="toggleRoot('root:functions', $event)">
+              <span class="caret">{{ isExpanded('root:functions') ? '▼' : '▶' }}</span>
+              <span class="section-label">Функции</span>
+              <span class="count">{{ functions.length }}</span>
+            </button>
+            @if (isExpanded('root:functions')) {
+              <ul class="tree nested routine-list">
+                @for (fn of functions; track fn.oid) {
+                  <li class="routine-row">
+                    <div class="routine-info">
+                      <span class="routine-name">{{ routineLabel(fn) }}</span>
+                      @if (fn.description) {
+                        <span class="routine-desc">{{ fn.description }}</span>
+                      }
+                    </div>
+                    <button type="button" class="src-btn" title="Текст функции" (click)="showSource(fn, $event)">
+                      SQL
+                    </button>
+                  </li>
+                } @empty {
+                  <li class="leaf muted">—</li>
+                }
+              </ul>
+            }
+          </li>
+
+          <li class="section">
+            <button type="button" class="tree-node section-node procedures" (click)="toggleRoot('root:procedures', $event)">
+              <span class="caret">{{ isExpanded('root:procedures') ? '▼' : '▶' }}</span>
+              <span class="section-label">Процедуры</span>
+              <span class="count">{{ procedures.length }}</span>
+            </button>
+            @if (isExpanded('root:procedures')) {
+              <ul class="tree nested routine-list">
+                @for (proc of procedures; track proc.oid) {
+                  <li class="routine-row">
+                    <div class="routine-info">
+                      <span class="routine-name">{{ routineLabel(proc) }}</span>
+                      @if (proc.description) {
+                        <span class="routine-desc">{{ proc.description }}</span>
+                      }
+                    </div>
+                    <button type="button" class="src-btn" title="Текст процедуры" (click)="showSource(proc, $event)">
+                      SQL
+                    </button>
+                  </li>
+                } @empty {
+                  <li class="leaf muted">—</li>
+                }
+              </ul>
+            }
+          </li>
+
+          @if (schema.extensions.length) {
+            <li class="section">
+              <button type="button" class="tree-node section-node extensions" (click)="toggleRoot('root:ext', $event)">
+                <span class="caret">{{ isExpanded('root:ext') ? '▼' : '▶' }}</span>
+                <span class="section-label">Расширения</span>
+                <span class="count">{{ schema.extensions.length }}</span>
+              </button>
+              @if (isExpanded('root:ext')) {
+                <ul class="tree nested leaf-list">
+                  @for (ext of schema.extensions; track ext.name) {
+                    <li class="leaf ext-row">{{ ext.name }} <span class="ext-ver">v{{ ext.version }}</span></li>
+                  }
+                </ul>
+              }
+            </li>
+          }
+        </ul>
+      }
+
+      @if (schema && !loading && activeTab === 'diagram' && diagram) {
+        <div class="diagram-toolbar">
+          <span class="diagram-hint">
+            Стрелки: поле → поле (FOREIGN KEY). Клик по таблице — детали во вкладке «Дерево».
+          </span>
+          <span class="diagram-meta">{{ diagram.boxes.length }} табл. · {{ diagram.links.length }} связей</span>
+        </div>
+        <div class="diagram-scroll scroll-list">
+          <svg
+            class="er-svg"
+            [attr.viewBox]="'0 0 ' + diagram.width + ' ' + diagram.height"
+            [attr.width]="diagram.width"
+            [attr.height]="diagram.height"
+            role="img"
+            aria-label="Диаграмма таблиц и внешних ключей"
+          >
+            <defs>
+              <marker
+                id="fk-arrow"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="7"
+                markerHeight="7"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+
+            @for (e of diagram.edges; track e.link.fromTable + e.link.fromColumn + e.link.toTable) {
+              <path
+                class="fk-edge"
+                [attr.d]="edgePath(e)"
+                [attr.marker-end]="'url(#fk-arrow)'"
+              >
+                <title>
+                  {{ e.link.fromTable }}.{{ e.link.fromColumn }} → {{ e.link.toTable }}.{{
+                    e.link.toColumn
+                  }}
+                </title>
+              </path>
+            }
+
+            @for (box of diagram.boxes; track box.name) {
+              <g
+                class="table-box"
+                [class.table-box-hot]="hoverTable === box.name"
+                (click)="openTableFromDiagram(box.name)"
+                (mouseenter)="hoverTable = box.name"
+                (mouseleave)="hoverTable = null"
+              >
+                <title>{{ box.comment || box.name }}</title>
+                <rect
+                  class="table-rect"
+                  [attr.x]="box.x"
+                  [attr.y]="box.y"
+                  [attr.width]="box.width"
+                  [attr.height]="box.height"
+                  rx="6"
+                />
+                <rect
+                  class="table-header"
+                  [attr.x]="box.x"
+                  [attr.y]="box.y"
+                  [attr.width]="box.width"
+                  height="28"
+                  rx="6"
+                />
+                <text class="table-title" [attr.x]="box.x + 8" [attr.y]="box.y + 18">
+                  {{ box.name }}
+                </text>
+                @for (col of box.columns; track col.name; let i = $index) {
+                  <text
+                    class="col-text"
+                    [class.col-pk]="col.kind === 'pk'"
+                    [class.col-fk]="col.kind === 'fk'"
+                    [attr.x]="box.x + 8"
+                    [attr.y]="box.y + 28 + i * 16 + 12"
+                  >
+                    {{ col.kind === 'pk' ? 'PK ' : col.kind === 'fk' ? 'FK ' : '' }}{{ col.name }}
+                    <tspan class="col-type-svg">{{ col.type }}</tspan>
+                  </text>
+                }
+              </g>
+            }
+          </svg>
+        </div>
+        @if (diagram.links.length === 0) {
+          <p class="status">Связи FK не найдены в загруженной структуре.</p>
+        }
+      }
+    </div>
+  </aside>
+}

@@ -1,0 +1,34 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog" open>
+    <header class="dialog-header">
+      <h2>{{ title }}</h2>
+      <button type="button" class="icon-btn" title="Закрыть" [disabled]="saving" (click)="close()">✕</button>
+    </header>
+    <div class="dialog-body">
+      @if (error) { <p class="error">{{ error }}</p> }
+      <form class="form" (ngSubmit)="save()">
+        <label class="field">
+          <span class="label">Код</span>
+          <input type="text" maxlength="50" required [(ngModel)]="code" name="code" [disabled]="saving" />
+        </label>
+        <label class="field">
+          <span class="label">Название</span>
+          <input type="text" maxlength="100" required [(ngModel)]="name" name="name" [disabled]="saving" />
+        </label>
+        <label class="field">
+          <span class="label">URL API</span>
+          <input type="url" maxlength="255" [(ngModel)]="apiUrl" name="apiUrl" [disabled]="saving" placeholder="https://..." />
+        </label>
+        <label class="field field-check">
+          <input type="checkbox" [(ngModel)]="isActive" name="isActive" [disabled]="saving" />
+          <span>Активен</span>
+        </label>
+        <footer class="dialog-footer">
+          <button type="button" class="btn btn-secondary" [disabled]="saving" (click)="close()">Отмена</button>
+          <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Сохранение…' : 'Сохранить' }}</button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+}

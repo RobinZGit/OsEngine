@@ -1,0 +1,128 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog dialog-wide" open>
+    <header class="dialog-header">
+      <h2>{{ title }}</h2>
+      <button type="button" class="icon-btn" title="Закрыть" [disabled]="saving" (click)="close()">✕</button>
+    </header>
+    <div class="dialog-body">
+      @if (error) { <p class="error">{{ error }}</p> }
+      <form class="form" (ngSubmit)="save()">
+        <label class="field">
+          <span class="label">Код</span>
+          @if (isCreate) {
+            <input
+              type="text"
+              maxlength="20"
+              required
+              [(ngModel)]="code"
+              name="code"
+              [disabled]="saving"
+              placeholder="MYIND"
+              class="mono-input"
+            />
+            <span class="hint">Латиница, до 20 символов. Будет сохранён в верхнем регистре.</span>
+          } @else {
+            <input type="text" [value]="code" name="code" disabled class="mono-input" />
+          }
+        </label>
+        <label class="field">
+          <span class="label">Название</span>
+          <input type="text" maxlength="100" required [(ngModel)]="name" name="name" [disabled]="saving" />
+        </label>
+        <label class="field">
+          <span class="label">Категория</span>
+          <input type="text" maxlength="50" [(ngModel)]="category" name="category" [disabled]="saving" placeholder="trend, momentum, …" />
+        </label>
+        <label class="field field-description">
+          <span class="label">Описание</span>
+          <span class="hint">Полное наименование, расчёт, сигналы и применение (несколько абзацев).</span>
+          <textarea
+            class="desc-area"
+            rows="10"
+            [(ngModel)]="description"
+            name="description"
+            [disabled]="saving"
+          ></textarea>
+        </label>
+
+        @if (isCustom) {
+          <div class="field">
+            <div class="field-label-row">
+              <span class="label">Формула</span>
+              <button
+                type="button"
+                class="info-btn"
+                title="Подробнее о синтаксисе формулы"
+                aria-label="Подробнее о синтаксисе формулы"
+                [attr.aria-expanded]="formulaHelpOpen"
+                (click)="toggleFormulaHelp()"
+              >И.</button>
+            </div>
+            <span class="hint">{{ formulaHint }}</span>
+            @if (formulaHelpOpen) {
+              <pre class="formula-help-panel" aria-live="polite">{{ formulaHelpDetail }}</pre>
+            }
+            <textarea
+              class="mono-area"
+              rows="4"
+              [(ngModel)]="formula"
+              name="formula"
+              [disabled]="saving"
+              placeholder="pp * (1; -2; 1)"
+              required
+            ></textarea>
+          </div>
+        } @else {
+          <label class="field">
+            <span class="label">Формула (script)</span>
+            <textarea
+              class="mono-area"
+              rows="4"
+              [(ngModel)]="script"
+              name="script"
+              [disabled]="saving"
+              placeholder="SELECT calc_ind_rsi(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)"
+            ></textarea>
+            <span class="hint">
+              Legacy per-bar шаблон. Плейсхолдеры: :period, :series, :security_id, :timeframe_id, :dt, :indicator_id.
+            </span>
+          </label>
+          @if (formula) {
+            <div class="field">
+              <div class="field-label-row">
+                <span class="label">Массивная формула</span>
+                <button
+                  type="button"
+                  class="info-btn"
+                  title="Подробнее о синтаксисе формулы"
+                  aria-label="Подробнее о синтаксисе формулы"
+                  [attr.aria-expanded]="formulaHelpOpen"
+                  (click)="toggleFormulaHelp()"
+                >И.</button>
+              </div>
+              @if (formulaHelpOpen) {
+                <pre class="formula-help-panel" aria-live="polite">{{ formulaHelpDetail }}</pre>
+              }
+              <input type="text" [value]="formula" disabled class="mono-input" />
+            </div>
+          }
+        }
+
+        @if (seriesSummary) {
+          <p class="series-hint"><strong>Серии:</strong> {{ seriesSummary }}</p>
+        }
+        <label class="field field-check">
+          <input type="checkbox" [(ngModel)]="isActive" name="isActive" [disabled]="saving" />
+          <span>Активен</span>
+        </label>
+        <footer class="dialog-footer">
+          <button type="button" class="btn btn-secondary" [disabled]="saving" (click)="close()">Отмена</button>
+          <button type="submit" class="btn btn-primary" [disabled]="saving">
+            {{ saving ? (isCreate ? 'Создание…' : 'Сохранение…') : (isCreate ? 'Создать' : 'Сохранить') }}
+          </button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+}

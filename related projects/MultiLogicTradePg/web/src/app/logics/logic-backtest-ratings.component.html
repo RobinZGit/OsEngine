@@ -1,0 +1,83 @@
+<details class="signals-block positions-sub-block ratings-sub-block" [open]="expanded">
+  <summary class="signals-summary">
+    <span class="signals-summary-head" (click)="toggleBlock($event)">
+      <span class="signals-chevron" [class.open]="expanded" aria-hidden="true">▸</span>
+      <span class="signals-title">Рейтинги сигналов на бумаге</span>
+      @if (expanded && !loading) {
+        <span class="ratings-count">{{ signals.length }}</span>
+      }
+      @if (loading) {
+        <span class="ratings-loading">загрузка…</span>
+      }
+    </span>
+  </summary>
+
+  @if (expanded) {
+    <div class="signals-body ratings-body">
+      <p class="ratings-hint">
+        Сработал → ждём следующую свечу → ход цены в % годовых сравниваем с базовой ставкой логики
+        (по умолчанию 20%). Успех <strong>+1</strong>, иначе <strong>−1</strong>. График — только по этой бумаге.
+      </p>
+
+      @if (error) {
+        <p class="ratings-error">{{ error }}</p>
+      }
+
+      @if (!loading && signals.length === 0) {
+        <p class="ratings-empty">Нет сигналов на логике.</p>
+      }
+
+      <ul class="ratings-list scroll-list-panel">
+        @for (sig of signals; track sig.signal_id) {
+          <li class="ratings-item" [class.open]="isSignalExpanded(sig.signal_id)">
+            <button
+              type="button"
+              class="ratings-item-toggle"
+              (click)="toggleSignal(sig.signal_id, $event)"
+            >
+              <span class="signals-chevron" [class.open]="isSignalExpanded(sig.signal_id)">▸</span>
+              <strong>{{ sig.indicator_code }}</strong>
+              <span
+                class="sig-badge"
+                [class.sig-open]="sig.position_event === 'open'"
+                [class.sig-close]="sig.position_event === 'close'"
+              >
+                {{ positionEventLabel(sig.position_event) }}
+              </span>
+              <span
+                class="sig-badge"
+                [class.sig-long]="sig.position_side === 'long'"
+                [class.sig-short]="sig.position_side === 'short'"
+              >
+                {{ positionSideLabel(sig.position_side) }}
+              </span>
+              <span class="sig-badge">{{ signalKindLabel(sig.signal_kind) }}</span>
+              <span
+                class="ratings-value"
+                [class.trade-pnl-pos]="paperRating(sig) > 0"
+                [class.trade-pnl-neg]="paperRating(sig) < 0"
+                title="Рейтинг сигнала на этой бумаге"
+              >
+                {{ paperRating(sig) }}
+              </span>
+              <span class="ratings-points-n">{{ chartPointCount(sig) }} точ.</span>
+            </button>
+
+            @if (isSignalExpanded(sig.signal_id)) {
+              <div class="ratings-chart-wrap">
+                <code class="ratings-formula">{{ sig.formula }}</code>
+                <canvas
+                  class="ratings-chart"
+                  width="640"
+                  height="160"
+                  [attr.data-signal]="sig.signal_id"
+                  #ratingChart
+                ></canvas>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    </div>
+  }
+</details>

@@ -1,0 +1,76 @@
+<section class="panel">
+  <header class="panel-head">
+    <div class="panel-title-row">
+      <h2>Индикаторы</h2>
+      <button
+        type="button"
+        class="icon-btn add-btn"
+        title="Добавить индикатор"
+        aria-label="Добавить индикатор"
+        (click)="openCreate()"
+      >+</button>
+    </div>
+    <p class="panel-note">Перетащите индикатор на бумагу справа</p>
+  </header>
+
+  @if (loading) {
+    <p class="status">Загрузка…</p>
+  }
+
+  @if (error) {
+    <div class="error-banner" role="alert">{{ error }}</div>
+  }
+
+  @if (!loading && !error) {
+    <div class="scroll-list">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Код</th>
+            <th>Название</th>
+            <th>Описание</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of indicators; track row.id) {
+            <tr
+              class="indicator-draggable"
+              draggable="true"
+              [class.row-inactive]="!row.is_active"
+              [class.row-custom]="row.is_custom"
+              (dragstart)="onDragStart($event, row)"
+              (dragend)="onDragEnd()"
+            >
+              <td class="mono">{{ row.code }}</td>
+              <td>
+                {{ row.name }}
+                @if (row.formula) {
+                  <span class="formula-hint" [title]="row.formula">{{ row.formula }}</span>
+                }
+              </td>
+              <td class="desc-cell" [title]="row.description || ''">{{ descriptionPreview(row.description) }}</td>
+              <td class="col-actions">
+                <button type="button" class="icon-btn" title="Редактировать" aria-label="Редактировать" (click)="openEdit(row)">
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/></svg>
+                </button>
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="4" class="empty">Нет индикаторов</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    </div>
+  }
+
+  <app-indicator-editor
+    [open]="editorOpen"
+    [indicator]="editTarget"
+    [createMode]="createMode"
+    (closed)="onEditorClosed()"
+    (saved)="load()"
+  />
+</section>

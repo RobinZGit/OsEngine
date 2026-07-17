@@ -1,0 +1,10 @@
+.kind-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.mono {
+  text-transform: uppercase;
+  font-family: ui-monospace, monospace;
+}

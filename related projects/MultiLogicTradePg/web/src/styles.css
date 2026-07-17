@@ -1,0 +1,46 @@
+/* Global */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f3f4f6;
+}
+
+code {
+  background: #e5e7eb;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+/* Scrollable lists — см. .cursor/rules/scrollable-lists.mdc */
+.page-scroll {
+  height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.page-scroll .page-header {
+  flex-shrink: 0;
+}
+
+.scroll-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.scroll-list-panel {
+  max-height: min(420px, 45vh);
+  overflow: auto;
+  min-height: 0;
+}
+
+.scroll-list-panel-tall {
+  max-height: min(560px, 55vh);
+  overflow: auto;
+  min-height: 0;
+}

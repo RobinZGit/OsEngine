@@ -1,0 +1,78 @@
+.dialog-wide {
+  max-width: 42rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.desc-area {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  min-height: 10rem;
+}
+
+.field-description .hint {
+  margin-bottom: 0.35rem;
+}
+
+.mono-area,
+.mono-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #6b7280;
+  line-height: 1.35;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.info-btn {
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1;
+  padding: 0.15rem 0.35rem 0.2rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.info-btn:hover {
+  background: #dbeafe;
+}
+
+.info-btn[aria-expanded='true'] {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.formula-help-panel {
+  margin: 0.5rem 0 0;
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.series-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #374151;
+}

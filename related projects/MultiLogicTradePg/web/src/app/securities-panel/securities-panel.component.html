@@ -1,0 +1,493 @@
+<section class="panel">
+
+  <header class="panel-head">
+
+    <h2>Бумаги</h2>
+
+    <div class="toolbar">
+
+      <label class="toolbar-field">
+
+        <span>Площадка</span>
+
+        <select
+
+          [(ngModel)]="exchangeId"
+
+          (ngModelChange)="onExchangeChange()"
+
+          [disabled]="loading"
+
+        >
+
+          @for (ex of exchanges; track ex.id) {
+
+            <option [ngValue]="ex.id">{{ ex.name }}</option>
+
+          }
+
+        </select>
+
+      </label>
+
+      <label class="toolbar-field">
+
+        <span>Таймфрейм</span>
+
+        <select
+
+          [(ngModel)]="timeframeId"
+
+          (ngModelChange)="onTimeframeChange()"
+
+          [disabled]="loading"
+
+        >
+
+          @for (tf of timeframes; track tf.id) {
+
+            <option [ngValue]="tf.id">{{ tf.tf }} — {{ tf.full_name }}</option>
+
+          }
+
+        </select>
+
+      </label>
+
+    </div>
+
+  </header>
+
+
+
+  @if (loading) {
+
+    <p class="status">Загрузка…</p>
+
+  }
+
+  @if (error) {
+
+    <div class="error-banner" role="alert">{{ error }}</div>
+
+  }
+
+
+
+  @if (!loading && !error) {
+
+    <div class="groups">
+
+      <!-- Акции -->
+
+      <section class="group">
+
+        <header class="group-head">
+
+          <button type="button" class="group-toggle" (click)="toggleGroup('stock')">
+
+            <span class="caret">{{ stocksExpanded ? '▼' : '▶' }}</span>
+
+            <span>Акции</span>
+
+            <span class="count">{{ stocks.length }}</span>
+
+          </button>
+
+          <button type="button" class="icon-btn icon-add" title="Добавить акцию" (click)="openAdd('stock')">+</button>
+
+        </header>
+
+        @if (stocksExpanded) {
+
+          <div class="scroll-list-panel">
+
+          <ul class="sec-list">
+
+            @for (row of stocks; track row.id) {
+
+              <li
+                class="sec-item"
+                [class.drop-target]="isDropTarget(row.id)"
+                (dragover)="onDragOver($event, row.id)"
+                (dragleave)="onDragLeave($event, row.id)"
+                (drop)="onDrop($event, row)"
+              >
+
+                <header class="sec-row">
+
+                  <button type="button" class="sec-toggle" (click)="toggleSecurity(row)">
+
+                    <span class="caret">{{ isSecurityExpanded(row.id) ? '▼' : '▶' }}</span>
+
+                    <span class="sec-name">{{ row.name }}</span>
+
+                    <span class="sec-prefix">{{ row.prefix }}</span>
+
+                  </button>
+
+                  <div class="sec-actions">
+
+                    @if (isPriceLoadActive(row.id)) {
+
+                      <span class="spinner" title="Загрузка цен…" aria-hidden="true"></span>
+
+                      <button type="button" class="btn-stop" (click)="stopLoadPrices(row, $event)">Стоп</button>
+
+                    } @else if (isIndicatorRecalcActive(row.id)) {
+
+                      <span class="spinner" [title]="indicatorRecalcState(row.id).message || 'Пересчёт…'" aria-hidden="true"></span>
+
+                      <span class="recalc-label">{{ indicatorRecalcState(row.id).message }}</span>
+
+                    } @else {
+
+                      <button type="button" class="btn-load" (click)="startLoadPrices(row, $event)">Загрузить цены</button>
+
+                    }
+
+                  </div>
+
+                </header>
+
+                @if (priceLoadState(row.id).message || priceLoadState(row.id).error) {
+
+                  <p class="load-status" [class.load-error]="!!priceLoadState(row.id).error">
+
+                    {{ priceLoadState(row.id).error || priceLoadState(row.id).message }}
+
+                  </p>
+
+                }
+
+                @if (indicatorRecalcState(row.id).error) {
+
+                  <p class="load-status load-error">{{ indicatorRecalcState(row.id).error }}</p>
+
+                }
+
+                @if (isSecurityExpanded(row.id)) {
+
+                  <details class="sec-indicators" open>
+
+                    <summary>Индикаторы бумаги</summary>
+
+                    @if (indicatorStatus(row.id); as status) {
+
+                      <p class="ind-status">{{ status }}</p>
+
+                    }
+
+                    @if (indicatorError(row.id)) {
+
+                      <p class="ind-status ind-error">{{ indicatorError(row.id) }}</p>
+
+                    }
+
+                    @if (indicatorSyncDebugText(row.id); as dbg) {
+
+                      <p class="ind-status ind-debug" title="Диагностика sync">{{ dbg }}</p>
+
+                    }
+
+                    <ul class="ind-list">
+
+                      @for (ind of assignedIndicatorSeries(row.id); track ind.id) {
+
+                        <li>
+
+                          <span class="ind-label">{{ seriesLabel(ind) }}</span>
+
+                          <button
+                            type="button"
+                            class="icon-btn icon-delete"
+                            title="Удалить серию"
+                            aria-label="Удалить серию индикатора"
+                            (click)="removeIndicatorSeries(ind, $event)"
+                          >
+
+                            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+
+                          </button>
+
+                        </li>
+
+                      } @empty {
+
+                        <li class="ind-empty">Перетащите индикатор слева на эту бумагу</li>
+
+                      }
+
+                    </ul>
+
+                  </details>
+
+                  <div class="sec-chart">
+
+                    <app-price-chart
+
+                      [title]="row.name"
+
+                      [securityId]="row.id"
+
+                      [candles]="chartState(row.id).candles"
+
+                      [indicatorSeries]="chartIndicatorsForDisplay(row.id)"
+
+                      [loading]="chartState(row.id).loading"
+
+                      [loadingOlder]="chartState(row.id).loadingOlder"
+
+                      [error]="chartState(row.id).error"
+
+                      (loadOlder)="onLoadOlder(row.id)"
+
+                      (visibleRangeChange)="onChartVisibleRange(row.id, $event)"
+
+                      (recalcIndicators)="onRecalcIndicators(row.id, $event)"
+
+                    />
+
+                  </div>
+
+                }
+
+              </li>
+
+            } @empty {
+
+              <li class="empty">Нет акций на выбранной площадке</li>
+
+            }
+
+          </ul>
+
+          </div>
+
+        }
+
+      </section>
+
+
+
+      <!-- Фьючерсы (группы контрактов) -->
+
+      <section class="group">
+
+        <header class="group-head">
+
+          <button type="button" class="group-toggle" (click)="toggleGroup('futures')">
+
+            <span class="caret">{{ futuresExpanded ? '▼' : '▶' }}</span>
+
+            <span>Фьючерсы</span>
+
+            <span class="count">{{ futures.length }}</span>
+
+          </button>
+
+          <button type="button" class="icon-btn icon-add" title="Добавить фьючерс" (click)="openAdd('futures')">+</button>
+
+        </header>
+
+        @if (futuresExpanded) {
+
+          <div class="scroll-list-panel">
+
+          <ul class="sec-list">
+
+            @for (row of futures; track row.id) {
+
+              <li
+                class="sec-item"
+                [class.drop-target]="isDropTarget(row.id)"
+                (dragover)="onDragOver($event, row.id)"
+                (dragleave)="onDragLeave($event, row.id)"
+                (drop)="onDrop($event, row)"
+              >
+
+                <header class="sec-row">
+
+                  <button type="button" class="sec-toggle" (click)="toggleSecurity(row)">
+
+                    <span class="caret">{{ isSecurityExpanded(row.id) ? '▼' : '▶' }}</span>
+
+                    <span class="sec-name">{{ row.name }}</span>
+
+                    <span class="sec-prefix sec-prefix-group" title="Групповой префикс">{{ row.prefix }}</span>
+
+                  </button>
+
+                  <div class="sec-actions">
+
+                    @if (isPriceLoadActive(row.id)) {
+
+                      <span class="spinner" title="Загрузка цен…" aria-hidden="true"></span>
+
+                      <button type="button" class="btn-stop" (click)="stopLoadPrices(row, $event)">Стоп</button>
+
+                    } @else if (isIndicatorRecalcActive(row.id)) {
+
+                      <span class="spinner" [title]="indicatorRecalcState(row.id).message || 'Пересчёт…'" aria-hidden="true"></span>
+
+                      <span class="recalc-label">{{ indicatorRecalcState(row.id).message }}</span>
+
+                    } @else {
+
+                      <button type="button" class="btn-load" (click)="startLoadPrices(row, $event)">Загрузить цены</button>
+
+                    }
+
+                  </div>
+
+                </header>
+
+                @if (priceLoadState(row.id).message || priceLoadState(row.id).error) {
+
+                  <p class="load-status" [class.load-error]="!!priceLoadState(row.id).error">
+
+                    {{ priceLoadState(row.id).error || priceLoadState(row.id).message }}
+
+                  </p>
+
+                }
+
+                @if (indicatorRecalcState(row.id).error) {
+
+                  <p class="load-status load-error">{{ indicatorRecalcState(row.id).error }}</p>
+
+                }
+
+                @if (isSecurityExpanded(row.id)) {
+
+                  <details class="sec-indicators" open>
+
+                    <summary>Индикаторы бумаги</summary>
+
+                    @if (indicatorStatus(row.id); as status) {
+
+                      <p class="ind-status">{{ status }}</p>
+
+                    }
+
+                    @if (indicatorError(row.id)) {
+
+                      <p class="ind-status ind-error">{{ indicatorError(row.id) }}</p>
+
+                    }
+
+                    @if (indicatorSyncDebugText(row.id); as dbg) {
+
+                      <p class="ind-status ind-debug" title="Диагностика sync">{{ dbg }}</p>
+
+                    }
+
+                    <ul class="ind-list">
+
+                      @for (ind of assignedIndicatorSeries(row.id); track ind.id) {
+
+                        <li>
+
+                          <span class="ind-label">{{ seriesLabel(ind) }}</span>
+
+                          <button
+                            type="button"
+                            class="icon-btn icon-delete"
+                            title="Удалить серию"
+                            aria-label="Удалить серию индикатора"
+                            (click)="removeIndicatorSeries(ind, $event)"
+                          >
+
+                            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+
+                          </button>
+
+                        </li>
+
+                      } @empty {
+
+                        <li class="ind-empty">Перетащите индикатор слева на эту бумагу</li>
+
+                      }
+
+                    </ul>
+
+                  </details>
+
+                  <div class="sec-chart">
+
+                    <app-price-chart
+
+                      [title]="row.name"
+
+                      [securityId]="row.id"
+
+                      [candles]="chartState(row.id).candles"
+
+                      [indicatorSeries]="chartIndicatorsForDisplay(row.id)"
+
+                      [loading]="chartState(row.id).loading"
+
+                      [loadingOlder]="chartState(row.id).loadingOlder"
+
+                      [error]="chartState(row.id).error"
+
+                      (loadOlder)="onLoadOlder(row.id)"
+
+                      (visibleRangeChange)="onChartVisibleRange(row.id, $event)"
+
+                      (recalcIndicators)="onRecalcIndicators(row.id, $event)"
+
+                    />
+
+                  </div>
+
+                }
+
+              </li>
+
+            } @empty {
+
+              <li class="empty">Нет фьючерсов на выбранной площадке</li>
+
+            }
+
+          </ul>
+
+          </div>
+
+        }
+
+      </section>
+
+    </div>
+
+  }
+
+
+
+  <app-security-editor
+
+    [open]="editorOpen"
+
+    [kind]="editorKind"
+
+    [exchangeId]="exchangeId ?? 0"
+
+    [exchangeName]="exchangeName"
+
+    (closed)="editorOpen = false"
+
+    (saved)="onSecuritySaved()"
+
+  />
+
+  <app-tbank-token-dialog
+    [open]="tbankTokenDialogOpen"
+    (saved)="onTbankTokenSaved()"
+    (cancelled)="onTbankTokenCancelled()"
+  />
+
+</section>
+
+

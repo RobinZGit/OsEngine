@@ -1,0 +1,125 @@
+<details class="signals-block positions-sub-block papers-sub-block" [open]="expandedPapers">
+  <summary class="signals-summary">
+    <span class="signals-summary-head" (click)="togglePapersBlock($event)">
+      <span class="signals-chevron" [class.open]="expandedPapers" aria-hidden="true">▸</span>
+      <span class="signals-title">Бумаги</span>
+      <span class="papers-count">{{ paperRows.length }}</span>
+    </span>
+    <span class="papers-mode-toggle" (click)="$event.stopPropagation()">
+      <button
+        type="button"
+        class="btn-chart-mode"
+        [class.active]="chartMode === 'price'"
+        title="Свечной график"
+        (click)="setChartMode('price', $event)"
+      >График</button>
+      <button
+        type="button"
+        class="btn-chart-mode"
+        [class.active]="chartMode === 'equity'"
+        title="Кривая эквити (портфель / лонги / шорты)"
+        (click)="setChartMode('equity', $event)"
+      >Эквити</button>
+    </span>
+  </summary>
+
+  @if (expandedPapers) {
+    <div class="signals-body papers-body">
+      @if (paperRows.length === 0) {
+        <p class="empty papers-empty">Нет бумаг со сделками в периоде теста</p>
+      } @else {
+        <div class="scroll-list-panel papers-list">
+          @for (paper of paperRows; track paper.security_id) {
+            <div class="paper-item" [class.paper-item-open]="isPaperExpanded(paper.security_id)">
+              <button
+                type="button"
+                class="paper-item-toggle"
+                (click)="togglePaper($event, paper.security_id)"
+              >
+                <span
+                  class="signals-chevron"
+                  [class.open]="isPaperExpanded(paper.security_id)"
+                  aria-hidden="true"
+                >▸</span>
+                <strong>{{ paper.security_prefix || paper.security_name }}</strong>
+                <span class="paper-name-muted">{{ paper.security_name }}</span>
+                <span
+                  class="trade-pnl paper-pnl"
+                  [class.trade-pnl-pos]="paper.pnl > 0"
+                  [class.trade-pnl-neg]="paper.pnl < 0"
+                >
+                  {{ formatPnl(paper.pnl) }}
+                  @if (paperPnlPct(paper.pnl) != null) {
+                    <span class="pnl-deposit-pct">({{ formatPnlPct(paperPnlPct(paper.pnl)) }})</span>
+                  }
+                </span>
+                <span class="paper-comm" title="Комиссия по сделкам бумаги">
+                  ком. {{ formatMoney(paper.commission) }}
+                </span>
+                <span class="paper-trades-meta">{{ paper.trade_count }} сд.</span>
+              </button>
+
+              @if (isPaperExpanded(paper.security_id)) {
+                <div class="paper-chart-wrap" [attr.data-chart-tick]="chartTick">
+                  @if (chartMode === 'equity') {
+                    <div class="paper-chart-host paper-equity-host">
+                      <app-equity-curve-chart
+                        [total]="overlays(paper.security_id).equity"
+                        [longs]="overlays(paper.security_id).equityLong"
+                        [shorts]="overlays(paper.security_id).equityShort"
+                      />
+                    </div>
+                  } @else {
+                    @if (chartState(paper.security_id).status) {
+                      <p class="paper-chart-status">{{ chartState(paper.security_id).status }}</p>
+                    }
+                    @if (chartState(paper.security_id).error) {
+                      <p class="paper-chart-error">{{ chartState(paper.security_id).error }}</p>
+                    }
+                    @if (isChartLoading(paper.security_id)) {
+                      <p class="paper-chart-status">Загрузка графика…</p>
+                    }
+                    @if (hasChartCandles(paper.security_id)) {
+                      <div class="paper-chart-host">
+                        <app-price-chart
+                          [title]="paper.security_prefix || paper.security_name"
+                          [securityId]="paper.security_id"
+                          [candles]="chartState(paper.security_id).candles"
+                          [indicatorSeries]="chartIndicatorsForDisplay(paper.security_id)"
+                          [tradeMarkers]="overlays(paper.security_id).markers"
+                          [stopMarkers]="overlays(paper.security_id).stops"
+                          [shadedRanges]="overlays(paper.security_id).shaded"
+                          [equityPoints]="overlays(paper.security_id).equity"
+                          [focusDt]="chartState(paper.security_id).focusDt"
+                          focusAlign="start"
+                          [loading]="false"
+                          [loadingOlder]="chartState(paper.security_id).loadingOlder"
+                          [showRecalcButton]="false"
+                          [error]="null"
+                          (loadOlder)="onLoadOlder(paper.security_id)"
+                          (visibleRangeChange)="onVisibleRange(paper.security_id, $event)"
+                        />
+                      </div>
+                      <p class="paper-chart-legend">
+                        ▲▼ вход/выход · SL/TP · бледная зона — выкл. · полоса PnL внизу · ⟸сд./сд.⟹ — по сделкам · ⛶ полный экран
+                      </p>
+                    }
+                  }
+
+                  @if (logicId) {
+                    <app-logic-backtest-ratings
+                      [logicId]="logicId"
+                      [securityId]="paper.security_id"
+                      [runId]="runId"
+                      [reloadToken]="reloadToken"
+                    />
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</details>

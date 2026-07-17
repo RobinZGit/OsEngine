@@ -1,0 +1,59 @@
+<div class="combat-signal-detail">
+  <p class="combat-detail-hint">
+    Боевой рейтинг по бумаге: сработал → следующая свеча → % годовых vs базовая ставка → +1 / −1.
+    Не зависит от сделок. Общий рейтинг в колонке — сумма по всем бумагам.
+  </p>
+
+  @if (error) {
+    <p class="combat-detail-error">{{ error }}</p>
+  }
+
+  @if (activePapers().length === 0) {
+    <p class="combat-detail-empty">Нет активных бумаг в логике.</p>
+  } @else {
+    <ul class="combat-paper-list scroll-list-panel">
+      @for (sec of activePapers(); track sec.security_id) {
+        <li class="combat-paper-item" [class.open]="isPaperExpanded(sec.security_id)">
+          <button
+            type="button"
+            class="combat-paper-toggle"
+            (click)="togglePaper(sec.security_id, $event)"
+          >
+            <span
+              class="signals-chevron"
+              [class.open]="isPaperExpanded(sec.security_id)"
+              aria-hidden="true"
+            >▸</span>
+            <strong>{{ paperLabel(sec) }}</strong>
+            @if (sec.prefix) {
+              <span class="combat-paper-prefix">{{ sec.prefix }}</span>
+            }
+            <span
+              class="combat-paper-rating"
+              [class.trade-pnl-pos]="ratingOf(sec.security_id) > 0"
+              [class.trade-pnl-neg]="ratingOf(sec.security_id) < 0"
+              title="Рейтинг сигнала на этой бумаге (бой)"
+            >
+              {{ ratingOf(sec.security_id) }}
+            </span>
+            @if (loadingPaperId === sec.security_id) {
+              <span class="combat-paper-loading">…</span>
+            }
+          </button>
+
+          @if (isPaperExpanded(sec.security_id)) {
+            <div class="combat-chart-wrap">
+              <canvas
+                class="combat-rating-chart"
+                width="640"
+                height="150"
+                [attr.data-security]="sec.security_id"
+                #ratingChart
+              ></canvas>
+            </div>
+          }
+        </li>
+      }
+    </ul>
+  }
+</div>

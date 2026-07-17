@@ -1,0 +1,107 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog dialog-wide" open>
+    <header class="dialog-header">
+      <h2>{{ title }}</h2>
+      <button type="button" class="icon-btn" title="Закрыть" [disabled]="saving" (click)="close()">✕</button>
+    </header>
+    <div class="dialog-body">
+      @if (loading) { <p class="status">Загрузка…</p> }
+      @if (error) { <p class="error">{{ error }}</p> }
+      @if (!loading) {
+        <form class="form" (ngSubmit)="save()">
+          <label class="field">
+            <span class="label">Тип счёта</span>
+            <select name="accountType" [(ngModel)]="accountType" [disabled]="saving" (ngModelChange)="onAccountTypeChange()">
+              <option value="fake">фейковый (демо)</option>
+              <option value="real">реальный (T-Bank)</option>
+            </select>
+          </label>
+
+          @if (!isRealTbank) {
+            <label class="field">
+              <span class="label">Брокер</span>
+              <select name="broker" required [(ngModel)]="brokerId" [disabled]="saving">
+                @for (b of brokers; track b.id) {
+                  <option [ngValue]="b.id">{{ b.code }} — {{ b.name }}</option>
+                }
+              </select>
+            </label>
+            <label class="field">
+              <span class="label">Код счёта</span>
+              <input type="text" maxlength="100" required [(ngModel)]="accountCode" name="accountCode" [disabled]="saving" />
+            </label>
+            <label class="field">
+              <span class="label">Название</span>
+              <input type="text" maxlength="100" required [(ngModel)]="name" name="name" [disabled]="saving" />
+            </label>
+          } @else {
+            <p class="field-hint">Брокер: <strong>T-Bank</strong> (определяется автоматически). Достаточно API-токена.</p>
+
+            <app-secret-token-field
+              [(ngModel)]="apiToken"
+              name="apiToken"
+              [hasStoredToken]="hasStoredToken"
+              [disabled]="saving"
+              hint="Токен из личного кабинета T-Bank Invest. По нему подтягиваются счета и остаток."
+            />
+            <div class="test-row">
+              <button type="button" class="btn btn-secondary" [disabled]="saving || testing" (click)="testConnection()">
+                {{ testing ? 'Проверка…' : 'Проверить по токену' }}
+              </button>
+              @if (preview) {
+                @if (preview.balance_display) {
+                  <span class="preview-balance">Остаток: {{ preview.balance_display }}</span>
+                } @else if (preview.balance_error) {
+                  <span class="preview-error">{{ preview.balance_error }}</span>
+                }
+              }
+            </div>
+
+            @if (tbankAccounts.length > 1) {
+              <label class="field">
+                <span class="label">Счёт в T-Bank</span>
+                <select
+                  name="tbankPick"
+                  [ngModel]="accountCode"
+                  (ngModelChange)="onTbankAccountPick($event)"
+                  [disabled]="saving"
+                >
+                  @for (a of tbankAccounts; track a.id) {
+                    <option [ngValue]="a.id">{{ a.name || a.id }} ({{ a.type }})</option>
+                  }
+                </select>
+              </label>
+            }
+
+            @if (accountCode) {
+              <label class="field">
+                <span class="label">ID в API (справочно)</span>
+                <input type="text" [value]="accountCode" readonly class="readonly" name="accountCodeRef" />
+              </label>
+            }
+
+            <label class="field">
+              <span class="label">Название в системе</span>
+              <input type="text" maxlength="100" [(ngModel)]="name" name="name" [disabled]="saving" placeholder="Подставится из T-Bank или введите своё" />
+            </label>
+          }
+
+          <label class="field field-check">
+            <input type="checkbox" [(ngModel)]="isEfficient" name="isEfficient" [disabled]="saving" />
+            <span>Эффективный счёт</span>
+          </label>
+          <label class="field field-check">
+            <input type="checkbox" [(ngModel)]="isActive" name="isActive" [disabled]="saving" />
+            <span>Активен</span>
+          </label>
+          <footer class="dialog-footer">
+            <button type="button" class="btn btn-secondary" [disabled]="saving" (click)="close()">Отмена</button>
+            <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Сохранение…' : 'Сохранить' }}</button>
+          </footer>
+        </form>
+      }
+    </div>
+  </dialog>
+}
+

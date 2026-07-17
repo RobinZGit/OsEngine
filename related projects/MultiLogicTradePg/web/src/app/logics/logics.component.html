@@ -1,0 +1,1628 @@
+<section class="page page-scroll">
+
+  <header class="page-header">
+
+    <div class="title-row">
+
+      <h1>Торговые операции</h1>
+
+      <button
+
+        type="button"
+
+        class="icon-btn icon-add"
+
+        title="Добавить"
+
+        aria-label="Добавить"
+
+        (click)="openAdd()"
+
+      >
+
+        +
+
+      </button>
+
+    </div>
+
+    <p class="subtitle">
+
+      Таблица <code>logics</code> — одна строка = одна торговля.
+
+      <span class="poll-hint">Обновление каждые {{ pollIntervalMs / 1000 }} с</span>
+
+    </p>
+
+  </header>
+
+
+
+  @if (loading && logics.length === 0) {
+
+    <p class="status">Загрузка…</p>
+
+  }
+
+
+
+  @if (error) {
+
+    <div class="error-banner" role="alert">
+
+      <strong>Нет связи с базой данных</strong>
+
+      <p>{{ error }}</p>
+
+    </div>
+
+  }
+
+
+
+  @if (!error || logics.length > 0) {
+
+    <div class="scroll-list">
+    <div class="table-wrap" [class.table-dimmed]="loading && logics.length > 0">
+
+      <table>
+
+        <thead>
+
+          <tr>
+
+            <th class="col-expand"></th>
+
+            <th class="col-check">Вкл.</th>
+
+            <th>ID</th>
+
+            <th>Логика</th>
+
+            <th>account_id</th>
+
+            <th>Счёт</th>
+
+            <th>Тип счёта</th>
+
+            <th>Брокер</th>
+
+            <th>Счёт активен</th>
+
+            <th
+              class="col-combat-pnl"
+              title="Сумма фин. результата боевых (реальных) сделок (онлайн, не хранится отдельно)"
+            >Финрез</th>
+
+            <th
+              class="col-test-pnl"
+              title="Сумма фин. результата тестовых сделок (онлайн, не хранится отдельно)"
+            >Финрез теста</th>
+
+            <th class="col-actions"></th>
+
+          </tr>
+
+        </thead>
+
+        <tbody>
+
+          @for (row of logics; track row.id) {
+
+            <tr
+
+              class="logic-main-row"
+
+              [class.row-enabled]="row.is_enabled"
+
+              [class.row-disabled]="!row.is_enabled"
+
+              [class.row-expanded]="isLogicExpanded(row.id)"
+
+              [class.row-testing]="isBacktestRunning(row.id)"
+
+              (click)="toggleLogicExpand(row, $event)"
+
+            >
+
+              <td class="col-expand" aria-hidden="true">
+
+                <span class="expand-chevron" [class.open]="isLogicExpanded(row.id)">▸</span>
+
+              </td>
+
+              <td class="col-check">
+
+                <input
+
+                  type="checkbox"
+
+                  class="enable-check"
+
+                  [checked]="row.is_enabled"
+
+                  [disabled]="isSaving(row)"
+
+                  (change)="onEnabledChange(row, $any($event.target).checked, $event)"
+
+                  [attr.aria-label]="'Включить логику ' + row.name"
+
+                />
+
+                @if (isRatingPrecalcActive(row.id)) {
+                  <span
+                    class="rating-precalc-spin"
+                    [title]="ratingPrecalcTitle(row.id)"
+                    aria-label="Предрасчёт рейтингов"
+                  >↻</span>
+                }
+
+              </td>
+
+              <td>{{ row.id }}</td>
+
+              <td>
+                <span class="logic-name-cell">
+                  <span class="logic-name-main">
+                    <span class="logic-name-text">{{ row.name }}</span>
+                    @if (isBacktestRunning(row.id)) {
+                      <span
+                        class="logic-test-progress"
+                        [title]="backtestProgressTitle(row.id)"
+                        [attr.aria-label]="'Тестирование ' + backtestProgressPct(row.id) + '%'"
+                      >
+                        <span class="logic-test-progress-ring" aria-hidden="true">↻</span>
+                        <span class="logic-test-progress-pct">{{ backtestProgressPct(row.id) }}</span>
+                      </span>
+                    }
+                  </span>
+                  @if (row.note) {
+                    <span class="logic-note-inline" [title]="row.note">{{ row.note }}</span>
+                  }
+                </span>
+              </td>
+
+              <td>{{ row.account_id }}</td>
+
+              <td>{{ row.account_code }} — {{ row.account_name }}</td>
+
+              <td>
+
+                <span class="badge" [class.badge-fake]="row.account_type === 'fake'">
+
+                  {{ accountTypeLabel(row.account_type) }}
+
+                </span>
+
+              </td>
+
+              <td>{{ row.broker_code }}</td>
+
+              <td>{{ row.account_is_active ? 'да' : 'нет' }}</td>
+
+              <td class="col-combat-pnl">
+                @if (hasCombatFinancialResult(row.id)) {
+                  <span
+                    class="trade-pnl logic-combat-pnl"
+                    [class.trade-pnl-pos]="(combatFinancialResult(row.id) ?? 0) > 0"
+                    [class.trade-pnl-neg]="(combatFinancialResult(row.id) ?? 0) < 0"
+                    [title]="combatFinancialResultTitle(row.id)"
+                  >
+                    {{ formatPnl(combatFinancialResult(row.id)) }}
+                    @if (combatFinancialResultPct(row.id, row.initial_balance) != null) {
+                      <span class="pnl-deposit-pct">({{ formatPnlPct(combatFinancialResultPct(row.id, row.initial_balance)) }})</span>
+                    }
+                  </span>
+                } @else {
+                  <span class="logic-test-pnl-empty" title="Боевых сделок ещё не было">—</span>
+                }
+              </td>
+
+              <td class="col-test-pnl">
+                @if (hasTestFinancialResult(row.id)) {
+                  <span
+                    class="trade-pnl logic-test-pnl"
+                    [class.trade-pnl-pos]="(testFinancialResult(row.id) ?? 0) > 0"
+                    [class.trade-pnl-neg]="(testFinancialResult(row.id) ?? 0) < 0"
+                    [title]="testFinancialResultTitle(row.id)"
+                  >
+                    {{ formatPnl(testFinancialResult(row.id)) }}
+                    @if (testFinancialResultPct(row.id, row.initial_balance) != null) {
+                      <span class="pnl-deposit-pct">({{ formatPnlPct(testFinancialResultPct(row.id, row.initial_balance)) }})</span>
+                    }
+                  </span>
+                } @else {
+                  <span class="logic-test-pnl-empty" title="Тестирования ещё не было">—</span>
+                }
+              </td>
+
+              <td class="col-actions">
+
+                <button
+
+                  type="button"
+
+                  class="icon-btn"
+
+                  title="Редактировать"
+
+                  aria-label="Редактировать"
+
+                  (click)="openEdit(row, $event)"
+
+                >
+
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+
+                    <path
+
+                      fill="currentColor"
+
+                      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
+
+                    />
+
+                  </svg>
+
+                </button>
+
+                <button
+
+                  type="button"
+
+                  class="icon-btn icon-danger"
+
+                  title="Удалить"
+
+                  aria-label="Удалить"
+
+                  (click)="deleteLogic(row, $event)"
+
+                >
+
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+
+                    <path
+
+                      fill="currentColor"
+
+                      d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+
+                    />
+
+                  </svg>
+
+                </button>
+
+              </td>
+
+            </tr>
+
+            @if (isLogicExpanded(row.id)) {
+
+              <tr class="logic-detail-row">
+
+                <td colspan="10">
+
+                  <div class="logic-signals-panel" (click)="$event.stopPropagation()">
+
+                    <details class="signals-block params-block" [open]="isParamsBlockExpanded(row.id)">
+
+                      <summary class="signals-summary">
+
+                        <span
+                          class="signals-summary-head"
+                          (click)="toggleParamsBlock(row.id, $event)"
+                        >
+
+                          <span
+                            class="signals-chevron"
+                            [class.open]="isParamsBlockExpanded(row.id)"
+                            aria-hidden="true"
+                          >▸</span>
+
+                          <span class="signals-title">Параметры логики</span>
+
+                          @if (isParamsLoading(row.id)) {
+                            <span class="signals-loading">загрузка…</span>
+                          }
+
+                        </span>
+
+                      </summary>
+
+                      <div class="signals-body">
+
+                        <table class="signals-table params-table">
+
+                          <thead>
+
+                            <tr>
+
+                              <th>Параметр</th>
+
+                              <th>Значение</th>
+
+                              <th>Описание</th>
+
+                            </tr>
+
+                          </thead>
+
+                          <tbody>
+
+                            <tr>
+
+                              <td>Таймфрейм</td>
+
+                              <td>
+
+                                <select
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).timeframe"
+                                  (ngModelChange)="onParamsTimeframeChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  @for (tf of timeframesCatalog; track tf.id) {
+                                    <option [value]="tf.tf">{{ tf.tf }} — {{ tf.full_name }}</option>
+                                  }
+                                </select>
+
+                              </td>
+
+                              <td class="params-hint">Цены, индикаторы и цикл сделок в PostgreSQL (pg_cron)</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Таймфрейм стоп-лосса</td>
+
+                              <td>
+
+                                <select
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).stop_loss_timeframe"
+                                  (ngModelChange)="onParamsStopLossTimeframeChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  @for (tf of timeframesCatalog; track tf.id) {
+                                    <option [value]="tf.tf">{{ tf.tf }} — {{ tf.full_name }}</option>
+                                  }
+                                </select>
+
+                              </td>
+
+                              <td class="params-hint">Свеча для проверки просадки и срабатывания SL (по умолчанию M5)</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>% депозита на сделку</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).position_size_pct"
+                                  (ngModelChange)="onParamsPctChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">Доля текущего остатка на одну покупку (1–100)</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Базовая ставка (% годовых)</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).base_annual_rate_pct"
+                                  (ngModelChange)="onParamsBaseAnnualRateChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                Порог успеха рейтинга сигнала на логике: доля ставки на одну свечу TF
+                              </td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Дней предрасчёта рейтинга</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="numeric"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).rating_lookback_days"
+                                  (ngModelChange)="onParamsRatingLookbackChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                При включении боя: предрасчёт боевых рейтингов по свечам за N дней (фон, 1–90)
+                              </td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Макс. открытых позиций</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="numeric"
+                                  class="params-input params-input-short"
+                                  [ngModel]="getParamsDraft(row.id).max_open_positions"
+                                  (ngModelChange)="onParamsMaxPositionsChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">Long-позиции по разным бумагам одновременно</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Начальный остаток</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).initial_balance"
+                                  (ngModelChange)="onParamsInitialBalanceChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  [placeholder]="row.account_type === 'fake' ? '1000000' : 'необязательно'"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+
+                                @if (row.account_type === 'fake') {
+
+                                  Стартовый депозит бумажной торговли
+
+                                } @else {
+
+                                  Эталон депозита для расчёта лота (опционально)
+
+                                }
+
+                              </td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>% комиссии от сделки</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input params-input-short"
+                                  [ngModel]="getParamsDraft(row.id).commission_pct"
+                                  (ngModelChange)="onParamsCommissionPctChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                Фейковый счёт: комиссия = цена × количество × % / 100 на каждую сделку
+                              </td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Метод расчёта PnL</td>
+
+                              <td>
+
+                                <select
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).cost_method"
+                                  (ngModelChange)="onParamsCostMethodChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  @for (opt of costMethodOptions; track opt.value) {
+                                    <option [value]="opt.value">{{ opt.label }}</option>
+                                  }
+                                </select>
+
+                              </td>
+
+                              <td class="params-hint">FIFO — по очереди покупок; средняя — по средней цене остатка</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Текущий остаток</td>
+
+                              <td><strong>{{ formatMoney(row.current_balance) }}</strong></td>
+
+                              <td class="params-hint">Обновляется runner после симулированных сделок</td>
+
+                            </tr>
+
+                            <tr class="params-actions-row">
+
+                              <td colspan="3">
+
+                                <label class="params-reset" (click)="$event.stopPropagation()">
+
+                                  <input
+                                    type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).inversion"
+                                    (ngModelChange)="onParamsInversionChange(row.id, $event)"
+                                  />
+
+                                  Инверсия (условия наоборот, Long↔Short)
+
+                                </label>
+
+                                <label class="params-reset" (click)="$event.stopPropagation()">
+
+                                  <input
+                                    type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).reset_balance"
+                                    (ngModelChange)="onParamsResetBalanceChange(row.id, $event)"
+                                  />
+
+                                  Сбросить текущий остаток к начальному при сохранении
+
+                                </label>
+
+                                @if (paramsSaveError(row.id)) {
+                                  <p class="params-save-error">{{ paramsSaveError(row.id) }}</p>
+                                }
+
+                                <button
+                                  type="button"
+                                  class="btn btn-sm btn-ok"
+                                  [disabled]="isParamsSaving(row.id)"
+                                  (click)="saveTradingParams(row, $event)"
+                                >
+                                  {{ isParamsSaving(row.id) ? 'Сохранение…' : 'Сохранить параметры' }}
+                                </button>
+
+                              </td>
+
+                            </tr>
+
+                          </tbody>
+
+                        </table>
+
+                        <p class="signals-help">
+                          Параметры хранятся в таблице <code>logic_params</code> (ключ / значение / тип).
+                          Кол-во лота: <code>floor(остаток × % / 100 / цена)</code>, минимум 1.
+                        </p>
+
+                      </div>
+
+                    </details>
+
+                    <details class="signals-block" [open]="isSignalsBlockExpanded(row.id)">
+
+                      <summary class="signals-summary">
+
+                        <span
+                          class="signals-summary-head"
+                          (click)="toggleSignalsBlock(row.id, $event)"
+                        >
+
+                          <span
+                            class="signals-chevron"
+                            [class.open]="isSignalsBlockExpanded(row.id)"
+                            aria-hidden="true"
+                          >▸</span>
+
+                          <span class="signals-title">Сигналы на логике</span>
+
+                          @if (isSignalsLoading(row.id)) {
+
+                            <span class="signals-loading">загрузка…</span>
+
+                          }
+
+                        </span>
+
+                        <span class="signals-summary-actions">
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-open-event"
+                            (click)="openSignalPicker(row.id, 'open', $event)"
+                          >
+                            + Открытие
+                          </button>
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-close-event"
+                            (click)="openSignalPicker(row.id, 'close', $event)"
+                          >
+                            + Закрытие
+                          </button>
+
+                        </span>
+
+                      </summary>
+
+                      <div class="signals-body">
+
+                      <p class="signals-and-hint">
+                        Сделка только если <strong>все</strong> активные сигналы той же стороны и
+                        того же действия сработали вместе (AND). Для OR — отдельные логики.
+                        Тип сигнала: <strong>по течению</strong> (follow / пробой / импульс) или
+                        <strong>против</strong> (fade / возврат от края). Не смешивайте в одном AND
+                        пробой и mean-reversion — сделок почти не будет.
+                        «Рейтинг» — сумма боевых оценок сигнала по всем бумагам логики
+                        (не зависит от сделок; не тестовый рейтинг). Разверните строку сигнала —
+                        список бумаг и график.
+                      </p>
+
+                      @if (isPickerOpen(row.id) && signalPicker) {
+
+                        <div class="indicator-picker">
+
+                          <p class="picker-title">
+                            Добавить индикатор —
+                            <strong>{{ positionEventLabel(signalPicker.positionEvent) }}</strong>
+                          </p>
+
+                          <div class="signal-picker-options" (click)="$event.stopPropagation()">
+
+                            <span class="picker-option-label">Сторона:</span>
+
+                            <label class="picker-radio">
+                              <input
+                                type="radio"
+                                name="picker-side-{{ row.id }}"
+                                [checked]="signalPicker.positionSide === 'long'"
+                                (change)="onPickerPositionSideChange('long')"
+                              />
+                              Long
+                            </label>
+
+                            <label class="picker-radio">
+                              <input
+                                type="radio"
+                                name="picker-side-{{ row.id }}"
+                                [checked]="signalPicker.positionSide === 'short'"
+                                (change)="onPickerPositionSideChange('short')"
+                              />
+                              Short
+                            </label>
+
+                            <span class="picker-option-label">Тип:</span>
+
+                            <label class="picker-radio">
+                              <input
+                                type="radio"
+                                name="picker-kind-{{ row.id }}"
+                                [checked]="signalPicker.signalKind === 'trend'"
+                                (change)="onPickerSignalKindChange('trend')"
+                              />
+                              По течению
+                            </label>
+
+                            <label class="picker-radio">
+                              <input
+                                type="radio"
+                                name="picker-kind-{{ row.id }}"
+                                [checked]="signalPicker.signalKind === 'counter'"
+                                (change)="onPickerSignalKindChange('counter')"
+                              />
+                              Против
+                            </label>
+
+                          </div>
+
+                          <p class="picker-hint">
+                            Действие: <strong>{{ positionEventLabel(signalPicker.positionEvent) }}</strong>.
+                            Шаблон формулы — <code>sig_trend_def</code> (по течению) /
+                            <code>sig_ct_def</code> (против); для коридоров: пробой UPPER / зона LOWER.
+                            Сейчас: {{ signalKindLabel(signalPicker.signalKind) }}.
+                          </p>
+
+                          @if (!indicatorsLoaded) {
+
+                            <p class="picker-empty">Загрузка справочника…</p>
+
+                          } @else {
+
+                            <ul class="picker-list">
+
+                              @for (ind of indicatorsCatalog; track ind.id) {
+
+                                <li
+                                  class="picker-item"
+                                  [class.selected]="isPickerSelected(ind.id)"
+                                  (dblclick)="onPickerRowDblClick(ind)"
+                                >
+
+                                  <label>
+
+                                    <input
+                                      type="checkbox"
+                                      [checked]="isPickerSelected(ind.id)"
+                                      (change)="togglePickerSelection(ind.id)"
+                                    />
+
+                                    <span class="picker-code">{{ ind.code }}</span>
+
+                                    <span class="picker-name">{{ ind.name }}</span>
+
+                                    @if (isPickerSelected(ind.id)) {
+                                      <code class="picker-formula-preview">{{ pickerPreviewFormula(ind) }}</code>
+                                    }
+
+                                  </label>
+
+                                </li>
+
+                              }
+
+                            </ul>
+
+                          }
+
+                          <div class="picker-actions">
+
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-ok"
+                              [disabled]="pickerSelectedIds.size === 0"
+                              (click)="addSelectedSignals()"
+                            >
+                              Добавить ({{ pickerSelectedIds.size }})
+                            </button>
+
+                            <button type="button" class="btn btn-sm btn-muted" (click)="closeSignalPicker()">
+                              Отмена
+                            </button>
+
+                          </div>
+
+                        </div>
+
+                      }
+
+                      <table class="signals-table">
+
+                        <thead>
+
+                          <tr>
+
+                            <th class="col-sig-expand"></th>
+
+                            <th>Действие</th>
+
+                            <th>Сторона</th>
+
+                            <th>Тип</th>
+
+                            <th>Индикатор</th>
+
+                            <th
+                              title="Сумма боевых рейтингов сигнала по всем бумагам логики"
+                            >Рейтинг</th>
+
+                            <th>Формула сигнала</th>
+
+                            <th class="col-sig-actions"></th>
+
+                          </tr>
+
+                        </thead>
+
+                        <tbody>
+
+                          @for (sig of signalsFor(row.id); track sig.id) {
+
+                            <tr
+                              class="sig-main-row"
+                              [class.sig-inactive]="!sig.is_active"
+                              [class.sig-combat-open]="isCombatSignalExpanded(row.id, sig.id)"
+                            >
+
+                              <td class="col-sig-expand">
+
+                                <button
+                                  type="button"
+                                  class="sig-expand-btn"
+                                  title="Бумаги и график рейтинга"
+                                  (click)="toggleCombatSignal(row.id, sig.id, $event)"
+                                >
+                                  <span
+                                    class="signals-chevron"
+                                    [class.open]="isCombatSignalExpanded(row.id, sig.id)"
+                                    aria-hidden="true"
+                                  >▸</span>
+                                </button>
+
+                              </td>
+
+                              <td>
+
+                                <span
+                                  class="sig-badge"
+                                  [class.sig-open]="sig.position_event === 'open'"
+                                  [class.sig-close]="sig.position_event === 'close'"
+                                >
+                                  {{ positionEventLabel(sig.position_event) }}
+                                </span>
+
+                              </td>
+
+                              <td>
+
+                                <span
+                                  class="sig-badge"
+                                  [class.sig-long]="sig.position_side === 'long'"
+                                  [class.sig-short]="sig.position_side === 'short'"
+                                >
+                                  {{ positionSideLabel(sig.position_side) }}
+                                </span>
+
+                              </td>
+
+                              <td>
+
+                                <span
+                                  class="sig-badge"
+                                  [class.sig-trend]="sig.signal_kind === 'trend'"
+                                  [class.sig-counter]="sig.signal_kind === 'counter'"
+                                >
+
+                                  {{ signalKindLabel(sig.signal_kind) }}
+
+                                </span>
+
+                              </td>
+
+                              <td>
+
+                                <strong>{{ sig.indicator_code }}</strong>
+
+                                <span class="sig-ind-name">{{ sig.indicator_name }}</span>
+
+                              </td>
+
+                              <td
+                                class="col-sig-rating"
+                                title="Сумма боевых рейтингов по бумагам"
+                              >
+                                {{ sig.rating ?? 0 }}
+                              </td>
+
+                              <td class="col-formula">
+
+                                <input
+
+                                  type="text"
+
+                                  class="formula-input"
+
+                                  [value]="formulaDraft(sig)"
+
+                                  [disabled]="isFormulaSaving(sig.id)"
+
+                                  (input)="onFormulaInput(sig, $any($event.target).value)"
+
+                                  (blur)="saveSignalFormula(sig)"
+
+                                  (keydown.enter)="saveSignalFormula(sig); $any($event.target).blur()"
+
+                                  spellcheck="false"
+
+                                />
+
+                                @if (formulaParseHint(sig); as hint) {
+
+                                  <span class="formula-hint" title="Предварительный разбор">{{ hint }}</span>
+
+                                }
+
+                              </td>
+
+                              <td class="col-sig-actions">
+
+                                <button
+
+                                  type="button"
+
+                                  class="icon-btn icon-danger"
+
+                                  title="Удалить сигнал"
+
+                                  aria-label="Удалить сигнал"
+
+                                  (click)="deleteSignal(sig, $event)"
+
+                                >
+
+                                  ✕
+
+                                </button>
+
+                              </td>
+
+                            </tr>
+
+                            @if (isCombatSignalExpanded(row.id, sig.id)) {
+                              <tr class="sig-combat-detail-row">
+                                <td colspan="8">
+                                  <app-logic-combat-signal-detail
+                                    [logicId]="row.id"
+                                    [signalId]="sig.id"
+                                    [securities]="securitiesFor(row.id)"
+                                    [reloadToken]="combatReloadToken(row.id)"
+                                  />
+                                </td>
+                              </tr>
+                            }
+
+                          } @empty {
+
+                            <tr>
+
+                              <td colspan="8" class="empty">
+
+                                Нет сигналов — добавьте трендовый или контртрендовый
+
+                              </td>
+
+                            </tr>
+
+                          }
+
+                        </tbody>
+
+                      </table>
+
+                      <p class="signals-help">
+
+                        Формат: <code>&#64;RSI(period=14,series=VALUE) VALUE &gt; 50</code> — условие из
+
+                        <code>sig_trend_def</code> / <code>sig_ct_def</code> справочника индикаторов.
+
+                      </p>
+
+                      </div>
+
+                    </details>
+
+                    <details class="signals-block stops-block" [open]="isStopsBlockExpanded(row.id)">
+
+                      <summary class="signals-summary">
+
+                        <span
+                          class="signals-summary-head"
+                          (click)="toggleStopsBlock(row.id, $event)"
+                        >
+
+                          <span
+                            class="signals-chevron"
+                            [class.open]="isStopsBlockExpanded(row.id)"
+                            aria-hidden="true"
+                          >▸</span>
+
+                          <span class="signals-title">Стоп-лосс и тейк-профит</span>
+
+                          @if (isStopsLoading(row.id)) {
+
+                            <span class="signals-loading">загрузка…</span>
+
+                          }
+
+                        </span>
+
+                        <span class="signals-summary-actions">
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-stop-loss"
+                            (click)="openStopForm(row.id, 'stop_loss', $event)"
+                          >
+                            + Стоп-лосс
+                          </button>
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-take-profit"
+                            (click)="openStopForm(row.id, 'take_profit', $event)"
+                          >
+                            + Тейк-профит
+                          </button>
+
+                        </span>
+
+                      </summary>
+
+                      <div class="signals-body">
+
+                        @if (stopForm && stopForm.logicId === row.id) {
+
+                          <div class="stop-form">
+
+                            <p class="stop-form-title">
+                              {{ ruleKindLabel(stopForm.ruleKind) }}
+                            </p>
+
+                            <div class="stop-form-grid">
+
+                              <label class="stop-field">
+                                <span>Тип</span>
+                                <select [(ngModel)]="stopFormDraft.scope_type">
+                                  @for (sc of stopScopesFor(stopForm.ruleKind); track sc) {
+                                    <option [ngValue]="sc">{{ scopeTypeLabel(sc, stopForm.ruleKind) }}</option>
+                                  }
+                                </select>
+                              </label>
+
+                              <label class="stop-field stop-field-value">
+                                <span>Значение</span>
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  [(ngModel)]="stopFormDraft.value"
+                                  placeholder="0.00"
+                                />
+                              </label>
+
+                              <label class="stop-field stop-field-unit">
+                                <span>Единица</span>
+                                <select [(ngModel)]="stopFormDraft.value_unit">
+                                  @for (u of stopUnits; track u) {
+                                    <option [ngValue]="u">{{ valueUnitLabel(u) }}</option>
+                                  }
+                                </select>
+                              </label>
+
+                            </div>
+
+                            <div class="picker-actions">
+
+                              <button type="button" class="btn btn-sm btn-ok" (click)="submitStopForm()">
+                                Добавить
+                              </button>
+
+                              <button type="button" class="btn btn-sm btn-muted" (click)="closeStopForm()">
+                                Отмена
+                              </button>
+
+                            </div>
+
+                          </div>
+
+                        }
+
+                        <table class="signals-table stops-table">
+
+                          <thead>
+
+                            <tr>
+
+                              <th>Вид</th>
+
+                              <th>Тип</th>
+
+                              <th>Значение</th>
+
+                              <th>Единица</th>
+
+                              <th class="col-sig-actions"></th>
+
+                            </tr>
+
+                          </thead>
+
+                          <tbody>
+
+                            @for (stop of stopsFor(row.id); track stop.id) {
+
+                              <tr [class.sig-inactive]="!stop.is_active">
+
+                                <td>
+
+                                  <span
+                                    class="sig-badge"
+                                    [class.sig-stop-loss]="stop.rule_kind === 'stop_loss'"
+                                    [class.sig-take-profit]="stop.rule_kind === 'take_profit'"
+                                  >
+                                    {{ ruleKindLabel(stop.rule_kind) }}
+                                  </span>
+
+                                </td>
+
+                                <td>
+
+                                  <select
+                                    class="stop-inline-select"
+                                    [ngModel]="stop.scope_type"
+                                    [disabled]="isStopSaving(stop.id)"
+                                    (ngModelChange)="saveStopRow(stop, { scope_type: $event })"
+                                  >
+                                    @for (sc of stopScopesFor(stop.rule_kind); track sc) {
+                                      <option [ngValue]="sc">{{ scopeTypeLabel(sc, stop.rule_kind) }}</option>
+                                    }
+                                  </select>
+
+                                </td>
+
+                                <td>
+
+                                  <input
+                                    type="text"
+                                    class="stop-value-input"
+                                    [value]="stop.value"
+                                    [disabled]="isStopSaving(stop.id)"
+                                    (blur)="onStopValueBlur(stop, $any($event.target).value)"
+                                    (keydown.enter)="$any($event.target).blur()"
+                                  />
+
+                                </td>
+
+                                <td>
+
+                                  <select
+                                    class="stop-inline-select"
+                                    [ngModel]="stop.value_unit"
+                                    [disabled]="isStopSaving(stop.id)"
+                                    (ngModelChange)="saveStopRow(stop, { value_unit: $event })"
+                                  >
+                                    @for (u of stopUnits; track u) {
+                                      <option [ngValue]="u">{{ valueUnitLabel(u) }}</option>
+                                    }
+                                  </select>
+
+                                </td>
+
+                                <td class="col-sig-actions">
+
+                                  <button
+                                    type="button"
+                                    class="icon-btn icon-danger"
+                                    title="Удалить"
+                                    aria-label="Удалить"
+                                    (click)="deleteStop(stop, $event)"
+                                  >
+                                    ✕
+                                  </button>
+
+                                </td>
+
+                              </tr>
+
+                            } @empty {
+
+                              <tr>
+
+                                <td colspan="5" class="empty">
+                                  Нет правил — добавьте стоп-лосс или тейк-профит
+                                </td>
+
+                              </tr>
+
+                            }
+
+                          </tbody>
+
+                        </table>
+
+                        <p class="signals-help">
+                          Тип: <strong>По бумаге</strong> — на одну бумагу в сделке;
+                          <strong>По всему портфелю логики</strong> — на весь портфель торговли.
+                          Единица: <strong>%</strong> или <strong>ATR</strong> (параметр ATR — позже).
+                        </p>
+
+                      </div>
+
+                    </details>
+
+                    <details class="signals-block securities-block" [open]="isSecuritiesBlockExpanded(row.id)">
+
+                      <summary class="signals-summary">
+
+                        <span
+                          class="signals-summary-head"
+                          (click)="toggleSecuritiesBlock(row.id, $event)"
+                        >
+
+                          <span
+                            class="signals-chevron"
+                            [class.open]="isSecuritiesBlockExpanded(row.id)"
+                            aria-hidden="true"
+                          >▸</span>
+
+                          <span class="signals-title">Ценные бумаги</span>
+
+                          @if (isSecuritiesLoading(row.id)) {
+
+                            <span class="signals-loading">загрузка…</span>
+
+                          }
+
+                        </span>
+
+                        <span class="signals-summary-actions">
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-securities"
+                            (click)="openSecurityPicker(row.id, $event)"
+                          >
+                            + Добавить
+                          </button>
+
+                        </span>
+
+                      </summary>
+
+                      <div class="signals-body">
+
+                        @if (isSecurityPickerOpen(row.id)) {
+
+                          <div class="indicator-picker securities-picker">
+
+                            <p class="picker-title">
+                              Выберите бумаги — галочки по строкам или «выбрать все» у группы
+                            </p>
+
+                            @if (securitiesCatalogLoading || !securitiesCatalogLoaded) {
+
+                              <p class="picker-empty">Загрузка списка бумаг…</p>
+
+                            } @else {
+
+                              <details class="sec-picker-group">
+
+                                <summary class="sec-picker-group-head">
+
+                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
+
+                                    <input
+                                      type="checkbox"
+                                      [checked]="allStocksPickerSelected(row.id)"
+                                      [disabled]="pickerStocksAvailable(row.id).length === 0"
+                                      (change)="toggleAllStocksPicker(row.id, $any($event.target).checked)"
+                                    />
+
+                                    <span class="sec-picker-group-title">Акции</span>
+
+                                    <span class="sec-picker-count">({{ pickerStocksAvailable(row.id).length }})</span>
+
+                                  </label>
+
+                                </summary>
+
+                                @if (pickerStocksAvailable(row.id).length === 0) {
+
+                                  <p class="picker-empty picker-empty-nested">Все акции уже добавлены</p>
+
+                                } @else {
+
+                                  <ul class="picker-list">
+
+                                    @for (sec of pickerStocksAvailable(row.id); track sec.id) {
+
+                                      <li
+                                        class="picker-item"
+                                        [class.selected]="isSecurityPickerSelected(sec.id)"
+                                      >
+
+                                        <label>
+
+                                          <input
+                                            type="checkbox"
+                                            [checked]="isSecurityPickerSelected(sec.id)"
+                                            (change)="toggleSecurityPickerSelection(sec.id)"
+                                          />
+
+                                          <span class="picker-code">{{ sec.prefix }}</span>
+
+                                          <span class="picker-name">{{ sec.name }}</span>
+
+                                        </label>
+
+                                      </li>
+
+                                    }
+
+                                  </ul>
+
+                                }
+
+                              </details>
+
+                              <details class="sec-picker-group">
+
+                                <summary class="sec-picker-group-head">
+
+                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
+
+                                    <input
+                                      type="checkbox"
+                                      [checked]="allFuturesPickerSelected(row.id)"
+                                      [disabled]="pickerFuturesAvailable(row.id).length === 0"
+                                      (change)="toggleAllFuturesPicker(row.id, $any($event.target).checked)"
+                                    />
+
+                                    <span class="sec-picker-group-title">Фьючерсы</span>
+
+                                    <span class="sec-picker-count">({{ pickerFuturesAvailable(row.id).length }})</span>
+
+                                  </label>
+
+                                </summary>
+
+                                @if (pickerFuturesAvailable(row.id).length === 0) {
+
+                                  <p class="picker-empty picker-empty-nested">Все фьючерсы уже добавлены</p>
+
+                                } @else {
+
+                                  <ul class="picker-list">
+
+                                    @for (sec of pickerFuturesAvailable(row.id); track sec.id) {
+
+                                      <li
+                                        class="picker-item"
+                                        [class.selected]="isSecurityPickerSelected(sec.id)"
+                                      >
+
+                                        <label>
+
+                                          <input
+                                            type="checkbox"
+                                            [checked]="isSecurityPickerSelected(sec.id)"
+                                            (change)="toggleSecurityPickerSelection(sec.id)"
+                                          />
+
+                                          <span class="picker-code">{{ sec.prefix }}</span>
+
+                                          <span class="picker-name">{{ sec.name }}</span>
+
+                                        </label>
+
+                                      </li>
+
+                                    }
+
+                                  </ul>
+
+                                }
+
+                              </details>
+
+                            }
+
+                            <div class="picker-actions">
+
+                              <button
+                                type="button"
+                                class="btn btn-sm btn-ok"
+                                [disabled]="pickerSelectedSecurityIds.size === 0"
+                                (click)="addSelectedSecurities()"
+                              >
+                                Добавить ({{ pickerSelectedSecurityIds.size }})
+                              </button>
+
+                              <button type="button" class="btn btn-sm btn-muted" (click)="closeSecurityPicker()">
+                                Отмена
+                              </button>
+
+                            </div>
+
+                          </div>
+
+                        }
+
+                        <table class="signals-table securities-table">
+
+                          <thead>
+
+                            <tr>
+
+                              <th>Тикер</th>
+
+                              <th>Название</th>
+
+                              <th>Лот</th>
+
+                              <th>Тип</th>
+
+                              <th>Биржа</th>
+
+                              <th class="col-sig-actions"></th>
+
+                            </tr>
+
+                          </thead>
+
+                          <tbody>
+
+                            @for (sec of securitiesFor(row.id); track sec.id) {
+
+                              <tr [class.sig-inactive]="!sec.is_active">
+
+                                <td><strong>{{ sec.prefix || '—' }}</strong></td>
+
+                                <td>{{ sec.security_name }}
+                                  @if (sec.real_trading_paused) {
+                                    <span class="sec-paused-badge" title="Реальная торговля приостановлена (SL с возобновлением); идут теневые сделки">теневой режим</span>
+                                  }
+                                </td>
+
+                                <td class="col-lot">{{ sec.lot_size ?? 1 }}</td>
+
+                                <td>{{ securityKindLabel(sec) }}</td>
+
+                                <td>{{ sec.exchange_name || '—' }}</td>
+
+                                <td class="col-sig-actions">
+
+                                  <button
+                                    type="button"
+                                    class="icon-btn icon-danger"
+                                    title="Удалить"
+                                    aria-label="Удалить"
+                                    (click)="deleteLogicSecurity(sec, $event)"
+                                  >
+                                    ✕
+                                  </button>
+
+                                </td>
+
+                              </tr>
+
+                            } @empty {
+
+                              <tr>
+
+                                <td colspan="5" class="empty">
+                                  Нет бумаг — нажмите «+ Добавить»
+                                </td>
+
+                              </tr>
+
+                            }
+
+                          </tbody>
+
+                        </table>
+
+                        <p class="signals-help">
+                          Портфель бумаг этой торговой логики. Сигналы и стопы применяются к выбранным инструментам.
+                        </p>
+
+                      </div>
+
+                    </details>
+
+                    <div class="logic-trades-stack">
+                      <app-logic-positions-panel
+                        [logicRow]="row"
+                        mode="live"
+                        [trades]="tradesFor(row.id, false)"
+                        [tradeLots]="logicTradeLots"
+                        [lotsLoading]="tradeLotsLoading"
+                        [loading]="isTradesLoading(row.id)"
+                        [closeAllLoading]="isCloseAllLoading(row.id)"
+                        [blockExpanded]="isTradesBlockExpanded(row.id)"
+                        [dimmed]="isBacktestRunning(row.id)"
+                        [disabled]="isBacktestRunning(row.id)"
+                        [tbankTokenAlert]="tbankTokenAlert"
+                        (toggleBlock)="toggleTradesBlock(row.id)"
+                        (closeAll)="closeAllPositionsAtMarket(row.id)"
+                        (openTokenDialog)="openTbankTokenDialogFromAlert()"
+                        (requestLots)="requestTradeLots($event)"
+                      />
+
+                      <app-logic-positions-panel
+                        [logicRow]="row"
+                        mode="test"
+                        [trades]="tradesFor(row.id, true)"
+                        [tradeLots]="logicTradeLots"
+                        [lotsLoading]="tradeLotsLoading"
+                        [blockExpanded]="isTestTradesBlockExpanded(row.id)"
+                        [backtestRun]="backtestFor(row.id)"
+                        [timeframeId]="timeframeIdForLogic(row)"
+                        [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
+                        (toggleBlock)="toggleTestTradesBlock(row.id)"
+                        (startBacktest)="startBacktestRun(row.id, $event)"
+                        (periodDialogOpen)="onPeriodDialogOpen($event)"
+                        (cancelBacktest)="cancelBacktestRun(row.id)"
+                        (requestLots)="requestTradeLots($event)"
+                      />
+                    </div>
+
+                  </div>
+
+                </td>
+
+              </tr>
+
+            }
+
+          } @empty {
+
+            @if (!loading && !error) {
+
+              <tr>
+
+                <td colspan="10" class="empty">Нет записей в logics</td>
+
+              </tr>
+
+            }
+
+          }
+
+        </tbody>
+
+      </table>
+
+    </div>
+    </div>
+
+  }
+
+
+
+  <app-logic-editor
+
+    [open]="editorOpen"
+
+    [mode]="editorMode"
+
+    [logic]="editorLogic"
+
+    (closed)="closeEditor()"
+
+    (saved)="onEditorSaved()"
+
+  />
+
+  <app-tbank-token-dialog
+    [open]="tbankTokenDialogOpen"
+    [context]="tbankTokenDialogContext"
+    [reason]="tbankTokenDialogReason"
+    (saved)="onTbankTokenSavedForLogic()"
+    (cancelled)="onTbankTokenCancelledForLogic()"
+  />
+
+</section>

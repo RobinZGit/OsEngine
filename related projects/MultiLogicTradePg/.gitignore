@@ -1,0 +1,15 @@
+# Локальная распаковка pg15http_w64.zip (скачивается вручную, см. scripts/install_pgsql_http.ps1)
+_tmp_http_ext/
+
+# Node.js
+node_modules/
+api/node_modules/
+web/node_modules/
+web/dist/
+installer/windows/dist/
+
+# Секреты API (пароль PostgreSQL)
+api/.env
+
+# Angular / IDE
+web/.angular/

@@ -1,0 +1,113 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog" open aria-labelledby="logic-editor-title">
+    <header class="dialog-header">
+      <h2 id="logic-editor-title">{{ title }}</h2>
+      <button
+        type="button"
+        class="icon-btn"
+        title="Закрыть"
+        [disabled]="saving"
+        (click)="close()"
+      >
+        ✕
+      </button>
+    </header>
+
+    <div class="dialog-body">
+      @if (loadingLookups) {
+        <p class="status">Загрузка справочников…</p>
+      }
+
+      @if (error) {
+        <p class="error" role="alert">{{ error }}</p>
+      }
+
+      @if (!loadingLookups) {
+        <form class="form" (ngSubmit)="save()">
+          <label class="field">
+            <span class="label">Имя логики</span>
+            <input
+              type="text"
+              name="name"
+              maxlength="100"
+              required
+              [(ngModel)]="name"
+              [disabled]="saving"
+              placeholder="Например: RSI SBER M5"
+            />
+          </label>
+
+          <label class="field">
+            <span class="label">Брокер</span>
+            <select
+              name="broker"
+              required
+              [(ngModel)]="brokerId"
+              [disabled]="saving || brokers.length === 0"
+              (ngModelChange)="onBrokerChange()"
+            >
+              @if (brokers.length === 0) {
+                <option [ngValue]="null">— нет брокеров —</option>
+              }
+              @for (b of brokers; track b.id) {
+                <option [ngValue]="b.id">{{ b.code }} — {{ b.name }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="label">Счёт</span>
+            <select
+              name="account"
+              required
+              [(ngModel)]="accountId"
+              [disabled]="saving || filteredAccounts.length === 0"
+            >
+              @if (filteredAccounts.length === 0) {
+                <option [ngValue]="null">— нет счетов у брокера —</option>
+              }
+              @for (a of filteredAccounts; track a.id) {
+                <option [ngValue]="a.id">
+                  {{ a.account_code }} — {{ a.name }}
+                  ({{ accountTypeLabel(a.account_type) }})
+                </option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="label">Примечание</span>
+            <textarea
+              name="note"
+              rows="4"
+              maxlength="2000"
+              [(ngModel)]="note"
+              [disabled]="saving"
+              placeholder="Трендовая / контртрендовая / демо; источник (OsEngine, FINRESP…); кратко суть стратегии"
+            ></textarea>
+          </label>
+
+          <label class="field field-check">
+            <input
+              type="checkbox"
+              name="isEnabled"
+              [(ngModel)]="isEnabled"
+              [disabled]="saving"
+            />
+            <span>Логика включена</span>
+          </label>
+
+          <footer class="dialog-footer">
+            <button type="button" class="btn btn-secondary" [disabled]="saving" (click)="close()">
+              Отмена
+            </button>
+            <button type="submit" class="btn btn-primary" [disabled]="saving">
+              {{ saving ? 'Сохранение…' : 'Сохранить' }}
+            </button>
+          </footer>
+        </form>
+      }
+    </div>
+  </dialog>
+}

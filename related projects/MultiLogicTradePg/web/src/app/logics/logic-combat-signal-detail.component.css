@@ -1,0 +1,88 @@
+.combat-signal-detail {
+  padding: 0.5rem 0.75rem 0.75rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.combat-detail-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.combat-detail-error {
+  margin: 0 0 0.5rem;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.combat-detail-empty {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.combat-paper-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(320px, 40vh);
+  overflow: auto;
+}
+
+.combat-paper-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  margin-bottom: 0.35rem;
+  background: #fff;
+}
+
+.combat-paper-item.open {
+  border-color: #99f6e4;
+}
+
+.combat-paper-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.combat-paper-toggle:hover {
+  background: #f1f5f9;
+}
+
+.combat-paper-prefix {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.combat-paper-rating {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #334155;
+}
+
+.combat-paper-loading {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.combat-chart-wrap {
+  padding: 0 0.55rem 0.55rem;
+}
+
+.combat-rating-chart {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border-radius: 4px;
+}

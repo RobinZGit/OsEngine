@@ -1,0 +1,22 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog" open>
+    <header class="dialog-header">
+      <h2>{{ title }}</h2>
+      <button type="button" class="icon-btn" title="Закрыть" [disabled]="saving" (click)="close()">✕</button>
+    </header>
+    <div class="dialog-body">
+      @if (error) { <p class="error">{{ error }}</p> }
+      <form class="form" (ngSubmit)="save()">
+        <label class="field">
+          <span class="label">Название</span>
+          <input type="text" maxlength="50" required [(ngModel)]="name" name="name" [disabled]="saving" placeholder="MOEX" />
+        </label>
+        <footer class="dialog-footer">
+          <button type="button" class="btn btn-secondary" [disabled]="saving" (click)="close()">Отмена</button>
+          <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Сохранение…' : 'Сохранить' }}</button>
+        </footer>
+      </form>
+    </div>
+  </dialog>
+}

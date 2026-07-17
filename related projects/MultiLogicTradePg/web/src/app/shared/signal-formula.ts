@@ -1,0 +1,138 @@
+import { IndicatorRow } from '../models/lookup.model';
+
+export type SignalKind = 'trend' | 'counter';
+export type PositionSide = 'long' | 'short';
+export type PositionEvent = 'open' | 'close';
+
+export interface ParsedSignalFormula {
+  raw: string;
+  indicatorCode: string | null;
+  params: string | null;
+  condition: string;
+  valid: boolean;
+  errors: string[];
+}
+
+/** Параметры @CODE(...) по умолчанию для строки сигнала в логике. */
+export function defaultIndicatorParams(code: string): string {
+  switch (code) {
+    case 'RSI':
+    case 'MFI':
+    case 'CCI':
+    case 'WILLR':
+    case 'CMO':
+    case 'ROC':
+    case 'TRIX':
+    case 'TSI':
+    case 'UO':
+      return 'period=14,series=VALUE';
+    case 'MACD':
+      return 'fast=12,slow=26,signal=9,series=MACD';
+    case 'STOCH':
+      return 'k=14,d=3,smooth=3,series=K';
+    case 'BB':
+      return 'period=20,std=2,series=MIDDLE';
+    case 'ATR':
+      return 'period=14,series=VALUE';
+    case 'PACC':
+      return 'series=VALUE';
+    case 'SMAT3':
+      return 'period=20,series=VALUE';
+    default:
+      return 'period=20,series=VALUE';
+  }
+}
+
+export function defaultSignalCondition(
+  indicator: Pick<IndicatorRow, 'sig_trend_def' | 'sig_ct_def'>,
+  kind: SignalKind
+): string {
+  const def =
+    kind === 'trend' ? indicator.sig_trend_def : indicator.sig_ct_def;
+  return (def ?? '').trim() || (kind === 'trend' ? 'VALUE > 50' : 'VALUE < 50');
+}
+
+/** Сборка формулы для logic_indicator_signals из справочника индикатора. */
+export function buildLogicSignalFormula(
+  indicator: Pick<IndicatorRow, 'code' | 'sig_trend_def' | 'sig_ct_def'>,
+  kind: SignalKind
+): string {
+  const params = defaultIndicatorParams(indicator.code);
+  const condition = defaultSignalCondition(indicator, kind);
+  return `@${indicator.code}(${params}) ${condition}`;
+}
+
+const REF_PATTERN =
+  /^@([A-Z0-9_]+)\(([^)]*)\)\s+([\s\S]+)$/i;
+
+/**
+ * Предварительный разбор формулы сигнала логики.
+ * Формат: @RSI(period=14,series=VALUE) VALUE > 50
+ */
+export function parseSignalFormula(raw: string): ParsedSignalFormula {
+  const text = (raw ?? '').trim();
+  const errors: string[] = [];
+  if (!text) {
+    return {
+      raw: text,
+      indicatorCode: null,
+      params: null,
+      condition: '',
+      valid: false,
+      errors: ['Пустая формула'],
+    };
+  }
+
+  const m = text.match(REF_PATTERN);
+  if (!m) {
+    return {
+      raw: text,
+      indicatorCode: null,
+      params: null,
+      condition: text,
+      valid: false,
+      errors: ['Ожидается @CODE(params) условие'],
+    };
+  }
+
+  const indicatorCode = m[1].toUpperCase();
+  const params = m[2].trim();
+  const condition = m[3].trim();
+
+  if (!params) {
+    errors.push('Пустые параметры в @CODE(...)');
+  }
+  if (!condition) {
+    errors.push('Нет условия после @CODE(...)');
+  }
+  if (!/[><=!]/.test(condition) && !/\b(CROSS|AND|OR)\b/i.test(condition)) {
+    errors.push('Условие должно содержать сравнение или AND/OR');
+  }
+
+  return {
+    raw: text,
+    indicatorCode,
+    params,
+    condition,
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
+ * Подпись вида сигнала для UI.
+ * В БД остаются trend|counter; смысл: follow (по течению) | fade (против / возврат).
+ */
+export function signalKindLabel(kind: SignalKind): string {
+  return kind === 'trend' ? 'По течению' : 'Против';
+}
+
+/** Подпись стороны позиции для UI. */
+export function positionSideLabel(side: PositionSide): string {
+  return side === 'long' ? 'Long' : 'Short';
+}
+
+/** Подпись действия сигнала: открытие / закрытие. */
+export function positionEventLabel(event: PositionEvent): string {
+  return event === 'open' ? 'Открытие' : 'Закрытие';
+}

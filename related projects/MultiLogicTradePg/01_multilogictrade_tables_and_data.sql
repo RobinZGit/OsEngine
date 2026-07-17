@@ -1,0 +1,2670 @@
+-- ============================================
+-- MultiLogicTrade — шаг 1: таблицы и справочники
+-- Версия: v44 (идемпотентный запуск)
+-- v44: logics.note — примечание; +5 контртрендовых OsEngine; подписи типа стратегии у seed
+-- v43c: logic_trades.run_id — привязка тестовых сделок к прогону (изоляция финреза)
+-- v43: комиссия default 0.03; L1–L4 из MultiLogicTradeA; LINREG/ADX/CCI calc
+-- v42: rating_lookback_days — окно предрасчёта боевого рейтинга сигналов при enable
+-- v41: пакет из 10 классических логик (OsEngine-style) + демо; все на FAKE, все акции
+-- v40: сигналы AND (все open/close стороны); rating; base_annual_rate_pct; pending рейтинга
+-- v39: DROP logics_detail; убраны дубликаты колонок logics → logic_params;
+--      legacy-поля indicator_values/parameter_*; prices.trades
+-- v38: logic_indicator_signals.position_event (open|close); logic_trades.position_event
+-- ============================================
+-- Подключение: база multilogictrade
+-- Можно выполнять многократно: объекты и строки не дублируются.
+-- Используются CREATE IF NOT EXISTS и INSERT ... ON CONFLICT DO NOTHING/UPDATE.
+--
+-- ================================================================
+-- ПЕРЕД ЗАПУСКОМ ЭТОГО СКРИПТА
+-- ================================================================
+--
+-- 1. Выполнен 00_create_database.sql (база multilogictrade создана).
+-- 2. Query Tool / psql подключены к multilogictrade, НЕ к postgres.
+-- 3. Расширения PostgreSQL для этого шага НЕ нужны
+--    (ни http, ни postgis, ни pg_cron).
+--
+-- Следующий шаг после успешного выполнения:
+--   02_multilogictrade_functions_and_procedures.sql
+--   Перед HTTP-блоком в 02 — установить pgsql-http (см. комментарии в 02).
+--
+-- psql:
+--   psql -U postgres -d multilogictrade -f 01_multilogictrade_tables_and_data.sql
+-- ================================================================
+-- ============================================
+
+-- ============================================
+
+-- Блок миграции: v36 — стоп-лосс (security_resume), is_shadow, pause/resume по бумаге
+-- ============================================
+DO $$
+BEGIN
+    ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
+    ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
+        CHECK (scope_type IN ('security', 'security_resume', 'portfolio'));
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Блок миграции: обновление существующей схемы v16 → v17
+-- ============================================
+DO $$
+BEGIN
+    NULL;
+END $$;
+
+-- Блок миграции: обновление существующей схемы v15 → v16
+-- ============================================
+DO $$
+BEGIN
+    NULL;
+END $$;
+
+-- Блок миграции: обновление существующей схемы v14 → v15
+-- ============================================
+DO $$
+BEGIN
+    UPDATE logic_stops SET scope_type = 'security' WHERE scope_type = 'logic';
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
+    ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
+        CHECK (scope_type IN ('security', 'security_resume', 'portfolio'));
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Блок миграции: обновление существующей схемы v13 → v14
+-- ============================================
+DO $$
+BEGIN
+    NULL;
+END $$;
+
+-- Блок миграции: обновление существующей схемы v12 → v13
+-- ============================================
+DO $$
+BEGIN
+    NULL;
+END $$;
+
+-- Блок миграции: обновление существующей схемы v11 → v12
+-- ============================================
+DO $$
+BEGIN
+    -- Убираем глобальный UNIQUE(prefix): один тикер может быть у акции и фьючерса
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'security_prefixes_prefix_key'
+          AND conrelid = 'security_prefixes'::regclass
+    ) THEN
+        ALTER TABLE security_prefixes DROP CONSTRAINT security_prefixes_prefix_key;
+    END IF;
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+END $$;
+
+-- ============================================
+-- Таблица: security_types (типы ценных бумаг)
+-- ============================================
+CREATE TABLE IF NOT EXISTS security_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+
+INSERT INTO security_types (name) VALUES
+    ('Stock'),
+    ('Bond'),
+    ('Futures'),
+    ('Options'),
+    ('ETF'),
+    ('CFD'),
+    ('Warrant'),
+    ('Swap'),
+    ('Commodity'),
+    ('Index'),
+    ('Forex'),
+    ('MutualFund'),
+    ('PreferredStock'),
+    ('ConvertibleBond')
+ON CONFLICT (name) DO NOTHING;
+
+ALTER TABLE security_types DROP COLUMN IF EXISTS note;
+
+COMMENT ON TABLE security_types IS 'Таблица типов ценных бумаг';
+
+-- ============================================
+-- Таблица: exchanges (торговые площадки)
+-- ============================================
+CREATE TABLE IF NOT EXISTS exchanges (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+
+INSERT INTO exchanges (name) VALUES ('MOEX'), ('SPB')
+ON CONFLICT (name) DO NOTHING;
+
+COMMENT ON TABLE exchanges IS 'Таблица торговых площадок';
+
+-- ============================================
+-- Таблица: securities (ценные бумаги)
+-- ============================================
+CREATE TABLE IF NOT EXISTS securities (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    security_type_id INTEGER REFERENCES security_types(id),
+    lot_size INTEGER NOT NULL DEFAULT 1 CHECK (lot_size >= 1)
+);
+
+ALTER TABLE securities ADD COLUMN IF NOT EXISTS lot_size INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE securities DROP CONSTRAINT IF EXISTS securities_lot_size_check;
+ALTER TABLE securities ADD CONSTRAINT securities_lot_size_check CHECK (lot_size >= 1);
+
+COMMENT ON COLUMN securities.lot_size IS 'Лотность: минимальный шаг объёма сделки в штуках (MOEX TQBR)';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_securities_name_unique ON securities(name);
+
+COMMENT ON TABLE securities IS 'Таблица ценных бумаг';
+
+-- ============================================
+-- Таблица: security_prefixes (тикеры на площадках)
+-- ============================================
+-- Решение для одинаковых тикеров (VTBR, LKOH у акции и фьючерса):
+--   • UNIQUE(security_id, exchange_id) — одна запись на инструмент и биржу
+--   • instrument_market — рынок: stock / futures / bonds / index
+--   • prefix — тикер MOEX; у акции и фьючерса может совпадать
+--   • tbank_figi — FIGI для T-Bank API (для акций заполняется, для фьючерсов — в futures_expirations)
+-- ============================================
+CREATE TABLE IF NOT EXISTS security_prefixes (
+    id SERIAL PRIMARY KEY,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    exchange_id INTEGER NOT NULL REFERENCES exchanges(id) ON DELETE CASCADE,
+    prefix VARCHAR(50) NOT NULL,
+    instrument_market VARCHAR(20) NOT NULL DEFAULT 'stock'
+        CHECK (instrument_market IN ('stock', 'futures', 'bonds', 'index', 'other')),
+    tbank_figi VARCHAR(50),
+    note VARCHAR(200)
+);
+
+UPDATE security_prefixes SET instrument_market = 'stock' WHERE instrument_market IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_security_prefixes_security_exchange
+    ON security_prefixes(security_id, exchange_id);
+CREATE INDEX IF NOT EXISTS idx_security_prefixes_prefix
+    ON security_prefixes(exchange_id, prefix, instrument_market);
+
+COMMENT ON TABLE security_prefixes IS 'Тикеры на торговых площадках; акция и фьючерс различаются security_id и instrument_market';
+COMMENT ON COLUMN security_prefixes.instrument_market IS 'Рынок: stock, futures, bonds, index — различает VTBR-акцию и VTBR-фьючерс';
+COMMENT ON COLUMN security_prefixes.tbank_figi IS 'FIGI инструмента в T-Bank Invest API';
+
+-- ============================================
+-- Справочник: 34 акции ММВБ
+-- ============================================
+INSERT INTO securities (name, security_type_id)
+SELECT v.name, st.id
+FROM (VALUES
+    ('Сбербанк (обыкновенные)', 'Stock'),
+    ('Сбербанк (привилегированные)', 'PreferredStock'),
+    ('Газпром', 'Stock'),
+    ('ЛУКОЙЛ', 'Stock'),
+    ('Роснефть', 'Stock'),
+    ('НОВАТЭК', 'Stock'),
+    ('Норникель', 'Stock'),
+    ('Татнефть (обыкновенные)', 'Stock'),
+    ('Татнефть (привилегированные)', 'PreferredStock'),
+    ('Сургутнефтегаз (обыкновенные)', 'Stock'),
+    ('Сургутнефтегаз (привилегированные)', 'PreferredStock'),
+    ('Полюс', 'Stock'),
+    ('Алроса', 'Stock'),
+    ('Северсталь', 'Stock'),
+    ('НЛМК', 'Stock'),
+    ('ММК', 'Stock'),
+    ('Мечел (обыкновенные)', 'Stock'),
+    ('Мечел (привилегированные)', 'PreferredStock'),
+    ('Магнит', 'Stock'),
+    ('МТС', 'Stock'),
+    ('ВТБ', 'Stock'),
+    ('РУСАЛ', 'Stock'),
+    ('РусГидро', 'Stock'),
+    ('Интер РАО', 'Stock'),
+    ('ФСК-Россети', 'Stock'),
+    ('Транснефть (привилегированные)', 'PreferredStock'),
+    ('Юнипро', 'Stock'),
+    ('Московская биржа', 'Stock'),
+    ('Ростелеком', 'Stock'),
+    ('Яндекс', 'Stock'),
+    ('Аэрофлот', 'Stock'),
+    ('Совкомфлот', 'Stock'),
+    ('ФосАгро', 'Stock'),
+    ('АФК Система', 'Stock')
+) AS v(name, type_name)
+JOIN security_types st ON st.name = v.type_name
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================
+-- Справочник: 20 фьючерсов ММВБ
+-- ============================================
+INSERT INTO securities (name, security_type_id)
+SELECT v.name, st.id
+FROM (VALUES
+    ('USD/RUB (доллар/рубль)', 'Futures'),
+    ('EUR/RUB (евро/рубль)', 'Futures'),
+    ('CNY/RUB (юань/рубль)', 'Futures'),
+    ('CNY/RUB вечный фьючерс', 'Futures'),
+    ('USD/RUB вечный фьючерс', 'Futures'),
+    ('Природный газ', 'Futures'),
+    ('Нефть Brent', 'Futures'),
+    ('Золото (USD)', 'Futures'),
+    ('Серебро (USD)', 'Futures'),
+    ('Золото (рублевый)', 'Futures'),
+    ('Золото вечный фьючерс', 'Futures'),
+    ('Сбербанк (фьючерс на акции)', 'Futures'),
+    ('ВТБ (фьючерс на акции)', 'Futures'),
+    ('Газпром (фьючерс на акции)', 'Futures'),
+    ('ЛУКОЙЛ (фьючерс на акции)', 'Futures'),
+    ('Индекс Мосбиржи (IMOEX)', 'Futures'),
+    ('Индекс РТС', 'Futures'),
+    ('Индекс Мосбиржи (дневной фьючерс)', 'Futures'),
+    ('Серебро (квартальный)', 'Futures'),
+    ('Золото (квартальный)', 'Futures')
+) AS v(name, type_name)
+JOIN security_types st ON st.name = v.type_name
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================
+-- Префиксы ММВБ (exchange MOEX = id 1)
+-- instrument_market отделяет акцию от фьючерса при одинаковом prefix
+-- ============================================
+INSERT INTO security_prefixes (security_id, exchange_id, prefix, instrument_market, tbank_figi, note)
+SELECT s.id, e.id, v.prefix, v.instrument_market, v.tbank_figi, v.note
+FROM exchanges e
+CROSS JOIN (VALUES
+    ('Сбербанк (обыкновенные)', 'SBER', 'stock', 'BBG004730N88', 'Акция MOEX TQBR'),
+    ('Сбербанк (привилегированные)', 'SBERP', 'stock', 'BBG0047315Y7', NULL),
+    ('Газпром', 'GAZP', 'stock', 'BBG004730RP0', NULL),
+    ('ЛУКОЙЛ', 'LKOH', 'stock', 'BBG004731032', 'Акция; тикер LKOH'),
+    ('Роснефть', 'ROSN', 'stock', 'BBG004731354', NULL),
+    ('НОВАТЭК', 'NVTK', 'stock', 'BBG00475KKY8', NULL),
+    ('Норникель', 'GMKN', 'stock', 'BBG004731489', NULL),
+    ('Татнефть (обыкновенные)', 'TATN', 'stock', 'BBG004RVFFC0', NULL),
+    ('Татнефть (привилегированные)', 'TATNP', 'stock', 'BBG004S681W1', NULL),
+    ('Сургутнефтегаз (обыкновенные)', 'SNGS', 'stock', 'BBG0047315D0', NULL),
+    ('Сургутнефтегаз (привилегированные)', 'SNGSP', 'stock', 'BBG004S681M2', NULL),
+    ('Полюс', 'PLZL', 'stock', 'BBG000R607Y3', NULL),
+    ('Алроса', 'ALRS', 'stock', 'BBG004S68B31', NULL),
+    ('Северсталь', 'CHMF', 'stock', 'BBG00475KHX6', NULL),
+    ('НЛМК', 'NLMK', 'stock', 'BBG004S681BH', NULL),
+    ('ММК', 'MAGN', 'stock', 'BBG004S68507', NULL),
+    ('Мечел (обыкновенные)', 'MTLR', 'stock', 'BBG004S68598', NULL),
+    ('Мечел (привилегированные)', 'MTLRP', 'stock', 'BBG004S686N0', NULL),
+    ('Магнит', 'MGNT', 'stock', 'BBG004RVFCY3', NULL),
+    ('МТС', 'MTSS', 'stock', 'BBG004S681W1', NULL),
+    ('ВТБ', 'VTBR', 'stock', 'BBG004730ZJ9', 'Акция; тикер VTBR'),
+    ('РУСАЛ', 'RUAL', 'stock', 'BBG008F2T3T2', NULL),
+    ('РусГидро', 'HYDR', 'stock', 'BBG00475K2X9', NULL),
+    ('Интер РАО', 'IRAO', 'stock', 'BBG004S68473', NULL),
+    ('ФСК-Россети', 'FEES', 'stock', 'BBG00475JZZ6', NULL),
+    ('Транснефть (привилегированные)', 'TRNFP', 'stock', 'BBG00475KHX6', NULL),
+    ('Юнипро', 'UPRO', 'stock', 'BBG004S686W0', NULL),
+    ('Московская биржа', 'MOEX', 'stock', 'BBG004730JJ5', NULL),
+    ('Ростелеком', 'RTKM', 'stock', 'BBG004S682Z6', NULL),
+    ('Яндекс', 'YDEX', 'stock', NULL, NULL),
+    ('Аэрофлот', 'AFLT', 'stock', 'BBG004S683W7', NULL),
+    ('Совкомфлот', 'FLOT', 'stock', NULL, NULL),
+    ('ФосАгро', 'PHOR', 'stock', 'BBG004S689R0', NULL),
+    ('АФК Система', 'AFKS', 'stock', 'BBG004S68614', NULL),
+    ('USD/RUB (доллар/рубль)', 'Si', 'futures', NULL, 'Базовый код MOEX FORTS'),
+    ('EUR/RUB (евро/рубль)', 'Eu', 'futures', NULL, NULL),
+    ('CNY/RUB (юань/рубль)', 'CR', 'futures', NULL, NULL),
+    ('CNY/RUB вечный фьючерс', 'CNYRUBF', 'futures', NULL, 'Вечный фьючерс'),
+    ('USD/RUB вечный фьючерс', 'USDRUBF', 'futures', NULL, 'Вечный фьючерс'),
+    ('Природный газ', 'NG', 'futures', NULL, NULL),
+    ('Нефть Brent', 'Br', 'futures', NULL, NULL),
+    ('Золото (USD)', 'GD', 'futures', NULL, NULL),
+    ('Серебро (USD)', 'SV', 'futures', NULL, NULL),
+    ('Золото (рублевый)', 'GL', 'futures', NULL, NULL),
+    ('Золото вечный фьючерс', 'GLDRUBF', 'futures', NULL, NULL),
+    ('Сбербанк (фьючерс на акции)', 'SBRF', 'futures', NULL, 'Фьючерс MOEX FORTS'),
+    ('ВТБ (фьючерс на акции)', 'VTBR', 'futures', NULL, 'Фьючерс; тот же prefix, другой security_id'),
+    ('Газпром (фьючерс на акции)', 'GAZR', 'futures', NULL, NULL),
+    ('ЛУКОЙЛ (фьючерс на акции)', 'LKOH', 'futures', NULL, 'Фьючерс; тот же prefix, другой security_id'),
+    ('Индекс Мосбиржи (IMOEX)', 'MX', 'futures', NULL, NULL),
+    ('Индекс РТС', 'RI', 'futures', NULL, NULL),
+    ('Индекс Мосбиржи (дневной фьючерс)', 'IMOEXF', 'futures', NULL, NULL),
+    ('Серебро (квартальный)', 'SILV', 'futures', NULL, NULL),
+    ('Золото (квартальный)', 'GOLD', 'futures', NULL, NULL)
+) AS v(security_name, prefix, instrument_market, tbank_figi, note)
+JOIN securities s ON s.name = v.security_name
+WHERE e.name = 'MOEX'
+ON CONFLICT (security_id, exchange_id) DO UPDATE SET
+    prefix = EXCLUDED.prefix,
+    instrument_market = EXCLUDED.instrument_market,
+    tbank_figi = COALESCE(EXCLUDED.tbank_figi, security_prefixes.tbank_figi),
+    note = EXCLUDED.note;
+
+-- Лотность акций MOEX (штук в лоте TQBR; фьючерсы — 1 контракт)
+UPDATE securities s
+SET lot_size = v.lot
+FROM security_prefixes sp
+JOIN exchanges e ON e.id = sp.exchange_id
+JOIN (VALUES
+    ('SBER', 10), ('SBERP', 10), ('GAZP', 10), ('LKOH', 10),
+    ('ROSN', 10), ('NVTK', 10), ('GMKN', 10), ('TATN', 10), ('TATNP', 10),
+    ('PLZL', 10), ('ALRS', 10), ('CHMF', 10), ('NLMK', 10), ('MAGN', 10),
+    ('MTLR', 10), ('MTLRP', 10), ('MGNT', 10), ('MTSS', 10), ('RUAL', 10),
+    ('HYDR', 10), ('PHOR', 10), ('MOEX', 10), ('TRNFP', 10), ('UPRO', 10),
+    ('SNGS', 1), ('SNGSP', 1), ('VTBR', 1), ('IRAO', 1), ('FEES', 1),
+    ('RTKM', 1), ('YDEX', 1), ('AFLT', 1), ('FLOT', 1), ('AFKS', 1)
+) AS v(prefix, lot) ON sp.prefix = v.prefix
+WHERE s.id = sp.security_id
+  AND e.name = 'MOEX'
+  AND sp.instrument_market = 'stock';
+
+-- ============================================
+-- Таблица: timeframes (таймфреймы)
+-- ============================================
+CREATE TABLE IF NOT EXISTS timeframes (
+    id SERIAL PRIMARY KEY,
+    tf VARCHAR(20) NOT NULL UNIQUE,
+    full_name VARCHAR(50) NOT NULL,
+    sec INTEGER NOT NULL CHECK (sec > 0),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+INSERT INTO timeframes (tf, full_name, sec, is_active) VALUES
+    ('M1', '1 минута', 60, TRUE), ('M2', '2 минуты', 120, TRUE), ('M3', '3 минуты', 180, TRUE),
+    ('M5', '5 минут', 300, TRUE), ('M10', '10 минут', 600, TRUE), ('M15', '15 минут', 900, TRUE),
+    ('M20', '20 минут', 1200, TRUE), ('M30', '30 минут', 1800, TRUE),
+    ('H1', '1 час', 3600, TRUE), ('H2', '2 часа', 7200, TRUE), ('H4', '4 часа', 14400, TRUE),
+    ('H6', '6 часов', 21600, TRUE), ('H8', '8 часов', 28800, TRUE), ('H12', '12 часов', 43200, TRUE),
+    ('D1', '1 день', 86400, TRUE), ('D2', '2 дня', 172800, TRUE), ('D3', '3 дня', 259200, TRUE),
+    ('W1', '1 неделя', 604800, TRUE), ('W2', '2 недели', 1209600, TRUE), ('W3', '3 недели', 1814400, TRUE),
+    ('MN1', '1 месяц', 2592000, TRUE), ('MN2', '2 месяца', 5184000, TRUE), ('MN3', '3 месяца', 7776000, TRUE),
+    ('MN6', '6 месяцев', 15552000, TRUE), ('Y1', '1 год', 31536000, TRUE)
+ON CONFLICT (tf) DO UPDATE SET
+    full_name = EXCLUDED.full_name,
+    sec = EXCLUDED.sec,
+    is_active = EXCLUDED.is_active;
+
+COMMENT ON TABLE timeframes IS 'Таблица таймфреймов';
+COMMENT ON COLUMN timeframes.is_active IS 'Использовать при массовой загрузке load_all_timeframes*';
+
+-- ============================================
+-- Таблица: brokers (брокеры)
+-- ============================================
+CREATE TABLE IF NOT EXISTS brokers (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    api_url VARCHAR(255),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+ALTER TABLE brokers DROP COLUMN IF EXISTS created_at;
+
+INSERT INTO brokers (code, name, api_url) VALUES
+    ('T-BANK', 'T-Bank (Т-Банк)', 'https://invest-public-api.tinkoff.ru/rest')
+ON CONFLICT (code) DO NOTHING;
+
+-- ============================================
+-- Таблица: accounts (счета)
+-- ============================================
+CREATE TABLE IF NOT EXISTS accounts (
+    id SERIAL PRIMARY KEY,
+    broker_id INTEGER NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    account_code VARCHAR(100) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    account_type VARCHAR(20) NOT NULL CHECK (account_type IN ('real', 'fake')),
+    is_efficient BOOLEAN NOT NULL DEFAULT FALSE,
+    token_encrypted TEXT,
+    token_hash VARCHAR(64),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE accounts DROP COLUMN IF EXISTS created_at;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_broker_account_code ON accounts(broker_id, account_code);
+
+INSERT INTO accounts (broker_id, account_code, name, account_type, is_efficient, token_encrypted, token_hash)
+SELECT b.id, 'FAKE-EFF-001', 'Демо-счет T-Bank (эффективный)', 'fake', TRUE, NULL, NULL
+FROM brokers b WHERE b.code = 'T-BANK'
+ON CONFLICT (broker_id, account_code) DO NOTHING;
+
+-- ============================================
+-- Таблица: prices (цены OHLCV)
+-- ============================================
+CREATE TABLE IF NOT EXISTS prices (
+    id BIGSERIAL PRIMARY KEY,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    dt TIMESTAMP NOT NULL,
+    open_price NUMERIC(18, 6) NOT NULL,
+    high_price NUMERIC(18, 6) NOT NULL,
+    low_price NUMERIC(18, 6) NOT NULL,
+    close_price NUMERIC(18, 6) NOT NULL,
+    volume NUMERIC(20, 2),
+    value NUMERIC(20, 2),
+    contract_prefix VARCHAR(50)
+);
+
+-- Существующие БД: CREATE TABLE IF NOT EXISTS не добавляет новые колонки
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS contract_prefix VARCHAR(50);
+ALTER TABLE prices DROP COLUMN IF EXISTS trades;
+ALTER TABLE prices DROP COLUMN IF EXISTS created_at;
+
+CREATE INDEX IF NOT EXISTS idx_prices_security_id ON prices(security_id);
+CREATE INDEX IF NOT EXISTS idx_prices_timeframe_id ON prices(timeframe_id);
+CREATE INDEX IF NOT EXISTS idx_prices_dt ON prices(dt);
+CREATE INDEX IF NOT EXISTS idx_prices_security_timeframe ON prices(security_id, timeframe_id);
+CREATE INDEX IF NOT EXISTS idx_prices_security_timeframe_dt ON prices(security_id, timeframe_id, dt);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_unique_candle ON prices(security_id, timeframe_id, dt);
+CREATE INDEX IF NOT EXISTS idx_prices_contract_prefix ON prices(contract_prefix)
+    WHERE contract_prefix IS NOT NULL;
+
+COMMENT ON TABLE prices IS 'Таблица цен (OHLCV)';
+COMMENT ON COLUMN prices.contract_prefix IS 'Тикер конкретного контракта (Si-6.26); NULL для акций. Групповой префикс — в security_prefixes.prefix';
+
+-- ============================================
+-- Таблица: parameter_types (типы параметров)
+-- ============================================
+CREATE TABLE IF NOT EXISTS parameter_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    short_name VARCHAR(20) NOT NULL UNIQUE,
+    value_type VARCHAR(20) NOT NULL,
+    default_value TEXT
+);
+
+ALTER TABLE parameter_types DROP COLUMN IF EXISTS is_control;
+ALTER TABLE parameter_types DROP COLUMN IF EXISTS is_fake_only;
+ALTER TABLE parameter_types DROP COLUMN IF EXISTS description;
+ALTER TABLE parameter_types DROP COLUMN IF EXISTS min_value;
+ALTER TABLE parameter_types DROP COLUMN IF EXISTS max_value;
+ALTER TABLE parameter_types DROP COLUMN IF EXISTS created_at;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parameter_types_short_name ON parameter_types(short_name);
+
+INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
+    ('RSI период', 'RSI_PERIOD', 'integer', '14'),
+    ('SMA период', 'SMA_PERIOD', 'integer', '20'),
+    ('EMA период', 'EMA_PERIOD', 'integer', '20'),
+    ('BB период', 'BB_PERIOD', 'integer', '20'),
+    ('ATR период', 'ATR_PERIOD', 'integer', '14'),
+    ('STOCH период K', 'STOCH_PERIOD', 'integer', '14'),
+    ('T-Bank API токен', 'TBANK_API_TOKEN', 'secret', ''),
+    ('Техническое логирование', 'APP_TECH_LOGGING', 'boolean', '0'),
+    ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', '')
+ON CONFLICT (short_name) DO NOTHING;
+
+-- ============================================
+-- Таблица: parameter_sets (наборы параметров)
+-- ============================================
+CREATE TABLE IF NOT EXISTS parameter_sets (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+ALTER TABLE parameter_sets DROP COLUMN IF EXISTS description;
+ALTER TABLE parameter_sets DROP COLUMN IF EXISTS is_active;
+ALTER TABLE parameter_sets DROP COLUMN IF EXISTS created_at;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parameter_sets_name ON parameter_sets(name);
+
+INSERT INTO parameter_sets (name) VALUES
+    ('Default')
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================
+-- Таблица: parameter_values (значения параметров)
+-- ============================================
+CREATE TABLE IF NOT EXISTS parameter_values (
+    id SERIAL PRIMARY KEY,
+    parameter_set_id INTEGER NOT NULL REFERENCES parameter_sets(id) ON DELETE CASCADE,
+    parameter_type_id INTEGER NOT NULL REFERENCES parameter_types(id) ON DELETE CASCADE,
+    value TEXT NOT NULL
+);
+
+ALTER TABLE parameter_values DROP COLUMN IF EXISTS record_date;
+ALTER TABLE parameter_values DROP COLUMN IF EXISTS created_at;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parameter_values_unique ON parameter_values(parameter_set_id, parameter_type_id);
+
+INSERT INTO parameter_values (parameter_set_id, parameter_type_id, value)
+SELECT ps.id, pt.id, pt.default_value
+FROM parameter_sets ps
+CROSS JOIN parameter_types pt
+WHERE ps.name = 'Default'
+ON CONFLICT (parameter_set_id, parameter_type_id) DO NOTHING;
+
+INSERT INTO parameter_values (parameter_set_id, parameter_type_id, value)
+SELECT ps.id, pt.id, ''
+FROM parameter_sets ps
+JOIN parameter_types pt ON pt.short_name = 'TBANK_API_TOKEN'
+WHERE ps.name = 'Default'
+ON CONFLICT (parameter_set_id, parameter_type_id) DO NOTHING;
+
+-- ============================================
+-- Таблица: indicators (справочник индикаторов)
+-- ============================================
+CREATE TABLE IF NOT EXISTS indicators (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(20) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    -- Шаблон вызова функции расчёта (EXECUTE в PostgreSQL / EXECUTE IMMEDIATE в Oracle).
+    -- Плейсхолдеры :period, :fast_period, :series, :security_id, :timeframe_id, :dt, :indicator_id и др.
+    -- :series — код серии из indicator_value_types (RSI, MACD, UPPER, …).
+    script TEXT,
+    -- Многочленная формула для массивного расчёта (sync / calc_poly_formula_array):
+    -- pp, sma(pp), pp * (1;-2;1), @RSI, sma() * sma() * sma() и т.д.
+    formula TEXT,
+    is_custom BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Подробное описание: полное название, расчёт, сигналы, применение (многострочный TEXT).
+    description TEXT,
+    category VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON COLUMN indicators.script IS
+'Устаревший per-bar шаблон SELECT calc_ind_*(…). Для новых индикаторов — поле formula.';
+
+COMMENT ON COLUMN indicators.formula IS
+'Многочленная формула массивного расчёта: pp, sma, @SMA, pp * (1;-2;1). Код индикатора (SMA, RSI) = ссылка @CODE в других формулах.';
+
+COMMENT ON COLUMN indicators.is_custom IS
+'TRUE — пользовательская/составная формула (подсветка в списке индикаторов).';
+
+COMMENT ON COLUMN indicators.description IS
+'Справочное описание: полное наименование, расчёт, типичные сигналы и область применения.';
+
+INSERT INTO indicators (code, name, description, category) VALUES
+    ('SMA', 'Simple Moving Average', 'Простое скользящее среднее', 'trend'),
+    ('EMA', 'Exponential Moving Average', 'Экспоненциальное скользящее среднее', 'trend'),
+    ('WMA', 'Weighted Moving Average', 'Взвешенное скользящее среднее', 'trend'),
+    ('RSI', 'Relative Strength Index', 'Индекс относительной силы (0-100)', 'momentum'),
+    ('MACD', 'Moving Average Convergence Divergence', 'Схождение/расхождение скользящих средних', 'momentum'),
+    ('STOCH', 'Stochastic Oscillator', 'Стохастический осциллятор (%K, %D)', 'momentum'),
+    ('BB', 'Bollinger Bands', 'Полосы Боллинджера', 'volatility'),
+    ('ATR', 'Average True Range', 'Средний истинный диапазон', 'volatility'),
+    ('PACC', 'Price Acceleration', 'Ускорение цены', 'momentum'),
+    ('ADX', 'Average Directional Index', 'Индекс среднего направления', 'trend'),
+    ('OBV', 'On-Balance Volume', 'Накопленный объем', 'volume'),
+    ('VWAP', 'Volume Weighted Average Price', 'Объемно-взвешенная средняя цена', 'volume'),
+    ('MFI', 'Money Flow Index', 'Индекс денежного потока', 'momentum'),
+    ('CCI', 'Commodity Channel Index', 'Индекс товарного канала', 'momentum'),
+    ('WILLR', 'Williams %R', 'Процентный диапазон Вильямса', 'momentum'),
+    ('PSAR', 'Parabolic SAR', 'Параболическая система SAR', 'trend'),
+    ('ICHIMOKU', 'Ichimoku Cloud', 'Облако Ишимоку', 'trend'),
+    ('KDJ', 'KDJ Indicator', 'Индикатор KDJ', 'momentum'),
+    ('DMI', 'Directional Movement Index', 'Индекс направленного движения', 'trend'),
+    ('KELTNER', 'Keltner Channels', 'Каналы Кельтнера', 'volatility'),
+    ('DONCHIAN', 'Donchian Channels', 'Каналы Дончиана', 'volatility'),
+    ('ROC', 'Rate of Change', 'Темп изменения', 'momentum'),
+    ('TRIX', 'Triple Exponential Average', 'Тройное экспоненциальное среднее', 'momentum'),
+    ('CMO', 'Chande Momentum Oscillator', 'Осциллятор моментума Чанде', 'momentum'),
+    ('RVI', 'Relative Vigor Index', 'Индекс относительной бодрости', 'momentum'),
+    ('TSI', 'True Strength Index', 'Индекс истинной силы', 'momentum'),
+    ('UO', 'Ultimate Oscillator', 'Ультимативный осциллятор', 'momentum'),
+    ('AROON', 'Aroon Indicator', 'Индикатор Арун', 'trend'),
+    ('SAR', 'Stop And Reverse', 'Стоп и реверс', 'trend'),
+    ('HMA', 'Hull Moving Average', 'Скользящее среднее Халла', 'trend'),
+    ('ZLEMA', 'Zero Lag EMA', 'EMA с нулевым запаздыванием', 'trend'),
+    ('SMAT3', 'SMA Triple', 'Тройное SMA (тройная свёртка)', 'trend'),
+    ('LINREG', 'Linear Regression Channel', 'Канал линейной регрессии (mid ± Dev·σ остатков)', 'trend')
+ON CONFLICT (code) DO NOTHING;
+
+-- Шаблоны расчёта (функция + параметры; :series подставляется для каждой линии индикатора)
+UPDATE indicators SET script = 'SELECT calc_ind_rsi(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'RSI';
+UPDATE indicators SET script = 'SELECT calc_ind_sma(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'SMA';
+UPDATE indicators SET script = 'SELECT calc_ind_ema(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'EMA';
+UPDATE indicators SET script = 'SELECT calc_ind_macd(:fast_period, :slow_period, :signal_period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'MACD';
+UPDATE indicators SET script = 'SELECT calc_ind_bb(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'BB';
+UPDATE indicators SET script = 'SELECT calc_ind_atr(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ATR';
+UPDATE indicators SET script = 'SELECT calc_ind_stoch(:k_period, :d_period, :smooth, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'STOCH';
+UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'CCI';
+UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
+UPDATE indicators SET script = 'SELECT calc_ind_linreg(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREG';
+
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS formula TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS is_custom BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_trend_def TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_ct_def TEXT;
+-- Профиль шаблонов сигнала: какие двоичные смыслы «по течению / против» типичны для индикатора
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_profile VARCHAR(20);
+
+COMMENT ON COLUMN indicators.sig_trend_def IS
+'Шаблон follow («по течению»): пробой/импульс/бычья половина. В logic_indicator_signals.signal_kind=trend';
+
+COMMENT ON COLUMN indicators.sig_ct_def IS
+'Шаблон fade («против»): возврат от края/перепроданность. В logic_indicator_signals.signal_kind=counter';
+
+COMMENT ON COLUMN indicators.sig_profile IS
+'Как читать двоичность follow/fade: trend_line | oscillator | channel | zero_line | strength | volume';
+
+-- Многочленные формулы (массивный расчёт — единый парсер, без SELECT)
+UPDATE indicators SET formula = 'sma', is_custom = FALSE WHERE code = 'SMA';
+UPDATE indicators SET formula = 'ema', is_custom = FALSE WHERE code = 'EMA';
+UPDATE indicators SET formula = 'pp * (1; -2; 1)', is_custom = TRUE WHERE code = 'PACC';
+UPDATE indicators SET formula = 'sma(period=20, series=VALUE) * sma(period=20, series=VALUE) * sma(period=20, series=VALUE)', is_custom = TRUE WHERE code = 'SMAT3';
+-- Как у STOCH/ATR/MACD: пустая formula → calc_indicator_series_array / calc_ind_*_array (не poly)
+UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code IN ('CCI', 'ADX', 'LINREG', 'ATR', 'STOCH', 'MACD', 'BB', 'RSI');
+
+-- Профили + шаблоны follow(trend) / fade(counter)
+-- trend_line: цена относительно линии
+UPDATE indicators SET
+    sig_profile = 'trend_line',
+    sig_trend_def = 'pp > VALUE',
+    sig_ct_def = 'pp < VALUE'
+WHERE code IN ('SMA', 'EMA', 'WMA', 'HMA', 'ZLEMA', 'SMAT3', 'ICHIMOKU', 'PSAR', 'SAR', 'LINREG');
+
+-- oscillator 0..100: follow = бычья половина / кросс; fade = зона перепроданности
+UPDATE indicators SET
+    sig_profile = 'oscillator',
+    sig_trend_def = 'VALUE > 50',
+    sig_ct_def = 'VALUE < 30'
+WHERE code IN ('RSI', 'CCI', 'CMO', 'MFI', 'WILLR', 'UO', 'RVI', 'ROC', 'TRIX', 'TSI', 'KDJ');
+
+UPDATE indicators SET
+    sig_profile = 'oscillator',
+    sig_trend_def = 'K > D',
+    sig_ct_def = 'K < 20'
+WHERE code = 'STOCH';
+
+-- channel: follow = пробой верхней (breakout up); fade = цена у нижней (reversion long-zone)
+UPDATE indicators SET
+    sig_profile = 'channel',
+    sig_trend_def = 'pp > UPPER',
+    sig_ct_def = 'pp < LOWER'
+WHERE code IN ('BB', 'KELTNER', 'DONCHIAN');
+
+-- zero_line: выше/ниже нуля
+UPDATE indicators SET
+    sig_profile = 'zero_line',
+    sig_trend_def = 'VALUE > 0',
+    sig_ct_def = 'VALUE < 0'
+WHERE code IN ('MACD', 'PACC', 'ATR', 'OBV', 'VWAP');
+
+UPDATE indicators SET sig_profile = 'volume' WHERE category = 'volume' AND sig_profile IS NULL;
+
+-- strength: сила тренда / направление
+UPDATE indicators SET
+    sig_profile = 'strength',
+    sig_trend_def = 'VALUE > 25',
+    sig_ct_def = 'VALUE < 20'
+WHERE code IN ('ADX', 'DMI');
+
+UPDATE indicators SET
+    sig_profile = 'strength',
+    sig_trend_def = 'UP > DOWN',
+    sig_ct_def = 'DOWN > UP'
+WHERE code = 'AROON';
+
+UPDATE indicators SET
+    sig_trend_def = COALESCE(sig_trend_def, 'VALUE > 50'),
+    sig_ct_def = COALESCE(sig_ct_def, 'VALUE < 50'),
+    sig_profile = COALESCE(sig_profile, 'oscillator')
+WHERE sig_trend_def IS NULL OR sig_ct_def IS NULL OR sig_profile IS NULL;
+
+-- Подробные описания индикаторов с функциями расчёта в PostgreSQL
+UPDATE indicators SET description = $desc$
+Relative Strength Index (RSI) — индекс относительной силы
+
+Расчёт: за период N (по умолчанию 14) суммируются приросты и падения цены закрытия; RS = средний прирост / среднее падение; RSI = 100 − 100/(1+RS). Значения в диапазоне 0–100.
+
+Сигналы: RSI выше 70 — зона перекупленности (риск коррекции вниз); ниже 30 — перепроданность (возможен отскок); пересечение уровня 50 — смена краткосрочного импульса; расхождение RSI и цены предупреждает о ослаблении тренда.
+
+Применение: фильтр входов в тренд и контртренд, оценка силы движения, тайминг на боковом рынке, комбинация с MA и объёмом.
+$desc$ WHERE code = 'RSI';
+
+UPDATE indicators SET description = $desc$
+Simple Moving Average (SMA) — простое скользящее среднее
+
+Расчёт: среднее арифметическое цен закрытия за последние N свечей (по умолчанию 20). Каждая свеча в окне имеет одинаковый вес.
+
+Сигналы: цена выше SMA — бычий фон, ниже — медвежий; пересечение цены и линии SMA — возможная смена краткосрочного тренда; наклон SMA показывает направление и силу тренда; несколько SMA разного периода дают «золотой/мёртвый крест».
+
+Применение: определение тренда, динамические уровни поддержки и сопротивления, trailing stop, база для MACD, полос Боллинджера и других индикаторов.
+$desc$ WHERE code = 'SMA';
+
+UPDATE indicators SET description = $desc$
+Exponential Moving Average (EMA) — экспоненциальное скользящее среднее
+
+Расчёт: рекурсивное сглаживание цены закрытия; последним свечам присваивается больший вес (множитель 2/(N+1), по умолчанию N=20). Быстрее реагирует на изменения, чем SMA.
+
+Сигналы: цена выше EMA — восходящий импульс, ниже — нисходящий; пересечение быстрой и медленной EMA — классический трендовый сигнал; резкий отрыв цены от EMA — перегрев движения.
+
+Применение: трендовые системы, основа MACD, фильтр направления сделок, короткие и среднесрочные стратегии на ликвидных инструментах.
+$desc$ WHERE code = 'EMA';
+
+UPDATE indicators SET description = $desc$
+Moving Average Convergence Divergence (MACD) — схождение/расхождение скользящих средних
+
+Расчёт: линия MACD = EMA(12) − EMA(26); сигнальная линия = EMA(9) от MACD; гистограмма = MACD − Signal. Серии: MACD, SIGNAL, HISTOGRAM, ZERO.
+
+Сигналы: пересечение MACD и Signal снизу вверх — бычий сигнал, сверху вниз — медвежий; гистограмма выше/ниже нуля подтверждает импульс; дивергенция MACD и цены — предупреждение о развороте; пересечение нулевой линии — смена доминирующего тренда.
+
+Применение: определение момента входа в тренд, подтверждение пробоев, фильтр для swing- и позиционной торговли, сочетание с RSI и объёмом.
+$desc$ WHERE code = 'MACD';
+
+UPDATE indicators SET description = $desc$
+Bollinger Bands (BB) — полосы Боллинджера
+
+Расчёт: средняя полоса = SMA(N), по умолчанию N=20; верхняя и нижняя = SMA ± k·σ (k=2 стандартных отклонения); bandwidth — относительная ширина канала. Серии: UPPER, MIDDLE, LOWER, BANDWIDTH.
+
+Сигналы: касание/пробой верхней полосы — перекупленность или сильный тренд; нижней — перепроданность или падение; сжатие полос (низкий bandwidth) — ожидание всплеска волатильности; «walking the bands» — устойчивый тренд вдоль границы.
+
+Применение: оценка волатильности, mean-reversion на боковике, подтверждение пробоев при расширении полос, постановка стопов относительно полос.
+$desc$ WHERE code = 'BB';
+
+UPDATE indicators SET description = $desc$
+Average True Range (ATR) — средний истинный диапазон
+
+Расчёт: True Range = max(High−Low, |High−Close_prev|, |Low−Close_prev|); ATR — сглаженное среднее TR за N периодов (Wilder, по умолчанию 14). ATR_PCT — ATR в процентах от цены.
+
+Сигналы: рост ATR — усиление волатильности и движения; падение ATR — затишье и сжатие; резкий скачок ATR после консолидации — начало импульса. Сам по себе не даёт направления buy/sell.
+
+Применение: расчёт стоп-лоссов и тейк-профитов в пунктах цены, sizing позиции, фильтр «достаточной» волатильности для входа, сравнение активности инструментов.
+$desc$ WHERE code = 'ATR';
+
+UPDATE indicators SET description = $desc$
+Stochastic Oscillator (STOCH) — стохастический осциллятор
+
+Расчёт: %K = (Close − Low_N) / (High_N − Low_N) × 100 за период N (по умолчанию 14); %D — SMA(%K) за 3 периода. Значения 0–100. Серии: K, D, пороги 80/20.
+
+Сигналы: %K и %D выше 80 — перекупленность; ниже 20 — перепроданность; пересечение %K и %D в зонах экстремумов — сигнал разворота; бычья/медвежья дивергенция с ценой — предупреждение о смене импульса.
+
+Применение: тайминг входа на коррекциях в тренде, скальпинг и intraday, комбинация с уровнями и трендовыми фильтрами (MA, ADX).
+$desc$ WHERE code = 'STOCH';
+
+UPDATE indicators SET description = $desc$
+Price Acceleration (PACC) — ускорение цены
+
+Расчёт: вторая разность цены закрытия — дискретный аналог второй производной по времени.
+Формула в терминах многочленов MultiLogic: pp * (1; -2; 1), где pp — ряд Close, оператор * — свёртка (см. MultiLogic PolynomialIndicators).
+На баре k: a_k = p_k − 2·p_{k−1} + p_{k−2}. Показывает, ускоряется или замедляется движение цены.
+
+Сигналы: смена знака ускорения — возможный разворот импульса; положительное ускорение на растущей цене — усиление тренда; отрицательное — замедление роста или усиление падения.
+
+Применение: фильтр импульса, подтверждение пробоев, оценка «кривизны» траектории цены; линия строится на шкале цены (как SMA).
+$desc$ WHERE code = 'PACC';
+
+UPDATE indicators SET description = $desc$
+SMA Triple (SMAT3) — тройная свёртка ряда SMA
+
+Расчёт: sma(period=20, series=VALUE) * … (трижды). В () — параметры: позиционно (20, VALUE) или period=20, series=VALUE; без () — дефолты серии на бумаге.
+S = sma(…), затем ((S * S) * S) с нормализацией при равной длине рядов.
+
+Сигналы: усиленное сглаживание на шкале цены; отлично от одинарного SMA.
+
+Применение: тройная свёртка многочленов; запись через * без скобок и без композиции.
+$desc$ WHERE code = 'SMAT3';
+
+-- SMAT3COMP удалён (композиция sma(sma(...)) не используется)
+
+-- ============================================
+-- Таблица: indicator_value_types (линии индикаторов)
+-- ============================================
+CREATE TABLE IF NOT EXISTS indicator_value_types (
+    id SERIAL PRIMARY KEY,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    code VARCHAR(20) NOT NULL,
+    name VARCHAR(50) NOT NULL,
+    value_type VARCHAR(20) NOT NULL DEFAULT 'float',
+    is_threshold BOOLEAN NOT NULL DEFAULT FALSE,
+    threshold_value NUMERIC(18, 6),
+    description TEXT,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_indicator_value_types_unique ON indicator_value_types(indicator_id, code);
+
+-- Типы значений (привязка по коду индикатора, не по id)
+INSERT INTO indicator_value_types (indicator_id, code, name, value_type, is_threshold, threshold_value, description, display_order)
+SELECT i.id, v.code, v.name, v.value_type, v.is_threshold, v.threshold_value, v.description, v.display_order
+FROM indicators i
+JOIN (VALUES
+    ('RSI', 'RSI', 'Значение RSI', 'float', FALSE, NULL, 'Основное значение RSI', 1),
+    ('RSI', 'OVERBOUGHT', 'Перекупленность', 'float', TRUE, 70, 'Порог перекупленности', 2),
+    ('RSI', 'OVERSOLD', 'Перепроданность', 'float', TRUE, 30, 'Порог перепроданности', 3),
+    ('RSI', 'NEUTRAL', 'Нейтральная зона', 'float', TRUE, 50, 'Нейтральный уровень', 4),
+    ('MACD', 'MACD', 'MACD линия', 'float', FALSE, NULL, 'Разница EMA', 1),
+    ('MACD', 'SIGNAL', 'Сигнальная линия', 'float', FALSE, NULL, 'Signal line', 2),
+    ('MACD', 'HISTOGRAM', 'Гистограмма', 'float', FALSE, NULL, 'MACD - Signal', 3),
+    ('MACD', 'ZERO', 'Нулевая линия', 'float', TRUE, 0, 'Нулевой уровень', 4),
+    ('STOCH', 'K', '%K линия', 'float', FALSE, NULL, 'Быстрая линия', 1),
+    ('STOCH', 'D', '%D линия', 'float', FALSE, NULL, 'Медленная линия', 2),
+    ('STOCH', 'OVERBOUGHT', 'Перекупленность', 'float', TRUE, 80, 'Порог 80', 3),
+    ('STOCH', 'OVERSOLD', 'Перепроданность', 'float', TRUE, 20, 'Порог 20', 4),
+    ('BB', 'UPPER', 'Верхняя полоса', 'float', FALSE, NULL, 'Upper band', 1),
+    ('BB', 'MIDDLE', 'Средняя полоса', 'float', FALSE, NULL, 'Middle band', 2),
+    ('BB', 'LOWER', 'Нижняя полоса', 'float', FALSE, NULL, 'Lower band', 3),
+    ('BB', 'BANDWIDTH', 'Ширина полос', 'float', FALSE, NULL, 'Bandwidth', 4),
+    ('ATR', 'ATR', 'Значение ATR', 'float', FALSE, NULL, 'ATR', 1),
+    ('ATR', 'ATR_PCT', 'ATR в процентах', 'float', FALSE, NULL, 'ATR %', 2),
+    ('ATR', 'GROWTH5', 'Рост ATR за 5 баров %', 'float', FALSE, NULL, 'Бывший GrOk: (ATR/ATR[-5]-1)*100', 3),
+    ('CCI', 'VALUE', 'Значение CCI', 'float', FALSE, NULL, 'CCI', 1),
+    ('ADX', 'ADX', 'Значение ADX', 'float', FALSE, NULL, 'ADX Wilder', 1),
+    ('ADX', 'PDI', '+DI', 'float', FALSE, NULL, 'Plus DI', 2),
+    ('ADX', 'MDI', '−DI', 'float', FALSE, NULL, 'Minus DI', 3),
+    ('LINREG', 'MIDDLE', 'Линия LinReg', 'float', FALSE, NULL, 'Середина канала', 1),
+    ('LINREG', 'UPPER', 'Верхняя граница', 'float', FALSE, NULL, 'mid + Dev·σ', 2),
+    ('LINREG', 'LOWER', 'Нижняя граница', 'float', FALSE, NULL, 'mid − Dev·σ', 3),
+    ('LINREG', 'SLOPE', 'Наклон LinReg', 'float', FALSE, NULL, 'Наклон регрессии', 4),
+    ('PACC', 'VALUE', 'Ускорение цены', 'float', FALSE, NULL, 'pp * (1;-2;1)', 1),
+    ('SMAT3', 'VALUE', 'SMA³ свёртка', 'float', FALSE, NULL, 'sma(period=20,series=VALUE)*3', 1),
+    ('SMA', 'VALUE', 'Значение MA', 'float', FALSE, NULL, 'SMA value', 1),
+    ('EMA', 'VALUE', 'Значение EMA', 'float', FALSE, NULL, 'EMA value', 1),
+    ('WMA', 'VALUE', 'Значение WMA', 'float', FALSE, NULL, 'WMA value', 1)
+) AS v(indicator_code, code, name, value_type, is_threshold, threshold_value, description, display_order)
+    ON i.code = v.indicator_code
+ON CONFLICT (indicator_id, code) DO NOTHING;
+
+-- ============================================
+-- Таблица: security_indicator_series (серии индикаторов на бумаге)
+-- Одна строка = одна линия на графике (серия) с формулой вызова calc_ind_*_array
+-- ============================================
+CREATE TABLE IF NOT EXISTS security_indicator_series (
+    id SERIAL PRIMARY KEY,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    series_code VARCHAR(20) NOT NULL,
+    invoke_formula TEXT NOT NULL,
+    param_period INTEGER,
+    param_fast_period INTEGER,
+    param_slow_period INTEGER,
+    param_signal_period INTEGER,
+    param_std_dev NUMERIC(10, 4) DEFAULT 2.0,
+    param_k_period INTEGER,
+    param_d_period INTEGER,
+    param_smooth INTEGER,
+    point_count INTEGER NOT NULL DEFAULT 100,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_security_indicator_series_unique
+    ON security_indicator_series(security_id, indicator_id, series_code);
+CREATE INDEX IF NOT EXISTS idx_security_indicator_series_security_id
+    ON security_indicator_series(security_id);
+CREATE INDEX IF NOT EXISTS idx_security_indicator_series_indicator_id
+    ON security_indicator_series(indicator_id);
+
+COMMENT ON TABLE security_indicator_series IS
+'Привязка серий индикатора к бумаге: invoke_formula — calc_ind_*_array(…) или многочленная формула (pp * (1;-2;1), @SMA, …)';
+
+-- Пример: SBER + STOCH, серии %K и %D с параметрами по умолчанию
+INSERT INTO security_indicator_series (
+    security_id, indicator_id, series_code, invoke_formula,
+    param_k_period, param_d_period, param_smooth, point_count, display_order
+)
+SELECT s.id, i.id, v.series_code, v.formula, 14, 3, 3, 100, v.ord
+FROM securities s
+JOIN security_prefixes sp ON sp.security_id = s.id AND sp.prefix = 'SBER'
+JOIN indicators i ON i.code = 'STOCH'
+CROSS JOIN (
+    VALUES
+        ('K', 'calc_ind_stoch_array(:param_k_period, :param_d_period, :param_smooth, :series, :security_id, :timeframe_id, :point_count, :end_dt)', 1),
+        ('D', 'calc_ind_stoch_array(:param_k_period, :param_d_period, :param_smooth, :series, :security_id, :timeframe_id, :point_count, :end_dt)', 2)
+) AS v(series_code, formula, ord)
+ON CONFLICT (security_id, indicator_id, series_code) DO NOTHING;
+
+-- Пример: SBER + PACC (ускорение цены), многочленная формула по умолчанию
+INSERT INTO security_indicator_series (
+    security_id, indicator_id, series_code, invoke_formula,
+    point_count, display_order
+)
+SELECT s.id, i.id, 'VALUE', 'pp * (1; -2; 1)', 100, 3
+FROM securities s
+JOIN security_prefixes sp ON sp.security_id = s.id AND sp.prefix = 'SBER'
+JOIN indicators i ON i.code = 'PACC'
+ON CONFLICT (security_id, indicator_id, series_code) DO NOTHING;
+
+-- ============================================
+-- Таблица: indicator_values (рассчитанные значения)
+-- ============================================
+CREATE TABLE IF NOT EXISTS indicator_values (
+    id BIGSERIAL PRIMARY KEY,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    indicator_value_type_id INTEGER NOT NULL REFERENCES indicator_value_types(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    dt TIMESTAMP NOT NULL,
+    value NUMERIC(18, 6)
+);
+
+ALTER TABLE indicator_values DROP COLUMN IF EXISTS is_signal;
+ALTER TABLE indicator_values DROP COLUMN IF EXISTS signal_type;
+ALTER TABLE indicator_values DROP COLUMN IF EXISTS created_at;
+
+CREATE INDEX IF NOT EXISTS idx_indicator_values_indicator_id ON indicator_values(indicator_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_values_security_id ON indicator_values(security_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_values_timeframe_id ON indicator_values(timeframe_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_values_dt ON indicator_values(dt);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_indicator_values_unique
+    ON indicator_values(indicator_id, indicator_value_type_id, security_id, timeframe_id, dt);
+
+-- ============================================
+-- Таблицы торговой логики (заготовка)
+-- logics — основная сущность: одна строка = одна торговля (трейд)
+-- ============================================
+CREATE TABLE IF NOT EXISTS logics (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    note TEXT
+);
+
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS note TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_logics_account_id ON logics(account_id);
+
+COMMENT ON TABLE logics IS 'Торговые логики: одна строка — одна торговля (трейд); параметры — в logic_params';
+COMMENT ON COLUMN logics.name IS 'Уникальное имя логики';
+COMMENT ON COLUMN logics.account_id IS 'Счёт (accounts), на котором выполняется эта торговля';
+COMMENT ON COLUMN logics.is_enabled IS 'Логика включена (активна) или выключена';
+COMMENT ON COLUMN logics.note IS 'Примечание: тип стратегии, источник (OsEngine и т.д.), комментарий в свободной форме';
+
+-- Пример: SMA Price Cross Demo (фейковый счёт T-Bank); параметры — в logic_params ниже
+INSERT INTO logics (name, account_id, is_enabled)
+SELECT
+    'SMA Price Cross Demo',
+    a.id,
+    FALSE
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================
+-- Параметры торговой логики (EAV: logic_param_defs + logic_params)
+-- ============================================
+CREATE TABLE IF NOT EXISTS logic_param_defs (
+    param_key VARCHAR(64) PRIMARY KEY,
+    name_ru VARCHAR(200) NOT NULL,
+    value_type VARCHAR(20) NOT NULL CHECK (value_type IN ('number', 'integer', 'money', 'boolean', 'text')),
+    default_value TEXT NOT NULL DEFAULT '',
+    description TEXT,
+    display_order INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order) VALUES
+    ('timeframe', 'Таймфрейм', 'text', 'M15',
+     'Таймфрейм цен, индикаторов и цикла сделок (M15, H1, D1 …)', 0),
+    ('position_size_pct', '% депозита на сделку', 'number', '10',
+     'Доля текущего остатка на одну покупку (1–100)', 1),
+    ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',
+     'Long/Short позиции по разным бумагам одновременно', 2),
+    ('initial_balance', 'Начальный остаток', 'money', '',
+     'Стартовый депозит бумажной торговли / эталон для расчёта лота', 3),
+    ('current_balance', 'Текущий остаток', 'money', '',
+     'Обновляется trade runner после симулированных сделок', 4),
+    ('commission_pct', '% комиссии от сделки', 'number', '0.03',
+     'Фейковый счёт: комиссия = цена × количество × % / 100 (на каждую сделку)', 5),
+    ('cost_method', 'Метод расчёта PnL', 'text', 'FIFO',
+     'FIFO — по очереди покупок; AVERAGE — по средней цене остатка', 6),
+    ('stop_loss_timeframe', 'Таймфрейм стоп-лосса', 'text', 'M5',
+     'TF для проверки стоп-лоссов (по умолчанию M5)', 7),
+    ('base_annual_rate_pct', 'Базовая ставка (% годовых)', 'number', '20',
+     'Порог для рейтинга сигнала: ход цены на следующей свече в годовых ≥ этой ставки', 8),
+    ('rating_lookback_days', 'Дней предрасчёта рейтинга', 'integer', '7',
+     'При включении боя: предрасчёт боевых рейтингов сигналов по свечам за N дней (фон)', 9),
+    ('inversion', 'Инверсия', 'boolean', 'false',
+     'Инверсия логики: условия наоборот (≥↔≤, >↔<) и сделки в противоположную сторону (Long↔Short)', 10),
+    ('last_stop_bar_dt', 'Последняя свеча стоп-лосса', 'text', '',
+     'Служебный: open time закрытой свечи TF стоп-лосса', 97),
+    ('last_trade_check_at', 'Последняя проверка сигналов', 'text', '',
+     'Служебный: время последнего run_trade_cycle (не редактировать)', 98),
+    ('last_trade_bar_dt', 'Последняя обработанная свеча', 'text', '',
+     'Служебный: open time закрытой свечи TF (не редактировать)', 99)
+ON CONFLICT (param_key) DO UPDATE SET
+    name_ru = EXCLUDED.name_ru,
+    value_type = EXCLUDED.value_type,
+    default_value = EXCLUDED.default_value,
+    description = EXCLUDED.description,
+    display_order = EXCLUDED.display_order;
+
+CREATE TABLE IF NOT EXISTS logic_params (
+    id SERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    param_key VARCHAR(64) NOT NULL REFERENCES logic_param_defs(param_key) ON DELETE RESTRICT,
+    param_value TEXT NOT NULL DEFAULT '',
+    value_type VARCHAR(20) NOT NULL CHECK (value_type IN ('number', 'integer', 'money', 'boolean', 'text')),
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (logic_id, param_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_logic_params_logic_id ON logic_params(logic_id);
+
+COMMENT ON TABLE logic_param_defs IS 'Справочник ключей параметров торговой логики';
+COMMENT ON TABLE logic_params IS 'Значения параметров logics: одна строка = один параметр одной логики';
+COMMENT ON COLUMN logic_params.param_key IS 'Имя параметра (ссылка на logic_param_defs)';
+COMMENT ON COLUMN logic_params.param_value IS 'Значение в текстовом виде';
+COMMENT ON COLUMN logic_params.value_type IS 'Тип значения: number | integer | money | boolean | text';
+
+-- v39: перенос из legacy-колонок logics (если ещё есть) → logic_params, затем DROP
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'logics' AND column_name = 'position_size_pct'
+    ) THEN
+        INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+        SELECT l.id, 'position_size_pct', l.position_size_pct::text, 'number'
+        FROM logics l
+        ON CONFLICT (logic_id, param_key) DO UPDATE SET
+            param_value = EXCLUDED.param_value,
+            updated_at = CURRENT_TIMESTAMP;
+
+        INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+        SELECT l.id, 'max_open_positions', l.max_open_positions::text, 'integer'
+        FROM logics l
+        ON CONFLICT (logic_id, param_key) DO UPDATE SET
+            param_value = EXCLUDED.param_value,
+            updated_at = CURRENT_TIMESTAMP;
+
+        INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+        SELECT l.id, 'initial_balance', l.initial_balance::text, 'money'
+        FROM logics l
+        WHERE l.initial_balance IS NOT NULL
+        ON CONFLICT (logic_id, param_key) DO UPDATE SET
+            param_value = EXCLUDED.param_value,
+            updated_at = CURRENT_TIMESTAMP;
+
+        INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+        SELECT l.id, 'current_balance', l.current_balance::text, 'money'
+        FROM logics l
+        WHERE l.current_balance IS NOT NULL
+        ON CONFLICT (logic_id, param_key) DO UPDATE SET
+            param_value = EXCLUDED.param_value,
+            updated_at = CURRENT_TIMESTAMP;
+    END IF;
+END $$;
+
+ALTER TABLE logics DROP CONSTRAINT IF EXISTS chk_logics_position_size_pct;
+ALTER TABLE logics DROP CONSTRAINT IF EXISTS chk_logics_max_open_positions;
+ALTER TABLE logics DROP COLUMN IF EXISTS position_size_pct;
+ALTER TABLE logics DROP COLUMN IF EXISTS max_open_positions;
+ALTER TABLE logics DROP COLUMN IF EXISTS initial_balance;
+ALTER TABLE logics DROP COLUMN IF EXISTS current_balance;
+
+-- Дефолты для всех логик без строк в logic_params
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+-- Демо SMA: параметры в logic_params
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name = 'SMA Price Cross Demo'
+ON CONFLICT (logic_id, param_key) DO UPDATE SET
+    param_value = EXCLUDED.param_value,
+    updated_at = CURRENT_TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS sides (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(20) NOT NULL UNIQUE
+);
+
+INSERT INTO sides (name) VALUES ('Open'), ('Close') ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS actions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(20) NOT NULL UNIQUE
+);
+
+INSERT INTO actions (name) VALUES ('Long'), ('Short') ON CONFLICT (name) DO NOTHING;
+
+-- v39: устаревшая logics_detail удалена (заменена logic_indicator_signals)
+DROP TABLE IF EXISTS logics_detail;
+
+-- Сигналы индикаторов, привязанные к торговой логике
+CREATE TABLE IF NOT EXISTS logic_indicator_signals (
+    id SERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE RESTRICT,
+    position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close')),
+    position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short')),
+    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
+    formula TEXT NOT NULL,
+    rating INTEGER NOT NULL DEFAULT 0,
+    rating_test INTEGER NOT NULL DEFAULT 0,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (logic_id, indicator_id, position_event, position_side, signal_kind)
+);
+
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating_test INTEGER NOT NULL DEFAULT 0;
+-- Рейтинг может быть отрицательным (успех +1 / неуспех −1 по следующей свече)
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_rating_check;
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_rating_test_check;
+UPDATE logic_indicator_signals SET rating = 0 WHERE rating IS NULL;
+UPDATE logic_indicator_signals SET rating_test = 0 WHERE rating_test IS NULL;
+
+-- Миграция v18 → v19: position_side (long | short)
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_side VARCHAR(10) NOT NULL DEFAULT 'long';
+
+-- Миграция v38: position_event (open | close) — явно открытие/закрытие
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open';
+
+DO $$
+BEGIN
+    ALTER TABLE logic_indicator_signals ADD CONSTRAINT logic_indicator_signals_position_side_check
+        CHECK (position_side IN ('long', 'short'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE logic_indicator_signals ADD CONSTRAINT logic_indicator_signals_position_event_check
+        CHECK (position_event IN ('open', 'close'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+UPDATE logic_indicator_signals SET position_side = 'long' WHERE position_side IS NULL OR position_side = '';
+
+-- Backfill v38 один раз: если ещё нет ни одного close — старая модель (counter = закрытие)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM logic_indicator_signals WHERE position_event = 'close' LIMIT 1
+    ) THEN
+        RETURN;
+    END IF;
+    UPDATE logic_indicator_signals
+    SET position_event = CASE WHEN signal_kind = 'counter' THEN 'close' ELSE 'open' END;
+END $$;
+
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_signal_kind_key;
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_side_signal_kind_key;
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_event_position_side_signal_kind_key;
+
+DROP INDEX IF EXISTS logic_indicator_signals_logic_id_indicator_id_signal_kind_key;
+DROP INDEX IF EXISTS idx_logic_indicator_signals_unique;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_logic_indicator_signals_unique
+    ON logic_indicator_signals (logic_id, indicator_id, position_event, position_side, signal_kind);
+
+CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_logic_id
+    ON logic_indicator_signals(logic_id);
+CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_indicator_id
+    ON logic_indicator_signals(indicator_id);
+
+COMMENT ON TABLE logic_indicator_signals IS
+'Сигналы индикаторов для logics: position_event open|close, сторона long|short, тип trend|counter. '
+'В одной логике для сделки нужны ВСЕ активные сигналы той же стороны и того же open/close (AND).';
+COMMENT ON COLUMN logic_indicator_signals.position_event IS 'open | close — открытие или закрытие позиции';
+COMMENT ON COLUMN logic_indicator_signals.position_side IS 'long | short — сторона позиции сигнала';
+COMMENT ON COLUMN logic_indicator_signals.signal_kind IS 'trend | counter';
+COMMENT ON COLUMN logic_indicator_signals.formula IS
+'Редактируемая формула: @RSI(period=14,series=VALUE) VALUE > 50';
+COMMENT ON COLUMN logic_indicator_signals.rating IS
+'Боевой рейтинг сигнала на логике (может быть <0): сработал → pending; на следующей свече '
+'ход → % годовых vs base_annual_rate_pct → +1/−1. Не рейтинг индикатора из справочника.';
+COMMENT ON COLUMN logic_indicator_signals.rating_test IS
+'Тестовый рейтинг сигнала (is_test), сумма по бумагам; не смешивается с rating.';
+
+-- Ожидание проверки рейтинга сигнала: сработал на баре → на следующей свече TF оцениваем ход цены
+CREATE TABLE IF NOT EXISTS logic_signal_rating_pending (
+    id BIGSERIAL PRIMARY KEY,
+    signal_id INTEGER NOT NULL REFERENCES logic_indicator_signals(id) ON DELETE CASCADE,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE RESTRICT,
+    bar_dt TIMESTAMP NOT NULL,
+    price NUMERIC(18, 6) NOT NULL CHECK (price > 0),
+    position_side VARCHAR(10) NOT NULL CHECK (position_side IN ('long', 'short')),
+    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
+    is_test BOOLEAN NOT NULL DEFAULT FALSE,
+    run_id BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS run_id BIGINT;
+
+ALTER TABLE logic_signal_rating_pending
+    DROP CONSTRAINT IF EXISTS logic_signal_rating_pending_signal_id_security_id_bar_dt_key;
+DROP INDEX IF EXISTS logic_signal_rating_pending_signal_id_security_id_bar_dt_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_logic_signal_rating_pending_uniq
+    ON logic_signal_rating_pending (signal_id, security_id, bar_dt, is_test);
+
+CREATE INDEX IF NOT EXISTS idx_logic_signal_rating_pending_logic
+    ON logic_signal_rating_pending(logic_id, timeframe_id, is_test);
+
+COMMENT ON TABLE logic_signal_rating_pending IS
+'Срабатывания сигналов логики, ожидающие проверки на следующей свече TF; is_test отделяет тест от боя.';
+
+-- История рейтинга для графиков (шаг на каждом resolve)
+CREATE TABLE IF NOT EXISTS logic_signal_rating_history (
+    id BIGSERIAL PRIMARY KEY,
+    signal_id INTEGER NOT NULL REFERENCES logic_indicator_signals(id) ON DELETE CASCADE,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL,
+    run_id BIGINT,
+    bar_dt TIMESTAMP NOT NULL,
+    rating INTEGER NOT NULL,
+    delta SMALLINT NOT NULL CHECK (delta IN (-1, 1)),
+    is_test BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE logic_signal_rating_history DROP CONSTRAINT IF EXISTS logic_signal_rating_history_rating_check;
+
+CREATE INDEX IF NOT EXISTS idx_logic_signal_rating_history_signal
+    ON logic_signal_rating_history (signal_id, is_test, bar_dt);
+CREATE INDEX IF NOT EXISTS idx_logic_signal_rating_history_run
+    ON logic_signal_rating_history (run_id, signal_id, bar_dt)
+    WHERE run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_logic_signal_rating_history_logic_test
+    ON logic_signal_rating_history (logic_id, is_test, bar_dt);
+CREATE INDEX IF NOT EXISTS idx_logic_signal_rating_history_sec
+    ON logic_signal_rating_history (logic_id, security_id, is_test, signal_id, bar_dt);
+
+COMMENT ON TABLE logic_signal_rating_history IS
+'Рейтинг сигнала на бумаге во времени: rating — кумулятив по (signal×security), delta ±1 после проверки следующей свечи';
+
+-- Стоп-лосс и тейк-профит по торговой логике
+CREATE TABLE IF NOT EXISTS logic_stops (
+    id SERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    rule_kind VARCHAR(20) NOT NULL CHECK (rule_kind IN ('stop_loss', 'take_profit')),
+    scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('security', 'security_resume', 'portfolio')),
+    value NUMERIC(18, 6) NOT NULL CHECK (value > 0),
+    value_unit VARCHAR(10) NOT NULL CHECK (value_unit IN ('percent', 'atr')),
+    display_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_logic_stops_logic_id ON logic_stops(logic_id);
+CREATE INDEX IF NOT EXISTS idx_logic_stops_rule_kind ON logic_stops(logic_id, rule_kind);
+
+COMMENT ON TABLE logic_stops IS
+'Стоп-лосс и тейк-профит для logics: security (по бумаге) или portfolio (портфель логики)';
+COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
+COMMENT ON COLUMN logic_stops.scope_type IS
+'stop_loss: security | security_resume | portfolio; take_profit: security | portfolio';
+
+UPDATE logic_stops
+SET scope_type = 'security'
+WHERE rule_kind = 'take_profit' AND scope_type = 'security_resume';
+
+DO $$
+BEGIN
+    ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_tp_scope_check;
+    ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_tp_scope_check
+        CHECK (rule_kind = 'stop_loss' OR scope_type IN ('security', 'portfolio'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+COMMENT ON COLUMN logic_stops.value_unit IS 'percent | atr';
+
+-- Ценные бумаги, привязанные к торговой логике (портфель логики)
+CREATE TABLE IF NOT EXISTS logic_securities (
+    id SERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE RESTRICT,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    stop_resume_equity NUMERIC(20, 6),
+    stop_resume_baseline NUMERIC(20, 6),
+    stop_resume_triggered_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (logic_id, security_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_logic_securities_logic_id ON logic_securities(logic_id);
+CREATE INDEX IF NOT EXISTS idx_logic_securities_security_id ON logic_securities(security_id);
+
+COMMENT ON TABLE logic_securities IS
+'Портфель ценных бумаг торговой логики: одна строка — одна бумага в logics';
+COMMENT ON COLUMN logic_securities.display_order IS 'Порядок отображения в UI';
+COMMENT ON COLUMN logic_securities.real_trading_paused IS
+'TRUE — реальная торговля по бумаге приостановлена (теневой режим после security_resume SL)';
+COMMENT ON COLUMN logic_securities.stop_resume_equity IS
+'Целевая стоимость трека бумаги для возобновления реальной торговли';
+COMMENT ON COLUMN logic_securities.stop_resume_baseline IS
+'Стоимость трека сразу после срабатывания SL (база для теневого восстановления)';
+
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at TIMESTAMP;
+
+-- Демо (v40b): follow/breakout — SMA + подтверждение BB/STOCH на OPEN; CLOSE только по SMA
+-- (mean-reversion BB/STOCH вместе с SMA в AND почти никогда не срабатывает)
+DELETE FROM logic_indicator_signals lis
+USING logics l
+WHERE lis.logic_id = l.id
+  AND l.name = 'SMA Price Cross Demo';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    -- Open long (AND follow): выше SMA + пробой верхней BB + импульс STOCH
+    ('SMA',   'open',  'long',  'trend',   '@SMA(period=20,series=VALUE) pp > VALUE', 0),
+    ('BB',    'open',  'long',  'trend',   '@BB(period=20,series=UPPER) pp > VALUE', 1),
+    ('STOCH', 'open',  'long',  'trend',   '@STOCH(series=K) VALUE > 50', 2),
+    -- Close long: только потеря тренда по SMA (без жёсткого AND по коридору)
+    ('SMA',   'close', 'long',  'counter', '@SMA(period=20,series=VALUE) pp < VALUE', 3),
+    -- Open short (AND follow): ниже SMA + пробой нижней BB + слабый STOCH
+    ('SMA',   'open',  'short', 'trend',   '@SMA(period=20,series=VALUE) pp < VALUE', 4),
+    ('BB',    'open',  'short', 'trend',   '@BB(period=20,series=LOWER) pp < VALUE', 5),
+    ('STOCH', 'open',  'short', 'trend',   '@STOCH(series=K) VALUE < 50', 6),
+    -- Close short: только SMA
+    ('SMA',   'close', 'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 7)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'SMA Price Cross Demo'
+ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind) DO UPDATE SET
+    formula = EXCLUDED.formula,
+    display_order = EXCLUDED.display_order,
+    is_active = TRUE;
+
+-- Все акции (stock) в портфель демо-логики (без дублей при нескольких prefix)
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name = 'SMA Price Cross Demo'
+ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+
+-- Стоп-лосс 1% по бумаге с возобновлением (security_resume) и тейк-профит 3% по бумаге
+DELETE FROM logic_stops ls
+USING logics l
+WHERE ls.logic_id = l.id
+  AND l.name = 'SMA Price Cross Demo';
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',    'security_resume', 1.0, 'percent', 0),
+    ('take_profit',  'security', 3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name = 'SMA Price Cross Demo';
+
+-- =====================================================================
+-- v41: классические стратегии (по мотивам OsEngine Robots / Custom)
+-- Демо «SMA Price Cross Demo» выше не трогаем.
+-- Все на FAKE-EFF-001, выключены, все акции, SL 1% resume / TP 3%.
+-- =====================================================================
+
+INSERT INTO logics (name, account_id, is_enabled)
+SELECT v.name, a.id, FALSE
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+CROSS JOIN (VALUES
+    ('RSI Mean Reversion'),
+    ('Bollinger Bounce'),
+    ('Bollinger Breakout'),
+    ('MACD Zero Line'),
+    ('Stochastic Levels'),
+    ('EMA Price Cross'),
+    ('Dual MA Trend'),
+    ('SMA Stoch Pullback'),
+    ('BB Stoch Bounce'),
+    ('SMAT3 Trend')
+) AS v(name)
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+-- Параметры как у демо (перекрывают пустые default_value из logic_param_defs)
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name IN (
+    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
+    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
+    'BB Stoch Bounce', 'SMAT3 Trend'
+)
+ON CONFLICT (logic_id, param_key) DO UPDATE SET
+    param_value = EXCLUDED.param_value,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- Дозаполнение любых отсутствующих ключей из справочника
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name IN (
+    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
+    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
+    'BB Stoch Bounce', 'SMAT3 Trend'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+-- Сброс сигналов seed-логик перед повторной вставкой
+DELETE FROM logic_indicator_signals lis
+USING logics l
+WHERE lis.logic_id = l.id
+  AND l.name IN (
+    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
+    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
+    'BB Stoch Bounce', 'SMAT3 Trend'
+  );
+
+-- RSI Mean Reversion (OsEngine RsiTrade)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 0),
+    ('RSI', 'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 50', 1),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 2),
+    ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'RSI Mean Reversion';
+
+-- Bollinger Bounce (OsEngine StrategyBollinger)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('BB',  'open',  'long',  'counter', '@BB(period=20,series=LOWER) pp < VALUE', 0),
+    ('BB',  'close', 'long',  'trend',   '@BB(period=20,series=MIDDLE) pp > VALUE', 1),
+    ('BB',  'open',  'short', 'counter', '@BB(period=20,series=UPPER) pp > VALUE', 2),
+    ('BB',  'close', 'short', 'trend',   '@BB(period=20,series=MIDDLE) pp < VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Bollinger Bounce';
+
+-- Bollinger Breakout (OsEngine BollingerRevers)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('BB',  'open',  'long',  'trend',   '@BB(period=20,series=UPPER) pp > VALUE', 0),
+    ('BB',  'close', 'long',  'counter', '@BB(period=20,series=MIDDLE) pp < VALUE', 1),
+    ('BB',  'open',  'short', 'trend',   '@BB(period=20,series=LOWER) pp < VALUE', 2),
+    ('BB',  'close', 'short', 'counter', '@BB(period=20,series=MIDDLE) pp > VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Bollinger Breakout';
+
+-- MACD Zero Line (OsEngine MacdRevers упрощённо: пересечение нуля)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('MACD', 'open',  'long',  'trend',   '@MACD(series=MACD) VALUE > 0', 0),
+    ('MACD', 'close', 'long',  'counter', '@MACD(series=MACD) VALUE < 0', 1),
+    ('MACD', 'open',  'short', 'trend',   '@MACD(series=MACD) VALUE < 0', 2),
+    ('MACD', 'close', 'short', 'counter', '@MACD(series=MACD) VALUE > 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'MACD Zero Line';
+
+-- Stochastic Levels (контртренд по уровням, как RsiTrade для Stoch)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('STOCH', 'open',  'long',  'counter', '@STOCH(series=K) VALUE < 20', 0),
+    ('STOCH', 'close', 'long',  'trend',   '@STOCH(series=K) VALUE > 50', 1),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(series=K) VALUE > 80', 2),
+    ('STOCH', 'close', 'short', 'trend',   '@STOCH(series=K) VALUE < 50', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Stochastic Levels';
+
+-- EMA Price Cross (OsEngine SmaTrendSample на EMA)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('EMA', 'open',  'long',  'trend',   '@EMA(period=20,series=VALUE) pp > VALUE', 0),
+    ('EMA', 'close', 'long',  'counter', '@EMA(period=20,series=VALUE) pp < VALUE', 1),
+    ('EMA', 'open',  'short', 'trend',   '@EMA(period=20,series=VALUE) pp < VALUE', 2),
+    ('EMA', 'close', 'short', 'counter', '@EMA(period=20,series=VALUE) pp > VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'EMA Price Cross';
+
+-- Dual MA Trend (SMA+EMA как в SmaWithAShift: фильтр «цена выше/ниже обеих»)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA', 'open',  'long',  'trend',   '@SMA(period=20,series=VALUE) pp > VALUE', 0),
+    ('EMA', 'open',  'long',  'trend',   '@EMA(period=50,series=VALUE) pp > VALUE', 1),
+    ('SMA', 'close', 'long',  'counter', '@SMA(period=20,series=VALUE) pp < VALUE', 2),
+    ('SMA', 'open',  'short', 'trend',   '@SMA(period=20,series=VALUE) pp < VALUE', 3),
+    ('EMA', 'open',  'short', 'trend',   '@EMA(period=50,series=VALUE) pp < VALUE', 4),
+    ('SMA', 'close', 'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Dual MA Trend';
+
+-- SMA Stoch Pullback (OsEngine SmaStochastic: тренд SMA + откат Stoch)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA',   'open',  'long',  'trend',   '@SMA(period=20,series=VALUE) pp > VALUE', 0),
+    ('STOCH', 'open',  'long',  'counter', '@STOCH(series=K) VALUE < 30', 1),
+    ('SMA',   'close', 'long',  'counter', '@SMA(period=20,series=VALUE) pp < VALUE', 2),
+    ('SMA',   'open',  'short', 'trend',   '@SMA(period=20,series=VALUE) pp < VALUE', 3),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(series=K) VALUE > 70', 4),
+    ('SMA',   'close', 'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'SMA Stoch Pullback';
+
+-- BB Stoch Bounce (OsEngine StrategyBollingerAndStochastic)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('BB',    'open',  'long',  'counter', '@BB(period=20,series=LOWER) pp < VALUE', 0),
+    ('STOCH', 'open',  'long',  'counter', '@STOCH(series=K) VALUE < 20', 1),
+    ('BB',    'close', 'long',  'trend',   '@BB(period=20,series=MIDDLE) pp > VALUE', 2),
+    ('BB',    'open',  'short', 'counter', '@BB(period=20,series=UPPER) pp > VALUE', 3),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(series=K) VALUE > 80', 4),
+    ('BB',    'close', 'short', 'trend',   '@BB(period=20,series=MIDDLE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'BB Stoch Bounce';
+
+-- SMAT3 Trend (тройное SMA как сглаженный тренд)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMAT3', 'open',  'long',  'trend',   '@SMAT3(series=VALUE) pp > VALUE', 0),
+    ('SMAT3', 'close', 'long',  'counter', '@SMAT3(series=VALUE) pp < VALUE', 1),
+    ('SMAT3', 'open',  'short', 'trend',   '@SMAT3(series=VALUE) pp < VALUE', 2),
+    ('SMAT3', 'close', 'short', 'counter', '@SMAT3(series=VALUE) pp > VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'SMAT3 Trend';
+
+-- Все акции во все seed-логики (включая уже существующие строки)
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name IN (
+    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
+    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
+    'BB Stoch Bounce', 'SMAT3 Trend'
+)
+ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+
+-- SL/TP как у демо
+DELETE FROM logic_stops ls
+USING logics l
+WHERE ls.logic_id = l.id
+  AND l.name IN (
+    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
+    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
+    'BB Stoch Bounce', 'SMAT3 Trend'
+  );
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'security',        3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name IN (
+    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
+    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
+    'BB Stoch Bounce', 'SMAT3 Trend'
+);
+
+-- =====================================================================
+-- v43: L1–L4 из MultiLogicTradeA (FINRESP) — AND-сигналы, без Strict/Regime/OnFlip
+-- Адаптация: SMA100, LINREG±2σ, ATR GROWTH5≥3, ADX TrOk/WkOk, CCI, MACD HISTOGRAM
+-- =====================================================================
+
+INSERT INTO logics (name, account_id, is_enabled)
+SELECT v.name, a.id, FALSE
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+CROSS JOIN (VALUES
+    ('L1 — лонг, тренд'),
+    ('L2 — лонг, боковик'),
+    ('L3 — шорт, тренд'),
+    ('L4 — шорт, боковик')
+) AS v(name)
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name IN (
+    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
+)
+ON CONFLICT (logic_id, param_key) DO UPDATE SET
+    param_value = EXCLUDED.param_value,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name IN (
+    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+DELETE FROM logic_indicator_signals lis
+USING logics l
+WHERE lis.logic_id = l.id
+  AND l.name IN (
+    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
+  );
+
+-- L1 long trend: Op SMA Ab + LinReg AbUp + ATR GrOk + ADX TrOk + CCI>=100 + MACD>Sig
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA',    'open',  'long', 'trend',   '@SMA(period=100,series=VALUE) pp > VALUE', 0),
+    ('LINREG', 'open',  'long', 'trend',   '@LINREG(period=20,std_dev=2,series=UPPER) pp > VALUE', 1),
+    ('ATR',    'open',  'long', 'trend',   '@ATR(period=14,series=GROWTH5) VALUE >= 3', 2),
+    ('ADX',    'open',  'long', 'trend',   '@ADX(period=14,series=ADX) VALUE >= 25', 3),
+    ('CCI',    'open',  'long', 'trend',   '@CCI(period=20,series=VALUE) VALUE >= 100', 4),
+    ('MACD',   'open',  'long', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 5),
+    ('SMA',    'close', 'long', 'counter', '@SMA(period=100,series=VALUE) pp < VALUE', 6),
+    ('LINREG', 'close', 'long', 'counter', '@LINREG(period=20,std_dev=2,series=LOWER) pp < VALUE', 7),
+    ('CCI',    'close', 'long', 'counter', '@CCI(period=20,series=VALUE) VALUE <= -100', 8),
+    ('MACD',   'close', 'long', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 9)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'L1 — лонг, тренд';
+
+-- L2 long flat: Stoch oversold + ADX weak + ATR growth + SMA Ab + MACD
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA',   'open',  'long', 'trend',   '@SMA(period=100,series=VALUE) pp > VALUE', 0),
+    ('STOCH', 'open',  'long', 'counter', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE <= 10', 1),
+    ('ATR',   'open',  'long', 'trend',   '@ATR(period=14,series=GROWTH5) VALUE >= 3', 2),
+    ('ADX',   'open',  'long', 'counter', '@ADX(period=14,series=ADX) VALUE < 25', 3),
+    ('MACD',  'open',  'long', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 4),
+    ('SMA',   'close', 'long', 'counter', '@SMA(period=100,series=VALUE) pp < VALUE', 5),
+    ('STOCH', 'close', 'long', 'trend',   '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE >= 90', 6),
+    ('MACD',  'close', 'long', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 7)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'L2 — лонг, боковик';
+
+-- L3 short trend
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA',    'open',  'short', 'trend',   '@SMA(period=100,series=VALUE) pp < VALUE', 0),
+    ('LINREG', 'open',  'short', 'trend',   '@LINREG(period=20,std_dev=2,series=LOWER) pp < VALUE', 1),
+    ('ATR',    'open',  'short', 'trend',   '@ATR(period=14,series=GROWTH5) VALUE >= 3', 2),
+    ('ADX',    'open',  'short', 'trend',   '@ADX(period=14,series=ADX) VALUE >= 25', 3),
+    ('CCI',    'open',  'short', 'trend',   '@CCI(period=20,series=VALUE) VALUE <= -100', 4),
+    ('MACD',   'open',  'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 5),
+    ('SMA',    'close', 'short', 'counter', '@SMA(period=100,series=VALUE) pp > VALUE', 6),
+    ('LINREG', 'close', 'short', 'counter', '@LINREG(period=20,std_dev=2,series=UPPER) pp > VALUE', 7),
+    ('CCI',    'close', 'short', 'counter', '@CCI(period=20,series=VALUE) VALUE >= 100', 8),
+    ('MACD',   'close', 'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 9)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'L3 — шорт, тренд';
+
+-- L4 short flat
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA',   'open',  'short', 'trend',   '@SMA(period=100,series=VALUE) pp < VALUE', 0),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE >= 90', 1),
+    ('ATR',   'open',  'short', 'trend',   '@ATR(period=14,series=GROWTH5) VALUE >= 3', 2),
+    ('ADX',   'open',  'short', 'counter', '@ADX(period=14,series=ADX) VALUE < 25', 3),
+    ('MACD',  'open',  'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 4),
+    ('SMA',   'close', 'short', 'counter', '@SMA(period=100,series=VALUE) pp > VALUE', 5),
+    ('STOCH', 'close', 'short', 'trend',   '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE <= 10', 6),
+    ('MACD',  'close', 'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 7)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'L4 — шорт, боковик';
+
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name IN (
+    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
+)
+ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+
+DELETE FROM logic_stops ls
+USING logics l
+WHERE ls.logic_id = l.id
+  AND l.name IN (
+    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
+  );
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'security',        3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name IN (
+    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
+);
+
+-- =====================================================================
+-- v44: ещё 5 контртрендовых стратегий (OsEngine-style)
+-- FAKE, выключены, все акции, SL 1% resume / TP 3%.
+-- =====================================================================
+
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT v.name, a.id, FALSE, v.note
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+CROSS JOIN (VALUES
+    (
+        'CCI Countertrade',
+        'Контртрендовая. По мотивам OsEngine CciTrade: long при CCI ≤ −100, short при CCI ≥ +100; выход к нулевой зоне.'
+    ),
+    (
+        'LinReg Fade',
+        'Контртрендовая. OsEngine-style fade по каналу LinReg: отскок от нижней/верхней границы к середине канала.'
+    ),
+    (
+        'ADX Range RSI',
+        'Контртрендовая (боковик). Слабый тренд ADX < 25 + перепроданность/перекупленность RSI — OsEngine range-trading.'
+    ),
+    (
+        'MACD Hist Fade',
+        'Контртрендовая. OsEngine MacdRevers (упрощ.): вход против импульса гистограммы MACD, выход при смене знака HISTOGRAM.'
+    ),
+    (
+        'ATR Spike Reversal',
+        'Контртрендовая. Всплеск волатильности ATR GROWTH5 ≥ 3 + экстремум RSI — откат после импульса (OsEngine-style fade).'
+    )
+) AS v(name, note)
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO UPDATE SET note = EXCLUDED.note;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name IN (
+    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+)
+ON CONFLICT (logic_id, param_key) DO UPDATE SET
+    param_value = EXCLUDED.param_value,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name IN (
+    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+DELETE FROM logic_indicator_signals lis
+USING logics l
+WHERE lis.logic_id = l.id
+  AND l.name IN (
+    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+  );
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('CCI', 'open',  'long',  'counter', '@CCI(period=20,series=VALUE) VALUE <= -100', 0),
+    ('CCI', 'close', 'long',  'trend',   '@CCI(period=20,series=VALUE) VALUE >= 0', 1),
+    ('CCI', 'open',  'short', 'counter', '@CCI(period=20,series=VALUE) VALUE >= 100', 2),
+    ('CCI', 'close', 'short', 'trend',   '@CCI(period=20,series=VALUE) VALUE <= 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'CCI Countertrade';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('LINREG', 'open',  'long',  'counter', '@LINREG(period=20,std_dev=2,series=LOWER) pp <= VALUE', 0),
+    ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE) pp >= VALUE', 1),
+    ('LINREG', 'open',  'short', 'counter', '@LINREG(period=20,std_dev=2,series=UPPER) pp >= VALUE', 2),
+    ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'LinReg Fade';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ADX', 'open',  'long',  'counter', '@ADX(period=14,series=ADX) VALUE < 25', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 1),
+    ('RSI', 'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 50', 2),
+    ('ADX', 'open',  'short', 'counter', '@ADX(period=14,series=ADX) VALUE < 25', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 4),
+    ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'ADX Range RSI';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('MACD', 'open',  'long',  'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 0),
+    ('MACD', 'close', 'long',  'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 1),
+    ('MACD', 'open',  'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 2),
+    ('MACD', 'close', 'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'MACD Hist Fade';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ATR', 'open',  'long',  'counter', '@ATR(period=14,series=GROWTH5) VALUE >= 3', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 35', 1),
+    ('RSI', 'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 55', 2),
+    ('ATR', 'open',  'short', 'counter', '@ATR(period=14,series=GROWTH5) VALUE >= 3', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 65', 4),
+    ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 45', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'ATR Spike Reversal';
+
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name IN (
+    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+)
+ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+
+DELETE FROM logic_stops ls
+USING logics l
+WHERE ls.logic_id = l.id
+  AND l.name IN (
+    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+  );
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'security',        3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name IN (
+    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+);
+
+-- Примечания ко всем seed-логикам (тип стратегии + источник)
+UPDATE logics l
+SET note = v.note
+FROM (VALUES
+    (
+        'SMA Price Cross Demo',
+        'Демо-логика проекта. Трендовая по пересечению цены и SMA: long выше средней, short ниже. Для проверки UI и runner, не из OsEngine.'
+    ),
+    (
+        'RSI Mean Reversion',
+        'Контртрендовая (mean reversion). OsEngine RsiTrade: покупка в перепроданности RSI<30, продажа в перекупленности RSI>70.'
+    ),
+    (
+        'Bollinger Bounce',
+        'Контртрендовая. OsEngine StrategyBollinger: отскок от нижней/верхней полосы BB к середине канала.'
+    ),
+    (
+        'Bollinger Breakout',
+        'Трендовая. OsEngine BollingerRevers / пробой: вход по выходу за полосу, выход у середины BB.'
+    ),
+    (
+        'MACD Zero Line',
+        'Трендовая. OsEngine MacdTrend (упрощ.): long при MACD>0, short при MACD<0.'
+    ),
+    (
+        'Stochastic Levels',
+        'Контртрендовая. OsEngine Stochastic fade: long при %K<20, short при %K>80.'
+    ),
+    (
+        'EMA Price Cross',
+        'Трендовая. OsEngine SmaTrendSample на EMA: цена выше EMA — long, ниже — short.'
+    ),
+    (
+        'Dual MA Trend',
+        'Трендовая. OsEngine SmaWithAShift: цена выше SMA(20) и EMA(50) — long, ниже обеих — short.'
+    ),
+    (
+        'SMA Stoch Pullback',
+        'Смешанная: тренд + контртренд. OsEngine SmaStochastic — фильтр тренда по SMA, вход на откате Stoch.'
+    ),
+    (
+        'BB Stoch Bounce',
+        'Контртрендовая (комбо). OsEngine StrategyBollingerAndStochastic: экстремум одновременно по BB и Stoch.'
+    ),
+    (
+        'SMAT3 Trend',
+        'Трендовая. Сглаженное тройное SMA (SMAT3): long выше линии, short ниже — тренд по сглаженной средней.'
+    ),
+    (
+        'L1 — лонг, тренд',
+        'Трендовая комплексная. Адаптация MultiLogicTradeA FINRESP L1 (SMA, LinReg, ATR, ADX, CCI, MACD). Не OsEngine.'
+    ),
+    (
+        'L2 — лонг, боковик',
+        'Контртрендовая / боковик. FINRESP L2 — long в диапазоне, слабый ADX и откат к нижней границе LinReg.'
+    ),
+    (
+        'L3 — шорт, тренд',
+        'Трендовая шорт. FINRESP L3 — зеркало L1 для short по тем же фильтрам.'
+    ),
+    (
+        'L4 — шорт, боковик',
+        'Контртрендовая / боковик. FINRESP L4 — short в диапазоне.'
+    )
+) AS v(name, note)
+WHERE l.name = v.name;
+
+-- Сделки по торговой логике (исполнение по сигналам индикаторов)
+CREATE TABLE IF NOT EXISTS logic_trades (
+    id BIGSERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE RESTRICT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE RESTRICT,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE RESTRICT,
+    side_id INTEGER NOT NULL REFERENCES sides(id) ON DELETE RESTRICT,
+    action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
+    position_event VARCHAR(10) NOT NULL DEFAULT 'open'
+        CHECK (position_event IN ('open', 'close')),
+    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
+    signal_formula TEXT NOT NULL,
+    quantity NUMERIC(20, 6) NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    price NUMERIC(18, 6) NOT NULL CHECK (price > 0),
+    bar_dt TIMESTAMP NOT NULL,
+    executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_simulated BOOLEAN NOT NULL DEFAULT FALSE,
+    is_fictitious BOOLEAN NOT NULL DEFAULT FALSE,
+    is_shadow BOOLEAN NOT NULL DEFAULT FALSE,
+    is_test BOOLEAN NOT NULL DEFAULT FALSE,
+    run_id BIGINT,
+    broker_order_id VARCHAR(100),
+    status VARCHAR(20) NOT NULL DEFAULT 'filled'
+        CHECK (status IN ('pending', 'submitted', 'filled', 'rejected', 'cancelled')),
+    commission NUMERIC(18, 6) NOT NULL DEFAULT 0,
+    financial_result NUMERIC(20, 6),
+    note TEXT,
+    trade_reason TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_logic_trades_logic_id ON logic_trades(logic_id);
+CREATE INDEX IF NOT EXISTS idx_logic_trades_executed_at ON logic_trades(executed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_logic_trades_security_id ON logic_trades(security_id);
+
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS trade_reason TEXT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open';
+-- Прогон теста, породивший сделку (NULL = бой / старые записи до v43c)
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS run_id BIGINT;
+
+DO $$
+BEGIN
+    ALTER TABLE logic_trades ADD CONSTRAINT logic_trades_position_event_check
+        CHECK (position_event IN ('open', 'close'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Backfill: Close side → position_event=close
+UPDATE logic_trades lt
+SET position_event = 'close'
+FROM sides s
+WHERE s.id = lt.side_id AND s.name = 'Close' AND lt.position_event = 'open';
+
+UPDATE logic_trades lt
+SET position_event = 'open'
+FROM sides s
+WHERE s.id = lt.side_id AND s.name = 'Open' AND lt.position_event = 'close';
+
+ALTER TABLE logic_trades DROP CONSTRAINT IF EXISTS logic_trades_logic_id_security_id_signal_kind_bar_dt_key;
+DROP INDEX IF EXISTS logic_trades_logic_id_security_id_signal_kind_bar_dt_key;
+-- v40: одна сделка на open/close × сторону (action) на баре — сигналы объединяются AND
+DROP INDEX IF EXISTS idx_logic_trades_signal_bar_book;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_logic_trades_signal_bar_book
+    ON logic_trades (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow);
+
+CREATE INDEX IF NOT EXISTS idx_logic_trades_test ON logic_trades(logic_id) WHERE is_test;
+
+COMMENT ON TABLE logic_trades IS
+'Сделки logics: исполнение по logic_indicator_signals; is_simulated — фейковый счёт; is_fictitious — резерв';
+COMMENT ON COLUMN logic_trades.is_simulated IS 'TRUE — сделка на фейковом счёте (бумажная торговля)';
+COMMENT ON COLUMN logic_trades.is_fictitious IS 'Фиктивная сделка (резерв, заполнение позже)';
+COMMENT ON COLUMN logic_trades.is_shadow IS
+'Теневая сделка: не влияет на реальный депозит; режим возобновления после стоп-лосса по бумаге';
+COMMENT ON COLUMN logic_trades.is_test IS
+'TRUE — сделка исторического тестирования (отдельная книга, не смешивается с боевыми и live-теневыми)';
+COMMENT ON COLUMN logic_trades.trade_reason IS
+'Причина сделки: сигнал индикатора, stop_loss/take_profit (тип), market:close_all и т.п.';
+COMMENT ON COLUMN logic_trades.bar_dt IS 'Свеча, на которой сработал сигнал';
+COMMENT ON COLUMN logic_trades.commission IS 'Комиссия по сделке (фейк: % от депозита; реал: с биржи)';
+COMMENT ON COLUMN logic_trades.financial_result IS 'Итог PnL закрывающей сделки (сумма пакетов); NULL для открытия';
+COMMENT ON COLUMN logic_trades.run_id IS
+'FK → logic_backtest_runs: прогон теста, породивший сделку; NULL для боевых и legacy';
+
+CREATE TABLE IF NOT EXISTS logic_backtest_runs (
+    id BIGSERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    date_from DATE NOT NULL,
+    date_to DATE NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'pending'
+        CHECK (status IN (
+            'pending', 'loading_prices', 'loading_indicators', 'running',
+            'completed', 'cancelled', 'failed'
+        )),
+    progress_pct NUMERIC(5, 2) NOT NULL DEFAULT 0,
+    phase_message TEXT,
+    phase_detail TEXT,
+    current_bar_dt TIMESTAMP,
+    total_bars INTEGER NOT NULL DEFAULT 0,
+    processed_bars INTEGER NOT NULL DEFAULT 0,
+    trades_created INTEGER NOT NULL DEFAULT 0,
+    test_balance NUMERIC(20, 6),
+    financial_result NUMERIC(20, 6),
+    cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
+    error_message TEXT,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_logic_backtest_runs_logic ON logic_backtest_runs(logic_id, created_at DESC);
+
+-- FK logic_trades.run_id после CREATE logic_backtest_runs (порядок таблиц)
+DO $$
+BEGIN
+    ALTER TABLE logic_trades
+        ADD CONSTRAINT logic_trades_run_id_fkey
+        FOREIGN KEY (run_id) REFERENCES logic_backtest_runs(id) ON DELETE SET NULL;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_logic_trades_run_id
+    ON logic_trades(run_id)
+    WHERE run_id IS NOT NULL;
+
+COMMENT ON TABLE logic_backtest_runs IS
+'Историческое тестирование: прогресс, период, итог (сделки is_test=TRUE)';
+
+CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
+    run_id BIGINT NOT NULL REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    stop_resume_equity NUMERIC(20, 6),
+    stop_resume_baseline NUMERIC(20, 6),
+    PRIMARY KEY (run_id, security_id)
+);
+
+COMMENT ON TABLE logic_backtest_security_state IS
+'Пауза security_resume внутри backtest (не меняет live logic_securities)';
+
+-- Пакеты закрытия (FIFO / средняя): связь продажи с покупками
+CREATE TABLE IF NOT EXISTS logic_trade_lots (
+    id BIGSERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    close_trade_id BIGINT NOT NULL REFERENCES logic_trades(id) ON DELETE CASCADE,
+    open_trade_id BIGINT REFERENCES logic_trades(id) ON DELETE SET NULL,
+    action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
+    cost_method VARCHAR(10) NOT NULL DEFAULT 'FIFO'
+        CHECK (cost_method IN ('FIFO', 'AVERAGE')),
+    quantity NUMERIC(20, 6) NOT NULL CHECK (quantity > 0),
+    close_amount NUMERIC(20, 6) NOT NULL,
+    open_amount NUMERIC(20, 6) NOT NULL,
+    close_commission NUMERIC(18, 6) NOT NULL DEFAULT 0,
+    open_commission NUMERIC(18, 6) NOT NULL DEFAULT 0,
+    financial_result NUMERIC(20, 6) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_logic_trade_lots_close ON logic_trade_lots(close_trade_id);
+CREATE INDEX IF NOT EXISTS idx_logic_trade_lots_open ON logic_trade_lots(open_trade_id);
+CREATE INDEX IF NOT EXISTS idx_logic_trade_lots_logic ON logic_trade_lots(logic_id);
+
+COMMENT ON TABLE logic_trade_lots IS
+'Пакеты по сделкам: закрытие → открытие; PnL = доход − расход − комиссии';
+COMMENT ON COLUMN logic_trade_lots.open_trade_id IS 'NULL при методе AVERAGE (средняя цена)';
+
+-- ============================================
+-- Таблица: futures_expirations (контракты фьючерсов)
+-- ============================================
+CREATE TABLE IF NOT EXISTS futures_expirations (
+    id SERIAL PRIMARY KEY,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    prefix VARCHAR(50) NOT NULL,
+    moex_secid VARCHAR(20),
+    expiration_date DATE NOT NULL,
+    tbank_figi VARCHAR(50),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_futures_exp_security_id ON futures_expirations(security_id);
+CREATE INDEX IF NOT EXISTS idx_futures_exp_prefix ON futures_expirations(prefix);
+CREATE INDEX IF NOT EXISTS idx_futures_exp_date ON futures_expirations(expiration_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_exp_security_prefix ON futures_expirations(security_id, prefix);
+
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS moex_secid VARCHAR(20);
+
+COMMENT ON TABLE futures_expirations IS 'Контракты фьючерсов; prefix — SHORTNAME MOEX (CNY-9.26), moex_secid — SECID (CRU6) для T-Bank/MOEX. Sync из MOEX ISS.';
+
+-- Ручной INSERT контрактов не нужен — sync_futures_expirations_from_moex подтягивает список с MOEX.
+-- ============================================
+-- Таблица: price_load_log (лог загрузки цен)
+-- ============================================
+CREATE TABLE IF NOT EXISTS price_load_log (
+    id BIGSERIAL PRIMARY KEY,
+    security_id INTEGER NOT NULL REFERENCES securities(id),
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id),
+    date_from DATE NOT NULL,
+    date_to DATE NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    records_loaded INTEGER DEFAULT 0,
+    contract_prefix VARCHAR(50),
+    error_message TEXT,
+    loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS contract_prefix VARCHAR(50);
+
+CREATE INDEX IF NOT EXISTS idx_price_load_log_security ON price_load_log(security_id, timeframe_id);
+CREATE INDEX IF NOT EXISTS idx_price_load_log_loaded_at ON price_load_log(loaded_at);
+
+-- ============================================
+-- Таблица: app_tech_log (технический журнал UI/API)
+-- ============================================
+CREATE TABLE IF NOT EXISTS app_tech_log (
+    id BIGSERIAL PRIMARY KEY,
+    trace_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    span_id VARCHAR(64) NOT NULL,
+    parent_span_id VARCHAR(64),
+    thread_key VARCHAR(128) NOT NULL,
+    source VARCHAR(32) NOT NULL DEFAULT 'web',
+    operation VARCHAR(128) NOT NULL,
+    phase VARCHAR(16) NOT NULL CHECK (phase IN ('start', 'end', 'event')),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMPTZ,
+    duration_ms INTEGER,
+    security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL,
+    timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE SET NULL,
+    logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL,
+    sync_gen INTEGER,
+    message TEXT,
+    payload JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_app_tech_log_created_at ON app_tech_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_tech_log_trace_id ON app_tech_log(trace_id);
+CREATE INDEX IF NOT EXISTS idx_app_tech_log_thread_key ON app_tech_log(thread_key);
+CREATE INDEX IF NOT EXISTS idx_app_tech_log_security ON app_tech_log(security_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_tech_log_logic_id ON app_tech_log(logic_id, created_at DESC);
+
+COMMENT ON TABLE app_tech_log IS
+'Технический журнал проекта: sync графика, trade runner, сигналы, параметры логики (если APP_TECH_LOGGING=1)';
+COMMENT ON COLUMN app_tech_log.trace_id IS 'Цепочка одного жеста пользователя (pan/zoom)';
+COMMENT ON COLUMN app_tech_log.thread_key IS 'Поток: sec:29:gen:3, logic:1:trade, trade-runner и т.п.';
+COMMENT ON COLUMN app_tech_log.logic_id IS 'Торговая логика (trade runner, параметры, enable/disable)';
+COMMENT ON COLUMN app_tech_log.phase IS 'start | end | event';
+
+-- ============================================
+-- Дополнительные индексы
+-- ============================================
+CREATE INDEX IF NOT EXISTS idx_security_types_name ON security_types(name);
+CREATE INDEX IF NOT EXISTS idx_exchanges_name ON exchanges(name);
+CREATE INDEX IF NOT EXISTS idx_securities_type_id ON securities(security_type_id);
+CREATE INDEX IF NOT EXISTS idx_security_prefixes_security_id ON security_prefixes(security_id);
+CREATE INDEX IF NOT EXISTS idx_timeframes_tf ON timeframes(tf);
+CREATE INDEX IF NOT EXISTS idx_brokers_code ON brokers(code);
+CREATE INDEX IF NOT EXISTS idx_indicators_code ON indicators(code);
+
+-- ============================================
+-- Комментарии ко всем таблицам и полям (PostgreSQL COMMENT ON)
+-- ============================================
+
+-- security_types
+COMMENT ON COLUMN security_types.id IS 'Surrogate PK';
+COMMENT ON COLUMN security_types.name IS 'Код типа: Stock, Futures, Bond …';
+-- exchanges
+COMMENT ON COLUMN exchanges.id IS 'Surrogate PK';
+COMMENT ON COLUMN exchanges.name IS 'Код площадки: MOEX, SPB';
+
+-- securities
+COMMENT ON COLUMN securities.id IS 'Surrogate PK';
+COMMENT ON COLUMN securities.name IS 'Полное наименование инструмента (уникально)';
+COMMENT ON COLUMN securities.security_type_id IS 'FK → security_types';
+
+-- security_prefixes
+COMMENT ON COLUMN security_prefixes.id IS 'Surrogate PK';
+COMMENT ON COLUMN security_prefixes.security_id IS 'FK → securities';
+COMMENT ON COLUMN security_prefixes.exchange_id IS 'FK → exchanges';
+COMMENT ON COLUMN security_prefixes.prefix IS 'Тикер на бирже (SBER, VTBR, Si …)';
+COMMENT ON COLUMN security_prefixes.note IS 'Произвольная заметка';
+
+-- timeframes
+COMMENT ON COLUMN timeframes.id IS 'Surrogate PK';
+COMMENT ON COLUMN timeframes.tf IS 'Код TF: M15, H1, D1 …';
+COMMENT ON COLUMN timeframes.full_name IS 'Человекочитаемое название';
+COMMENT ON COLUMN timeframes.sec IS 'Длительность одной свечи в секундах';
+
+-- brokers
+COMMENT ON TABLE brokers IS 'Брокеры / провайдеры API (T-Bank и др.)';
+COMMENT ON COLUMN brokers.id IS 'Surrogate PK';
+COMMENT ON COLUMN brokers.code IS 'Уникальный код брокера (T-BANK)';
+COMMENT ON COLUMN brokers.name IS 'Отображаемое имя';
+COMMENT ON COLUMN brokers.api_url IS 'Базовый URL REST API';
+COMMENT ON COLUMN brokers.is_active IS 'Брокер доступен для подключения счетов';
+
+-- accounts
+COMMENT ON TABLE accounts IS 'Торговые счета брокера (real / fake); логики привязаны к account_id';
+COMMENT ON COLUMN accounts.id IS 'Surrogate PK';
+COMMENT ON COLUMN accounts.broker_id IS 'FK → brokers';
+COMMENT ON COLUMN accounts.account_code IS 'Код счёта у брокера (уникален в рамках broker_id)';
+COMMENT ON COLUMN accounts.name IS 'Имя счёта в UI';
+COMMENT ON COLUMN accounts.account_type IS 'real — боевой; fake — бумажная торговля';
+COMMENT ON COLUMN accounts.is_efficient IS 'Эффективный (маржинальный) счёт T-Bank';
+COMMENT ON COLUMN accounts.token_encrypted IS 'Зашифрованный токен счёта (если отличается от глобального)';
+COMMENT ON COLUMN accounts.token_hash IS 'Хеш токена для проверки без расшифровки';
+COMMENT ON COLUMN accounts.is_active IS 'Счёт активен';
+COMMENT ON COLUMN accounts.updated_at IS 'Дата последнего изменения';
+
+-- prices
+COMMENT ON COLUMN prices.id IS 'Surrogate PK';
+COMMENT ON COLUMN prices.security_id IS 'FK → securities';
+COMMENT ON COLUMN prices.timeframe_id IS 'FK → timeframes';
+COMMENT ON COLUMN prices.dt IS 'Open time свечи (UTC/локаль БД)';
+COMMENT ON COLUMN prices.open_price IS 'Цена открытия';
+COMMENT ON COLUMN prices.high_price IS 'Максимум';
+COMMENT ON COLUMN prices.low_price IS 'Минимум';
+COMMENT ON COLUMN prices.close_price IS 'Цена закрытия';
+COMMENT ON COLUMN prices.volume IS 'Объём в лотах/штуках';
+COMMENT ON COLUMN prices.value IS 'Оборот в деньгах (MOEX resample)';
+
+-- parameter_types (глобальные настройки приложения, не per-logic)
+COMMENT ON TABLE parameter_types IS 'Справочник типов глобальных параметров (RSI_PERIOD, TBANK_API_TOKEN …)';
+COMMENT ON COLUMN parameter_types.id IS 'Surrogate PK';
+COMMENT ON COLUMN parameter_types.name IS 'Полное имя параметра';
+COMMENT ON COLUMN parameter_types.short_name IS 'Ключ в коде (RSI_PERIOD, TBANK_API_TOKEN)';
+COMMENT ON COLUMN parameter_types.value_type IS 'integer | number | boolean | text | secret';
+COMMENT ON COLUMN parameter_types.default_value IS 'Значение по умолчанию (текст)';
+
+-- parameter_sets
+COMMENT ON TABLE parameter_sets IS 'Наборы глобальных параметров (обычно Default)';
+COMMENT ON COLUMN parameter_sets.id IS 'Surrogate PK';
+COMMENT ON COLUMN parameter_sets.name IS 'Имя набора (уникально)';
+
+-- parameter_values
+COMMENT ON TABLE parameter_values IS 'Значения глобальных parameter_types внутри parameter_sets';
+COMMENT ON COLUMN parameter_values.id IS 'Surrogate PK';
+COMMENT ON COLUMN parameter_values.parameter_set_id IS 'FK → parameter_sets';
+COMMENT ON COLUMN parameter_values.parameter_type_id IS 'FK → parameter_types';
+COMMENT ON COLUMN parameter_values.value IS 'Текущее значение (текст)';
+
+-- indicators
+COMMENT ON TABLE indicators IS 'Справочник индикаторов: код (SMA, RSI), formula/script, описание';
+COMMENT ON COLUMN indicators.id IS 'Surrogate PK';
+COMMENT ON COLUMN indicators.code IS 'Короткий код (@SMA в формулах сигналов)';
+COMMENT ON COLUMN indicators.name IS 'Полное английское название';
+COMMENT ON COLUMN indicators.category IS 'Группа: trend, momentum, volatility …';
+COMMENT ON COLUMN indicators.is_active IS 'Индикатор доступен в UI и расчётах';
+COMMENT ON COLUMN indicators.created_at IS 'Дата создания';
+COMMENT ON COLUMN indicators.sig_trend_def IS 'Шаблон follow (signal_kind=trend): по течению / пробой';
+COMMENT ON COLUMN indicators.sig_ct_def IS 'Шаблон fade (signal_kind=counter): против / возврат от края';
+COMMENT ON COLUMN indicators.sig_profile IS
+'Профиль шаблонов: trend_line | oscillator | channel | zero_line | strength | volume';
+
+-- indicator_value_types
+COMMENT ON TABLE indicator_value_types IS 'Линии/серии индикатора: RSI, OVERBOUGHT, MACD, UPPER …';
+COMMENT ON COLUMN indicator_value_types.id IS 'Surrogate PK';
+COMMENT ON COLUMN indicator_value_types.indicator_id IS 'FK → indicators';
+COMMENT ON COLUMN indicator_value_types.code IS 'Код серии в рамках индикатора';
+COMMENT ON COLUMN indicator_value_types.name IS 'Отображаемое имя линии';
+COMMENT ON COLUMN indicator_value_types.value_type IS 'Тип значения (float …)';
+COMMENT ON COLUMN indicator_value_types.is_threshold IS 'TRUE — горизонтальный порог на графике';
+COMMENT ON COLUMN indicator_value_types.threshold_value IS 'Значение порога (70 для RSI OVERBOUGHT)';
+COMMENT ON COLUMN indicator_value_types.description IS 'Описание серии';
+COMMENT ON COLUMN indicator_value_types.display_order IS 'Порядок на графике';
+COMMENT ON COLUMN indicator_value_types.created_at IS 'Дата создания';
+
+-- security_indicator_series
+COMMENT ON COLUMN security_indicator_series.id IS 'Surrogate PK';
+COMMENT ON COLUMN security_indicator_series.security_id IS 'FK → securities';
+COMMENT ON COLUMN security_indicator_series.indicator_id IS 'FK → indicators';
+COMMENT ON COLUMN security_indicator_series.series_code IS 'Код серии (VALUE, K, D …)';
+COMMENT ON COLUMN security_indicator_series.invoke_formula IS 'Формула расчёта: calc_ind_*_array или многочлен pp * (1;-2;1)';
+COMMENT ON COLUMN security_indicator_series.param_period IS 'period для SMA/RSI/BB …';
+COMMENT ON COLUMN security_indicator_series.param_fast_period IS 'fast_period для MACD';
+COMMENT ON COLUMN security_indicator_series.param_slow_period IS 'slow_period для MACD';
+COMMENT ON COLUMN security_indicator_series.param_signal_period IS 'signal_period для MACD';
+COMMENT ON COLUMN security_indicator_series.param_std_dev IS 'std_dev для Bollinger';
+COMMENT ON COLUMN security_indicator_series.param_k_period IS '%K period для STOCH';
+COMMENT ON COLUMN security_indicator_series.param_d_period IS '%D period для STOCH';
+COMMENT ON COLUMN security_indicator_series.param_smooth IS 'Сглаживание STOCH';
+COMMENT ON COLUMN security_indicator_series.point_count IS 'Число баров в массивном расчёте';
+COMMENT ON COLUMN security_indicator_series.display_order IS 'Порядок линий на графике';
+COMMENT ON COLUMN security_indicator_series.is_active IS 'Серия участвует в sync/calc';
+COMMENT ON COLUMN security_indicator_series.created_at IS 'Дата создания';
+
+-- indicator_values
+COMMENT ON TABLE indicator_values IS 'Рассчитанные значения индикаторов по бумаге, TF и времени';
+COMMENT ON COLUMN indicator_values.id IS 'Surrogate PK';
+COMMENT ON COLUMN indicator_values.indicator_id IS 'FK → indicators';
+COMMENT ON COLUMN indicator_values.indicator_value_type_id IS 'FK → indicator_value_types (какая линия)';
+COMMENT ON COLUMN indicator_values.security_id IS 'FK → securities';
+COMMENT ON COLUMN indicator_values.timeframe_id IS 'FK → timeframes';
+COMMENT ON COLUMN indicator_values.dt IS 'Open time свечи значения';
+COMMENT ON COLUMN indicator_values.value IS 'Числовое значение индикатора';
+
+-- logics (дополнение)
+COMMENT ON COLUMN logics.id IS 'Surrogate PK; все дочерние таблицы ссылаются logic_id → logics.id';
+COMMENT ON COLUMN logics.note IS 'Примечание: тип стратегии, источник, комментарий в свободной форме';
+
+-- logic_param_defs
+COMMENT ON COLUMN logic_param_defs.param_key IS 'Уникальный ключ параметра логики (timeframe, commission_pct …)';
+COMMENT ON COLUMN logic_param_defs.name_ru IS 'Подпись в UI';
+COMMENT ON COLUMN logic_param_defs.value_type IS 'number | integer | money | boolean | text';
+COMMENT ON COLUMN logic_param_defs.default_value IS 'Значение при создании новой логики';
+COMMENT ON COLUMN logic_param_defs.description IS 'Подсказка в UI';
+COMMENT ON COLUMN logic_param_defs.display_order IS 'Порядок полей в форме параметров';
+
+-- logic_params
+COMMENT ON COLUMN logic_params.id IS 'Surrogate PK';
+COMMENT ON COLUMN logic_params.logic_id IS 'FK → logics: параметры изолированы по логике';
+COMMENT ON COLUMN logic_params.updated_at IS 'Время последнего изменения значения';
+
+-- sides / actions (справочники сделок)
+COMMENT ON TABLE sides IS 'Сторона сделки: Open (открытие) | Close (закрытие)';
+COMMENT ON COLUMN sides.id IS 'Surrogate PK';
+COMMENT ON COLUMN sides.name IS 'Open | Close';
+
+COMMENT ON TABLE actions IS 'Направление позиции: Long | Short';
+COMMENT ON COLUMN actions.id IS 'Surrogate PK';
+COMMENT ON COLUMN actions.name IS 'Long | Short';
+
+-- logic_indicator_signals (дополнение)
+COMMENT ON COLUMN logic_indicator_signals.id IS 'Surrogate PK';
+COMMENT ON COLUMN logic_indicator_signals.logic_id IS 'FK → logics';
+COMMENT ON COLUMN logic_indicator_signals.indicator_id IS 'FK → indicators';
+COMMENT ON COLUMN logic_indicator_signals.display_order IS 'Приоритет проверки сигналов';
+COMMENT ON COLUMN logic_indicator_signals.is_active IS 'Сигнал участвует в trade runner';
+COMMENT ON COLUMN logic_indicator_signals.created_at IS 'Дата создания';
+
+-- logic_stops (дополнение)
+COMMENT ON COLUMN logic_stops.id IS 'Surrogate PK';
+COMMENT ON COLUMN logic_stops.logic_id IS 'FK → logics';
+COMMENT ON COLUMN logic_stops.value IS 'Величина SL/TP (% или множитель ATR)';
+COMMENT ON COLUMN logic_stops.display_order IS 'Порядок применения правил';
+COMMENT ON COLUMN logic_stops.is_active IS 'Правило включено';
+COMMENT ON COLUMN logic_stops.created_at IS 'Дата создания';
+
+-- logic_securities (дополнение)
+COMMENT ON COLUMN logic_securities.id IS 'Surrogate PK';
+COMMENT ON COLUMN logic_securities.logic_id IS 'FK → logics';
+COMMENT ON COLUMN logic_securities.security_id IS 'FK → securities — бумага в портфеле логики';
+COMMENT ON COLUMN logic_securities.is_active IS 'Бумага участвует в торговле/тесте';
+COMMENT ON COLUMN logic_securities.stop_resume_triggered_at IS 'Когда сработал security_resume SL';
+COMMENT ON COLUMN logic_securities.created_at IS 'Дата добавления в портфель';
+
+-- logic_trades (дополнение)
+COMMENT ON COLUMN logic_trades.id IS 'Surrogate PK сделки';
+COMMENT ON COLUMN logic_trades.logic_id IS 'FK → logics — все сделки логики здесь';
+COMMENT ON COLUMN logic_trades.account_id IS 'FK → accounts — счёт исполнения';
+COMMENT ON COLUMN logic_trades.security_id IS 'FK → securities';
+COMMENT ON COLUMN logic_trades.timeframe_id IS 'FK → timeframes — TF сигнала';
+COMMENT ON COLUMN logic_trades.side_id IS 'FK → sides: Open | Close';
+COMMENT ON COLUMN logic_trades.action_id IS 'FK → actions: Long | Short';
+COMMENT ON COLUMN logic_trades.position_event IS 'open | close — действие сигнала (копия с logic_indicator_signals)';
+COMMENT ON COLUMN logic_trades.signal_kind IS 'trend | counter — какой тип сигнала сработал';
+COMMENT ON COLUMN logic_trades.signal_formula IS 'Копия формулы logic_indicator_signals на момент сделки';
+COMMENT ON COLUMN logic_trades.quantity IS 'Объём в лотах/штуках';
+COMMENT ON COLUMN logic_trades.price IS 'Цена исполнения';
+COMMENT ON COLUMN logic_trades.executed_at IS 'Время записи/исполнения';
+COMMENT ON COLUMN logic_trades.is_simulated IS 'Бумажная торговля (fake account)';
+COMMENT ON COLUMN logic_trades.broker_order_id IS 'ID заявки у брокера (real)';
+COMMENT ON COLUMN logic_trades.status IS 'pending | submitted | filled | rejected | cancelled';
+COMMENT ON COLUMN logic_trades.note IS 'Произвольная заметка';
+COMMENT ON COLUMN logic_trades.created_at IS 'Дата создания записи';
+
+-- logic_backtest_runs
+COMMENT ON COLUMN logic_backtest_runs.id IS 'Surrogate PK прогона теста';
+COMMENT ON COLUMN logic_backtest_runs.logic_id IS 'FK → logics';
+COMMENT ON COLUMN logic_backtest_runs.date_from IS 'Начало периода теста';
+COMMENT ON COLUMN logic_backtest_runs.date_to IS 'Конец периода теста';
+COMMENT ON COLUMN logic_backtest_runs.status IS 'pending | loading_prices | running | completed | …';
+COMMENT ON COLUMN logic_backtest_runs.progress_pct IS 'Прогресс 0–100';
+COMMENT ON COLUMN logic_backtest_runs.phase_message IS 'Текущая фаза для UI';
+COMMENT ON COLUMN logic_backtest_runs.phase_detail IS 'Детали фазы (JSON-текст)';
+COMMENT ON COLUMN logic_backtest_runs.current_bar_dt IS 'Обрабатываемая свеча';
+COMMENT ON COLUMN logic_backtest_runs.total_bars IS 'Всего баров в прогоне';
+COMMENT ON COLUMN logic_backtest_runs.processed_bars IS 'Обработано баров';
+COMMENT ON COLUMN logic_backtest_runs.trades_created IS 'Создано test-сделок';
+COMMENT ON COLUMN logic_backtest_runs.test_balance IS 'Итоговый баланс в тесте';
+COMMENT ON COLUMN logic_backtest_runs.financial_result IS 'Суммарный PnL теста';
+COMMENT ON COLUMN logic_backtest_runs.cancel_requested IS 'Запрошена отмена';
+COMMENT ON COLUMN logic_backtest_runs.error_message IS 'Текст ошибки при failed';
+COMMENT ON COLUMN logic_backtest_runs.started_at IS 'Старт прогона';
+COMMENT ON COLUMN logic_backtest_runs.finished_at IS 'Завершение прогона';
+COMMENT ON COLUMN logic_backtest_runs.created_at IS 'Создание записи прогона';
+
+-- logic_backtest_security_state
+COMMENT ON COLUMN logic_backtest_security_state.run_id IS 'FK → logic_backtest_runs';
+COMMENT ON COLUMN logic_backtest_security_state.security_id IS 'FK → securities';
+COMMENT ON COLUMN logic_backtest_security_state.real_trading_paused IS 'Теневой режим внутри backtest';
+COMMENT ON COLUMN logic_backtest_security_state.stop_resume_equity IS 'Цель возобновления (копия logic_securities)';
+COMMENT ON COLUMN logic_backtest_security_state.stop_resume_baseline IS 'База после SL в тесте';
+
+-- logic_trade_lots
+COMMENT ON COLUMN logic_trade_lots.id IS 'Surrogate PK пакета закрытия';
+COMMENT ON COLUMN logic_trade_lots.logic_id IS 'FK → logics';
+COMMENT ON COLUMN logic_trade_lots.close_trade_id IS 'FK → logic_trades (Close)';
+COMMENT ON COLUMN logic_trade_lots.action_id IS 'Long | Short — сторона закрываемой позиции';
+COMMENT ON COLUMN logic_trade_lots.cost_method IS 'FIFO | AVERAGE — из logic_params.cost_method';
+COMMENT ON COLUMN logic_trade_lots.quantity IS 'Объём в пакете';
+COMMENT ON COLUMN logic_trade_lots.close_amount IS 'Сумма по цене закрытия';
+COMMENT ON COLUMN logic_trade_lots.open_amount IS 'Сумма по цене открытия (FIFO) или средней';
+COMMENT ON COLUMN logic_trade_lots.close_commission IS 'Комиссия закрывающей сделки (доля)';
+COMMENT ON COLUMN logic_trade_lots.open_commission IS 'Комиссия открывающей сделки (доля)';
+COMMENT ON COLUMN logic_trade_lots.financial_result IS 'PnL пакета';
+COMMENT ON COLUMN logic_trade_lots.created_at IS 'Дата создания';
+
+-- futures_expirations
+COMMENT ON COLUMN futures_expirations.id IS 'Surrogate PK контракта';
+COMMENT ON COLUMN futures_expirations.security_id IS 'FK → securities (группа фьючерса)';
+COMMENT ON COLUMN futures_expirations.prefix IS 'SHORTNAME MOEX (Si-6.26, CNY-9.26)';
+COMMENT ON COLUMN futures_expirations.moex_secid IS 'SECID для API (CRU6, SiM6)';
+COMMENT ON COLUMN futures_expirations.expiration_date IS 'Дата экспирации';
+COMMENT ON COLUMN futures_expirations.tbank_figi IS 'FIGI контракта в T-Bank';
+COMMENT ON COLUMN futures_expirations.is_active IS 'Контракт доступен для загрузки цен';
+COMMENT ON COLUMN futures_expirations.created_at IS 'Дата синхронизации';
+
+-- price_load_log
+COMMENT ON TABLE price_load_log IS 'Журнал загрузок цен (T-Bank / MOEX): период, источник, результат';
+COMMENT ON COLUMN price_load_log.id IS 'Surrogate PK';
+COMMENT ON COLUMN price_load_log.security_id IS 'FK → securities';
+COMMENT ON COLUMN price_load_log.timeframe_id IS 'FK → timeframes';
+COMMENT ON COLUMN price_load_log.date_from IS 'Начало запрошенного периода';
+COMMENT ON COLUMN price_load_log.date_to IS 'Конец запрошенного периода';
+COMMENT ON COLUMN price_load_log.source IS 'T-BANK | MOEX | …';
+COMMENT ON COLUMN price_load_log.records_loaded IS 'Число загруженных свечей';
+COMMENT ON COLUMN price_load_log.contract_prefix IS 'Конкретный фьючерсный контракт (если есть)';
+COMMENT ON COLUMN price_load_log.error_message IS 'Текст ошибки загрузки';
+COMMENT ON COLUMN price_load_log.loaded_at IS 'Время завершения загрузки';
+
+-- app_tech_log (дополнение)
+COMMENT ON COLUMN app_tech_log.id IS 'Surrogate PK';
+COMMENT ON COLUMN app_tech_log.span_id IS 'Идентификатор span в trace';
+COMMENT ON COLUMN app_tech_log.parent_span_id IS 'Родительский span';
+COMMENT ON COLUMN app_tech_log.source IS 'web | api | sql';
+COMMENT ON COLUMN app_tech_log.operation IS 'Имя операции (run_trade_cycle, backtest.start …)';
+COMMENT ON COLUMN app_tech_log.started_at IS 'Начало операции';
+COMMENT ON COLUMN app_tech_log.finished_at IS 'Конец операции';
+COMMENT ON COLUMN app_tech_log.duration_ms IS 'Длительность, мс';
+COMMENT ON COLUMN app_tech_log.security_id IS 'FK → securities (если применимо)';
+COMMENT ON COLUMN app_tech_log.timeframe_id IS 'FK → timeframes (если применимо)';
+COMMENT ON COLUMN app_tech_log.sync_gen IS 'Поколение sync графика';
+COMMENT ON COLUMN app_tech_log.message IS 'Краткое сообщение';
+COMMENT ON COLUMN app_tech_log.payload IS 'JSON с деталями';
+COMMENT ON COLUMN app_tech_log.created_at IS 'Время записи в журнал';
+
+-- ============================================
+-- Готово: шаг 1 завершён
+-- ============================================

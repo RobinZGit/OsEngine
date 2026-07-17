@@ -1,0 +1,350 @@
+
+# Создадим SQL-скрипт по частям
+part1 = """-- ============================================
+-- БАЗА ДАННЫХ: multilogictrade
+-- Реструктуризация индикаторов (v12)
+-- ============================================
+-- Удаление старых таблиц индикаторов и создание новой структуры
+-- ============================================
+
+\c multilogictrade;
+
+-- ============================================
+-- ШАГ 1: УДАЛЕНИЕ СТАРЫХ ТАБЛИЦ И ИНДЕКСОВ
+-- ============================================
+
+DROP TABLE IF EXISTS indicator_values CASCADE;
+DROP TABLE IF EXISTS indicator_value_types CASCADE;
+DROP TABLE IF EXISTS indicators CASCADE;
+
+DROP FUNCTION IF EXISTS insert_indicator_value(INTEGER, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC, BOOLEAN, VARCHAR, BOOLEAN);
+DROP PROCEDURE IF EXISTS calculate_indicator(INTEGER, INTEGER, INTEGER, DATE, DATE, BOOLEAN);
+DROP PROCEDURE IF EXISTS calculate_all_indicators(INTEGER, INTEGER, DATE, DATE, BOOLEAN);
+DROP PROCEDURE IF EXISTS calculate_indicators_batch(INTEGER[], INTEGER, DATE, DATE, BOOLEAN);
+
+-- ============================================
+-- ШАГ 2: СПРАВОЧНИК ИНДИКАТОРОВ (упрощённый)
+-- ============================================
+CREATE TABLE IF NOT EXISTS indicators (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(20) NOT NULL UNIQUE,         -- Сокращение: SMA, EMA, RSI, MACD
+    name VARCHAR(100) NOT NULL,              -- Полное имя
+    description TEXT,                         -- Описание
+    category VARCHAR(50),                    -- trend, momentum, volatility, volume
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO indicators (code, name, description, category) VALUES
+    ('SMA', 'Simple Moving Average', 'Простое скользящее среднее', 'trend'),
+    ('EMA', 'Exponential Moving Average', 'Экспоненциальное скользящее среднее', 'trend'),
+    ('WMA', 'Weighted Moving Average', 'Взвешенное скользящее среднее', 'trend'),
+    ('RSI', 'Relative Strength Index', 'Индекс относительной силы (0-100)', 'momentum'),
+    ('MACD', 'Moving Average Convergence Divergence', 'Схождение/расхождение MA', 'momentum'),
+    ('STOCH', 'Stochastic Oscillator', 'Стохастический осциллятор', 'momentum'),
+    ('BB', 'Bollinger Bands', 'Полосы Боллинджера', 'volatility'),
+    ('ATR', 'Average True Range', 'Средний истинный диапазон', 'volatility'),
+    ('ADX', 'Average Directional Index', 'Индекс среднего направления', 'trend'),
+    ('OBV', 'On-Balance Volume', 'Накопленный объем', 'volume'),
+    ('VWAP', 'Volume Weighted Average Price', 'Объемно-взвешенная средняя цена', 'volume'),
+    ('MFI', 'Money Flow Index', 'Индекс денежного потока', 'momentum'),
+    ('CCI', 'Commodity Channel Index', 'Индекс товарного канала', 'momentum'),
+    ('WILLR', 'Williams %R', 'Процентный диапазон Вильямса', 'momentum'),
+    ('PSAR', 'Parabolic SAR', 'Параболическая система SAR', 'trend'),
+    ('ICHIMOKU', 'Ichimoku Cloud', 'Облако Ишимоку', 'trend'),
+    ('KDJ', 'KDJ Indicator', 'Индикатор KDJ', 'momentum'),
+    ('DMI', 'Directional Movement Index', 'Индекс направленного движения', 'trend'),
+    ('KELTNER', 'Keltner Channels', 'Каналы Кельтнера', 'volatility'),
+    ('DONCHIAN', 'Donchian Channels', 'Каналы Дончиана', 'volatility'),
+    ('ROC', 'Rate of Change', 'Темп изменения', 'momentum'),
+    ('TRIX', 'Triple Exponential Average', 'Тройное экспоненциальное среднее', 'momentum'),
+    ('CMO', 'Chande Momentum Oscillator', 'Осциллятор моментума Чанде', 'momentum'),
+    ('RVI', 'Relative Vigor Index', 'Индекс относительной бодрости', 'momentum'),
+    ('TSI', 'True Strength Index', 'Индекс истинной силы', 'momentum'),
+    ('UO', 'Ultimate Oscillator', 'Ультимативный осциллятор', 'momentum'),
+    ('AROON', 'Aroon Indicator', 'Индикатор Арун', 'trend'),
+    ('SAR', 'Stop And Reverse', 'Стоп и реверс', 'trend'),
+    ('HMA', 'Hull Moving Average', 'Скользящее среднее Халла', 'trend'),
+    ('ZLEMA', 'Zero Lag EMA', 'EMA с нулевым запаздыванием', 'trend')
+ON CONFLICT (code) DO NOTHING;
+
+COMMENT ON TABLE indicators IS 'Справочник технических индикаторов';
+
+-- ============================================
+-- ШАГ 3: ИНДИКАТОР_ПАРАМЕТР_МАСТЕР
+-- ============================================
+CREATE TABLE IF NOT EXISTS indicator_param_master (
+    id SERIAL PRIMARY KEY,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    param_code VARCHAR(30) NOT NULL,         -- PERIOD, FAST_PERIOD, STD_DEV
+    param_name VARCHAR(100) NOT NULL,        -- Человекочитаемое имя
+    value_type VARCHAR(20) NOT NULL DEFAULT 'integer', -- integer, float, string, boolean
+    description TEXT,
+    is_required BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(indicator_id, param_code)
+);
+
+COMMENT ON TABLE indicator_param_master IS 'Мастер-таблица параметров индикаторов';
+
+-- ============================================
+-- ШАГ 4: ИНДИКАТОР_ПАРАМЕТР_ДЕТАЛЬ
+-- ============================================
+CREATE TABLE IF NOT EXISTS indicator_param_detail (
+    id SERIAL PRIMARY KEY,
+    param_master_id INTEGER NOT NULL REFERENCES indicator_param_master(id) ON DELETE CASCADE,
+    default_value TEXT NOT NULL,              -- Значение по умолчанию
+    min_value NUMERIC(18, 6),                 -- Минимум
+    max_value NUMERIC(18, 6),                 -- Максимум
+    step_value NUMERIC(18, 6),                -- Шаг
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(param_master_id)
+);
+
+COMMENT ON TABLE indicator_param_detail IS 'Детальная таблица параметров индикаторов (значения по умолчанию)';
+
+-- ============================================
+-- ШАГ 5: ЗАПОЛНЕНИЕ ПАРАМЕТРОВ
+-- ============================================
+
+-- SMA: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета SMA', 1
+FROM indicators WHERE code = 'SMA'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '20', 2, 500, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'SMA')
+ON CONFLICT DO NOTHING;
+
+-- EMA: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета EMA', 1
+FROM indicators WHERE code = 'EMA'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '20', 2, 500, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'EMA')
+ON CONFLICT DO NOTHING;
+
+-- WMA: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета WMA', 1
+FROM indicators WHERE code = 'WMA'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '20', 2, 500, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'WMA')
+ON CONFLICT DO NOTHING;
+
+-- RSI: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета RSI', 1
+FROM indicators WHERE code = 'RSI'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '14', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'RSI')
+ON CONFLICT DO NOTHING;
+
+-- MACD: FAST_PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'FAST_PERIOD', 'Быстрый период', 'integer', 'Период быстрой EMA', 1
+FROM indicators WHERE code = 'MACD'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '12', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'FAST_PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'MACD')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'SLOW_PERIOD', 'Медленный период', 'integer', 'Период медленной EMA', 2
+FROM indicators WHERE code = 'MACD'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '26', 2, 200, 1
+FROM indicator_param_master
+WHERE param_code = 'SLOW_PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'MACD')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'SIGNAL_PERIOD', 'Сигнальный период', 'integer', 'Период сигнальной EMA', 3
+FROM indicators WHERE code = 'MACD'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '9', 2, 50, 1
+FROM indicator_param_master
+WHERE param_code = 'SIGNAL_PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'MACD')
+ON CONFLICT DO NOTHING;
+
+-- BB: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета SMA', 1
+FROM indicators WHERE code = 'BB'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '20', 2, 500, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'BB')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'STD_DEV', 'Стандартное отклонение', 'float', 'Коэффициент для полос', 2
+FROM indicators WHERE code = 'BB'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '2.0', 0.5, 5.0, 0.1
+FROM indicator_param_master
+WHERE param_code = 'STD_DEV' AND indicator_id = (SELECT id FROM indicators WHERE code = 'BB')
+ON CONFLICT DO NOTHING;
+
+-- ATR: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета ATR', 1
+FROM indicators WHERE code = 'ATR'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '14', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'ATR')
+ON CONFLICT DO NOTHING;
+
+-- STOCH: K_PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'K_PERIOD', 'Период %K', 'integer', 'Период для расчета %K', 1
+FROM indicators WHERE code = 'STOCH'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '14', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'K_PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'STOCH')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'D_PERIOD', 'Период %D', 'integer', 'Период сглаживания %D', 2
+FROM indicators WHERE code = 'STOCH'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '3', 2, 50, 1
+FROM indicator_param_master
+WHERE param_code = 'D_PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'STOCH')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'SMOOTH', 'Сглаживание', 'integer', 'Период сглаживания %K', 3
+FROM indicators WHERE code = 'STOCH'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '3', 1, 50, 1
+FROM indicator_param_master
+WHERE param_code = 'SMOOTH' AND indicator_id = (SELECT id FROM indicators WHERE code = 'STOCH')
+ON CONFLICT DO NOTHING;
+
+-- ADX: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета ADX', 1
+FROM indicators WHERE code = 'ADX'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '14', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'ADX')
+ON CONFLICT DO NOTHING;
+
+-- VWAP: SESSION_BASED
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order, is_required)
+SELECT id, 'SESSION_BASED', 'На основе сессии', 'boolean', 'Рассчитывать за торговую сессию', 1, FALSE
+FROM indicators WHERE code = 'VWAP'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, 'true', NULL, NULL, NULL
+FROM indicator_param_master
+WHERE param_code = 'SESSION_BASED' AND indicator_id = (SELECT id FROM indicators WHERE code = 'VWAP')
+ON CONFLICT DO NOTHING;
+
+-- MFI: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета MFI', 1
+FROM indicators WHERE code = 'MFI'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '14', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'MFI')
+ON CONFLICT DO NOTHING;
+
+-- CCI: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета CCI', 1
+FROM indicators WHERE code = 'CCI'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '20', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'CCI')
+ON CONFLICT DO NOTHING;
+
+-- WILLR: PERIOD
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'PERIOD', 'Период', 'integer', 'Количество свечей для расчета Williams %R', 1
+FROM indicators WHERE code = 'WILLR'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '14', 2, 100, 1
+FROM indicator_param_master
+WHERE param_code = 'PERIOD' AND indicator_id = (SELECT id FROM indicators WHERE code = 'WILLR')
+ON CONFLICT DO NOTHING;
+
+-- PSAR: AF_STEP
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'AF_STEP', 'Шаг ускорения', 'float', 'Начальный шаг ускорения', 1
+FROM indicators WHERE code = 'PSAR'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '0.02', 0.01, 0.5, 0.01
+FROM indicator_param_master
+WHERE param_code = 'AF_STEP' AND indicator_id = (SELECT id FROM indicators WHERE code = 'PSAR')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_master (indicator_id, param_code, param_name, value_type, description, display_order)
+SELECT id, 'AF_MAX', 'Макс. ускорение', 'float', 'Максимальное значение ускорения', 2
+FROM indicators WHERE code = 'PSAR'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO indicator_param_detail (param_master_id, default_value, min_value, max_value, step_value)
+SELECT id, '0.2', 0.05, 1.0, 0.05
+FROM indicator_param_master
+WHERE param_code = 'AF_MAX' AND indicator_id = (SELECT id FROM indicators WHERE code = 'PSAR')
+ON CONFLICT DO NOTHING;
+"""
+
+with open('/mnt/agents/output/multilogictrade_indicators_restructure_part1.sql', 'w', encoding='utf-8') as f:
+    f.write(part1)
+
+print("Part 1 saved successfully")
+print(f"Size: {len(part1)} chars")

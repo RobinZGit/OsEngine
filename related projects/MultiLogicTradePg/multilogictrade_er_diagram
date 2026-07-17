@@ -1,0 +1,199 @@
+// MultiLogicTrade Database Schema
+digraph {
+	bgcolor="#0d1117" dpi=200 pad=1.0 rankdir=TB
+	graph [fontcolor="#e6edf3" fontname="Helvetica Bold" fontsize=28 label="MultiLogicTrade — ER Diagram (v16)" labeljust=center labelloc=t]
+	node [fontname=Helvetica margin=0 shape=none]
+	edge [color="#8b949e" fontcolor="#8b949e" fontname=Helvetica fontsize=10]
+	security_types [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">security_types</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Типы ценных бумаг</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50) UNIQUE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  note</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100)</FONT></TD></TR></TABLE>>]
+	exchanges [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">exchanges</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Торговые площадки</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50) UNIQUE</FONT></TD></TR></TABLE>>]
+	timeframes [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">timeframes</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Таймфреймы</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  tf</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20) UNIQUE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  full_name</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  sec</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">INTEGER</FONT></TD></TR></TABLE>>]
+	brokers [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">brokers</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Брокеры</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  code</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50) UNIQUE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  api_url</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(255)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_active</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  created_at</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR></TABLE>>]
+	securities [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">securities</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Ценные бумаги</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(200)</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 security_type_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → security_types</FONT></TD></TR></TABLE>>]
+	security_prefixes [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">security_prefixes</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Префиксы (тикеры)</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 security_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → securities</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 exchange_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → exchanges</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  prefix</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50) UNIQUE</FONT></TD></TR></TABLE>>]
+	accounts [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">accounts</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Торговые счета</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 broker_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → brokers</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  account_code</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  account_type</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">real/fake</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_efficient</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  token_encrypted</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_active</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  created_at</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR></TABLE>>]
+	prices [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">prices</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Цены OHLCV</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">BIGSERIAL PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 security_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → securities</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 timeframe_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → timeframes</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  dt</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  open_price</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  high_price</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  low_price</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  close_price</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  volume</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(20,2)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  value</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(20,2)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  trades</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">INTEGER</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  created_at</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR></TABLE>>]
+	parameter_types [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">parameter_types</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Типы параметров</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100) UNIQUE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  short_name</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  value_type</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_control</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_fake_only</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  description</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  default_value</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  min_value</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  max_value</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR></TABLE>>]
+	parameter_sets [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">parameter_sets</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Наборы параметров</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  description</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_active</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  created_at</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR></TABLE>>]
+	parameter_values [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">parameter_values</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Значения параметров</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 parameter_set_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → parameter_sets</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 parameter_type_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → parameter_types</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  value</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  record_date</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  created_at</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR></TABLE>>]
+	indicators [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">indicators</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Технические индикаторы</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  code</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20) UNIQUE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  script</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  description</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  category</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_active</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR></TABLE>>]
+	indicator_value_types [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">indicator_value_types</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Типы значений индикаторов</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 indicator_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → indicators</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  code</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  value_type</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_threshold</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  threshold_value</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  description</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR></TABLE>>]
+	indicator_values [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">indicator_values</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Рассчитанные значения индикаторов</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">BIGSERIAL PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 indicator_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → indicators</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 indicator_value_type_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → ind_val_types</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 security_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → securities</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 timeframe_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → timeframes</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  dt</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  value</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">NUMERIC(18,6)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_signal</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  signal_type</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20)</FONT></TD></TR></TABLE>>]
+	logics [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">logics</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Торговые логики</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(100) UNIQUE</FONT></TD></TR></TABLE>>]
+	sides [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">sides</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Стороны сделки</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20) UNIQUE</FONT></TD></TR></TABLE>>]
+	actions [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">actions</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Действия</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  name</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20) UNIQUE</FONT></TD></TR></TABLE>>]
+	logics_detail [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">logics_detail</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Детали логики</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 logic_name</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → logics(name)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  formula</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 side_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → sides</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 action_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → actions</FONT></TD></TR></TABLE>>]
+	futures_expirations [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">futures_expirations</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Сроки экспирации фьючерсов</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 security_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → securities</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  prefix</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(50)</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  expiration_date</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">DATE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  is_active</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">BOOLEAN</FONT></TD></TR></TABLE>>]
+	price_load_log [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD COLSPAN="2" BGCOLOR="#1f6feb" ALIGN="CENTER"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="12">price_load_log</FONT><BR/>
+    <FONT COLOR="#c9d1d9" FACE="Helvetica" POINT-SIZE="8">Лог загрузки цен</FONT></TD></TR><TR><TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica Bold" POINT-SIZE="9">🔑 id</FONT></TD>
+        <TD BGCOLOR="#238636" ALIGN="LEFT"><FONT COLOR="#ffffff" FACE="Helvetica" POINT-SIZE="9">BIGSERIAL PK</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 security_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → securities</FONT></TD></TR><TR><TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica Bold" POINT-SIZE="9">🔗 timeframe_id</FONT></TD>
+        <TD BGCOLOR="#bc8f00" ALIGN="LEFT"><FONT COLOR="#000000" FACE="Helvetica" POINT-SIZE="9">FK → timeframes</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  date_from</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">DATE</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  date_to</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">DATE</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  source</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">VARCHAR(20)</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  records_loaded</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">INTEGER</FONT></TD></TR><TR><TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  error_message</FONT></TD>
+        <TD BGCOLOR="#161b22" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TEXT</FONT></TD></TR><TR><TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica Bold" POINT-SIZE="9">  loaded_at</FONT></TD>
+        <TD BGCOLOR="#21262d" ALIGN="LEFT"><FONT COLOR="#e6edf3" FACE="Helvetica" POINT-SIZE="9">TIMESTAMP</FONT></TD></TR></TABLE>>]
+	security_types -> securities [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=security_type_id style=solid]
+	securities -> security_prefixes [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=security_id style=solid]
+	exchanges -> security_prefixes [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=exchange_id style=solid]
+	brokers -> accounts [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=broker_id style=solid]
+	securities -> prices [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=security_id style=solid]
+	timeframes -> prices [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=timeframe_id style=solid]
+	parameter_sets -> parameter_values [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=parameter_set_id style=solid]
+	parameter_types -> parameter_values [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=parameter_type_id style=solid]
+	indicators -> indicator_value_types [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=indicator_id style=solid]
+	indicators -> indicator_values [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=indicator_id style=solid]
+	indicator_value_types -> indicator_values [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=indicator_value_type_id style=solid]
+	securities -> indicator_values [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=security_id style=solid]
+	timeframes -> indicator_values [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=timeframe_id style=solid]
+	logics -> logics_detail [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=logic_name style=solid]
+	sides -> logics_detail [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=side_id style=solid]
+	actions -> logics_detail [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=action_id style=solid]
+	securities -> futures_expirations [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=security_id style=solid]
+	securities -> price_load_log [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=security_id style=solid]
+	timeframes -> price_load_log [label="1 : N" arrowhead=crow arrowtail=dot dir=both headlabel=timeframe_id style=solid]
+}
