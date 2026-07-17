@@ -12,7 +12,8 @@ param(
     [string] $InstallDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path,
     [string] $PostgresPassword = "111",
     [string] $PostgresMajor = "15",
-    [switch] $SkipDependencyInstall
+    [switch] $SkipDependencyInstall,
+    [switch] $SkipAppProtocol
 )
 
 $ErrorActionPreference = "Stop"
@@ -595,7 +596,9 @@ finally {
     try {
         if (Test-Path $LogPath) {
             Copy-Item $LogPath $LatestLogPath -Force
+        }
 
+        if ((-not $SkipAppProtocol) -and (Test-Path $LogPath)) {
             $summary = @"
 MultiLogicTradePg installation protocol
 Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")

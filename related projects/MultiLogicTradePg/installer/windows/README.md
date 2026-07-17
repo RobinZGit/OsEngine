@@ -70,10 +70,10 @@ database, installs npm packages, and creates launch shortcuts.
    C:\ProgramData\MultiLogicTradePg\install-latest.log
    ```
 
-   `INSTALL_PROTOCOL.txt` contains the setup summary plus the full post-install
-   PowerShell transcript and is the easiest file to send for diagnostics. Setup
-   copies a placeholder protocol first, so the file always exists; the
-   post-install script replaces it with the full protocol when it finishes.
+   `INSTALL_PROTOCOL.txt` contains the full post-install output and is the
+   easiest file to send for diagnostics. Setup copies a placeholder protocol
+   first, then runs post-install through a small wrapper that overwrites the file
+   immediately and captures PowerShell output/errors from the first line.
 
 8. Creates shortcuts:
 

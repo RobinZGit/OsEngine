@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-17 — `INSTALL_PROTOCOL.txt` всегда существует: placeholder + Check перед Notepad
+**Последнее обновление:** 2026-07-17 — post-install запускается через wrapper, `INSTALL_PROTOCOL.txt` пишет stdout/stderr сразу
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -190,7 +190,7 @@
 83. **Fix installer admin responsibilities:** `MultiLogic_Trade_Progress_Start.bat` больше не выполняет `npm install`; он только проверяет `api\web node_modules` и локальный Angular CLI. Все npm-пакеты ставятся post-install скриптом от администратора, установка падает, если `node_modules` не создан.
 84. **Fix reset БД:** installer больше не полагается на `00` для reset; post-install ищет локальный PostgreSQL (`5432`, существующий `api\.env PGPORT`, `5433..5440`) с пользователем `postgres`/паролем `111`, выбирает порт, где уже есть `multilogictrade`, удаляет базу по имени через terminate + `DROP DATABASE IF EXISTS ... WITH (FORCE)`, проверяет отсутствие/создание базы, накатывает `01 -> 02` и записывает выбранный `PGPORT` в `api\.env`.
 85. **Reset всегда:** checkbox `resetdb` удалён из Inno Setup; post-install больше не принимает `-ResetDatabase` и всегда сбрасывает/пересоздаёт `multilogictrade` при установке.
-86. **Протокол установки + автозапуск:** installer сразу кладёт placeholder `{app}\INSTALL_PROTOCOL.txt`, post-install заменяет его полным протоколом и копирует transcript в `C:\ProgramData\MultiLogicTradePg\install-latest.log`; Notepad запускается только если файл существует; в Start Menu есть `Install protocol`; на финальной странице Setup добавлен checked checkbox `Run MultiLogic Trade` и optional unchecked `Open installation protocol`.
+86. **Протокол установки + автозапуск:** installer сразу кладёт placeholder `{app}\INSTALL_PROTOCOL.txt`; post-install запускается через `installer\windows\scripts\run_postinstall.cmd`, который сразу перезаписывает протокол и пишет туда stdout/stderr PowerShell. `install.ps1` дополнительно копирует transcript в `C:\ProgramData\MultiLogicTradePg\install-latest.log`; Notepad запускается только если файл существует; в Start Menu есть `Install protocol`; на финальной странице Setup добавлен checked checkbox `Run MultiLogic Trade` и optional unchecked `Open installation protocol`.
 
 ### Автотесты
 
@@ -251,6 +251,7 @@
 - [x] Убрать optional reset checkbox: каждая установка всегда пересоздаёт `multilogictrade` (2026-07-17).
 - [x] Добавить `INSTALL_PROTOCOL.txt` + shortcut протокола + checked checkbox запуска после установки (2026-07-17).
 - [x] Fix missing `INSTALL_PROTOCOL.txt`: placeholder копируется в `{app}` до post-install, Notepad guarded by `FileExists` (2026-07-17).
+- [x] Post-install через `run_postinstall.cmd`, чтобы `INSTALL_PROTOCOL.txt` получал stdout/stderr даже при раннем падении PowerShell (2026-07-17).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -271,6 +272,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-17 | Robust installer protocol: run_postinstall.cmd captures PowerShell stdout/stderr into INSTALL_PROTOCOL.txt |
 | 2026-07-17 | Fix missing protocol Notepad: packaged INSTALL_PROTOCOL placeholder and FileExists check |
 | 2026-07-17 | Installer protocol + final-page run checkbox: INSTALL_PROTOCOL.txt, install-latest.log, Start Menu protocol |
 | 2026-07-17 | Installer reset is mandatory: removed resetdb task/flag; every setup recreates multilogictrade |
@@ -454,3 +456,4 @@
 95. «Did you put it in main? He still did not update/delete the database.» — подтвердить main и сделать reset БД безусловным при каждой установке.
 96. «database is still not reset; add installation protocol so I can throw it to you; add checkbox enabled to run program after installation» — добавить `INSTALL_PROTOCOL.txt`, shortcut протокола и checked run-after-install checkbox.
 97. Скрин Блокнота: «Не удаётся найти файл C:\Program Files\MultiLogicTradePg\INSTALL_PROTOCOL.txt» — добавить placeholder протокола в installer files и `Check: FileExists` для открытия.
+98. Placeholder протокола остался неизменённым после setup — запускать post-install через `.cmd` wrapper, который пишет stdout/stderr в `INSTALL_PROTOCOL.txt` независимо от внутреннего finally PowerShell.
