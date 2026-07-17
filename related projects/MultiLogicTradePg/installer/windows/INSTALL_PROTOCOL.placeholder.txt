@@ -1,0 +1,9 @@
+MultiLogicTradePg installation protocol
+
+The post-install script has not written the full protocol yet.
+
+If this file remains unchanged after setup finishes, the post-install script did
+not reach its protocol-writing step. In that case, also check:
+
+C:\ProgramData\MultiLogicTradePg\install-latest.log
+

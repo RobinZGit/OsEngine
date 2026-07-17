@@ -40,6 +40,7 @@ Source: "{#SourceRoot}\01_multilogictrade_tables_and_data.sql"; DestDir: "{app}"
 Source: "{#SourceRoot}\02_multilogictrade_functions_and_procedures.sql"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\03_multilogictrade_examples.sql"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\installer\windows\INSTALL_PROTOCOL.placeholder.txt"; DestDir: "{app}"; DestName: "INSTALL_PROTOCOL.txt"; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceRoot}\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "_tmp_http_ext\*"
 Source: "{#SourceRoot}\api\*"; DestDir: "{app}\api"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "node_modules\*,.env"
@@ -55,7 +56,7 @@ Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\windows\scripts\install.ps1"" -InstallDir ""{app}"" -PostgresPassword ""111"""; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg..."; Flags: waituntilterminated
 Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Run MultiLogic Trade"; Flags: postinstall nowait skipifsilent runasoriginaluser
-Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Description: "Open installation protocol"; Flags: postinstall skipifsilent unchecked runasoriginaluser
+Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Description: "Open installation protocol"; Flags: postinstall skipifsilent unchecked runasoriginaluser; Check: InstallProtocolExists
 
 [Code]
 function StripQuotes(Value: String): String;
@@ -63,6 +64,11 @@ begin
   Result := Value;
   if (Length(Result) >= 2) and (Copy(Result, 1, 1) = '"') and (Copy(Result, Length(Result), 1) = '"') then
     Result := Copy(Result, 2, Length(Result) - 2);
+end;
+
+function InstallProtocolExists(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\INSTALL_PROTOCOL.txt'));
 end;
 
 function InitializeSetup(): Boolean;

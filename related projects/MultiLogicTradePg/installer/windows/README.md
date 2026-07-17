@@ -71,7 +71,9 @@ database, installs npm packages, and creates launch shortcuts.
    ```
 
    `INSTALL_PROTOCOL.txt` contains the setup summary plus the full post-install
-   PowerShell transcript and is the easiest file to send for diagnostics.
+   PowerShell transcript and is the easiest file to send for diagnostics. Setup
+   copies a placeholder protocol first, so the file always exists; the
+   post-install script replaces it with the full protocol when it finishes.
 
 8. Creates shortcuts:
 
