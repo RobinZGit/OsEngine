@@ -63,10 +63,21 @@ database, installs npm packages, and creates launch shortcuts.
 
    in both `api\` and `web\`.
 
-7. Creates shortcuts:
+7. Writes installation logs:
+
+   ```text
+   C:\Program Files\MultiLogicTradePg\INSTALL_PROTOCOL.txt
+   C:\ProgramData\MultiLogicTradePg\install-latest.log
+   ```
+
+   `INSTALL_PROTOCOL.txt` contains the setup summary plus the full post-install
+   PowerShell transcript and is the easiest file to send for diagnostics.
+
+8. Creates shortcuts:
 
    - Desktop: `MultiLogic Trade`
    - Start Menu: `MultiLogic Trade\MultiLogic Trade`
+   - Start Menu: `MultiLogic Trade\Install protocol`
 
    Both shortcuts run via `cmd.exe /k` (console stays open) and start:
 
@@ -79,6 +90,10 @@ database, installs npm packages, and creates launch shortcuts.
    starts Angular on `:4200`, opens the browser, and keeps the window open until
    you press a key. It does not run `npm install`; package installation is an
    installer-time administrator task.
+
+9. Shows a checked final-page checkbox to run MultiLogic Trade immediately after
+   setup. There is also an optional unchecked checkbox to open the installation
+   protocol.
 
 ## Reinstall behavior
 
@@ -114,10 +129,17 @@ installer\windows\dist\MultiLogicTradePgSetup.exe
 
 ## Logs
 
-The post-install script writes a transcript to:
+The post-install script writes a ready-to-send protocol to:
 
 ```text
-C:\ProgramData\MultiLogicTradePg\install.log
+C:\Program Files\MultiLogicTradePg\INSTALL_PROTOCOL.txt
+```
+
+It also writes transcripts to:
+
+```text
+C:\ProgramData\MultiLogicTradePg\install-latest.log
+C:\ProgramData\MultiLogicTradePg\install-YYYYMMDD-HHMMSS.log
 ```
 
 If the installer cannot install Node.js, PostgreSQL, or npm packages, check this

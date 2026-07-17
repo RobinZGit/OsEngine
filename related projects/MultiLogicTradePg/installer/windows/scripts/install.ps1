@@ -20,9 +20,12 @@ $ProgressPreference = "SilentlyContinue"
 
 $InstallDir = (Resolve-Path $InstallDir).Path
 $LogDir = Join-Path $env:ProgramData "MultiLogicTradePg"
-$LogPath = Join-Path $LogDir "install.log"
+$RunStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$LogPath = Join-Path $LogDir "install-$RunStamp.log"
+$LatestLogPath = Join-Path $LogDir "install-latest.log"
+$ProtocolPath = Join-Path $InstallDir "INSTALL_PROTOCOL.txt"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
-Start-Transcript -Path $LogPath -Append | Out-Null
+Start-Transcript -Path $LogPath | Out-Null
 $script:PostgresHost = "localhost"
 $script:PostgresPort = 5432
 
@@ -565,6 +568,7 @@ TRADE_RUNNER_INTERVAL_MS=15000
     Write-Host "MultiLogicTradePg installer post-install" -ForegroundColor Green
     Write-Host "InstallDir: $InstallDir"
     Write-Host "Log:        $LogPath"
+    Write-Host "Protocol:   $ProtocolPath"
 
     Ensure-NodeJs
     $pgRoot = Ensure-PostgreSql
@@ -582,5 +586,34 @@ TRADE_RUNNER_INTERVAL_MS=15000
     Write-Host "Запуск: ярлык 'MultiLogic Trade' на рабочем столе или в меню Пуск." -ForegroundColor Green
 }
 finally {
-    Stop-Transcript | Out-Null
+    try {
+        Stop-Transcript | Out-Null
+    }
+    catch {
+    }
+
+    try {
+        if (Test-Path $LogPath) {
+            Copy-Item $LogPath $LatestLogPath -Force
+
+            $summary = @"
+MultiLogicTradePg installation protocol
+Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+InstallDir: $InstallDir
+Transcript: $LogPath
+Latest transcript copy: $LatestLogPath
+PostgreSQL target: $($script:PostgresHost):$($script:PostgresPort) / multilogictrade / user postgres
+
+Attach this file when reporting installer problems.
+
+================ FULL TRANSCRIPT ================
+"@
+            Write-Utf8NoBomText $ProtocolPath $summary
+            Get-Content -Path $LogPath -Encoding UTF8 -ErrorAction SilentlyContinue |
+                Add-Content -Path $ProtocolPath -Encoding UTF8
+        }
+    }
+    catch {
+        Write-Warning "Could not write install protocol: $($_.Exception.Message)"
+    }
 }
