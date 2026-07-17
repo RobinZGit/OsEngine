@@ -23,7 +23,7 @@ echo  WEB: %WEB%
 echo  API: %API%
 echo.
 
-REM Refresh PATH (Node/npm installed by Setup are invisible to Explorer until re-login).
+REM Refresh PATH (Node from Setup is invisible to Explorer until re-login).
 call :RefreshPath
 if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
 if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "PATH=%ProgramFiles(x86)%\nodejs;%PATH%"
@@ -36,12 +36,6 @@ if errorlevel 1 (
   goto :end_pause
 )
 for /f "delims=" %%V in ('node -v 2^>nul') do echo  Node: %%V
-
-where npm >nul 2>&1
-if errorlevel 1 (
-  echo  [ERROR] npm was not found. Check Node.js installation.
-  goto :end_pause
-)
 
 REM Default DB password from installer; override from api\.env if present.
 if "%PGPASSWORD%"=="" set "PGPASSWORD=111"
@@ -81,30 +75,23 @@ if errorlevel 1 (
 echo.
 
 if not exist "%API%\node_modules\" (
-  echo  [2/5] npm install in api...
-  pushd "%API%"
-  call npm install --no-audit --no-fund
-  if errorlevel 1 (
-    popd
-    goto :fail_npm
-  )
-  popd
-) else (
-  echo  [2/5] api - OK (node_modules exists)
+  echo  [ERROR] api\node_modules was not found.
+  echo          Reinstall MultiLogicTradePgSetup.exe as Administrator.
+  goto :missing_node_modules
 )
+echo  [2/5] api - OK (node_modules exists)
 
 if not exist "%WEB%\node_modules\" (
-  echo  [3/5] npm install in web...
-  pushd "%WEB%"
-  call npm install --no-audit --no-fund
-  if errorlevel 1 (
-    popd
-    goto :fail_npm
-  )
-  popd
-) else (
-  echo  [3/5] web - OK (node_modules exists)
+  echo  [ERROR] web\node_modules was not found.
+  echo          Reinstall MultiLogicTradePgSetup.exe as Administrator.
+  goto :missing_node_modules
 )
+if not exist "%WEB%\node_modules\@angular\cli\bin\ng.js" (
+  echo  [ERROR] Angular CLI was not found in web\node_modules.
+  echo          Reinstall MultiLogicTradePgSetup.exe as Administrator.
+  goto :missing_node_modules
+)
+echo  [3/5] web - OK (node_modules exists)
 
 echo  [4/5] Angular cache cleanup...
 pushd "%WEB%"
@@ -114,7 +101,7 @@ if exist ".angular\cache" (
 ) else (
   echo       .angular\cache not found
 )
-call npx --yes ng cache clean >nul 2>&1
+call node "%WEB%\node_modules\@angular\cli\bin\ng.js" cache clean >nul 2>&1
 popd
 
 echo  [5/5] Start in THIS window (do not close it)...
@@ -138,8 +125,8 @@ set "CACHE_BUST=%RANDOM%"
 start "MultiLogic Browser Opener" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 27; Start-Process 'http://localhost:4200/?v=%CACHE_BUST%'"
 
 pushd "%WEB%"
-echo  Launch: npx ng serve --port 4200 ...
-call npx ng serve --port 4200 --host localhost --open=false --configuration=development
+echo  Launch: ng serve --port 4200 ...
+call node "%WEB%\node_modules\@angular\cli\bin\ng.js" serve --port 4200 --host localhost --open=false --configuration=development
 set "NG_EXIT=!ERRORLEVEL!"
 popd
 
@@ -190,10 +177,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "if(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue){ exit 1 } else { exit 0 }"
 exit /b !ERRORLEVEL!
 
-:fail_npm
+:missing_node_modules
 echo.
 set "EXIT_CODE=1"
-echo  [ERROR] npm install failed.
+echo  [ERROR] Packages must be prepared by the installer, not by this launcher.
 goto :end_pause
 
 :end_pause

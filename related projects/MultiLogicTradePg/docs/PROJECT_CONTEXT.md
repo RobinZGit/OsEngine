@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-17 — fix launcher v3: старый рабочий `.bat` flow + исправлен browser opener
+**Последнее обновление:** 2026-07-17 — installer ставит npm-пакеты; launcher без npm install; reset БД по имени с FORCE
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -186,7 +186,9 @@
 79. **Готовый один `.exe`:** собран Inno Setup (Wine+ISCC в Linux Cloud) → `installer/windows/dist/MultiLogicTradePgSetup.exe` (~2.2 MB), закоммичен в git (gitignore разрешает только этот Setup.exe).
 80. **Fix ярлыка Desktop/Start Menu:** ярлыки через `cmd.exe /k` (консоль не мигает); `MultiLogic_Trade_Progress_Start.bat` обновляет PATH (Node после Setup без re-login), читает `api\.env`, поднимает API `:3000` + `ng serve` `:4200`, открывает браузер, всегда `pause` в конце. Добавлен `web/Start_MultiLogic_Trade.cmd`.
 81. **Fix batch-ошибок установленного launcher:** Windows-скрипты установщика/запуска нормализуются в CRLF + UTF-8 без BOM; добавлен `.gitattributes`; API стартует с унаследованными env-переменными вместо длинной цепочки `cmd /c "set ...&& ..."`.
-82. **Fix launcher v2/v3:** после повтора ошибки большой PowerShell-wrapper отменён; возвращён старый рабочий `.bat` flow (одно окно, API в фоне, Angular в foreground, npm только если нет `node_modules`), но файл сделан ASCII-only/CRLF и исправлено отложенное открытие браузера без вложенного `start \"\"`, которое давало `The system cannot find the file \\.`.
+82. **Fix launcher v2/v3:** после повтора ошибки большой PowerShell-wrapper отменён; возвращён старый рабочий `.bat` flow (одно окно, API в фоне, Angular в foreground), но файл сделан ASCII-only/CRLF и исправлено отложенное открытие браузера без вложенного `start \"\"`, которое давало `The system cannot find the file \\.`.
+83. **Fix installer admin responsibilities:** `MultiLogic_Trade_Progress_Start.bat` больше не выполняет `npm install`; он только проверяет `api\web node_modules` и локальный Angular CLI. Все npm-пакеты ставятся post-install скриптом от администратора, установка падает, если `node_modules` не создан.
+84. **Fix reset БД:** installer больше не полагается на `00` для reset; post-install явно подключается к `localhost:5432/postgres`, удаляет `multilogictrade` по имени через terminate + `DROP DATABASE IF EXISTS ... WITH (FORCE)`, проверяет отсутствие/создание базы и только потом накатывает `01 -> 02`.
 
 ### Автотесты
 
@@ -242,6 +244,7 @@
 - [x] Fix ярлыка: окно не закрывается; поднимаются API+Angular с установленной БД (2026-07-17).
 - [x] Fix batch-ошибок launcher после установки: CRLF/UTF-8 без BOM + упрощённый старт API (2026-07-17).
 - [x] Fix launcher v3: вернуть старый рабочий `.bat` flow, исправить delayed browser opener и сохранить ASCII/CRLF (2026-07-17).
+- [x] Installer-only npm install; launcher без npm install; reset БД по имени с `DROP ... WITH (FORCE)` и проверкой (2026-07-17).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -262,6 +265,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-17 | Installer admin fix: npm only during setup; launcher checks node_modules; DB reset by name with FORCE |
 | 2026-07-17 | Fix installer launcher v3: old working bat flow restored; fixed delayed browser start; rebuilt Setup.exe |
 | 2026-07-17 | Fix installer launcher batch parsing: CRLF/UTF-8 no BOM, inherited API env, rebuilt Setup.exe |
 | 2026-07-17 | Контекст: mirror OsEngine, Setup.exe, fix ярлыка cmd/k + PATH + pause; save PROJECT_CONTEXT |
@@ -435,3 +439,4 @@
 90. «Сохрани контекст в репо» — обновление этого файла + push.
 91. «Read the context and correct the installer's error. That's it for this repository.» Ошибки `cmd`: `--no-fund`, `SSWORDPGHOSTPGDATABASEPGUSERPORT`, `Unknown argument: port` — исправить установленный launcher.
 92. Повтор того же лога (`'--no-fund' is not recognized`, `Unknown argument: port`) + старый bat в source поднимает API/Angular, но пишет `The system cannot find the file \\.` — вернуть старый рабочий `.bat` flow, исправить delayed browser opener, не переустанавливать npm при наличии `node_modules`.
+93. «Can the installer itself install packages as administrator, not when the batch file is launched? ... why old logic remains after reset?» — убрать npm install из bat, сделать npm обязательным в installer, reset базы по имени с FORCE и логом host/port/db.

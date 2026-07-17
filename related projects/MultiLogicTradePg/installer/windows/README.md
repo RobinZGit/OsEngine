@@ -35,10 +35,14 @@ database, installs npm packages, and creates launch shortcuts.
    111
    ```
 
-4. Deploys the database from scratch when the installer task is selected:
+4. Deploys the database from scratch when the installer task is selected.
+   The reset is done by database name on the PostgreSQL instance used by the
+   application (`localhost:5432`): active connections to `multilogictrade` are
+   terminated, `DROP DATABASE IF EXISTS multilogictrade WITH (FORCE)` is run,
+   the database is created again, and only then scripts `01` and `02` are
+   applied.
 
    ```text
-   00_create_database.sql
    01_multilogictrade_tables_and_data.sql
    02_multilogictrade_functions_and_procedures.sql
    ```
@@ -69,8 +73,10 @@ database, installs npm packages, and creates launch shortcuts.
    ```
 
    That script refreshes PATH (so Node.js from Setup is visible without re-login),
-   starts API on `:3000`, Angular on `:4200`, opens the browser, and keeps the
-   window open until you press a key.
+   verifies that install-time `node_modules` exist, starts API on `:3000`,
+   starts Angular on `:4200`, opens the browser, and keeps the window open until
+   you press a key. It does not run `npm install`; package installation is an
+   installer-time administrator task.
 
 ## Reinstall behavior
 
@@ -80,8 +86,8 @@ When an existing MultiLogicTradePg installation is detected, setup asks:
 - **No** — install over the existing folder.
 - **Cancel** — stop setup.
 
-The database-reset task is checked by default. When selected, `00` recreates the
-`multilogictrade` database and deletes previous data.
+The database-reset task is checked by default. When selected, setup recreates the
+`multilogictrade` database by name on `localhost:5432` and deletes previous data.
 
 ## Build the `.exe`
 

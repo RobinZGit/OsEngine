@@ -275,6 +275,28 @@ try {
         Invoke-Native $Psql (@("-h", "localhost", "-p", "5432", "-U", "postgres", "-d", $Database) + $Arguments)
     }
 
+    function Invoke-PsqlScalar {
+        param(
+            [string] $Psql,
+            [string] $Database,
+            [string] $Sql
+        )
+        $env:PGPASSWORD = $PostgresPassword
+        $env:PGCLIENTENCODING = "UTF8"
+        $previous = Get-Location
+        try {
+            Set-Location $InstallDir
+            $output = & $Psql -h localhost -p 5432 -U postgres -d $Database -t -A -v ON_ERROR_STOP=1 -c $Sql
+            if ($LASTEXITCODE -ne 0) {
+                throw "$Psql exited with code $LASTEXITCODE"
+            }
+            return (($output | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1).Trim())
+        }
+        finally {
+            Set-Location $previous
+        }
+    }
+
     function Wait-PostgresReady {
         param([string] $Psql)
         Write-Step "Ожидание готовности PostgreSQL"
@@ -385,8 +407,28 @@ try {
             return
         }
 
-        Write-Step "Развёртывание базы данных 00 -> 01 -> 02"
-        Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-f", (Join-Path $InstallDir "00_create_database.sql"))
+        Write-Step "Сброс базы данных по имени"
+        Write-Host "    psql:     $Psql" -ForegroundColor DarkGray
+        Write-Host "    host:     localhost" -ForegroundColor DarkGray
+        Write-Host "    port:     5432" -ForegroundColor DarkGray
+        Write-Host "    database: multilogictrade" -ForegroundColor DarkGray
+
+        Invoke-Psql $Psql "postgres" @(
+            "-v", "ON_ERROR_STOP=1",
+            "-c", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'multilogictrade' AND pid <> pg_backend_pid();"
+        )
+        Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "DROP DATABASE IF EXISTS multilogictrade WITH (FORCE);")
+        $existsAfterDrop = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+        if ($existsAfterDrop -ne "0") {
+            throw "Database multilogictrade still exists after DROP DATABASE. Reset did not complete."
+        }
+        Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE multilogictrade ENCODING 'UTF8' TEMPLATE template0;")
+        $existsAfterCreate = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+        if ($existsAfterCreate -ne "1") {
+            throw "Database multilogictrade was not created after reset."
+        }
+
+        Write-Step "Развёртывание базы данных 01 -> 02"
         Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", (Join-Path $InstallDir "01_multilogictrade_tables_and_data.sql"))
 
         $sql02 = Join-Path $InstallDir "02_multilogictrade_functions_and_procedures.sql"
@@ -395,6 +437,9 @@ try {
             $sql02 = New-CoreSql02File
         }
         Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql02)
+
+        $logicCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics;"
+        Write-Host "    База multilogictrade пересоздана. Logics rows after seed: $logicCount" -ForegroundColor Green
     }
 
     function Write-ApiEnv {
@@ -428,6 +473,9 @@ TRADE_RUNNER_INTERVAL_MS=15000
                 @("install", "--no-audit", "--no-fund")
             }
             Invoke-Native $npm $args $path
+            if (-not (Test-Path (Join-Path $path "node_modules"))) {
+                throw "npm completed for $dir, but node_modules was not created."
+            }
         }
     }
 
