@@ -24,6 +24,8 @@ $LogDir = Join-Path $env:ProgramData "MultiLogicTradePg"
 $LogPath = Join-Path $LogDir "install.log"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Start-Transcript -Path $LogPath -Append | Out-Null
+$script:PostgresHost = "localhost"
+$script:PostgresPort = 5432
 
 try {
     function Write-Step {
@@ -272,7 +274,7 @@ try {
         )
         $env:PGPASSWORD = $PostgresPassword
         $env:PGCLIENTENCODING = "UTF8"
-        Invoke-Native $Psql (@("-h", "localhost", "-p", "5432", "-U", "postgres", "-d", $Database) + $Arguments)
+        Invoke-Native $Psql (@("-h", $script:PostgresHost, "-p", "$script:PostgresPort", "-U", "postgres", "-d", $Database) + $Arguments)
     }
 
     function Invoke-PsqlScalar {
@@ -286,7 +288,7 @@ try {
         $previous = Get-Location
         try {
             Set-Location $InstallDir
-            $output = & $Psql -h localhost -p 5432 -U postgres -d $Database -t -A -v ON_ERROR_STOP=1 -c $Sql
+            $output = & $Psql -h $script:PostgresHost -p $script:PostgresPort -U postgres -d $Database -t -A -v ON_ERROR_STOP=1 -c $Sql
             if ($LASTEXITCODE -ne 0) {
                 throw "$Psql exited with code $LASTEXITCODE"
             }
@@ -295,6 +297,89 @@ try {
         finally {
             Set-Location $previous
         }
+    }
+
+    function Invoke-PsqlScalarAtPort {
+        param(
+            [string] $Psql,
+            [int] $Port,
+            [string] $Database,
+            [string] $Sql
+        )
+        $env:PGPASSWORD = $PostgresPassword
+        $env:PGCLIENTENCODING = "UTF8"
+        $previous = Get-Location
+        try {
+            Set-Location $InstallDir
+            $output = & $Psql -h localhost -p $Port -U postgres -d $Database -t -A -v ON_ERROR_STOP=1 -c $Sql 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                return $null
+            }
+            return (($output | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1).Trim())
+        }
+        finally {
+            Set-Location $previous
+        }
+    }
+
+    function Get-ExistingApiEnvPort {
+        $envPath = Join-Path $InstallDir "api\.env"
+        if (-not (Test-Path $envPath)) { return $null }
+        $line = Get-Content -Path $envPath -Encoding UTF8 -ErrorAction SilentlyContinue |
+            Where-Object { $_ -match '^\s*PGPORT\s*=' } |
+            Select-Object -First 1
+        if (-not $line) { return $null }
+        $value = (($line -split '=', 2)[1]).Trim()
+        $port = 0
+        if ([int]::TryParse($value, [ref] $port) -and $port -gt 0) {
+            return $port
+        }
+        return $null
+    }
+
+    function Get-PostgresPortCandidates {
+        $ports = New-Object System.Collections.Generic.List[int]
+        $candidates = @(5432)
+        $existingPort = Get-ExistingApiEnvPort
+        if ($existingPort) { $candidates += $existingPort }
+        $candidates += 5433..5440
+
+        foreach ($port in $candidates) {
+            if ($port -and -not $ports.Contains([int]$port)) {
+                $ports.Add([int]$port)
+            }
+        }
+        return $ports.ToArray()
+    }
+
+    function Select-PostgresTarget {
+        param([string] $Psql)
+        Write-Step "Поиск PostgreSQL с базой multilogictrade"
+        $readyPort = $null
+        foreach ($port in (Get-PostgresPortCandidates)) {
+            $serverOk = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT 1;"
+            if ($serverOk -ne "1") {
+                Write-Host "    localhost:$port — нет подключения postgres/111" -ForegroundColor DarkGray
+                continue
+            }
+
+            if (-not $readyPort) { $readyPort = $port }
+            $dbExists = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+            Write-Host "    localhost:$port — доступен, multilogictrade=$dbExists" -ForegroundColor DarkGray
+            if ($dbExists -eq "1") {
+                $script:PostgresPort = $port
+                Write-Host "    Найдена существующая база multilogictrade на localhost:$port. Будет сброшена именно она." -ForegroundColor Green
+                return
+            }
+        }
+
+        if ($readyPort) {
+            $script:PostgresPort = $readyPort
+            Write-Host "    Существующая multilogictrade не найдена. Новая база будет создана на localhost:$readyPort." -ForegroundColor Yellow
+            return
+        }
+
+        throw "No local PostgreSQL server accepted user postgres with the supplied password."
     }
 
     function Wait-PostgresReady {
@@ -409,8 +494,8 @@ try {
 
         Write-Step "Сброс базы данных по имени"
         Write-Host "    psql:     $Psql" -ForegroundColor DarkGray
-        Write-Host "    host:     localhost" -ForegroundColor DarkGray
-        Write-Host "    port:     5432" -ForegroundColor DarkGray
+        Write-Host "    host:     $script:PostgresHost" -ForegroundColor DarkGray
+        Write-Host "    port:     $script:PostgresPort" -ForegroundColor DarkGray
         Write-Host "    database: multilogictrade" -ForegroundColor DarkGray
 
         Invoke-Psql $Psql "postgres" @(
@@ -446,7 +531,7 @@ try {
         Write-Step "Создание api\\.env"
         $content = @"
 PGHOST=localhost
-PGPORT=5432
+PGPORT=$script:PostgresPort
 PGDATABASE=multilogictrade
 PGUSER=postgres
 PGPASSWORD=$PostgresPassword
@@ -490,6 +575,7 @@ TRADE_RUNNER_INTERVAL_MS=15000
     Ensure-NodeJs
     $pgRoot = Ensure-PostgreSql
     $psql = Join-Path $pgRoot "bin\psql.exe"
+    Select-PostgresTarget $psql
     Wait-PostgresReady $psql
     $httpReady = Install-PgsqlHttpExtension $pgRoot
     Wait-PostgresReady $psql

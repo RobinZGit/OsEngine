@@ -36,11 +36,13 @@ database, installs npm packages, and creates launch shortcuts.
    ```
 
 4. Deploys the database from scratch when the installer task is selected.
-   The reset is done by database name on the PostgreSQL instance used by the
-   application (`localhost:5432`): active connections to `multilogictrade` are
-   terminated, `DROP DATABASE IF EXISTS multilogictrade WITH (FORCE)` is run,
-   the database is created again, and only then scripts `01` and `02` are
-   applied.
+   Setup first searches local PostgreSQL ports (`5432`, an existing `api\.env`
+   `PGPORT`, and nearby ports) using user `postgres` and password `111`. If it
+   finds an existing `multilogictrade`, it resets that exact server. Otherwise it
+   creates the database on the first reachable local PostgreSQL server. Active
+   connections to `multilogictrade` are terminated,
+   `DROP DATABASE IF EXISTS multilogictrade WITH (FORCE)` is run, the database is
+   created again, and only then scripts `01` and `02` are applied.
 
    ```text
    01_multilogictrade_tables_and_data.sql
@@ -87,7 +89,8 @@ When an existing MultiLogicTradePg installation is detected, setup asks:
 - **Cancel** — stop setup.
 
 The database-reset task is checked by default. When selected, setup recreates the
-`multilogictrade` database by name on `localhost:5432` and deletes previous data.
+`multilogictrade` database by name on the selected local PostgreSQL port and
+deletes previous data. The selected port is written to `api\.env`.
 
 ## Build the `.exe`
 
