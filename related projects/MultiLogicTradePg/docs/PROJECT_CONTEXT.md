@@ -4,8 +4,11 @@
 > **Обновлять перед каждым push в репозиторий** — см. `.cursor/rules/project-context.mdc`.
 > Включать **запросы пользователя текстом** (секция «Запросы пользователя»).
 
-**Репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg  
-**Последнее обновление:** 2026-07-17 — исходники Windows-инсталлятора: Node/PostgreSQL, БД, npm, ярлыки
+**Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
+**Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
+**Последнее обновление:** 2026-07-17 — собран `MultiLogicTradePgSetup.exe`; fix ярлыка (окно не закрывается, поднимаются API+Angular)
+
+> **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
 ---
 
@@ -178,7 +181,10 @@
 74. **Инверсия логики:** param `inversion` (default false); условия `≥↔≤`, `>↔<` + сделки Long↔Short (как ReverseSignals+ReverseSides / OsEngine); UI галочка в параметрах.
 75. **Эквити в тесте:** переключатель «График / Эквити» у блока Бумаги; общая синяя + бледные long(зел.)/short(кр.).
 76. **Финрез (% депозита):** в скобках у боевого/тестового финреза и на панелях Позиции/Тестирование / плитках бумаг.
-77. **Windows-инсталлятор:** `installer/windows` — Inno Setup `.iss`, post-install PowerShell, build helper и README. Установка: копирует проект в Program Files, ставит недостающие Node.js 18+ и PostgreSQL 15, пытается поставить pgsql-http, разворачивает БД `00→01→02` с паролем `111`, создаёт `api\.env`, выполняет `npm ci` для `api`/`web`, создаёт ярлыки Desktop/Start Menu на `web\MultiLogic_Trade_Progress_Start.bat`; при старой установке предлагает удалить и поставить заново.
+77. **Windows-инсталлятор (исходники):** `installer/windows` — Inno Setup `.iss`, post-install PowerShell, build helper и README. Установка: копирует проект в Program Files, ставит недостающие Node.js 18+ и PostgreSQL 15, пытается поставить pgsql-http, разворачивает БД `00→01→02` с паролем `111`, создаёт `api\.env`, выполняет `npm ci` для `api`/`web`; при старой установке предлагает удалить и поставить заново.
+78. **Снимок в OsEngine:** полная копия проекта (SQL/api/web/docs/installer) положена в `related projects/MultiLogicTradePg` репозитория OsEngine (`OsEngine_SNAPSHOT.md`), потому что Cloud Agent OsEngine не может push в отдельный MultiLogicTradePg.
+79. **Готовый один `.exe`:** собран Inno Setup (Wine+ISCC в Linux Cloud) → `installer/windows/dist/MultiLogicTradePgSetup.exe` (~2.2 MB), закоммичен в git (gitignore разрешает только этот Setup.exe).
+80. **Fix ярлыка Desktop/Start Menu:** ярлыки через `cmd.exe /k` (консоль не мигает); `MultiLogic_Trade_Progress_Start.bat` обновляет PATH (Node после Setup без re-login), читает `api\.env`, поднимает API `:3000` + `ng serve` `:4200`, открывает браузер, всегда `pause` в конце. Добавлен `web/Start_MultiLogic_Trade.cmd`.
 
 ### Автотесты
 
@@ -194,6 +200,7 @@
 2. Локально: PostgreSQL 15, pgsql-http, база `multilogictrade`.
 3. `verify:sql` + `verify:indicators` + `test:unit`, CI в `.github/workflows/pages.yml`.
 4. `docs/LOCAL_SETUP.md`, `scripts/run_multilogictrade.ps1`, `web/MultiLogic_Trade_Progress_Start.bat`.
+5. Windows Setup: `installer/windows/dist/MultiLogicTradePgSetup.exe` + исходники Inno; ярлыки → `cmd /k` + Start.bat (API+Angular).
 
 ### Фьючерсы и загрузка цен
 
@@ -229,7 +236,10 @@
 - [ ] Прогнать полный UI-тест загрузки для вечных (`USDRUBF` и др.).
 - [ ] Параметры индикаторов per-security (редактирование колонок `param_*` в UI).
 - [ ] Параметр периода ATR для `logic_stops.value_unit = atr` (сейчас только хранение единицы).
-- [ ] Собрать `installer/windows/dist/MultiLogicTradePgSetup.exe` на Windows с Inno Setup и прогнать smoke-test установки на чистой машине/VM.
+- [x] Собрать `installer/windows/dist/MultiLogicTradePgSetup.exe` (Inno Setup / Wine ISCC) и выложить в OsEngine mirror (2026-07-17).
+- [x] Fix ярлыка: окно не закрывается; поднимаются API+Angular с установленной БД (2026-07-17).
+- [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
+- [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
 ---
 
@@ -248,6 +258,10 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-17 | Контекст: mirror OsEngine, Setup.exe, fix ярлыка cmd/k + PATH + pause; save PROJECT_CONTEXT |
+| 2026-07-17 | Fix desktop launcher: окно закрывалось; cmd /k; bat refresh PATH; API+Angular stay open |
+| 2026-07-17 | Built MultiLogicTradePgSetup.exe (~2.2MB) into installer/windows/dist; push OsEngine main |
+| 2026-07-17 | Snapshot MultiLogicTradePg (+ installer sources) → OsEngine `related projects/MultiLogicTradePg` |
 | 2026-07-17 | Windows installer sources: Inno Setup, post-install dependency install, DB deploy, npm ci, shortcuts |
 | 2026-07-15 | inversion param; equity curve in backtest papers; PnL (% of deposit) in parentheses |
 | 2026-07-15 | БД 00→01→02 с нуля (lot_size + commission notional + v44 logics) |
@@ -408,3 +422,8 @@
 83. «Собери базу данных с нуля».
 84. «Галочка инверсия в параметрах (условия наоборот + другая сторона); в тесте флажок эквити/график с лонгами/шортами; у финреза в скобках % депозита».
 85. «For this project, you need to create an installer and put it in the repository. The installer is probably in the form of an .exe file. The installer must install needed programs like node and postgres if missing; deploy the database by scripts; install what is needed for Angular; put shortcuts on Desktop and launch panel; if the program is found, propose to delete it and install again from scratch. Postgres password is 111».
+86. «Push installer changes to MultiLogicTradePg main» — Cloud Agent на OsEngine не имел write в MultiLogicTradePg; дан доступ Cursor App / токен обсуждался (`MULTILOGIC_GITHUB_TOKEN` в env не появился).
+87. «If I can't create a circle in this repository, create a folder for MultiLogicTradePg in OsEngine, copy everything, push to main» — сделано: `related projects/MultiLogicTradePg` на OsEngine `main`.
+88. «Сделай инсталлятор в виде одного exe файла» — собран и закоммичен `MultiLogicTradePgSetup.exe`.
+89. «After using the installer, desktop button closes the window; Angular does not open; old bat kept window open and raised ports» — fix ярлыков `cmd /k` + hardened Start.bat; пересобран Setup.exe.
+90. «Сохрани контекст в репо» — обновление этого файла + push.
