@@ -71,6 +71,15 @@ try {
         return $null
     }
 
+    function Write-Utf8NoBomText {
+        param(
+            [string] $Path,
+            [string] $Text
+        )
+        $encoding = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($Path, $Text, $encoding)
+    }
+
     function Get-NodeMajor {
         try {
             $version = (& node -p "process.versions.node" 2>$null).Trim()
@@ -344,6 +353,28 @@ try {
         return $target
     }
 
+    function Convert-ToCrlfFile {
+        param([string] $Path)
+        $text = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+        $text = $text -replace "`r`n|`r|`n", "`r`n"
+        Write-Utf8NoBomText $Path $text
+    }
+
+    function Normalize-WindowsTextFiles {
+        Write-Step "Подготовка Windows-скриптов"
+        $roots = @((Join-Path $InstallDir "web")) | Where-Object { Test-Path $_ }
+        $extensions = @("*.bat", "*.cmd")
+        $files = foreach ($root in $roots) {
+            foreach ($extension in $extensions) {
+                Get-ChildItem -Path $root -Filter $extension -File -Recurse -ErrorAction SilentlyContinue
+            }
+        }
+        $files |
+            Sort-Object -Property FullName -Unique |
+            ForEach-Object { Convert-ToCrlfFile $_.FullName }
+        Write-Host "    Запускатели Windows сохранены в CRLF / UTF-8 без BOM." -ForegroundColor Green
+    }
+
     function Deploy-Database {
         param(
             [string] $Psql,
@@ -378,7 +409,7 @@ PORT=3000
 CORS_ORIGIN=http://localhost:4200
 TRADE_RUNNER_INTERVAL_MS=15000
 "@
-        Set-Content -Path (Join-Path $InstallDir "api\.env") -Value $content -Encoding UTF8
+        Write-Utf8NoBomText (Join-Path $InstallDir "api\.env") $content
     }
 
     function Install-NpmDependencies {
@@ -416,6 +447,7 @@ TRADE_RUNNER_INTERVAL_MS=15000
     Wait-PostgresReady $psql
     Deploy-Database $psql $httpReady
     Write-ApiEnv
+    Normalize-WindowsTextFiles
     Install-NpmDependencies
 
     Write-Step "Готово"

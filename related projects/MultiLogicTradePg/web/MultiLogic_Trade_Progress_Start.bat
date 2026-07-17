@@ -125,8 +125,11 @@ echo  Ctrl+C — остановить Angular и API
 echo  --------------------------------------------------------
 echo.
 
+set "CORS_ORIGIN=http://localhost:4200"
+set "TRADE_RUNNER_INTERVAL_MS=15000"
+
 pushd "%API%"
-start "MultiLogic API" /b cmd /c "set PGPASSWORD=%PGPASSWORD%&& set PGHOST=%PGHOST%&& set PGDATABASE=%PGDATABASE%&& set PGUSER=%PGUSER%&& set PORT=%PORT%&& set CORS_ORIGIN=http://localhost:4200&& set TRADE_RUNNER_INTERVAL_MS=15000&& node server.js"
+start "MultiLogic API" /b cmd /c node server.js
 popd
 
 REM Give API a moment to bind the port

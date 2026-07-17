@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-17 — собран `MultiLogicTradePgSetup.exe`; fix ярлыка (окно не закрывается, поднимаются API+Angular)
+**Последнее обновление:** 2026-07-17 — fix установленного launcher: CRLF/UTF-8 без BOM, без хрупкой `cmd /c set ... && ...`
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -185,6 +185,7 @@
 78. **Снимок в OsEngine:** полная копия проекта (SQL/api/web/docs/installer) положена в `related projects/MultiLogicTradePg` репозитория OsEngine (`OsEngine_SNAPSHOT.md`), потому что Cloud Agent OsEngine не может push в отдельный MultiLogicTradePg.
 79. **Готовый один `.exe`:** собран Inno Setup (Wine+ISCC в Linux Cloud) → `installer/windows/dist/MultiLogicTradePgSetup.exe` (~2.2 MB), закоммичен в git (gitignore разрешает только этот Setup.exe).
 80. **Fix ярлыка Desktop/Start Menu:** ярлыки через `cmd.exe /k` (консоль не мигает); `MultiLogic_Trade_Progress_Start.bat` обновляет PATH (Node после Setup без re-login), читает `api\.env`, поднимает API `:3000` + `ng serve` `:4200`, открывает браузер, всегда `pause` в конце. Добавлен `web/Start_MultiLogic_Trade.cmd`.
+81. **Fix batch-ошибок установленного launcher:** Windows-скрипты установщика/запуска нормализуются в CRLF + UTF-8 без BOM; добавлен `.gitattributes`; API стартует с унаследованными env-переменными вместо длинной цепочки `cmd /c "set ...&& ..."`.
 
 ### Автотесты
 
@@ -238,6 +239,7 @@
 - [ ] Параметр периода ATR для `logic_stops.value_unit = atr` (сейчас только хранение единицы).
 - [x] Собрать `installer/windows/dist/MultiLogicTradePgSetup.exe` (Inno Setup / Wine ISCC) и выложить в OsEngine mirror (2026-07-17).
 - [x] Fix ярлыка: окно не закрывается; поднимаются API+Angular с установленной БД (2026-07-17).
+- [x] Fix batch-ошибок launcher после установки: CRLF/UTF-8 без BOM + упрощённый старт API (2026-07-17).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -258,6 +260,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-17 | Fix installer launcher batch parsing: CRLF/UTF-8 no BOM, inherited API env, rebuilt Setup.exe |
 | 2026-07-17 | Контекст: mirror OsEngine, Setup.exe, fix ярлыка cmd/k + PATH + pause; save PROJECT_CONTEXT |
 | 2026-07-17 | Fix desktop launcher: окно закрывалось; cmd /k; bat refresh PATH; API+Angular stay open |
 | 2026-07-17 | Built MultiLogicTradePgSetup.exe (~2.2MB) into installer/windows/dist; push OsEngine main |
@@ -427,3 +430,4 @@
 88. «Сделай инсталлятор в виде одного exe файла» — собран и закоммичен `MultiLogicTradePgSetup.exe`.
 89. «After using the installer, desktop button closes the window; Angular does not open; old bat kept window open and raised ports» — fix ярлыков `cmd /k` + hardened Start.bat; пересобран Setup.exe.
 90. «Сохрани контекст в репо» — обновление этого файла + push.
+91. «Read the context and correct the installer's error. That's it for this repository.» Ошибки `cmd`: `--no-fund`, `SSWORDPGHOSTPGDATABASEPGUSERPORT`, `Unknown argument: port` — исправить установленный launcher.
