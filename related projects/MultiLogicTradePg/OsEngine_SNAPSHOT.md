@@ -9,3 +9,9 @@ GitHub repository (write access is scoped to OsEngine).
 
 Source commit (MultiLogicTradePg): `141c7fa` — Add Windows installer workflow  
 Base: `1bcc8a0` on MultiLogicTradePg `main`
+
+Built single-file installer:
+
+```text
+installer/windows/dist/MultiLogicTradePgSetup.exe
+```

@@ -6,7 +6,9 @@ node_modules/
 api/node_modules/
 web/node_modules/
 web/dist/
-installer/windows/dist/
+# Built installer output (keep the single Setup.exe in git)
+installer/windows/dist/*
+!installer/windows/dist/MultiLogicTradePgSetup.exe
 
 # Секреты API (пароль PostgreSQL)
 api/.env

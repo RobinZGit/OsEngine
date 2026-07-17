@@ -43,16 +43,20 @@ psql -U postgres -d multilogictrade -f 02_multilogictrade_functions_and_procedur
 
 ### Windows installer
 
-Исходники Windows-инсталлятора лежат в [`installer/windows`](installer/windows).
-Инсталлятор собирается в `.exe` через Inno Setup:
+Готовый один файл установщика:
+
+[`installer/windows/dist/MultiLogicTradePgSetup.exe`](installer/windows/dist/MultiLogicTradePgSetup.exe)
+
+Запустите `.exe` от имени администратора на Windows. Он ставит проект в
+`C:\Program Files\MultiLogicTradePg`, при необходимости ставит Node.js и PostgreSQL 15,
+разворачивает БД `00` → `01` → `02` (пароль PostgreSQL `111`), выполняет `npm ci`
+для `api` и `web`, создаёт ярлыки на рабочем столе и в меню Пуск.
+
+Исходники Inno Setup: [`installer/windows`](installer/windows). Пересборка:
 
 ```powershell
 .\installer\windows\build-installer.ps1
 ```
-
-Он устанавливает недостающие Node.js/PostgreSQL, разворачивает БД из `00` → `01` → `02`
-с паролем PostgreSQL `111`, выполняет `npm ci` для `api` и `web`, создаёт ярлыки
-на рабочем столе и в меню Пуск.
 
 **GitHub Pages (только UI, без API):**  
 https://robinzgit.github.io/MultiLogicTradePg/  

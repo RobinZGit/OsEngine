@@ -1,9 +1,15 @@
 # Windows installer
-This folder contains the Windows installer source for MultiLogicTradePg.
 
-The installer is an Inno Setup project. It builds a single `MultiLogicTradePgSetup.exe`
-that copies the project to `Program Files`, installs missing runtime dependencies,
-deploys the PostgreSQL database, installs npm packages, and creates launch shortcuts.
+Ready-to-run single installer:
+
+```text
+installer/windows/dist/MultiLogicTradePgSetup.exe
+```
+
+This folder also contains the Inno Setup sources for MultiLogicTradePg.
+The project builds one `MultiLogicTradePgSetup.exe` that copies the project to
+`Program Files`, installs missing runtime dependencies, deploys the PostgreSQL
+database, installs npm packages, and creates launch shortcuts.
 
 ## What the installer does
 
