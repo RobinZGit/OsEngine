@@ -62,11 +62,15 @@ database, installs npm packages, and creates launch shortcuts.
    - Desktop: `MultiLogic Trade`
    - Start Menu: `MultiLogic Trade\MultiLogic Trade`
 
-   Both shortcuts run:
+   Both shortcuts run via `cmd.exe /k` (console stays open) and start:
 
    ```text
    web\MultiLogic_Trade_Progress_Start.bat
    ```
+
+   That script refreshes PATH (so Node.js from Setup is visible without re-login),
+   starts API on `:3000`, Angular on `:4200`, opens the browser, and keeps the
+   window open until you press a key.
 
 ## Reinstall behavior
 

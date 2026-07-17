@@ -39,7 +39,8 @@ psql -U postgres -d multilogictrade -f 02_multilogictrade_functions_and_procedur
 | API | `api/` | Express → PostgreSQL |
 | UI | `web/` | Angular (страница logics, структура БД) |
 
-**Локальный запуск:** `web\MultiLogic_Trade_Progress_Start.bat`
+**Локальный запуск:** `web\MultiLogic_Trade_Progress_Start.bat`  
+(или ярлык **MultiLogic Trade** с рабочего стола после установки — окно консоли остаётся открытым, поднимаются API `:3000` и Angular `:4200`)
 
 ### Windows installer
 

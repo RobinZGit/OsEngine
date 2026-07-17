@@ -3,7 +3,8 @@
 #define MyAppName "MultiLogicTradePg"
 #define MyAppPublisher "RobinZGit"
 #define MyAppVersion "1.0.0"
-#define MyAppExeName "MultiLogic_Trade_Progress_Start.bat"
+#define MyAppExeName "Start_MultiLogic_Trade.cmd"
+#define MyAppBatName "MultiLogic_Trade_Progress_Start.bat"
 #define MyAppId "{D8F3A59E-59FD-4A83-BC26-FD0A671E01A9}"
 #define SourceRoot "..\.."
 
@@ -24,7 +25,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 SetupLogging=yes
-UninstallDisplayIcon={app}\web\{#MyAppExeName}
+UninstallDisplayIcon={sys}\cmd.exe
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -47,8 +48,9 @@ Source: "{#SourceRoot}\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recurs
 Source: "{#SourceRoot}\installer\windows\*"; DestDir: "{app}\installer\windows"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "dist\*"
 
 [Icons]
-Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{app}\web\{#MyAppExeName}"; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade"
-Name: "{autodesktop}\MultiLogic Trade"; Filename: "{app}\web\{#MyAppExeName}"; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade"; Tasks: desktopicon
+; Launch via cmd.exe /k so the console stays open (Explorer shortcuts to .bat/.cmd often flash and close).
+Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"
+Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"; Tasks: desktopicon
 
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\windows\scripts\install.ps1"" -InstallDir ""{app}"" -PostgresPassword ""111"" -ResetDatabase:{code:GetResetDatabaseFlag}"; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg..."; Flags: waituntilterminated
