@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-17 — post-install запускается через wrapper, `INSTALL_PROTOCOL.txt` пишет stdout/stderr сразу
+**Последнее обновление:** 2026-07-17 — fix PowerShell parser: `install.ps1` ASCII-only, без here-string
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -191,6 +191,7 @@
 84. **Fix reset БД:** installer больше не полагается на `00` для reset; post-install ищет локальный PostgreSQL (`5432`, существующий `api\.env PGPORT`, `5433..5440`) с пользователем `postgres`/паролем `111`, выбирает порт, где уже есть `multilogictrade`, удаляет базу по имени через terminate + `DROP DATABASE IF EXISTS ... WITH (FORCE)`, проверяет отсутствие/создание базы, накатывает `01 -> 02` и записывает выбранный `PGPORT` в `api\.env`.
 85. **Reset всегда:** checkbox `resetdb` удалён из Inno Setup; post-install больше не принимает `-ResetDatabase` и всегда сбрасывает/пересоздаёт `multilogictrade` при установке.
 86. **Протокол установки + автозапуск:** installer сразу кладёт placeholder `{app}\INSTALL_PROTOCOL.txt`; post-install запускается через `installer\windows\scripts\run_postinstall.cmd`, который сразу перезаписывает протокол и пишет туда stdout/stderr PowerShell. `install.ps1` дополнительно копирует transcript в `C:\ProgramData\MultiLogicTradePg\install-latest.log`; Notepad запускается только если файл существует; в Start Menu есть `Install protocol`; на финальной странице Setup добавлен checked checkbox `Run MultiLogic Trade` и optional unchecked `Open installation protocol`.
+87. **Fix PowerShell parser:** протокол показал ParserError в `install.ps1` на Windows PowerShell 5.1; скрипт переведён в ASCII-only, убраны here-string блоки (`@"..."@`) для `api\.env` и protocol summary, сообщения заменены на ASCII.
 
 ### Автотесты
 
@@ -252,6 +253,7 @@
 - [x] Добавить `INSTALL_PROTOCOL.txt` + shortcut протокола + checked checkbox запуска после установки (2026-07-17).
 - [x] Fix missing `INSTALL_PROTOCOL.txt`: placeholder копируется в `{app}` до post-install, Notepad guarded by `FileExists` (2026-07-17).
 - [x] Post-install через `run_postinstall.cmd`, чтобы `INSTALL_PROTOCOL.txt` получал stdout/stderr даже при раннем падении PowerShell (2026-07-17).
+- [x] Fix ParserError в `install.ps1`: ASCII-only + без here-string для Windows PowerShell 5.1 (2026-07-17).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -272,6 +274,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-17 | Fix install.ps1 ParserError: ASCII-only PowerShell, no here-strings; rebuilt Setup.exe |
 | 2026-07-17 | Robust installer protocol: run_postinstall.cmd captures PowerShell stdout/stderr into INSTALL_PROTOCOL.txt |
 | 2026-07-17 | Fix missing protocol Notepad: packaged INSTALL_PROTOCOL placeholder and FileExists check |
 | 2026-07-17 | Installer protocol + final-page run checkbox: INSTALL_PROTOCOL.txt, install-latest.log, Start Menu protocol |
@@ -457,3 +460,4 @@
 96. «database is still not reset; add installation protocol so I can throw it to you; add checkbox enabled to run program after installation» — добавить `INSTALL_PROTOCOL.txt`, shortcut протокола и checked run-after-install checkbox.
 97. Скрин Блокнота: «Не удаётся найти файл C:\Program Files\MultiLogicTradePg\INSTALL_PROTOCOL.txt» — добавить placeholder протокола в installer files и `Check: FileExists` для открытия.
 98. Placeholder протокола остался неизменённым после setup — запускать post-install через `.cmd` wrapper, который пишет stdout/stderr в `INSTALL_PROTOCOL.txt` независимо от внутреннего finally PowerShell.
+99. Протокол показал `ParserError` в `install.ps1` на строке `Write-Utf8NoBomText ... api\.env` и mojibake строк — убрать here-string и non-ASCII из PowerShell-скрипта.

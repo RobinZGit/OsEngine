@@ -129,25 +129,25 @@ try {
     }
 
     function Ensure-NodeJs {
-        Write-Step "Проверка Node.js"
+        Write-Step "Checking Node.js"
         Refresh-Path
         $major = Get-NodeMajor
         if ($major -ge 18) {
-            Write-Host "    Node.js найден: major $major" -ForegroundColor Green
+            Write-Host "    Node.js found: major $major" -ForegroundColor Green
             return
         }
         if ($SkipDependencyInstall) {
-            throw "Node.js 18+ не найден, а установка зависимостей отключена."
+            throw "Node.js 18+ was not found and dependency installation is disabled."
         }
 
-        Write-Host "    Node.js 18+ не найден. Установка Node.js LTS..." -ForegroundColor Yellow
+        Write-Host "    Node.js 18+ was not found. Installing Node.js LTS..." -ForegroundColor Yellow
         try {
             if (-not (Install-NodeWithWinget)) {
                 Install-NodeFromMsi
             }
         }
         catch {
-            Write-Warning "winget не установил Node.js: $($_.Exception.Message)"
+            Write-Warning "winget did not install Node.js: $($_.Exception.Message)"
             Install-NodeFromMsi
         }
         Refresh-Path
@@ -156,7 +156,7 @@ try {
         if ($major -lt 18) {
             throw "Node.js installation failed or version is still below 18."
         }
-        Write-Host "    Node.js установлен: major $major" -ForegroundColor Green
+        Write-Host "    Node.js installed: major $major" -ForegroundColor Green
     }
 
     function Find-PostgresRoot {
@@ -194,7 +194,7 @@ try {
         if ($serviceName) {
             $svc = Get-Service -Name $serviceName
             if ($svc.Status -ne "Running") {
-                Write-Host "    Запуск службы $serviceName..." -ForegroundColor Yellow
+                Write-Host "    Starting service $serviceName..." -ForegroundColor Yellow
                 Start-Service -Name $serviceName
                 $svc.WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
             }
@@ -239,21 +239,21 @@ try {
     }
 
     function Ensure-PostgreSql {
-        Write-Step "Проверка PostgreSQL $PostgresMajor"
+        Write-Step "Checking PostgreSQL $PostgresMajor"
         Refresh-Path
         $root = Find-PostgresRoot
         if (-not $root) {
             if ($SkipDependencyInstall) {
-                throw "PostgreSQL $PostgresMajor не найден, а установка зависимостей отключена."
+                throw "PostgreSQL $PostgresMajor was not found and dependency installation is disabled."
             }
-            Write-Host "    PostgreSQL $PostgresMajor не найден. Установка..." -ForegroundColor Yellow
+            Write-Host "    PostgreSQL $PostgresMajor was not found. Installing..." -ForegroundColor Yellow
             try {
                 if (-not (Install-PostgresWithWinget)) {
                     Install-PostgresFromEnterpriseDb
                 }
             }
             catch {
-                Write-Warning "winget не установил PostgreSQL: $($_.Exception.Message)"
+                Write-Warning "winget did not install PostgreSQL: $($_.Exception.Message)"
                 Install-PostgresFromEnterpriseDb
             }
             Refresh-Path
@@ -357,28 +357,28 @@ try {
 
     function Select-PostgresTarget {
         param([string] $Psql)
-        Write-Step "Поиск PostgreSQL с базой multilogictrade"
+        Write-Step "Searching PostgreSQL target for multilogictrade"
         $readyPort = $null
         foreach ($port in (Get-PostgresPortCandidates)) {
             $serverOk = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT 1;"
             if ($serverOk -ne "1") {
-                Write-Host "    localhost:$port — нет подключения postgres/111" -ForegroundColor DarkGray
+                Write-Host "    localhost:$port - no postgres/111 connection" -ForegroundColor DarkGray
                 continue
             }
 
             if (-not $readyPort) { $readyPort = $port }
             $dbExists = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
-            Write-Host "    localhost:$port — доступен, multilogictrade=$dbExists" -ForegroundColor DarkGray
+            Write-Host "    localhost:$port - available, multilogictrade=$dbExists" -ForegroundColor DarkGray
             if ($dbExists -eq "1") {
                 $script:PostgresPort = $port
-                Write-Host "    Найдена существующая база multilogictrade на localhost:$port. Будет сброшена именно она." -ForegroundColor Green
+                Write-Host "    Existing multilogictrade found on localhost:$port. This database will be reset." -ForegroundColor Green
                 return
             }
         }
 
         if ($readyPort) {
             $script:PostgresPort = $readyPort
-            Write-Host "    Существующая multilogictrade не найдена. Новая база будет создана на localhost:$readyPort." -ForegroundColor Yellow
+            Write-Host "    Existing multilogictrade was not found. A new database will be created on localhost:$readyPort." -ForegroundColor Yellow
             return
         }
 
@@ -387,11 +387,11 @@ try {
 
     function Wait-PostgresReady {
         param([string] $Psql)
-        Write-Step "Ожидание готовности PostgreSQL"
+        Write-Step "Waiting for PostgreSQL"
         for ($i = 1; $i -le 60; $i++) {
             try {
                 Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "SELECT 1;")
-                Write-Host "    PostgreSQL готов." -ForegroundColor Green
+                Write-Host "    PostgreSQL is ready." -ForegroundColor Green
                 return
             }
             catch {
@@ -406,11 +406,11 @@ try {
 
         $control = Join-Path $PostgresRoot "share\extension\http.control"
         if (Test-Path $control) {
-            Write-Host "    pgsql-http уже установлен." -ForegroundColor Green
+            Write-Host "    pgsql-http already installed." -ForegroundColor Green
             return $true
         }
 
-        Write-Host "    Попытка установить pgsql-http для полной HTTP-загрузки цен..." -ForegroundColor Yellow
+        Write-Host "    Trying to install pgsql-http for HTTP price loading..." -ForegroundColor Yellow
         try {
             $zip = Join-Path $env:TEMP "pg15http_w64.zip"
             $extract = Join-Path $env:TEMP "pg15http_w64"
@@ -441,11 +441,11 @@ try {
                 Restart-Service -Name $serviceName -Force
                 Start-Sleep -Seconds 3
             }
-            Write-Host "    pgsql-http установлен." -ForegroundColor Green
+            Write-Host "    pgsql-http installed." -ForegroundColor Green
             return $true
         }
         catch {
-            Write-Warning "pgsql-http не установлен: $($_.Exception.Message)"
+            Write-Warning "pgsql-http was not installed: $($_.Exception.Message)"
             return $false
         }
     }
@@ -471,7 +471,7 @@ try {
     }
 
     function Normalize-WindowsTextFiles {
-        Write-Step "Подготовка Windows-скриптов"
+        Write-Step "Preparing Windows scripts"
         $roots = @((Join-Path $InstallDir "web")) | Where-Object { Test-Path $_ }
         $extensions = @("*.bat", "*.cmd")
         $files = foreach ($root in $roots) {
@@ -482,7 +482,7 @@ try {
         $files |
             Sort-Object -Property FullName -Unique |
             ForEach-Object { Convert-ToCrlfFile $_.FullName }
-        Write-Host "    Запускатели Windows сохранены в CRLF / UTF-8 без BOM." -ForegroundColor Green
+        Write-Host "    Windows launchers saved as CRLF / UTF-8 without BOM." -ForegroundColor Green
     }
 
     function Deploy-Database {
@@ -490,7 +490,7 @@ try {
             [string] $Psql,
             [bool] $HttpExtensionReady
         )
-        Write-Step "Сброс базы данных по имени"
+        Write-Step "Resetting database by name"
         Write-Host "    psql:     $Psql" -ForegroundColor DarkGray
         Write-Host "    host:     $script:PostgresHost" -ForegroundColor DarkGray
         Write-Host "    port:     $script:PostgresPort" -ForegroundColor DarkGray
@@ -511,41 +511,41 @@ try {
             throw "Database multilogictrade was not created after reset."
         }
 
-        Write-Step "Развёртывание базы данных 01 -> 02"
+        Write-Step "Deploying database 01 -> 02"
         Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", (Join-Path $InstallDir "01_multilogictrade_tables_and_data.sql"))
 
         $sql02 = Join-Path $InstallDir "02_multilogictrade_functions_and_procedures.sql"
         if (-not $HttpExtensionReady) {
-            Write-Warning "HTTP-блок 02 будет пропущен, потому что pgsql-http недоступен. Загрузка цен через HTTP может быть недоступна до установки pgsql-http."
+            Write-Warning "HTTP block in 02 will be skipped because pgsql-http is unavailable. HTTP price loading may be unavailable until pgsql-http is installed."
             $sql02 = New-CoreSql02File
         }
         Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql02)
 
         $logicCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics;"
-        Write-Host "    База multilogictrade пересоздана. Logics rows after seed: $logicCount" -ForegroundColor Green
+        Write-Host "    Database multilogictrade recreated. Logics rows after seed: $logicCount" -ForegroundColor Green
     }
 
     function Write-ApiEnv {
-        Write-Step "Создание api\\.env"
-        $content = @"
-PGHOST=localhost
-PGPORT=$script:PostgresPort
-PGDATABASE=multilogictrade
-PGUSER=postgres
-PGPASSWORD=$PostgresPassword
-PORT=3000
-CORS_ORIGIN=http://localhost:4200
-TRADE_RUNNER_INTERVAL_MS=15000
-"@
-        Write-Utf8NoBomText (Join-Path $InstallDir "api\.env") $content
+        Write-Step "Creating api\\.env"
+        $content = @(
+            "PGHOST=localhost",
+            "PGPORT=$($script:PostgresPort)",
+            "PGDATABASE=multilogictrade",
+            "PGUSER=postgres",
+            "PGPASSWORD=$PostgresPassword",
+            "PORT=3000",
+            "CORS_ORIGIN=http://localhost:4200",
+            "TRADE_RUNNER_INTERVAL_MS=15000"
+        ) -join [Environment]::NewLine
+        Write-Utf8NoBomText -Path (Join-Path $InstallDir "api\.env") -Text $content
     }
 
     function Install-NpmDependencies {
-        Write-Step "Установка npm-зависимостей"
+        Write-Step "Installing npm dependencies"
         Refresh-Path
         $npm = Get-CommandPath "npm.cmd"
         if (-not $npm) { $npm = Get-CommandPath "npm" }
-        if (-not $npm) { throw "npm не найден после установки Node.js." }
+        if (-not $npm) { throw "npm was not found after Node.js installation." }
 
         foreach ($dir in @("api", "web")) {
             $path = Join-Path $InstallDir $dir
@@ -583,8 +583,8 @@ TRADE_RUNNER_INTERVAL_MS=15000
     Normalize-WindowsTextFiles
     Install-NpmDependencies
 
-    Write-Step "Готово"
-    Write-Host "Запуск: ярлык 'MultiLogic Trade' на рабочем столе или в меню Пуск." -ForegroundColor Green
+    Write-Step "Done"
+    Write-Host "Launch: use the 'MultiLogic Trade' shortcut on Desktop or Start Menu." -ForegroundColor Green
 }
 finally {
     try {
@@ -599,19 +599,19 @@ finally {
         }
 
         if ((-not $SkipAppProtocol) -and (Test-Path $LogPath)) {
-            $summary = @"
-MultiLogicTradePg installation protocol
-Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-InstallDir: $InstallDir
-Transcript: $LogPath
-Latest transcript copy: $LatestLogPath
-PostgreSQL target: $($script:PostgresHost):$($script:PostgresPort) / multilogictrade / user postgres
-
-Attach this file when reporting installer problems.
-
-================ FULL TRANSCRIPT ================
-"@
-            Write-Utf8NoBomText $ProtocolPath $summary
+            $summary = @(
+                "MultiLogicTradePg installation protocol",
+                "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+                "InstallDir: $InstallDir",
+                "Transcript: $LogPath",
+                "Latest transcript copy: $LatestLogPath",
+                "PostgreSQL target: $($script:PostgresHost):$($script:PostgresPort) / multilogictrade / user postgres",
+                "",
+                "Attach this file when reporting installer problems.",
+                "",
+                "================ FULL TRANSCRIPT ================"
+            ) -join [Environment]::NewLine
+            Write-Utf8NoBomText -Path $ProtocolPath -Text $summary
             Get-Content -Path $LogPath -Encoding UTF8 -ErrorAction SilentlyContinue |
                 Add-Content -Path $ProtocolPath -Encoding UTF8
         }
