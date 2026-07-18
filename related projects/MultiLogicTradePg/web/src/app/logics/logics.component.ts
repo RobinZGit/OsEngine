@@ -761,6 +761,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.paramsDirtyIds.delete(row.id);
           this.savingParamsIds.delete(row.id);
           this.paramsSaveErrors.delete(row.id);
+          // Денежный фонд добавлен/снят в logic_securities — обновить список «Ценные бумаги»
+          this.loadSecuritiesForLogic(row.id, true);
           this.techLog.event(
             this.techLog.logicThreadKey(row.id, 'params'),
             'logic.params.saved',
@@ -2024,8 +2026,45 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  private loadSecuritiesForLogic(logicId: number): void {
-    if (this.securitiesLoading.has(logicId)) return;
+  /** Денежный фонд — первая бумага в Позиции/Тестирование → «Бумаги». */
+  cashFundPinnedPaper(row: LogicRow): {
+    security_id: number;
+    security_name: string;
+    security_prefix: string | null;
+    pnl: number;
+    commission: number;
+    trade_count: number;
+  } | null {
+    const code = String(row.cash_fund_code ?? '')
+      .trim()
+      .toUpperCase();
+    if (!code || !['TMON', 'LQDT', 'SBMM'].includes(code)) {
+      return null;
+    }
+    if (!this.logicSecurities.has(row.id) && !this.securitiesLoading.has(row.id)) {
+      this.loadSecuritiesForLogic(row.id);
+    }
+    const sec = this.securitiesFor(row.id).find(
+      (s) =>
+        String(s.prefix ?? '')
+          .trim()
+          .toUpperCase() === code && s.is_active !== false
+    );
+    if (!sec) {
+      return null;
+    }
+    return {
+      security_id: sec.security_id,
+      security_name: sec.security_name,
+      security_prefix: sec.prefix,
+      pnl: 0,
+      commission: 0,
+      trade_count: 0,
+    };
+  }
+
+  private loadSecuritiesForLogic(logicId: number, force = false): void {
+    if (!force && this.securitiesLoading.has(logicId)) return;
     this.securitiesLoading.add(logicId);
     this.logicsService.getLogicSecurities(logicId).subscribe({
       next: (rows) => {

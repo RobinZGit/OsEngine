@@ -46,6 +46,39 @@ function trade(partial: Partial<LogicTradeRow>): LogicTradeRow {
 }
 
 describe('backtest-chart-overlays', () => {
+  it('papersWithTrades pins cash fund at top even without trades', () => {
+    const rows = papersWithTrades(
+      [
+        {
+          id: 1,
+          logic_id: 1,
+          security_id: 10,
+          security_name: 'Sber',
+          security_prefix: 'SBER',
+          status: 'filled',
+          bar_dt: '2026-01-02T10:00:00',
+          executed_at: '2026-01-02T10:00:00',
+          financial_result: 1,
+          commission: 0,
+          is_shadow: false,
+          is_test: true,
+        } as never,
+      ],
+      '2026-01-01',
+      '2026-01-31',
+      {
+        security_id: 99,
+        security_name: 'TMON fund',
+        security_prefix: 'TMON',
+        pnl: 0,
+        commission: 0,
+        trade_count: 0,
+      }
+    );
+    expect(rows[0].security_prefix).toBe('TMON');
+    expect(rows.some((r) => r.security_prefix === 'SBER')).toBeTrue();
+  });
+
   it('papersWithTrades returns only securities with trades in period', () => {
     const rows = papersWithTrades(
       [

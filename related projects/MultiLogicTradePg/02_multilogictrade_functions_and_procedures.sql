@@ -4074,6 +4074,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6837,6 +6838,34 @@ COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
 -- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
 -- ============================================
 -- Stop-loss runner: security / security_resume / portfolio
+-- ============================================
+
+CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_tf TEXT;
+    v_id INTEGER;
+BEGIN
+    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
+    SELECT t.id INTO v_id
+    FROM timeframes t
+    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
+    ORDER BY t.sec
+    LIMIT 1;
+    IF v_id IS NULL THEN
+        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
+    END IF;
+    RETURN v_id;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
+'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
+
+-- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
+-- ============================================
+-- Stop-loss runner: security / security_resume / security_inversion / portfolio
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
@@ -9830,6 +9859,13 @@ BEGIN
             COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          -- Денежный фонд только для парковки кэша, не для сигналов
+          AND NOT EXISTS (
+              SELECT 1
+              FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
     LOOP
         v_is_shadow := v_sec.real_trading_paused;
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
@@ -10157,6 +10193,58 @@ COMMENT ON FUNCTION process_logic_trades(INTEGER) IS
 'рейтинг сигнала на логике обновляется через pending на следующей свече TF';
 
 -- @include sql/logic_cash_fund_park.sql (stub; full after http)
+
+CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
+    p_logic_id INTEGER,
+    p_code TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_code TEXT;
+    v_security_id INTEGER;
+BEGIN
+    v_code := upper(btrim(COALESCE(p_code, '')));
+
+    DELETE FROM logic_securities ls
+    USING security_prefixes sp
+    WHERE ls.security_id = sp.security_id
+      AND ls.logic_id = p_logic_id
+      AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+      AND (v_code = '' OR upper(sp.prefix) <> v_code);
+
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN;
+    END IF;
+
+    SELECT s.id
+    INTO v_security_id
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id
+    WHERE upper(sp.prefix) = v_code
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    IF v_security_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    UPDATE logic_securities
+    SET display_order = display_order + 1
+    WHERE logic_id = p_logic_id
+      AND security_id <> v_security_id
+      AND display_order >= 0;
+
+    INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+    VALUES (p_logic_id, v_security_id, 0, TRUE)
+    ON CONFLICT (logic_id, security_id) DO UPDATE SET
+        is_active = TRUE,
+        display_order = 0;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_ensure_cash_fund_security(INTEGER, TEXT) IS
+'Добавить выбранный денежный фонд в logic_securities с display_order=0 (верх списка)';
 
 CREATE OR REPLACE FUNCTION logic_park_excess_cash(p_logic_id INTEGER)
 RETURNS JSONB
@@ -11156,6 +11244,11 @@ BEGIN
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
     LOOP
         v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id);
         v_eff_inversion := (
@@ -11407,6 +11500,11 @@ BEGIN
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
         ORDER BY ls.display_order, ls.id
     LOOP
         IF logic_backtest_cancel_requested(v_run_id) THEN
@@ -11946,6 +12044,58 @@ COMMENT ON FUNCTION configure_http_ssl() IS
 -- Вызов из run_trade_cycle / Node trade-runner
 -- ============================================
 
+CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
+    p_logic_id INTEGER,
+    p_code TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_code TEXT;
+    v_security_id INTEGER;
+BEGIN
+    v_code := upper(btrim(COALESCE(p_code, '')));
+
+    DELETE FROM logic_securities ls
+    USING security_prefixes sp
+    WHERE ls.security_id = sp.security_id
+      AND ls.logic_id = p_logic_id
+      AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+      AND (v_code = '' OR upper(sp.prefix) <> v_code);
+
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN;
+    END IF;
+
+    SELECT s.id
+    INTO v_security_id
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id
+    WHERE upper(sp.prefix) = v_code
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    IF v_security_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    UPDATE logic_securities
+    SET display_order = display_order + 1
+    WHERE logic_id = p_logic_id
+      AND security_id <> v_security_id
+      AND display_order >= 0;
+
+    INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+    VALUES (p_logic_id, v_security_id, 0, TRUE)
+    ON CONFLICT (logic_id, security_id) DO UPDATE SET
+        is_active = TRUE,
+        display_order = 0;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_ensure_cash_fund_security(INTEGER, TEXT) IS
+'Добавить выбранный денежный фонд в logic_securities с display_order=0 (верх списка)';
+
 CREATE OR REPLACE FUNCTION logic_resolve_cash_fund_instrument(p_ticker TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
@@ -12172,6 +12322,9 @@ BEGIN
         'text'
     );
 
+    -- Фонд в портфеле логики (сверху списка «Ценные бумаги»)
+    PERFORM logic_ensure_cash_fund_security(p_logic_id, v_code);
+
     IF v_logic.account_type = 'fake' THEN
         PERFORM logic_trade_log(
             p_logic_id,
@@ -12303,6 +12456,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Если cash_fund_code задан и current_balance > threshold — BUY фонда на реальном счёте (1 раз на закрытую свечу TF); fake только логирует';
 -- @end logic_cash_fund_park_http
+
 
 
 -- instrumentId для GetCandles: ShareBy по тикеру (исправляет устаревший tbank_figi)

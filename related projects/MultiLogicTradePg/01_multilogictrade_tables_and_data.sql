@@ -381,6 +381,34 @@ ON CONFLICT (security_id, exchange_id) DO UPDATE SET
     tbank_figi = COALESCE(EXCLUDED.tbank_figi, security_prefixes.tbank_figi),
     note = EXCLUDED.note;
 
+-- ============================================
+-- Денежные фонды (парк кэша): TMON / LQDT / SBMM
+-- ============================================
+INSERT INTO securities (name, security_type_id, lot_size)
+SELECT v.name, st.id, 1
+FROM (VALUES
+    ('Т-Капитал денежный рынок (TMON)', 'ETF'),
+    ('ВИМ Ликвидность (LQDT)', 'ETF'),
+    ('Сбер Первый / Сберегательный (SBMM)', 'ETF')
+) AS v(name, type_name)
+JOIN security_types st ON st.name = v.type_name
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO security_prefixes (security_id, exchange_id, prefix, instrument_market, tbank_figi, note)
+SELECT s.id, e.id, v.prefix, 'other', NULL, v.note
+FROM exchanges e
+CROSS JOIN (VALUES
+    ('Т-Капитал денежный рынок (TMON)', 'TMON', 'БПИФ денежного рынка; парковка кэша'),
+    ('ВИМ Ликвидность (LQDT)', 'LQDT', 'БПИФ денежного рынка; парковка кэша'),
+    ('Сбер Первый / Сберегательный (SBMM)', 'SBMM', 'БПИФ денежного рынка; парковка кэша')
+) AS v(security_name, prefix, note)
+JOIN securities s ON s.name = v.security_name
+WHERE e.name = 'MOEX'
+ON CONFLICT (security_id, exchange_id) DO UPDATE SET
+    prefix = EXCLUDED.prefix,
+    instrument_market = EXCLUDED.instrument_market,
+    note = EXCLUDED.note;
+
 -- Лотность акций MOEX (штук в лоте TQBR; фьючерсы — 1 контракт)
 UPDATE securities s
 SET lot_size = v.lot

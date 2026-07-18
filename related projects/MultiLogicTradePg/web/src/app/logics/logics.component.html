@@ -1634,6 +1634,7 @@
 
                         <p class="signals-help">
                           Портфель бумаг этой торговой логики. Сигналы и стопы применяются к выбранным инструментам.
+                          Денежный фонд (TMON/LQDT/SBMM) из параметров появляется сверху списка и не участвует в сигналах.
                         </p>
 
                       </div>
@@ -1655,6 +1656,7 @@
                         [timeframeId]="timeframeIdForLogic(row)"
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [tbankTokenAlert]="tbankTokenAlert"
+                        [pinnedPaper]="cashFundPinnedPaper(row)"
                         (toggleBlock)="toggleTradesBlock(row.id)"
                         (closeAll)="closeAllPositionsAtMarket(row.id)"
                         (openTokenDialog)="openTbankTokenDialogFromAlert()"
@@ -1671,6 +1673,7 @@
                         [backtestRun]="backtestFor(row.id)"
                         [timeframeId]="timeframeIdForLogic(row)"
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
+                        [pinnedPaper]="cashFundPinnedPaper(row)"
                         (toggleBlock)="toggleTestTradesBlock(row.id)"
                         (startBacktest)="startBacktestRun(row.id, $event)"
                         (periodDialogOpen)="onPeriodDialogOpen($event)"

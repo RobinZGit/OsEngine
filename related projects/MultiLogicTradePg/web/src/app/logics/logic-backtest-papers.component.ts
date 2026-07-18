@@ -34,19 +34,13 @@ import {
   buildTradeMarkers,
   clipCandlesForBacktest,
   dtKey,
+  PaperListRow,
   papersWithTrades,
   tradeDtWindow,
   tradesForSecurity,
 } from './backtest-chart-overlays';
 
-export interface BacktestPaperRow {
-  security_id: number;
-  security_name: string;
-  security_prefix: string | null;
-  pnl: number;
-  commission: number;
-  trade_count: number;
-}
+export type BacktestPaperRow = PaperListRow;
 
 function humanizeChartLoadError(err: unknown): string {
   const e = err as { name?: string; message?: string; error?: { error?: string } };
@@ -134,6 +128,8 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   @Input() signalIndicatorIds: number[] = [];
   /** Начальный депозит логики — для % у PnL бумаги. */
   @Input() initialBalance: number | null = null;
+  /** Денежный фонд (TMON/LQDT/SBMM) — всегда первой строкой в списке бумаг. */
+  @Input() pinnedPaper: BacktestPaperRow | null = null;
 
   get isLive(): boolean {
     return this.mode === 'live';
@@ -163,7 +159,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     }
     const periodChanged =
       !!changes['dateFrom'] || !!changes['dateTo'] || !!changes['runId'];
-    if (changes['trades'] || periodChanged) {
+    if (changes['trades'] || periodChanged || changes['pinnedPaper']) {
       this.rebuildPaperCache({ reloadCharts: periodChanged });
     }
   }
@@ -400,7 +396,12 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   }
 
   private rebuildPaperCache(opts: { reloadCharts: boolean } = { reloadCharts: false }): void {
-    this.paperRows = papersWithTrades(this.trades, this.dateFrom, this.dateTo);
+    this.paperRows = papersWithTrades(
+      this.trades,
+      this.dateFrom,
+      this.dateTo,
+      this.pinnedPaper
+    );
     for (const paper of this.paperRows) {
       const secTrades = tradesForSecurity(
         this.trades,

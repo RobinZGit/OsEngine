@@ -890,6 +890,11 @@ BEGIN
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
     LOOP
         v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id);
         v_eff_inversion := (
@@ -1141,6 +1146,11 @@ BEGIN
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
         ORDER BY ls.display_order, ls.id
     LOOP
         IF logic_backtest_cancel_requested(v_run_id) THEN

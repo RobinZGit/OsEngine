@@ -163,6 +163,12 @@ async function fetchActiveSecurityIds(pool, logicId) {
      FROM logic_securities ls
      JOIN securities s ON s.id = ls.security_id
      WHERE ls.logic_id = $1 AND ls.is_active = TRUE
+       AND NOT EXISTS (
+         SELECT 1
+         FROM security_prefixes sp
+         WHERE sp.security_id = ls.security_id
+           AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+       )
      ORDER BY ls.display_order, ls.id`,
     [logicId]
   );

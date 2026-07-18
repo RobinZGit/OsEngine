@@ -31,7 +31,10 @@ import {
 
 import { LogicRow } from '../models/logic.model';
 
-import { LogicBacktestPapersComponent } from './logic-backtest-papers.component';
+import {
+  BacktestPaperRow,
+  LogicBacktestPapersComponent,
+} from './logic-backtest-papers.component';
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import { buildEquityPoints, buildPortfolioStopMarkers } from './backtest-chart-overlays';
 import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
@@ -98,6 +101,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Input({ required: true }) mode: 'live' | 'test' = 'live';
 
   @Input() trades: LogicTradeRow[] = [];
+
+  /** Денежный фонд — первая бумага в блоке «Бумаги» (бой и тест). */
+  @Input() pinnedPaper: BacktestPaperRow | null = null;
 
   @Input() tradeLots = new Map<number, LogicTradeLotRow[]>();
 

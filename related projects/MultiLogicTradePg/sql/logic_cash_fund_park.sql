@@ -3,6 +3,58 @@
 -- Вызов из run_trade_cycle / Node trade-runner
 -- ============================================
 
+CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
+    p_logic_id INTEGER,
+    p_code TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_code TEXT;
+    v_security_id INTEGER;
+BEGIN
+    v_code := upper(btrim(COALESCE(p_code, '')));
+
+    DELETE FROM logic_securities ls
+    USING security_prefixes sp
+    WHERE ls.security_id = sp.security_id
+      AND ls.logic_id = p_logic_id
+      AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+      AND (v_code = '' OR upper(sp.prefix) <> v_code);
+
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN;
+    END IF;
+
+    SELECT s.id
+    INTO v_security_id
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id
+    WHERE upper(sp.prefix) = v_code
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    IF v_security_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    UPDATE logic_securities
+    SET display_order = display_order + 1
+    WHERE logic_id = p_logic_id
+      AND security_id <> v_security_id
+      AND display_order >= 0;
+
+    INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+    VALUES (p_logic_id, v_security_id, 0, TRUE)
+    ON CONFLICT (logic_id, security_id) DO UPDATE SET
+        is_active = TRUE,
+        display_order = 0;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_ensure_cash_fund_security(INTEGER, TEXT) IS
+'Добавить выбранный денежный фонд в logic_securities с display_order=0 (верх списка)';
+
 CREATE OR REPLACE FUNCTION logic_resolve_cash_fund_instrument(p_ticker TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
@@ -228,6 +280,9 @@ BEGIN
         to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
         'text'
     );
+
+    -- Фонд в портфеле логики (сверху списка «Ценные бумаги»)
+    PERFORM logic_ensure_cash_fund_security(p_logic_id, v_code);
 
     IF v_logic.account_type = 'fake' THEN
         PERFORM logic_trade_log(

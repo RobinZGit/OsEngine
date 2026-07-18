@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — Implemented cash-fund park in runner + scheduled cleanup (pg_cron/Node); installer
+**Последнее обновление:** 2026-07-18 — Cash fund visible in securities/papers (top); seed TMON/LQDT/SBMM; installer
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -209,6 +209,7 @@
 101. **Эквити/бумаги бой+тест:** блок «Эквити портфеля» и раскрываемые «Бумаги» (график/эквити, lazy load) в live как в test; вертикали портфельных SL/TP на эквити; период теста запоминается; `/pnl-summary` и панель — один критерий последнего run (`id DESC`) + только filled/submitted.
 102. **Cash-fund + общие настройки очистки:** params `cash_fund_code` / `cash_fund_threshold` / `last_cash_fund_bar_dt`; шапка DB+gear; `APP_CLEANUP_DISK` + manual cleanup API.
 103. **Cash-fund runner + cleanup schedule:** `logic_park_excess_cash` (EtfBy/FindInstrument + `tbank_post_order` BUY; fake skip+log; 1×/closed TF bar); `run_cleanup_if_enabled` + pg_cron `30 3 * * *` + Node `maintenance-scheduler.js` (24h); `APP_CLEANUP_LAST_AT`.
+104. **Cash fund in portfolio UI:** seed ETF TMON/LQDT/SBMM; on param save → `syncLogicCashFundSecurity` (`display_order=0`); pin in Позиции/Тестирование «Бумаги»; runner/backtest skip fund for signals.
 
 ### Автотесты
 
@@ -310,6 +311,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Cash fund in logic_securities + papers pin (top); seed TMON/LQDT/SBMM; skip signals on fund |
 | 2026-07-18 | Implement cash-fund park in runner + scheduled cleanup; plan docs; installer |
 | 2026-07-18 | Posted plan docs/PLAN_cash_fund_runner_and_cleanup_cron.md (runner buy + cleanup cron); installer |
 | 2026-07-18 | Cash-fund params; DB+gear header; APP_CLEANUP_DISK + cleanup_trading_disk_space; settings panel; installer |
@@ -537,3 +539,4 @@
 116. After local Setup + No: no equity tiles, finres still differ — INSTALL_PROTOCOL ExitCode 1: install.ps1 ParserError on em-dash; post-install never finished (npm/API restart).
 117. «Add cash fund param (TMON/LQDT) + amount threshold default 100000; gear → general settings with cleanup checkbox for unused prices/tests/logs; DB icon for schema.»
 118. «Make a plan and post it» / «Do what you planned» / «Stop planning and do what is planned!» — implement cash-fund park + scheduled cleanup.
+119. «The product that is purchased must be visible in the block of securities, both in the test and in the real trade… at the top of the list.»

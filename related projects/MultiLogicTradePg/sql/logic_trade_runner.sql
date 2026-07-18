@@ -884,6 +884,13 @@ BEGIN
             COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          -- Денежный фонд только для парковки кэша, не для сигналов
+          AND NOT EXISTS (
+              SELECT 1
+              FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
     LOOP
         v_is_shadow := v_sec.real_trading_paused;
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));

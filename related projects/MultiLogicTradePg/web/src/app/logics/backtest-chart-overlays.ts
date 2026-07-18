@@ -44,30 +44,23 @@ export function tradesForSecurity(
     .sort((a, b) => dtKey(a.bar_dt).localeCompare(dtKey(b.bar_dt)));
 }
 
-/** Бумаги, по которым были сделки в тесте. */
-export function papersWithTrades(
-  trades: LogicTradeRow[],
-  dateFrom?: string | null,
-  dateTo?: string | null
-): {
+export type PaperListRow = {
   security_id: number;
   security_name: string;
   security_prefix: string | null;
   pnl: number;
   commission: number;
   trade_count: number;
-}[] {
-  const map = new Map<
-    number,
-    {
-      security_id: number;
-      security_name: string;
-      security_prefix: string | null;
-      pnl: number;
-      commission: number;
-      trade_count: number;
-    }
-  >();
+};
+
+/** Бумаги, по которым были сделки; optional pin (денежный фонд) — всегда сверху. */
+export function papersWithTrades(
+  trades: LogicTradeRow[],
+  dateFrom?: string | null,
+  dateTo?: string | null,
+  pinned?: PaperListRow | null
+): PaperListRow[] {
+  const map = new Map<number, PaperListRow>();
   for (const t of trades) {
     if (t.status !== 'filled' && t.status !== 'submitted') continue;
     const key = dtKey(t.bar_dt || t.executed_at);
@@ -98,12 +91,25 @@ export function papersWithTrades(
     }
     map.set(t.security_id, row);
   }
-  return [...map.values()].sort((a, b) =>
+  const sorted = [...map.values()].sort((a, b) =>
     (a.security_prefix || a.security_name).localeCompare(
       b.security_prefix || b.security_name,
       'ru'
     )
   );
+  if (!pinned?.security_id) {
+    return sorted;
+  }
+  const fromTrades = map.get(pinned.security_id);
+  const head: PaperListRow = {
+    security_id: pinned.security_id,
+    security_name: pinned.security_name || fromTrades?.security_name || '',
+    security_prefix: pinned.security_prefix ?? fromTrades?.security_prefix ?? null,
+    pnl: fromTrades?.pnl ?? 0,
+    commission: fromTrades?.commission ?? 0,
+    trade_count: fromTrades?.trade_count ?? 0,
+  };
+  return [head, ...sorted.filter((r) => r.security_id !== pinned.security_id)];
 }
 
 export function buildTradeMarkers(trades: LogicTradeRow[]): ChartTradeMarker[] {

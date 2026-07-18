@@ -333,6 +333,7 @@ async function saveTradingParams(pool, logicId, payload) {
       throw new Error('Денежный фонд: пусто, TMON, LQDT или SBMM');
     }
     await upsertParam(pool, logicId, PARAM_KEYS.CASH_FUND_CODE, code, 'text');
+    await syncLogicCashFundSecurity(pool, logicId, code);
   }
 
   if (payload.cash_fund_threshold !== undefined) {
@@ -344,6 +345,63 @@ async function saveTradingParams(pool, logicId, payload) {
   }
 
   return getTradingParams(pool, logicId);
+}
+
+/** Привязать выбранный денежный фонд к logic_securities (display_order=0, сверху списка). */
+async function syncLogicCashFundSecurity(pool, logicId, code) {
+  await pool.query(
+    `
+    DELETE FROM logic_securities ls
+    USING security_prefixes sp
+    WHERE ls.security_id = sp.security_id
+      AND ls.logic_id = $1
+      AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+      AND ($2::text = '' OR upper(sp.prefix) <> $2)
+    `,
+    [logicId, code || '']
+  );
+
+  if (!code) {
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `
+    SELECT s.id AS security_id
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id
+    WHERE upper(sp.prefix) = $1
+    ORDER BY sp.exchange_id
+    LIMIT 1
+    `,
+    [code]
+  );
+  if (!rows[0]) {
+    return;
+  }
+  const securityId = rows[0].security_id;
+
+  await pool.query(
+    `
+    UPDATE logic_securities
+    SET display_order = display_order + 1
+    WHERE logic_id = $1
+      AND security_id <> $2
+      AND display_order >= 0
+    `,
+    [logicId, securityId]
+  );
+
+  await pool.query(
+    `
+    INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+    VALUES ($1, $2, 0, TRUE)
+    ON CONFLICT (logic_id, security_id) DO UPDATE SET
+      is_active = TRUE,
+      display_order = 0
+    `,
+    [logicId, securityId]
+  );
 }
 
 async function updateCurrentBalance(pool, logicId, balance) {
@@ -381,6 +439,7 @@ module.exports = {
   getTradingParams,
   ensureDefaultParams,
   saveTradingParams,
+  syncLogicCashFundSecurity,
   updateCurrentBalance,
   getLogicParamsDetailed,
 };
