@@ -1446,8 +1446,30 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     );
 
     await client.query('COMMIT');
+    const { rows: fullRows } = await pool.query(
+      `
+      SELECT
+        l.id,
+        l.name,
+        l.account_id,
+        l.is_enabled,
+        l.note,
+        a.account_code,
+        a.name AS account_name,
+        a.account_type,
+        a.broker_id,
+        a.is_active AS account_is_active,
+        b.code AS broker_code,
+        b.name AS broker_name
+      FROM logics l
+      JOIN accounts a ON a.id = l.account_id
+      JOIN brokers b ON b.id = a.broker_id
+      WHERE l.id = $1
+      `,
+      [copy.id]
+    );
     const params = await getTradingParams(pool, copy.id);
-    res.status(201).json({ ...copy, ...params });
+    res.status(201).json({ ...(fullRows[0] ?? copy), ...params });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('POST /api/logics/:id/copy', err);
