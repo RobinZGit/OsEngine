@@ -1677,12 +1677,21 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.loadStopsForLogic(created.id);
         this.loadSecuritiesForLogic(created.id);
         alert(`Логика скопирована: ${created.name}`);
+        // After OK: list is already updated/expanded — scroll so the new row is on screen.
+        setTimeout(() => this.scrollLogicIntoView(created.id), 0);
       },
       error: (err) => {
         this.copyingLogicIds.delete(row.id);
         alert(err?.error?.error || 'Не удалось скопировать логику');
       },
     });
+  }
+
+  private scrollLogicIntoView(logicId: number): void {
+    const el = document.querySelector(
+      `.logic-main-row[data-logic-id="${logicId}"]`,
+    ) as HTMLElement | null;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
   }
 
   isCopying(row: LogicRow): boolean {
