@@ -1,4 +1,5 @@
--- MOEX fallback после неудачи T-Bank (ошибка или 0 свечей); M1 resample для intraday TF.
+-- MOEX fallback после неудачи T-Bank (ошибка или 0 свечей); base resample для intraday TF.
+-- FORTS ISS: только interval 1,10,60,24,7,31,4 — для M15 берём M10 (быстрее M1).
 
 CREATE OR REPLACE FUNCTION price_load_use_moex_fallback()
 RETURNS BOOLEAN
@@ -8,6 +9,21 @@ $$;
 
 COMMENT ON FUNCTION price_load_use_moex_fallback() IS
 'MOEX разрешён как fallback после неудачи T-Bank (ошибка или 0 свечей)';
+
+CREATE OR REPLACE FUNCTION moex_forts_base_interval(p_requested INTEGER)
+RETURNS INTEGER
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT CASE
+        WHEN p_requested IS NULL THEN 1
+        WHEN p_requested IN (1, 10, 60, 24, 7, 31, 4) THEN p_requested
+        WHEN p_requested < 10 THEN 1
+        WHEN p_requested < 60 THEN 10
+        ELSE 60
+    END;
+$$;
+
+COMMENT ON FUNCTION moex_forts_base_interval(INTEGER) IS
+'Ближайший поддерживаемый FORTS interval для resample (M15→10, M5→1, H2→60)';
 
 -- ============================================
 
@@ -61,30 +77,41 @@ BEGIN
 
     GET DIAGNOSTICS v_rows = ROW_COUNT;
 
-    RAISE NOTICE 'resample M1→TF id=%: % свечей (% — %)', p_dst_timeframe_id, v_rows, p_date_from, p_date_to;
+    RAISE NOTICE 'resample → TF id=%: % свечей (% — %)', p_dst_timeframe_id, v_rows, p_date_from, p_date_to;
 END;
 $$;
 
 COMMENT ON PROCEDURE resample_prices_to_timeframe(INTEGER, INTEGER, INTEGER, DATE, DATE) IS
 'Агрегирует свечи более мелкого TF в целевой (epoch-бакеты по sec целевого TF)';
 
-CREATE OR REPLACE PROCEDURE load_moex_m1_candles_paginated(
+CREATE OR REPLACE PROCEDURE load_moex_interval_candles_paginated(
     p_security_id INTEGER,
     p_date_from DATE,
     p_date_to DATE,
-    p_contract_prefix VARCHAR DEFAULT NULL
+    p_contract_prefix VARCHAR DEFAULT NULL,
+    p_moex_interval INTEGER DEFAULT 1
 )
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_m1_tf_id INTEGER;
+    v_src_tf_id INTEGER;
+    v_src_tf VARCHAR(20);
     v_day DATE;
     v_start INTEGER;
     v_batch INTEGER;
     v_total INTEGER := 0;
+    v_interval INTEGER;
 BEGIN
-    SELECT t.id INTO v_m1_tf_id FROM timeframes t WHERE t.tf = 'M1' LIMIT 1;
-    IF v_m1_tf_id IS NULL THEN
-        RAISE EXCEPTION 'M1 timeframe not found';
+    v_interval := COALESCE(NULLIF(p_moex_interval, 0), 1);
+    v_src_tf := CASE v_interval
+        WHEN 1 THEN 'M1'
+        WHEN 10 THEN 'M10'
+        WHEN 60 THEN 'H1'
+        ELSE 'M1'
+    END;
+
+    SELECT t.id INTO v_src_tf_id FROM timeframes t WHERE t.tf = v_src_tf LIMIT 1;
+    IF v_src_tf_id IS NULL THEN
+        RAISE EXCEPTION 'timeframe % not found for MOEX interval %', v_src_tf, v_interval;
     END IF;
 
     v_day := p_date_from;
@@ -92,12 +119,12 @@ BEGIN
         v_start := 0;
         LOOP
             CALL load_prices_from_moex_http(
-                p_security_id, v_m1_tf_id, v_day, v_day, p_contract_prefix, 1, v_start
+                p_security_id, v_src_tf_id, v_day, v_day, p_contract_prefix, v_interval, v_start
             );
             SELECT records_loaded INTO v_batch
             FROM price_load_log
             WHERE security_id = p_security_id
-              AND timeframe_id = v_m1_tf_id
+              AND timeframe_id = v_src_tf_id
               AND date_from = v_day
               AND date_to = v_day
               AND source = 'MOEX'
@@ -111,34 +138,64 @@ BEGIN
         v_day := v_day + 1;
     END LOOP;
 
-    RAISE NOTICE 'MOEX M1 paginated: % свечей (% — %)', v_total, p_date_from, p_date_to;
+    RAISE NOTICE 'MOEX % paginated: % свечей (% — %)', v_src_tf, v_total, p_date_from, p_date_to;
+END;
+$$;
+
+COMMENT ON PROCEDURE load_moex_interval_candles_paginated(INTEGER, DATE, DATE, VARCHAR, INTEGER) IS
+'Загрузка MOEX FORTS/ISS по дням с пагинацией (interval 1/10/60)';
+
+-- Совместимость: старое имя → M1
+CREATE OR REPLACE PROCEDURE load_moex_m1_candles_paginated(
+    p_security_id INTEGER,
+    p_date_from DATE,
+    p_date_to DATE,
+    p_contract_prefix VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql AS $$
+BEGIN
+    CALL load_moex_interval_candles_paginated(
+        p_security_id, p_date_from, p_date_to, p_contract_prefix, 1
+    );
 END;
 $$;
 
 COMMENT ON PROCEDURE load_moex_m1_candles_paginated(INTEGER, DATE, DATE, VARCHAR) IS
 'Загрузка M1 с MOEX по дням с пагинацией start=500';
 
-CREATE OR REPLACE PROCEDURE load_prices_moex_via_m1_resample(
+CREATE OR REPLACE PROCEDURE load_prices_moex_via_base_resample(
     p_security_id INTEGER,
     p_timeframe_id INTEGER,
     p_date_from DATE,
     p_date_to DATE,
-    p_contract_prefix VARCHAR DEFAULT NULL
+    p_contract_prefix VARCHAR DEFAULT NULL,
+    p_base_interval INTEGER DEFAULT 10
 )
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_m1_tf_id INTEGER;
+    v_src_tf_id INTEGER;
+    v_src_tf VARCHAR(20);
     v_tf_name VARCHAR(20);
     v_resampled INTEGER := 0;
+    v_base INTEGER;
 BEGIN
-    SELECT t.id INTO v_m1_tf_id FROM timeframes t WHERE t.tf = 'M1' LIMIT 1;
+    v_base := moex_forts_base_interval(COALESCE(p_base_interval, 10));
+    v_src_tf := CASE v_base
+        WHEN 1 THEN 'M1'
+        WHEN 10 THEN 'M10'
+        WHEN 60 THEN 'H1'
+        ELSE 'M1'
+    END;
+    SELECT t.id INTO v_src_tf_id FROM timeframes t WHERE t.tf = v_src_tf LIMIT 1;
     SELECT tf INTO v_tf_name FROM timeframes WHERE id = p_timeframe_id;
 
-    RAISE NOTICE 'MOEX resample: % → M1 → % (% — %)', v_tf_name, v_tf_name, p_date_from, p_date_to;
+    RAISE NOTICE 'MOEX resample: % → % → % (% — %)', v_tf_name, v_src_tf, v_tf_name, p_date_from, p_date_to;
 
-    CALL load_moex_m1_candles_paginated(p_security_id, p_date_from, p_date_to, p_contract_prefix);
+    CALL load_moex_interval_candles_paginated(
+        p_security_id, p_date_from, p_date_to, p_contract_prefix, v_base
+    );
     CALL resample_prices_to_timeframe(
-        p_security_id, v_m1_tf_id, p_timeframe_id, p_date_from, p_date_to
+        p_security_id, v_src_tf_id, p_timeframe_id, p_date_from, p_date_to
     );
 
     SELECT COUNT(*)::INTEGER INTO v_resampled
@@ -153,11 +210,37 @@ BEGIN
     )
     VALUES (
         p_security_id, p_timeframe_id, p_date_from, p_date_to,
-        'MOEX-M1', v_resampled, p_contract_prefix,
-        format('MOEX ISS не отдаёт %s напрямую; resample из M1', v_tf_name)
+        format('MOEX-%s', v_src_tf), v_resampled, p_contract_prefix,
+        format('MOEX ISS не отдаёт %s напрямую; resample из %s', v_tf_name, v_src_tf)
+    );
+END;
+$$;
+
+COMMENT ON PROCEDURE load_prices_moex_via_base_resample(INTEGER, INTEGER, DATE, DATE, VARCHAR, INTEGER) IS
+'Fallback: загрузка базового FORTS interval (обычно M10) + resample в целевой TF';
+
+CREATE OR REPLACE PROCEDURE load_prices_moex_via_m1_resample(
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_date_from DATE,
+    p_date_to DATE,
+    p_contract_prefix VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_tf_name VARCHAR(20);
+    v_req INTEGER;
+    v_base INTEGER;
+BEGIN
+    SELECT tf INTO v_tf_name FROM timeframes WHERE id = p_timeframe_id;
+    v_req := get_moex_candle_interval(v_tf_name);
+    v_base := moex_forts_base_interval(v_req);
+    -- Для M15/M20/M30 предпочитаем M10 (в ~10× меньше HTTP, чем M1)
+    CALL load_prices_moex_via_base_resample(
+        p_security_id, p_timeframe_id, p_date_from, p_date_to, p_contract_prefix, v_base
     );
 END;
 $$;
 
 COMMENT ON PROCEDURE load_prices_moex_via_m1_resample(INTEGER, INTEGER, DATE, DATE, VARCHAR) IS
-'Fallback: M1 paginated load + resample в целевой TF (M15/M5/M20 …)';
+'Fallback: FORTS base interval (M10 для M15) + resample в целевой TF';

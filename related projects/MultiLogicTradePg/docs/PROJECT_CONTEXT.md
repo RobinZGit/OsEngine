@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — Futures M15 via MOEX M1→resample; futures open qty 1 lot; T-Bank token restore on failed verify; installer
+**Последнее обновление:** 2026-07-18 — Futures backtest: partial prices→indicators; MOEX M10 resample; no early exit after partial T-Bank; concurrency=1
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -315,6 +315,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Futures backtest fix: partial coverage still runs indicators; MOEX M10→M15; T-Bank partial→MOEX; concurrency=1 |
 | 2026-07-18 | Futures: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token rollback on bad verify |
 | 2026-07-18 | Cash fund in logic_securities + papers pin (top); seed TMON/LQDT/SBMM; skip signals on fund |
 | 2026-07-18 | Implement cash-fund park in runner + scheduled cleanup; plan docs; installer |
@@ -546,3 +547,4 @@
 118. «Make a plan and post it» / «Do what you planned» / «Stop planning and do what is planned!» — implement cash-fund park + scheduled cleanup.
 119. «The product that is purchased must be visible in the block of securities, both in the test and in the real trade… at the top of the list.»
 120. «Learn Futures… when I choose Futures in testing it loads prices and tests; same for combat… T-Bank token didn’t save / can it fly off?»
+121. «Futures again, not a single test transaction… look, is it right or again something fell?»

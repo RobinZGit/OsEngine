@@ -7,9 +7,10 @@ const { writeTechLogEvent } = require('./lib/tech-log');
  * По умолчанию 2 — меньше таймаутов T-Bank, чем при 4.
  * Env: BACKTEST_PRICE_CONCURRENCY (1..8).
  */
+// 1 по умолчанию: параллельный HTTP (особенно фьючерсы T-Bank/MOEX) даёт SSL timeout
 const BACKTEST_PRICE_CONCURRENCY = Math.max(
   1,
-  Math.min(8, Number(process.env.BACKTEST_PRICE_CONCURRENCY) || 2)
+  Math.min(8, Number(process.env.BACKTEST_PRICE_CONCURRENCY) || 1)
 );
 
 /**
@@ -352,17 +353,27 @@ async function ensureSecurityData(
       pool,
       runId,
       logicId,
-      okAfterLoad ? 'backtest.prices.loaded' : 'backtest.prices.insufficient',
+      okAfterLoad
+        ? 'backtest.prices.loaded'
+        : inPeriod > 0
+          ? 'backtest.prices.partial'
+          : 'backtest.prices.insufficient',
       okAfterLoad
         ? `Цены загружены: ${secName || secId}, в периоде ${inPeriod} свечей`
-        : `Недостаточно свечей после загрузки (${inPeriod} в периоде ${dateFrom} — ${dateTo})`,
+        : inPeriod > 0
+          ? `Частичные цены: ${secName || secId}, в периоде ${inPeriod} свечей — считаем индикаторы`
+          : `Недостаточно свечей после загрузки (${inPeriod} в периоде ${dateFrom} — ${dateTo})`,
       { security_id: secId, prices_in_period: inPeriod, coverage_ok: okAfterLoad },
       secId,
       tfId
     );
-    if (!okAfterLoad) {
+    if (!okAfterLoad && inPeriod <= 0) {
       stats.pricesErr += 1;
       return;
+    }
+    // Частичное покрытие (часто у фьючерсов после SSL) — всё равно считаем индикаторы
+    if (!okAfterLoad && inPeriod > 0) {
+      pricesReloaded = true;
     }
   }
 
