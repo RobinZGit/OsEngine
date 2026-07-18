@@ -84,6 +84,7 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Dated futures: rollover + T-Bank → MOEX (MOEX M15/M5… → M1 resample внутри load_prices_from_moex_http)
     IF v_is_future THEN
         CALL load_prices_futures_http(p_security_id, p_timeframe_id, p_date_from, p_date_to);
         RETURN;

@@ -4075,6 +4075,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7003,6 +7004,34 @@ $$;
 COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
 'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
 
+-- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
+-- ============================================
+-- Stop-loss runner: security / security_resume / security_inversion / portfolio
+-- ============================================
+
+CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_tf TEXT;
+    v_id INTEGER;
+BEGIN
+    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
+    SELECT t.id INTO v_id
+    FROM timeframes t
+    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
+    ORDER BY t.sec
+    LIMIT 1;
+    IF v_id IS NULL THEN
+        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
+    END IF;
+    RETURN v_id;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
+'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
+
 CREATE OR REPLACE FUNCTION logic_long_position_qty(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -7857,6 +7886,20 @@ $$;
 
 COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
 'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
 
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
@@ -9759,6 +9802,7 @@ DECLARE
     v_signal_kind TEXT;
     v_ind_dt TIMESTAMP;
     v_lot_size INTEGER;
+    v_is_futures BOOLEAN;
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
@@ -9870,6 +9914,7 @@ BEGIN
         v_is_shadow := v_sec.real_trading_paused;
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);
+        v_is_futures := logic_security_is_futures(v_sec.security_id);
 
         FOR v_grp IN
             SELECT lis.position_event, lis.position_side
@@ -10007,10 +10052,14 @@ BEGIN
                         v_balance, v_position_size_pct, v_pp, v_lot_size
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF v_logic.account_type = 'fake' THEN
+                        -- Фьючерсы: % депозита / цена контракта часто даёт 0 → 1 лот
+                        IF v_is_futures THEN
+                            v_quantity := v_lot_size;
+                        ELSIF v_logic.account_type = 'fake' THEN
                             CONTINUE;
+                        ELSE
+                            v_quantity := v_lot_size;
                         END IF;
-                        v_quantity := v_lot_size;
                     END IF;
                     v_side_id := v_side_open_id;
                     v_action_id := v_action_long_id;
@@ -10032,10 +10081,13 @@ BEGIN
                     v_balance, v_position_size_pct, v_pp, v_lot_size
                 );
                 IF v_quantity < v_lot_size THEN
-                    IF v_logic.account_type = 'fake' THEN
+                    IF v_is_futures THEN
+                        v_quantity := v_lot_size;
+                    ELSIF v_logic.account_type = 'fake' THEN
                         CONTINUE;
+                    ELSE
+                        v_quantity := v_lot_size;
                     END IF;
-                    v_quantity := v_lot_size;
                 END IF;
                 v_side_id := v_side_open_id;
                 v_action_id := v_action_short_id;
@@ -11227,6 +11279,7 @@ DECLARE
     v_signal_kind TEXT;
     v_pp NUMERIC;
     v_lot_size INTEGER;
+    v_is_futures BOOLEAN;
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
@@ -11260,6 +11313,7 @@ BEGIN
             )
         );
         v_lot_size := logic_security_lot_size(v_sec.security_id);
+        v_is_futures := logic_security_is_futures(v_sec.security_id);
 
         FOR v_grp IN
             SELECT lis.position_event, lis.position_side
@@ -11337,7 +11391,8 @@ BEGIN
                         p_balance, v_position_size_pct, v_pp, v_lot_size
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF p_balance >= v_pp * v_lot_size THEN
+                        -- Фьючерсы: нотионал контракта >> % депозита → 1 лот при сигнале
+                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -11360,7 +11415,7 @@ BEGIN
                         p_balance, v_position_size_pct, v_pp, v_lot_size
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF p_balance >= v_pp * v_lot_size THEN
+                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -12459,6 +12514,7 @@ COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 
 
 
+
 -- instrumentId для GetCandles: ShareBy по тикеру (исправляет устаревший tbank_figi)
 CREATE OR REPLACE FUNCTION resolve_tbank_instrument_id(
     p_security_id INTEGER,
@@ -12925,6 +12981,16 @@ BEGIN
         END IF;
     END IF;
 
+    -- FORTS ISS: нет M15/M5/M2/… — только 1, 10, 60, 24, 7, 31, 4 → M1 + resample
+    IF v_engine = 'futures'
+       AND v_moex_interval NOT IN (1, 10, 60, 24, 7, 31, 4)
+    THEN
+        CALL load_prices_moex_via_m1_resample(
+            p_security_id, p_timeframe_id, p_date_from, p_date_to, p_contract_prefix
+        );
+        RETURN;
+    END IF;
+
     IF p_contract_prefix IS NOT NULL THEN
         v_prefix := v_moex_ticker;
     END IF;
@@ -13195,19 +13261,31 @@ $$;
 COMMENT ON PROCEDURE load_prices_moex_via_m1_resample(INTEGER, INTEGER, DATE, DATE, VARCHAR) IS
 'Fallback: M1 paginated load + resample в целевой TF (M15/M5/M20 …)';
 
--- MOEX ASSETCODE для группового префикса (CR → CNY, Br → BR)
+-- MOEX ASSETCODE для группового префикса (CR → CNY, GD → GOLD, …)
 CREATE OR REPLACE FUNCTION moex_future_asset_code(p_group_prefix VARCHAR)
 RETURNS VARCHAR
 LANGUAGE sql IMMUTABLE AS $$
     SELECT CASE upper(btrim(p_group_prefix))
         WHEN 'CR' THEN 'CNY'
         WHEN 'BR' THEN 'BR'
+        WHEN 'GD' THEN 'GOLD'
+        WHEN 'SV' THEN 'SILV'
+        WHEN 'MX' THEN 'MIX'
+        WHEN 'RI' THEN 'RTS'
+        WHEN 'EU' THEN 'Eu'
+        WHEN 'NG' THEN 'NG'
+        WHEN 'SBRF' THEN 'SBRF'
+        WHEN 'GAZR' THEN 'GAZR'
+        WHEN 'LKOH' THEN 'LKOH'
+        WHEN 'VTBR' THEN 'VTBR'
+        WHEN 'GL' THEN 'GL'
+        WHEN 'SI' THEN 'Si'
         ELSE btrim(p_group_prefix)
     END;
 $$;
 
 COMMENT ON FUNCTION moex_future_asset_code(VARCHAR) IS
-'Код базового актива MOEX FORTS для группового префикса (CR → CNY)';
+'Код базового актива MOEX FORTS для группового префикса (CR → CNY, GD → GOLD, MX → MIX …)';
 
 -- Синхронизация контрактов фьючерса из MOEX ISS → futures_expirations
 CREATE OR REPLACE PROCEDURE sync_futures_expirations_from_moex(

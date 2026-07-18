@@ -873,6 +873,7 @@ DECLARE
     v_signal_kind TEXT;
     v_pp NUMERIC;
     v_lot_size INTEGER;
+    v_is_futures BOOLEAN;
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
@@ -906,6 +907,7 @@ BEGIN
             )
         );
         v_lot_size := logic_security_lot_size(v_sec.security_id);
+        v_is_futures := logic_security_is_futures(v_sec.security_id);
 
         FOR v_grp IN
             SELECT lis.position_event, lis.position_side
@@ -983,7 +985,8 @@ BEGIN
                         p_balance, v_position_size_pct, v_pp, v_lot_size
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF p_balance >= v_pp * v_lot_size THEN
+                        -- Фьючерсы: нотионал контракта >> % депозита → 1 лот при сигнале
+                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -1006,7 +1009,7 @@ BEGIN
                         p_balance, v_position_size_pct, v_pp, v_lot_size
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF p_balance >= v_pp * v_lot_size THEN
+                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;

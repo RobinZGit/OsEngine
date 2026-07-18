@@ -229,15 +229,29 @@ app.put('/api/settings/tbank-token', async (req, res) => {
     return;
   }
   try {
+    // Сохраняем предыдущий токен: verify идёт после UPSERT — при ошибке откатываем
+    const { rows: prevRows } = await pool.query(
+      `SELECT btrim(COALESCE(pv.value, '')) AS token
+       FROM parameter_values pv
+       JOIN parameter_types pt ON pt.id = pv.parameter_type_id
+       JOIN parameter_sets ps ON ps.id = pv.parameter_set_id
+       WHERE ps.name = 'Default' AND pt.short_name = 'TBANK_API_TOKEN'
+       LIMIT 1`
+    );
+    const previousToken = prevRows[0]?.token || '';
+
     await pool.query('CALL set_tbank_token($1)', [token]);
     const { rows } = await pool.query('SELECT tbank_verify_token() AS status');
     const status = rows[0]?.status ?? {};
     if (!status.valid) {
+      if (previousToken && previousToken !== token) {
+        await pool.query('CALL set_tbank_token($1)', [previousToken]);
+      }
       res.status(400).json({
         error:
           status.error_message ||
-          'Токен сохранён, но T-Bank его не принял. Проверьте API-токен.',
-        has_token: Boolean(status.has_token),
+          'T-Bank не принял токен. Предыдущий токен восстановлен.',
+        has_token: previousToken !== '',
         valid: false,
         error_message: status.error_message ?? null,
       });

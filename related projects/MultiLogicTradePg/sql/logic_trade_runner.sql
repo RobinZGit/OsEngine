@@ -361,6 +361,20 @@ $$;
 COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
 'Лотность бумаги (штук в лоте); минимум 1';
 
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -784,6 +798,7 @@ DECLARE
     v_signal_kind TEXT;
     v_ind_dt TIMESTAMP;
     v_lot_size INTEGER;
+    v_is_futures BOOLEAN;
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
@@ -895,6 +910,7 @@ BEGIN
         v_is_shadow := v_sec.real_trading_paused;
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);
+        v_is_futures := logic_security_is_futures(v_sec.security_id);
 
         FOR v_grp IN
             SELECT lis.position_event, lis.position_side
@@ -1032,10 +1048,14 @@ BEGIN
                         v_balance, v_position_size_pct, v_pp, v_lot_size
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF v_logic.account_type = 'fake' THEN
+                        -- Фьючерсы: % депозита / цена контракта часто даёт 0 → 1 лот
+                        IF v_is_futures THEN
+                            v_quantity := v_lot_size;
+                        ELSIF v_logic.account_type = 'fake' THEN
                             CONTINUE;
+                        ELSE
+                            v_quantity := v_lot_size;
                         END IF;
-                        v_quantity := v_lot_size;
                     END IF;
                     v_side_id := v_side_open_id;
                     v_action_id := v_action_long_id;
@@ -1057,10 +1077,13 @@ BEGIN
                     v_balance, v_position_size_pct, v_pp, v_lot_size
                 );
                 IF v_quantity < v_lot_size THEN
-                    IF v_logic.account_type = 'fake' THEN
+                    IF v_is_futures THEN
+                        v_quantity := v_lot_size;
+                    ELSIF v_logic.account_type = 'fake' THEN
                         CONTINUE;
+                    ELSE
+                        v_quantity := v_lot_size;
                     END IF;
-                    v_quantity := v_lot_size;
                 END IF;
                 v_side_id := v_side_open_id;
                 v_action_id := v_action_short_id;

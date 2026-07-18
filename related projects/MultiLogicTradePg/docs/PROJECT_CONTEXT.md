@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — Cash fund visible in securities/papers (top); seed TMON/LQDT/SBMM; installer
+**Последнее обновление:** 2026-07-18 — Futures M15 via MOEX M1→resample; futures open qty 1 lot; T-Bank token restore on failed verify; installer
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -57,6 +57,9 @@
 - T-Bank **FutureBy** — сначала `moex_secid` (`CRU6`), затем `prefix` (`CNY-9.26`);
 - MOEX candles URL — по **SECID**, не SHORTNAME;
 - `load_prices_http` — вечные → T-Bank/MOEX по `CNYRUBF` из `security_prefixes` (не из `futures_expirations`);
+- **MOEX FORTS не отдаёт M15/M5/…** (только 1, 10, 60, 24, 7, 31, 4) → `load_prices_from_moex_http` вызывает **M1 + resample** (`load_prices_moex_via_m1_resample`);
+- `moex_future_asset_code`: CR→CNY, GD→GOLD, SV→SILV, MX→MIX, RI→RTS, …;
+- открытие позиции по фьючерсу: если `% депозита / цена` даёт 0 → **1 лот** (бой и тест);
 - таймауты: `lock_timeout` / `statement_timeout` в API и SQL (защита от зависаний).
 
 ### Проверка SQL перед сборкой
@@ -292,6 +295,7 @@
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 - [x] Trade runner: auto-buy cash fund (TMON/LQDT/SBMM) when free cash > threshold — `logic_park_excess_cash` (2026-07-18).
 - [x] pg_cron / Node daily schedule for cleanup when `APP_CLEANUP_DISK` is on (2026-07-18).
+- [x] Futures testing/live: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token restore on bad verify (2026-07-18).
 
 ---
 
@@ -311,6 +315,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Futures: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token rollback on bad verify |
 | 2026-07-18 | Cash fund in logic_securities + papers pin (top); seed TMON/LQDT/SBMM; skip signals on fund |
 | 2026-07-18 | Implement cash-fund park in runner + scheduled cleanup; plan docs; installer |
 | 2026-07-18 | Posted plan docs/PLAN_cash_fund_runner_and_cleanup_cron.md (runner buy + cleanup cron); installer |
@@ -540,3 +545,4 @@
 117. «Add cash fund param (TMON/LQDT) + amount threshold default 100000; gear → general settings with cleanup checkbox for unused prices/tests/logs; DB icon for schema.»
 118. «Make a plan and post it» / «Do what you planned» / «Stop planning and do what is planned!» — implement cash-fund park + scheduled cleanup.
 119. «The product that is purchased must be visible in the block of securities, both in the test and in the real trade… at the top of the list.»
+120. «Learn Futures… when I choose Futures in testing it loads prices and tests; same for combat… T-Bank token didn’t save / can it fly off?»
