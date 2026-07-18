@@ -13,6 +13,7 @@ alwaysApply: true
 3. **После правок SQL** — **прогнать проверку** (`npm run verify:sql` или `.\scripts\verify_sql_scripts.ps1`).
 4. **Перед сборкой и деплоем** — скрипты **обязаны проходить проверку** без ошибок; в них должны быть **все** изменения БД до последнего коммита.
 5. **Не оставлять** локальную БД и репозиторий в расхождении.
+6. **Если SQL входит в Windows installer** — после любых изменений `00`–`03` обязательно пересобрать `installer/windows/dist/MultiLogicTradePgSetup.exe` (см. `.cursor/rules/installer-freshness.mdc`).
 
 ## Проверка перед сборкой / выкладкой
 
@@ -71,3 +72,4 @@ set PGPASSWORD=111
 - Запуск UI: `web/MultiLogic_Trade_Progress_Start.bat`
 - CI: `.github/workflows/pages.yml`
 - Контекст: `docs/PROJECT_CONTEXT.md` — **обновлять при каждой выкладке** (см. `.cursor/rules/project-context.mdc`)
+- Installer: `installer/windows/dist/MultiLogicTradePgSetup.exe` — **пересобирать при изменениях SQL/API/UI/scripts/installer** (см. `.cursor/rules/installer-freshness.mdc`)

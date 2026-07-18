@@ -1,0 +1,55 @@
+---
+description: Windows installer must always match the current shipped project state
+globs: "installer/windows/**,web/**,api/**,scripts/**,docs/**,*.sql"
+alwaysApply: true
+---
+
+# Windows installer freshness (MultiLogicTradePg)
+
+## Rule (Sergey)
+
+The committed installer binary must always match the current repository state.
+
+Before every push that changes anything shipped by the Windows installer, rebuild:
+
+```powershell
+.\installer\windows\build-installer.ps1
+```
+
+or compile:
+
+```text
+installer\windows\MultiLogicTradePg.iss
+```
+
+and commit the updated:
+
+```text
+installer\windows\dist\MultiLogicTradePgSetup.exe
+```
+
+## Rebuild the installer after changes to
+
+- SQL scripts: `00_create_database.sql`, `01_*.sql`, `02_*.sql`, `03_*.sql`.
+- API files under `api/`.
+- Angular/UI files under `web/`.
+- runtime scripts under `scripts/`.
+- launcher files such as `web\MultiLogic_Trade_Progress_Start.bat`.
+- installer sources under `installer/windows/`.
+- docs/context files that are shipped inside the installer.
+
+## Database structure changes
+
+If the database structure changes:
+
+1. Update the source SQL scripts first (`00`-`02`, and `03` if examples change).
+2. Run SQL verification where available (`npm run verify:sql` or `.\scripts\verify_sql_scripts.ps1`).
+3. Rebuild `MultiLogicTradePgSetup.exe` so a fresh installation deploys the new schema.
+4. Update `docs/PROJECT_CONTEXT.md`.
+5. Commit code, SQL, installer binary, and context together before pushing.
+
+## Do not
+
+- Do not push UI/API/SQL changes that should be installed on Windows without rebuilding `MultiLogicTradePgSetup.exe`.
+- Do not rely on users running repository source files manually after installer changes.
+- Do not leave `installer/windows/dist/MultiLogicTradePgSetup.exe` older than the shipped source tree.
