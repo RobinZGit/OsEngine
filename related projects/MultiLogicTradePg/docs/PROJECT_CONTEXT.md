@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — Cash-fund logic params; header DB+gear icons; general settings cleanup (APP_CLEANUP_DISK + cleanup_trading_disk_space); installer
+**Последнее обновление:** 2026-07-18 — Posted plan: cash-fund runner buy + scheduled cleanup (`docs/PLAN_cash_fund_runner_and_cleanup_cron.md`); installer
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -288,8 +288,8 @@
 - [x] Cash-fund params + header DB/gear + cleanup settings panel/SQL/API; installer (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
-- [ ] Trade runner: auto-buy cash fund (TMON/LQDT/SBMM) when free cash > threshold.
-- [ ] Optional pg_cron schedule for `cleanup_trading_disk_space` when `APP_CLEANUP_DISK` is on.
+- [ ] Trade runner: auto-buy cash fund (TMON/LQDT/SBMM) when free cash > threshold — see `docs/PLAN_cash_fund_runner_and_cleanup_cron.md`.
+- [ ] Optional pg_cron / Node daily schedule for `cleanup_trading_disk_space` when `APP_CLEANUP_DISK` is on — same plan.
 
 ---
 
@@ -309,6 +309,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Posted plan docs/PLAN_cash_fund_runner_and_cleanup_cron.md (runner buy + cleanup cron); installer |
 | 2026-07-18 | Cash-fund params; DB+gear header; APP_CLEANUP_DISK + cleanup_trading_disk_space; settings panel; installer |
 | 2026-07-18 | Test finres mismatch: panel LIMIT 5000 vs pnl-summary 6685; load full run_id; installer |
 | 2026-07-18 | Fix upgrade No: install.ps1 ParserError (em-dash); equity open by default; reinstall Setup |
@@ -533,3 +534,4 @@
 115. «Always put changes in the installer when needed (DB, Angular, everything at once)… then put out what I corrected in the repository, installer, everything.»
 116. After local Setup + No: no equity tiles, finres still differ — INSTALL_PROTOCOL ExitCode 1: install.ps1 ParserError on em-dash; post-install never finished (npm/API restart).
 117. «Add cash fund param (TMON/LQDT) + amount threshold default 100000; gear → general settings with cleanup checkbox for unused prices/tests/logs; DB icon for schema.»
+118. «Make a plan and post it» / «Do what you planned» — next-phase plan: cash-fund runner auto-buy + scheduled cleanup; publish in repo.
