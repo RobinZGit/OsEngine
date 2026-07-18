@@ -2075,8 +2075,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private loadTestTradesForLogic(logicId: number, _silent = false): void {
     if (this.testTradesInFlight.has(logicId)) return;
     this.testTradesInFlight.add(logicId);
-    // Бэктест по многим бумагам — нужен большой лимит, иначе маркеры MMK и др. режутся.
-    this.logicsService.getLogicTrades(logicId, 5000, true).pipe(takeUntil(this.destroy$)).subscribe({
+    // Полный последний прогон: иначе LIMIT 5000 даёт другой финрез, чем колонка «Тест» (pnl-summary).
+    const runId = this.backtestRuns.get(Number(logicId))?.id ?? null;
+    this.logicsService.getLogicTrades(logicId, 50000, true, runId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (rows) => {
         this.testTradesInFlight.delete(logicId);
         const prev = this.logicTradesTest.get(Number(logicId));

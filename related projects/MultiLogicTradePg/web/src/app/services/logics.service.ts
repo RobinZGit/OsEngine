@@ -247,13 +247,21 @@ export class LogicsService {
     );
   }
 
-  getLogicTrades(logicId: number, limit = 100, isTest?: boolean): Observable<LogicTradeRow[]> {
+  getLogicTrades(
+    logicId: number,
+    limit = 100,
+    isTest?: boolean,
+    runId?: number | null
+  ): Observable<LogicTradeRow[]> {
     const params: Record<string, string> = {
       logic_id: String(logicId),
       limit: String(limit),
     };
     if (isTest === true) params['is_test'] = '1';
     if (isTest === false) params['is_test'] = '0';
+    if (runId != null && Number.isFinite(Number(runId)) && Number(runId) > 0) {
+      params['run_id'] = String(runId);
+    }
     return this.http.get<LogicTradeRow[]>(`${this.appConfig.apiUrl}/logic-trades`, {
       params,
     });

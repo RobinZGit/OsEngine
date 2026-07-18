@@ -2489,9 +2489,15 @@ app.get('/api/logic-trades', async (req, res) => {
       : isTestRaw === '0' || isTestRaw === 'false'
         ? false
         : null;
+  const runIdRaw = req.query.run_id;
+  const runId =
+    runIdRaw != null && runIdRaw !== '' && Number.isFinite(Number(runIdRaw))
+      ? Number(runIdRaw)
+      : null;
   const limitRaw = Number(req.query.limit);
-  const defaultLimit = isTest === true ? 5000 : 100;
-  const limitCap = isTest === true ? 20000 : 500;
+  // Test runs can exceed 5k closes; panel must load the full latest run or finres != table column.
+  const defaultLimit = isTest === true ? 20000 : 100;
+  const limitCap = isTest === true ? 50000 : 500;
   const limit = Math.min(
     Math.max(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : defaultLimit, 1),
     limitCap
@@ -2504,12 +2510,16 @@ app.get('/api/logic-trades', async (req, res) => {
     } else if (isTest === false) {
       where += ' AND lt.is_test = FALSE';
     }
+    if (runId != null && runId > 0) {
+      params.push(runId);
+      where += ` AND lt.run_id = $${params.length}`;
+    }
     params.push(limit);
     const { rows } = await pool.query(
       `${LOGIC_TRADE_SELECT}
        ${where}
        ORDER BY lt.executed_at DESC, lt.id DESC
-       LIMIT $2`,
+       LIMIT $${params.length}`,
       params
     );
     res.json(rows);

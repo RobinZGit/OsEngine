@@ -31,6 +31,7 @@
         <span class="positions-counts" title="Сделки открытия / сделки закрытия">
           ({{ openTradeCount() }}/{{ closeTradeCount() }})
         </span>
+        <span class="positions-sub-hint" title="Внутри: эквити портфеля, сделки, бумаги">· эквити · бумаги</span>
 
         @if (isTest && periodLabel && !isBacktestRunning) {
           <span class="positions-period-label">{{ periodLabel }}</span>

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — Fix install.ps1 ASCII (post-install ParserError on upgrade No); equity block open by default; installer rebuild
+**Последнее обновление:** 2026-07-18 — Fix test finres: load full run (not LIMIT 5000); hint «эквити · бумаги» on Positions/Testing; installer
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -304,6 +304,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Test finres mismatch: panel LIMIT 5000 vs pnl-summary 6685; load full run_id; installer |
 | 2026-07-18 | Fix upgrade No: install.ps1 ParserError (em-dash); equity open by default; reinstall Setup |
 | 2026-07-18 | Live/test equity+papers; portfolio SL/TP equity lines; remember test period; pnl-summary by run id; installer |
 | 2026-07-18 | 01 CREATE+ALTER: comment-aware ensure script; indicators.sig_* in CREATE; verify-sql + upgrade OK; installer rebuild |
