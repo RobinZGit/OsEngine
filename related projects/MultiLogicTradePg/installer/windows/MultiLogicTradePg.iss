@@ -54,11 +54,26 @@ Name: "{autoprograms}\MultiLogic Trade\Install protocol"; Filename: "{win}\notep
 Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"; Tasks: desktopicon
 
 [Run]
-Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg... Подробности пишутся в INSTALL_PROTOCOL.txt"; Flags: waituntilterminated runhidden
+Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Настройка приложения... См. INSTALL_PROTOCOL.txt"; Flags: waituntilterminated runhidden; BeforeInstall: PreparePostInstall; AfterInstall: FinishPostInstall
 Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Run MultiLogic Trade"; Flags: postinstall nowait skipifsilent runasoriginaluser
 Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Description: "Open installation protocol"; Flags: postinstall skipifsilent unchecked runasoriginaluser; Check: InstallProtocolExists
 
 [Code]
+procedure PreparePostInstall();
+var
+  Max: Integer;
+begin
+  WizardForm.StatusLabel.Caption := 'Настройка приложения... См. INSTALL_PROTOCOL.txt';
+  Max := WizardForm.ProgressGauge.Max;
+  if Max > 0 then
+    WizardForm.ProgressGauge.Position := (Max * 85) div 100;
+end;
+
+procedure FinishPostInstall();
+begin
+  WizardForm.ProgressGauge.Position := WizardForm.ProgressGauge.Max;
+end;
+
 function StripQuotes(Value: String): String;
 begin
   Result := Value;

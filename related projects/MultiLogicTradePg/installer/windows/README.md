@@ -74,7 +74,9 @@ database, installs npm packages, and creates launch shortcuts.
    easiest file to send for diagnostics. Setup copies a placeholder protocol
    first, then runs post-install hidden through a small wrapper that overwrites
    the file immediately and captures PowerShell output/errors from the first
-   line. The setup window remains visible and shows the current installer status.
+   line. The setup window remains visible and shows a short current status.
+   During the hidden post-install step the progress bar is kept below 100% until
+   the step finishes.
 
 8. Creates shortcuts:
 

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — правила проекта: SQL и installer всегда держать актуальными
+**Последнее обновление:** 2026-07-18 — installer status не обрезается, progress удерживается ниже 100% на post-install
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -195,6 +195,7 @@
 88. **UI logics:** добавлен backend/UI copy logic (`POST /api/logics/:id/copy`) — копирует логику, params, signals, stops, securities, но не trades/runs; имя `... copy`, копия выключена; endpoint сразу возвращает полную joined-строку с account/broker полями. Главная таблица logics ужата, actions видны на экране. В «Позиции/Тестирование» рядом с названием — счётчик open/close, PnL уже с `%` от депозита; в тестировании добавлен блок «Эквити портфеля» (общая/long/short).
 89. **UI processes/formulas/select-all:** сверху на странице logics добавлена панель активных процессов (`GET /api/processes`: pg_stat_activity, running backtests, enabled trade runner, pg_cron если доступен + локальный rating precalc). В picker бумаг групповой checkbox больше не disabled и может снять выбор. Формула сигнала — full-width textarea с переносом, Ctrl+Enter сохраняет; warning `sig.rating ?? 0` убран.
 90. **Правила актуальности SQL/installer:** добавлено `.cursor/rules/installer-freshness.mdc`; `database-scripts.mdc` и `project-context.mdc` теперь явно требуют держать `00`–`03`, `docs/PROJECT_CONTEXT.md` и `installer/windows/dist/MultiLogicTradePgSetup.exe` в актуальном состоянии. При изменении SQL/API/UI/scripts/docs/installer sources — пересобрать installer и коммитить `.exe` вместе с изменениями.
+91. **Installer UX status/progress:** длинный `StatusMsg` post-install заменён на короткий «Настройка приложения... См. INSTALL_PROTOCOL.txt»; перед скрытым post-install шагом progress bar ставится примерно на 85%, после завершения — на 100%.
 
 ### Автотесты
 
@@ -261,6 +262,7 @@
 - [x] Installer UX: post-install `cmd` wrapper runs hidden, setup window shows status, details go to `INSTALL_PROTOCOL.txt` (2026-07-18).
 - [x] UI logics follow-up: process panel, available select-all checkbox fix, formula textarea, rebuilt installer (2026-07-18).
 - [x] Project rules: SQL scripts and Windows installer must always be current; rebuild installer for shipped changes (2026-07-18).
+- [x] Installer UX: короткий status text + progress bar ниже 100% во время post-install (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -281,6 +283,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Installer UX: shorter StatusMsg and hold progress at ~85% during hidden post-install |
 | 2026-07-18 | Project rules: installer freshness rule; SQL/context rules require current SQL + rebuilt Setup.exe |
 | 2026-07-18 | UI follow-up + installer rebuild: process strip, formula textarea, select-all fix, no sig.rating warning |
 | 2026-07-18 | Installer UX: hide empty post-install cmd window; keep setup status and protocol logging |
@@ -476,3 +479,4 @@
 101. Скрин: при установке пустое окно `cmd.exe` поверх Setup сбивает пользователя — скрыть post-install cmd wrapper, оставить прогресс в окне Setup и лог в `INSTALL_PROTOCOL.txt`.
 102. «I don't see the copy button… always commit to main… add working process indicator… fix shares/futures all checkbox… signal formula as textarea full length… collect/export because I don't see current changes.» — причина невидимости: installer не был пересобран после UI; добавить process strip, textarea формул, select-all fix, пересобрать Setup.exe.
 103. «always need to reassemble the installer… sql scripts if database structure changes… write project rules» — добавить Cursor rule: SQL scripts and Windows installer must always match shipped state; rebuild installer before push for shipped changes.
+104. Скрин installer: status text обрезан, progress bar 100% на долгом post-install — укоротить StatusMsg и держать progress ниже 100% до завершения post-install.
