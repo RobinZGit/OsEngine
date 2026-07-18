@@ -39,6 +39,7 @@ if not exist "%POWERSHELL%" (
 )
 
 set "MLTPG_PROTOCOL_CAPTURED=1"
+REM install.ps1 must stay ASCII-safe (em-dash/UTF-8 breaks parse under some code pages).
 "%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%install.ps1" -InstallDir "%INSTALL_DIR%" -PostgresPassword "%PG_PASSWORD%" -DbMode "%DB_MODE%" -SkipAppProtocol >> "%PROTOCOL%" 2>&1
 set "EXIT_CODE=%ERRORLEVEL%"
 

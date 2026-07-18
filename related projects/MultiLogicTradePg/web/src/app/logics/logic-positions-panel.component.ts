@@ -155,7 +155,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   expandedClosed = false;
 
-  expandedPortfolioEquity = false;
+  /** Default open so upgrade users see the block without hunting. */
+  expandedPortfolioEquity = true;
 
   expandedTradeIds = new Set<number>();
 

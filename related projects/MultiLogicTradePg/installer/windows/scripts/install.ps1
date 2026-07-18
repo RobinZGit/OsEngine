@@ -579,7 +579,7 @@ try {
             return
         }
 
-        # upgrade | create — keep data; never DROP DATABASE
+        # upgrade | create - keep data; never DROP DATABASE
         Write-Step "Ensuring database exists (no DROP; preserve data)"
         if ($existsBefore -ne "1") {
             Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE multilogictrade ENCODING 'UTF8' TEMPLATE template0;")
@@ -599,7 +599,7 @@ try {
         $priceCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM prices;"
         Write-Host "    After: logics=$logicCount prices=$priceCount (before logics=$logicsBefore prices=$pricesBefore)" -ForegroundColor Green
         if ($null -ne $pricesBefore -and $pricesBefore -ne "" -and [int]$priceCount -lt [int]$pricesBefore) {
-            throw "Upgrade reduced prices row count ($pricesBefore -> $priceCount). Aborting — data loss unexpected."
+            throw "Upgrade reduced prices row count ($pricesBefore -> $priceCount). Aborting - data loss unexpected."
         }
     }
 
@@ -687,7 +687,7 @@ try {
 
     function Grant-RuntimeWriteAccess {
         # ng serve / Vite write .angular\cache under Program Files; default ACLs deny that for Users.
-        # Grant on folders only (OI)(CI) so new .angular\cache inherits — avoid /T over node_modules.
+        # Grant on folders only (OI)(CI) so new .angular\cache inherits - avoid /T over node_modules.
         Write-Step "Granting Users modify rights for Angular runtime cache"
         $web = Join-Path $InstallDir "web"
         $api = Join-Path $InstallDir "api"

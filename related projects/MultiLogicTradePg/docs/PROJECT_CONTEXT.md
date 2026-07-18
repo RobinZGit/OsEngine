@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — UI: live/test equity+papers, portfolio SL/TP lines, remember test period; API pnl-summary = latest run by id; installer rebuild
+**Последнее обновление:** 2026-07-18 — Fix install.ps1 ASCII (post-install ParserError on upgrade No); equity block open by default; installer rebuild
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -304,6 +304,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Fix upgrade No: install.ps1 ParserError (em-dash); equity open by default; reinstall Setup |
 | 2026-07-18 | Live/test equity+papers; portfolio SL/TP equity lines; remember test period; pnl-summary by run id; installer |
 | 2026-07-18 | 01 CREATE+ALTER: comment-aware ensure script; indicators.sig_* in CREATE; verify-sql + upgrade OK; installer rebuild |
 | 2026-07-18 | 01 full CREATE + ALTER IF NOT EXISTS for all columns (upgrade comments); ensure script |
@@ -523,3 +524,4 @@
 113. Keep CREATE full schema + ALTER that never fail; comment why each ALTER (upgrade existing DBs).
 114. Remember test period; portfolio SL/TP verticals on equity; live equity+papers same as test (lazy/non-block); fix table vs panel test finres mismatch.
 115. «Always put changes in the installer when needed (DB, Angular, everything at once)… then put out what I corrected in the repository, installer, everything.»
+116. After local Setup + No: no equity tiles, finres still differ — INSTALL_PROTOCOL ExitCode 1: install.ps1 ParserError on em-dash; post-install never finished (npm/API restart).
