@@ -34,7 +34,7 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 Копирование: создаёт выключенную копию с именем «… copy» (параметры, сигналы, стопы, бумаги; без сделок). После OK список прокручивается к новой развёрнутой строке.
 
 Раскрытие строки — блоки:
-• Параметры — таймфрейм, % позиции, лимит позиций, балансы, комиссия, FIFO/AVERAGE, базовая ставка рейтинга, lookback, инверсия, прогрев (warmup_pretest), сброс баланса.
+• Параметры — таймфрейм, % позиции, лимит позиций, балансы, комиссия, FIFO/AVERAGE, базовая ставка рейтинга, lookback, инверсия, прогрев (warmup_pretest), денежный фонд (cash_fund_code / cash_fund_threshold), сброс баланса.
 • Сигналы — open/close × long/short; AND внутри группы (все условия группы должны сработать). Формула вида @SMA(period=20) VALUE > pp. Рейтинг боя — сумма по бумагам.
 • Стоп-лосс / тейк-профит — по бумаге, портфелю, security_resume, security_inversion (% или ATR).
 • Ценные бумаги — портфель логики; лотность учитывается при открытии.
@@ -68,7 +68,8 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 • /api/logics — логики, копирование, параметры, сигналы, стопы, бумаги, сделки, бэктест, pnl.
 • /api/securities, /api/prices, /api/security-indicator-series — бумаги, цены, серии индикаторов.
 • /api/indicators — справочник индикаторов.
-• /api/settings/tbank-token, /api/settings/tech-logging — токен и журнал.
+• /api/settings/tbank-token, /api/settings/tech-logging, /api/settings/cleanup — токен, журнал, очистка диска.
+• /api/maintenance/cleanup — ручной запуск cleanup_trading_disk_space().
 • /api/schema — структура БД для шестерёнки.
 • Trade runner — фоновый цикл сделок при открытом UI (heartbeat).
 

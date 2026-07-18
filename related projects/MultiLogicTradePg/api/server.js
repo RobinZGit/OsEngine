@@ -4,7 +4,7 @@
  * Группы маршрутов (кратко для разработчика / справки UI):
  * - /api/logics, /api/logic-params, signals, stops, securities, trades — торговые логики
  * - /api/securities, /api/prices, /api/security-indicator-series, /api/indicators — рынок и индикаторы
- * - /api/settings/* — T-Bank токен, tech-logging
+ * - /api/settings/* — T-Bank токен, tech-logging, cleanup; /api/maintenance/cleanup
  * - /api/schema — дерево БД для шестерёнки (obj_description функций/процедур)
  * - trade-runner / backtest / rating-precalc — фоновые циклы
  *
@@ -281,6 +281,41 @@ app.put('/api/settings/tech-logging', async (req, res) => {
     res.json({ ok: true, enabled });
   } catch (err) {
     console.error('PUT /api/settings/tech-logging', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/settings/cleanup', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT cleanup_unused_market_data_enabled() AS enabled'
+    );
+    res.json({ enabled: Boolean(rows[0]?.enabled) });
+  } catch (err) {
+    console.error('GET /api/settings/cleanup', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings/cleanup', async (req, res) => {
+  const enabled = Boolean(req.body?.enabled);
+  try {
+    await pool.query('CALL set_cleanup_unused_market_data($1)', [enabled]);
+    res.json({ ok: true, enabled });
+  } catch (err) {
+    console.error('PUT /api/settings/cleanup', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/maintenance/cleanup', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT cleanup_trading_disk_space() AS result'
+    );
+    res.json({ ok: true, result: rows[0]?.result ?? {} });
+  } catch (err) {
+    console.error('POST /api/maintenance/cleanup', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3314,6 +3349,26 @@ function parseLogicTradingParams(body) {
 
   if (body?.warmup_pretest !== undefined) {
     out.warmup_pretest = Boolean(body.warmup_pretest);
+    hasField = true;
+  }
+
+  if (body?.cash_fund_code !== undefined) {
+    const code = String(body.cash_fund_code ?? '')
+      .trim()
+      .toUpperCase();
+    if (!['', 'TMON', 'LQDT', 'SBMM'].includes(code)) {
+      return { error: 'Денежный фонд: пусто, TMON, LQDT или SBMM' };
+    }
+    out.cash_fund_code = code;
+    hasField = true;
+  }
+
+  if (body?.cash_fund_threshold !== undefined) {
+    const v = Number(body.cash_fund_threshold);
+    if (!Number.isFinite(v) || v < 0) {
+      return { error: 'Порог свободных денег: число ≥ 0' };
+    }
+    out.cash_fund_threshold = v;
     hasField = true;
   }
 

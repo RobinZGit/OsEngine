@@ -211,12 +211,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: string;
       inversion: boolean;
       warmup_pretest: boolean;
+      cash_fund_code: string;
+      cash_fund_threshold: string;
       reset_balance: boolean;
     }
   >();
   paramsSaveErrors = new Map<number, string>();
   paramsLoading = new Set<number>();
   timeframesCatalog: { id: number; tf: string; full_name: string }[] = [];
+  readonly cashFundOptions: { value: string; label: string }[] = [
+    { value: '', label: 'Не покупать' },
+    { value: 'TMON', label: 'TMON — Т-Капитал денежный рынок' },
+    { value: 'LQDT', label: 'LQDT — ВИМ Ликвидность' },
+    { value: 'SBMM', label: 'SBMM — Сбер Первый' },
+  ];
   /** Пользователь менял черновик — poll не перезаписывает поля ввода. */
   private paramsDirtyIds = new Set<number>();
 
@@ -460,6 +468,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsCashFundCodeChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).cash_fund_code = String(value ?? '')
+      .trim()
+      .toUpperCase();
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
+  onParamsCashFundThresholdChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).cash_fund_threshold = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   private formatPctParam(value: number | string | null | undefined): string {
     if (value == null || value === '') return '10';
     const n =
@@ -538,6 +560,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days?: number;
       inversion?: boolean;
       warmup_pretest?: boolean;
+      cash_fund_code?: string;
+      cash_fund_threshold?: number;
     }
   ): void {
     const idx = this.logics.findIndex((l) => l.id === logicId);
@@ -559,6 +583,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     rating_lookback_days?: number;
     inversion?: boolean;
     warmup_pretest?: boolean;
+    cash_fund_code?: string;
+    cash_fund_threshold?: number;
   }): {
     timeframe: string;
     position_size_pct: string;
@@ -571,10 +597,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
     rating_lookback_days: string;
     inversion: boolean;
     warmup_pretest: boolean;
+    cash_fund_code: string;
+    cash_fund_threshold: string;
     reset_balance: boolean;
   } {
     const method: 'FIFO' | 'AVERAGE' =
       trading.cost_method === 'AVERAGE' ? 'AVERAGE' : 'FIFO';
+    const fundRaw = String(trading.cash_fund_code ?? '')
+      .trim()
+      .toUpperCase();
+    const cash_fund_code = ['', 'TMON', 'LQDT', 'SBMM'].includes(fundRaw)
+      ? fundRaw
+      : '';
     return {
       timeframe: (trading.timeframe ?? 'M15').toUpperCase(),
       position_size_pct: this.formatPctParam(trading.position_size_pct),
@@ -587,6 +621,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: this.formatIntParam(trading.rating_lookback_days ?? 7, 7),
       inversion: !!trading.inversion,
       warmup_pretest: trading.warmup_pretest !== false,
+      cash_fund_code,
+      cash_fund_threshold: this.formatBalanceDraft(
+        trading.cash_fund_threshold != null ? trading.cash_fund_threshold : 100000
+      ),
       reset_balance: false,
     };
   }
@@ -625,6 +663,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: row.rating_lookback_days,
       inversion: row.inversion,
       warmup_pretest: row.warmup_pretest,
+      cash_fund_code: row.cash_fund_code,
+      cash_fund_threshold: row.cash_fund_threshold,
     });
   }
 
@@ -682,6 +722,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const cash_fund_threshold = this.parseDecimalInput(draft.cash_fund_threshold);
+    if (!Number.isFinite(cash_fund_threshold) || cash_fund_threshold < 0) {
+      this.paramsSaveErrors.set(row.id, 'Порог свободных денег: число ≥ 0');
+      return;
+    }
+    const cash_fund_code = String(draft.cash_fund_code ?? '')
+      .trim()
+      .toUpperCase();
+    if (!['', 'TMON', 'LQDT', 'SBMM'].includes(cash_fund_code)) {
+      this.paramsSaveErrors.set(row.id, 'Денежный фонд: пусто, TMON, LQDT или SBMM');
+      return;
+    }
+
     this.paramsSaveErrors.delete(row.id);
     this.savingParamsIds.add(row.id);
     this.logicsService
@@ -697,6 +750,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
         rating_lookback_days,
         inversion: draft.inversion,
         warmup_pretest: draft.warmup_pretest,
+        cash_fund_code,
+        cash_fund_threshold,
         reset_balance: draft.reset_balance,
       })
       .subscribe({

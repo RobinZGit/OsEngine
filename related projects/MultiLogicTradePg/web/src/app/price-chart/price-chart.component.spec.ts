@@ -112,6 +112,27 @@ describe('PriceChartComponent', () => {
     expect((component as unknown as { dragging: boolean }).dragging).toBeFalse();
   });
 
+  it('backtest overlays do not block pan', () => {
+    component.candles = [
+      { dt: '2026-01-01T10:00:00', open_price: 1, high_price: 1, low_price: 1, close_price: 1, volume: 1 },
+      { dt: '2026-01-01T10:15:00', open_price: 2, high_price: 2, low_price: 2, close_price: 2, volume: 1 },
+    ];
+    component.loading = false;
+    component.tradeMarkers = [
+      { dt: '2026-01-01T10:00:00', price: 1, kind: 'open', side: 'long' },
+    ];
+    component.shadedRanges = [
+      { startDt: '2026-01-01T10:00:00', endDt: '2026-01-01T10:15:00', kind: 'inverted' },
+    ];
+
+    const down = new PointerEvent('pointerdown', { clientX: 40, pointerId: 1 });
+    Object.defineProperty(down, 'target', {
+      value: { setPointerCapture: () => {}, releasePointerCapture: () => {} },
+    });
+    component.onPointerDown(down);
+    expect((component as unknown as { dragging: boolean }).dragging).toBeTrue();
+  });
+
   it('anchors zero on price scale for PACC', () => {
     component.indicatorSeries = [
       {

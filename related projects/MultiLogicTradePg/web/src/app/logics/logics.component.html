@@ -620,6 +620,55 @@
 
                             </tr>
 
+                            <tr>
+
+                              <td>Денежный фонд</td>
+
+                              <td>
+
+                                <select
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).cash_fund_code"
+                                  (ngModelChange)="onParamsCashFundCodeChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  @for (opt of cashFundOptions; track opt.value) {
+                                    <option [value]="opt.value">{{ opt.label }}</option>
+                                  }
+                                </select>
+
+                              </td>
+
+                              <td class="params-hint">
+                                Пусто = не покупать. TMON / LQDT / SBMM — парковать кэш выше порога (исполнение в runner позже)
+                              </td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Порог свободных денег, ₽</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).cash_fund_threshold"
+                                  (ngModelChange)="onParamsCashFundThresholdChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="100000"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                Если свободный кэш выше порога и выбран фонд — парковать избыток
+                              </td>
+
+                            </tr>
+
                             <tr class="params-actions-row">
 
                               <td colspan="3">

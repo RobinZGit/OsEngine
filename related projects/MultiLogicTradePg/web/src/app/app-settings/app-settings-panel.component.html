@@ -1,0 +1,67 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <aside class="panel" aria-label="Общие настройки">
+    <header class="panel-header">
+      <div>
+        <h2>Общие настройки</h2>
+        <p class="meta">Диск · очистка данных, не нужных для торговли</p>
+      </div>
+      <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
+    </header>
+
+    <div class="panel-body scroll-list-panel">
+      @if (loading) {
+        <p class="muted">Загрузка…</p>
+      } @else {
+        <section class="settings-block">
+          <label class="check-row">
+            <input
+              type="checkbox"
+              [ngModel]="cleanupEnabled"
+              (ngModelChange)="onCleanupToggle($event)"
+              [disabled]="saving"
+            />
+            <span>
+              Очищать лишние данные (цены/тесты/логи), не нужные для торговли и активных
+              индикаторов
+            </span>
+          </label>
+          <p class="hint">
+            Галочка сохраняется как предпочтение (для будущих автозапусков). Кнопка ниже
+            запускает очистку сразу. Удаляются старые/неиспользуемые свечи, тестовые сделки и
+            прогоны, устаревший tech log; цены для активных серий индикаторов и бумаг
+            включённых логик сохраняются за недавнее окно.
+          </p>
+          <button
+            type="button"
+            class="btn-cleanup"
+            (click)="runCleanupNow()"
+            [disabled]="cleaning"
+          >
+            {{ cleaning ? 'Очистка…' : 'Очистить сейчас' }}
+          </button>
+          @if (saving) {
+            <p class="muted">Сохранение…</p>
+          }
+        </section>
+      }
+
+      @if (error) {
+        <p class="error">{{ error }}</p>
+      }
+
+      @if (lastResult) {
+        <section class="result-block">
+          <h3>Результат очистки</h3>
+          <ul>
+            @for (entry of lastResult | keyvalue; track entry.key) {
+              <li>
+                <code>{{ entry.key }}</code>: {{ entry.value }}
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </div>
+  </aside>
+}

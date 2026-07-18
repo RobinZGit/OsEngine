@@ -46,4 +46,27 @@ export class SettingsService {
       { enabled }
     );
   }
+
+  getCleanupSetting(): Observable<{ enabled: boolean }> {
+    return this.http.get<{ enabled: boolean }>(
+      `${this.appConfig.apiUrl}/settings/cleanup`
+    );
+  }
+
+  saveCleanupSetting(enabled: boolean): Observable<{ ok: boolean; enabled: boolean }> {
+    return this.http.put<{ ok: boolean; enabled: boolean }>(
+      `${this.appConfig.apiUrl}/settings/cleanup`,
+      { enabled }
+    );
+  }
+
+  runMaintenanceCleanup(): Observable<{
+    ok: boolean;
+    result: Record<string, number>;
+  }> {
+    return this.http.post<{ ok: boolean; result: Record<string, number> }>(
+      `${this.appConfig.apiUrl}/maintenance/cleanup`,
+      {}
+    );
+  }
 }

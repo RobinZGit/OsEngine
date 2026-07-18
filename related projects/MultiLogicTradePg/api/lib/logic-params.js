@@ -14,7 +14,11 @@ const PARAM_KEYS = {
   RATING_LOOKBACK_DAYS: 'rating_lookback_days',
   INVERSION: 'inversion',
   WARMUP_PRETEST: 'warmup_pretest',
+  CASH_FUND_CODE: 'cash_fund_code',
+  CASH_FUND_THRESHOLD: 'cash_fund_threshold',
 };
+
+const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
 
 const DEFAULTS = {
   [PARAM_KEYS.TIMEFRAME]: { value: 'M15', type: 'text' },
@@ -29,6 +33,8 @@ const DEFAULTS = {
   [PARAM_KEYS.RATING_LOOKBACK_DAYS]: { value: '7', type: 'integer' },
   [PARAM_KEYS.INVERSION]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.WARMUP_PRETEST]: { value: 'true', type: 'boolean' },
+  [PARAM_KEYS.CASH_FUND_CODE]: { value: '', type: 'text' },
+  [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '100000', type: 'money' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -103,6 +109,17 @@ function rowsToTradingParams(rows) {
         : 7,
     inversion: map[PARAM_KEYS.INVERSION] === true,
     warmup_pretest: map[PARAM_KEYS.WARMUP_PRETEST] !== false,
+    cash_fund_code: (() => {
+      const raw =
+        map[PARAM_KEYS.CASH_FUND_CODE] != null
+          ? String(map[PARAM_KEYS.CASH_FUND_CODE]).trim().toUpperCase()
+          : '';
+      return CASH_FUND_CODES.has(raw) ? raw : '';
+    })(),
+    cash_fund_threshold:
+      map[PARAM_KEYS.CASH_FUND_THRESHOLD] != null
+        ? Number(map[PARAM_KEYS.CASH_FUND_THRESHOLD])
+        : 100000,
   };
 }
 
@@ -306,6 +323,24 @@ async function saveTradingParams(pool, logicId, payload) {
       payload.warmup_pretest ? 'true' : 'false',
       'boolean'
     );
+  }
+
+  if (payload.cash_fund_code !== undefined) {
+    const code = String(payload.cash_fund_code ?? '')
+      .trim()
+      .toUpperCase();
+    if (!CASH_FUND_CODES.has(code)) {
+      throw new Error('Денежный фонд: пусто, TMON, LQDT или SBMM');
+    }
+    await upsertParam(pool, logicId, PARAM_KEYS.CASH_FUND_CODE, code, 'text');
+  }
+
+  if (payload.cash_fund_threshold !== undefined) {
+    const v = Number(payload.cash_fund_threshold);
+    if (!Number.isFinite(v) || v < 0) {
+      throw new Error('Порог свободных денег: число ≥ 0');
+    }
+    await upsertParam(pool, logicId, PARAM_KEYS.CASH_FUND_THRESHOLD, v, 'money');
   }
 
   return getTradingParams(pool, logicId);

@@ -486,6 +486,48 @@ $$;
 COMMENT ON PROCEDURE set_app_tech_logging(BOOLEAN) IS
 'Вкл/выкл глобальное техническое логирование (галочка в шапке UI)';
 
+-- @include sql/app_cleanup_settings.sql
+CREATE OR REPLACE FUNCTION cleanup_unused_market_data_enabled()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(
+        (
+            SELECT lower(btrim(pv.value)) IN ('1', 'true', 'yes', 'on')
+            FROM parameter_values pv
+            JOIN parameter_types pt ON pt.id = pv.parameter_type_id
+            JOIN parameter_sets ps ON ps.id = pv.parameter_set_id
+            WHERE ps.name = 'Default'
+              AND pt.short_name = 'APP_CLEANUP_DISK'
+            LIMIT 1
+        ),
+        FALSE
+    );
+$$;
+
+COMMENT ON FUNCTION cleanup_unused_market_data_enabled() IS
+'TRUE, если в parameter_values (Default) включён APP_CLEANUP_DISK';
+
+CREATE OR REPLACE PROCEDURE set_cleanup_unused_market_data(p_enabled BOOLEAN)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_set_id INTEGER;
+    v_type_id INTEGER;
+BEGIN
+    SELECT id INTO v_set_id FROM parameter_sets WHERE name = 'Default' LIMIT 1;
+    SELECT id INTO v_type_id FROM parameter_types WHERE short_name = 'APP_CLEANUP_DISK' LIMIT 1;
+    IF v_set_id IS NULL OR v_type_id IS NULL THEN
+        RAISE EXCEPTION 'APP_CLEANUP_DISK not found in parameter_types';
+    END IF;
+    INSERT INTO parameter_values (parameter_set_id, parameter_type_id, value)
+    VALUES (v_set_id, v_type_id, CASE WHEN COALESCE(p_enabled, FALSE) THEN '1' ELSE '0' END)
+    ON CONFLICT (parameter_set_id, parameter_type_id)
+    DO UPDATE SET value = EXCLUDED.value;
+END;
+$$;
+
+COMMENT ON PROCEDURE set_cleanup_unused_market_data(BOOLEAN) IS
+'Вкл/выкл предпочтение очистки лишних цен/тестов/логов (общие настройки UI)';
+
 CREATE OR REPLACE FUNCTION trade_runner_ui_heartbeat_ttl_sec()
 RETURNS INTEGER
 LANGUAGE sql
@@ -961,6 +1003,97 @@ $$;
 
 COMMENT ON PROCEDURE cleanup_old_prices(INTEGER) IS 
 'Удаляет цены старше указанного количества дней (по умолчанию 365).';
+
+-- @include sql/cleanup_trading_disk_space.sql
+CREATE OR REPLACE FUNCTION cleanup_trading_disk_space(
+    p_keep_days_active INTEGER DEFAULT 90,
+    p_keep_days_other INTEGER DEFAULT 14,
+    p_tech_log_keep_days INTEGER DEFAULT 7
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_cutoff_active TIMESTAMP;
+    v_cutoff_other TIMESTAMP;
+    v_cutoff_tech TIMESTAMP;
+    v_prices_deleted INTEGER := 0;
+    v_tech_deleted INTEGER := 0;
+    v_test_trades_deleted INTEGER := 0;
+    v_rating_test_deleted INTEGER := 0;
+    v_backtest_runs_deleted INTEGER := 0;
+    v_indicator_values_deleted INTEGER := 0;
+BEGIN
+    v_cutoff_active := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_keep_days_active, 90), 1) || ' days')::INTERVAL;
+    v_cutoff_other := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_keep_days_other, 14), 1) || ' days')::INTERVAL;
+    v_cutoff_tech := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_tech_log_keep_days, 7), 1) || ' days')::INTERVAL;
+
+    DELETE FROM prices p
+    WHERE p.dt < CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM security_indicator_series sis
+            WHERE sis.security_id = p.security_id
+              AND sis.is_active
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM logic_securities ls
+            JOIN logics l ON l.id = ls.logic_id
+            WHERE ls.security_id = p.security_id
+              AND l.is_enabled
+        )
+        THEN v_cutoff_active
+        ELSE v_cutoff_other
+    END;
+    GET DIAGNOSTICS v_prices_deleted = ROW_COUNT;
+
+    DELETE FROM logic_trades
+    WHERE is_test;
+    GET DIAGNOSTICS v_test_trades_deleted = ROW_COUNT;
+
+    DELETE FROM logic_signal_rating_history
+    WHERE is_test;
+    GET DIAGNOSTICS v_rating_test_deleted = ROW_COUNT;
+
+    DELETE FROM logic_backtest_runs
+    WHERE status IN ('completed', 'cancelled', 'failed');
+    GET DIAGNOSTICS v_backtest_runs_deleted = ROW_COUNT;
+
+    DELETE FROM indicator_values iv
+    WHERE iv.dt < v_cutoff_active
+      AND NOT EXISTS (
+          SELECT 1
+          FROM security_indicator_series sis
+          JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
+          WHERE sis.security_id = iv.security_id
+            AND sis.indicator_id = iv.indicator_id
+            AND sis.is_active
+            AND upper(btrim(sis.series_code)) = upper(btrim(ivt.code))
+      );
+    GET DIAGNOSTICS v_indicator_values_deleted = ROW_COUNT;
+
+    IF to_regclass('public.app_tech_log') IS NOT NULL THEN
+        DELETE FROM app_tech_log
+        WHERE created_at < v_cutoff_tech;
+        GET DIAGNOSTICS v_tech_deleted = ROW_COUNT;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'prices_deleted', v_prices_deleted,
+        'test_trades_deleted', v_test_trades_deleted,
+        'rating_test_history_deleted', v_rating_test_deleted,
+        'backtest_runs_deleted', v_backtest_runs_deleted,
+        'indicator_values_deleted', v_indicator_values_deleted,
+        'tech_log_deleted', v_tech_deleted,
+        'keep_days_active', GREATEST(COALESCE(p_keep_days_active, 90), 1),
+        'keep_days_other', GREATEST(COALESCE(p_keep_days_other, 14), 1),
+        'tech_log_keep_days', GREATEST(COALESCE(p_tech_log_keep_days, 7), 1)
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION cleanup_trading_disk_space(INTEGER, INTEGER, INTEGER) IS
+'Удаляет лишние цены/тесты/логи для экономии диска; сохраняет недавние цены для активных индикаторов и enabled-логик.';
 
 -- ============================================
 -- Индикаторы: подстановка плейсхолдеров и функции calc_ind_*

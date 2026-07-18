@@ -3,6 +3,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DbSchemaPanelComponent } from './db-schema/db-schema-panel.component';
 import { AppHelpPanelComponent } from './app-help/app-help-panel.component';
+import { AppSettingsPanelComponent } from './app-settings/app-settings-panel.component';
 import { TechLogService } from './services/tech-log.service';
 import { TradeRunnerSessionService } from './services/trade-runner-session.service';
 
@@ -15,6 +16,7 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
     RouterLinkActive,
     DbSchemaPanelComponent,
     AppHelpPanelComponent,
+    AppSettingsPanelComponent,
     FormsModule,
   ],
   template: `
@@ -39,7 +41,7 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
           aria-label="Справка"
           (click)="openHelp()"
         >
-          <!-- Book icon: white on dark bar (same style as gear) -->
+          <!-- Book icon -->
           <svg class="bar-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
             <path
               fill="#ffffff"
@@ -55,6 +57,27 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
           aria-label="Структура базы данных"
           (click)="openSchema()"
         >
+          <!-- Database / cylinders icon -->
+          <svg class="bar-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
+            <ellipse cx="12" cy="5" rx="8" ry="3" fill="#ffffff" />
+            <path
+              fill="#ffffff"
+              d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5c0 1.66-3.58 3-8 3S4 6.66 4 5z"
+            />
+            <path
+              fill="#ffffff"
+              d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6c0 1.66-3.58 3-8 3s-8-1.34-8-3z"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="bar-icon-btn"
+          title="Общие настройки"
+          aria-label="Общие настройки"
+          (click)="openSettings()"
+        >
+          <!-- Gear icon -->
           <svg class="bar-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
             <path
               fill="#ffffff"
@@ -81,6 +104,7 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
     </main>
     <app-help-panel [open]="helpOpen" (closed)="helpOpen = false" />
     <app-db-schema-panel [open]="schemaOpen" (closed)="schemaOpen = false" />
+    <app-settings-panel [open]="settingsOpen" (closed)="settingsOpen = false" />
   `,
   styles: [
     `
@@ -174,6 +198,7 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
 export class AppComponent implements OnInit, OnDestroy {
   schemaOpen = false;
   helpOpen = false;
+  settingsOpen = false;
   techLoggingEnabled = false;
 
   constructor(
@@ -204,5 +229,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   openSchema(): void {
     this.schemaOpen = true;
+  }
+
+  openSettings(): void {
+    this.settingsOpen = true;
   }
 }

@@ -1,0 +1,149 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 1000;
+}
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(520px, 96vw);
+  height: 100vh;
+  background: #f8fafc;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid #374151;
+  background: linear-gradient(180deg, #111827 0%, #1f2937 100%);
+  color: #f9fafb;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: #9ca3af;
+}
+
+.icon-btn {
+  border: 1px solid #4b5563;
+  background: #374151;
+  color: #f3f4f6;
+  border-radius: 6px;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: #4b5563;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.15rem 1.25rem 1.5rem;
+  max-height: none;
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.95rem;
+  color: #111827;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.check-row input {
+  margin-top: 0.2rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.btn-cleanup {
+  align-self: flex-start;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+}
+
+.btn-cleanup:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.btn-cleanup:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.muted {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.error {
+  margin: 0.75rem 0 0;
+  color: #b91c1c;
+  font-size: 0.88rem;
+}
+
+.result-block {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.result-block h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.result-block ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  color: #374151;
+}
+
+.result-block code {
+  font-size: 0.82rem;
+}

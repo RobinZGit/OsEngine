@@ -19,6 +19,10 @@ export interface LogicRow {
   inversion?: boolean;
   /** Перед включением боя: предварительный тест для stop resume / inversion states. */
   warmup_pretest?: boolean;
+  /** Денежный фонд для парковки кэша: '' | TMON | LQDT | SBMM (runner later). */
+  cash_fund_code?: string;
+  /** Порог свободных денег (₽) выше которого парковать в фонд. */
+  cash_fund_threshold?: number;
   account_code: string;
   account_name: string;
   account_type: 'real' | 'fake';
@@ -40,6 +44,8 @@ export interface LogicTradingParamsPayload {
   rating_lookback_days?: number;
   inversion?: boolean;
   warmup_pretest?: boolean;
+  cash_fund_code?: string;
+  cash_fund_threshold?: number;
 }
 
 export interface LogicTradingParamsResponse {
@@ -55,6 +61,8 @@ export interface LogicTradingParamsResponse {
   rating_lookback_days: number;
   inversion: boolean;
   warmup_pretest: boolean;
+  cash_fund_code: string;
+  cash_fund_threshold: number;
 }
 
 export interface LogicParamRow {

@@ -178,7 +178,7 @@ describe('LogicBacktestPapersComponent', () => {
     expect(component.chartIndicatorsForDisplay(7)).toEqual([]);
   });
 
-  it('onVisibleRange auto emit does not fetch indicators', () => {
+  it('onVisibleRange auto emit does not suppress', () => {
     const st = component.chartState(7);
     st.candles = [
       {

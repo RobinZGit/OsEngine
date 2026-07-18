@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — Fix test finres: load full run (not LIMIT 5000); hint «эквити · бумаги» on Positions/Testing; installer
+**Последнее обновление:** 2026-07-18 — Cash-fund logic params; header DB+gear icons; general settings cleanup (APP_CLEANUP_DISK + cleanup_trading_disk_space); installer
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -83,7 +83,8 @@
 - **`logic_securities`** — портфель бумаг логики (`logic_id`, `security_id`, `display_order`, `is_active`);
 - **`logic_trades`** — сделки: `position_event`, `signal_kind`, `is_simulated`, **`is_fictitious`**, `commission`, **`financial_result`** (только Close), **`run_id`** (прогон теста → `logic_backtest_runs`; NULL у боя), `bar_dt`, `status`; side Open/Close через `sides`; уникальность бара: `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`;
 - **`logic_trade_lots`** — пакеты закрытия (FIFO / средняя): связь close↔open, суммы, комиссии, PnL по пакету;
-- **`logic_param_defs`** + **`logic_params`** — параметры торговли (EAV): **`timeframe`**, `position_size_pct`, `max_open_positions`, `initial_balance`, `current_balance`, **`commission_pct`**, **`cost_method`** (FIFO|AVERAGE), **`base_annual_rate_pct`** (порог рейтинга сигнала), `last_trade_check_at`;
+- **`logic_param_defs`** + **`logic_params`** — параметры торговли (EAV): **`timeframe`**, `position_size_pct`, `max_open_positions`, `initial_balance`, `current_balance`, **`commission_pct`**, **`cost_method`** (FIFO|AVERAGE), **`base_annual_rate_pct`** (порог рейтинга сигнала), **`cash_fund_code`** / **`cash_fund_threshold`** (парк кэша в TMON/LQDT/SBMM — params only, runner later), `last_trade_check_at`;
+- **Общие настройки (шестерёнка):** `APP_CLEANUP_DISK` + `cleanup_trading_disk_space()`; API `GET/PUT /api/settings/cleanup`, `POST /api/maintenance/cleanup`; иконка БД → схема, шестерёнка → настройки;
 - **`indicators.formula`** — многочлен для `calc_poly_formula_array`; **`is_custom`** — подсветка в списке;
 - **`sma`**, **`ema`**, **`ww()`** — от close; **`sma(period=20)`**, **`sma(period=20, series=VALUE)`** — параметры в ();
 - **`@CODE`**, `*`, `#`, ядра `(1;-2;1)` — единый парсер `poly_*` в `02`;
@@ -206,6 +207,7 @@
 99. **Installer DbMode:** Да → `wipe` (DROP DATABASE); Нет → `upgrade` (без DROP, `sql/drop_public_routines.sql` + `01` + `02`, данные таблиц сохраняются); первая установка → `create`. Режим в `db-mode.txt` / аргумент post-install / `INSTALL_PROTOCOL.txt`.
 100. **01 CREATE+ALTER:** у каждой таблицы полный `CREATE TABLE IF NOT EXISTS`; сразу после — `ALTER … ADD COLUMN IF NOT EXISTS` для всех колонок кроме PK `id` (с комментарием upgrade); `NOT NULL` в ALTER только вместе с `DEFAULT`. Генератор: `scripts/ensure-01-column-alters.mjs` (игнорирует `--`/`/*` в CREATE; убирает сиротские mid-file ADD COLUMN; `indicators.sig_*` в CREATE).
 101. **Эквити/бумаги бой+тест:** блок «Эквити портфеля» и раскрываемые «Бумаги» (график/эквити, lazy load) в live как в test; вертикали портфельных SL/TP на эквити; период теста запоминается; `/pnl-summary` и панель — один критерий последнего run (`id DESC`) + только filled/submitted.
+102. **Cash-fund + общие настройки очистки:** params `cash_fund_code` (`''`|TMON|LQDT|SBMM) и `cash_fund_threshold` (default 100000) в `logic_param_defs`/API/UI (исполнение покупки — later); шапка: иконка БД → схема, шестерёнка → панель «Общие настройки»; `APP_CLEANUP_DISK` + `cleanup_trading_disk_space()`; `GET/PUT /api/settings/cleanup`, `POST /api/maintenance/cleanup`.
 
 ### Автотесты
 
@@ -283,8 +285,11 @@
 - [x] Installer «Нет»: data-preserving DB upgrade (DbMode upgrade/create/wipe) (2026-07-18).
 - [x] 01: full CREATE + idempotent ALTER ADD COLUMN IF NOT EXISTS with upgrade comments (2026-07-18).
 - [x] Live+test equity/papers parity; portfolio SL/TP on equity; remember test period; pnl-summary align; installer (2026-07-18).
+- [x] Cash-fund params + header DB/gear + cleanup settings panel/SQL/API; installer (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
+- [ ] Trade runner: auto-buy cash fund (TMON/LQDT/SBMM) when free cash > threshold.
+- [ ] Optional pg_cron schedule for `cleanup_trading_disk_space` when `APP_CLEANUP_DISK` is on.
 
 ---
 
@@ -304,6 +309,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Cash-fund params; DB+gear header; APP_CLEANUP_DISK + cleanup_trading_disk_space; settings panel; installer |
 | 2026-07-18 | Test finres mismatch: panel LIMIT 5000 vs pnl-summary 6685; load full run_id; installer |
 | 2026-07-18 | Fix upgrade No: install.ps1 ParserError (em-dash); equity open by default; reinstall Setup |
 | 2026-07-18 | Live/test equity+papers; portfolio SL/TP equity lines; remember test period; pnl-summary by run id; installer |
@@ -526,3 +532,4 @@
 114. Remember test period; portfolio SL/TP verticals on equity; live equity+papers same as test (lazy/non-block); fix table vs panel test finres mismatch.
 115. «Always put changes in the installer when needed (DB, Angular, everything at once)… then put out what I corrected in the repository, installer, everything.»
 116. After local Setup + No: no equity tiles, finres still differ — INSTALL_PROTOCOL ExitCode 1: install.ps1 ParserError on em-dash; post-install never finished (npm/API restart).
+117. «Add cash fund param (TMON/LQDT) + amount threshold default 100000; gear → general settings with cleanup checkbox for unused prices/tests/logs; DB icon for schema.»
