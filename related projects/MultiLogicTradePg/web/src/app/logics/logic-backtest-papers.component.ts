@@ -122,6 +122,8 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly techLog = inject(TechLogService);
 
+  /** test — бэктест; live — боевые сделки (те же lazy/OnPush ограничения). */
+  @Input() mode: 'test' | 'live' = 'test';
   @Input() logicId: number | null = null;
   @Input() runId: number | null = null;
   @Input() reloadToken: string | number | null = null;
@@ -132,6 +134,10 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   @Input() signalIndicatorIds: number[] = [];
   /** Начальный депозит логики — для % у PnL бумаги. */
   @Input() initialBalance: number | null = null;
+
+  get isLive(): boolean {
+    return this.mode === 'live';
+  }
 
   expandedPapers = false;
   /** Режим разворота: свечной график или эквити. */

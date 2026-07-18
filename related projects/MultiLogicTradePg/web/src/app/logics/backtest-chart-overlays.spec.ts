@@ -1,5 +1,6 @@
 import {
   buildEquityPoints,
+  buildPortfolioStopMarkers,
   buildShadedDisabledRanges,
   buildStopMarkers,
   buildTradeMarkers,
@@ -101,6 +102,43 @@ describe('backtest-chart-overlays', () => {
     ]);
     expect(markers.length).toBe(2);
     expect(markers[0].ruleKind).toBe('stop_loss');
+    expect(markers[1].ruleKind).toBe('take_profit');
+  });
+
+  it('buildPortfolioStopMarkers keeps only portfolio SL/TP and dedupes by bar', () => {
+    const markers = buildPortfolioStopMarkers([
+      trade({
+        side_name: 'Close',
+        trade_reason: 'stop_loss:security (2%)',
+        price: 95,
+      }),
+      trade({
+        id: 2,
+        security_id: 11,
+        bar_dt: '2026-04-11 12:00:00',
+        side_name: 'Close',
+        trade_reason: 'stop_loss:portfolio (3%)',
+        price: 100,
+      }),
+      trade({
+        id: 3,
+        security_id: 12,
+        bar_dt: '2026-04-11 12:00:00',
+        side_name: 'Close',
+        trade_reason: 'stop_loss:portfolio (3%)',
+        price: 101,
+      }),
+      trade({
+        id: 4,
+        bar_dt: '2026-04-12 15:00:00',
+        side_name: 'Close',
+        trade_reason: 'take_profit:portfolio (5%)',
+        price: 120,
+      }),
+    ]);
+    expect(markers.length).toBe(2);
+    expect(markers[0].ruleKind).toBe('stop_loss');
+    expect(markers[0].label).toContain('portfolio');
     expect(markers[1].ruleKind).toBe('take_profit');
   });
 

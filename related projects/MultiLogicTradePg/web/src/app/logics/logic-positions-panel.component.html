@@ -153,30 +153,29 @@
       </button>
     }
 
-    @if (isTest) {
-      <details class="signals-block positions-sub-block portfolio-equity-block" [open]="expandedPortfolioEquity">
-        <summary class="signals-summary">
-          <span class="signals-summary-head" (click)="togglePortfolioEquityBlock($event)">
-            <span class="signals-chevron" [class.open]="expandedPortfolioEquity" aria-hidden="true">▸</span>
-            <span class="signals-title">Эквити портфеля</span>
-            <span class="positions-sub-hint">общая / long / short</span>
-          </span>
-        </summary>
-        <div class="signals-body">
-          @if (hasPortfolioEquity()) {
-            <div class="portfolio-equity-host">
-              <app-equity-curve-chart
-                [total]="cachedPortfolioEquity"
-                [longs]="cachedPortfolioEquityLong"
-                [shorts]="cachedPortfolioEquityShort"
-              />
-            </div>
-          } @else {
-            <p class="empty">Нет закрытых сделок для эквити портфеля</p>
-          }
-        </div>
-      </details>
-    }
+    <details class="signals-block positions-sub-block portfolio-equity-block" [open]="expandedPortfolioEquity">
+      <summary class="signals-summary">
+        <span class="signals-summary-head" (click)="togglePortfolioEquityBlock($event)">
+          <span class="signals-chevron" [class.open]="expandedPortfolioEquity" aria-hidden="true">▸</span>
+          <span class="signals-title">Эквити портфеля</span>
+          <span class="positions-sub-hint">общая / long / short</span>
+        </span>
+      </summary>
+      <div class="signals-body">
+        @if (hasPortfolioEquity()) {
+          <div class="portfolio-equity-host">
+            <app-equity-curve-chart
+              [total]="cachedPortfolioEquity"
+              [longs]="cachedPortfolioEquityLong"
+              [shorts]="cachedPortfolioEquityShort"
+              [stopMarkers]="cachedPortfolioStopMarkers"
+            />
+          </div>
+        } @else {
+          <p class="empty">Нет закрытых сделок для эквити портфеля</p>
+        }
+      </div>
+    </details>
 
     <details class="signals-block positions-sub-block" [open]="expandedOpen">
       <summary class="signals-summary">
@@ -407,23 +406,22 @@
       </div>
     </details>
 
-    @if (isTest) {
-      <app-logic-backtest-papers
-        [logicId]="logicRow.id"
-        [runId]="backtestRun?.id ?? null"
-        [reloadToken]="
-          (backtestRun?.id ?? '') +
-          ':' +
-          (backtestRun?.status ?? '')
-        "
-        [trades]="trades"
-        [dateFrom]="backtestRun?.date_from ?? null"
-        [dateTo]="backtestRun?.date_to ?? null"
-        [timeframeId]="timeframeId"
-        [signalIndicatorIds]="signalIndicatorIds"
-        [initialBalance]="logicRow.initial_balance"
-      />
-    }
+    <app-logic-backtest-papers
+      [mode]="isTest ? 'test' : 'live'"
+      [logicId]="logicRow.id"
+      [runId]="isTest ? (backtestRun?.id ?? null) : null"
+      [reloadToken]="
+        isTest
+          ? (backtestRun?.id ?? '') + ':' + (backtestRun?.status ?? '')
+          : livePapersReloadToken()
+      "
+      [trades]="trades"
+      [dateFrom]="papersDateFrom()"
+      [dateTo]="papersDateTo()"
+      [timeframeId]="timeframeId"
+      [signalIndicatorIds]="signalIndicatorIds"
+      [initialBalance]="logicRow.initial_balance"
+    />
 
     <p class="signals-help">
       @if (isTest) {
@@ -432,8 +430,9 @@
         Блок <strong>Бумаги</strong> — график; под ним <strong>Рейтинги сигналов на бумаге</strong>
         (сработал → следующая свеча → % годовых vs базовая ставка → +1/−1).
       } @else {
-        <strong>Сделки открытия</strong> — покупки (long) или продажи в шорт с ненулевым остатком.
-        <strong>Сделки закрытия</strong> — продажи или покрытие шорта; раскройте строку для пакетов FIFO/средней.
+        <strong>Эквити портфеля</strong> — по боевым закрытиям (как в тесте).
+        <strong>Сделки открытия</strong> — с ненулевым остатком; <strong>закрытия</strong> — раскройте строку для FIFO/средней.
+        Блок <strong>Бумаги</strong> — раскрытие, график/эквити и рейтинги боевых сигналов; загрузка свечей только при развороте бумаги (без блокировки UI).
       }
     </p>
   </div>

@@ -1603,6 +1603,8 @@
                         [blockExpanded]="isTradesBlockExpanded(row.id)"
                         [dimmed]="isBacktestRunning(row.id)"
                         [disabled]="isBacktestRunning(row.id)"
+                        [timeframeId]="timeframeIdForLogic(row)"
+                        [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [tbankTokenAlert]="tbankTokenAlert"
                         (toggleBlock)="toggleTradesBlock(row.id)"
                         (closeAll)="closeAllPositionsAtMarket(row.id)"

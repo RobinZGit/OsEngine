@@ -55,6 +55,8 @@ export class LogicBacktestRatingsComponent
   @Input({ required: true }) securityId!: number;
   @Input() runId: number | null = null;
   @Input() reloadToken: string | number | null = null;
+  /** false — боевые рейтинги (is_test=0). */
+  @Input() isTest = true;
 
   @ViewChildren('ratingChart') chartCanvases?: QueryList<ElementRef<HTMLCanvasElement>>;
 
@@ -136,7 +138,7 @@ export class LogicBacktestRatingsComponent
 
   private load(force: boolean): void {
     if (!this.logicId || !this.securityId) return;
-    const token = `${this.logicId}:${this.securityId}:${this.runId ?? ''}`;
+    const token = `${this.logicId}:${this.securityId}:${this.runId ?? ''}:t${this.isTest ? 1 : 0}`;
     const now = Date.now();
     if (!force && now - this.lastLoadAt < 8000 && token === this.lastLoadToken) {
       return;
@@ -149,9 +151,9 @@ export class LogicBacktestRatingsComponent
     const params = new URLSearchParams({
       logic_id: String(this.logicId),
       security_id: String(this.securityId),
-      is_test: '1',
+      is_test: this.isTest ? '1' : '0',
     });
-    if (this.runId != null) {
+    if (this.isTest && this.runId != null) {
       params.set('run_id', String(this.runId));
     }
     const url = `${this.appConfig.apiUrl}/logic-signal-ratings/history?${params}`;

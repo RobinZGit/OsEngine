@@ -9,10 +9,11 @@ import {
   SimpleChanges,
   ViewChild,
 } from '@angular/core';
-import { ChartEquityPoint } from '../models/market.model';
+import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
 
 /**
  * Отдельный график эквити: общая (синяя), long (зелёная бледная), short (красная бледная).
+ * Вертикали — срабатывания портфельного SL/TP.
  */
 @Component({
   selector: 'app-equity-curve-chart',
@@ -25,6 +26,10 @@ import { ChartEquityPoint } from '../models/market.model';
         <span class="leg-total">━━</span> общая ·
         <span class="leg-long">──</span> лонги ·
         <span class="leg-short">──</span> шорты
+        @if (stopMarkers.length) {
+          · <span class="leg-sl">|</span> SL портфель ·
+          <span class="leg-tp">|</span> TP портфель
+        }
       </p>
     </div>
   `,
@@ -59,6 +64,14 @@ import { ChartEquityPoint } from '../models/market.model';
         color: #dc2626;
         opacity: 0.65;
       }
+      .leg-sl {
+        color: #dc2626;
+        font-weight: 700;
+      }
+      .leg-tp {
+        color: #059669;
+        font-weight: 700;
+      }
     `,
   ],
 })
@@ -68,6 +81,8 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
   @Input() total: ChartEquityPoint[] = [];
   @Input() longs: ChartEquityPoint[] = [];
   @Input() shorts: ChartEquityPoint[] = [];
+  /** Портфельные SL/TP (вертикали на баре срабатывания). */
+  @Input() stopMarkers: ChartStopMarker[] = [];
 
   private resizeObs: ResizeObserver | null = null;
 
@@ -165,6 +180,29 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
         else ctx.lineTo(x, y);
       });
       ctx.stroke();
+    }
+
+    // Вертикали портфельного SL/TP (как на ценовом графике).
+    for (const m of this.stopMarkers) {
+      const t = Date.parse(m.dt);
+      if (!Number.isFinite(t)) continue;
+      if (t < t0 || t > t1) continue;
+      const x = xOf(t);
+      const color = m.ruleKind === 'take_profit' ? '#059669' : '#dc2626';
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(x, padT);
+      ctx.lineTo(x, padT + plotH);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.font = '600 10px system-ui, sans-serif';
+      const tag = m.ruleKind === 'take_profit' ? 'TP' : 'SL';
+      const text = `${tag} ${m.label || ''}`.trim();
+      ctx.fillText(text, Math.min(x + 4, cssW - padR - 72), padT + 12);
     }
   }
 

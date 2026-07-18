@@ -26,7 +26,13 @@
   @if (expandedPapers) {
     <div class="signals-body papers-body">
       @if (paperRows.length === 0) {
-        <p class="empty papers-empty">Нет бумаг со сделками в периоде теста</p>
+        <p class="empty papers-empty">
+          @if (isLive) {
+            Нет бумаг со боевыми сделками
+          } @else {
+            Нет бумаг со сделками в периоде теста
+          }
+        </p>
       } @else {
         <div class="scroll-list-panel papers-list">
           @for (paper of paperRows; track paper.security_id) {
@@ -112,6 +118,7 @@
                       [securityId]="paper.security_id"
                       [runId]="runId"
                       [reloadToken]="reloadToken"
+                      [isTest]="!isLive"
                     />
                   }
                 </div>

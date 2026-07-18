@@ -10,6 +10,8 @@ alwaysApply: true
 
 The committed installer binary must always match the current repository state.
 
+**Default for agents:** if the change touches SQL, API, Angular/`web`, scripts, docs shipped in Setup, or installer sources — **rebuild and commit `MultiLogicTradePgSetup.exe` in the same push**. Do not ship source-only and leave the installer stale. If unsure whether a file is packaged — treat it as packaged and rebuild.
+
 Before every push that changes anything shipped by the Windows installer, rebuild:
 
 ```powershell

@@ -140,6 +140,29 @@ export function buildStopMarkers(trades: LogicTradeRow[]): ChartStopMarker[] {
   return out;
 }
 
+/**
+ * Портфельные SL/TP для вертикалей на эквити: одно событие на бар
+ * (закрытие всех бумаг с reason stop_loss:portfolio / take_profit:portfolio).
+ */
+export function buildPortfolioStopMarkers(trades: LogicTradeRow[]): ChartStopMarker[] {
+  const portfolioCloses = trades.filter((t) => {
+    const reason = String(t.trade_reason || '').toLowerCase();
+    return (
+      t.side_name === 'Close' &&
+      (reason.includes('portfolio') || reason.includes('портфел'))
+    );
+  });
+  const byKey = new Map<string, ChartStopMarker>();
+  for (const m of buildStopMarkers(portfolioCloses)) {
+    if (m.ruleKind !== 'stop_loss' && m.ruleKind !== 'take_profit') continue;
+    const key = `${dtKey(m.dt)}|${m.ruleKind}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, m);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => dtKey(a.dt).localeCompare(dtKey(b.dt)));
+}
+
 function shortenStopLabel(reason: string): string {
   const s = reason.trim();
   if (s.length <= 42) return s;

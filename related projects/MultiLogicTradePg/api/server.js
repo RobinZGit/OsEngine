@@ -2533,12 +2533,14 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
       // При наличии run_id берём сделки последнего прогона логики.
       const { rows } = await pool.query(
         `
+        -- latest_run: тот же критерий, что getBacktestStatus (ORDER BY id DESC),
+        -- иначе колонка «Тест» и блок «Тестирование» суммируют разные прогоны.
         WITH latest_run AS (
           SELECT DISTINCT ON (r.logic_id)
             r.logic_id,
             r.id AS run_id
           FROM logic_backtest_runs r
-          ORDER BY r.logic_id, COALESCE(r.finished_at, r.started_at, r.created_at) DESC, r.id DESC
+          ORDER BY r.logic_id, r.id DESC
         )
         SELECT
           lt.logic_id,

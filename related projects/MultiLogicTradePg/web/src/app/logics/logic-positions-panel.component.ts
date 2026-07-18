@@ -33,8 +33,8 @@ import { LogicRow } from '../models/logic.model';
 
 import { LogicBacktestPapersComponent } from './logic-backtest-papers.component';
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
-import { buildEquityPoints } from './backtest-chart-overlays';
-import { ChartEquityPoint } from '../models/market.model';
+import { buildEquityPoints, buildPortfolioStopMarkers } from './backtest-chart-overlays';
+import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
 
 
 
@@ -146,6 +146,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
   cachedPortfolioEquity: ChartEquityPoint[] = [];
   cachedPortfolioEquityLong: ChartEquityPoint[] = [];
   cachedPortfolioEquityShort: ChartEquityPoint[] = [];
+  cachedPortfolioStopMarkers: ChartStopMarker[] = [];
 
 
 
@@ -216,7 +217,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
     let pnl = 0;
     let commission = 0;
     for (const t of this.trades) {
+      // Как /logic-trades/pnl-summary: без shadow, только filled/submitted.
       if (t.is_shadow) continue;
+      if (t.status !== 'filled' && t.status !== 'submitted') continue;
       if (t.financial_result != null && Number.isFinite(Number(t.financial_result))) {
         pnl += Number(t.financial_result);
       }
@@ -228,10 +231,42 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.cachedCloseTrades = close;
     this.cachedTotalPnl = pnl;
     this.cachedTotalCommission = commission;
-    const periodStart = this.backtestRun?.date_from ?? null;
+    const periodStart = this.isTest
+      ? (this.backtestRun?.date_from ?? null)
+      : this.papersDateFrom();
     this.cachedPortfolioEquity = buildEquityPoints(this.trades, periodStart);
     this.cachedPortfolioEquityLong = buildEquityPoints(this.trades, periodStart, 'long');
     this.cachedPortfolioEquityShort = buildEquityPoints(this.trades, periodStart, 'short');
+    this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
+  }
+
+  /** Окно дат для блока Бумаги / эквити (тест — период прогона, бой — по сделкам). */
+  papersDateFrom(): string | null {
+    if (this.isTest) return this.backtestRun?.date_from ?? null;
+    return this.tradesDateBound('from');
+  }
+
+  papersDateTo(): string | null {
+    if (this.isTest) return this.backtestRun?.date_to ?? null;
+    return this.tradesDateBound('to');
+  }
+
+  /** Токен для пересборки overlays при poll боевых сделок (без сброса графика). */
+  livePapersReloadToken(): string {
+    if (this.trades.length === 0) return '0';
+    const last = this.trades[0];
+    // trades в панели уже отфильтрованы; fingerprint по длине + крайним id
+    const a = this.trades[this.trades.length - 1];
+    return `${this.trades.length}:${a?.id ?? ''}:${last?.id ?? ''}:${last?.bar_dt ?? ''}`;
+  }
+
+  private tradesDateBound(which: 'from' | 'to'): string | null {
+    const keys = this.trades
+      .map((t) => String(t.bar_dt || t.executed_at || '').slice(0, 10))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
+    if (keys.length === 0) return null;
+    return which === 'from' ? keys[0] : keys[keys.length - 1];
   }
 
 
@@ -568,41 +603,32 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
   openRunDialog(event: Event): void {
-
     event.stopPropagation();
-
-    const { from, to } = defaultBacktestWeek();
-
-    this.periodFrom = from;
-
-    this.periodTo = to;
-
+    const remembered = resolveBacktestPeriod(
+      this.backtestRun?.date_from,
+      this.backtestRun?.date_to,
+      this.logicRow?.id,
+    );
+    this.periodFrom = remembered.from;
+    this.periodTo = remembered.to;
     this.showPeriodDialog = true;
-
     this.periodDialogOpen.emit(true);
-
   }
-
-
 
   closeRunDialog(): void {
-
     this.showPeriodDialog = false;
-
     this.periodDialogOpen.emit(false);
-
   }
 
-
-
   confirmRunDialog(): void {
-
     this.showPeriodDialog = false;
-
     this.periodDialogOpen.emit(false);
-
+    saveRememberedBacktestPeriod(
+      this.logicRow?.id,
+      this.periodFrom,
+      this.periodTo,
+    );
     this.startBacktest.emit({ date_from: this.periodFrom, date_to: this.periodTo });
-
   }
 
 
@@ -635,37 +661,81 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
 function defaultBacktestWeek(): { from: string; to: string } {
-
   const now = new Date();
-
   const day = now.getDay();
-
   const monday = new Date(now);
-
   monday.setDate(now.getDate() - ((day + 6) % 7));
-
   const sunday = new Date(monday);
-
   sunday.setDate(monday.getDate() + 6);
-
   // Не ставить date_to в будущее — иначе бэктест гоняет T-Bank впустую.
-
   const to = sunday.getTime() > now.getTime() ? now : sunday;
-
   return { from: fmtDate(monday), to: fmtDate(to) };
-
 }
 
+const BACKTEST_PERIOD_LS_PREFIX = 'mlt.backtestPeriod.';
 
+/** YYYY-MM-DD from API date / ISO string. */
+function asDateInputValue(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+function loadRememberedBacktestPeriod(
+  logicId: number | null | undefined,
+): { from: string; to: string } | null {
+  if (logicId == null || !Number.isFinite(Number(logicId))) return null;
+  try {
+    const raw = localStorage.getItem(BACKTEST_PERIOD_LS_PREFIX + logicId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { from?: string; to?: string };
+    const from = asDateInputValue(parsed?.from);
+    const to = asDateInputValue(parsed?.to);
+    if (!from || !to) return null;
+    return { from, to };
+  } catch {
+    return null;
+  }
+}
+
+function saveRememberedBacktestPeriod(
+  logicId: number | null | undefined,
+  from: string,
+  to: string,
+): void {
+  if (logicId == null || !Number.isFinite(Number(logicId))) return;
+  const f = asDateInputValue(from);
+  const t = asDateInputValue(to);
+  if (!f || !t) return;
+  try {
+    localStorage.setItem(
+      BACKTEST_PERIOD_LS_PREFIX + logicId,
+      JSON.stringify({ from: f, to: t }),
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+/** Last run → localStorage → current week. */
+function resolveBacktestPeriod(
+  runFrom: string | null | undefined,
+  runTo: string | null | undefined,
+  logicId: number | null | undefined,
+): { from: string; to: string } {
+  const from = asDateInputValue(runFrom);
+  const to = asDateInputValue(runTo);
+  if (from && to) return { from, to };
+  const remembered = loadRememberedBacktestPeriod(logicId);
+  if (remembered) return remembered;
+  return defaultBacktestWeek();
+}
 
 /** Локальный YYYY-MM-DD (не UTC — иначе сдвиг дня в MSK). */
-
 function fmtDate(d: Date): string {
-
   const y = d.getFullYear();
-
   const m = String(d.getMonth() + 1).padStart(2, '0');
-
   const day = String(d.getDate()).padStart(2, '0');
 
   return `${y}-${m}-${day}`;

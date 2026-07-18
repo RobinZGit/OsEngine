@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — 01 CREATE+ALTER: fix parser (SQL comments), sig_* in CREATE, verify-sql + verify-db-upgrade OK
+**Последнее обновление:** 2026-07-18 — UI: live/test equity+papers, portfolio SL/TP lines, remember test period; API pnl-summary = latest run by id; installer rebuild
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -205,6 +205,7 @@
 98. **Справка UI + комментарии рутин:** панель «Справка» (иконка книги, белая на тёмной шапке) рядом с шестерёнкой — разделы о системе, вкладках, логиках, индикаторах, структуре БД, API, установке. В SQL добавлены COMMENT ON для ~91 функций/процедур без описания (`sql/routine_comments_missing.sql` → блок в `02`); JSDoc у `api/server.js` и ключевых методов `LogicsService`.
 99. **Installer DbMode:** Да → `wipe` (DROP DATABASE); Нет → `upgrade` (без DROP, `sql/drop_public_routines.sql` + `01` + `02`, данные таблиц сохраняются); первая установка → `create`. Режим в `db-mode.txt` / аргумент post-install / `INSTALL_PROTOCOL.txt`.
 100. **01 CREATE+ALTER:** у каждой таблицы полный `CREATE TABLE IF NOT EXISTS`; сразу после — `ALTER … ADD COLUMN IF NOT EXISTS` для всех колонок кроме PK `id` (с комментарием upgrade); `NOT NULL` в ALTER только вместе с `DEFAULT`. Генератор: `scripts/ensure-01-column-alters.mjs` (игнорирует `--`/`/*` в CREATE; убирает сиротские mid-file ADD COLUMN; `indicators.sig_*` в CREATE).
+101. **Эквити/бумаги бой+тест:** блок «Эквити портфеля» и раскрываемые «Бумаги» (график/эквити, lazy load) в live как в test; вертикали портфельных SL/TP на эквити; период теста запоминается; `/pnl-summary` и панель — один критерий последнего run (`id DESC`) + только filled/submitted.
 
 ### Автотесты
 
@@ -281,6 +282,7 @@
 - [x] App help panel (book icon) + missing SQL COMMENT ON for routines; JSDoc API hints (2026-07-18).
 - [x] Installer «Нет»: data-preserving DB upgrade (DbMode upgrade/create/wipe) (2026-07-18).
 - [x] 01: full CREATE + idempotent ALTER ADD COLUMN IF NOT EXISTS with upgrade comments (2026-07-18).
+- [x] Live+test equity/papers parity; portfolio SL/TP on equity; remember test period; pnl-summary align; installer (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -290,6 +292,7 @@
 
 - Коммиты и push — **по запросу** пользователя.
 - **Перед каждым push** — обновить `docs/PROJECT_CONTEXT.md` и включить в выкладку (правило `.cursor/rules/project-context.mdc`). Не считать выкладку завершённой без актуального контекста в `origin`.
+- **Installer:** любое изменение SQL/API/Angular/`web`/scripts/docs в Setup → пересобрать `MultiLogicTradePgSetup.exe` **в том же push** (`.cursor/rules/installer-freshness.mdc`). Не выкладывать исходники без свежего Setup.
 - Sergey — **2–3 устройства**; в начале сессии читать этот файл + `git log`.
 - Язык: русский (English note — только если пользователь пишет по-английски).
 - Пароль локального postgres часто: `111`.
@@ -301,6 +304,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Live/test equity+papers; portfolio SL/TP equity lines; remember test period; pnl-summary by run id; installer |
 | 2026-07-18 | 01 CREATE+ALTER: comment-aware ensure script; indicators.sig_* in CREATE; verify-sql + upgrade OK; installer rebuild |
 | 2026-07-18 | 01 full CREATE + ALTER IF NOT EXISTS for all columns (upgrade comments); ensure script |
 | 2026-07-18 | Installer DbMode: Yes=wipe DB, No=upgrade keep data (drop routines + 01/02) |
@@ -517,3 +521,5 @@
 111. «Add comments to all procedures and functions… write help… next to the gear… icon… white on black… put in the repository.»
 112. Upgrade DB on installer «No»: keep table data; ALTER/add columns via 01; recreate procedures/functions; do not DROP DATABASE.
 113. Keep CREATE full schema + ALTER that never fail; comment why each ALTER (upgrade existing DBs).
+114. Remember test period; portfolio SL/TP verticals on equity; live equity+papers same as test (lazy/non-block); fix table vs panel test finres mismatch.
+115. «Always put changes in the installer when needed (DB, Angular, everything at once)… then put out what I corrected in the repository, installer, everything.»
