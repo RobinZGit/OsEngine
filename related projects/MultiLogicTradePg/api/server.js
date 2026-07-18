@@ -1,3 +1,16 @@
+/**
+ * MultiLogicTradePg Express API — мост Angular ↔ PostgreSQL.
+ *
+ * Группы маршрутов (кратко для разработчика / справки UI):
+ * - /api/logics, /api/logic-params, signals, stops, securities, trades — торговые логики
+ * - /api/securities, /api/prices, /api/security-indicator-series, /api/indicators — рынок и индикаторы
+ * - /api/settings/* — T-Bank токен, tech-logging
+ * - /api/schema — дерево БД для шестерёнки (obj_description функций/процедур)
+ * - trade-runner / backtest / rating-precalc — фоновые циклы
+ *
+ * Пользовательская справка: иконка книги в шапке Angular.
+ * Комментарии SQL: COMMENT ON FUNCTION/PROCEDURE в 01/02 и sql/routine_comments_missing.sql.
+ */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');

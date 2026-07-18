@@ -43,6 +43,7 @@ Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\installer\windows\INSTALL_PROTOCOL.placeholder.txt"; DestDir: "{app}"; DestName: "INSTALL_PROTOCOL.txt"; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceRoot}\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "_tmp_http_ext\*"
+Source: "{#SourceRoot}\sql\*"; DestDir: "{app}\sql"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceRoot}\api\*"; DestDir: "{app}\api"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "node_modules\*,.env"
 Source: "{#SourceRoot}\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "node_modules\*,.angular\*,dist\*"
 Source: "{#SourceRoot}\installer\windows\*"; DestDir: "{app}\installer\windows"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "dist\*"

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — copy logic: после OK прокрутка к новой развёрнутой логике
+**Последнее обновление:** 2026-07-18 — справка (книга у шестерёнки) + COMMENT ON для всех недостающих SQL-рутин
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -202,6 +202,7 @@
 95. **Fix install-over («Нет»):** post-install останавливает :3000/:4200, удаляет `api`/`web` `node_modules` (+ `.angular`), затем чистый `npm ci` и проверка `web\node_modules\@angular\cli\bin\ng.js`. Launcher `FreePorts`: `taskkill` через PowerShell `2>$null` (убран `2>nul | Out-Null`, который давал Out-File на устройство nul).
 96. **Fix EPERM `.angular/cache`:** post-install `icacls` — группа Users получает Modify на `{app}`, `web`, `api` и создаётся `web\.angular\cache`; launcher проверяет mkdir cache до `ng serve` (иначе ясная ошибка про переустановку).
 97. **Copy logic scroll:** после `alert` и OK — `scrollIntoView` к строке новой логики (`data-logic-id`); разворот копии по-прежнему сразу после копирования.
+98. **Справка UI + комментарии рутин:** панель «Справка» (иконка книги, белая на тёмной шапке) рядом с шестерёнкой — разделы о системе, вкладках, логиках, индикаторах, структуре БД, API, установке. В SQL добавлены COMMENT ON для ~91 функций/процедур без описания (`sql/routine_comments_missing.sql` → блок в `02`); JSDoc у `api/server.js` и ключевых методов `LogicsService`.
 
 ### Автотесты
 
@@ -275,6 +276,7 @@
 - [x] Fix install-over (No): clean npm + Angular CLI verify; fix launcher FreePorts Out-File (2026-07-18).
 - [x] Fix EPERM Angular/Vite cache under Program Files via icacls Users modify (2026-07-18).
 - [x] Copy logic: after OK on success alert, scroll form to the new expanded logic (2026-07-18).
+- [x] App help panel (book icon) + missing SQL COMMENT ON for routines; JSDoc API hints (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -295,6 +297,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Help panel (book) next to gear; COMMENT ON for 91 routines; JSDoc; installer rebuild |
 | 2026-07-18 | Copy logic: after alert OK, scrollIntoView to new expanded row; installer rebuild |
 | 2026-07-18 | Fix EPERM .angular/cache in Program Files: icacls Users + launcher mkdir check |
 | 2026-07-18 | Fix install-over (No): stop ports, wipe node_modules, npm ci + ng.js check; FreePorts 2>$null |
@@ -504,3 +507,4 @@
 108. Ошибка после установки с «Нет» (поверх): Out-File/nul в FreePorts; Angular CLI не найден в web\node_modules — починить install-over и launcher.
 109. После успешного старта: `EPERM mkdir ... Program Files\...\web\.angular\cache\...\vite\deps_temp_*` — права на запись кэша Angular под Program Files.
 110. «When copying the logic, after the message… clicks OK, rewind the form so that this new logic is visible» — прокрутка к копии после OK; разворот уже есть; выложить + контекст.
+111. «Add comments to all procedures and functions… write help… next to the gear… icon… white on black… put in the repository.»

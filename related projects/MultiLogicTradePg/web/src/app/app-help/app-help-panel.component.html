@@ -1,0 +1,33 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <aside class="panel" aria-label="Справка MultiLogic Trade">
+    <header class="panel-header">
+      <div>
+        <h2>Справка</h2>
+        <p class="meta">MultiLogic Trade · PostgreSQL + Angular</p>
+      </div>
+      <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
+    </header>
+
+    <div class="panel-body">
+      <nav class="help-nav" aria-label="Разделы справки">
+        @for (s of sections; track s.id) {
+          <button
+            type="button"
+            class="help-nav-btn"
+            [class.active]="s.id === activeId"
+            (click)="select(s.id)"
+          >
+            {{ s.title }}
+          </button>
+        }
+      </nav>
+      <article class="help-article scroll-list-panel">
+        @if (active; as sec) {
+          <h3>{{ sec.title }}</h3>
+          <pre class="help-body">{{ sec.body }}</pre>
+        }
+      </article>
+    </div>
+  </aside>
+}

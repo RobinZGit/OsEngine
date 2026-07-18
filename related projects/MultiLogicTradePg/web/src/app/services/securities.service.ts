@@ -1,3 +1,7 @@
+/**
+ * Бумаги, цены и серии индикаторов (вкладка «Бумаги и индикаторы»).
+ * HTTP → `/api/securities`, `/api/prices`, `/api/security-indicator-series`, `/api/indicator-values`.
+ */
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, timeout } from 'rxjs';

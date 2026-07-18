@@ -1,3 +1,8 @@
+/**
+ * HTTP-клиент вкладки «Торговые операции».
+ * Все методы — обёртки над Express `/api/logics*`, `/api/logic-*`, бэктестом и рейтингом.
+ * Смысл полей и сценариев — в справке (иконка книги в шапке) и в COMMENT ON SQL-функций.
+ */
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
@@ -39,20 +44,24 @@ export class LogicsService {
     private readonly appConfig: AppConfigService
   ) {}
 
+  /** Список логик с полями счёта/брокера для главной таблицы. */
   getLogics(): Observable<LogicRow[]> {
     return this.http.get<LogicRow[]>(`${this.appConfig.apiUrl}/logics`);
   }
 
+  /** Активные процессы (бэктесты, runner, pg_stat_activity) для полоски наверху. */
   getProcesses(): Observable<{ rows: ProcessStatusItem[] }> {
     return this.http.get<{ rows: ProcessStatusItem[] }>(
       `${this.appConfig.apiUrl}/processes`
     );
   }
 
+  /** Создать логику (редактор «+»). */
   createLogic(payload: LogicPayload): Observable<LogicRow> {
     return this.http.post<LogicRow>(`${this.appConfig.apiUrl}/logics`, payload);
   }
 
+  /** Сохранить карточку логики (имя, счёт, примечание…). */
   updateLogic(id: number, payload: LogicPayload): Observable<LogicRow> {
     return this.http.put<LogicRow>(
       `${this.appConfig.apiUrl}/logics/${id}`,
@@ -60,6 +69,10 @@ export class LogicsService {
     );
   }
 
+  /**
+   * Копия логики: params/signals/stops/securities, без сделок.
+   * Имя «… copy», is_enabled=false.
+   */
   copyLogic(id: number): Observable<LogicRow> {
     return this.http.post<LogicRow>(
       `${this.appConfig.apiUrl}/logics/${id}/copy`,
@@ -67,6 +80,9 @@ export class LogicsService {
     );
   }
 
+  /**
+   * Вкл/выкл боя. Может запустить warmup_pretest или предрасчёт рейтинга.
+   */
   updateLogicEnabled(
     id: number,
     is_enabled: boolean
