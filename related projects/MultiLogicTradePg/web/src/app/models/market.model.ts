@@ -162,6 +162,7 @@ export interface ChartShadedRange {
   startDt: string;
   endDt: string;
   label?: string;
+  kind?: 'paused' | 'inverted';
 }
 
 /** Точка кумулятивного PnL по бумаге (с нуля). */

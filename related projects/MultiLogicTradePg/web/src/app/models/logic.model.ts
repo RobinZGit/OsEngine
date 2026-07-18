@@ -92,7 +92,7 @@ export interface LogicStopRow {
   id: number;
   logic_id: number;
   rule_kind: 'stop_loss' | 'take_profit';
-  scope_type: 'security' | 'security_resume' | 'portfolio';
+  scope_type: 'security' | 'security_resume' | 'security_inversion' | 'portfolio';
   value: number;
   value_unit: 'percent' | 'atr';
   display_order: number;
@@ -115,6 +115,7 @@ export interface LogicSecurityRow {
   exchange_id: number | null;
   exchange_name: string | null;
   real_trading_paused?: boolean;
+  real_trading_inverted?: boolean;
   stop_resume_equity?: number | null;
   stop_resume_baseline?: number | null;
   stop_resume_triggered_at?: string | null;

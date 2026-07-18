@@ -24,7 +24,7 @@ const {
 } = require('./lib/logic-params');
 const { writeTechLogEvent } = require('./lib/tech-log');
 
-const VALID_STOP_SCOPES = new Set(['security', 'security_resume', 'portfolio']);
+const VALID_STOP_SCOPES = new Set(['security', 'security_resume', 'security_inversion', 'portfolio']);
 const TAKE_PROFIT_SCOPES = new Set(['security', 'portfolio']);
 
 function isScopeValidForRuleKind(ruleKind, scopeType) {
@@ -1974,7 +1974,7 @@ app.post('/api/logic-stops', async (req, res) => {
       error:
         ruleKind === 'take_profit'
           ? 'scope_type for take_profit must be security or portfolio'
-          : 'scope_type must be security, security_resume or portfolio',
+          : 'scope_type must be security, security_resume, security_inversion or portfolio',
     });
     return;
   }
@@ -2044,7 +2044,7 @@ app.put('/api/logic-stops/:id', async (req, res) => {
           error:
             ruleKind === 'take_profit'
               ? 'scope_type for take_profit must be security or portfolio'
-              : 'scope_type must be security, security_resume or portfolio',
+              : 'scope_type must be security, security_resume, security_inversion or portfolio',
         });
         return;
       }
@@ -2107,6 +2107,7 @@ const LOGIC_SECURITY_SELECT = `
     ls.is_active,
     ls.created_at,
     ls.real_trading_paused,
+    ls.real_trading_inverted,
     ls.stop_resume_equity::float8 AS stop_resume_equity,
     ls.stop_resume_baseline::float8 AS stop_resume_baseline,
     ls.stop_resume_triggered_at,

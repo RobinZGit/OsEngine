@@ -785,6 +785,7 @@ DECLARE
     v_ind_dt TIMESTAMP;
     v_lot_size INTEGER;
     v_inversion BOOLEAN;
+    v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
 BEGIN
     SELECT l.id, l.account_id, a.account_type
@@ -877,11 +878,15 @@ BEGIN
     );
 
     FOR v_sec IN
-        SELECT ls.security_id, COALESCE(ls.real_trading_paused, FALSE) AS real_trading_paused
+        SELECT
+            ls.security_id,
+            COALESCE(ls.real_trading_paused, FALSE) AS real_trading_paused,
+            COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
     LOOP
         v_is_shadow := v_sec.real_trading_paused;
+        v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);
 
         FOR v_grp IN
@@ -908,7 +913,7 @@ BEGIN
             LOOP
                 SELECT * INTO v_eval
                 FROM logic_signal_evaluate_at(
-                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, v_inversion
+                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, v_eff_inversion
                 );
 
                 IF v_eval.close_price IS NULL THEN
@@ -995,7 +1000,7 @@ BEGIN
             END IF;
 
             v_eff_side := lower(COALESCE(v_grp.position_side, 'long'));
-            IF v_inversion THEN
+            IF v_eff_inversion THEN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
             END IF;
 
@@ -1132,7 +1137,7 @@ BEGIN
                 v_balance := logic_trade_finalize(v_trade_id, v_balance);
                 v_notional := v_quantity * v_pp;
                 v_is_open := v_is_open_event;
-                IF v_grp.position_side = 'long' THEN
+                IF v_eff_side = 'long' THEN
                     v_balance := v_balance + CASE WHEN v_is_open THEN -v_notional ELSE v_notional END;
                 ELSE
                     v_balance := v_balance + CASE WHEN v_is_open THEN v_notional ELSE -v_notional END;
@@ -1160,6 +1165,9 @@ BEGIN
                     'status', v_status,
                     'position_event', v_grp.position_event,
                     'position_side', v_grp.position_side,
+                    'effective_side', v_eff_side,
+                    'global_inversion', v_inversion,
+                    'security_inversion', COALESCE(v_sec.real_trading_inverted, FALSE),
                     'signal_kind', v_signal_kind,
                     'formula', v_formulas,
                     'bar_dt', v_ind_dt

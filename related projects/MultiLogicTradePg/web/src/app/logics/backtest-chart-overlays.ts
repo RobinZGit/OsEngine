@@ -158,6 +158,8 @@ export function buildShadedDisabledRanges(trades: LogicTradeRow[]): ChartShadedR
   const ranges: ChartShadedRange[] = [];
   let start: string | null = null;
   let lastOffDt: string | null = null;
+  let invStart: string | null = null;
+  let invLastDt: string | null = null;
 
   const flush = (endDt: string) => {
     if (!start) return;
@@ -167,14 +169,41 @@ export function buildShadedDisabledRanges(trades: LogicTradeRow[]): ChartShadedR
       startDt: start,
       endDt: end,
       label: 'выкл.',
+      kind: 'paused',
     });
     start = null;
     lastOffDt = null;
   };
 
+  const flushInversion = (endDt: string) => {
+    if (!invStart) return;
+    const end = endDt || invLastDt || invStart;
+    if (dtKey(end) < dtKey(invStart)) return;
+    ranges.push({
+      startDt: invStart,
+      endDt: end,
+      label: 'инверсия',
+      kind: 'inverted',
+    });
+    invStart = null;
+    invLastDt = null;
+  };
+
   for (const t of sorted) {
     const dt = t.bar_dt || t.executed_at;
     const reason = (t.trade_reason || '').toLowerCase();
+    if (reason.includes('security_inversion')) {
+      if (invStart) {
+        flushInversion(dt);
+      } else {
+        invStart = dt;
+        invLastDt = dt;
+      }
+      continue;
+    }
+    if (invStart) {
+      invLastDt = dt;
+    }
     const stopPause =
       t.side_name === 'Close' &&
       (reason.includes('stop_loss') || reason.includes('security_resume'));
@@ -195,6 +224,9 @@ export function buildShadedDisabledRanges(trades: LogicTradeRow[]): ChartShadedR
   }
   if (start && lastOffDt) {
     flush(lastOffDt);
+  }
+  if (invStart && invLastDt) {
+    flushInversion(invLastDt);
   }
   return ranges;
 }

@@ -1,5 +1,5 @@
 -- ============================================
--- Stop-loss runner: security / security_resume / portfolio
+-- Stop-loss runner: security / security_resume / security_inversion / portfolio
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
@@ -635,7 +635,7 @@ BEGIN
                     FROM logic_securities ls
                     WHERE ls.logic_id = p_logic_id
                       AND ls.is_active = TRUE
-                      AND ls.real_trading_paused = TRUE
+                      AND (ls.real_trading_paused = TRUE OR ls.real_trading_inverted = TRUE)
                 LOOP
                     IF logic_check_security_resume(p_logic_id, v_sec.security_id, v_tf_id) THEN
                         v_actions := v_actions + 1;
@@ -684,7 +684,7 @@ BEGIN
             FROM logic_securities ls
             WHERE ls.logic_id = p_logic_id
               AND ls.is_active = TRUE
-              AND ls.real_trading_paused = TRUE
+              AND (ls.real_trading_paused = TRUE OR ls.real_trading_inverted = TRUE)
         ) q
     LOOP
         IF NOT v_skip_http
@@ -828,6 +828,30 @@ BEGIN
                 WHERE logic_id = p_logic_id
                   AND security_id = v_sec.security_id;
                 v_actions := v_actions + 1;
+            ELSIF v_stop.scope_type = 'security_inversion' THEN
+                PERFORM logic_trade_log(
+                    p_logic_id, 'stop.trigger',
+                    format(
+                        'SL inversion sec=%s: просадка %s%% >= %s%%',
+                        v_sec.security_id, round(v_drawdown, 4), v_stop.value
+                    ),
+                    jsonb_build_object(
+                        'security_id', v_sec.security_id,
+                        'drawdown_pct', v_drawdown,
+                        'scope', 'security_inversion'
+                    ),
+                    v_sec.security_id, v_tf_id
+                );
+                v_closed := logic_close_security_positions_market(
+                    p_logic_id, v_sec.security_id, FALSE
+                );
+                v_actions := v_actions + v_closed;
+                UPDATE logic_securities
+                SET real_trading_inverted = NOT COALESCE(real_trading_inverted, FALSE),
+                    stop_resume_triggered_at = CURRENT_TIMESTAMP
+                WHERE logic_id = p_logic_id
+                  AND security_id = v_sec.security_id;
+                v_actions := v_actions + 1;
             END IF;
         END LOOP;
     END IF;
@@ -842,4 +866,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
-'Цикл стоп-лоссов: security / security_resume / portfolio; TF из stop_loss_timeframe';
+'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';

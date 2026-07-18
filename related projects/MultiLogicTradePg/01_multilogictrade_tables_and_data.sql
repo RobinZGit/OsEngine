@@ -41,7 +41,7 @@ DO $$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
-        CHECK (scope_type IN ('security', 'security_resume', 'portfolio'));
+        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio'));
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN duplicate_object THEN NULL;
@@ -74,7 +74,7 @@ DO $$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
-        CHECK (scope_type IN ('security', 'security_resume', 'portfolio'));
+        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio'));
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN duplicate_object THEN NULL;
@@ -1296,7 +1296,7 @@ CREATE TABLE IF NOT EXISTS logic_stops (
     id SERIAL PRIMARY KEY,
     logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
     rule_kind VARCHAR(20) NOT NULL CHECK (rule_kind IN ('stop_loss', 'take_profit')),
-    scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('security', 'security_resume', 'portfolio')),
+    scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio')),
     value NUMERIC(18, 6) NOT NULL CHECK (value > 0),
     value_unit VARCHAR(10) NOT NULL CHECK (value_unit IN ('percent', 'atr')),
     display_order INTEGER NOT NULL DEFAULT 0,
@@ -1311,11 +1311,11 @@ COMMENT ON TABLE logic_stops IS
 'Стоп-лосс и тейк-профит для logics: security (по бумаге) или portfolio (портфель логики)';
 COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
 COMMENT ON COLUMN logic_stops.scope_type IS
-'stop_loss: security | security_resume | portfolio; take_profit: security | portfolio';
+'stop_loss: security | security_resume | security_inversion | portfolio; take_profit: security | portfolio';
 
 UPDATE logic_stops
 SET scope_type = 'security'
-WHERE rule_kind = 'take_profit' AND scope_type = 'security_resume';
+WHERE rule_kind = 'take_profit' AND scope_type IN ('security_resume', 'security_inversion');
 
 DO $$
 BEGIN
@@ -1335,6 +1335,7 @@ CREATE TABLE IF NOT EXISTS logic_securities (
     display_order INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE,
     stop_resume_equity NUMERIC(20, 6),
     stop_resume_baseline NUMERIC(20, 6),
     stop_resume_triggered_at TIMESTAMP,
@@ -1350,12 +1351,15 @@ COMMENT ON TABLE logic_securities IS
 COMMENT ON COLUMN logic_securities.display_order IS 'Порядок отображения в UI';
 COMMENT ON COLUMN logic_securities.real_trading_paused IS
 'TRUE — реальная торговля по бумаге приостановлена (теневой режим после security_resume SL)';
+COMMENT ON COLUMN logic_securities.real_trading_inverted IS
+'TRUE — по этой бумаге включена локальная инверсия логики после security_inversion SL';
 COMMENT ON COLUMN logic_securities.stop_resume_equity IS
 'Целевая стоимость трека бумаги для возобновления реальной торговли';
 COMMENT ON COLUMN logic_securities.stop_resume_baseline IS
 'Стоимость трека сразу после срабатывания SL (база для теневого восстановления)';
 
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at TIMESTAMP;
@@ -2248,13 +2252,16 @@ CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     run_id BIGINT NOT NULL REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,
     security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
     real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE,
     stop_resume_equity NUMERIC(20, 6),
     stop_resume_baseline NUMERIC(20, 6),
     PRIMARY KEY (run_id, security_id)
 );
 
 COMMENT ON TABLE logic_backtest_security_state IS
-'Пауза security_resume внутри backtest (не меняет live logic_securities)';
+'Пауза security_resume и локальная инверсия security_inversion внутри backtest (не меняет live logic_securities)';
+
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Пакеты закрытия (FIFO / средняя): связь продажи с покупками
 CREATE TABLE IF NOT EXISTS logic_trade_lots (
@@ -2561,6 +2568,7 @@ COMMENT ON COLUMN logic_securities.id IS 'Surrogate PK';
 COMMENT ON COLUMN logic_securities.logic_id IS 'FK → logics';
 COMMENT ON COLUMN logic_securities.security_id IS 'FK → securities — бумага в портфеле логики';
 COMMENT ON COLUMN logic_securities.is_active IS 'Бумага участвует в торговле/тесте';
+COMMENT ON COLUMN logic_securities.real_trading_inverted IS 'Локальная инверсия сигналов по бумаге внутри логики';
 COMMENT ON COLUMN logic_securities.stop_resume_triggered_at IS 'Когда сработал security_resume SL';
 COMMENT ON COLUMN logic_securities.created_at IS 'Дата добавления в портфель';
 
@@ -2609,6 +2617,7 @@ COMMENT ON COLUMN logic_backtest_runs.created_at IS 'Создание запис
 COMMENT ON COLUMN logic_backtest_security_state.run_id IS 'FK → logic_backtest_runs';
 COMMENT ON COLUMN logic_backtest_security_state.security_id IS 'FK → securities';
 COMMENT ON COLUMN logic_backtest_security_state.real_trading_paused IS 'Теневой режим внутри backtest';
+COMMENT ON COLUMN logic_backtest_security_state.real_trading_inverted IS 'Локальная инверсия сигналов по бумаге внутри backtest';
 COMMENT ON COLUMN logic_backtest_security_state.stop_resume_equity IS 'Цель возобновления (копия logic_securities)';
 COMMENT ON COLUMN logic_backtest_security_state.stop_resume_baseline IS 'База после SL в тесте';
 

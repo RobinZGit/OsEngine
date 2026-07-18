@@ -142,6 +142,7 @@
               [class.row-expanded]="isLogicExpanded(row.id)"
 
               [class.row-testing]="isBacktestRunning(row.id)"
+              [class.row-inversion]="row.inversion"
 
               (click)="toggleLogicExpand(row, $event)"
 
@@ -1524,6 +1525,9 @@
                                 <td>{{ sec.security_name }}
                                   @if (sec.real_trading_paused) {
                                     <span class="sec-paused-badge" title="Реальная торговля приостановлена (SL с возобновлением); идут теневые сделки">теневой режим</span>
+                                  }
+                                  @if (sec.real_trading_inverted) {
+                                    <span class="sec-inverted-badge" title="По бумаге включена локальная инверсия после SL">инверсия</span>
                                   }
                                 </td>
 

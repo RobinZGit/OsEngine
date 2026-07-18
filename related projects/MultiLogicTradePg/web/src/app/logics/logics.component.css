@@ -328,6 +328,12 @@ tbody tr.logic-main-row:hover {
   background: #fcd34d !important;
 }
 
+.row-inversion {
+  outline: 2px solid #ef4444;
+  outline-offset: -2px;
+  box-shadow: inset 4px 0 0 #dc2626;
+}
+
 .logic-name-cell {
   display: flex;
   flex-direction: column;
@@ -1125,7 +1131,8 @@ tbody tr.logic-main-row:hover {
   border-color: #93c5fd;
 }
 
-.sec-paused-badge {
+.sec-paused-badge,
+.sec-inverted-badge {
   display: inline-block;
   margin-left: 0.35rem;
   padding: 0.05rem 0.35rem;
@@ -1138,4 +1145,10 @@ tbody tr.logic-main-row:hover {
   color: #92400e;
   background: #fef3c7;
   border: 1px solid #fcd34d;
+}
+
+.sec-inverted-badge {
+  color: #9f1239;
+  background: #ffe4e6;
+  border-color: #fda4af;
 }

@@ -378,6 +378,19 @@ LANGUAGE sql STABLE AS $$
     );
 $$;
 
+CREATE OR REPLACE FUNCTION logic_backtest_sec_inverted(
+    p_run_id BIGINT,
+    p_security_id INTEGER
+)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(
+        (SELECT real_trading_inverted FROM logic_backtest_security_state
+         WHERE run_id = p_run_id AND security_id = p_security_id),
+        FALSE
+    );
+$$;
+
 CREATE OR REPLACE FUNCTION logic_backtest_count_open_positions(
     p_logic_id INTEGER,
     p_is_shadow BOOLEAN
@@ -766,6 +779,13 @@ BEGIN
                         real_trading_paused = TRUE,
                         stop_resume_equity = EXCLUDED.stop_resume_equity,
                         stop_resume_baseline = EXCLUDED.stop_resume_baseline;
+                ELSIF v_stop.scope_type = 'security_inversion' THEN
+                    INSERT INTO logic_backtest_security_state (
+                        run_id, security_id, real_trading_inverted
+                    )
+                    VALUES (p_run_id, v_sec.security_id, TRUE)
+                    ON CONFLICT (run_id, security_id) DO UPDATE SET
+                        real_trading_inverted = NOT COALESCE(logic_backtest_security_state.real_trading_inverted, FALSE);
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio' THEN
@@ -854,6 +874,7 @@ DECLARE
     v_pp NUMERIC;
     v_lot_size INTEGER;
     v_inversion BOOLEAN;
+    v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
 BEGIN
     SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
@@ -871,6 +892,14 @@ BEGIN
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
     LOOP
         v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id);
+        v_eff_inversion := (
+            v_inversion <> COALESCE(
+                (SELECT st.real_trading_inverted
+                 FROM logic_backtest_security_state st
+                 WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id),
+                FALSE
+            )
+        );
         v_lot_size := logic_security_lot_size(v_sec.security_id);
 
         FOR v_grp IN
@@ -897,7 +926,7 @@ BEGIN
             LOOP
                 SELECT * INTO v_eval
                 FROM logic_signal_evaluate_at(
-                    v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, v_inversion
+                    v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, v_eff_inversion
                 );
 
                 IF v_eval.close_price IS NULL THEN
@@ -925,7 +954,7 @@ BEGIN
             END IF;
 
             v_eff_side := lower(COALESCE(v_grp.position_side, 'long'));
-            IF v_inversion THEN
+            IF v_eff_inversion THEN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
             END IF;
 
@@ -936,7 +965,7 @@ BEGIN
             v_is_open_event := COALESCE(v_grp.position_event, 'open') = 'open';
             v_reason := format(
                 'signal:AND%s:%s/%s→%s %s',
-                CASE WHEN v_inversion THEN ':inv' ELSE '' END,
+                CASE WHEN v_eff_inversion THEN ':inv' ELSE '' END,
                 v_grp.position_event, v_grp.position_side, v_eff_side, v_formulas
             );
 

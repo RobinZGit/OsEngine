@@ -1,5 +1,5 @@
 export type LogicStopRuleKind = 'stop_loss' | 'take_profit';
-export type LogicStopScopeType = 'security' | 'security_resume' | 'portfolio';
+export type LogicStopScopeType = 'security' | 'security_resume' | 'security_inversion' | 'portfolio';
 export type LogicStopValueUnit = 'percent' | 'atr';
 
 export function ruleKindLabel(kind: LogicStopRuleKind): string {
@@ -25,6 +25,8 @@ export function scopeTypeLabel(
       return 'По бумаге (обычный)';
     case 'security_resume':
       return 'По бумаге (возобновление при достижении суммы прерывания)';
+    case 'security_inversion':
+      return 'По бумаге (инверсия при повторной просадке)';
     case 'portfolio':
       return 'По всему портфелю логики';
   }
@@ -38,6 +40,7 @@ export function valueUnitLabel(unit: LogicStopValueUnit): string {
 export const LOGIC_STOP_SCOPES_STOP_LOSS: LogicStopScopeType[] = [
   'security',
   'security_resume',
+  'security_inversion',
   'portfolio',
 ];
 
