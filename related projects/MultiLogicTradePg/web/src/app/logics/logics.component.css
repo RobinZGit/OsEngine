@@ -143,6 +143,77 @@
   font-size: 0.88rem;
 }
 
+.process-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: -0.55rem 0 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.process-strip-head {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-right: 0.25rem;
+  color: #1e3a8a;
+}
+
+.process-strip-head span {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.process-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 22rem;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 0.78rem;
+}
+
+.process-chip-warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.process-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.process-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+  flex: 0 0 auto;
+}
+
+.process-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-status,
+.process-progress {
+  font-weight: 700;
+  color: #2563eb;
+  white-space: nowrap;
+}
+
 .btn {
   padding: 0.45rem 0.9rem;
   border: 1px solid #2563eb;
@@ -765,7 +836,8 @@ tbody tr.logic-main-row:hover {
 }
 
 .col-formula {
-  min-width: 280px;
+  width: 50%;
+  min-width: 360px;
 }
 
 .formula-input {
@@ -776,6 +848,13 @@ tbody tr.logic-main-row:hover {
   padding: 0.35rem 0.5rem;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
+}
+
+.formula-textarea {
+  min-height: 4.8rem;
+  resize: vertical;
+  line-height: 1.35;
+  white-space: pre-wrap;
 }
 
 .formula-input:focus {

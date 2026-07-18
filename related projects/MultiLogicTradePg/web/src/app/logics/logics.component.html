@@ -38,6 +38,28 @@
 
 
 
+  @if (hasActiveProcesses()) {
+    <section class="process-strip" aria-label="Активные процессы">
+      <div class="process-strip-head">
+        <strong>Процессы</strong>
+        <span>PostgreSQL / тесты / расчёты Angular</span>
+      </div>
+      @if (processError) {
+        <span class="process-chip process-error" [title]="processError">ошибка: {{ processError }}</span>
+      }
+      @for (p of activeProcesses(); track p.type + ':' + p.label + ':' + p.status) {
+        <span class="process-chip" [class.process-chip-warn]="p.type === 'postgres'" [title]="processTitle(p)">
+          <span class="process-dot"></span>
+          <span class="process-label">{{ p.label }}</span>
+          <span class="process-status">{{ p.status }}</span>
+          @if (p.progress_pct != null) {
+            <span class="process-progress">{{ p.progress_pct | number:'1.0-0' }}%</span>
+          }
+        </span>
+      }
+    </section>
+  }
+
   @if (loading && logics.length === 0) {
 
     <p class="status">Загрузка…</p>
@@ -945,30 +967,30 @@
                                 class="col-sig-rating"
                                 title="Сумма боевых рейтингов по бумагам"
                               >
-                                {{ sig.rating ?? 0 }}
+                                {{ sig.rating }}
                               </td>
 
                               <td class="col-formula">
 
-                                <input
+                                <textarea
 
-                                  type="text"
+                                  rows="3"
 
-                                  class="formula-input"
+                                  class="formula-input formula-textarea"
 
-                                  [value]="formulaDraft(sig)"
+                                  [ngModel]="formulaDraft(sig)"
 
                                   [disabled]="isFormulaSaving(sig.id)"
 
-                                  (input)="onFormulaInput(sig, $any($event.target).value)"
+                                  (ngModelChange)="onFormulaInput(sig, $event)"
 
                                   (blur)="saveSignalFormula(sig)"
 
-                                  (keydown.enter)="saveSignalFormula(sig); $any($event.target).blur()"
+                                  (keydown.control.enter)="saveSignalFormula(sig); $any($event.target).blur()"
 
                                   spellcheck="false"
 
-                                />
+                                ></textarea>
 
                                 @if (formulaParseHint(sig); as hint) {
 
@@ -1337,7 +1359,6 @@
                                     <input
                                       type="checkbox"
                                       [checked]="allStocksPickerSelected(row.id)"
-                                      [disabled]="pickerStocksAvailable(row.id).length === 0"
                                       (change)="toggleAllStocksPicker(row.id, $any($event.target).checked)"
                                     />
 
@@ -1397,7 +1418,6 @@
                                     <input
                                       type="checkbox"
                                       [checked]="allFuturesPickerSelected(row.id)"
-                                      [disabled]="pickerFuturesAvailable(row.id).length === 0"
                                       (change)="toggleAllFuturesPicker(row.id, $any($event.target).checked)"
                                     />
 

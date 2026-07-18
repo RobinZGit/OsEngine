@@ -2721,6 +2721,112 @@ app.get('/api/tech-log', async (req, res) => {
   }
 });
 
+app.get('/api/processes', async (_req, res) => {
+  const rows = [];
+  try {
+    const active = await pool.query(`
+      SELECT
+        pid,
+        state,
+        wait_event_type,
+        wait_event,
+        now() - COALESCE(query_start, xact_start, backend_start) AS age,
+        left(regexp_replace(COALESCE(query, ''), '\\s+', ' ', 'g'), 180) AS query
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND state <> 'idle'
+      ORDER BY COALESCE(query_start, xact_start, backend_start) NULLS LAST
+      LIMIT 20
+    `);
+    for (const r of active.rows) {
+      rows.push({
+        type: 'postgres',
+        label: `PostgreSQL pid ${r.pid}`,
+        status: r.state || 'active',
+        detail: r.query || '',
+        wait: [r.wait_event_type, r.wait_event].filter(Boolean).join(':') || null,
+        age: String(r.age || ''),
+      });
+    }
+
+    const backtests = await pool.query(`
+      SELECT
+        r.logic_id,
+        l.name AS logic_name,
+        r.status,
+        COALESCE(r.progress_pct, 0) AS progress_pct,
+        r.phase_message,
+        r.phase_detail,
+        r.started_at
+      FROM logic_backtest_runs r
+      JOIN logics l ON l.id = r.logic_id
+      WHERE r.status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+      ORDER BY r.started_at DESC
+      LIMIT 20
+    `);
+    for (const r of backtests.rows) {
+      rows.push({
+        type: 'backtest',
+        label: `Test: ${r.logic_name}`,
+        status: r.status,
+        detail: [r.phase_message, r.phase_detail].filter(Boolean).join(' — '),
+        progress_pct: Number(r.progress_pct) || 0,
+        logic_id: r.logic_id,
+        started_at: r.started_at,
+      });
+    }
+
+    const enabled = await pool.query(`
+      SELECT COUNT(*)::int AS cnt
+      FROM logics
+      WHERE is_enabled = TRUE
+    `);
+    const enabledCount = Number(enabled.rows[0]?.cnt) || 0;
+    if (enabledCount > 0) {
+      rows.push({
+        type: 'trade_runner',
+        label: 'Trade runner',
+        status: 'scheduled',
+        detail: `${enabledCount} enabled logic(s), Node fallback interval ${process.env.TRADE_RUNNER_INTERVAL_MS || 15000} ms`,
+      });
+    }
+
+    try {
+      const cronExists = await pool.query(`SELECT to_regclass('cron.job') AS job_table`);
+      if (cronExists.rows[0]?.job_table) {
+        const cron = await pool.query(`
+          SELECT jobid, schedule, command, active
+          FROM cron.job
+          WHERE command ILIKE '%run_trade_cycle%'
+          ORDER BY jobid
+          LIMIT 10
+        `);
+        for (const r of cron.rows) {
+          rows.push({
+            type: 'pg_cron',
+            label: `pg_cron job ${r.jobid}`,
+            status: r.active ? 'active' : 'disabled',
+            detail: `${r.schedule}: ${r.command}`,
+          });
+        }
+      }
+    } catch (cronErr) {
+      rows.push({
+        type: 'pg_cron',
+        label: 'pg_cron',
+        status: 'unavailable',
+        detail: cronErr.message,
+      });
+    }
+
+    res.json({ rows });
+  } catch (err) {
+    console.error('GET /api/processes', err);
+    res.status(500).json({ error: err.message, rows });
+  }
+});
+
 function btrimStr(v) {
   if (v == null) return '';
   return String(v).trim();

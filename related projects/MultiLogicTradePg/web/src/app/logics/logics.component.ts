@@ -54,7 +54,7 @@ import {
   LogicPositionsPanelComponent,
 } from './logic-positions-panel.component';
 import { LogicCombatSignalDetailComponent } from './logic-combat-signal-detail.component';
-import type { SignalRatingPrecalcStatus } from '../services/logics.service';
+import type { ProcessStatusItem, SignalRatingPrecalcStatus } from '../services/logics.service';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -128,6 +128,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
+  processRows: ProcessStatusItem[] = [];
+  processError: string | null = null;
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
   testPnlByLogic = new Map<
     number,
@@ -273,6 +275,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           // Сделки — read-only, обновляем; редактируемые блоки (параметры, формулы) — нет
           this.refreshAllTradesSummaries();
           this.refreshPnlSummaries();
+          this.refreshProcesses();
           this.maybeCheckTbankTokenForTrades();
         },
         error: (err) => {
@@ -320,6 +323,33 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   isTradesBlockExpanded(id: number): boolean {
     return this.expandedTradesBlocks.has(id);
+  }
+
+  activeProcesses(): ProcessStatusItem[] {
+    const local: ProcessStatusItem[] = [];
+    for (const s of this.ratingPrecalcByLogic.values()) {
+      if (s.status === 'pending' || s.status === 'running') {
+        local.push({
+          type: 'angular',
+          label: `Rating precalc logic #${s.logic_id}`,
+          status: s.status,
+          detail: s.phase_message,
+          progress_pct: s.progress_pct,
+          logic_id: s.logic_id,
+        });
+      }
+    }
+    return [...this.processRows, ...local].slice(0, 12);
+  }
+
+  hasActiveProcesses(): boolean {
+    return this.activeProcesses().length > 0 || !!this.processError;
+  }
+
+  processTitle(p: ProcessStatusItem): string {
+    return [p.label, p.status, p.detail, p.wait, p.age]
+      .filter(Boolean)
+      .join(' · ');
   }
 
   toggleLogicExpand(row: LogicRow, event: Event): void {
@@ -2064,6 +2094,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private refreshPnlSummaries(): void {
     this.refreshTestPnlSummary();
     this.refreshCombatPnlSummary();
+  }
+
+  private refreshProcesses(): void {
+    this.logicsService.getProcesses().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (resp) => {
+        this.processRows = resp.rows ?? [];
+        this.processError = null;
+      },
+      error: (err) => {
+        this.processRows = [];
+        this.processError = err?.error?.error ?? err?.message ?? 'Не удалось загрузить процессы';
+      },
+    });
   }
 
   private refreshTestPnlSummary(): void {

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — installer post-install wrapper скрыт, прогресс остаётся в Setup + INSTALL_PROTOCOL
+**Последнее обновление:** 2026-07-18 — UI: верхняя панель процессов, textarea формул, select-all fix, installer rebuilt
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -193,6 +193,7 @@
 86. **Протокол установки + автозапуск:** installer сразу кладёт placeholder `{app}\INSTALL_PROTOCOL.txt`; post-install запускается скрыто через `installer\windows\scripts\run_postinstall.cmd`, который сразу перезаписывает протокол и пишет туда stdout/stderr PowerShell. `install.ps1` дополнительно копирует transcript в `C:\ProgramData\MultiLogicTradePg\install-latest.log`; Notepad запускается только если файл существует; в Start Menu есть `Install protocol`; на финальной странице Setup добавлен checked checkbox `Run MultiLogic Trade` и optional unchecked `Open installation protocol`.
 87. **Fix PowerShell parser:** протокол показал ParserError в `install.ps1` на Windows PowerShell 5.1; скрипт переведён в ASCII-only, убраны here-string блоки (`@"..."@`) для `api\.env` и protocol summary, сообщения заменены на ASCII.
 88. **UI logics:** добавлен backend/UI copy logic (`POST /api/logics/:id/copy`) — копирует логику, params, signals, stops, securities, но не trades/runs; имя `... copy`, копия выключена; endpoint сразу возвращает полную joined-строку с account/broker полями. Главная таблица logics ужата, actions видны на экране. В «Позиции/Тестирование» рядом с названием — счётчик open/close, PnL уже с `%` от депозита; в тестировании добавлен блок «Эквити портфеля» (общая/long/short).
+89. **UI processes/formulas/select-all:** сверху на странице logics добавлена панель активных процессов (`GET /api/processes`: pg_stat_activity, running backtests, enabled trade runner, pg_cron если доступен + локальный rating precalc). В picker бумаг групповой checkbox больше не disabled и может снять выбор. Формула сигнала — full-width textarea с переносом, Ctrl+Enter сохраняет; warning `sig.rating ?? 0` убран.
 
 ### Автотесты
 
@@ -257,6 +258,7 @@
 - [x] Fix ParserError в `install.ps1`: ASCII-only + без here-string для Windows PowerShell 5.1 (2026-07-17).
 - [x] UI logics: copy button, compact table, portfolio equity common/long/short, open/closed counts (2026-07-18).
 - [x] Installer UX: post-install `cmd` wrapper runs hidden, setup window shows status, details go to `INSTALL_PROTOCOL.txt` (2026-07-18).
+- [x] UI logics follow-up: process panel, available select-all checkbox fix, formula textarea, rebuilt installer (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -277,6 +279,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | UI follow-up + installer rebuild: process strip, formula textarea, select-all fix, no sig.rating warning |
 | 2026-07-18 | Installer UX: hide empty post-install cmd window; keep setup status and protocol logging |
 | 2026-07-18 | UI logics: copy endpoint/button, compact columns, portfolio equity block, open/closed counts |
 | 2026-07-17 | Fix install.ps1 ParserError: ASCII-only PowerShell, no here-strings; rebuilt Setup.exe |
@@ -468,3 +471,4 @@
 99. Протокол показал `ParserError` в `install.ps1` на строке `Write-Utf8NoBomText ... api\.env` и mojibake строк — убрать here-string и non-ASCII из PowerShell-скрипта.
 100. «Make a copy button in logics; trim columns so edit/delete visible; in testing add equity-common/long/short for portfolio; in testing/live show open/closed trade counts after block name; after financial result show % of deposit.»
 101. Скрин: при установке пустое окно `cmd.exe` поверх Setup сбивает пользователя — скрыть post-install cmd wrapper, оставить прогресс в окне Setup и лог в `INSTALL_PROTOCOL.txt`.
+102. «I don't see the copy button… always commit to main… add working process indicator… fix shares/futures all checkbox… signal formula as textarea full length… collect/export because I don't see current changes.» — причина невидимости: installer не был пересобран после UI; добавить process strip, textarea формул, select-all fix, пересобрать Setup.exe.

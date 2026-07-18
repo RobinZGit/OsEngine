@@ -20,6 +20,18 @@ export interface SignalRatingPrecalcStatus {
   finished_at: string | null;
 }
 
+export interface ProcessStatusItem {
+  type: string;
+  label: string;
+  status: string;
+  detail?: string | null;
+  wait?: string | null;
+  age?: string | null;
+  progress_pct?: number | null;
+  logic_id?: number | null;
+  started_at?: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class LogicsService {
   constructor(
@@ -29,6 +41,12 @@ export class LogicsService {
 
   getLogics(): Observable<LogicRow[]> {
     return this.http.get<LogicRow[]>(`${this.appConfig.apiUrl}/logics`);
+  }
+
+  getProcesses(): Observable<{ rows: ProcessStatusItem[] }> {
+    return this.http.get<{ rows: ProcessStatusItem[] }>(
+      `${this.appConfig.apiUrl}/processes`
+    );
   }
 
   createLogic(payload: LogicPayload): Observable<LogicRow> {
