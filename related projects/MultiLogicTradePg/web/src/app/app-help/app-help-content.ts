@@ -57,7 +57,9 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
     body: `Шестерёнка открывает дерево таблиц, функций и процедур PostgreSQL.
 У каждой функции/процедуры в базе есть COMMENT ON — краткое описание на русском (видно под именем). Кнопка SQL — исходный текст.
 
-Комментарии лежат в скриптах 01/02 (и sql/routine_comments_missing.sql для ранее незакомментированных объектов). После переустановки/наката 02 они попадают в obj_description.`,
+Скрипт 01: CREATE TABLE IF NOT EXISTS — полная схема; сразу после — ALTER ADD COLUMN IF NOT EXISTS для upgrade старых БД (CREATE существующую таблицу не меняет). Функции/процедуры — в 02.
+
+Комментарии SQL: 01/02 и sql/routine_comments_missing.sql. После наката 02 — в obj_description.`,
   },
   {
     id: 'api',

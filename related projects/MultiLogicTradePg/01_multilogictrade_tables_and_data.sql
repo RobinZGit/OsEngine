@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS security_types (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE security_types ADD COLUMN IF NOT EXISTS name VARCHAR(50);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 INSERT INTO security_types (name) VALUES
     ('Stock'),
@@ -146,6 +153,13 @@ CREATE TABLE IF NOT EXISTS exchanges (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE exchanges ADD COLUMN IF NOT EXISTS name VARCHAR(50);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 INSERT INTO exchanges (name) VALUES ('MOEX'), ('SPB')
 ON CONFLICT (name) DO NOTHING;
@@ -161,8 +175,16 @@ CREATE TABLE IF NOT EXISTS securities (
     security_type_id INTEGER REFERENCES security_types(id),
     lot_size INTEGER NOT NULL DEFAULT 1 CHECK (lot_size >= 1)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE securities ADD COLUMN IF NOT EXISTS name VARCHAR(200);
+ALTER TABLE securities ADD COLUMN IF NOT EXISTS security_type_id INTEGER REFERENCES security_types(id);
+ALTER TABLE securities ADD COLUMN IF NOT EXISTS lot_size INTEGER NOT NULL DEFAULT 1 CHECK (lot_size >= 1);
 
-ALTER TABLE securities ADD COLUMN IF NOT EXISTS lot_size INTEGER NOT NULL DEFAULT 1;
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
+
 ALTER TABLE securities DROP CONSTRAINT IF EXISTS securities_lot_size_check;
 ALTER TABLE securities ADD CONSTRAINT securities_lot_size_check CHECK (lot_size >= 1);
 
@@ -190,6 +212,18 @@ CREATE TABLE IF NOT EXISTS security_prefixes (
     tbank_figi VARCHAR(50),
     note VARCHAR(200)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS exchange_id INTEGER REFERENCES exchanges(id) ON DELETE CASCADE;
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS prefix VARCHAR(50);
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS instrument_market VARCHAR(20) NOT NULL DEFAULT 'stock' CHECK (instrument_market IN ('stock', 'futures', 'bonds', 'index', 'other'));
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS tbank_figi VARCHAR(50);
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS note VARCHAR(200);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 UPDATE security_prefixes SET instrument_market = 'stock' WHERE instrument_market IS NULL;
 
@@ -375,6 +409,16 @@ CREATE TABLE IF NOT EXISTS timeframes (
     sec INTEGER NOT NULL CHECK (sec > 0),
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS tf VARCHAR(20);
+ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS full_name VARCHAR(50);
+ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS sec INTEGER CHECK (sec > 0);
+ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 INSERT INTO timeframes (tf, full_name, sec, is_active) VALUES
     ('M1', '1 минута', 60, TRUE), ('M2', '2 минуты', 120, TRUE), ('M3', '3 минуты', 180, TRUE),
@@ -404,6 +448,16 @@ CREATE TABLE IF NOT EXISTS brokers (
     api_url VARCHAR(255),
     is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE brokers ADD COLUMN IF NOT EXISTS code VARCHAR(50);
+ALTER TABLE brokers ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+ALTER TABLE brokers ADD COLUMN IF NOT EXISTS api_url VARCHAR(255);
+ALTER TABLE brokers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE brokers DROP COLUMN IF EXISTS created_at;
 
@@ -426,6 +480,21 @@ CREATE TABLE IF NOT EXISTS accounts (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS broker_id INTEGER REFERENCES brokers(id) ON DELETE CASCADE;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS account_code VARCHAR(100);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS account_type VARCHAR(20) CHECK (account_type IN ('real', 'fake'));
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_efficient BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS token_encrypted TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS token_hash VARCHAR(64);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE accounts DROP COLUMN IF EXISTS created_at;
 
@@ -452,9 +521,24 @@ CREATE TABLE IF NOT EXISTS prices (
     value NUMERIC(20, 2),
     contract_prefix VARCHAR(50)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE CASCADE;
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS dt TIMESTAMP;
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS open_price NUMERIC(18, 6);
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS high_price NUMERIC(18, 6);
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS low_price NUMERIC(18, 6);
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS close_price NUMERIC(18, 6);
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS volume NUMERIC(20, 2);
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS value NUMERIC(20, 2);
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS contract_prefix VARCHAR(50);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 -- Существующие БД: CREATE TABLE IF NOT EXISTS не добавляет новые колонки
-ALTER TABLE prices ADD COLUMN IF NOT EXISTS contract_prefix VARCHAR(50);
 ALTER TABLE prices DROP COLUMN IF EXISTS trades;
 ALTER TABLE prices DROP COLUMN IF EXISTS created_at;
 
@@ -480,6 +564,16 @@ CREATE TABLE IF NOT EXISTS parameter_types (
     value_type VARCHAR(20) NOT NULL,
     default_value TEXT
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS short_name VARCHAR(20);
+ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS value_type VARCHAR(20);
+ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS default_value TEXT;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE parameter_types DROP COLUMN IF EXISTS is_control;
 ALTER TABLE parameter_types DROP COLUMN IF EXISTS is_fake_only;
@@ -509,6 +603,13 @@ CREATE TABLE IF NOT EXISTS parameter_sets (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE parameter_sets ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE parameter_sets DROP COLUMN IF EXISTS description;
 ALTER TABLE parameter_sets DROP COLUMN IF EXISTS is_active;
@@ -529,6 +630,15 @@ CREATE TABLE IF NOT EXISTS parameter_values (
     parameter_type_id INTEGER NOT NULL REFERENCES parameter_types(id) ON DELETE CASCADE,
     value TEXT NOT NULL
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE parameter_values ADD COLUMN IF NOT EXISTS parameter_set_id INTEGER REFERENCES parameter_sets(id) ON DELETE CASCADE;
+ALTER TABLE parameter_values ADD COLUMN IF NOT EXISTS parameter_type_id INTEGER REFERENCES parameter_types(id) ON DELETE CASCADE;
+ALTER TABLE parameter_values ADD COLUMN IF NOT EXISTS value TEXT;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE parameter_values DROP COLUMN IF EXISTS record_date;
 ALTER TABLE parameter_values DROP COLUMN IF EXISTS created_at;
@@ -567,9 +677,31 @@ CREATE TABLE IF NOT EXISTS indicators (
     -- Подробное описание: полное название, расчёт, сигналы, применение (многострочный TEXT).
     description TEXT,
     category VARCHAR(50),
+    -- Шаблоны follow/fade и профиль двоичности сигнала (logic_indicator_signals).
+    sig_trend_def TEXT,
+    sig_ct_def TEXT,
+    sig_profile VARCHAR(20),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS code VARCHAR(20);
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS script TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS formula TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS is_custom BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS category VARCHAR(50);
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_trend_def TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_ct_def TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_profile VARCHAR(20);
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 COMMENT ON COLUMN indicators.script IS
 'Устаревший per-bar шаблон SELECT calc_ind_*(…). Для новых индикаторов — поле formula.';
@@ -631,12 +763,7 @@ UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_
 UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
 UPDATE indicators SET script = 'SELECT calc_ind_linreg(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREG';
 
-ALTER TABLE indicators ADD COLUMN IF NOT EXISTS formula TEXT;
-ALTER TABLE indicators ADD COLUMN IF NOT EXISTS is_custom BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_trend_def TEXT;
-ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_ct_def TEXT;
 -- Профиль шаблонов сигнала: какие двоичные смыслы «по течению / против» типичны для индикатора
-ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_profile VARCHAR(20);
 
 COMMENT ON COLUMN indicators.sig_trend_def IS
 'Шаблон follow («по течению»): пробой/импульс/бычья половина. В logic_indicator_signals.signal_kind=trend';
@@ -822,6 +949,21 @@ CREATE TABLE IF NOT EXISTS indicator_value_types (
     display_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS indicator_id INTEGER REFERENCES indicators(id) ON DELETE CASCADE;
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS code VARCHAR(20);
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS name VARCHAR(50);
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS value_type VARCHAR(20) NOT NULL DEFAULT 'float';
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS is_threshold BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS threshold_value NUMERIC(18, 6);
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_value_types ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_indicator_value_types_unique ON indicator_value_types(indicator_id, code);
 
@@ -889,6 +1031,28 @@ CREATE TABLE IF NOT EXISTS security_indicator_series (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS indicator_id INTEGER REFERENCES indicators(id) ON DELETE CASCADE;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS series_code VARCHAR(20);
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS invoke_formula TEXT;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_period INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_fast_period INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_slow_period INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_signal_period INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_std_dev NUMERIC(10, 4) DEFAULT 2.0;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_k_period INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_d_period INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_smooth INTEGER;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS point_count INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_security_indicator_series_unique
     ON security_indicator_series(security_id, indicator_id, series_code);
@@ -939,6 +1103,18 @@ CREATE TABLE IF NOT EXISTS indicator_values (
     dt TIMESTAMP NOT NULL,
     value NUMERIC(18, 6)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS indicator_id INTEGER REFERENCES indicators(id) ON DELETE CASCADE;
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS indicator_value_type_id INTEGER REFERENCES indicator_value_types(id) ON DELETE CASCADE;
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE CASCADE;
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS dt TIMESTAMP;
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS value NUMERIC(18, 6);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE indicator_values DROP COLUMN IF EXISTS is_signal;
 ALTER TABLE indicator_values DROP COLUMN IF EXISTS signal_type;
@@ -962,8 +1138,17 @@ CREATE TABLE IF NOT EXISTS logics (
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     note TEXT
 );
-
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE RESTRICT;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS note TEXT;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logics_account_id ON logics(account_id);
 
@@ -995,6 +1180,18 @@ CREATE TABLE IF NOT EXISTS logic_param_defs (
     description TEXT,
     display_order INTEGER NOT NULL DEFAULT 0
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS param_key VARCHAR(64);
+ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS name_ru VARCHAR(200);
+ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS value_type VARCHAR(20) CHECK (value_type IN ('number', 'integer', 'money', 'boolean', 'text'));
+ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS default_value TEXT NOT NULL DEFAULT '';
+ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order) VALUES
     ('timeframe', 'Таймфрейм', 'text', 'M15',
@@ -1043,6 +1240,17 @@ CREATE TABLE IF NOT EXISTS logic_params (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (logic_id, param_key)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS param_key VARCHAR(64) REFERENCES logic_param_defs(param_key) ON DELETE RESTRICT;
+ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS param_value TEXT NOT NULL DEFAULT '';
+ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS value_type VARCHAR(20) CHECK (value_type IN ('number', 'integer', 'money', 'boolean', 'text'));
+ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logic_params_logic_id ON logic_params(logic_id);
 
@@ -1130,6 +1338,13 @@ CREATE TABLE IF NOT EXISTS sides (
     id SERIAL PRIMARY KEY,
     name VARCHAR(20) NOT NULL UNIQUE
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE sides ADD COLUMN IF NOT EXISTS name VARCHAR(20);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 INSERT INTO sides (name) VALUES ('Open'), ('Close') ON CONFLICT (name) DO NOTHING;
 
@@ -1137,6 +1352,13 @@ CREATE TABLE IF NOT EXISTS actions (
     id SERIAL PRIMARY KEY,
     name VARCHAR(20) NOT NULL UNIQUE
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE actions ADD COLUMN IF NOT EXISTS name VARCHAR(20);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 INSERT INTO actions (name) VALUES ('Long'), ('Short') ON CONFLICT (name) DO NOTHING;
 
@@ -1159,9 +1381,24 @@ CREATE TABLE IF NOT EXISTS logic_indicator_signals (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (logic_id, indicator_id, position_event, position_side, signal_kind)
 );
-
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS indicator_id INTEGER REFERENCES indicators(id) ON DELETE RESTRICT;
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close'));
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short'));
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter'));
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS formula TEXT;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating_test INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
+
 -- Рейтинг может быть отрицательным (успех +1 / неуспех −1 по следующей свече)
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_rating_check;
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_rating_test_check;
@@ -1169,10 +1406,8 @@ UPDATE logic_indicator_signals SET rating = 0 WHERE rating IS NULL;
 UPDATE logic_indicator_signals SET rating_test = 0 WHERE rating_test IS NULL;
 
 -- Миграция v18 → v19: position_side (long | short)
-ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_side VARCHAR(10) NOT NULL DEFAULT 'long';
 
 -- Миграция v38: position_event (open | close) — явно открытие/закрытие
-ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open';
 
 DO $$
 BEGIN
@@ -1248,9 +1483,24 @@ CREATE TABLE IF NOT EXISTS logic_signal_rating_pending (
     run_id BIGINT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS signal_id INTEGER REFERENCES logic_indicator_signals(id) ON DELETE CASCADE;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE RESTRICT;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS bar_dt TIMESTAMP;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS price NUMERIC(18, 6) CHECK (price > 0);
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS position_side VARCHAR(10) CHECK (position_side IN ('long', 'short'));
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter'));
 ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS run_id BIGINT;
+ALTER TABLE logic_signal_rating_pending ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
+
 
 ALTER TABLE logic_signal_rating_pending
     DROP CONSTRAINT IF EXISTS logic_signal_rating_pending_signal_id_security_id_bar_dt_key;
@@ -1277,6 +1527,21 @@ CREATE TABLE IF NOT EXISTS logic_signal_rating_history (
     is_test BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS signal_id INTEGER REFERENCES logic_indicator_signals(id) ON DELETE CASCADE;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS run_id BIGINT;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS bar_dt TIMESTAMP;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS rating INTEGER;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS delta SMALLINT CHECK (delta IN (-1, 1));
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_signal_rating_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 ALTER TABLE logic_signal_rating_history DROP CONSTRAINT IF EXISTS logic_signal_rating_history_rating_check;
 
@@ -1305,6 +1570,20 @@ CREATE TABLE IF NOT EXISTS logic_stops (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS rule_kind VARCHAR(20) CHECK (rule_kind IN ('stop_loss', 'take_profit'));
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20) CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio'));
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value NUMERIC(18, 6) CHECK (value > 0);
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value_unit VARCHAR(10) CHECK (value_unit IN ('percent', 'atr'));
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logic_stops_logic_id ON logic_stops(logic_id);
 CREATE INDEX IF NOT EXISTS idx_logic_stops_rule_kind ON logic_stops(logic_id, rule_kind);
@@ -1344,6 +1623,22 @@ CREATE TABLE IF NOT EXISTS logic_securities (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (logic_id, security_id)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE RESTRICT;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at TIMESTAMP;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logic_securities_logic_id ON logic_securities(logic_id);
 CREATE INDEX IF NOT EXISTS idx_logic_securities_security_id ON logic_securities(security_id);
@@ -1360,11 +1655,6 @@ COMMENT ON COLUMN logic_securities.stop_resume_equity IS
 COMMENT ON COLUMN logic_securities.stop_resume_baseline IS
 'Стоимость трека сразу после срабатывания SL (база для теневого восстановления)';
 
-ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
-ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
-ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at TIMESTAMP;
 
 -- Демо (v40b): follow/breakout — SMA + подтверждение BB/STOCH на OPEN; CLOSE только по SMA
 -- (mean-reversion BB/STOCH вместе с SMA в AND почти никогда не срабатывает)
@@ -2147,19 +2437,43 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     trade_reason TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS side_id INTEGER REFERENCES sides(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS action_id INTEGER REFERENCES actions(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close'));
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter'));
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_formula TEXT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS quantity NUMERIC(20, 6) NOT NULL DEFAULT 1 CHECK (quantity > 0);
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS price NUMERIC(18, 6) CHECK (price > 0);
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS bar_dt TIMESTAMP;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_fictitious BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS run_id BIGINT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS broker_order_id VARCHAR(100);
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'filled' CHECK (status IN ('pending', 'submitted', 'filled', 'rejected', 'cancelled'));
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS trade_reason TEXT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logic_trades_logic_id ON logic_trades(logic_id);
 CREATE INDEX IF NOT EXISTS idx_logic_trades_executed_at ON logic_trades(executed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_logic_trades_security_id ON logic_trades(security_id);
 
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(18, 6) NOT NULL DEFAULT 0;
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS trade_reason TEXT;
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open';
 -- Прогон теста, породивший сделку (NULL = бой / старые записи до v43c)
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS run_id BIGINT;
 
 DO $$
 BEGIN
@@ -2230,6 +2544,30 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     finished_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS date_from DATE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS date_to DATE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ( 'pending', 'loading_prices', 'loading_indicators', 'running', 'completed', 'cancelled', 'failed' ));
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS progress_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS phase_message TEXT;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS phase_detail TEXT;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS current_bar_dt TIMESTAMP;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS total_bars INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS processed_bars INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS trades_created INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS test_balance NUMERIC(20, 6);
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logic_backtest_runs_logic ON logic_backtest_runs(logic_id, created_at DESC);
 
@@ -2259,11 +2597,22 @@ CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     stop_resume_baseline NUMERIC(20, 6),
     PRIMARY KEY (run_id, security_id)
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS run_id BIGINT REFERENCES logic_backtest_runs(id) ON DELETE CASCADE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 COMMENT ON TABLE logic_backtest_security_state IS
 'Пауза security_resume и локальная инверсия security_inversion внутри backtest (не меняет live logic_securities)';
 
-ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Пакеты закрытия (FIFO / средняя): связь продажи с покупками
 CREATE TABLE IF NOT EXISTS logic_trade_lots (
@@ -2282,6 +2631,24 @@ CREATE TABLE IF NOT EXISTS logic_trade_lots (
     financial_result NUMERIC(20, 6) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS close_trade_id BIGINT REFERENCES logic_trades(id) ON DELETE CASCADE;
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS open_trade_id BIGINT REFERENCES logic_trades(id) ON DELETE SET NULL;
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS action_id INTEGER REFERENCES actions(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS cost_method VARCHAR(10) NOT NULL DEFAULT 'FIFO' CHECK (cost_method IN ('FIFO', 'AVERAGE'));
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS quantity NUMERIC(20, 6) CHECK (quantity > 0);
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS close_amount NUMERIC(20, 6);
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS open_amount NUMERIC(20, 6);
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS close_commission NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS open_commission NUMERIC(18, 6) NOT NULL DEFAULT 0;
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
+ALTER TABLE logic_trade_lots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_logic_trade_lots_close ON logic_trade_lots(close_trade_id);
 CREATE INDEX IF NOT EXISTS idx_logic_trade_lots_open ON logic_trade_lots(open_trade_id);
@@ -2304,13 +2671,25 @@ CREATE TABLE IF NOT EXISTS futures_expirations (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS prefix VARCHAR(50);
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS moex_secid VARCHAR(20);
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS expiration_date DATE;
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS tbank_figi VARCHAR(50);
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_futures_exp_security_id ON futures_expirations(security_id);
 CREATE INDEX IF NOT EXISTS idx_futures_exp_prefix ON futures_expirations(prefix);
 CREATE INDEX IF NOT EXISTS idx_futures_exp_date ON futures_expirations(expiration_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_exp_security_prefix ON futures_expirations(security_id, prefix);
 
-ALTER TABLE futures_expirations ADD COLUMN IF NOT EXISTS moex_secid VARCHAR(20);
 
 COMMENT ON TABLE futures_expirations IS 'Контракты фьючерсов; prefix — SHORTNAME MOEX (CNY-9.26), moex_secid — SECID (CRU6) для T-Bank/MOEX. Sync из MOEX ISS.';
 
@@ -2330,8 +2709,22 @@ CREATE TABLE IF NOT EXISTS price_load_log (
     error_message TEXT,
     loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id);
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id);
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS date_from DATE;
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS date_to DATE;
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS source VARCHAR(20);
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS records_loaded INTEGER DEFAULT 0;
 ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS contract_prefix VARCHAR(50);
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE price_load_log ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_price_load_log_security ON price_load_log(security_id, timeframe_id);
 CREATE INDEX IF NOT EXISTS idx_price_load_log_loaded_at ON price_load_log(loaded_at);
@@ -2359,8 +2752,30 @@ CREATE TABLE IF NOT EXISTS app_tech_log (
     payload JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS trace_id UUID NOT NULL DEFAULT gen_random_uuid();
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS span_id VARCHAR(64);
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS parent_span_id VARCHAR(64);
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS thread_key VARCHAR(128);
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web';
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS operation VARCHAR(128);
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS phase VARCHAR(16) CHECK (phase IN ('start', 'end', 'event'));
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE SET NULL;
 ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS sync_gen INTEGER;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS message TEXT;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS payload JSONB;
+ALTER TABLE app_tech_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+
+
+
+
 
 CREATE INDEX IF NOT EXISTS idx_app_tech_log_created_at ON app_tech_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_app_tech_log_trace_id ON app_tech_log(trace_id);

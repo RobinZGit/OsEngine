@@ -9,13 +9,17 @@ alwaysApply: true
 ## Правило (Sergey)
 
 1. **Любое изменение схемы** — сразу в исходные скрипты создания (`00`–`02`), не отдельными одноразовыми миграциями (нет Flyway/отдельных migrate-*.sql).
-2. **Новые поля** — добавлять **в `CREATE TABLE`**, а для уже существующих БД — **`ALTER TABLE … ADD COLUMN IF NOT EXISTS` сразу после `CREATE TABLE`**, до индексов на эту колонку.
-3. **Удаление колонок** — только явным `ALTER TABLE … DROP COLUMN IF EXISTS` в `01` (не «дропать всё, чего нет в CREATE»).
-4. **Индексы** — `CREATE INDEX IF NOT EXISTS`. Если определение индекса меняется — явный `DROP INDEX IF EXISTS` + создание заново в `01` (не массовый DROP всех индексов при upgrade).
-5. **После правок SQL** — **прогнать проверку** (`npm run verify:sql` или `.\scripts\verify_sql_scripts.ps1`).
-6. **Перед сборкой и деплоем** — скрипты **обязаны проходить проверку** без ошибок; в них должны быть **все** изменения БД до последнего коммита.
-7. **Не оставлять** локальную БД и репозиторий в расхождении.
-8. **Если SQL входит в Windows installer** — после любых изменений `00`–`03` / `sql/*` / installer scripts обязательно пересобрать `installer/windows/dist/MultiLogicTradePgSetup.exe` (см. `.cursor/rules/installer-freshness.mdc`).
+2. **Таблицы в `01`:** `CREATE TABLE IF NOT EXISTS` = **полная** актуальная схема. Сразу после CREATE — для **каждой** колонки (кроме PK `id SERIAL`) блок  
+   `ALTER TABLE … ADD COLUMN IF NOT EXISTS …`  
+   с комментарием, что ALTER нужен для **upgrade** существующих БД (`CREATE IF NOT EXISTS` таблицу не меняет). ALTER идемпотентен и не должен падать при повторном прогоне.  
+   Поддержка: `node scripts/ensure-01-column-alters.mjs` (пересобирает блоки ALTER после CREATE; не парсит SQL-комментарии внутри CREATE как колонки; удаляет mid-file дубликаты ADD COLUMN).
+3. **Новые поля** — сначала в `CREATE TABLE`, затем тот же `ALTER … ADD COLUMN IF NOT EXISTS` (или снова `ensure-01-column-alters.mjs`), до индексов на эту колонку. Не оставлять отдельные mid-file `ADD COLUMN` для колонок, уже описанных в CREATE.
+4. **Удаление колонок** — только явным `ALTER TABLE … DROP COLUMN IF EXISTS` в `01` (не «дропать всё, чего нет в CREATE»).
+5. **Индексы** — `CREATE INDEX IF NOT EXISTS`. Если определение индекса меняется — явный `DROP INDEX IF EXISTS` + создание заново в `01` (не массовый DROP всех индексов при upgrade).
+6. **После правок SQL** — **прогнать проверку** (`npm run verify:sql` или `.\scripts\verify_sql_scripts.ps1`).
+7. **Перед сборкой и деплоем** — скрипты **обязаны проходить проверку** без ошибок; в них должны быть **все** изменения БД до последнего коммита.
+8. **Не оставлять** локальную БД и репозиторий в расхождении.
+9. **Если SQL входит в Windows installer** — после любых изменений `00`–`03` / `sql/*` / installer scripts обязательно пересобрать `installer/windows/dist/MultiLogicTradePgSetup.exe` (см. `.cursor/rules/installer-freshness.mdc`).
 
 ## Wipe vs upgrade (Windows installer)
 
