@@ -42,6 +42,13 @@ export class LogicsService {
     );
   }
 
+  copyLogic(id: number): Observable<LogicRow> {
+    return this.http.post<LogicRow>(
+      `${this.appConfig.apiUrl}/logics/${id}/copy`,
+      {}
+    );
+  }
+
   updateLogicEnabled(
     id: number,
     is_enabled: boolean

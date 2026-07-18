@@ -1350,6 +1350,117 @@ app.post('/api/logics', async (req, res) => {
   }
 });
 
+app.post('/api/logics/:id/copy', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: sourceRows } = await client.query(
+      'SELECT id, name, account_id, note FROM logics WHERE id = $1',
+      [id]
+    );
+    if (sourceRows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    const source = sourceRows[0];
+    const baseName = `${source.name} copy`;
+    let copyName = baseName;
+    for (let i = 2; i <= 100; i += 1) {
+      const { rows: existing } = await client.query(
+        'SELECT 1 FROM logics WHERE name = $1 LIMIT 1',
+        [copyName]
+      );
+      if (existing.length === 0) break;
+      copyName = `${baseName} ${i}`;
+    }
+
+    const { rows: inserted } = await client.query(
+      `
+      INSERT INTO logics (name, account_id, is_enabled, note)
+      VALUES ($1, $2, FALSE, $3)
+      RETURNING id, name, account_id, is_enabled, note
+      `,
+      [copyName, source.account_id, source.note]
+    );
+    const copy = inserted[0];
+
+    await client.query(
+      `
+      INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+      SELECT $1, param_key, param_value, value_type
+      FROM logic_params
+      WHERE logic_id = $2
+      ON CONFLICT (logic_id, param_key) DO UPDATE SET
+        param_value = EXCLUDED.param_value,
+        value_type = EXCLUDED.value_type,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [copy.id, id]
+    );
+
+    await client.query(
+      `
+      INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind,
+        formula, rating, rating_test, display_order, is_active
+      )
+      SELECT
+        $1, indicator_id, position_event, position_side, signal_kind,
+        formula, 0, 0, display_order, is_active
+      FROM logic_indicator_signals
+      WHERE logic_id = $2
+      ORDER BY display_order, id
+      `,
+      [copy.id, id]
+    );
+
+    await client.query(
+      `
+      INSERT INTO logic_stops (
+        logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active
+      )
+      SELECT $1, rule_kind, scope_type, value, value_unit, display_order, is_active
+      FROM logic_stops
+      WHERE logic_id = $2
+      ORDER BY display_order, id
+      `,
+      [copy.id, id]
+    );
+
+    await client.query(
+      `
+      INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+      SELECT $1, security_id, display_order, is_active
+      FROM logic_securities
+      WHERE logic_id = $2
+      ORDER BY display_order, id
+      ON CONFLICT (logic_id, security_id) DO NOTHING
+      `,
+      [copy.id, id]
+    );
+
+    await client.query('COMMIT');
+    const params = await getTradingParams(pool, copy.id);
+    res.status(201).json({ ...copy, ...params });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/logics/:id/copy', err);
+    if (err.code === '23505') {
+      res.status(409).json({ error: 'Could not create a unique copy name' });
+      return;
+    }
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.put('/api/logics/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {

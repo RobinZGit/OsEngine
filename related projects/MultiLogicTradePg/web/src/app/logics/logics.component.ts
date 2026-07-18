@@ -194,6 +194,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private savingFormulaIds = new Set<number>();
   private savingStopIds = new Set<number>();
   private savingParamsIds = new Set<number>();
+  private copyingLogicIds = new Set<number>();
   paramsDrafts = new Map<
     number,
     {
@@ -1617,6 +1618,31 @@ export class LogicsComponent implements OnInit, OnDestroy {
         alert(err?.error?.error || 'Не удалось удалить логику');
       },
     });
+  }
+
+  copyLogic(row: LogicRow, event: Event): void {
+    event.stopPropagation();
+    if (this.copyingLogicIds.has(row.id)) return;
+    this.copyingLogicIds.add(row.id);
+    this.logicsService.copyLogic(row.id).subscribe({
+      next: (created) => {
+        this.copyingLogicIds.delete(row.id);
+        this.logics = [...this.logics, created].sort((a, b) => a.id - b.id);
+        this.expandedLogics.add(created.id);
+        this.ensureParamsDraft(created.id, true);
+        this.loadSignalsForLogic(created.id, true);
+        this.loadStopsForLogic(created.id);
+        this.loadSecuritiesForLogic(created.id);
+      },
+      error: (err) => {
+        this.copyingLogicIds.delete(row.id);
+        alert(err?.error?.error || 'Не удалось скопировать логику');
+      },
+    });
+  }
+
+  isCopying(row: LogicRow): boolean {
+    return this.copyingLogicIds.has(row.id);
   }
 
   onEnabledChange(row: LogicRow, checked: boolean, event: Event): void {

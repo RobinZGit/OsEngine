@@ -32,6 +32,9 @@ import {
 import { LogicRow } from '../models/logic.model';
 
 import { LogicBacktestPapersComponent } from './logic-backtest-papers.component';
+import { EquityCurveChartComponent } from './equity-curve-chart.component';
+import { buildEquityPoints } from './backtest-chart-overlays';
+import { ChartEquityPoint } from '../models/market.model';
 
 
 
@@ -77,6 +80,7 @@ export interface BacktestRunStatus {
     CommonModule,
     FormsModule,
     LogicBacktestPapersComponent,
+    EquityCurveChartComponent,
   ],
 
   templateUrl: './logic-positions-panel.component.html',
@@ -139,6 +143,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   cachedCloseTrades: LogicTradeRow[] = [];
   cachedTotalPnl = 0;
   cachedTotalCommission = 0;
+  cachedPortfolioEquity: ChartEquityPoint[] = [];
+  cachedPortfolioEquityLong: ChartEquityPoint[] = [];
+  cachedPortfolioEquityShort: ChartEquityPoint[] = [];
 
 
 
@@ -146,6 +153,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   expandedOpen = false;
 
   expandedClosed = false;
+
+  expandedPortfolioEquity = false;
 
   expandedTradeIds = new Set<number>();
 
@@ -192,7 +201,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     if (changes['backtestRun'] && !this.isBacktestRunning) {
       this.cancelling = false;
     }
-    if (changes['trades'] || changes['logicRow']) {
+    if (changes['trades'] || changes['logicRow'] || changes['backtestRun']) {
       this.rebuildTradeCaches();
     }
   }
@@ -219,6 +228,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.cachedCloseTrades = close;
     this.cachedTotalPnl = pnl;
     this.cachedTotalCommission = commission;
+    const periodStart = this.backtestRun?.date_from ?? null;
+    this.cachedPortfolioEquity = buildEquityPoints(this.trades, periodStart);
+    this.cachedPortfolioEquityLong = buildEquityPoints(this.trades, periodStart, 'long');
+    this.cachedPortfolioEquityShort = buildEquityPoints(this.trades, periodStart, 'short');
   }
 
 
@@ -337,6 +350,18 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return this.cachedCloseTrades;
   }
 
+  openTradeCount(): number {
+    return this.cachedOpenTrades.length;
+  }
+
+  closeTradeCount(): number {
+    return this.cachedCloseTrades.length;
+  }
+
+  totalTradeCount(): number {
+    return this.openTradeCount() + this.closeTradeCount();
+  }
+
   totalFinancialResult(): number {
     return this.cachedTotalPnl;
   }
@@ -348,6 +373,14 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   hasOpenPositions(): boolean {
     return this.cachedOpenTrades.length > 0;
+  }
+
+  hasPortfolioEquity(): boolean {
+    return (
+      this.cachedPortfolioEquity.length > 0 ||
+      this.cachedPortfolioEquityLong.length > 0 ||
+      this.cachedPortfolioEquityShort.length > 0
+    );
   }
 
 
@@ -466,6 +499,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
     }
 
+  }
+
+  togglePortfolioEquityBlock(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.expandedPortfolioEquity = !this.expandedPortfolioEquity;
   }
 
 

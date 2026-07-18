@@ -116,6 +116,13 @@
   margin-left: 0.35rem;
 }
 
+.positions-panel-outer .positions-counts {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
 .positions-panel-outer .positions-summary-pnl {
   display: inline-flex;
   align-items: baseline;
@@ -169,6 +176,15 @@
   overflow: auto;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
+}
+
+.positions-panel-outer .portfolio-equity-block {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.positions-panel-outer .portfolio-equity-host {
+  min-height: 220px;
 }
 
 .positions-panel-outer .trades-table {

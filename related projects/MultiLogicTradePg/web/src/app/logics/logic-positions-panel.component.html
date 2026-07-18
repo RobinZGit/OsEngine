@@ -28,6 +28,9 @@
       <span class="signals-summary-head" (click)="onToggleBlock($event)">
         <span class="signals-chevron" [class.open]="blockExpanded" aria-hidden="true">▸</span>
         <span class="signals-title">{{ title }}</span>
+        <span class="positions-counts" title="Сделки открытия / сделки закрытия">
+          ({{ openTradeCount() }}/{{ closeTradeCount() }})
+        </span>
 
         @if (isTest && periodLabel && !isBacktestRunning) {
           <span class="positions-period-label">{{ periodLabel }}</span>
@@ -148,6 +151,31 @@
         <span aria-hidden="true">⚠</span>
         <span>{{ tbankTokenAlert.message }}</span>
       </button>
+    }
+
+    @if (isTest) {
+      <details class="signals-block positions-sub-block portfolio-equity-block" [open]="expandedPortfolioEquity">
+        <summary class="signals-summary">
+          <span class="signals-summary-head" (click)="togglePortfolioEquityBlock($event)">
+            <span class="signals-chevron" [class.open]="expandedPortfolioEquity" aria-hidden="true">▸</span>
+            <span class="signals-title">Эквити портфеля</span>
+            <span class="positions-sub-hint">общая / long / short</span>
+          </span>
+        </summary>
+        <div class="signals-body">
+          @if (hasPortfolioEquity()) {
+            <div class="portfolio-equity-host">
+              <app-equity-curve-chart
+                [total]="cachedPortfolioEquity"
+                [longs]="cachedPortfolioEquityLong"
+                [shorts]="cachedPortfolioEquityShort"
+              />
+            </div>
+          } @else {
+            <p class="empty">Нет закрытых сделок для эквити портфеля</p>
+          }
+        </div>
+      </details>
     }
 
     <details class="signals-block positions-sub-block" [open]="expandedOpen">

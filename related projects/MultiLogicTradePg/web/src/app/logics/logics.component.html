@@ -75,19 +75,19 @@
 
             <th class="col-check">Вкл.</th>
 
-            <th>ID</th>
+            <th class="col-id">ID</th>
 
-            <th>Логика</th>
+            <th class="col-logic">Логика</th>
 
-            <th>account_id</th>
+            <th class="col-account-id">acc_id</th>
 
-            <th>Счёт</th>
+            <th class="col-account">Счёт</th>
 
-            <th>Тип счёта</th>
+            <th class="col-account-type">Тип</th>
 
-            <th>Брокер</th>
+            <th class="col-broker">Брокер</th>
 
-            <th>Счёт активен</th>
+            <th class="col-active">Актив.</th>
 
             <th
               class="col-combat-pnl"
@@ -159,9 +159,9 @@
 
               </td>
 
-              <td>{{ row.id }}</td>
+              <td class="col-id">{{ row.id }}</td>
 
-              <td>
+              <td class="col-logic">
                 <span class="logic-name-cell">
                   <span class="logic-name-main">
                     <span class="logic-name-text">{{ row.name }}</span>
@@ -182,11 +182,11 @@
                 </span>
               </td>
 
-              <td>{{ row.account_id }}</td>
+              <td class="col-account-id">{{ row.account_id }}</td>
 
-              <td>{{ row.account_code }} — {{ row.account_name }}</td>
+              <td class="col-account" [title]="row.account_code + ' — ' + row.account_name">{{ row.account_code }} — {{ row.account_name }}</td>
 
-              <td>
+              <td class="col-account-type">
 
                 <span class="badge" [class.badge-fake]="row.account_type === 'fake'">
 
@@ -196,9 +196,9 @@
 
               </td>
 
-              <td>{{ row.broker_code }}</td>
+              <td class="col-broker">{{ row.broker_code }}</td>
 
-              <td>{{ row.account_is_active ? 'да' : 'нет' }}</td>
+              <td class="col-active">{{ row.account_is_active ? 'да' : 'нет' }}</td>
 
               <td class="col-combat-pnl">
                 @if (hasCombatFinancialResult(row.id)) {
@@ -270,6 +270,26 @@
 
                   type="button"
 
+                  class="icon-btn icon-copy"
+
+                  title="Скопировать логику"
+
+                  aria-label="Скопировать логику"
+
+                  [disabled]="isCopying(row)"
+
+                  (click)="copyLogic(row, $event)"
+
+                >
+
+                  +
+
+                </button>
+
+                <button
+
+                  type="button"
+
                   class="icon-btn icon-danger"
 
                   title="Удалить"
@@ -302,7 +322,7 @@
 
               <tr class="logic-detail-row">
 
-                <td colspan="10">
+                <td colspan="12">
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 
@@ -1584,7 +1604,7 @@
 
               <tr>
 
-                <td colspan="10" class="empty">Нет записей в logics</td>
+                <td colspan="12" class="empty">Нет записей в logics</td>
 
               </tr>
 
