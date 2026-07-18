@@ -607,6 +607,32 @@ try {
         Write-Host "    Angular CLI OK: $ngJs" -ForegroundColor Green
     }
 
+    function Grant-RuntimeWriteAccess {
+        # ng serve / Vite write .angular\cache under Program Files; default ACLs deny that for Users.
+        # Grant on folders only (OI)(CI) so new .angular\cache inherits — avoid /T over node_modules.
+        Write-Step "Granting Users modify rights for Angular runtime cache"
+        $web = Join-Path $InstallDir "web"
+        $api = Join-Path $InstallDir "api"
+        $angularDir = Join-Path $web ".angular"
+        $cache = Join-Path $angularDir "cache"
+
+        foreach ($path in @($InstallDir, $web, $api)) {
+            if (-not (Test-Path $path)) { continue }
+            Write-Host "    icacls $path -> Users:(OI)(CI)M"
+            & icacls.exe $path /grant "*S-1-5-32-545:(OI)(CI)M" /C /Q
+            if ($LASTEXITCODE -ne 0) {
+                throw "icacls failed for $path (exit $LASTEXITCODE). Angular cannot write cache under Program Files without this."
+            }
+        }
+
+        New-Item -ItemType Directory -Force -Path $cache | Out-Null
+        & icacls.exe $angularDir /grant "*S-1-5-32-545:(OI)(CI)M" /T /C /Q
+        if ($LASTEXITCODE -ne 0) {
+            throw "icacls failed for $angularDir (exit $LASTEXITCODE)."
+        }
+        Write-Host "    Write access OK (Users can create .angular cache)." -ForegroundColor Green
+    }
+
     if (-not (Test-Admin)) {
         throw "Installer post-install script must run as Administrator."
     }
@@ -627,6 +653,7 @@ try {
     Write-ApiEnv
     Normalize-WindowsTextFiles
     Install-NpmDependencies
+    Grant-RuntimeWriteAccess
 
     Write-Step "Done"
     Write-Host "Launch: use the 'MultiLogic Trade' shortcut on Desktop or Start Menu." -ForegroundColor Green

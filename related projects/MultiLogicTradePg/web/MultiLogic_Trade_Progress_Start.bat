@@ -101,6 +101,15 @@ if exist ".angular\cache" (
 ) else (
   echo       .angular\cache not found
 )
+REM Program Files is read-only for normal users unless installer granted Users modify.
+mkdir ".angular\cache" 2>nul
+if not exist ".angular\cache\" (
+  echo  [ERROR] Cannot create web\.angular\cache under Program Files ^(EPERM^).
+  echo          Reinstall MultiLogicTradePgSetup.exe as Administrator
+  echo          ^(post-install grants Users write access for Angular/Vite cache^).
+  popd
+  goto :end_pause
+)
 call node "%WEB%\node_modules\@angular\cli\bin\ng.js" cache clean >nul 2>&1
 popd
 

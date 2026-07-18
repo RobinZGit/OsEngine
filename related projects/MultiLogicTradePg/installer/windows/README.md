@@ -114,6 +114,10 @@ Every installation recreates the `multilogictrade` database by name on the
 selected local PostgreSQL port and deletes previous data. The selected port is
 written to `api\.env`.
 
+Post-install also grants the Windows **Users** group modify rights on the
+install folder (`web` / `api`) so `ng serve` can create `.angular\cache` under
+`C:\Program Files\...` without EPERM when launched from a normal Desktop shortcut.
+
 ## Build the `.exe`
 
 Install Inno Setup 6, then run from the repository root:
