@@ -594,6 +594,7 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('T-Bank API токен', 'TBANK_API_TOKEN', 'secret', ''),
     ('Техническое логирование', 'APP_TECH_LOGGING', 'boolean', '0'),
     ('Очистка лишних данных (диск)', 'APP_CLEANUP_DISK', 'boolean', '0'),
+    ('Последняя автоочистка диска', 'APP_CLEANUP_LAST_AT', 'text', ''),
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', '')
 ON CONFLICT (short_name) DO NOTHING;
 
@@ -1220,9 +1221,11 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('warmup_pretest', 'Прогрев (предварительное тестирование)', 'boolean', 'true',
      'Перед включением боя: прогнать тест за rating_lookback_days и перенести состояния бумаг для security_resume/security_inversion', 11),
     ('cash_fund_code', 'Денежный фонд (парк кэша)', 'text', '',
-     'Пусто = не покупать. TMON / LQDT / SBMM — парковать свободные деньги выше порога (исполнение в runner — позже)', 12),
+     'Пусто = не покупать. TMON / LQDT / SBMM — runner паркует избыток кэша на реальном счёте (1 раз на закрытую свечу TF)', 12),
     ('cash_fund_threshold', 'Порог свободных денег, ₽', 'money', '100000',
-     'Если свободный кэш выше порога и выбран фонд — парковать избыток в денежный фонд', 13),
+     'Если current_balance выше порога и выбран фонд — парковать избыток (buy-only)', 13),
+    ('last_cash_fund_bar_dt', 'Последняя парковка кэша', 'text', '',
+     'Служебный: open time закрытой свечи TF последней попытки парковки в фонд', 96),
     ('last_stop_bar_dt', 'Последняя свеча стоп-лосса', 'text', '',
      'Служебный: open time закрытой свечи TF стоп-лосса', 97),
     ('last_trade_check_at', 'Последняя проверка сигналов', 'text', '',

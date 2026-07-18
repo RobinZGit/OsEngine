@@ -1,6 +1,6 @@
 # Plan: Cash-fund runner buy + scheduled disk cleanup
 
-**Status:** ready to implement (params/UI/cleanup API already shipped in `1ddfa63`)  
+**Status:** implemented (2026-07-18) — params/UI were in `1ddfa63`; runner park + schedule in follow-up commit  
 **Date:** 2026-07-18  
 **Scope:** execute what was explicitly out of scope in the cash-fund / general-settings pass.
 

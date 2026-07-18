@@ -71,12 +71,36 @@ if (tradeStart === -1 || tradeEnd === -1) {
   throw new Error('sync-02: prices_have_closed_bar/logic_refresh/process_logic_trades / run_trade_cycle not found');
 }
 const ratingBlock = read('sql/logic_signal_and_rating.sql').trimEnd() + '\n\n';
+// Stub: full park (HTTP/EtfBy) is injected after CREATE EXTENSION http
+const cashParkStub = `
+CREATE OR REPLACE FUNCTION logic_park_excess_cash(p_logic_id INTEGER)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN jsonb_build_object('skipped', TRUE, 'reason', 'http_unavailable');
+END;
+$$;
+
+COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
+'Stub без pgsql-http; полная реализация после CREATE EXTENSION http (sql/logic_cash_fund_park.sql)';
+`;
+let tradeSlice = tradeTail.slice(tradeStart, tradeEnd).trimEnd();
+const runCycleMark = 'CREATE OR REPLACE FUNCTION run_trade_cycle()';
+const runCycleIdx = tradeSlice.indexOf(runCycleMark);
+if (runCycleIdx === -1) {
+  throw new Error('sync-02: run_trade_cycle not found in trade slice');
+}
+tradeSlice =
+  tradeSlice.slice(0, runCycleIdx) +
+  `-- @include sql/logic_cash_fund_park.sql (stub; full after http)\n${cashParkStub}\n` +
+  tradeSlice.slice(runCycleIdx);
 const tradeBlock =
   ratingBlock +
-  tradeTail.slice(tradeStart, tradeEnd).trimEnd() +
+  tradeSlice +
   '\n\n' +
   tradeTail.slice(tradeEnd).trimEnd() +
   '\n';
+
 
 // Рейтинг + refresh + process; при повторном sync не дублировать
 const ratingMarker = '-- AND-группы сигналов + рейтинг сигнала на логике';
@@ -155,6 +179,39 @@ const calcExtra = read('sql/calc_ind_extra.sql').trimEnd() + '\n';
     sql02.slice(0, start) +
     `${beginMark}\n${calcExtra}${endMark}\n` +
     sql02.slice(after);
+}
+
+// Полная парковка кэша требует pgsql-http — после CREATE EXTENSION http
+{
+  const cashParkFull = read('sql/logic_cash_fund_park.sql').trimEnd() + '\n';
+  const beginMark = '-- @begin logic_cash_fund_park_http';
+  const endMark = '-- @end logic_cash_fund_park_http';
+  const start = sql02.indexOf(beginMark);
+  if (start !== -1) {
+    const end = sql02.indexOf(endMark, start);
+    if (end === -1) {
+      throw new Error('sync-02: markers not found for logic_cash_fund_park_http (end)');
+    }
+    sql02 =
+      sql02.slice(0, start) +
+      `${beginMark}\n${cashParkFull}${endMark}\n` +
+      sql02.slice(end + endMark.length);
+  } else {
+    const anchor = 'COMMENT ON FUNCTION configure_http_ssl() IS';
+    const a = sql02.indexOf(anchor);
+    if (a === -1) {
+      throw new Error('sync-02: configure_http_ssl COMMENT not found for cash fund park inject');
+    }
+    const semi = sql02.indexOf(';', a);
+    if (semi === -1) {
+      throw new Error('sync-02: configure_http_ssl COMMENT semicolon not found');
+    }
+    const insertAt = semi + 1;
+    sql02 =
+      sql02.slice(0, insertAt) +
+      `\n\n${beginMark}\n${cashParkFull}${endMark}\n` +
+      sql02.slice(insertAt);
+  }
 }
 
 fs.writeFileSync(path.join(root, '02_multilogictrade_functions_and_procedures.sql'), sql02, 'utf8');

@@ -83,6 +83,11 @@ async function runTradeCycle(pool, opts = {}) {
         [row.id]
       );
       created += Number(tradeRows[0]?.n ?? 0);
+      try {
+        await client.query(`SELECT logic_park_excess_cash($1)`, [row.id]);
+      } catch (parkErr) {
+        console.error(`cash fund park logic=${row.id}`, parkErr.message);
+      }
       processed += 1;
     }
 

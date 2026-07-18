@@ -1,0 +1,361 @@
+-- ============================================
+-- Парковка свободного кэша в денежный фонд (TMON/LQDT/SBMM)
+-- Вызов из run_trade_cycle / Node trade-runner
+-- ============================================
+
+CREATE OR REPLACE FUNCTION logic_resolve_cash_fund_instrument(p_ticker TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_token TEXT;
+    v_api_url TEXT;
+    v_headers http_header[];
+    v_response http_response;
+    v_ticker TEXT;
+    v_try TEXT;
+    v_instrument JSONB;
+    v_figi TEXT;
+    v_lot INTEGER;
+    v_price NUMERIC;
+    v_price_resp JSONB;
+    v_units NUMERIC;
+    v_nano NUMERIC;
+BEGIN
+    v_ticker := upper(btrim(COALESCE(p_ticker, '')));
+    IF v_ticker = '' THEN
+        RETURN NULL;
+    END IF;
+
+    v_token := get_tbank_token();
+    IF v_token IS NULL OR btrim(v_token) = '' THEN
+        RETURN jsonb_build_object('error', 'no_tbank_token', 'ticker', v_ticker);
+    END IF;
+
+    SELECT rtrim(b.api_url, '/')
+    INTO v_api_url
+    FROM brokers b
+    WHERE b.code = 'T-BANK'
+    LIMIT 1;
+    v_api_url := COALESCE(v_api_url, 'https://invest-public-api.tinkoff.ru/rest');
+
+    PERFORM configure_http_ssl();
+    v_headers := ARRAY[
+        http_header('Authorization', 'Bearer ' || v_token),
+        http_header('Accept', 'application/json')
+    ];
+
+    -- EtfBy: ticker + classCode TQTF (и вариант TMON@)
+    FOREACH v_try IN ARRAY ARRAY[v_ticker, v_ticker || '@']
+    LOOP
+        SELECT * INTO v_response FROM http((
+            'POST',
+            v_api_url || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/EtfBy',
+            v_headers,
+            'application/json',
+            jsonb_build_object(
+                'id_type', 'INSTRUMENT_ID_TYPE_TICKER',
+                'classCode', 'TQTF',
+                'id', v_try
+            )::TEXT
+        )::http_request);
+        IF v_response.status = 200 THEN
+            v_instrument := v_response.content::JSONB->'instrument';
+            EXIT;
+        END IF;
+    END LOOP;
+
+    -- Fallback: FindInstrument
+    IF v_instrument IS NULL THEN
+        SELECT * INTO v_response FROM http((
+            'POST',
+            v_api_url || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument',
+            v_headers,
+            'application/json',
+            jsonb_build_object('query', v_ticker)::TEXT
+        )::http_request);
+        IF v_response.status = 200 THEN
+            SELECT elem
+            INTO v_instrument
+            FROM jsonb_array_elements(
+                COALESCE(v_response.content::JSONB->'instruments', '[]'::JSONB)
+            ) AS elem
+            WHERE upper(COALESCE(elem->>'ticker', '')) IN (v_ticker, v_ticker || '@')
+               OR upper(COALESCE(elem->>'ticker', '')) LIKE v_ticker || '%'
+            ORDER BY CASE WHEN upper(COALESCE(elem->>'ticker', '')) = v_ticker THEN 0 ELSE 1 END
+            LIMIT 1;
+        END IF;
+    END IF;
+
+    IF v_instrument IS NULL THEN
+        RETURN jsonb_build_object('error', 'instrument_not_found', 'ticker', v_ticker);
+    END IF;
+
+    v_figi := COALESCE(v_instrument->>'figi', v_instrument->>'uid');
+    v_lot := GREATEST(1, COALESCE(NULLIF(v_instrument->>'lot', '')::INTEGER, 1));
+
+    IF v_figi IS NULL OR btrim(v_figi) = '' THEN
+        RETURN jsonb_build_object('error', 'no_figi', 'ticker', v_ticker);
+    END IF;
+
+    SELECT * INTO v_response FROM http((
+        'POST',
+        v_api_url || '/tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+        v_headers,
+        'application/json',
+        jsonb_build_object('figi', jsonb_build_array(v_figi))::TEXT
+    )::http_request);
+
+    IF v_response.status = 200 THEN
+        v_price_resp := COALESCE(
+            v_response.content::JSONB->'lastPrices'->0->'price',
+            '{}'::JSONB
+        );
+        v_units := COALESCE((v_price_resp->>'units')::NUMERIC, 0);
+        v_nano := COALESCE((v_price_resp->>'nano')::NUMERIC, 0);
+        v_price := v_units + v_nano / 1000000000.0;
+    END IF;
+
+    IF v_price IS NULL OR v_price <= 0 THEN
+        v_price := 100; -- типичный порядок цены БПИФ денежного рынка
+    END IF;
+
+    RETURN jsonb_build_object(
+        'ticker', v_ticker,
+        'figi', v_figi,
+        'lot', v_lot,
+        'price', v_price,
+        'name', v_instrument->>'name'
+    );
+EXCEPTION
+    WHEN undefined_function THEN
+        RETURN jsonb_build_object('error', 'http_unavailable', 'ticker', v_ticker);
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object('error', SQLERRM, 'ticker', v_ticker);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_resolve_cash_fund_instrument(TEXT) IS
+'FIGI/лот/цена денежного фонда (EtfBy TQTF или FindInstrument + GetLastPrices)';
+
+CREATE OR REPLACE FUNCTION logic_park_excess_cash(p_logic_id INTEGER)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic RECORD;
+    v_code TEXT;
+    v_threshold NUMERIC;
+    v_balance NUMERIC;
+    v_park_amount NUMERIC;
+    v_tf_id INTEGER;
+    v_tf_sec INTEGER;
+    v_closed_bar_dt TIMESTAMP;
+    v_last_raw TEXT;
+    v_last_dt TIMESTAMP;
+    v_inst JSONB;
+    v_figi TEXT;
+    v_lot INTEGER;
+    v_price NUMERIC;
+    v_qty INTEGER;
+    v_order JSONB;
+    v_broker_order_id TEXT;
+    v_status TEXT;
+    v_note TEXT;
+BEGIN
+    SELECT l.id, l.account_id, a.account_type, a.is_active
+    INTO v_logic
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id
+      AND l.is_enabled = TRUE;
+
+    IF NOT FOUND OR NOT COALESCE(v_logic.is_active, FALSE) THEN
+        RETURN jsonb_build_object('skipped', TRUE, 'reason', 'logic_inactive');
+    END IF;
+
+    v_code := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'cash_fund_code'), '')));
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN jsonb_build_object('skipped', TRUE, 'reason', 'no_fund');
+    END IF;
+
+    v_threshold := COALESCE(get_logic_param_numeric(p_logic_id, 'cash_fund_threshold', 100000), 100000);
+    IF v_threshold < 0 THEN
+        v_threshold := 0;
+    END IF;
+
+    -- v1: свободный кэш = current_balance (без вычета открытых позиций)
+    v_balance := COALESCE(logic_ensure_balance(p_logic_id), 0);
+    v_park_amount := v_balance - v_threshold;
+    IF v_park_amount <= 0 THEN
+        RETURN jsonb_build_object(
+            'skipped', TRUE,
+            'reason', 'below_threshold',
+            'balance', v_balance,
+            'threshold', v_threshold
+        );
+    END IF;
+
+    v_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    IF v_tf_id IS NULL THEN
+        RETURN jsonb_build_object('skipped', TRUE, 'reason', 'no_timeframe');
+    END IF;
+    SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
+    v_closed_bar_dt := logic_last_closed_bar_dt(v_tf_sec);
+    IF v_closed_bar_dt IS NULL THEN
+        RETURN jsonb_build_object('skipped', TRUE, 'reason', 'no_closed_bar');
+    END IF;
+
+    v_last_raw := btrim(COALESCE(get_logic_param_text(p_logic_id, 'last_cash_fund_bar_dt'), ''));
+    IF v_last_raw <> '' THEN
+        BEGIN
+            v_last_dt := v_last_raw::TIMESTAMP;
+            IF v_closed_bar_dt <= v_last_dt THEN
+                RETURN jsonb_build_object(
+                    'skipped', TRUE,
+                    'reason', 'bar_already_parked',
+                    'closed_bar', v_closed_bar_dt
+                );
+            END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
+    END IF;
+
+    -- Идемпотентность: одна попытка на закрытую свечу TF
+    PERFORM logic_upsert_param(
+        p_logic_id,
+        'last_cash_fund_bar_dt',
+        to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'text'
+    );
+
+    IF v_logic.account_type = 'fake' THEN
+        PERFORM logic_trade_log(
+            p_logic_id,
+            'cash_fund.skip_fake',
+            format('Фейк-счёт: парковка %s на %s ₽ не отправляется в T-Bank', v_code, v_park_amount),
+            jsonb_build_object(
+                'fund', v_code,
+                'park_amount', v_park_amount,
+                'balance', v_balance,
+                'threshold', v_threshold,
+                'closed_bar', v_closed_bar_dt
+            ),
+            NULL,
+            v_tf_id
+        );
+        RETURN jsonb_build_object(
+            'skipped', TRUE,
+            'reason', 'fake_account',
+            'fund', v_code,
+            'park_amount', v_park_amount
+        );
+    END IF;
+
+    v_inst := logic_resolve_cash_fund_instrument(v_code);
+    IF v_inst IS NULL OR v_inst ? 'error' THEN
+        v_note := COALESCE(v_inst->>'error', 'resolve_failed');
+        PERFORM logic_trade_log(
+            p_logic_id,
+            'cash_fund.resolve_fail',
+            format('Не удалось найти фонд %s: %s', v_code, v_note),
+            v_inst,
+            NULL,
+            v_tf_id
+        );
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'resolve_failed', 'detail', v_inst);
+    END IF;
+
+    v_figi := v_inst->>'figi';
+    v_lot := GREATEST(1, COALESCE((v_inst->>'lot')::INTEGER, 1));
+    v_price := COALESCE((v_inst->>'price')::NUMERIC, 0);
+    IF v_price <= 0 THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'bad_price', 'detail', v_inst);
+    END IF;
+
+    v_qty := (floor(v_park_amount / v_price)::INTEGER / v_lot) * v_lot;
+    IF v_qty < v_lot THEN
+        PERFORM logic_trade_log(
+            p_logic_id,
+            'cash_fund.skip_qty',
+            format('Сумма %s ₽ меньше 1 лота %s по цене %s', v_park_amount, v_code, v_price),
+            jsonb_build_object(
+                'fund', v_code,
+                'park_amount', v_park_amount,
+                'price', v_price,
+                'lot', v_lot
+            ),
+            NULL,
+            v_tf_id
+        );
+        RETURN jsonb_build_object(
+            'skipped', TRUE,
+            'reason', 'qty_below_lot',
+            'park_amount', v_park_amount,
+            'price', v_price,
+            'lot', v_lot
+        );
+    END IF;
+
+    v_status := 'rejected';
+    v_note := NULL;
+    v_broker_order_id := NULL;
+    BEGIN
+        v_order := tbank_post_order(v_logic.account_id, v_figi, v_qty, v_price, 'BUY');
+        v_broker_order_id := COALESCE(
+            v_order->>'orderId',
+            v_order->>'order_id',
+            v_order->'orderState'->>'orderId'
+        );
+        IF v_broker_order_id IS NOT NULL THEN
+            v_status := 'submitted';
+        ELSE
+            v_note := left(COALESCE(v_order::TEXT, 'empty order response'), 500);
+        END IF;
+    EXCEPTION
+        WHEN undefined_function THEN
+            v_note := 'tbank_post_order недоступен (нет HTTP-расширения)';
+        WHEN OTHERS THEN
+            v_note := SQLERRM;
+    END;
+
+    PERFORM logic_trade_log(
+        p_logic_id,
+        CASE WHEN v_status = 'submitted' THEN 'cash_fund.order_ok' ELSE 'cash_fund.order_fail' END,
+        format(
+            'Парковка %s: qty=%s price=%s status=%s',
+            v_code, v_qty, v_price, v_status
+        ),
+        jsonb_build_object(
+            'fund', v_code,
+            'figi', v_figi,
+            'quantity', v_qty,
+            'price', v_price,
+            'park_amount', v_park_amount,
+            'balance', v_balance,
+            'threshold', v_threshold,
+            'status', v_status,
+            'broker_order_id', v_broker_order_id,
+            'note', v_note,
+            'closed_bar', v_closed_bar_dt
+        ),
+        NULL,
+        v_tf_id
+    );
+
+    RETURN jsonb_build_object(
+        'ok', v_status = 'submitted',
+        'fund', v_code,
+        'quantity', v_qty,
+        'price', v_price,
+        'park_amount', v_park_amount,
+        'status', v_status,
+        'broker_order_id', v_broker_order_id,
+        'note', v_note,
+        'closed_bar', v_closed_bar_dt
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
+'Если cash_fund_code задан и current_balance > threshold — BUY фонда на реальном счёте (1 раз на закрытую свечу TF); fake только логирует';

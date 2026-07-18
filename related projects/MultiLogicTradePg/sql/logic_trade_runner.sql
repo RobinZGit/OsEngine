@@ -1261,6 +1261,7 @@ BEGIN
         v_processed := v_processed + 1;
         v_total_stops := v_total_stops + process_logic_stops(v_logic.id);
         v_total_created := v_total_created + process_logic_trades(v_logic.id);
+        PERFORM logic_park_excess_cash(v_logic.id);
     END LOOP;
 
     PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));

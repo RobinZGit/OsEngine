@@ -24,6 +24,7 @@ const {
   getRatingPrecalcStatus,
 } = require('./logic-rating-precalc');
 const { runTradeCycle, startTradeRunner } = require('./trade-runner');
+const { startMaintenanceScheduler } = require('./maintenance-scheduler');
 const {
   touchUiHeartbeatDb,
   clearUiHeartbeatDb,
@@ -3837,4 +3838,5 @@ app.listen(port, () => {
   console.log(`MultiLogicTrade API: http://localhost:${port}`);
   console.log(`CORS origin: ${corsOrigin}`);
   startTradeRunner(pool);
+  startMaintenanceScheduler(pool);
 });
