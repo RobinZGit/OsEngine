@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-18 — security_inversion stop-loss + per-paper inversion state
+**Последнее обновление:** 2026-07-18 — warmup_pretest перед включением боя для resume/inversion stop-loss
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -197,6 +197,7 @@
 90. **Правила актуальности SQL/installer:** добавлено `.cursor/rules/installer-freshness.mdc`; `database-scripts.mdc` и `project-context.mdc` теперь явно требуют держать `00`–`03`, `docs/PROJECT_CONTEXT.md` и `installer/windows/dist/MultiLogicTradePgSetup.exe` в актуальном состоянии. При изменении SQL/API/UI/scripts/docs/installer sources — пересобрать installer и коммитить `.exe` вместе с изменениями.
 91. **Installer UX status/progress:** длинный `StatusMsg` post-install заменён на короткий «Настройка приложения... См. INSTALL_PROTOCOL.txt»; перед скрытым post-install шагом progress bar ставится примерно на 85%, после завершения — на 100%.
 92. **Stop-loss security_inversion:** добавлен scope `security_inversion` для stop_loss. В `logic_securities` и `logic_backtest_security_state` есть `real_trading_inverted`; SL по бумаге с инверсией закрывает текущую позицию и переключает локальную инверсию по этой бумаге. Trade runner/backtest используют XOR глобальной `inversion` и локальной `real_trading_inverted`. UI показывает badge «инверсия», глобально инвертированная логика обводится красным; график теста подсвечивает периоды инверсии бледно-розовым без разрыва equity.
+93. **Warm-up перед включением боя:** добавлен boolean param `warmup_pretest` (default TRUE), UI checkbox «Прогрев (предварительное тестирование)». При включении логики с активным stop_loss `security_resume` или `security_inversion` API оставляет `is_enabled=FALSE`, запускает backtest за `rating_lookback_days`, раскрывает блок «Тестирование», после `completed` переносит `real_trading_paused`/`real_trading_inverted`/resume targets из `logic_backtest_security_state` в live `logic_securities`, затем включает логику и запускает rating precalc. Повторный click во время warm-up переиспользует текущий run.
 
 ### Автотесты
 
@@ -265,6 +266,7 @@
 - [x] Project rules: SQL scripts and Windows installer must always be current; rebuild installer for shipped changes (2026-07-18).
 - [x] Installer UX: короткий status text + progress bar ниже 100% во время post-install (2026-07-18).
 - [x] Stop-loss `security_inversion`: локальная инверсия по бумаге, runner/backtest/UI/chart support, SQL scripts synced, installer rebuilt (2026-07-18).
+- [x] `warmup_pretest`: preliminary test before enabling live for `security_resume`/`security_inversion`, transfer tested paper states to live, installer rebuilt (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
 - [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
 
@@ -285,6 +287,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-18 | Warm-up pretest before live enable: param/UI/API watcher transfers backtest paper states then enables logic |
 | 2026-07-18 | Stop-loss security_inversion: schema, runner/backtest, UI badges/highlight, chart shading, installer rebuild |
 | 2026-07-18 | Installer UX: shorter StatusMsg and hold progress at ~85% during hidden post-install |
 | 2026-07-18 | Project rules: installer freshness rule; SQL/context rules require current SQL + rebuilt Setup.exe |
@@ -484,3 +487,4 @@
 103. «always need to reassemble the installer… sql scripts if database structure changes… write project rules» — добавить Cursor rule: SQL scripts and Windows installer must always match shipped state; rebuild installer before push for shipped changes.
 104. Скрин installer: status text обрезан, progress bar 100% на долгом post-install — укоротить StatusMsg и держать progress ниже 100% до завершения post-install.
 105. «If inversion checkbox is enabled highlight logic; add stop-loss type on paper with inversion; if paper equity falls below SL percent, invert logic on that paper; if falls again switch back; highlight inversion period on equity/chart.»
+106. «Add logic parameter checkbox warm-up/preliminary testing, default on; for security_resume/security_inversion stop-loss, enabling logic first runs testing for rating_lookback_days, real trade starts only after test; transfer paused/inverted paper states from test to live logic_securities.»

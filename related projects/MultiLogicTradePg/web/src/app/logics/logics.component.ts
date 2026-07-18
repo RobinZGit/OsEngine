@@ -210,6 +210,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       base_annual_rate_pct: string;
       rating_lookback_days: string;
       inversion: boolean;
+      warmup_pretest: boolean;
       reset_balance: boolean;
     }
   >();
@@ -453,6 +454,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsWarmupPretestChange(logicId: number, value: boolean): void {
+    this.getParamsDraft(logicId).warmup_pretest = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   private formatPctParam(value: number | string | null | undefined): string {
     if (value == null || value === '') return '10';
     const n =
@@ -530,6 +537,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       base_annual_rate_pct?: number;
       rating_lookback_days?: number;
       inversion?: boolean;
+      warmup_pretest?: boolean;
     }
   ): void {
     const idx = this.logics.findIndex((l) => l.id === logicId);
@@ -550,6 +558,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     base_annual_rate_pct?: number;
     rating_lookback_days?: number;
     inversion?: boolean;
+    warmup_pretest?: boolean;
   }): {
     timeframe: string;
     position_size_pct: string;
@@ -561,6 +570,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     base_annual_rate_pct: string;
     rating_lookback_days: string;
     inversion: boolean;
+    warmup_pretest: boolean;
     reset_balance: boolean;
   } {
     const method: 'FIFO' | 'AVERAGE' =
@@ -576,6 +586,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       base_annual_rate_pct: this.formatPctParam(trading.base_annual_rate_pct ?? 20),
       rating_lookback_days: this.formatIntParam(trading.rating_lookback_days ?? 7, 7),
       inversion: !!trading.inversion,
+      warmup_pretest: trading.warmup_pretest !== false,
       reset_balance: false,
     };
   }
@@ -613,6 +624,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       base_annual_rate_pct: row.base_annual_rate_pct,
       rating_lookback_days: row.rating_lookback_days,
       inversion: row.inversion,
+      warmup_pretest: row.warmup_pretest,
     });
   }
 
@@ -684,6 +696,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         base_annual_rate_pct,
         rating_lookback_days,
         inversion: draft.inversion,
+        warmup_pretest: draft.warmup_pretest,
         reset_balance: draft.reset_balance,
       })
       .subscribe({
@@ -1791,12 +1804,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.logicsService.updateLogicEnabled(row.id, checked).subscribe({
       next: (resp) => {
         this.savingIds.delete(row.id);
+        row.is_enabled = resp.is_enabled;
         this.techLog.event(
           this.techLog.logicThreadKey(row.id, 'control'),
           checked ? 'logic.enabled' : 'logic.disabled',
           checked ? 'Логика включена (UI)' : 'Логика выключена (UI)',
-          { logicId: row.id, payload: { is_enabled: checked } }
+          { logicId: row.id, payload: resp }
         );
+        if (resp.warmup_pretest?.started) {
+          this.backtestPollIds.add(row.id);
+          this.expandedLogics.add(row.id);
+          this.expandedTestTradesBlocks.add(row.id);
+          this.refreshBacktestStatus(row.id);
+          return;
+        }
         if (checked) {
           this.lastTbankTokenCheckAt = 0;
           this.maybeCheckTbankTokenForTrades();

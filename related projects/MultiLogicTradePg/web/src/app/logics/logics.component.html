@@ -638,6 +638,18 @@
 
                                   <input
                                     type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).warmup_pretest"
+                                    (ngModelChange)="onParamsWarmupPretestChange(row.id, $event)"
+                                  />
+
+                                  Прогрев (предварительное тестирование)
+
+                                </label>
+
+                                <label class="params-reset" (click)="$event.stopPropagation()">
+
+                                  <input
+                                    type="checkbox"
                                     [ngModel]="getParamsDraft(row.id).reset_balance"
                                     (ngModelChange)="onParamsResetBalanceChange(row.id, $event)"
                                   />

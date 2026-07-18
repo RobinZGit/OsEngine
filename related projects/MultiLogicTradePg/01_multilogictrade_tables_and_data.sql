@@ -1019,6 +1019,8 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'При включении боя: предрасчёт боевых рейтингов сигналов по свечам за N дней (фон)', 9),
     ('inversion', 'Инверсия', 'boolean', 'false',
      'Инверсия логики: условия наоборот (≥↔≤, >↔<) и сделки в противоположную сторону (Long↔Short)', 10),
+    ('warmup_pretest', 'Прогрев (предварительное тестирование)', 'boolean', 'true',
+     'Перед включением боя: прогнать тест за rating_lookback_days и перенести состояния бумаг для security_resume/security_inversion', 11),
     ('last_stop_bar_dt', 'Последняя свеча стоп-лосса', 'text', '',
      'Служебный: open time закрытой свечи TF стоп-лосса', 97),
     ('last_trade_check_at', 'Последняя проверка сигналов', 'text', '',

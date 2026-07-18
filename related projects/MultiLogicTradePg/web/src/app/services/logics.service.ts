@@ -74,11 +74,23 @@ export class LogicsService {
     id: number;
     is_enabled: boolean;
     rating_precalc?: SignalRatingPrecalcStatus;
+    warmup_pretest?: {
+      started: boolean;
+      run_id: number;
+      date_from: string;
+      date_to: string;
+    };
   }> {
     return this.http.patch<{
       id: number;
       is_enabled: boolean;
       rating_precalc?: SignalRatingPrecalcStatus;
+      warmup_pretest?: {
+        started: boolean;
+        run_id: number;
+        date_from: string;
+        date_to: string;
+      };
     }>(`${this.appConfig.apiUrl}/logics/${id}`, { is_enabled });
   }
 

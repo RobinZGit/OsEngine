@@ -33,6 +33,127 @@ function isScopeValidForRuleKind(ruleKind, scopeType) {
   return true;
 }
 
+const warmupWatchers = new Set();
+
+function localIsoDate(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function shiftLocalDate(isoDate, days) {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return localIsoDate(d);
+}
+
+async function logicNeedsWarmup(pool, logicId) {
+  const [{ warmup_pretest, rating_lookback_days }, stopResp] = await Promise.all([
+    getTradingParams(pool, logicId),
+    pool.query(
+      `
+      SELECT 1
+      FROM logic_stops
+      WHERE logic_id = $1
+        AND rule_kind = 'stop_loss'
+        AND scope_type IN ('security_resume', 'security_inversion')
+        AND is_active = TRUE
+      LIMIT 1
+      `,
+      [logicId]
+    ),
+  ]);
+  return {
+    enabled: warmup_pretest !== false && stopResp.rows.length > 0,
+    lookbackDays: Math.max(1, Math.min(90, Number(rating_lookback_days) || 7)),
+  };
+}
+
+async function transferWarmupSecurityState(pool, logicId, runId) {
+  await pool.query(
+    `
+    UPDATE logic_securities
+    SET
+      real_trading_paused = FALSE,
+      real_trading_inverted = FALSE,
+      stop_resume_equity = NULL,
+      stop_resume_baseline = NULL,
+      stop_resume_triggered_at = NULL
+    WHERE logic_id = $1
+    `,
+    [logicId]
+  );
+  await pool.query(
+    `
+    UPDATE logic_securities ls
+    SET
+      real_trading_paused = COALESCE(st.real_trading_paused, FALSE),
+      real_trading_inverted = COALESCE(st.real_trading_inverted, FALSE),
+      stop_resume_equity = st.stop_resume_equity,
+      stop_resume_baseline = st.stop_resume_baseline,
+      stop_resume_triggered_at = CASE
+        WHEN COALESCE(st.real_trading_paused, FALSE) OR COALESCE(st.real_trading_inverted, FALSE)
+          THEN CURRENT_TIMESTAMP
+        ELSE NULL
+      END
+    FROM logic_backtest_security_state st
+    WHERE st.run_id = $2
+      AND st.security_id = ls.security_id
+      AND ls.logic_id = $1
+    `,
+    [logicId, runId]
+  );
+}
+
+function watchWarmupBacktest(pool, logicId, runId) {
+  const key = `${logicId}:${runId}`;
+  if (warmupWatchers.has(key)) return;
+  warmupWatchers.add(key);
+  const poll = async () => {
+    try {
+      const status = await getBacktestStatus(pool, logicId, runId);
+      if (!status || ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(status.status)) {
+        setTimeout(poll, 2000);
+        return;
+      }
+      if (status.status === 'completed') {
+        await transferWarmupSecurityState(pool, logicId, runId);
+        const { rows } = await pool.query(
+          `UPDATE logics SET is_enabled = TRUE WHERE id = $1 RETURNING id`,
+          [logicId]
+        );
+        if (rows.length > 0) {
+          await writeTechLogEvent(pool, {
+            threadKey: `logic:${logicId}:warmup`,
+            operation: 'logic.warmup.enabled',
+            message: `Warm-up completed, logic enabled (run ${runId})`,
+            source: 'api',
+            logicId,
+            payload: { run_id: runId },
+          });
+          startRatingPrecalc(pool, logicId).catch(() => {});
+        }
+      } else {
+        await writeTechLogEvent(pool, {
+          threadKey: `logic:${logicId}:warmup`,
+          operation: 'logic.warmup.failed',
+          message: `Warm-up finished with status ${status.status}; logic remains disabled`,
+          source: 'api',
+          logicId,
+          payload: { run_id: runId, status },
+        });
+      }
+    } catch (err) {
+      console.error('watchWarmupBacktest', err);
+      setTimeout(poll, 5000);
+      return;
+    }
+    warmupWatchers.delete(key);
+  };
+  setTimeout(poll, 2000);
+}
+
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';
@@ -1576,14 +1697,74 @@ app.patch('/api/logics/:id', async (req, res) => {
     return;
   }
   try {
+    const { rows: existsRows } = await pool.query(
+      `SELECT id FROM logics WHERE id = $1`,
+      [id]
+    );
+    if (existsRows.length === 0) {
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    if (is_enabled) {
+      const warmup = await logicNeedsWarmup(pool, id);
+      if (warmup.enabled) {
+        const { rows: activeWarmup } = await pool.query(
+          `
+          SELECT id, date_from, date_to
+          FROM logic_backtest_runs
+          WHERE logic_id = $1
+            AND status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+          ORDER BY id DESC
+          LIMIT 1
+          `,
+          [id]
+        );
+        if (activeWarmup.length > 0) {
+          const run = activeWarmup[0];
+          await pool.query(`UPDATE logics SET is_enabled = FALSE WHERE id = $1`, [id]);
+          watchWarmupBacktest(pool, id, run.id);
+          res.json({
+            id,
+            is_enabled: false,
+            warmup_pretest: {
+              started: true,
+              run_id: run.id,
+              date_from: run.date_from,
+              date_to: run.date_to,
+            },
+          });
+          return;
+        }
+        const dateTo = localIsoDate();
+        const dateFrom = shiftLocalDate(dateTo, -(warmup.lookbackDays - 1));
+        const runId = await startBacktest(pool, id, dateFrom, dateTo);
+        await pool.query(`UPDATE logics SET is_enabled = FALSE WHERE id = $1`, [id]);
+        watchWarmupBacktest(pool, id, runId);
+        await writeTechLogEvent(pool, {
+          threadKey: `logic:${id}:warmup`,
+          operation: 'logic.warmup.started',
+          message: `Warm-up backtest started before enabling logic`,
+          source: 'api',
+          logicId: id,
+          payload: { run_id: runId, date_from: dateFrom, date_to: dateTo },
+        });
+        res.json({
+          id,
+          is_enabled: false,
+          warmup_pretest: {
+            started: true,
+            run_id: runId,
+            date_from: dateFrom,
+            date_to: dateTo,
+          },
+        });
+        return;
+      }
+    }
     const { rows } = await pool.query(
       `UPDATE logics SET is_enabled = $1 WHERE id = $2 RETURNING id, is_enabled`,
       [is_enabled, id]
     );
-    if (rows.length === 0) {
-      res.status(404).json({ error: 'Logic not found' });
-      return;
-    }
     await writeTechLogEvent(pool, {
       threadKey: `logic:${id}:control`,
       operation: is_enabled ? 'logic.enabled' : 'logic.disabled',
@@ -3103,6 +3284,11 @@ function parseLogicTradingParams(body) {
 
   if (body?.inversion !== undefined) {
     out.inversion = Boolean(body.inversion);
+    hasField = true;
+  }
+
+  if (body?.warmup_pretest !== undefined) {
+    out.warmup_pretest = Boolean(body.warmup_pretest);
     hasField = true;
   }
 

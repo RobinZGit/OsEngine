@@ -17,6 +17,8 @@ export interface LogicRow {
   rating_lookback_days?: number;
   /** Инверсия логики: условия наоборот и Long↔Short. */
   inversion?: boolean;
+  /** Перед включением боя: предварительный тест для stop resume / inversion states. */
+  warmup_pretest?: boolean;
   account_code: string;
   account_name: string;
   account_type: 'real' | 'fake';
@@ -37,6 +39,7 @@ export interface LogicTradingParamsPayload {
   base_annual_rate_pct?: number;
   rating_lookback_days?: number;
   inversion?: boolean;
+  warmup_pretest?: boolean;
 }
 
 export interface LogicTradingParamsResponse {
@@ -51,6 +54,7 @@ export interface LogicTradingParamsResponse {
   base_annual_rate_pct: number;
   rating_lookback_days: number;
   inversion: boolean;
+  warmup_pretest: boolean;
 }
 
 export interface LogicParamRow {

@@ -13,6 +13,7 @@ const PARAM_KEYS = {
   BASE_ANNUAL_RATE_PCT: 'base_annual_rate_pct',
   RATING_LOOKBACK_DAYS: 'rating_lookback_days',
   INVERSION: 'inversion',
+  WARMUP_PRETEST: 'warmup_pretest',
 };
 
 const DEFAULTS = {
@@ -27,6 +28,7 @@ const DEFAULTS = {
   [PARAM_KEYS.BASE_ANNUAL_RATE_PCT]: { value: '20', type: 'number' },
   [PARAM_KEYS.RATING_LOOKBACK_DAYS]: { value: '7', type: 'integer' },
   [PARAM_KEYS.INVERSION]: { value: 'false', type: 'boolean' },
+  [PARAM_KEYS.WARMUP_PRETEST]: { value: 'true', type: 'boolean' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -100,6 +102,7 @@ function rowsToTradingParams(rows) {
         ? Number(map[PARAM_KEYS.RATING_LOOKBACK_DAYS])
         : 7,
     inversion: map[PARAM_KEYS.INVERSION] === true,
+    warmup_pretest: map[PARAM_KEYS.WARMUP_PRETEST] !== false,
   };
 }
 
@@ -291,6 +294,16 @@ async function saveTradingParams(pool, logicId, payload) {
       logicId,
       PARAM_KEYS.INVERSION,
       payload.inversion ? 'true' : 'false',
+      'boolean'
+    );
+  }
+
+  if (payload.warmup_pretest !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.WARMUP_PRETEST,
+      payload.warmup_pretest ? 'true' : 'false',
       'boolean'
     );
   }

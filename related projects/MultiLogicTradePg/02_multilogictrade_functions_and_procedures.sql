@@ -3880,6 +3880,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6643,6 +6644,34 @@ COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
 -- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
 -- ============================================
 -- Stop-loss runner: security / security_resume / portfolio
+-- ============================================
+
+CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_tf TEXT;
+    v_id INTEGER;
+BEGIN
+    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
+    SELECT t.id INTO v_id
+    FROM timeframes t
+    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
+    ORDER BY t.sec
+    LIMIT 1;
+    IF v_id IS NULL THEN
+        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
+    END IF;
+    RETURN v_id;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
+'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
+
+-- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
+-- ============================================
+-- Stop-loss runner: security / security_resume / security_inversion / portfolio
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
