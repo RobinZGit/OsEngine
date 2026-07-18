@@ -540,12 +540,51 @@ try {
         Write-Utf8NoBomText -Path (Join-Path $InstallDir "api\.env") -Text $content
     }
 
+    function Stop-AppListeners {
+        Write-Step "Stopping MultiLogic listeners on ports 3000 and 4200"
+        foreach ($port in @(3000, 4200)) {
+            try {
+                $pids = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty OwningProcess -Unique)
+                foreach ($procId in $pids) {
+                    Write-Host "    Stopping PID $procId (port $port)"
+                    Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+                    & taskkill.exe /F /T /PID $procId 2>$null | Out-Null
+                }
+            }
+            catch {
+            }
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    function Remove-DirectoryForce {
+        param([string] $Path)
+        if (-not (Test-Path $Path)) { return }
+        Write-Host "    Removing $Path"
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            # Retry after short wait (files may still be unlocking after taskkill).
+            Start-Sleep -Seconds 2
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+        }
+    }
+
     function Install-NpmDependencies {
         Write-Step "Installing npm dependencies"
         Refresh-Path
         $npm = Get-CommandPath "npm.cmd"
         if (-not $npm) { $npm = Get-CommandPath "npm" }
         if (-not $npm) { throw "npm was not found after Node.js installation." }
+
+        # Install-over ("No" in setup dialog) leaves old node_modules; locked Angular
+        # files often produce a half-broken web\node_modules without @angular/cli.
+        Stop-AppListeners
+        Remove-DirectoryForce (Join-Path $InstallDir "api\node_modules")
+        Remove-DirectoryForce (Join-Path $InstallDir "web\node_modules")
+        Remove-DirectoryForce (Join-Path $InstallDir "web\.angular")
 
         foreach ($dir in @("api", "web")) {
             $path = Join-Path $InstallDir $dir
@@ -560,6 +599,12 @@ try {
                 throw "npm completed for $dir, but node_modules was not created."
             }
         }
+
+        $ngJs = Join-Path $InstallDir "web\node_modules\@angular\cli\bin\ng.js"
+        if (-not (Test-Path $ngJs)) {
+            throw "Angular CLI was not installed at web\node_modules\@angular\cli\bin\ng.js after npm ci."
+        }
+        Write-Host "    Angular CLI OK: $ngJs" -ForegroundColor Green
     }
 
     if (-not (Test-Admin)) {

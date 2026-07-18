@@ -104,8 +104,10 @@ database, installs npm packages, and creates launch shortcuts.
 
 When an existing MultiLogicTradePg installation is detected, setup asks:
 
-- **Yes** — uninstall the old version and install from scratch.
-- **No** — install over the existing folder.
+- **Yes** — uninstall the old version and install from scratch (recommended).
+- **No** — install over the existing folder; post-install stops ports 3000/4200,
+  deletes `api`/`web` `node_modules`, then runs a clean `npm ci` (and verifies
+  Angular CLI). Close MultiLogic Trade windows before setup if they are open.
 - **Cancel** — stop setup.
 
 Every installation recreates the `multilogictrade` database by name on the

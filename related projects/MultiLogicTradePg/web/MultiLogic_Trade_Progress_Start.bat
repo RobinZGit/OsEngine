@@ -163,14 +163,15 @@ exit /b 0
 
 :FreeOnePort
 set "FP=%~1"
+REM Use PowerShell 2>$null (not cmd 2>nul) — otherwise Out-File fails on "nul" device.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$p=%FP%; for($i=0;$i -lt 5;$i++){" ^
-  "  $c=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue;" ^
-  "  if(-not $c){ exit 0 };" ^
+  "  $c=@(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue);" ^
+  "  if($c.Count -eq 0){ exit 0 };" ^
   "  $c | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object {" ^
-  "    Write-Host ('       PID '+$_+' port '+$p);" ^
-  "    Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue;" ^
-  "    cmd /c taskkill /F /T /PID $_ 2>nul | Out-Null" ^
+  "    $procId=$_; Write-Host ('       PID '+$procId+' port '+$p);" ^
+  "    Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue;" ^
+  "    & taskkill.exe /F /T /PID $procId 2>$null | Out-Null" ^
   "  };" ^
   "  Start-Sleep -Milliseconds 800" ^
   "};" ^
