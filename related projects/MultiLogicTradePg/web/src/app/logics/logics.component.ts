@@ -1676,6 +1676,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.loadSignalsForLogic(created.id, true);
         this.loadStopsForLogic(created.id);
         this.loadSecuritiesForLogic(created.id);
+        alert(`Логика скопирована: ${created.name}`);
       },
       error: (err) => {
         this.copyingLogicIds.delete(row.id);

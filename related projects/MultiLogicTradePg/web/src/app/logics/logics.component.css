@@ -71,14 +71,15 @@
 }
 
 .icon-copy {
-  color: #2563eb;
+  color: #374151;
   font-size: 1.05rem;
   font-weight: 700;
 }
 
 .icon-copy:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: #111827;
 }
 
 .col-actions {
