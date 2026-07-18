@@ -55,19 +55,36 @@ Name: "{autoprograms}\MultiLogic Trade\Install protocol"; Filename: "{win}\notep
 Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"; Tasks: desktopicon
 
 [Run]
+; DbMode is written to installer\windows\db-mode.txt in PreparePostInstall (read by run_postinstall.cmd).
 Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Настройка приложения... См. INSTALL_PROTOCOL.txt"; Flags: waituntilterminated runhidden; BeforeInstall: PreparePostInstall; AfterInstall: FinishPostInstall
 Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Run MultiLogic Trade"; Flags: postinstall nowait skipifsilent runasoriginaluser
 Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Description: "Open installation protocol"; Flags: postinstall skipifsilent unchecked runasoriginaluser; Check: InstallProtocolExists
 
 [Code]
+var
+  GDbMode: String;
+
+function GetDbMode(Param: String): String;
+begin
+  if GDbMode = '' then
+    Result := 'create'
+  else
+    Result := GDbMode;
+end;
+
 procedure PreparePostInstall();
 var
   Max: Integer;
+  ModePath: String;
 begin
   WizardForm.StatusLabel.Caption := 'Настройка приложения... См. INSTALL_PROTOCOL.txt';
   Max := WizardForm.ProgressGauge.Max;
   if Max > 0 then
     WizardForm.ProgressGauge.Position := (Max * 85) div 100;
+
+  ModePath := ExpandConstant('{app}\installer\windows\db-mode.txt');
+  ForceDirectories(ExtractFilePath(ModePath));
+  SaveStringToFile(ModePath, GetDbMode('') + #13#10, False);
 end;
 
 procedure FinishPostInstall();
@@ -94,14 +111,16 @@ var
   Answer: Integer;
 begin
   Result := True;
+  GDbMode := 'create';
 
   if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', UninstallString)
     or RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', UninstallString) then
   begin
     Answer := MsgBox(
       'MultiLogicTradePg уже установлен.'#13#10#13#10 +
-      'Да — удалить старую установку и поставить заново (рекомендуется).'#13#10 +
-      'Нет — установить поверх: файлы обновятся, npm-пакеты api/web переустановятся заново.'#13#10 +
+      'Да — удалить старую установку и поставить заново (БД пересоздаётся, данные стираются).'#13#10 +
+      'Нет — установить поверх: файлы и npm обновятся; база НЕ удаляется,'#13#10 +
+      'схема обновится скриптами 01/02 (цены, сделки, логики сохраняются).'#13#10 +
       'Отмена — остановить установку.'#13#10#13#10 +
       'Перед установкой закройте MultiLogic Trade (окна API/Angular), если они открыты.',
       mbConfirmation,
@@ -110,12 +129,15 @@ begin
 
     if Answer = IDYES then
     begin
+      GDbMode := 'wipe';
       if not Exec(StripQuotes(UninstallString), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
       begin
         MsgBox('Не удалось запустить деинсталлятор старой версии.', mbError, MB_OK);
         Result := False;
       end;
     end
+    else if Answer = IDNO then
+      GDbMode := 'upgrade'
     else if Answer = IDCANCEL then
       Result := False;
   end;

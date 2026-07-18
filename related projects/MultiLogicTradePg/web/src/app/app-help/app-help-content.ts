@@ -75,8 +75,13 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
   {
     id: 'install',
     title: 'Установка Windows',
-    body: `Setup.exe ставит Node, PostgreSQL (пароль часто 111), накатывает 00→01→02, npm ci для api/web, ярлыки.
-При «Нет» (поверх) пакеты переустанавливаются; post-install даёт группе Users права на запись .angular\\cache в Program Files.
-Запускайте ярлык после закрытия старых окон API/Angular. Протокол: INSTALL_PROTOCOL.txt.`,
+    body: `Setup.exe ставит Node, PostgreSQL (пароль часто 111), npm ci для api/web, ярлыки.
+
+Повторная установка:
+• Да — удалить старое + пересоздать БД (данные стираются).
+• Нет — поверх: файлы/npm обновляются; база НЕ удаляется, схема через 01/02 (цены, сделки, логики сохраняются); функции/процедуры пересоздаются.
+
+Post-install даёт группе Users права на запись .angular\\cache в Program Files.
+Протокол: INSTALL_PROTOCOL.txt (там же DbMode).`,
   },
 ];

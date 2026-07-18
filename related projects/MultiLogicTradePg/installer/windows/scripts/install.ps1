@@ -12,6 +12,8 @@ param(
     [string] $InstallDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path,
     [string] $PostgresPassword = "111",
     [string] $PostgresMajor = "15",
+    [ValidateSet("wipe", "upgrade", "create")]
+    [string] $DbMode = "wipe",
     [switch] $SkipDependencyInstall,
     [switch] $SkipAppProtocol
 )
@@ -25,6 +27,17 @@ $RunStamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $LogPath = Join-Path $LogDir "install-$RunStamp.log"
 $LatestLogPath = Join-Path $LogDir "install-latest.log"
 $ProtocolPath = Join-Path $InstallDir "INSTALL_PROTOCOL.txt"
+$DbModeFile = Join-Path $InstallDir "installer\windows\db-mode.txt"
+if ((-not $PSBoundParameters.ContainsKey("DbMode")) -and (Test-Path $DbModeFile)) {
+    $fromFile = (Get-Content -LiteralPath $DbModeFile -TotalCount 1 -ErrorAction SilentlyContinue)
+    if ($fromFile) {
+        $fromFile = $fromFile.Trim().ToLowerInvariant()
+        if ($fromFile -in @("wipe", "upgrade", "create")) {
+            $DbMode = $fromFile
+        }
+    }
+}
+$DbMode = $DbMode.Trim().ToLowerInvariant()
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Start-Transcript -Path $LogPath | Out-Null
 $script:PostgresHost = "localhost"
@@ -485,44 +498,109 @@ try {
         Write-Host "    Windows launchers saved as CRLF / UTF-8 without BOM." -ForegroundColor Green
     }
 
-    function Deploy-Database {
+    function Get-Sql02Path {
+        param([bool] $HttpExtensionReady)
+        $sql02 = Join-Path $InstallDir "02_multilogictrade_functions_and_procedures.sql"
+        if (-not $HttpExtensionReady) {
+            Write-Warning "HTTP block in 02 will be skipped because pgsql-http is unavailable. HTTP price loading may be unavailable until pgsql-http is installed."
+            return (New-CoreSql02File)
+        }
+        return $sql02
+    }
+
+    function Invoke-SchemaScripts {
         param(
             [string] $Psql,
-            [bool] $HttpExtensionReady
+            [bool] $HttpExtensionReady,
+            [bool] $DropRoutinesFirst
         )
-        Write-Step "Resetting database by name"
-        Write-Host "    psql:     $Psql" -ForegroundColor DarkGray
-        Write-Host "    host:     $script:PostgresHost" -ForegroundColor DarkGray
-        Write-Host "    port:     $script:PostgresPort" -ForegroundColor DarkGray
-        Write-Host "    database: multilogictrade" -ForegroundColor DarkGray
-
-        Invoke-Psql $Psql "postgres" @(
-            "-v", "ON_ERROR_STOP=1",
-            "-c", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'multilogictrade' AND pid <> pg_backend_pid();"
-        )
-        Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "DROP DATABASE IF EXISTS multilogictrade WITH (FORCE);")
-        $existsAfterDrop = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
-        if ($existsAfterDrop -ne "0") {
-            throw "Database multilogictrade still exists after DROP DATABASE. Reset did not complete."
-        }
-        Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE multilogictrade ENCODING 'UTF8' TEMPLATE template0;")
-        $existsAfterCreate = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
-        if ($existsAfterCreate -ne "1") {
-            throw "Database multilogictrade was not created after reset."
+        if ($DropRoutinesFirst) {
+            $dropSql = Join-Path $InstallDir "sql\drop_public_routines.sql"
+            if (-not (Test-Path $dropSql)) {
+                throw "Missing $dropSql (required before upgrade recreate of 02)."
+            }
+            Write-Step "Dropping public functions/procedures (data tables kept)"
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $dropSql)
         }
 
         Write-Step "Deploying database 01 -> 02"
         Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", (Join-Path $InstallDir "01_multilogictrade_tables_and_data.sql"))
-
-        $sql02 = Join-Path $InstallDir "02_multilogictrade_functions_and_procedures.sql"
-        if (-not $HttpExtensionReady) {
-            Write-Warning "HTTP block in 02 will be skipped because pgsql-http is unavailable. HTTP price loading may be unavailable until pgsql-http is installed."
-            $sql02 = New-CoreSql02File
-        }
+        $sql02 = Get-Sql02Path -HttpExtensionReady $HttpExtensionReady
         Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql02)
+    }
+
+    function Deploy-Database {
+        param(
+            [string] $Psql,
+            [bool] $HttpExtensionReady,
+            [string] $Mode
+        )
+        Write-Step "Database deploy mode: $Mode"
+        Write-Host "    psql:     $Psql" -ForegroundColor DarkGray
+        Write-Host "    host:     $script:PostgresHost" -ForegroundColor DarkGray
+        Write-Host "    port:     $script:PostgresPort" -ForegroundColor DarkGray
+        Write-Host "    database: multilogictrade" -ForegroundColor DarkGray
+        Write-Host "    DbMode:   $Mode" -ForegroundColor DarkGray
+
+        $existsBefore = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+        $logicsBefore = $null
+        $pricesBefore = $null
+        if ($existsBefore -eq "1") {
+            try {
+                $logicsBefore = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics;"
+                $pricesBefore = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM prices;"
+            }
+            catch {
+                Write-Host "    (counts before: logics/prices unavailable yet)" -ForegroundColor DarkGray
+            }
+        }
+        Write-Host "    Before: db_exists=$existsBefore logics=$logicsBefore prices=$pricesBefore"
+
+        if ($Mode -eq "wipe") {
+            Write-Step "Resetting database by name (wipe)"
+            Invoke-Psql $Psql "postgres" @(
+                "-v", "ON_ERROR_STOP=1",
+                "-c", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'multilogictrade' AND pid <> pg_backend_pid();"
+            )
+            Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "DROP DATABASE IF EXISTS multilogictrade WITH (FORCE);")
+            $existsAfterDrop = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+            if ($existsAfterDrop -ne "0") {
+                throw "Database multilogictrade still exists after DROP DATABASE. Reset did not complete."
+            }
+            Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE multilogictrade ENCODING 'UTF8' TEMPLATE template0;")
+            $existsAfterCreate = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+            if ($existsAfterCreate -ne "1") {
+                throw "Database multilogictrade was not created after reset."
+            }
+            Invoke-SchemaScripts -Psql $Psql -HttpExtensionReady $HttpExtensionReady -DropRoutinesFirst $false
+            $logicCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics;"
+            $priceCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM prices;"
+            Write-Host "    Database wiped and recreated. logics=$logicCount prices=$priceCount" -ForegroundColor Green
+            return
+        }
+
+        # upgrade | create — keep data; never DROP DATABASE
+        Write-Step "Ensuring database exists (no DROP; preserve data)"
+        if ($existsBefore -ne "1") {
+            Invoke-Psql $Psql "postgres" @("-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE multilogictrade ENCODING 'UTF8' TEMPLATE template0;")
+            $existsAfterCreate = Invoke-PsqlScalar $Psql "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+            if ($existsAfterCreate -ne "1") {
+                throw "Database multilogictrade was not created."
+            }
+            Write-Host "    Created empty multilogictrade." -ForegroundColor Green
+            Invoke-SchemaScripts -Psql $Psql -HttpExtensionReady $HttpExtensionReady -DropRoutinesFirst $false
+        }
+        else {
+            Write-Host "    Existing multilogictrade kept (upgrade in place)." -ForegroundColor Green
+            Invoke-SchemaScripts -Psql $Psql -HttpExtensionReady $HttpExtensionReady -DropRoutinesFirst $true
+        }
 
         $logicCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics;"
-        Write-Host "    Database multilogictrade recreated. Logics rows after seed: $logicCount" -ForegroundColor Green
+        $priceCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM prices;"
+        Write-Host "    After: logics=$logicCount prices=$priceCount (before logics=$logicsBefore prices=$pricesBefore)" -ForegroundColor Green
+        if ($null -ne $pricesBefore -and $pricesBefore -ne "" -and [int]$priceCount -lt [int]$pricesBefore) {
+            throw "Upgrade reduced prices row count ($pricesBefore -> $priceCount). Aborting — data loss unexpected."
+        }
     }
 
     function Write-ApiEnv {
@@ -639,6 +717,7 @@ try {
 
     Write-Host "MultiLogicTradePg installer post-install" -ForegroundColor Green
     Write-Host "InstallDir: $InstallDir"
+    Write-Host "DbMode:     $DbMode"
     Write-Host "Log:        $LogPath"
     Write-Host "Protocol:   $ProtocolPath"
 
@@ -649,7 +728,7 @@ try {
     Wait-PostgresReady $psql
     $httpReady = Install-PgsqlHttpExtension $pgRoot
     Wait-PostgresReady $psql
-    Deploy-Database $psql $httpReady
+    Deploy-Database -Psql $psql -HttpExtensionReady $httpReady -Mode $DbMode
     Write-ApiEnv
     Normalize-WindowsTextFiles
     Install-NpmDependencies
@@ -675,6 +754,7 @@ finally {
                 "MultiLogicTradePg installation protocol",
                 "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
                 "InstallDir: $InstallDir",
+                "DbMode: $DbMode",
                 "Transcript: $LogPath",
                 "Latest transcript copy: $LatestLogPath",
                 "PostgreSQL target: $($script:PostgresHost):$($script:PostgresPort) / multilogictrade / user postgres",

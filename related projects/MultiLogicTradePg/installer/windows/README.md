@@ -104,15 +104,19 @@ database, installs npm packages, and creates launch shortcuts.
 
 When an existing MultiLogicTradePg installation is detected, setup asks:
 
-- **Yes** — uninstall the old version and install from scratch (recommended).
-- **No** — install over the existing folder; post-install stops ports 3000/4200,
-  deletes `api`/`web` `node_modules`, then runs a clean `npm ci` (and verifies
-  Angular CLI). Close MultiLogic Trade windows before setup if they are open.
+- **Yes** — uninstall the old version and install from scratch. Database mode
+  **wipe**: `DROP DATABASE` + fresh `01`→`02` (all data deleted).
+- **No** — install over the existing folder (files + npm). Database mode
+  **upgrade**: **no** `DROP DATABASE`; keep prices/trades/logics; re-run
+  idempotent `01` (ADD COLUMN / indexes) then drop public routines and apply
+  `02`. Close MultiLogic Trade windows before setup if they are open.
 - **Cancel** — stop setup.
 
-Every installation recreates the `multilogictrade` database by name on the
-selected local PostgreSQL port and deletes previous data. The selected port is
-written to `api\.env`.
+First install (no prior product) uses database mode **create**: create
+`multilogictrade` only if missing, then `01`→`02` (never drops an existing DB).
+
+The chosen PostgreSQL port is written to `api\.env`. Mode is also saved as
+`installer\windows\db-mode.txt` and logged in `INSTALL_PROTOCOL.txt`.
 
 Post-install also grants the Windows **Users** group modify rights on the
 install folder (`web` / `api`) so `ng serve` can create `.angular\cache` under
