@@ -72,8 +72,9 @@ database, installs npm packages, and creates launch shortcuts.
 
    `INSTALL_PROTOCOL.txt` contains the full post-install output and is the
    easiest file to send for diagnostics. Setup copies a placeholder protocol
-   first, then runs post-install through a small wrapper that overwrites the file
-   immediately and captures PowerShell output/errors from the first line.
+   first, then runs post-install hidden through a small wrapper that overwrites
+   the file immediately and captures PowerShell output/errors from the first
+   line. The setup window remains visible and shows the current installer status.
 
 8. Creates shortcuts:
 

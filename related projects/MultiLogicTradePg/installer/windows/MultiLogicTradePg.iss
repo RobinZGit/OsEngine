@@ -54,7 +54,7 @@ Name: "{autoprograms}\MultiLogic Trade\Install protocol"; Filename: "{win}\notep
 Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"; Tasks: desktopicon
 
 [Run]
-Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg..."; Flags: waituntilterminated
+Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Установка Node.js/PostgreSQL, npm-зависимостей и базы MultiLogicTradePg... Подробности пишутся в INSTALL_PROTOCOL.txt"; Flags: waituntilterminated runhidden
 Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Run MultiLogic Trade"; Flags: postinstall nowait skipifsilent runasoriginaluser
 Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Description: "Open installation protocol"; Flags: postinstall skipifsilent unchecked runasoriginaluser; Check: InstallProtocolExists
 
