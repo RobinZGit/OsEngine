@@ -177,18 +177,35 @@ function watchWarmupBacktest(pool, logicId, runId) {
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';
+const corsOrigins = String(
+  process.env.CORS_ORIGIN || 'http://localhost:4200,http://127.0.0.1:4200'
+)
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const corsOrigin = corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins;
 
-const pool = new Pool({
+const pgPoolCommon = {
   host: process.env.PGHOST || 'localhost',
   port: Number(process.env.PGPORT) || 5432,
   database: process.env.PGDATABASE || 'multilogictrade',
   user: process.env.PGUSER || 'postgres',
   password: process.env.PGPASSWORD,
-  // Бой (по логикам) + бэктест (×2) + UI poll + прекалк рейтингов
-  max: Math.max(10, Math.min(40, Number(process.env.PGPOOL_MAX) || 24)),
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 15_000,
+};
+
+// HTTP/UI: короткий timeout — иначе poll «процессов» висит и браузер показывает status 0.
+const pool = new Pool({
+  ...pgPoolCommon,
+  max: Math.max(8, Math.min(24, Number(process.env.PGPOOL_MAX) || 16)),
+  connectionTimeoutMillis: 8_000,
+});
+
+// Долгий CALL logic_backtest_run_bars / load_prices — отдельный пул, не забивает UI.
+const backtestPool = new Pool({
+  ...pgPoolCommon,
+  max: Math.max(2, Math.min(12, Number(process.env.PGPOOL_BACKTEST_MAX) || 6)),
+  connectionTimeoutMillis: 60_000,
 });
 
 app.use(cors({ origin: corsOrigin }));
@@ -3184,10 +3201,10 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     return;
   }
   try {
-    // Быстрый ответ браузеру: только cancel + оборвать SQL-сессию.
+    // Быстрый ответ браузеру: только cancel + INSERT; тяжёлый прогон — в backtestPool.
     // DELETE тест-сделок — в фоне (runBacktestAsync), иначе при зависшем CALL → «0 Unknown Error».
     const superseded = await supersedeActiveBacktests(pool, logicId);
-    const runId = await startBacktest(pool, logicId, dateFrom, dateTo);
+    const runId = await startBacktest(pool, logicId, dateFrom, dateTo, backtestPool);
     res.status(202).json({
       ok: true,
       run_id: runId,
@@ -4259,7 +4276,7 @@ app.use((_req, res) => {
 
 app.listen(port, () => {
   console.log(`MultiLogicTrade API: http://localhost:${port}`);
-  console.log(`CORS origin: ${corsOrigin}`);
+  console.log(`CORS origin: ${Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin}`);
   failOrphanBacktestRuns(pool).catch((err) => {
     console.error('failOrphanBacktestRuns', err.message);
   });

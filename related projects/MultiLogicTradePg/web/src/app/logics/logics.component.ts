@@ -335,7 +335,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
           // Сделки — read-only, обновляем; редактируемые блоки (параметры, формулы) — нет
           this.refreshAllTradesSummaries();
           this.refreshPnlSummaries();
-          this.refreshProcesses();
+          // Во время Start не дергаем /processes — иначе при кратком обрыве API полоска показывает status 0.
+          if (this.backtestStartInFlight.size === 0) {
+            this.refreshProcesses();
+          }
           this.maybeCheckTbankTokenForTrades();
         },
         error: (err) => {
@@ -2506,13 +2509,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  private doStartBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
-    if (this.backtestStartInFlight.has(logicId)) {
+  private doStartBacktestRun(
+    logicId: number,
+    period: { date_from: string; date_to: string },
+    isRetry = false
+  ): void {
+    if (!isRetry && this.backtestStartInFlight.has(logicId)) {
       return;
     }
     this.backtestStartInFlight.add(logicId);
     // Сразу жёлтая строка / «Стоп» — не ждём ответа API (иначе кажется, что ▶ «ничего не делает»).
-    this.applyOptimisticBacktestStart(logicId, period);
+    if (!isRetry) {
+      this.applyOptimisticBacktestStart(logicId, period);
+    }
     this.logicsService
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
@@ -2526,8 +2535,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.refreshBacktestStatus(logicId, Number.isFinite(runId) && runId > 0 ? runId : undefined);
         },
         error: (err) => {
-          this.backtestStartInFlight.delete(logicId);
           const body = err?.error;
+          const status = Number(err?.status);
+          const msg = String(err?.message || '');
+          // Один повтор при status 0 (краткий обрыв / aborted) — без второго alert.
+          if (!isRetry && (status === 0 || /Unknown Error/i.test(msg))) {
+            window.setTimeout(() => this.doStartBacktestRun(logicId, period, true), 700);
+            return;
+          }
+          this.backtestStartInFlight.delete(logicId);
           // 409: в БД уже есть active-прогон — подхватываем его и показываем «Стоп», а не только alert.
           if (err?.status === 409 && body?.run_id) {
             this.backtestPollIds.add(logicId);
@@ -2726,6 +2742,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.processError = null;
       },
       error: (err) => {
+        const status = Number(err?.status);
+        const msg = String(err?.message || '');
+        // status 0 — сеть/abort; не засоряем верхнюю полоску длинным Http failure….
+        if (status === 0 || /Unknown Error/i.test(msg)) {
+          return;
+        }
         this.processRows = [];
         this.processError = err?.error?.error ?? err?.message ?? 'Не удалось загрузить процессы';
       },

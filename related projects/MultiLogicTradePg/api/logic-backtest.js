@@ -1057,7 +1057,7 @@ async function supersedeActiveBacktests(pool, logicId) {
   return ids;
 }
 
-async function startBacktest(pool, logicId, dateFrom, dateTo) {
+async function startBacktest(pool, logicId, dateFrom, dateTo, workerPool = pool) {
   const { rows } = await pool.query(
     `
     INSERT INTO logic_backtest_runs (logic_id, date_from, date_to, status, progress_pct, phase_message, started_at)
@@ -1067,8 +1067,10 @@ async function startBacktest(pool, logicId, dateFrom, dateTo) {
     [logicId, dateFrom, dateTo]
   );
   const runId = rows[0].id;
+  // workerPool (отдельный PG pool) — чтобы load_prices/CALL не забирали все слоты у /api/processes.
+  const runPool = workerPool || pool;
   setImmediate(() => {
-    runBacktestAsync(pool, logicId, dateFrom, dateTo, runId).catch((err) => {
+    runBacktestAsync(runPool, logicId, dateFrom, dateTo, runId).catch((err) => {
       console.error('backtest run failed', err);
     });
   });
