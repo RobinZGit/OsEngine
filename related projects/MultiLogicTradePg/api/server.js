@@ -25,6 +25,7 @@ const {
   cancelBacktest,
   failOrphanBacktestRuns,
 } = require('./logic-backtest');
+const { appendBacktestProgressLog } = require('./backtest-progress-log');
 const {
   startRatingPrecalc,
   getRatingPrecalcStatus,
@@ -3223,8 +3224,21 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       superseded_runs: superseded,
       elapsed_ms: ms,
     });
+    appendBacktestProgressLog('api-start', {
+      logic_id: logicId,
+      run_id: runId,
+      progress_pct: 1,
+      status: 'pending',
+      elapsed_ms: ms,
+      superseded,
+    });
   } catch (err) {
     console.error(`POST /api/logic-backtest/start FAIL in ${Date.now() - t0}ms`, err);
+    appendBacktestProgressLog('api-start-fail', {
+      logic_id: logicId,
+      error: err.message,
+      elapsed_ms: Date.now() - t0,
+    });
     res.status(500).json({ error: err.message });
   }
 });
@@ -3232,21 +3246,67 @@ app.post('/api/logic-backtest/start', async (req, res) => {
 app.get('/api/logic-backtest/status', async (req, res) => {
   const logicId = Number(req.query.logic_id);
   const runId = req.query.run_id != null ? Number(req.query.run_id) : null;
+  const t0 = Date.now();
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;
   }
   try {
-    const row = await getBacktestStatus(pool, logicId, runId);
+    // backtestPool — не конкурировать с trade_runner / тяжёлым HTTP-пулом.
+    const row = await getBacktestStatus(backtestPool, logicId, runId);
+    const ms = Date.now() - t0;
     if (!row) {
+      appendBacktestProgressLog('api-status', {
+        logic_id: logicId,
+        run_id: runId,
+        found: false,
+        ms,
+      });
       res.status(404).json({ error: 'Run not found' });
       return;
+    }
+    appendBacktestProgressLog('api-status', {
+      logic_id: logicId,
+      run_id: Number(row.id),
+      status: row.status,
+      progress_pct: Number(row.progress_pct) || 0,
+      processed_bars: row.processed_bars,
+      total_bars: row.total_bars,
+      ms,
+    });
+    // Не спамить api.log на каждый poll — только медленные или смена %.
+    if (ms >= 200 || Number(row.progress_pct) === 1 || Number(row.progress_pct) >= 99) {
+      console.log(
+        `Backtest status: logic=${logicId} run=${row.id} ${row.status} ${row.progress_pct}% in ${ms}ms`
+      );
     }
     res.json(row);
   } catch (err) {
     console.error('GET /api/logic-backtest/status', err);
+    appendBacktestProgressLog('api-status-fail', {
+      logic_id: logicId,
+      run_id: runId,
+      error: err.message,
+      ms: Date.now() - t0,
+    });
     res.status(500).json({ error: err.message });
   }
+});
+
+/** Клиентский лог UI (apply %, poll error) → тот же backtest-progress.log. */
+app.post('/api/logic-backtest/ui-log', (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  appendBacktestProgressLog('ui', {
+    logic_id: body.logic_id != null ? Number(body.logic_id) : null,
+    run_id: body.run_id != null ? Number(body.run_id) : null,
+    event: body.event || 'ui',
+    ui_pct: body.ui_pct,
+    server_pct: body.server_pct,
+    status: body.status,
+    detail: body.detail,
+    error: body.error,
+  });
+  res.status(204).end();
 });
 
 app.post('/api/logic-backtest/cancel', async (req, res) => {
@@ -3261,6 +3321,7 @@ app.post('/api/logic-backtest/cancel', async (req, res) => {
       res.status(404).json({ error: 'Run not found or already finished' });
       return;
     }
+    appendBacktestProgressLog('api-cancel', { run_id: runId });
     res.json({ ok: true, run_id: runId });
   } catch (err) {
     console.error('POST /api/logic-backtest/cancel', err);

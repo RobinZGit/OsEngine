@@ -459,6 +459,20 @@ export class LogicsService {
     );
   }
 
+  /** Диагностика: UI → api/logs/backtest-progress.log */
+  postBacktestUiLog(body: {
+    logic_id: number;
+    event: string;
+    run_id?: number | null;
+    ui_pct?: number;
+    server_pct?: number;
+    status?: string;
+    detail?: string;
+    error?: string;
+  }): Observable<void> {
+    return this.http.post<void>(`${this.appConfig.apiUrl}/logic-backtest/ui-log`, body);
+  }
+
   cancelBacktest(runId: number): Observable<{ ok: boolean; run_id: number }> {
     return this.http.post<{ ok: boolean; run_id: number }>(
       `${this.appConfig.apiUrl}/logic-backtest/cancel`,

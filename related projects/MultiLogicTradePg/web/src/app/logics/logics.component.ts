@@ -1,8 +1,8 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, switchMap, takeUntil, timer, forkJoin, of, Subscription } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { Subject, exhaustMap, switchMap, takeUntil, timer, forkJoin, of, Subscription, EMPTY } from 'rxjs';
+import { catchError, map, timeout } from 'rxjs/operators';
 import { LogicsService } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
@@ -141,7 +141,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private preferredBacktestRunId = new Map<number, number>();
   /** Момент клика Start (ms) — чтобы игнорировать только старые completed. */
   private backtestOptimisticAtMs = new Map<number, number>();
-  /** Частый poll статуса после Start (switchMap — без гонок устаревших %). */
+  /** Частый poll статуса после Start (exhaustMap — дождаться /status, не отменять). */
   private backtestFastPollSubs = new Map<number, Subscription>();
   /** Игнор устаревших ответов /status (иначе 1% перетирает актуальный %). */
   private backtestStatusSeq = new Map<number, number>();
@@ -2744,19 +2744,34 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Частый poll: progress_pct из logic_backtest_runs; switchMap — без гонок 1% поверх 50%. */
+  /** Частый poll: exhaustMap — не отменять /status каждые 500мс (иначе UI вечно на 1%). */
   private startFastBacktestPoll(logicId: number, runId?: number): void {
     if (runId != null && Number.isFinite(runId) && runId > 0) {
       this.preferredBacktestRunId.set(logicId, runId);
     }
     this.stopFastBacktestPoll(logicId);
+    this.postBacktestUiLog(logicId, 'poll_start', {
+      run_id: this.preferredBacktestRunId.get(logicId) ?? null,
+      detail: 'exhaustMap 500ms',
+    });
     const sub = timer(0, 500)
       .pipe(
         takeUntil(this.destroy$),
-        switchMap(() => {
+        exhaustMap(() => {
           const preferred = this.preferredBacktestRunId.get(logicId);
           return this.logicsService.getBacktestStatus(logicId, preferred).pipe(
-            catchError(() => of(null))
+            timeout(8_000),
+            catchError((err) => {
+              const msg = String(err?.message || err?.name || 'status_error');
+              console.warn(`[backtest] status error logic=${logicId}`, msg);
+              this.postBacktestUiLog(logicId, 'status_error', {
+                run_id: preferred ?? null,
+                error: msg,
+                ui_pct: Number(this.backtestRuns.get(logicId)?.progress_pct) || 0,
+              });
+              // Не apply(null) — иначе сбрасываем жёлтый UI / теряем 1%.
+              return EMPTY;
+            })
           );
         })
       )
@@ -2780,6 +2795,33 @@ export class LogicsComponent implements OnInit, OnDestroy {
       sub.unsubscribe();
       this.backtestFastPollSubs.delete(logicId);
     }
+  }
+
+  /** Пишет в api/logs/backtest-progress.log через API (видно без DevTools). */
+  private postBacktestUiLog(
+    logicId: number,
+    event: string,
+    extra: {
+      run_id?: number | null;
+      ui_pct?: number;
+      server_pct?: number;
+      status?: string;
+      detail?: string;
+      error?: string;
+    } = {}
+  ): void {
+    this.logicsService
+      .postBacktestUiLog({
+        logic_id: logicId,
+        event,
+        run_id: extra.run_id ?? this.preferredBacktestRunId.get(logicId) ?? null,
+        ui_pct: extra.ui_pct,
+        server_pct: extra.server_pct,
+        status: extra.status,
+        detail: extra.detail,
+        error: extra.error,
+      })
+      .subscribe({ error: () => {} });
   }
 
   cancelBacktestRun(logicId: number): void {
@@ -2871,19 +2913,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
       ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(s);
     const preferred = this.preferredBacktestRunId.get(logicId);
 
-    if (cur && cur.id < 0 && row && !active(String(row.status ?? ''))) {
-      const t0 = this.backtestOptimisticAtMs.get(logicId) ?? 0;
-      const finished = row.finished_at ? Date.parse(String(row.finished_at)) : 0;
-      if (t0 > 0 && finished > 0 && finished < t0) {
-        return;
-      }
-      if (preferred != null && Number(row.id) !== preferred) {
-        return;
-      }
-    }
-
     if (!row) {
-      if (cur && cur.id < 0) {
+      // Ошибки /status больше не приходят как null (EMPTY). null = только явный сброс.
+      this.postBacktestUiLog(logicId, 'apply_null_skip', {
+        ui_pct: Number(cur?.progress_pct) || 0,
+        status: String(cur?.status ?? ''),
+        detail: 'keep current UI',
+      });
+      if (cur && Number(cur.id) < 0) {
+        return;
+      }
+      if (cur && active(String(cur.status ?? ''))) {
         return;
       }
       this.setBacktestRun(logicId, null);
@@ -2895,26 +2935,67 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const st = String(row.status ?? '');
+    // PG часто отдаёт id строкой — нормализуем сразу.
+    const rowId = Number(row.id);
+    const normalized: BacktestRunStatus = {
+      ...row,
+      id: rowId,
+      progress_pct: Number(row.progress_pct) || 0,
+    };
+
+    if (cur && Number(cur.id) < 0 && !active(String(normalized.status ?? ''))) {
+      const t0 = this.backtestOptimisticAtMs.get(logicId) ?? 0;
+      const finished = normalized.finished_at ? Date.parse(String(normalized.finished_at)) : 0;
+      if (t0 > 0 && finished > 0 && finished < t0) {
+        this.postBacktestUiLog(logicId, 'apply_skip_old_completed', {
+          run_id: rowId,
+          server_pct: normalized.progress_pct,
+          status: String(normalized.status),
+        });
+        return;
+      }
+      if (preferred != null && rowId !== preferred) {
+        this.postBacktestUiLog(logicId, 'apply_skip_wrong_run', {
+          run_id: rowId,
+          detail: `preferred=${preferred}`,
+          status: String(normalized.status),
+        });
+        return;
+      }
+    }
+
+    const st = String(normalized.status ?? '');
     const prevPct =
-      cur && Number(cur.id) === Number(row.id) ? Number(cur.progress_pct) || 0 : 0;
-    let nextPct = Number(row.progress_pct) || 0;
-    // Completed всегда 100% — иначе UI «залипает» на 1% из ответа /start.
+      cur && Number(cur.id) === rowId ? Number(cur.progress_pct) || 0 : 0;
+    let nextPct = Number(normalized.progress_pct) || 0;
     if (st === 'completed') {
       nextPct = 100;
-    } else if (active(st) && Number(cur?.id) === Number(row.id) && nextPct < prevPct) {
-      // Не даём устаревшему /status вернуть полоску назад (1% поверх 50%).
+    } else if (active(st) && Number(cur?.id) === rowId && nextPct < prevPct) {
       nextPct = prevPct;
     } else if (!active(st) && nextPct < prevPct) {
       nextPct = prevPct;
     }
-    const nextRow: BacktestRunStatus = { ...row, progress_pct: nextPct };
+    const nextRow: BacktestRunStatus = { ...normalized, progress_pct: nextPct };
+
+    // Логируем смену %/status (не каждый одинаковый tick).
+    if (prevPct !== nextPct || String(cur?.status ?? '') !== st) {
+      this.postBacktestUiLog(logicId, 'apply', {
+        run_id: rowId,
+        ui_pct: prevPct,
+        server_pct: Number(normalized.progress_pct) || 0,
+        status: st,
+        detail: `→${nextPct}%`,
+      });
+      console.log(
+        `[backtest] apply logic=${logicId} run=${rowId} ${prevPct}%→${nextPct}% status=${st}`
+      );
+    }
 
     this.setBacktestRun(logicId, nextRow);
     if (active(st)) {
       this.backtestPollIds.add(logicId);
-      if (Number(nextRow.id) > 0) {
-        this.preferredBacktestRunId.set(logicId, Number(nextRow.id));
+      if (rowId > 0) {
+        this.preferredBacktestRunId.set(logicId, rowId);
       }
     } else {
       this.backtestPollIds.delete(logicId);
