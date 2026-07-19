@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: backtest Start UX — optimistic yellow + hydrate status + OnPush period dialog
+**Последнее обновление:** 2026-07-19 — Ship: Start supersedes old run (clear test trades/FinRES); fix diagnose hang at 100%
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -311,6 +311,7 @@
 - [x] Papers list (test+live): `в портф.` = |ост.| × last close (`/api/prices/last`); label `финрез` for realized PnL; stop SL/TP never closes TMON/LQDT/SBMM (2026-07-19).
 - [x] Fix NG5002: literal `@` in papers template → `&#64;` (2026-07-19).
 - [x] Backtest Start: optimistic pending UI, hydrate active runs on load, OnPush markForCheck for period dialog (2026-07-19).
+- [x] Start always cancels active run + DELETE test trades; light diagnose (no per-sec detail hang at 100%); UI clears FinRES on Start (2026-07-19).
 
 ---
 
@@ -330,6 +331,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: Start supersedes old test; fix diagnose hang at 100% |
 | 2026-07-19 | Ship: backtest Start UX (optimistic + hydrate + period dialog OnPush) |
 | 2026-07-19 | Ship: fix NG5002 `@` → `&#64;` in papers last-price label |
 | 2026-07-19 | Ship: papers MTM value + exclude cash fund from stop closes |
@@ -601,3 +603,4 @@
 139. «No stop-losses and no take-profits should affect the fund. It should remain a purchased fund.» — guard close helpers + SL/TP loops; fund stays open.
 140. Installer start failed: NG5002 Incomplete block `@` in papers template — escape as `&#64;`.
 141. «When you press the start button, nothing happens, the color of the board does not change, testing does not start.» — optimistic UI + hydrate + OnPush dialog.
+142. «Yellow but testing not begun; must delete past testing and start again; FinRES stays old.» — supersede on Start + clear trades; diagnose hang.

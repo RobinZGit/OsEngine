@@ -4089,6 +4089,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6719,6 +6720,32 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -9950,39 +9977,15 @@ BEGIN
       AND p.timeframe_id = p_tf_id
       AND p.dt::date BETWEEN p_date_from AND p_date_to;
 
+    -- Без per-security detail: коррелированные COUNT по prices на каждую бумагу
+    -- подвешивали прогон на 100% (status=running, completed не писался).
     RETURN jsonb_build_object(
         'run_id', p_run_id,
         'securities', v_securities,
         'signals', v_signals,
         'prices_in_period', v_prices,
         'indicator_values_in_period', v_indicators,
-        'distinct_bars', v_bars,
-        'securities_detail', (
-            SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                'security_id', ls.security_id,
-                'name', s.name,
-                'prices_in_period', (
-                    SELECT COUNT(*)::INTEGER FROM prices p
-                    WHERE p.security_id = ls.security_id
-                      AND p.timeframe_id = p_tf_id
-                      AND p.dt::date BETWEEN p_date_from AND p_date_to
-                ),
-                'indicators_in_period', (
-                    SELECT COUNT(*)::INTEGER FROM indicator_values iv
-                    WHERE iv.security_id = ls.security_id
-                      AND iv.timeframe_id = p_tf_id
-                      AND iv.dt::date BETWEEN p_date_from AND p_date_to
-                ),
-                'test_trades', (
-                    SELECT COUNT(*)::INTEGER FROM logic_trades lt
-                    WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE
-                      AND lt.security_id = ls.security_id
-                )
-            ) ORDER BY ls.display_order, ls.id), '[]'::jsonb)
-            FROM logic_securities ls
-            JOIN securities s ON s.id = ls.security_id
-            WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-        )
+        'distinct_bars', v_bars
     );
 END;
 $$;
@@ -11370,6 +11373,14 @@ BEGIN
         END IF;
     END LOOP;
 
+    PERFORM logic_backtest_update_run(
+        p_run_id, 'running', 99.5, 'Завершение',
+        'Подсчёт результата…',
+        CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
+        v_total, NULL, v_balance
+    );
+    COMMIT;
+
     IF v_total > 0 THEN
         v_balance := logic_backtest_park_excess_cash(
             p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
@@ -11382,9 +11393,13 @@ BEGIN
     SELECT COUNT(*)::INTEGER INTO v_trades_created
     FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
 
-    v_diag := logic_backtest_diagnose(
-        p_run_id, v_run.logic_id, v_tf_id, v_run.date_from, v_run.date_to
-    );
+    BEGIN
+        v_diag := logic_backtest_diagnose(
+            p_run_id, v_run.logic_id, v_tf_id, v_run.date_from, v_run.date_to
+        );
+    EXCEPTION WHEN OTHERS THEN
+        v_diag := jsonb_build_object('diagnose_error', SQLERRM);
+    END;
 
     PERFORM logic_backtest_log(
         p_run_id, v_run.logic_id, 'backtest.complete',
@@ -11392,7 +11407,7 @@ BEGIN
             THEN format('Завершено: %s сделок, PnL=%s', v_trades_created, round(v_pnl, 2))
             ELSE format('Завершено без сделок (%s баров)', v_total)
         END,
-        v_diag || jsonb_build_object(
+        COALESCE(v_diag, '{}'::jsonb) || jsonb_build_object(
             'trades_created', v_trades_created,
             'financial_result', v_pnl,
             'total_bars', v_total,
@@ -12531,6 +12546,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

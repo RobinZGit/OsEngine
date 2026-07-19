@@ -909,6 +909,25 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       [runId]
     );
     const fin = finalRows[0] || {};
+    // Если PROCEDURE оборвалась после 100% без completed — не оставляем вечный «running».
+    if (
+      fin.status === 'running' ||
+      fin.status === 'loading_prices' ||
+      fin.status === 'loading_indicators' ||
+      fin.status === 'pending'
+    ) {
+      const pnl = await sumTestPnl(pool, logicId);
+      await updateRun(pool, runId, {
+        status: 'completed',
+        progress_pct: 100,
+        phase_message: 'Тестирование завершено',
+        phase_detail: 'Статус восстановлен после SQL-прогона',
+        financial_result: pnl,
+        finished_at: new Date(),
+      });
+      fin.status = 'completed';
+      fin.financial_result = pnl;
+    }
     await backtestLog(
       pool,
       runId,

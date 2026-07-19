@@ -2544,6 +2544,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
     logicId: number,
     period: { date_from: string; date_to: string }
   ): void {
+    // Сразу сбросить старый финрез/сделки теста — иначе «жёлтый» с цифрами прошлого прогона.
+    this.logicTradesTest.set(logicId, []);
+    this.testTradesViewByLogic.set(logicId, []);
+    this.testPnlByLogic.set(logicId, {
+      financial_result: 0,
+      commission: 0,
+      trade_count: 0,
+      date_from: period.date_from,
+      date_to: period.date_to,
+    });
     this.backtestRuns.set(logicId, {
       id: -logicId,
       logic_id: logicId,
@@ -2552,11 +2562,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
       status: 'pending',
       progress_pct: 0,
       phase_message: 'Старт',
-      phase_detail: 'Запуск тестирования…',
+      phase_detail: 'Очистка прошлого теста и запуск…',
       total_bars: 0,
       processed_bars: 0,
       test_balance: null,
-      financial_result: null,
+      financial_result: 0,
       error_message: null,
     });
     this.backtestPollIds.add(logicId);
