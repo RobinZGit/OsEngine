@@ -2599,7 +2599,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
               status: String(resp?.status || 'pending'),
               progress_pct: Number(resp?.progress_pct) > 0 ? Number(resp.progress_pct) : 1,
               phase_message: String(resp?.phase_message || 'Запуск'),
-              phase_detail: String(resp?.phase_detail || 'Прогон создан в БД'),
+              phase_detail: String(resp?.phase_detail || 'Прогон создан'),
               total_bars: 0,
               processed_bars: 0,
               test_balance: null,
@@ -2720,7 +2720,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       status: 'pending',
       progress_pct: 1,
       phase_message: 'Запуск',
-      phase_detail: 'Создаём прогон в PostgreSQL…',
+      phase_detail: 'Запускаем тест…',
       total_bars: 0,
       processed_bars: 0,
       test_balance: null,
@@ -2758,7 +2758,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         ...cur,
         progress_pct: step,
         phase_message: 'Запуск',
-        phase_detail: 'Создаём прогон в PostgreSQL…',
+        phase_detail: 'Запускаем тест…',
       });
     }, 450);
     this.optimisticPulseTimers.set(logicId, timer);

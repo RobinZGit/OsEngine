@@ -3225,7 +3225,7 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       status: 'pending',
       progress_pct: 1,
       phase_message: 'Запуск',
-      phase_detail: 'Прогон создан в БД',
+      phase_detail: 'Прогон создан',
       superseded_runs: superseded,
       elapsed_ms: ms,
     });

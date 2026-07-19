@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Rollback UI backtest to Node bar-loop (pre-SQL-robots); keep Start/status on HTTP pool
+**Последнее обновление:** 2026-07-19 — Reword backtest Start texts (no «PostgreSQL» in progress UI)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -350,6 +350,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Reword Start progress: «Запускаем тест…» (not «в PostgreSQL»); engine unchanged |
 | 2026-07-19 | Rollback UI backtest to Node bar-loop (EOD/NTP/park); Start/status still on HTTP pool |
 | 2026-07-19 | Start/status on HTTP pool only; backtestPool for workers; no 5% wait behind CALL |
 | 2026-07-19 | Fix Start status-0 at 3%: pause all polls during /start; API URL 127.0.0.1 |
@@ -659,3 +660,4 @@
 158. «At 3% error, no response from API» — browser HTTP slot starve during Start; pause polls; use 127.0.0.1.
 159. «Expectation of an answer from API for 5%» — Start/status waited on backtestPool; split control vs worker pools.
 160. «It's hanging again… roll back all the testing to when it was not in Postgres… still in Angular… until I asked you to redo everything in Postgres» — restore Node bar-loop orchestration; keep UI Start fixes + HTTP control plane.
+161. «I see … create a program in Postgres… roll back even earlier» + chose **A** — only reword Start texts («Запускаем тест…»); no further architecture rollback.
