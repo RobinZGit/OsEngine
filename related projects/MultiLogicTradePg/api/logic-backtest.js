@@ -1100,21 +1100,26 @@ async function supersedeActiveBacktests(pool, logicId) {
     return [];
   }
   const ids = cancelled.map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0);
-  try {
-    // Оборвать сессию SQL-робота: иначе пул/DELETE висят, Angular получает status 0.
-    await pool.query(
-      `
+  // terminate — в фоне: не держать POST /start (иначе Angular «Ожидание API» на 5%).
+  setImmediate(() => {
+    pool
+      .query(
+        `
       SELECT pg_terminate_backend(a.pid)
       FROM pg_stat_activity a
       WHERE a.datname = current_database()
         AND a.pid <> pg_backend_pid()
         AND a.state <> 'idle'
-        AND a.query ILIKE '%logic_backtest_run_bars%'
+        AND (
+          a.query ILIKE '%logic_backtest_run_bars%'
+          OR a.query ILIKE '%load_prices%'
+        )
       `
-    );
-  } catch (err) {
-    console.warn('Backtest: pg_terminate_backend skipped:', err.message);
-  }
+      )
+      .catch((err) => {
+        console.warn('Backtest: pg_terminate_backend skipped:', err.message);
+      });
+  });
   console.log(
     `Backtest: superseded ${ids.length} active run(s) for logic ${logicId}: ${ids.join(',')}`
   );

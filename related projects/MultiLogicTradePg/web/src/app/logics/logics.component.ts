@@ -2524,8 +2524,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     for (const id of [...this.backtestFastPollSubs.keys()]) {
       this.stopFastBacktestPoll(id);
     }
-    // Краткая пауза: дождаться завершения уже ушедших запросов (лимит Chrome ~6/host).
-    window.setTimeout(() => this.doStartBacktestRun(logicId, period, false, true), 350);
+    // Сразу POST — без искусственной паузы (ответ /start должен быть <300мс на HTTP-пуле).
+    this.doStartBacktestRun(logicId, period, false, true);
   }
 
   private doStartBacktestRun(
@@ -2720,7 +2720,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       status: 'pending',
       progress_pct: 1,
       phase_message: 'Запуск',
-      phase_detail: 'Ожидание сервера…',
+      phase_detail: 'Создаём прогон в PostgreSQL…',
       total_bars: 0,
       processed_bars: 0,
       test_balance: null,
@@ -2758,7 +2758,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         ...cur,
         progress_pct: step,
         phase_message: 'Запуск',
-        phase_detail: 'Ожидание ответа API…',
+        phase_detail: 'Создаём прогон в PostgreSQL…',
       });
     }, 450);
     this.optimisticPulseTimers.set(logicId, timer);

@@ -3206,13 +3206,15 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     return;
   }
   try {
-    // backtestPool — не ждать свободный слот HTTP-пула (его забивает UI poll).
+    // ВАЖНО: INSERT/supersede только через HTTP-пул `pool` (короткий timeout).
+    // backtestPool занят load_prices/CALL — если Start ждёт его, Angular висит на 5% «Ожидание API».
     console.log(`Backtest start: begin logic=${logicId} ${dateFrom}..${dateTo}`);
     const superseded = await Promise.race([
-      supersedeActiveBacktests(backtestPool, logicId),
-      new Promise((resolve) => setTimeout(() => resolve([]), 1500)),
+      supersedeActiveBacktests(pool, logicId),
+      new Promise((resolve) => setTimeout(() => resolve([]), 800)),
     ]);
-    const runId = await startBacktest(backtestPool, logicId, dateFrom, dateTo, backtestPool);
+    // workerPool = backtestPool — тяжёлая работа после 202, не блокирует ответ.
+    const runId = await startBacktest(pool, logicId, dateFrom, dateTo, backtestPool);
     const ms = Date.now() - t0;
     console.log(
       `Backtest start: 202 run=${runId} logic=${logicId} superseded=${JSON.stringify(superseded)} in ${ms}ms`
@@ -3255,8 +3257,8 @@ app.get('/api/logic-backtest/status', async (req, res) => {
     return;
   }
   try {
-    // backtestPool — не конкурировать с trade_runner / тяжёлым HTTP-пулом.
-    const row = await getBacktestStatus(backtestPool, logicId, runId);
+    // HTTP-пул `pool` — status всегда быстрый; backtestPool может быть занят CALL.
+    const row = await getBacktestStatus(pool, logicId, runId);
     const ms = Date.now() - t0;
     if (!row) {
       // Не пишем found:false в лог — UI раньше опрашивал ВСЕ логики и забивал диск/UI.
@@ -3294,7 +3296,7 @@ app.get('/api/logic-backtest/status', async (req, res) => {
 /** Активные прогоны одним запросом (hydrate без N×/status на каждую логику). */
 app.get('/api/logic-backtest/active', async (_req, res) => {
   try {
-    const rows = await listActiveBacktests(backtestPool);
+    const rows = await listActiveBacktests(pool);
     res.json(rows);
   } catch (err) {
     console.error('GET /api/logic-backtest/active', err);

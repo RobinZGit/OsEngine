@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Fix Start at 3%/status 0: pause polls during /start; API via 127.0.0.1
+**Последнее обновление:** 2026-07-19 — Start/status on HTTP pool (not backtestPool) — no wait behind load_prices/CALL
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -328,6 +328,7 @@
 - [x] Form freeze + stuck ~38%: hydrate polled ALL logics → 404 retry forever; `/active` + no 404 retry; richer phase_detail (bars/trades/finres) (2026-07-19).
 - [x] «Нет ответа от API» + no %: sync progress-log blocked Node; async log + keep optimistic % on start fail (2026-07-19).
 - [x] At 3% «Нет ответа от API»: CLI /start OK 177ms — browser slot starve; pause polls + 127.0.0.1 API URL (2026-07-19).
+- [x] At 5% «Ожидание API»: /start used backtestPool (blocked by CALL); control plane on HTTP `pool`; terminate async (2026-07-19).
 
 ---
 
@@ -347,6 +348,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Start/status on HTTP pool only; backtestPool for workers; no 5% wait behind CALL |
 | 2026-07-19 | Fix Start status-0 at 3%: pause all polls during /start; API URL 127.0.0.1 |
 | 2026-07-19 | Fix «Нет ответа от API»: async progress log; keep optimistic % on start fail |
 | 2026-07-19 | Fix UI freeze: stop N×/status 404 retries; GET /active; richer progress (bars/trades/finres) |
@@ -652,3 +654,4 @@
 156. «Hanging at 38%… progress more informative» + «form hangs stuck» — 404 status storm freeze; informative bar from table; `/active` hydrate.
 157. «No percent, hung, then Нет ответа от API» — sync backtest-progress.log blocked API; keep % on error.
 158. «At 3% error, no response from API» — browser HTTP slot starve during Start; pause polls; use 127.0.0.1.
+159. «Expectation of an answer from API for 5%» — Start/status waited on backtestPool; split control vs worker pools.
