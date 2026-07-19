@@ -3192,6 +3192,7 @@ app.post('/api/logic-backtest/start', async (req, res) => {
   const logicId = Number(req.body?.logic_id);
   const dateFrom = btrimStr(req.body?.date_from);
   const dateTo = btrimStr(req.body?.date_to);
+  const t0 = Date.now();
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;
@@ -3201,19 +3202,25 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     return;
   }
   try {
-    // Не блокировать 202 дольше 2 с на cancel — иначе браузер сидит на 0% «Ожидание сервера».
+    // backtestPool — не ждать свободный слот HTTP-пула (его забивает UI poll).
+    console.log(`Backtest start: begin logic=${logicId} ${dateFrom}..${dateTo}`);
     const superseded = await Promise.race([
-      supersedeActiveBacktests(pool, logicId),
-      new Promise((resolve) => setTimeout(() => resolve([]), 2000)),
+      supersedeActiveBacktests(backtestPool, logicId),
+      new Promise((resolve) => setTimeout(() => resolve([]), 1500)),
     ]);
-    const runId = await startBacktest(pool, logicId, dateFrom, dateTo, backtestPool);
+    const runId = await startBacktest(backtestPool, logicId, dateFrom, dateTo, backtestPool);
+    const ms = Date.now() - t0;
+    console.log(
+      `Backtest start: 202 run=${runId} logic=${logicId} superseded=${JSON.stringify(superseded)} in ${ms}ms`
+    );
     res.status(202).json({
       ok: true,
       run_id: runId,
       superseded_runs: superseded,
+      elapsed_ms: ms,
     });
   } catch (err) {
-    console.error('POST /api/logic-backtest/start', err);
+    console.error(`POST /api/logic-backtest/start FAIL in ${Date.now() - t0}ms`, err);
     res.status(500).json({ error: err.message });
   }
 });

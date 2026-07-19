@@ -431,7 +431,7 @@ export class LogicsService {
         `${this.appConfig.apiUrl}/logic-backtest/start`,
         body
       )
-      .pipe(timeout(12_000));
+      .pipe(timeout(15_000));
   }
 
   getBacktestStatus(logicId: number, runId?: number): Observable<BacktestRunStatus | null> {

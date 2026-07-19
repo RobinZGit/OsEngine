@@ -2506,9 +2506,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (this.backtestStartInFlight.has(logicId)) {
       return;
     }
-    // Сразу жёлтая строка + частый poll статуса — НЕ ждать ответа /start (иначе 0% навсегда).
+    // Сразу жёлтый UI. Частый poll статуса — ТОЛЬКО после 202 /start,
+    // иначе status-запросы забивают PG pool и /start получает status 0.
     this.applyOptimisticBacktestStart(logicId, period);
-    this.startFastBacktestPoll(logicId);
     this.doStartBacktestRun(logicId, period, false, true);
   }
 
@@ -2524,14 +2524,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.backtestStartInFlight.add(logicId);
     if (!isRetry && !alreadyOptimistic) {
       this.applyOptimisticBacktestStart(logicId, period);
-      this.startFastBacktestPoll(logicId);
     }
+    // Пока ждём /start — не долбить /status (конкуренция за пул → «Нет ответа от API»).
+    this.stopFastBacktestPoll(logicId);
+    const t0 = Date.now();
+    console.log(`[backtest] POST /start logic=${logicId} retry=${isRetry} t=${t0}`);
     this.logicsService
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
         next: (resp) => {
           this.backtestStartInFlight.delete(logicId);
           const runId = Number(resp?.run_id);
+          console.log(
+            `[backtest] /start OK run=${runId} in ${Date.now() - t0}ms logic=${logicId}`
+          );
           this.backtestPollIds.add(logicId);
           this.expandedLogics.add(logicId);
           this.expandedTestTradesBlocks.add(logicId);
@@ -2546,9 +2552,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
         error: (err) => {
           const body = err?.error;
           const status = Number(err?.status);
+          const name = String(err?.name || '');
           const msg = String(err?.message || '');
+          console.warn(
+            `[backtest] /start FAIL in ${Date.now() - t0}ms logic=${logicId}`,
+            { status, name, msg, body }
+          );
           // Один повтор при status 0 (краткий обрыв / aborted) — без второго alert.
-          if (!isRetry && (status === 0 || /Unknown Error/i.test(msg))) {
+          if (!isRetry && (status === 0 || /Unknown Error/i.test(msg) || name === 'TimeoutError')) {
             window.setTimeout(() => this.doStartBacktestRun(logicId, period, true, true), 700);
             return;
           }
@@ -2571,6 +2582,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           const cur = this.backtestRuns.get(logicId);
           if (cur && Number(cur.id) > 0) {
             this.backtestPollIds.add(logicId);
+            this.startFastBacktestPoll(logicId, Number(cur.id));
             return;
           }
           // Откат оптимистичного pending, если старт не удался и прогона нет.
@@ -2589,14 +2601,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const status = Number((err as { status?: number })?.status);
     const name = String((err as { name?: string })?.name || '');
     const msg = String((err as { message?: string })?.message || '');
-    if (status === 0 || /Unknown Error/i.test(msg)) {
+    // timeout() отменяет HTTP → часто приходит как status 0 / Unknown Error — сначала это.
+    if (name === 'TimeoutError' || /timeout/i.test(msg)) {
       return (
-        'Нет ответа от API (localhost:3000). Чаще всего API перезапускался или зависший SQL-тест держал соединение.\n' +
-        'Перезапустите окно Start (API+Angular) и нажмите ▶ ещё раз.'
+        'Запуск теста не получил ответ API за 15 с (часто из‑за перегрузки запросов к БД).\n' +
+        'Перезапустите окно Start и нажмите ▶ ещё раз. Смотрите api\\logs\\api.log.'
       );
     }
-    if (name === 'TimeoutError' || /timeout/i.test(msg)) {
-      return 'API не ответил за 12 с на запуск теста. Перезапустите Start bat и попробуйте снова.';
+    if (status === 0 || /Unknown Error/i.test(msg)) {
+      return (
+        'Нет ответа от API (localhost:3000). Чаще всего API перезапускался, /start ждал пул БД,\n' +
+        'или запрос был оборван. Перезапустите окно Start (API+Angular) и нажмите ▶ ещё раз.\n' +
+        'Лог: C:\\Program Files\\MultiLogicTradePg\\api\\logs\\api.log'
+      );
     }
     return body?.error || msg || 'Не удалось запустить тест';
   }
@@ -2671,7 +2688,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       if (done) {
         this.stopFastBacktestPoll(logicId);
       }
-    }, 400);
+    }, 800);
     this.backtestFastPollTimers.set(logicId, timer);
   }
 
@@ -2821,6 +2838,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const heavyTick = this.pollTick % 3 === 0;
 
     for (const logicId of this.backtestPollIds) {
+      // Не конкурировать с POST /start за PG pool.
+      if (this.backtestStartInFlight.has(logicId)) continue;
       this.refreshBacktestStatus(logicId);
     }
 
