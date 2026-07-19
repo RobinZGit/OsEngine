@@ -133,12 +133,12 @@
   @if (isTest && isBacktestRunning) {
     <div class="backtest-progress backtest-progress-in-block">
       <div class="backtest-progress-bar">
-        <div class="backtest-progress-fill" [style.width.%]="backtestRun?.progress_pct ?? 0"></div>
+        <div class="backtest-progress-fill" [style.width.%]="backtestProgressView.progress_pct"></div>
       </div>
       <div class="backtest-progress-meta">
-        <span>{{ backtestRun?.phase_message }}</span>
-        <span>{{ backtestRun?.phase_detail }}</span>
-        <span>{{ (backtestRun?.progress_pct ?? 0) | number:'1.0-1' }}%</span>
+        <span>{{ backtestProgressView.phase_message }}</span>
+        <span>{{ backtestProgressView.phase_detail }}</span>
+        <span>{{ backtestProgressView.progress_pct | number:'1.0-1' }}%</span>
         @if (periodLabel) {
           <span class="positions-period-label">{{ periodLabel }}</span>
         }

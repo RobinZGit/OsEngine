@@ -2494,32 +2494,25 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   startBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
-    this.settings.getTbankTokenStatus(true).subscribe({
-      next: (status) => {
-        if (!status.has_token || !status.valid) {
-          this.pendingBacktest = { logicId, period };
-          this.tbankTokenDialogContext = 'logic';
-          this.tbankTokenDialogReason = status.has_token ? 'invalid' : 'missing';
-          this.tbankTokenDialogOpen = true;
-          return;
-        }
-        this.doStartBacktestRun(logicId, period);
-      },
-      error: () => this.doStartBacktestRun(logicId, period),
-    });
+    if (this.backtestStartInFlight.has(logicId)) {
+      return;
+    }
+    // Сразу жёлтая строка + ↻% — до проверки токена и до ответа /start (иначе «ничего не работает»).
+    this.applyOptimisticBacktestStart(logicId, period);
+    this.doStartBacktestRun(logicId, period, false, true);
   }
 
   private doStartBacktestRun(
     logicId: number,
     period: { date_from: string; date_to: string },
-    isRetry = false
+    isRetry = false,
+    alreadyOptimistic = false
   ): void {
-    if (!isRetry && this.backtestStartInFlight.has(logicId)) {
+    if (!isRetry && this.backtestStartInFlight.has(logicId) && !alreadyOptimistic) {
       return;
     }
     this.backtestStartInFlight.add(logicId);
-    // Сразу жёлтая строка / «Стоп» — не ждём ответа API (иначе кажется, что ▶ «ничего не делает»).
-    if (!isRetry) {
+    if (!isRetry && !alreadyOptimistic) {
       this.applyOptimisticBacktestStart(logicId, period);
     }
     this.logicsService
@@ -2540,7 +2533,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           const msg = String(err?.message || '');
           // Один повтор при status 0 (краткий обрыв / aborted) — без второго alert.
           if (!isRetry && (status === 0 || /Unknown Error/i.test(msg))) {
-            window.setTimeout(() => this.doStartBacktestRun(logicId, period, true), 700);
+            window.setTimeout(() => this.doStartBacktestRun(logicId, period, true, true), 700);
             return;
           }
           this.backtestStartInFlight.delete(logicId);
@@ -2557,6 +2550,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           if (cur && cur.status === 'pending' && cur.id < 0) {
             this.backtestRuns.delete(logicId);
             this.backtestPollIds.delete(logicId);
+            this.backtestRuns = new Map(this.backtestRuns);
           }
           alert(this.formatBacktestStartError(err, body));
         },
@@ -2594,21 +2588,24 @@ export class LogicsComponent implements OnInit, OnDestroy {
       date_from: period.date_from,
       date_to: period.date_to,
     });
-    this.backtestRuns.set(logicId, {
+    // Новый Map — чтобы биндинги/OnPush панели сразу увидели жёлтый ряд и ↻%.
+    const next = new Map(this.backtestRuns);
+    next.set(logicId, {
       id: -logicId,
       logic_id: logicId,
       date_from: period.date_from,
       date_to: period.date_to,
       status: 'pending',
-      progress_pct: 0,
-      phase_message: 'Старт',
-      phase_detail: 'Запуск…',
+      progress_pct: 1,
+      phase_message: 'Запуск',
+      phase_detail: 'Старт…',
       total_bars: 0,
       processed_bars: 0,
       test_balance: null,
       financial_result: 0,
       error_message: null,
     });
+    this.backtestRuns = next;
     this.backtestPollIds.add(logicId);
     this.expandedLogics.add(logicId);
     this.expandedTestTradesBlocks.add(logicId);

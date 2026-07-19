@@ -210,8 +210,19 @@ export class LogicPositionsPanelComponent implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['backtestRun'] && !this.isBacktestRunning) {
-      this.cancelling = false;
+    if (changes['backtestRun']) {
+      const s = this.backtestRun?.status;
+      if (
+        s === 'pending' ||
+        s === 'loading_prices' ||
+        s === 'loading_indicators' ||
+        s === 'running'
+      ) {
+        this.localStarting = false;
+      } else if (!this.isBacktestRunning) {
+        this.cancelling = false;
+        this.localStarting = false;
+      }
     }
     if (changes['trades'] || changes['logicRow'] || changes['backtestRun']) {
       this.rebuildTradeCaches();
@@ -293,12 +304,32 @@ export class LogicPositionsPanelComponent implements OnChanges {
   /** Локальный флаг сразу после нажатия «Стоп», пока статус ещё running. */
   cancelling = false;
 
+  /** Сразу после OK в диалоге периода — жёлтый UI до прихода backtestRun с родителя. */
+  private localStarting = false;
+
   get isBacktestRunning(): boolean {
-
+    if (this.localStarting) return true;
     const s = this.backtestRun?.status;
-
     return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
+  }
 
+  /** Пока localStarting и сервер ещё не прислал pending — не показывать старый 100%. */
+  get backtestProgressView(): {
+    progress_pct: number;
+    phase_message: string | null;
+    phase_detail: string | null;
+  } {
+    const s = this.backtestRun?.status;
+    const serverActive =
+      s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
+    if (this.localStarting && !serverActive) {
+      return { progress_pct: 1, phase_message: 'Запуск', phase_detail: 'Старт…' };
+    }
+    return {
+      progress_pct: Number(this.backtestRun?.progress_pct) || 0,
+      phase_message: this.backtestRun?.phase_message ?? null,
+      phase_detail: this.backtestRun?.phase_detail ?? null,
+    };
   }
 
   get isCancelling(): boolean {
@@ -654,6 +685,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
       alert('Дата «С» не может быть позже даты «По»');
       return;
     }
+    // Сразу Стоп/жёлтый блок — не ждать HTTP токена/start у родителя (OnPush иначе «висит»).
+    this.localStarting = true;
+    this.cancelling = false;
     this.showPeriodDialog = false;
     this.periodDialogOpen.emit(false);
     saveRememberedBacktestPeriod(this.logicRow?.id, from, to);
