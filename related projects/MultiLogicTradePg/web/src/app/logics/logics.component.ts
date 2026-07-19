@@ -135,6 +135,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private backtestPollIds = new Set<number>();
   /** Один раз после первой загрузки логик — подхватить уже идущий тест (после F5). */
   private backtestStatusHydrated = false;
+  /** Защита от двойного ▶ / повторного OK пока HTTP start ещё в полёте. */
+  private backtestStartInFlight = new Set<number>();
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
@@ -2505,12 +2507,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private doStartBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
+    if (this.backtestStartInFlight.has(logicId)) {
+      return;
+    }
+    this.backtestStartInFlight.add(logicId);
     // Сразу жёлтая строка / «Стоп» — не ждём ответа API (иначе кажется, что ▶ «ничего не делает»).
     this.applyOptimisticBacktestStart(logicId, period);
     this.logicsService
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
         next: (resp) => {
+          this.backtestStartInFlight.delete(logicId);
           const runId = Number(resp?.run_id);
           this.backtestPollIds.add(logicId);
           this.expandedLogics.add(logicId);
@@ -2519,6 +2526,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.refreshBacktestStatus(logicId, Number.isFinite(runId) && runId > 0 ? runId : undefined);
         },
         error: (err) => {
+          this.backtestStartInFlight.delete(logicId);
           const body = err?.error;
           // 409: в БД уже есть active-прогон — подхватываем его и показываем «Стоп», а не только alert.
           if (err?.status === 409 && body?.run_id) {
@@ -2534,9 +2542,25 @@ export class LogicsComponent implements OnInit, OnDestroy {
             this.backtestRuns.delete(logicId);
             this.backtestPollIds.delete(logicId);
           }
-          alert(body?.error || err?.message || 'Не удалось запустить тест');
+          alert(this.formatBacktestStartError(err, body));
         },
       });
+  }
+
+  private formatBacktestStartError(err: unknown, body: { error?: string } | null | undefined): string {
+    const status = Number((err as { status?: number })?.status);
+    const name = String((err as { name?: string })?.name || '');
+    const msg = String((err as { message?: string })?.message || '');
+    if (status === 0 || /Unknown Error/i.test(msg)) {
+      return (
+        'Нет ответа от API (localhost:3000). Чаще всего API перезапускался или зависший SQL-тест держал соединение.\n' +
+        'Перезапустите окно Start (API+Angular) и нажмите ▶ ещё раз.'
+      );
+    }
+    if (name === 'TimeoutError' || /timeout/i.test(msg)) {
+      return 'API не ответил за 30 с на запуск теста. Перезапустите Start bat и попробуйте снова.';
+    }
+    return body?.error || msg || 'Не удалось запустить тест';
   }
 
   /** Локальный pending до ответа /api/logic-backtest/start — чтобы UI сразу окрасился. */

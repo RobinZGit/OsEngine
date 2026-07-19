@@ -20,6 +20,7 @@ const {
 } = require('./tbank');
 const {
   startBacktest,
+  supersedeActiveBacktests,
   getBacktestStatus,
   cancelBacktest,
   failOrphanBacktestRuns,
@@ -3183,47 +3184,14 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     return;
   }
   try {
-    // Новый Старт всегда начинает заново: гасим активный/зомби-прогон и чистим старые тест-сделки,
-    // иначе UI остаётся жёлтым на старом FinRES, а 409 «уже выполняется» не даёт перезапуск.
-    const { rows: cancelled } = await pool.query(
-      `
-      UPDATE logic_backtest_runs
-      SET cancel_requested = TRUE,
-          status = 'cancelled',
-          phase_message = 'Заменён новым тестом',
-          phase_detail = 'Предыдущий прогон остановлен перед новым Старт',
-          error_message = COALESCE(
-            NULLIF(btrim(error_message), ''),
-            'Superseded by a new backtest start'
-          ),
-          finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP)
-      WHERE logic_id = $1
-        AND status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
-      RETURNING id
-      `,
-      [logicId]
-    );
-    await pool.query(
-      `DELETE FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE`,
-      [logicId]
-    );
-    try {
-      await pool.query(`SELECT logic_backtest_reset_signal_ratings($1)`, [logicId]);
-    } catch (_) {
-      /* optional on older DB */
-    }
-    if (cancelled.length > 0) {
-      console.log(
-        `Backtest: superseded ${cancelled.length} active run(s) for logic ${logicId}: ${cancelled
-          .map((r) => r.id)
-          .join(',')}`
-      );
-    }
+    // Быстрый ответ браузеру: только cancel + оборвать SQL-сессию.
+    // DELETE тест-сделок — в фоне (runBacktestAsync), иначе при зависшем CALL → «0 Unknown Error».
+    const superseded = await supersedeActiveBacktests(pool, logicId);
     const runId = await startBacktest(pool, logicId, dateFrom, dateTo);
     res.status(202).json({
       ok: true,
       run_id: runId,
-      superseded_runs: cancelled.map((r) => r.id),
+      superseded_runs: superseded,
     });
   } catch (err) {
     console.error('POST /api/logic-backtest/start', err);

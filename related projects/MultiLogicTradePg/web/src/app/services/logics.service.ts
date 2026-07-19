@@ -5,7 +5,7 @@
  */
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable, map, timeout } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import {
   LogicIndicatorSignalRow,
@@ -425,11 +425,13 @@ export class LogicsService {
     logic_id: number;
     date_from: string;
     date_to: string;
-  }): Observable<{ ok: boolean; run_id: number }> {
-    return this.http.post<{ ok: boolean; run_id: number }>(
-      `${this.appConfig.apiUrl}/logic-backtest/start`,
-      body
-    );
+  }): Observable<{ ok: boolean; run_id: number; superseded_runs?: number[] }> {
+    return this.http
+      .post<{ ok: boolean; run_id: number; superseded_runs?: number[] }>(
+        `${this.appConfig.apiUrl}/logic-backtest/start`,
+        body
+      )
+      .pipe(timeout(30_000));
   }
 
   getBacktestStatus(logicId: number, runId?: number): Observable<BacktestRunStatus | null> {

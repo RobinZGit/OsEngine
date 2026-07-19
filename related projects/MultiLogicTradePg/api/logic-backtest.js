@@ -1008,6 +1008,55 @@ async function finishCancelled(pool, runId, logicId, balance, processed, total) 
   );
 }
 
+/**
+ * Перед новым Старт: пометить активные прогоны cancelled и оборвать зависший
+ * CALL logic_backtest_run_bars (иначе DELETE/новый старт ждут лок → браузер «0 Unknown Error»).
+ * Тяжёлую очистку сделок делает runBacktestAsync — не блокируем HTTP.
+ */
+async function supersedeActiveBacktests(pool, logicId) {
+  const { rows: cancelled } = await pool.query(
+    `
+    UPDATE logic_backtest_runs
+    SET cancel_requested = TRUE,
+        status = 'cancelled',
+        phase_message = 'Заменён новым тестом',
+        phase_detail = 'Предыдущий прогон остановлен перед новым Старт',
+        error_message = COALESCE(
+          NULLIF(btrim(error_message), ''),
+          'Superseded by a new backtest start'
+        ),
+        finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP)
+    WHERE logic_id = $1
+      AND status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+    RETURNING id
+    `,
+    [logicId]
+  );
+  if (cancelled.length === 0) {
+    return [];
+  }
+  const ids = cancelled.map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0);
+  try {
+    // Оборвать сессию SQL-робота: иначе пул/DELETE висят, Angular получает status 0.
+    await pool.query(
+      `
+      SELECT pg_terminate_backend(a.pid)
+      FROM pg_stat_activity a
+      WHERE a.datname = current_database()
+        AND a.pid <> pg_backend_pid()
+        AND a.state <> 'idle'
+        AND a.query ILIKE '%logic_backtest_run_bars%'
+      `
+    );
+  } catch (err) {
+    console.warn('Backtest: pg_terminate_backend skipped:', err.message);
+  }
+  console.log(
+    `Backtest: superseded ${ids.length} active run(s) for logic ${logicId}: ${ids.join(',')}`
+  );
+  return ids;
+}
+
 async function startBacktest(pool, logicId, dateFrom, dateTo) {
   const { rows } = await pool.query(
     `
@@ -1135,6 +1184,7 @@ async function cancelBacktest(pool, runId) {
 
 module.exports = {
   startBacktest,
+  supersedeActiveBacktests,
   getBacktestStatus,
   cancelBacktest,
   failOrphanBacktestRuns,
