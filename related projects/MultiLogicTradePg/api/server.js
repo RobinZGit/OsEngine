@@ -36,6 +36,7 @@ const {
   ensureDefaultParams,
   getLogicParamsDetailed,
 } = require('./lib/logic-params');
+const { buildLogicBundle, importLogicBundle } = require('./lib/logic-bundle');
 const { writeTechLogEvent } = require('./lib/tech-log');
 
 const VALID_STOP_SCOPES = new Set(['security', 'security_resume', 'security_inversion', 'portfolio']);
@@ -1531,6 +1532,32 @@ app.post('/api/logics', async (req, res) => {
       return;
     }
     res.status(500).json({ error: err.message });
+  }
+});
+
+/** Экспорт выбранных логик: params/signals/stops/securities; без тестов и сделок. */
+app.post('/api/logics/export', async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  try {
+    const bundle = await buildLogicBundle(pool, ids);
+    res.json(bundle);
+  } catch (err) {
+    console.error('POST /api/logics/export', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+/**
+ * Импорт bundle: создаёт логики с теми же бумагами/сигналами/стопами/параметрами.
+ * Тесты и сделки не импортируются (пустой журнал).
+ */
+app.post('/api/logics/import', async (req, res) => {
+  try {
+    const result = await importLogicBundle(pool, req.body);
+    res.status(201).json(result);
+  } catch (err) {
+    console.error('POST /api/logics/import', err);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

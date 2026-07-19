@@ -37,6 +37,39 @@ export interface ProcessStatusItem {
   started_at?: string | null;
 }
 
+/** Portable export of logics (no backtests / trades). */
+export interface LogicExportBundle {
+  format: string;
+  version: number;
+  exported_at?: string;
+  logics: Array<{
+    name: string;
+    note?: string | null;
+    is_enabled?: boolean;
+    account?: { account_code?: string; broker_code?: string };
+    params?: Array<{ param_key: string; param_value: string; value_type: string }>;
+    signals?: Array<Record<string, unknown>>;
+    stops?: Array<Record<string, unknown>>;
+    securities?: Array<{
+      prefix?: string;
+      instrument_market?: string;
+      security_name?: string;
+      display_order?: number;
+      is_active?: boolean;
+    }>;
+  }>;
+}
+
+export interface LogicImportResult {
+  imported: Array<{
+    id: number;
+    name: string;
+    source_name: string;
+    securities_count: number;
+  }>;
+  warnings: string[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class LogicsService {
   constructor(
@@ -77,6 +110,25 @@ export class LogicsService {
     return this.http.post<LogicRow>(
       `${this.appConfig.apiUrl}/logics/${id}/copy`,
       {}
+    );
+  }
+
+  /**
+   * Экспорт выбранных логик (JSON): карточка, params, signals, stops, papers.
+   * Без тестов/сделок.
+   */
+  exportLogics(ids: number[]): Observable<LogicExportBundle> {
+    return this.http.post<LogicExportBundle>(
+      `${this.appConfig.apiUrl}/logics/export`,
+      { ids }
+    );
+  }
+
+  /** Импорт JSON-bundle: те же бумаги и настройки; тесты пустые. */
+  importLogics(bundle: LogicExportBundle): Observable<LogicImportResult> {
+    return this.http.post<LogicImportResult>(
+      `${this.appConfig.apiUrl}/logics/import`,
+      bundle
     );
   }
 

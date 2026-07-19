@@ -26,13 +26,49 @@
 
     </div>
 
-    <p class="subtitle">
+    <div class="subtitle-row">
 
-      Таблица <code>logics</code> — одна строка = одна торговля.
+      <p class="subtitle">
 
-      <span class="poll-hint">Обновление каждые {{ pollIntervalMs / 1000 }} с</span>
+        Таблица <code>logics</code> — одна строка = одна торговля.
 
-    </p>
+        <span class="poll-hint">Обновление каждые {{ pollIntervalMs / 1000 }} с</span>
+
+      </p>
+
+      <div class="logic-io-actions">
+
+        <button
+          type="button"
+          class="btn-io"
+          title="Экспорт отмеченных логик (настройки и бумаги, без тестов)"
+          [disabled]="exportImportBusy || selectedExportIds.size === 0"
+          (click)="exportSelectedLogics()"
+        >
+          Экспорт
+        </button>
+
+        <button
+          type="button"
+          class="btn-io"
+          title="Импорт логик из JSON (бумаги как в файле, тесты пустые)"
+          [disabled]="exportImportBusy"
+          (click)="triggerImportLogics()"
+        >
+          Импорт
+        </button>
+
+        <input
+          #logicImportFile
+          type="file"
+          accept="application/json,.json"
+          class="logic-import-input"
+          (change)="onImportFileSelected($event)"
+        />
+
+      </div>
+
+    </div>
 
   </header>
 
@@ -120,6 +156,16 @@
               class="col-test-pnl"
               title="Сумма фин. результата тестовых сделок (онлайн, не хранится отдельно)"
             >Финрез теста</th>
+
+            <th class="col-export" title="Отметить для экспорта">
+              <label class="export-check-all" (click)="$event.stopPropagation()">
+                <input
+                  type="checkbox"
+                  [checked]="allExportSelected()"
+                  (change)="toggleAllExport($any($event.target).checked)"
+                />
+              </label>
+            </th>
 
             <th class="col-actions"></th>
 
@@ -261,6 +307,16 @@
                 }
               </td>
 
+              <td class="col-export" (click)="$event.stopPropagation()">
+                <label class="export-check">
+                  <input
+                    type="checkbox"
+                    [checked]="isExportSelected(row.id)"
+                    (change)="toggleExportSelection(row.id, $any($event.target).checked)"
+                  />
+                </label>
+              </td>
+
               <td class="col-actions">
 
                 <button
@@ -347,7 +403,7 @@
 
               <tr class="logic-detail-row">
 
-                <td colspan="12">
+                <td colspan="13">
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 
@@ -1696,7 +1752,7 @@
 
               <tr>
 
-                <td colspan="12" class="empty">Нет записей в logics</td>
+                <td colspan="13" class="empty">Нет записей в logics</td>
 
               </tr>
 

@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
@@ -91,10 +91,16 @@ type StopFormDraft = {
   styleUrl: './logics.component.css',
 })
 export class LogicsComponent implements OnInit, OnDestroy {
+  @ViewChild('logicImportFile') logicImportFile?: ElementRef<HTMLInputElement>;
+
   logics: LogicRow[] = [];
   loading = true;
   error: string | null = null;
   pollIntervalMs = POLL_INTERVAL_MS;
+
+  /** Checkbox selection for export (right column). */
+  selectedExportIds = new Set<number>();
+  exportImportBusy = false;
 
   editorOpen = false;
   editorMode: LogicEditorMode = 'add';
@@ -1712,6 +1718,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.expandedLogics.delete(row.id);
         this.expandedSecuritiesBlocks.delete(row.id);
         this.expandedTradesBlocks.delete(row.id);
+        this.selectedExportIds.delete(row.id);
         this.loadLogicsOnce();
       },
       error: (err) => {
@@ -1742,6 +1749,125 @@ export class LogicsComponent implements OnInit, OnDestroy {
         alert(err?.error?.error || 'Не удалось скопировать логику');
       },
     });
+  }
+
+  isExportSelected(logicId: number): boolean {
+    return this.selectedExportIds.has(logicId);
+  }
+
+  toggleExportSelection(logicId: number, checked: boolean): void {
+    if (checked) {
+      this.selectedExportIds.add(logicId);
+    } else {
+      this.selectedExportIds.delete(logicId);
+    }
+  }
+
+  allExportSelected(): boolean {
+    return (
+      this.logics.length > 0 &&
+      this.logics.every((r) => this.selectedExportIds.has(r.id))
+    );
+  }
+
+  toggleAllExport(checked: boolean): void {
+    if (checked) {
+      for (const r of this.logics) {
+        this.selectedExportIds.add(r.id);
+      }
+    } else {
+      this.selectedExportIds.clear();
+    }
+  }
+
+  exportSelectedLogics(): void {
+    const ids = this.logics
+      .filter((r) => this.selectedExportIds.has(r.id))
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      alert('Отметьте логики для экспорта (чекбокс справа)');
+      return;
+    }
+    if (this.exportImportBusy) return;
+    this.exportImportBusy = true;
+    this.logicsService.exportLogics(ids).subscribe({
+      next: (bundle) => {
+        this.exportImportBusy = false;
+        const names = (bundle.logics || []).map((l) => l.name);
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+          type: 'application/json;charset=utf-8',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `multilogic-logics-${stamp}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(
+          names.length === 1
+            ? `Экспортирована логика: ${names[0]}`
+            : `Экспортированы логики (${names.length}):\n${names.join('\n')}`
+        );
+      },
+      error: (err) => {
+        this.exportImportBusy = false;
+        alert(err?.error?.error || 'Не удалось экспортировать логики');
+      },
+    });
+  }
+
+  triggerImportLogics(): void {
+    if (this.exportImportBusy) return;
+    const input = this.logicImportFile?.nativeElement;
+    if (!input) return;
+    input.value = '';
+    input.click();
+  }
+
+  onImportFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (this.exportImportBusy) return;
+    this.exportImportBusy = true;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = String(reader.result || '');
+        const bundle = JSON.parse(text);
+        this.logicsService.importLogics(bundle).subscribe({
+          next: (result) => {
+            this.exportImportBusy = false;
+            this.loadLogicsOnce();
+            const names = (result.imported || []).map((r) => r.name);
+            let msg =
+              names.length === 1
+                ? `Импортирована логика: ${names[0]}`
+                : `Импортированы логики (${names.length}):\n${names.join('\n')}`;
+            if (result.warnings?.length) {
+              msg += `\n\nПредупреждения:\n${result.warnings.slice(0, 12).join('\n')}`;
+              if (result.warnings.length > 12) {
+                msg += `\n… ещё ${result.warnings.length - 12}`;
+              }
+            }
+            alert(msg);
+          },
+          error: (err) => {
+            this.exportImportBusy = false;
+            alert(err?.error?.error || 'Не удалось импортировать логики');
+          },
+        });
+      } catch {
+        this.exportImportBusy = false;
+        alert('Файл не является корректным JSON');
+      }
+    };
+    reader.onerror = () => {
+      this.exportImportBusy = false;
+      alert('Не удалось прочитать файл');
+    };
+    reader.readAsText(file, 'utf-8');
   }
 
   private scrollLogicIntoView(logicId: number): void {
@@ -2380,6 +2506,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       next: (rows) => {
         this.logics = rows;
         this.error = null;
+        const alive = new Set(rows.map((r) => r.id));
+        for (const id of [...this.selectedExportIds]) {
+          if (!alive.has(id)) this.selectedExportIds.delete(id);
+        }
       },
     });
   }
