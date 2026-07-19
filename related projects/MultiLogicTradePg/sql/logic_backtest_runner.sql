@@ -1357,7 +1357,7 @@ DECLARE
     v_pnl NUMERIC;
     v_trades_created INTEGER;
     v_diag JSONB;
-    v_commit_every INTEGER := 5;
+    v_commit_every INTEGER := 1;
 BEGIN
     SELECT r.id, r.logic_id, r.date_from, r.date_to, r.status, r.cancel_requested, r.test_balance
     INTO v_run
@@ -1546,7 +1546,7 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_backtest_run_bars(BIGINT) IS
-'SQL-робот теста: прогон баров с COMMIT каждые 5 свечей (без длинного лока на весь тест)';
+'SQL-робот теста: прогон баров с COMMIT каждый бар (UI видит progress_pct в logic_backtest_runs)';
 
 DROP ROUTINE IF EXISTS run_logic_backtest(INTEGER, DATE, DATE);
 DROP ROUTINE IF EXISTS run_logic_backtest(INTEGER, DATE, DATE, BIGINT);

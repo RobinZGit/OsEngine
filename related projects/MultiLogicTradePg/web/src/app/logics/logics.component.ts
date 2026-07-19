@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
@@ -289,8 +289,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     private readonly securitiesService: SecuritiesService,
     private readonly settings: SettingsService,
     private readonly techLog: TechLogService,
-    private readonly appConfig: AppConfigService,
-    private readonly cdr: ChangeDetectorRef
+    private readonly appConfig: AppConfigService
   ) {}
 
   ngOnInit(): void {
@@ -2712,7 +2711,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
       next.delete(logicId);
     }
     this.backtestRuns = next;
-    this.cdr.detectChanges();
   }
 
   /** Пока id&lt;0 — двигаем 0→5% локально, чтобы ↻ не «замирал», пока /start в полёте. */
@@ -2765,7 +2763,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       if (done) {
         this.stopFastBacktestPoll(logicId);
       }
-    }, 800);
+    }, 500);
     this.backtestFastPollTimers.set(logicId, timer);
   }
 

@@ -1,4 +1,4 @@
-# MultiLogicTradePg — контекст проекта
+﻿# MultiLogicTradePg — контекст проекта
 
 > Живой файл контекста для продолжения работы с разных устройств и в Cursor.  
 > **Обновлять перед каждым push в репозиторий** — см. `.cursor/rules/project-context.mdc`.
@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: Stop always clickable; cancel aborts in-flight /start + terminate SQL
+**Последнее обновление:** 2026-07-19 — Ship: fix UI freeze (remove detectChanges thrash); progress from logic_backtest_runs
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -322,6 +322,7 @@
 - [x] /start status 0 after 0%: stop status-poll before Start (pool starve); Start on backtestPool; api.log timings (2026-07-19).
 - [x] 0% hang UX: optimistic pulse 0→5%; /start returns progress; early DB ticks 1/3/6/8/10%; detectChanges (2026-07-19).
 - [x] Stop stuck/disabled: never disable Stop; cancel in-flight start; terminate SQL on cancel (2026-07-19).
+- [x] Smooth progress bar: SQL COMMIT every bar → logic_backtest_runs.progress_pct; UI poll without detectChanges thrash / 80ms lerp freeze (2026-07-19).
 
 ---
 
@@ -344,7 +345,8 @@
 | 2026-07-19 | Ship: Stop always clickable + cancel in-flight start |
 | 2026-07-19 | Ship: progress pulse + early logic_backtest_runs.progress_pct ticks |
 | 2026-07-19 | Ship: fix /start status-0 — no poll before Start; backtestPool |
-| 2026-07-19 | Ship: fix TS2339 finished_at on BacktestRunStatus |
+| 2026-07-19 | Ship: smooth bar — commit every bar into logic_backtest_runs |
+| 2026-07-19 | Ship: fix TS18048 runId undefined on cancelBacktest |
 | 2026-07-19 | Ship: poll before /start returns — no freeze at 0% |
 | 2026-07-19 | Ship: fix stuck optimistic 1% (fast poll + run_id) |
 | 2026-07-19 | Ship: instant yellow Start UI (no token HTTP first) |
@@ -634,3 +636,4 @@
 150. «0% then Нет ответа от API» — status poll before /start starved PG pool; abort→status 0.
 151. «Hangs at 0%, logging on; controller should write % to a table.» — % already in logic_backtest_runs; UI pulse + early ticks + apply run from /start.
 152. «Can't press Stop, stuck; Stop must always work.» — disabled after first click + optimistic cancel ignored /start; fix.
+153. «Progress bar not smooth; Oracle should write % to a table.» — already PostgreSQL logic_backtest_runs; commit every bar + UI lerp.

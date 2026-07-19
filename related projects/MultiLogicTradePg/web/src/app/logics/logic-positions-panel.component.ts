@@ -301,7 +301,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
   }
 
-  /** Пока localStarting и сервер ещё не прислал pending — не показывать старый 100%. */
+  /** % и фазы — из таблицы logic_backtest_runs (через API status). */
   get backtestProgressView(): {
     progress_pct: number;
     phase_message: string | null;

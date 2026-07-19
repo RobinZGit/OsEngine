@@ -138,7 +138,7 @@ async function updateRun(pool, runId, patch) {
  * Троттлинг записи progress_pct, чтобы UI не «стоял», но и не долбил БД каждый мс.
  * force — всегда писать (конец фазы / 100%).
  */
-function createProgressReporter(pool, runId, minIntervalMs = 200) {
+function createProgressReporter(pool, runId, minIntervalMs = 100) {
   let lastAt = 0;
   let lastPct = -1;
   let pending = null;
@@ -616,7 +616,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     indCached: 0,
     indErr: 0,
   };
-  const reportProgress = createProgressReporter(pool, runId, 180);
+  const reportProgress = createProgressReporter(pool, runId, 100);
 
   try {
     // Сразу пишем фазу — иначе UI долго держит оптимистичное «Очистка…» без обновления.
