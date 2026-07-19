@@ -59,7 +59,10 @@ function paperTradesFingerprint(trades: LogicTradeRow[]): string {
   if (trades.length === 0) return '0';
   const first = trades[0];
   const last = trades[trades.length - 1];
-  return `${trades.length}:${first.id}:${last.id}:${last.bar_dt}:${last.financial_result ?? ''}`;
+  const remHint = trades
+    .filter((t) => t.side_name === 'Open')
+    .reduce((s, t) => s + Number(t.remaining_qty ?? t.quantity ?? 0), 0);
+  return `${trades.length}:${first.id}:${last.id}:${last.bar_dt}:${last.financial_result ?? ''}:${remHint}`;
 }
 
 interface PaperOverlays {
@@ -332,6 +335,15 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     const n = Number(value);
     if (!Number.isFinite(n)) return '0.00';
     return n.toFixed(2);
+  }
+
+  formatOpenQty(value: number | null | undefined): string {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n === 0) return '0';
+    const sign = n > 0 ? '+' : '−';
+    const abs = Math.abs(n);
+    const text = Number.isInteger(abs) ? String(abs) : abs.toFixed(4).replace(/\.?0+$/, '');
+    return `${sign}${text}`;
   }
 
   onLoadOlder(securityId: number): void {

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — HARD rollback of MultiLogicTradePg tree to `29ed3ba` (pre-SQL-robots, ~12:57)
+**Последнее обновление:** 2026-07-19 — TMON park in Node test + exclude fund from SL/TP + papers open_qty (keep 29ed3ba Start UI)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | TMON: Node park/EOD/NTP; SL/TP skip fund; papers «ост.» open_qty; no SQL-robots/Start hang UI |
 | 2026-07-19 | HARD rollback MultiLogicTradePg tree to `29ed3ba` (pre-SQL-robots ~12:57) |
 | 2026-07-19 | Ship: TMON park by equity excess; UI «Порог портфеля»; Windows+Linux installers |
 | 2026-07-19 | Ship: non-trading interval CRUD UI; NTP-off warning; TMON park fix/logs; Windows+Linux installers |
@@ -576,3 +577,4 @@
 130. Sunday trades with NTP off; need add/delete/edit period lines; TMON not bought with positive PnL; reassemble installer and post.
 131. Same test: TMON must buy each candle on equity excess over 1M; +13k finres → buy as much free cash allows ≤ excess; do not sell fund / stay in it.
 132. After SQL-robots / hang fixes: hard rewind — «I'll have to twist this very tightly» to **19.07.2026 ~12:57 / `29ed3ba`** (last ship before SQL-robots message).
+133. Hang finally over; TMON in papers but zero — park TMON in Angular/Node test; exclude from SL/TP test+live; show bought qty (ост.) in papers.

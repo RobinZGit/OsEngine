@@ -59,6 +59,13 @@
                     <span class="pnl-deposit-pct">({{ formatPnlPct(paperPnlPct(paper.pnl)) }})</span>
                   }
                 </span>
+                <span
+                  class="paper-open-qty"
+                  [class.paper-open-qty-zero]="paper.open_qty === 0"
+                  title="Открытый остаток позиции (лонг +, шорт −)"
+                >
+                  ост. {{ formatOpenQty(paper.open_qty) }}
+                </span>
                 <span class="paper-comm" title="Комиссия по сделкам бумаги">
                   ком. {{ formatMoney(paper.commission) }}
                 </span>

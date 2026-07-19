@@ -696,6 +696,62 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       return;
     }
 
+    // Цены денежного фонда (TMON/…) — отдельно: фонд исключён из syncActiveSecurities сигналов.
+    try {
+      const { rows: fundCodeRows } = await pool.query(
+        `SELECT upper(btrim(COALESCE(get_logic_param_text($1, 'cash_fund_code'), ''))) AS code`,
+        [logicId]
+      );
+      const fundCode = String(fundCodeRows[0]?.code ?? '');
+      if (fundCode && ['TMON', 'LQDT', 'SBMM'].includes(fundCode)) {
+        await pool.query(`SELECT logic_ensure_cash_fund_security($1, $2)`, [logicId, fundCode]);
+        const { rows: fundSecRows } = await pool.query(
+          `
+          SELECT s.id AS security_id
+          FROM securities s
+          JOIN security_prefixes sp ON sp.security_id = s.id
+          WHERE upper(sp.prefix) = $1
+          ORDER BY sp.exchange_id
+          LIMIT 1
+          `,
+          [fundCode]
+        );
+        const fundSecId = fundSecRows[0]?.security_id;
+        if (fundSecId) {
+          knownSecIds.add(Number(fundSecId));
+          // 4 аргумента — 5-й pointCount ломал load_prices_http на части сборок.
+          await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date)`, [
+            fundSecId,
+            tfId,
+            loadDateFrom,
+            loadDateTo,
+          ]);
+          await backtestLog(
+            pool,
+            runId,
+            logicId,
+            'backtest.cash_fund.prices',
+            `Цены фонда ${fundCode} загружены`,
+            { fund: fundCode, security_id: fundSecId },
+            fundSecId,
+            tfId
+          );
+        }
+      }
+    } catch (fundErr) {
+      console.warn('backtest cash fund price prep', fundErr?.message || fundErr);
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.cash_fund.prices_fail',
+        String(fundErr?.message || fundErr).slice(0, 400),
+        null,
+        null,
+        tfId
+      );
+    }
+
     const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
     if (indicatorIds.length === 0) {
       await updateRun(pool, runId, {
@@ -869,6 +925,8 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       }
 
       const barDt = bars[bi];
+      const prevBar = bi > 0 ? bars[bi - 1] : null;
+      const nextBar = bi + 1 < bars.length ? bars[bi + 1] : null;
 
       // Независимый рейтинг каждого сигнала (не зависит от AND/сделок)
       await pool.query(
@@ -890,15 +948,40 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
         return;
       }
 
-      const { rows: sigRows } = await pool.query(
-        `SELECT logic_backtest_process_signals($1, $2, $3, $4, $5, $6::numeric) AS balance`,
-        [runId, logicId, logic.account_id, tfId, barDt, balance]
+      // EOD / NTP / парковка TMON — в Node (не SQL-робот), иначе фонд не покупается из UI.
+      const { rows: eodRows } = await pool.query(
+        `SELECT logic_is_eod_close_bar($1, $2::timestamp, $3::timestamp, $4::timestamp) AS eod`,
+        [logicId, barDt, prevBar, nextBar]
       );
-      balance = Number(sigRows[0]?.balance ?? balance);
+      if (eodRows[0]?.eod) {
+        const { rows: eodBal } = await pool.query(
+          `SELECT logic_backtest_close_all_except_funds($1, $2, $3, $4, $5, $6::numeric) AS balance`,
+          [runId, logicId, logic.account_id, tfId, barDt, balance]
+        );
+        balance = Number(eodBal[0]?.balance ?? balance);
+      }
+
+      const { rows: ntpRows } = await pool.query(
+        `SELECT logic_is_non_trading_dt($1, $2::timestamp) AS ntp`,
+        [logicId, barDt]
+      );
+      if (!ntpRows[0]?.ntp) {
+        const { rows: sigRows } = await pool.query(
+          `SELECT logic_backtest_process_signals($1, $2, $3, $4, $5, $6::numeric) AS balance`,
+          [runId, logicId, logic.account_id, tfId, barDt, balance]
+        );
+        balance = Number(sigRows[0]?.balance ?? balance);
+      }
       if (await isCancelRequested(pool, runId)) {
         await finishCancelled(pool, runId, logicId, balance, bi + 1, totalBars);
         return;
       }
+
+      const { rows: parkRows } = await pool.query(
+        `SELECT logic_backtest_park_excess_cash($1, $2, $3, $4, $5, $6::numeric) AS balance`,
+        [runId, logicId, logic.account_id, tfId, barDt, balance]
+      );
+      balance = Number(parkRows[0]?.balance ?? balance);
 
       const isLast = bi === bars.length - 1;
       // Каждый бар двигает %, PnL пишем чаще чем раньше (каждый бар / throttle reporter)

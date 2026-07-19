@@ -2430,6 +2430,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     pnl: number;
     commission: number;
     trade_count: number;
+    open_qty: number;
   } | null {
     const code = String(row.cash_fund_code ?? '')
       .trim()
@@ -2456,6 +2457,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       pnl: 0,
       commission: 0,
       trade_count: 0,
+      open_qty: 0,
     };
   }
 
