@@ -19,7 +19,7 @@ alwaysApply: true
 6. **После правок SQL** — **прогнать проверку** (`npm run verify:sql` или `.\scripts\verify_sql_scripts.ps1`).
 7. **Перед сборкой и деплоем** — скрипты **обязаны проходить проверку** без ошибок; в них должны быть **все** изменения БД до последнего коммита.
 8. **Не оставлять** локальную БД и репозиторий в расхождении.
-9. **Если SQL входит в Windows installer** — после любых изменений `00`–`03` / `sql/*` / installer scripts обязательно пересобрать `installer/windows/dist/MultiLogicTradePgSetup.exe` (см. `.cursor/rules/installer-freshness.mdc`).
+9. **Если SQL входит в installers** — после любых изменений `00`–`03` / `sql/*` / installer scripts обязательно пересобрать **оба**: `installer/windows/dist/MultiLogicTradePgSetup.exe` и `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` (см. `.cursor/rules/installer-freshness.mdc`).
 
 ## Wipe vs upgrade (Windows installer)
 
@@ -98,4 +98,4 @@ set PGPASSWORD=111
 - Запуск UI: `web/MultiLogic_Trade_Progress_Start.bat`
 - CI: `.github/workflows/pages.yml`
 - Контекст: `docs/PROJECT_CONTEXT.md` — **обновлять при каждой выкладке** (см. `.cursor/rules/project-context.mdc`)
-- Installer: `installer/windows/dist/MultiLogicTradePgSetup.exe` — **пересобирать при изменениях SQL/API/UI/scripts/installer** (см. `.cursor/rules/installer-freshness.mdc`)
+- Installers: `installer/windows/dist/MultiLogicTradePgSetup.exe` и `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` — **пересобирать оба** при изменениях SQL/API/UI/scripts/installer (см. `.cursor/rules/installer-freshness.mdc`)

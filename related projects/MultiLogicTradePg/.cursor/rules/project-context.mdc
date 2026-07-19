@@ -21,9 +21,12 @@ alwaysApply: true
 **Порядок для агента и разработчика (обязательно, каждый раз):**
 
 1. **Сначала** обновить `docs/PROJECT_CONTEXT.md` (см. чеклист ниже) — дата, «что сделано», история, запросы пользователя, версия схемы.
-2. Если менялись файлы, входящие в Windows installer (SQL/API/UI/scripts/docs/installer), **пересобрать** `installer/windows/dist/MultiLogicTradePgSetup.exe` (см. `.cursor/rules/installer-freshness.mdc`).
-3. **Затем** закоммитить код, installer binary (если пересобирался) **и** контекст **в одном push** (контекст — отдельным коммитом сразу перед push или в том же коммите с кодом).
-4. **Не пушить** код/SQL/installer changes без актуального `PROJECT_CONTEXT.md` и актуального `MultiLogicTradePgSetup.exe` в `origin`.
+2. Если менялись файлы, входящие в installers (SQL/API/UI/scripts/docs/installer), **пересобрать оба**:
+   - `installer/windows/dist/MultiLogicTradePgSetup.exe`
+   - `installer/linux/dist/MultiLogicTradePg-linux.tar.gz`
+   (см. `.cursor/rules/installer-freshness.mdc`, удобно: `.\installer\build-all-installers.ps1`).
+3. **Затем** закоммитить код, installer artifacts (если пересобирались) **и** контекст **в одном push** (контекст — отдельным коммитом сразу перед push или в том же коммите с кодом).
+4. **Не пушить** код/SQL/installer changes без актуального `PROJECT_CONTEXT.md` и актуальных **обоих** installer artifacts в `origin`.
 5. Если забыли контекст или installer rebuild — сразу follow-up commit до того, как считать выкладку завершённой.
 
 Если hotfix после push — снова обновить контекст и сделать follow-up commit **до** того, как считать выкладку завершённой.
@@ -49,9 +52,14 @@ alwaysApply: true
 Порядок: `00` → `01` → `02` → `03`.  
 Перед сборкой/деплоем — `npm run verify:sql` (см. `.cursor/rules/database-scripts.mdc`).
 
-## Windows installer и выкладка
+## Installers и выкладка (Windows + Linux)
 
-Если менялись SQL/API/UI/scripts/docs/installer sources, перед push обязательно пересобрать Windows installer и закоммитить `installer/windows/dist/MultiLogicTradePgSetup.exe` (см. `.cursor/rules/installer-freshness.mdc`).
+Если менялись SQL/API/UI/scripts/docs/installer sources, перед push обязательно пересобрать **оба** installer и закоммитить:
+
+- `installer/windows/dist/MultiLogicTradePgSetup.exe`
+- `installer/linux/dist/MultiLogicTradePg-linux.tar.gz`
+
+(см. `.cursor/rules/installer-freshness.mdc`).
 
 ## Мультидевайс
 

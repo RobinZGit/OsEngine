@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship v46: bar_dt в сделках теста; неторговые периоды MOEX; close_positions_eod; installer
+**Последнее обновление:** 2026-07-19 — Linux installer (`MultiLogicTradePg-linux.tar.gz`) + freshness rule для Windows и Linux
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -301,6 +301,7 @@
 - [x] Help/schema: live PG vs offline 01/02; fix nested stop_runner in 02; regen schema-offline (2026-07-19).
 - [x] Readable test period on test line + Финрез теста; empty papers ISO fix; backtest cash-fund park (2026-07-19).
 - [x] v46 ship: test `executed_at`=`bar_dt`; `logic_non_trading_intervals` + UI «Торговые периоды» / MOEX; `use_non_trading_periods` (default on); `close_positions_eod` (default off, except funds); installer (2026-07-19).
+- [x] Linux installer: `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` + `install.sh`; freshness rule for Windows+Linux; `build-all-installers.ps1` (2026-07-19).
 
 ---
 
@@ -308,7 +309,7 @@
 
 - Коммиты и push — **по запросу** пользователя.
 - **Перед каждым push** — обновить `docs/PROJECT_CONTEXT.md` и включить в выкладку (правило `.cursor/rules/project-context.mdc`). Не считать выкладку завершённой без актуального контекста в `origin`.
-- **Installer:** любое изменение SQL/API/Angular/`web`/scripts/docs в Setup → пересобрать `MultiLogicTradePgSetup.exe` **в том же push** (`.cursor/rules/installer-freshness.mdc`). Не выкладывать исходники без свежего Setup.
+- **Installers:** любое изменение SQL/API/Angular/`web`/scripts/docs → пересобрать **оба**: `MultiLogicTradePgSetup.exe` и `MultiLogicTradePg-linux.tar.gz` **в том же push** (`.\installer\build-all-installers.ps1`, `.cursor/rules/installer-freshness.mdc`).
 - Sergey — **2–3 устройства**; в начале сессии читать этот файл + `git log`.
 - Язык: русский (English note — только если пользователь пишет по-английски).
 - Пароль локального postgres часто: `111`.
@@ -320,6 +321,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Linux installer tar.gz + install.sh; freshness rule Windows+Linux; build-all-installers.ps1 |
 | 2026-07-19 | Ship v46: bar_dt trade time; non-trading periods MOEX UI; EOD close except funds; installer |
 | 2026-07-19 | Ship: test period UI; Help schema live/offline; ISO papers fix; backtest TMON park; fix stop_runner nest; installer |
 | 2026-07-19 | Help/DB schema: live from PG, offline from 01+02; fix stop_runner ×N nest in sync-02; schema-offline regen |
@@ -565,3 +567,4 @@
 126. «TMON not purchased in test; empty papers list though params set.»
 127. «Post changes in the repository. Only the installer needs to be assembled first.»
 128. «В тесте дата/время сделки = по свечам, не wall-clock прогона; блок «Торговые периоды» до ЦБ с галочкой учитывать неторговые (вкл. по умолчанию) и кнопкой установить как на MOEX; параметр закрывать позиции в конце дня (кроме фондов), выкл. по умолчанию.»
+129. «Make another installer for linux for macbook… updated every time when changing the project» — Linux tar.gz + freshness like Windows.

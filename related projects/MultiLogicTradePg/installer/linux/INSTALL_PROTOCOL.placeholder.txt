@@ -1,0 +1,4 @@
+MultiLogicTradePg Linux install protocol
+========================================
+This file is overwritten by install.sh with the full post-install log.
+If you still see this text, install.sh did not finish writing the protocol.

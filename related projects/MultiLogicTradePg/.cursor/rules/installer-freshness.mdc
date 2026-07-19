@@ -1,44 +1,53 @@
 ---
-description: Windows installer must always match the current shipped project state
-globs: "installer/windows/**,web/**,api/**,scripts/**,docs/**,*.sql"
+description: Windows and Linux installers must always match the current shipped project state
+globs: "installer/**,web/**,api/**,scripts/**,docs/**,*.sql"
 alwaysApply: true
 ---
 
-# Windows installer freshness (MultiLogicTradePg)
+# Installer freshness (MultiLogicTradePg) — Windows + Linux
 
 ## Rule (Sergey)
 
-The committed installer binary must always match the current repository state.
+Committed installer artifacts must always match the current repository state.
 
-**Default for agents:** if the change touches SQL, API, Angular/`web`, scripts, docs shipped in Setup, or installer sources — **rebuild and commit `MultiLogicTradePgSetup.exe` in the same push**. Do not ship source-only and leave the installer stale. If unsure whether a file is packaged — treat it as packaged and rebuild.
+**Artifacts:**
 
-Before every push that changes anything shipped by the Windows installer, rebuild:
+| Platform | Path |
+|----------|------|
+| Windows | `installer/windows/dist/MultiLogicTradePgSetup.exe` |
+| Linux (incl. MacBook running Linux) | `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` |
+
+**Default for agents:** if the change touches SQL, API, Angular/`web`, scripts, docs shipped in the installers, or installer sources — **rebuild and commit both artifacts in the same push**. Do not ship source-only and leave either installer stale. If unsure whether a file is packaged — treat it as packaged and rebuild both.
+
+Before every push that changes anything shipped by the installers, rebuild:
+
+```powershell
+.\installer\build-all-installers.ps1
+```
+
+or separately:
 
 ```powershell
 .\installer\windows\build-installer.ps1
-```
-
-or compile:
-
-```text
-installer\windows\MultiLogicTradePg.iss
+.\installer\linux\build-installer.ps1
 ```
 
 and commit the updated:
 
 ```text
-installer\windows\dist\MultiLogicTradePgSetup.exe
+installer/windows/dist/MultiLogicTradePgSetup.exe
+installer/linux/dist/MultiLogicTradePg-linux.tar.gz
 ```
 
-## Rebuild the installer after changes to
+## Rebuild the installers after changes to
 
 - SQL scripts: `00_create_database.sql`, `01_*.sql`, `02_*.sql`, `03_*.sql`.
 - API files under `api/`.
 - Angular/UI files under `web/`.
 - runtime scripts under `scripts/`.
-- launcher files such as `web\MultiLogic_Trade_Progress_Start.bat`.
-- installer sources under `installer/windows/`.
-- docs/context files that are shipped inside the installer.
+- launcher files such as `web\MultiLogic_Trade_Progress_Start.bat` or `installer/linux/start-multilogic-trade.sh`.
+- installer sources under `installer/windows/` or `installer/linux/`.
+- docs/context files that are shipped inside the installers.
 
 ## Database structure changes
 
@@ -46,12 +55,12 @@ If the database structure changes:
 
 1. Update the source SQL scripts first (`00`-`02`, and `03` if examples change).
 2. Run SQL verification where available (`npm run verify:sql` or `.\scripts\verify_sql_scripts.ps1`).
-3. Rebuild `MultiLogicTradePgSetup.exe` so a fresh installation deploys the new schema.
+3. Rebuild **both** installers so a fresh installation deploys the new schema.
 4. Update `docs/PROJECT_CONTEXT.md`.
-5. Commit code, SQL, installer binary, and context together before pushing.
+5. Commit code, SQL, both installer artifacts, and context together before pushing.
 
 ## Do not
 
-- Do not push UI/API/SQL changes that should be installed on Windows without rebuilding `MultiLogicTradePgSetup.exe`.
+- Do not push UI/API/SQL changes that should be installed without rebuilding **both** installers.
 - Do not rely on users running repository source files manually after installer changes.
-- Do not leave `installer/windows/dist/MultiLogicTradePgSetup.exe` older than the shipped source tree.
+- Do not leave `MultiLogicTradePgSetup.exe` or `MultiLogicTradePg-linux.tar.gz` older than the shipped source tree.
