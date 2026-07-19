@@ -2785,15 +2785,21 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
     const run = this.backtestRuns.get(logicId);
     const preferred = this.preferredBacktestRunId.get(logicId);
-    const runId = Number(run?.id) > 0 ? Number(run?.id) : preferred;
+    const fromRun = Number(run?.id);
+    const fromPreferred = Number(preferred);
+    const runId =
+      Number.isFinite(fromRun) && fromRun > 0
+        ? fromRun
+        : Number.isFinite(fromPreferred) && fromPreferred > 0
+          ? fromPreferred
+          : 0;
 
-    // Оптимистичный id ещё нет — всё равно попробуем preferred; UI сбросим после cancel.
-    if (!Number.isFinite(runId) || runId <= 0) {
+    // Оптимистичный id ещё нет — UI сбросим; если /start ещё летит, отменим по флагу.
+    if (runId <= 0) {
       this.setBacktestRun(logicId, null);
       this.backtestPollIds.delete(logicId);
       this.preferredBacktestRunId.delete(logicId);
       this.backtestOptimisticAtMs.delete(logicId);
-      this.backtestCancelRequested.delete(logicId);
       return;
     }
 
