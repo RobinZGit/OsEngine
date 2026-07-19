@@ -2777,9 +2777,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Если Стоп нажали до ответа /start — отменить run сразу, как только появится id. */
-  private backtestCancelRequested = new Set<number>();
-
   cancelBacktestRun(logicId: number): void {
     this.backtestCancelRequested.add(logicId);
     this.backtestStartInFlight.delete(logicId);
