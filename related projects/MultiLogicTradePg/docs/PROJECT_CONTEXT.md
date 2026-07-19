@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: poll progress before /start returns; don’t freeze at 0%
+**Последнее обновление:** 2026-07-19 — Ship: fix TS2339 BacktestRunStatus.finished_at (ng serve compile)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -318,6 +318,7 @@
 - [x] Start yellow+↻% immediately (no T-Bank validate wait); panel localStarting for OnPush (2026-07-19).
 - [x] Stuck at optimistic 1%: prefer run_id, 500ms status poll, don’t clobber with old completed, Map CD (2026-07-19).
 - [x] Stuck at 0% «Ожидание сервера»: fast poll BEFORE /start returns; always apply active runs; start supersede ≤2s (2026-07-19).
+- [x] TS2339: add `finished_at`/`started_at` to `BacktestRunStatus` (ng serve failed) (2026-07-19).
 
 ---
 
@@ -337,6 +338,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: fix TS2339 finished_at on BacktestRunStatus |
 | 2026-07-19 | Ship: poll before /start returns — no freeze at 0% |
 | 2026-07-19 | Ship: fix stuck optimistic 1% (fast poll + run_id) |
 | 2026-07-19 | Ship: instant yellow Start UI (no token HTTP first) |
@@ -622,3 +624,4 @@
 146. «Hangs first then yellow; make yellow+percent spin immediately.» — Program Files still waited getTbankTokenStatus(true); paint UI first + panel localStarting.
 147. «New setup: yellow OK then hung at 1%.» — optimistic pct; status poll lost/clobbered; fast poll + prefer run_id.
 148. «Yellow 0% hangs again.» — fast poll waited for /start; now poll immediately + always take active runs.
+149. Start bat: TS2339 `finished_at` missing on `BacktestRunStatus` — add fields to interface.

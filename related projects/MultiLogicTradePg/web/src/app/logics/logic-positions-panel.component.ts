@@ -45,33 +45,21 @@ import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
 
 
 export interface BacktestRunStatus {
-
   id: number;
-
   logic_id: number;
-
   date_from: string;
-
   date_to: string;
-
   status: string;
-
   progress_pct: number;
-
   phase_message: string | null;
-
   phase_detail: string | null;
-
   total_bars: number;
-
   processed_bars: number;
-
   test_balance: number | null;
-
   financial_result: number | null;
-
   error_message: string | null;
-
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 
 
