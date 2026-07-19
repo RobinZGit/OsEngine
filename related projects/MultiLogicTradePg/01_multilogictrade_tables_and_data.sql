@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v44 (идемпотентный запуск)
+-- Версия: v45 (идемпотентный запуск)
+-- v45: +5 тренд +10 контртренд OsEngine; seed без DELETE (INSERT IF NOT EXISTS / DO NOTHING)
 -- v44: logics.note — примечание; +5 контртрендовых OsEngine; подписи типа стратегии у seed
 -- v43c: logic_trades.run_id — привязка тестовых сделок к прогону (изоляция финреза)
 -- v43: комиссия default 0.03; L1–L4 из MultiLogicTradeA; LINREG/ADX/CCI calc
@@ -1306,32 +1307,24 @@ BEGIN
         INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
         SELECT l.id, 'position_size_pct', l.position_size_pct::text, 'number'
         FROM logics l
-        ON CONFLICT (logic_id, param_key) DO UPDATE SET
-            param_value = EXCLUDED.param_value,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (logic_id, param_key) DO NOTHING;
 
         INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
         SELECT l.id, 'max_open_positions', l.max_open_positions::text, 'integer'
         FROM logics l
-        ON CONFLICT (logic_id, param_key) DO UPDATE SET
-            param_value = EXCLUDED.param_value,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (logic_id, param_key) DO NOTHING;
 
         INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
         SELECT l.id, 'initial_balance', l.initial_balance::text, 'money'
         FROM logics l
         WHERE l.initial_balance IS NOT NULL
-        ON CONFLICT (logic_id, param_key) DO UPDATE SET
-            param_value = EXCLUDED.param_value,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (logic_id, param_key) DO NOTHING;
 
         INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
         SELECT l.id, 'current_balance', l.current_balance::text, 'money'
         FROM logics l
         WHERE l.current_balance IS NOT NULL
-        ON CONFLICT (logic_id, param_key) DO UPDATE SET
-            param_value = EXCLUDED.param_value,
-            updated_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (logic_id, param_key) DO NOTHING;
     END IF;
 END $$;
 
@@ -1366,9 +1359,7 @@ CROSS JOIN (VALUES
     ('rating_lookback_days', '7', 'integer')
 ) AS v(param_key, param_value, value_type)
 WHERE l.name = 'SMA Price Cross Demo'
-ON CONFLICT (logic_id, param_key) DO UPDATE SET
-    param_value = EXCLUDED.param_value,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS sides (
     id SERIAL PRIMARY KEY,
@@ -1694,10 +1685,7 @@ COMMENT ON COLUMN logic_securities.stop_resume_baseline IS
 
 -- Демо (v40b): follow/breakout — SMA + подтверждение BB/STOCH на OPEN; CLOSE только по SMA
 -- (mean-reversion BB/STOCH вместе с SMA в AND почти никогда не срабатывает)
-DELETE FROM logic_indicator_signals lis
-USING logics l
-WHERE lis.logic_id = l.id
-  AND l.name = 'SMA Price Cross Demo';
+-- Демо-сигналы: не удаляем при upgrade; вставка только если сигналов ещё нет
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -1720,10 +1708,8 @@ CROSS JOIN (VALUES
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'SMA Price Cross Demo'
-ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind) DO UPDATE SET
-    formula = EXCLUDED.formula,
-    display_order = EXCLUDED.display_order,
-    is_active = TRUE;
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id)
+ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind) DO NOTHING;
 
 -- Все акции (stock) в портфель демо-логики (без дублей при нескольких prefix)
 INSERT INTO logic_securities (logic_id, security_id, display_order)
@@ -1738,13 +1724,10 @@ CROSS JOIN LATERAL (
     ORDER BY s.id, sp.prefix
 ) q
 WHERE l.name = 'SMA Price Cross Demo'
-ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+ON CONFLICT (logic_id, security_id) DO NOTHING;
 
 -- Стоп-лосс 1% по бумаге с возобновлением (security_resume) и тейк-профит 3% по бумаге
-DELETE FROM logic_stops ls
-USING logics l
-WHERE ls.logic_id = l.id
-  AND l.name = 'SMA Price Cross Demo';
+-- Демо-стопы: insert only if empty
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
@@ -1753,7 +1736,8 @@ CROSS JOIN (VALUES
     ('stop_loss',    'security_resume', 1.0, 'percent', 0),
     ('take_profit',  'security', 3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
-WHERE l.name = 'SMA Price Cross Demo';
+WHERE l.name = 'SMA Price Cross Demo'
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- =====================================================================
 -- v41: классические стратегии (по мотивам OsEngine Robots / Custom)
@@ -1801,9 +1785,7 @@ WHERE l.name IN (
     'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
     'BB Stoch Bounce', 'SMAT3 Trend'
 )
-ON CONFLICT (logic_id, param_key) DO UPDATE SET
-    param_value = EXCLUDED.param_value,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 -- Дозаполнение любых отсутствующих ключей из справочника
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
@@ -1817,15 +1799,7 @@ WHERE l.name IN (
 )
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
--- Сброс сигналов seed-логик перед повторной вставкой
-DELETE FROM logic_indicator_signals lis
-USING logics l
-WHERE lis.logic_id = l.id
-  AND l.name IN (
-    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
-    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
-    'BB Stoch Bounce', 'SMAT3 Trend'
-  );
+-- Сигналы seed: только если у логики ещё нет сигналов (не затираем копии и правки)
 
 -- RSI Mean Reversion (OsEngine RsiTrade)
 INSERT INTO logic_indicator_signals (
@@ -1840,7 +1814,8 @@ CROSS JOIN (VALUES
     ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'RSI Mean Reversion';
+WHERE l.name = 'RSI Mean Reversion'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- Bollinger Bounce (OsEngine StrategyBollinger)
 INSERT INTO logic_indicator_signals (
@@ -1855,7 +1830,8 @@ CROSS JOIN (VALUES
     ('BB',  'close', 'short', 'trend',   '@BB(period=20,series=MIDDLE) pp < VALUE', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'Bollinger Bounce';
+WHERE l.name = 'Bollinger Bounce'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- Bollinger Breakout (OsEngine BollingerRevers)
 INSERT INTO logic_indicator_signals (
@@ -1870,7 +1846,8 @@ CROSS JOIN (VALUES
     ('BB',  'close', 'short', 'counter', '@BB(period=20,series=MIDDLE) pp > VALUE', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'Bollinger Breakout';
+WHERE l.name = 'Bollinger Breakout'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- MACD Zero Line (OsEngine MacdRevers упрощённо: пересечение нуля)
 INSERT INTO logic_indicator_signals (
@@ -1885,7 +1862,8 @@ CROSS JOIN (VALUES
     ('MACD', 'close', 'short', 'counter', '@MACD(series=MACD) VALUE > 0', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'MACD Zero Line';
+WHERE l.name = 'MACD Zero Line'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- Stochastic Levels (контртренд по уровням, как RsiTrade для Stoch)
 INSERT INTO logic_indicator_signals (
@@ -1900,7 +1878,8 @@ CROSS JOIN (VALUES
     ('STOCH', 'close', 'short', 'trend',   '@STOCH(series=K) VALUE < 50', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'Stochastic Levels';
+WHERE l.name = 'Stochastic Levels'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- EMA Price Cross (OsEngine SmaTrendSample на EMA)
 INSERT INTO logic_indicator_signals (
@@ -1915,7 +1894,8 @@ CROSS JOIN (VALUES
     ('EMA', 'close', 'short', 'counter', '@EMA(period=20,series=VALUE) pp > VALUE', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'EMA Price Cross';
+WHERE l.name = 'EMA Price Cross'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- Dual MA Trend (SMA+EMA как в SmaWithAShift: фильтр «цена выше/ниже обеих»)
 INSERT INTO logic_indicator_signals (
@@ -1932,7 +1912,8 @@ CROSS JOIN (VALUES
     ('SMA', 'close', 'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 5)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'Dual MA Trend';
+WHERE l.name = 'Dual MA Trend'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- SMA Stoch Pullback (OsEngine SmaStochastic: тренд SMA + откат Stoch)
 INSERT INTO logic_indicator_signals (
@@ -1949,7 +1930,8 @@ CROSS JOIN (VALUES
     ('SMA',   'close', 'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 5)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'SMA Stoch Pullback';
+WHERE l.name = 'SMA Stoch Pullback'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- BB Stoch Bounce (OsEngine StrategyBollingerAndStochastic)
 INSERT INTO logic_indicator_signals (
@@ -1966,7 +1948,8 @@ CROSS JOIN (VALUES
     ('BB',    'close', 'short', 'trend',   '@BB(period=20,series=MIDDLE) pp < VALUE', 5)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'BB Stoch Bounce';
+WHERE l.name = 'BB Stoch Bounce'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- SMAT3 Trend (тройное SMA как сглаженный тренд)
 INSERT INTO logic_indicator_signals (
@@ -1981,7 +1964,8 @@ CROSS JOIN (VALUES
     ('SMAT3', 'close', 'short', 'counter', '@SMAT3(series=VALUE) pp > VALUE', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'SMAT3 Trend';
+WHERE l.name = 'SMAT3 Trend'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- Все акции во все seed-логики (включая уже существующие строки)
 INSERT INTO logic_securities (logic_id, security_id, display_order)
@@ -2000,17 +1984,10 @@ WHERE l.name IN (
     'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
     'BB Stoch Bounce', 'SMAT3 Trend'
 )
-ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+ON CONFLICT (logic_id, security_id) DO NOTHING;
 
 -- SL/TP как у демо
-DELETE FROM logic_stops ls
-USING logics l
-WHERE ls.logic_id = l.id
-  AND l.name IN (
-    'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
-    'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
-    'BB Stoch Bounce', 'SMAT3 Trend'
-  );
+-- Стопы seed: insert only if empty
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
@@ -2023,7 +2000,8 @@ WHERE l.name IN (
     'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
     'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
     'BB Stoch Bounce', 'SMAT3 Trend'
-);
+)
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- =====================================================================
 -- v43: L1–L4 из MultiLogicTradeA (FINRESP) — AND-сигналы, без Strict/Regime/OnFlip
@@ -2061,9 +2039,7 @@ CROSS JOIN (VALUES
 WHERE l.name IN (
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
 )
-ON CONFLICT (logic_id, param_key) DO UPDATE SET
-    param_value = EXCLUDED.param_value,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
 SELECT l.id, d.param_key, d.default_value, d.value_type
@@ -2074,12 +2050,7 @@ WHERE l.name IN (
 )
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
-DELETE FROM logic_indicator_signals lis
-USING logics l
-WHERE lis.logic_id = l.id
-  AND l.name IN (
-    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
-  );
+-- Сигналы seed: insert only if empty (см. AND NOT EXISTS ниже)
 
 -- L1 long trend: Op SMA Ab + LinReg AbUp + ATR GrOk + ADX TrOk + CCI>=100 + MACD>Sig
 INSERT INTO logic_indicator_signals (
@@ -2100,7 +2071,8 @@ CROSS JOIN (VALUES
     ('MACD',   'close', 'long', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 9)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'L1 — лонг, тренд';
+WHERE l.name = 'L1 — лонг, тренд'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- L2 long flat: Stoch oversold + ADX weak + ATR growth + SMA Ab + MACD
 INSERT INTO logic_indicator_signals (
@@ -2119,7 +2091,8 @@ CROSS JOIN (VALUES
     ('MACD',  'close', 'long', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 7)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'L2 — лонг, боковик';
+WHERE l.name = 'L2 — лонг, боковик'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- L3 short trend
 INSERT INTO logic_indicator_signals (
@@ -2140,7 +2113,8 @@ CROSS JOIN (VALUES
     ('MACD',   'close', 'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 9)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'L3 — шорт, тренд';
+WHERE l.name = 'L3 — шорт, тренд'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- L4 short flat
 INSERT INTO logic_indicator_signals (
@@ -2159,7 +2133,8 @@ CROSS JOIN (VALUES
     ('MACD',  'close', 'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 7)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'L4 — шорт, боковик';
+WHERE l.name = 'L4 — шорт, боковик'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_securities (logic_id, security_id, display_order)
 SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
@@ -2175,14 +2150,9 @@ CROSS JOIN LATERAL (
 WHERE l.name IN (
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
 )
-ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+ON CONFLICT (logic_id, security_id) DO NOTHING;
 
-DELETE FROM logic_stops ls
-USING logics l
-WHERE ls.logic_id = l.id
-  AND l.name IN (
-    'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
-  );
+-- Стопы seed: insert only if empty
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
@@ -2193,7 +2163,8 @@ CROSS JOIN (VALUES
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
-);
+)
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- =====================================================================
 -- v44: ещё 5 контртрендовых стратегий (OsEngine-style)
@@ -2227,7 +2198,7 @@ CROSS JOIN (VALUES
     )
 ) AS v(name, note)
 WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
-ON CONFLICT (name) DO UPDATE SET note = EXCLUDED.note;
+ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
 SELECT l.id, v.param_key, v.param_value, v.value_type
@@ -2247,9 +2218,7 @@ CROSS JOIN (VALUES
 WHERE l.name IN (
     'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
-ON CONFLICT (logic_id, param_key) DO UPDATE SET
-    param_value = EXCLUDED.param_value,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
 SELECT l.id, d.param_key, d.default_value, d.value_type
@@ -2260,12 +2229,7 @@ WHERE l.name IN (
 )
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
-DELETE FROM logic_indicator_signals lis
-USING logics l
-WHERE lis.logic_id = l.id
-  AND l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
-  );
+-- Сигналы seed: insert only if empty (см. AND NOT EXISTS ниже)
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2279,7 +2243,8 @@ CROSS JOIN (VALUES
     ('CCI', 'close', 'short', 'trend',   '@CCI(period=20,series=VALUE) VALUE <= 0', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'CCI Countertrade';
+WHERE l.name = 'CCI Countertrade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2293,7 +2258,8 @@ CROSS JOIN (VALUES
     ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'LinReg Fade';
+WHERE l.name = 'LinReg Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2309,7 +2275,8 @@ CROSS JOIN (VALUES
     ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 5)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'ADX Range RSI';
+WHERE l.name = 'ADX Range RSI'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2323,7 +2290,8 @@ CROSS JOIN (VALUES
     ('MACD', 'close', 'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 3)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'MACD Hist Fade';
+WHERE l.name = 'MACD Hist Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2339,7 +2307,8 @@ CROSS JOIN (VALUES
     ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 45', 5)
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'ATR Spike Reversal';
+WHERE l.name = 'ATR Spike Reversal'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_securities (logic_id, security_id, display_order)
 SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
@@ -2355,14 +2324,9 @@ CROSS JOIN LATERAL (
 WHERE l.name IN (
     'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
-ON CONFLICT (logic_id, security_id) DO UPDATE SET is_active = TRUE;
+ON CONFLICT (logic_id, security_id) DO NOTHING;
 
-DELETE FROM logic_stops ls
-USING logics l
-WHERE ls.logic_id = l.id
-  AND l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
-  );
+-- Стопы seed: insert only if empty
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
@@ -2373,7 +2337,348 @@ CROSS JOIN (VALUES
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
     'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
-);
+)
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
+
+-- =====================================================================
+-- v45: +5 трендовых и +10 контртрендовых (OsEngine-style), ещё не в seed
+-- FAKE, выключены, все акции, SL 1% resume / TP 3%.
+-- Только INSERT IF NOT EXISTS — копии пользователя и правки не затираются.
+-- =====================================================================
+
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT v.name, a.id, FALSE, v.note
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+CROSS JOIN (VALUES
+    -- 5 trend
+    ('MACD Signal Cross', 'Трендовая. OsEngine MacdLine: long при HISTOGRAM>0 (MACD выше Signal), short при HISTOGRAM<0.'),
+    ('ADX DI Trend', 'Трендовая. OsEngine AdxTrade: ADX>25 и направление +DI/−DI; выход при ослаблении ADX.'),
+    ('SMA100 Trend', 'Трендовая. OsEngine SmaTrendSample (долгая SMA): long выше SMA(100), short ниже.'),
+    ('LinReg Slope Trend', 'Трендовая. Следование наклону LinReg: long при SLOPE>0 и цене выше mid, short зеркально.'),
+    ('PACC Momentum Trend', 'Трендовая. OsEngine-style по ускорению цены PACC: long при PACC>0, short при PACC<0.'),
+    -- 10 counter-trend
+    ('RSI Extreme 20/80', 'Контртрендовая. OsEngine RsiTrade (жёсткие уровни): long RSI<20, short RSI>80.'),
+    ('Stoch D Fade', 'Контртрендовая. OsEngine Stochastic по %D: long %D<20, short %D>80.'),
+    ('CCI Extreme 200', 'Контртрендовая. OsEngine CciTrade (экстремум ±200): вход на перегибе, выход к нулю.'),
+    ('MACD Signal Fade', 'Контртрендовая. Fade против гистограммы MACD (зеркало MacdLine): long при HISTOGRAM<0.'),
+    ('ADX Exhaustion Fade', 'Контртрендовая. Сильный ADX>40 + RSI-экстремум — усталость тренда (OsEngine exhaustion).'),
+    ('ATR Quiet RSI', 'Контртрендовая. Низкая волатильность ATR GROWTH5<1 + RSI fade — боковик.'),
+    ('SMA Stretch Fade', 'Контртрендовая. Сильный отрыв цены от SMA(20) + RSI — возврат к средней (OsEngine stretch).'),
+    ('Stoch RSI Combo', 'Контртрендовая (комбо). OsEngine-style: одновременно Stoch и RSI в экстремуме.'),
+    ('PACC Reversal', 'Контртрендовая. Разворот ускорения PACC против цены/RSI — fade после импульса.'),
+    ('EMA RSI Fade', 'Контртрендовая. Цена у EMA + RSI перепродан/перекуп — откат к EMA (OsEngine pullback fade).')
+) AS v(name, note)
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name IN (
+    'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
+    'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
+    'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name IN (
+    'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
+    'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
+    'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+-- --- trend signals ---
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('MACD', 'open',  'long',  'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 0),
+    ('MACD', 'close', 'long',  'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 1),
+    ('MACD', 'open',  'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 2),
+    ('MACD', 'close', 'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'MACD Signal Cross'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ADX', 'open',  'long',  'trend',   '@ADX(period=14,series=ADX) VALUE > 25', 0),
+    ('SMA', 'open',  'long',  'trend',   '@SMA(period=50,series=VALUE) pp > VALUE', 1),
+    ('ADX', 'close', 'long',  'trend',   '@ADX(period=14,series=ADX) VALUE < 20', 2),
+    ('ADX', 'open',  'short', 'trend',   '@ADX(period=14,series=ADX) VALUE > 25', 3),
+    ('SMA', 'open',  'short', 'trend',   '@SMA(period=50,series=VALUE) pp < VALUE', 4),
+    ('ADX', 'close', 'short', 'trend',   '@ADX(period=14,series=ADX) VALUE < 20', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'ADX DI Trend'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA', 'open',  'long',  'trend',   '@SMA(period=100,series=VALUE) pp > VALUE', 0),
+    ('SMA', 'close', 'long',  'trend',   '@SMA(period=100,series=VALUE) pp < VALUE', 1),
+    ('SMA', 'open',  'short', 'trend',   '@SMA(period=100,series=VALUE) pp < VALUE', 2),
+    ('SMA', 'close', 'short', 'trend',   '@SMA(period=100,series=VALUE) pp > VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'SMA100 Trend'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('LINREG', 'open',  'long',  'trend',   '@LINREG(period=20,std_dev=2,series=SLOPE) VALUE > 0', 0),
+    ('SMA',    'open',  'long',  'trend',   '@SMA(period=20,series=VALUE) pp > VALUE', 1),
+    ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=2,series=SLOPE) VALUE < 0', 2),
+    ('LINREG', 'open',  'short', 'trend',   '@LINREG(period=20,std_dev=2,series=SLOPE) VALUE < 0', 3),
+    ('SMA',    'open',  'short', 'trend',   '@SMA(period=20,series=VALUE) pp < VALUE', 4),
+    ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=SLOPE) VALUE > 0', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'LinReg Slope Trend'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('PACC', 'open',  'long',  'trend',   '@PACC(series=VALUE) VALUE > 0', 0),
+    ('PACC', 'close', 'long',  'trend',   '@PACC(series=VALUE) VALUE < 0', 1),
+    ('PACC', 'open',  'short', 'trend',   '@PACC(series=VALUE) VALUE < 0', 2),
+    ('PACC', 'close', 'short', 'trend',   '@PACC(series=VALUE) VALUE > 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'PACC Momentum Trend'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- --- counter-trend signals ---
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 20', 0),
+    ('RSI', 'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 50', 1),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 80', 2),
+    ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'RSI Extreme 20/80'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('STOCH', 'open',  'long',  'counter', '@STOCH(series=D) VALUE < 20', 0),
+    ('STOCH', 'close', 'long',  'trend',   '@STOCH(series=D) VALUE > 50', 1),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(series=D) VALUE > 80', 2),
+    ('STOCH', 'close', 'short', 'trend',   '@STOCH(series=D) VALUE < 50', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Stoch D Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('CCI', 'open',  'long',  'counter', '@CCI(period=20,series=VALUE) VALUE <= -200', 0),
+    ('CCI', 'close', 'long',  'trend',   '@CCI(period=20,series=VALUE) VALUE >= 0', 1),
+    ('CCI', 'open',  'short', 'counter', '@CCI(period=20,series=VALUE) VALUE >= 200', 2),
+    ('CCI', 'close', 'short', 'trend',   '@CCI(period=20,series=VALUE) VALUE <= 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'CCI Extreme 200'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('MACD', 'open',  'long',  'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 0),
+    ('MACD', 'close', 'long',  'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 1),
+    ('MACD', 'open',  'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 2),
+    ('MACD', 'close', 'short', 'trend',   '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'MACD Signal Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ADX', 'open',  'long',  'counter', '@ADX(period=14,series=ADX) VALUE > 40', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 1),
+    ('RSI', 'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 50', 2),
+    ('ADX', 'open',  'short', 'counter', '@ADX(period=14,series=ADX) VALUE > 40', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 4),
+    ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'ADX Exhaustion Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ATR', 'open',  'long',  'counter', '@ATR(period=14,series=GROWTH5) VALUE < 1', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 35', 1),
+    ('RSI', 'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 55', 2),
+    ('ATR', 'open',  'short', 'counter', '@ATR(period=14,series=GROWTH5) VALUE < 1', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 65', 4),
+    ('RSI', 'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 45', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'ATR Quiet RSI'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA', 'open',  'long',  'counter', '@SMA(period=20,series=VALUE) pp < VALUE', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 1),
+    ('SMA', 'close', 'long',  'trend',   '@SMA(period=20,series=VALUE) pp >= VALUE', 2),
+    ('SMA', 'open',  'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 4),
+    ('SMA', 'close', 'short', 'trend',   '@SMA(period=20,series=VALUE) pp <= VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'SMA Stretch Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('STOCH', 'open',  'long',  'counter', '@STOCH(series=K) VALUE < 20', 0),
+    ('RSI',   'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 1),
+    ('RSI',   'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 50', 2),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(series=K) VALUE > 80', 3),
+    ('RSI',   'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 4),
+    ('RSI',   'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Stoch RSI Combo'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('PACC', 'open',  'long',  'counter', '@PACC(series=VALUE) VALUE < 0', 0),
+    ('RSI',  'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 35', 1),
+    ('PACC', 'close', 'long',  'trend',   '@PACC(series=VALUE) VALUE > 0', 2),
+    ('PACC', 'open',  'short', 'counter', '@PACC(series=VALUE) VALUE > 0', 3),
+    ('RSI',  'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 65', 4),
+    ('PACC', 'close', 'short', 'trend',   '@PACC(series=VALUE) VALUE < 0', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'PACC Reversal'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('EMA', 'open',  'long',  'counter', '@EMA(period=20,series=VALUE) pp <= VALUE', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 35', 1),
+    ('EMA', 'close', 'long',  'trend',   '@EMA(period=20,series=VALUE) pp > VALUE', 2),
+    ('EMA', 'open',  'short', 'counter', '@EMA(period=20,series=VALUE) pp >= VALUE', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 65', 4),
+    ('EMA', 'close', 'short', 'trend',   '@EMA(period=20,series=VALUE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'EMA RSI Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name IN (
+    'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
+    'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
+    'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade'
+)
+ON CONFLICT (logic_id, security_id) DO NOTHING;
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'security',        3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name IN (
+    'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
+    'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
+    'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade'
+)
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- Примечания ко всем seed-логикам (тип стратегии + источник)
 UPDATE logics l
@@ -2438,9 +2743,25 @@ FROM (VALUES
     (
         'L4 — шорт, боковик',
         'Контртрендовая / боковик. FINRESP L4 — short в диапазоне.'
-    )
+    ),
+    ('MACD Signal Cross', 'Трендовая. OsEngine MacdLine: long при HISTOGRAM>0 (MACD выше Signal), short при HISTOGRAM<0.'),
+    ('ADX DI Trend', 'Трендовая. OsEngine AdxTrade: ADX>25 + направление по SMA(50); выход при ADX<20.'),
+    ('SMA100 Trend', 'Трендовая. OsEngine SmaTrendSample (долгая SMA): long выше SMA(100), short ниже.'),
+    ('LinReg Slope Trend', 'Трендовая. Следование наклону LinReg + фильтр SMA(20).'),
+    ('PACC Momentum Trend', 'Трендовая. Ускорение цены PACC: long при PACC>0, short при PACC<0.'),
+    ('RSI Extreme 20/80', 'Контртрендовая. OsEngine RsiTrade (жёсткие уровни): long RSI<20, short RSI>80.'),
+    ('Stoch D Fade', 'Контртрендовая. OsEngine Stochastic по %D: long %D<20, short %D>80.'),
+    ('CCI Extreme 200', 'Контртрендовая. OsEngine CciTrade (экстремум ±200).'),
+    ('MACD Signal Fade', 'Контртрендовая. Fade против гистограммы MACD (зеркало MacdLine).'),
+    ('ADX Exhaustion Fade', 'Контртрендовая. ADX>40 + RSI-экстремум — усталость тренда.'),
+    ('ATR Quiet RSI', 'Контртрендовая. Низкая волатильность ATR + RSI fade.'),
+    ('SMA Stretch Fade', 'Контртрендовая. Отрыв от SMA(20) + RSI — возврат к средней.'),
+    ('Stoch RSI Combo', 'Контртрендовая (комбо). Stoch и RSI одновременно в экстремуме.'),
+    ('PACC Reversal', 'Контртрендовая. Разворот ускорения PACC + RSI.'),
+    ('EMA RSI Fade', 'Контртрендовая. Цена у EMA + RSI — откат к EMA.')
 ) AS v(name, note)
-WHERE l.name = v.name;
+WHERE l.name = v.name
+  AND (l.note IS NULL OR btrim(l.note) = '');
 
 -- Сделки по торговой логике (исполнение по сигналам индикаторов)
 CREATE TABLE IF NOT EXISTS logic_trades (

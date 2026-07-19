@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Logics export/import (checkboxes + JSON; papers yes, tests no)
+**Последнее обновление:** 2026-07-19 — v45: +5 trend +10 counter OsEngine logics; seed insert-only (preserve copies)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -297,6 +297,7 @@
 - [x] pg_cron / Node daily schedule for cleanup when `APP_CLEANUP_DISK` is on (2026-07-18).
 - [x] Futures testing/live: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token restore on bad verify (2026-07-18).
 - [x] Logics export/import JSON (checkboxes, papers yes / tests no) (2026-07-19).
+- [x] v45: +5 trend +10 counter OsEngine seed logics; seed idempotent (no DELETE) (2026-07-19).
 
 ---
 
@@ -316,6 +317,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | v45 seed: +5 trend +10 counter OsEngine logics; no DELETE on re-seed (preserve copies/edits) |
 | 2026-07-19 | Logics export/import: right checkboxes, header Export/Import, JSON with papers/params/signals/stops, no tests |
 | 2026-07-18 | Futures backtest fix: partial coverage still runs indicators; MOEX M10→M15; T-Bank partial→MOEX; concurrency=1 |
 | 2026-07-18 | Futures: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token rollback on bad verify |
@@ -551,3 +553,4 @@
 120. «Learn Futures… when I choose Futures in testing it loads prices and tests; same for combat… T-Bank token didn’t save / can it fly off?»
 121. «Futures again, not a single test transaction… look, is it right or again something fell?»
 122. «Add export/import for logics: checkboxes on the right, Export/Import buttons on the subtitle row; message with names; papers included, tests not.»
+123. «Add 5 trend + 10 counter-trend OsEngine logics not yet in seed; on upgrade do not erase existing/copied logics — insert if not exists.»
