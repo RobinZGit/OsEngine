@@ -459,6 +459,11 @@ export class LogicsService {
     );
   }
 
+  /** Только активные прогоны — без опроса каждой логики. */
+  listActiveBacktests(): Observable<BacktestRunStatus[]> {
+    return this.http.get<BacktestRunStatus[]>(`${this.appConfig.apiUrl}/logic-backtest/active`);
+  }
+
   /** Диагностика: UI → api/logs/backtest-progress.log */
   postBacktestUiLog(body: {
     logic_id: number;

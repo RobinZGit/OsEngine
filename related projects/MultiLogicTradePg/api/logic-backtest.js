@@ -519,9 +519,9 @@ async function syncActiveSecurities(
 
   const progressDetail = () => {
     const total = Math.max(1, secRows.length);
-    const active = [...inFlight.values()].filter(Boolean).slice(0, 4);
-    const activePart = active.length ? ` · сейчас: ${active.join(', ')}` : '';
-    return `Подготовка ${completed} / ${total}${activePart}`;
+    const active = [...inFlight.values()].filter(Boolean).slice(0, 3);
+    const activePart = active.length ? ` · ${active.join('; ')}` : '';
+    return `Бумаги ${completed}/${total}${activePart}`;
   };
 
   const bumpPrepProgress = async (force = false) => {
@@ -534,11 +534,14 @@ async function syncActiveSecurities(
       PREP_SPAN,
       Math.round((sum / secRows.length) * PREP_SPAN * 100) / 100
     );
+    const almostDone = completed >= Math.max(0, secRows.length - 1);
     await reportProgress(
       {
         status: 'loading_prices',
         progress_pct: pct,
-        phase_message: 'Загрузка цен и индикаторов',
+        phase_message: almostDone
+          ? 'Догрузка последних бумаг'
+          : 'Загрузка цен и индикаторов',
         phase_detail: progressDetail(),
       },
       { force }
@@ -575,7 +578,7 @@ async function syncActiveSecurities(
         async ({ detail, frac }) => {
           paperFrac.set(secId, Math.max(0.05, Math.min(0.99, Number(frac) || 0.05)));
           if (detail) {
-            inFlight.set(secId, `${label}`);
+            inFlight.set(secId, String(detail));
           }
           await bumpPrepProgress();
         }
@@ -914,7 +917,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
         status: 'loading_indicators',
         progress_pct: 39,
         phase_message: 'Подготовка прогона',
-        phase_detail: `Бумаг ${secTotal}, сигналов ${indicatorIds.length}`,
+        phase_detail: `Проверка свечей/индикаторов · бумаг ${secTotal}, сигналов ${indicatorIds.length}`,
       },
       { force: true }
     );
@@ -929,7 +932,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       status: 'running',
       progress_pct: 40,
       phase_message: 'Прогон по свечам (SQL)',
-      phase_detail: `бумаг ${knownSecIds.size}`,
+      phase_detail: `Старт · бумаг ${knownSecIds.size} · прогресс пишется в logic_backtest_runs`,
       test_balance: balance,
     });
     await backtestLog(
@@ -1168,6 +1171,26 @@ async function getBacktestStatus(pool, logicId, runId) {
   return rows[0] ?? null;
 }
 
+/** Только активные прогоны — для hydrate UI без опроса всех логик (иначе freeze). */
+async function listActiveBacktests(pool) {
+  const { rows } = await pool.query(`
+    SELECT id, logic_id,
+      date_from::text AS date_from,
+      date_to::text AS date_to,
+      status,
+      progress_pct::float8 AS progress_pct,
+      phase_message, phase_detail, current_bar_dt,
+      total_bars, processed_bars, trades_created,
+      test_balance::float8 AS test_balance,
+      financial_result::float8 AS financial_result,
+      cancel_requested, error_message, started_at, finished_at, created_at
+    FROM logic_backtest_runs
+    WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+    ORDER BY id DESC
+  `);
+  return rows;
+}
+
 /** После рестарта API фоновых воркеров нет — «висящие» active-статусы блокируют новый тест без кнопки Стоп. */
 async function failOrphanBacktestRuns(pool) {
   const { rowCount } = await pool.query(
@@ -1268,6 +1291,7 @@ module.exports = {
   startBacktest,
   supersedeActiveBacktests,
   getBacktestStatus,
+  listActiveBacktests,
   cancelBacktest,
   failOrphanBacktestRuns,
 };

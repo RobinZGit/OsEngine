@@ -22,6 +22,7 @@ const {
   startBacktest,
   supersedeActiveBacktests,
   getBacktestStatus,
+  listActiveBacktests,
   cancelBacktest,
   failOrphanBacktestRuns,
 } = require('./logic-backtest');
@@ -3256,12 +3257,7 @@ app.get('/api/logic-backtest/status', async (req, res) => {
     const row = await getBacktestStatus(backtestPool, logicId, runId);
     const ms = Date.now() - t0;
     if (!row) {
-      appendBacktestProgressLog('api-status', {
-        logic_id: logicId,
-        run_id: runId,
-        found: false,
-        ms,
-      });
+      // Не пишем found:false в лог — UI раньше опрашивал ВСЕ логики и забивал диск/UI.
       res.status(404).json({ error: 'Run not found' });
       return;
     }
@@ -3289,6 +3285,17 @@ app.get('/api/logic-backtest/status', async (req, res) => {
       error: err.message,
       ms: Date.now() - t0,
     });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Активные прогоны одним запросом (hydrate без N×/status на каждую логику). */
+app.get('/api/logic-backtest/active', async (_req, res) => {
+  try {
+    const rows = await listActiveBacktests(backtestPool);
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /api/logic-backtest/active', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1481,20 +1481,32 @@ BEGIN
         );
 
         IF v_i % v_commit_every = 0 OR v_i = v_total THEN
+            SELECT COUNT(*)::INTEGER INTO v_trades_created
+            FROM logic_trades
+            WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+
+            SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
+            FROM logic_trades
+            WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+
             PERFORM logic_backtest_update_run(
                 p_run_id, 'running',
-                round(40 + v_i::NUMERIC / v_total * 60, 2),
+                round(40 + v_i::NUMERIC / v_total * 58, 2),
                 'Прогон по свечам',
-                format('%s / %s баров', v_i, v_total),
-                v_bar_dt, v_i, NULL, v_balance
+                format(
+                    '%s/%s баров · сделок %s · финрез %s · баланс %s',
+                    v_i, v_total, v_trades_created,
+                    round(v_pnl, 2), round(v_balance, 0)
+                ),
+                v_bar_dt, v_i, v_trades_created, v_balance, v_pnl
             );
             COMMIT;
         END IF;
     END LOOP;
 
     PERFORM logic_backtest_update_run(
-        p_run_id, 'running', 99.5, 'Завершение',
-        'Подсчёт результата…',
+        p_run_id, 'running', 98.5, 'Завершение',
+        'Парковка денежного фонда (TMON/LQDT)…',
         CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
         v_total, NULL, v_balance
     );
@@ -1506,11 +1518,27 @@ BEGIN
         );
     END IF;
 
+    PERFORM logic_backtest_update_run(
+        p_run_id, 'running', 99.2, 'Завершение',
+        'Подсчёт финансового результата…',
+        CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
+        v_total, NULL, v_balance
+    );
+    COMMIT;
+
     SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
     FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
 
     SELECT COUNT(*)::INTEGER INTO v_trades_created
     FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+
+    PERFORM logic_backtest_update_run(
+        p_run_id, 'running', 99.6, 'Завершение',
+        format('Диагностика · сделок %s · финрез %s', v_trades_created, round(v_pnl, 2)),
+        CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
+        v_total, v_trades_created, v_balance, v_pnl
+    );
+    COMMIT;
 
     BEGIN
         v_diag := logic_backtest_diagnose(
@@ -1538,7 +1566,7 @@ BEGIN
     PERFORM logic_backtest_update_run(
         p_run_id, 'completed', 100,
         CASE WHEN v_trades_created > 0 THEN 'Тестирование завершено' ELSE 'Тест завершён — сделок нет' END,
-        format('%s баров, сделок: %s', v_total, v_trades_created),
+        format('%s баров, сделок: %s, финрез: %s', v_total, v_trades_created, round(v_pnl, 2)),
         v_bars[v_total], v_total, v_trades_created, v_balance, v_pnl
     );
     COMMIT;

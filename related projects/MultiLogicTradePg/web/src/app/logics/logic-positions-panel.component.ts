@@ -55,6 +55,7 @@ export interface BacktestRunStatus {
   phase_detail: string | null;
   total_bars: number;
   processed_bars: number;
+  trades_created?: number;
   test_balance: number | null;
   financial_result: number | null;
   error_message: string | null;
@@ -308,17 +309,38 @@ export class LogicPositionsPanelComponent implements OnChanges {
     progress_pct: number;
     phase_message: string | null;
     phase_detail: string | null;
+    bars_label: string | null;
+    trades_label: string | null;
+    pnl_label: string | null;
+    balance_label: string | null;
   } {
     const s = this.backtestRun?.status;
     const serverActive =
       s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
     if (this.localStarting && !serverActive) {
-      return { progress_pct: 0, phase_message: 'Запуск', phase_detail: 'Ожидание сервера…' };
+      return {
+        progress_pct: 0,
+        phase_message: 'Запуск',
+        phase_detail: 'Ожидание сервера…',
+        bars_label: null,
+        trades_label: null,
+        pnl_label: null,
+        balance_label: null,
+      };
     }
+    const processed = Number(this.backtestRun?.processed_bars) || 0;
+    const total = Number(this.backtestRun?.total_bars) || 0;
+    const trades = Number(this.backtestRun?.trades_created) || 0;
+    const pnl = Number(this.backtestRun?.financial_result);
+    const bal = Number(this.backtestRun?.test_balance);
     return {
       progress_pct: Number(this.backtestRun?.progress_pct) || 0,
       phase_message: this.backtestRun?.phase_message ?? null,
       phase_detail: this.backtestRun?.phase_detail ?? null,
+      bars_label: total > 0 ? `Бары ${processed}/${total}` : null,
+      trades_label: trades > 0 || (serverActive && total > 0) ? `Сделок ${trades}` : null,
+      pnl_label: Number.isFinite(pnl) ? `Финрез ${pnl.toFixed(2)}` : null,
+      balance_label: Number.isFinite(bal) ? `Баланс ${Math.round(bal)}` : null,
     };
   }
 

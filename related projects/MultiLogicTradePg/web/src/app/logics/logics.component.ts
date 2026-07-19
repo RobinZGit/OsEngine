@@ -340,9 +340,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.error = null;
           if (!this.backtestStatusHydrated) {
             this.backtestStatusHydrated = true;
-            for (const row of rows) {
-              this.refreshBacktestStatus(row.id);
-            }
+            this.hydrateActiveBacktests();
           }
           // Сделки — read-only, обновляем; редактируемые блоки (параметры, формулы) — нет
           this.refreshAllTradesSummaries();
@@ -2900,8 +2898,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
           if (this.backtestStatusSeq.get(logicId) !== seq) return;
           this.applyBacktestStatusRow(logicId, row);
         },
-        error: () => {
-          window.setTimeout(() => this.refreshBacktestStatus(logicId, preferred), 600);
+        error: (err) => {
+          const status = Number(err?.status);
+          // 404 = нет прогона — НЕ ретраим (раньше: 100 логик × каждые 600мс → freeze формы).
+          if (status === 404) {
+            return;
+          }
+          window.setTimeout(() => {
+            if (this.backtestPollIds.has(logicId) || this.preferredBacktestRunId.has(logicId)) {
+              this.refreshBacktestStatus(logicId, preferred);
+            }
+          }, 1200);
         },
       });
   }
@@ -2992,10 +2999,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
 
     this.setBacktestRun(logicId, nextRow);
+    const prevStatus = String(cur?.status ?? '');
     if (active(st)) {
       this.backtestPollIds.add(logicId);
       if (rowId > 0) {
         this.preferredBacktestRunId.set(logicId, rowId);
+      }
+      // Не пересобирать списки сделок на каждый % — это «дубит» форму.
+      if (prevStatus !== st) {
+        this.rebuildTestTradesView(logicId);
       }
     } else {
       this.backtestPollIds.delete(logicId);
@@ -3003,8 +3015,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.stopFastBacktestPoll(logicId);
       this.backtestOptimisticAtMs.delete(logicId);
       this.loadTestTradesForLogic(logicId, true);
+      this.rebuildTestTradesView(logicId);
     }
-    this.rebuildTestTradesView(logicId);
   }
 
   private loadTradesForLogic(logicId: number, silent = false): void {
@@ -3273,11 +3285,33 @@ export class LogicsComponent implements OnInit, OnDestroy {
         for (const id of [...this.selectedExportIds]) {
           if (!alive.has(id)) this.selectedExportIds.delete(id);
         }
-        // Подхватить «зомби»/активный прогон → кнопка «Стоп» (status API предпочитает active).
-        for (const row of rows) {
-          this.refreshBacktestStatus(row.id);
-        }
+        // Подхватить активный прогон → кнопка «Стоп» (один запрос, не N×status).
+        this.hydrateActiveBacktests();
       },
     });
+  }
+
+  /** Один GET /active вместо status по каждой логике (иначе UI «дубовый»). */
+  private hydrateActiveBacktests(): void {
+    this.logicsService
+      .listActiveBacktests()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (rows) => {
+          for (const row of rows || []) {
+            const logicId = Number(row.logic_id);
+            if (!Number.isFinite(logicId) || logicId <= 0) continue;
+            this.applyBacktestStatusRow(logicId, row);
+            const st = String(row.status ?? '');
+            if (
+              ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st) &&
+              Number(row.id) > 0
+            ) {
+              this.startFastBacktestPoll(logicId, Number(row.id));
+            }
+          }
+        },
+        error: () => {},
+      });
   }
 }

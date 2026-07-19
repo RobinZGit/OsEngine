@@ -135,9 +135,25 @@
         <div class="backtest-progress-fill" [style.width.%]="backtestProgressView.progress_pct"></div>
       </div>
       <div class="backtest-progress-meta">
-        <span>{{ backtestProgressView.phase_message }}</span>
-        <span>{{ backtestProgressView.phase_detail }}</span>
-        <span>{{ backtestProgressView.progress_pct | number:'1.0-1' }}%</span>
+        <span class="bp-phase">{{ backtestProgressView.phase_message }}</span>
+        <span class="bp-pct">{{ backtestProgressView.progress_pct | number:'1.0-1' }}%</span>
+      </div>
+      @if (backtestProgressView.phase_detail) {
+        <div class="backtest-progress-detail">{{ backtestProgressView.phase_detail }}</div>
+      }
+      <div class="backtest-progress-stats">
+        @if (backtestProgressView.bars_label) {
+          <span>{{ backtestProgressView.bars_label }}</span>
+        }
+        @if (backtestProgressView.trades_label) {
+          <span>{{ backtestProgressView.trades_label }}</span>
+        }
+        @if (backtestProgressView.pnl_label) {
+          <span>{{ backtestProgressView.pnl_label }}</span>
+        }
+        @if (backtestProgressView.balance_label) {
+          <span>{{ backtestProgressView.balance_label }}</span>
+        }
         @if (periodLabel) {
           <span class="positions-period-label">{{ periodLabel }}</span>
         }
