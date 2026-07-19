@@ -1,5 +1,6 @@
 import {
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   EventEmitter,
   HostBinding,
@@ -7,6 +8,7 @@ import {
   OnChanges,
   Output,
   SimpleChanges,
+  inject,
 } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
@@ -96,6 +98,7 @@ export interface BacktestRunStatus {
 })
 
 export class LogicPositionsPanelComponent implements OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
 
   @Input({ required: true }) logicRow!: LogicRow;
 
@@ -630,22 +633,32 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.periodTo = remembered.to;
     this.showPeriodDialog = true;
     this.periodDialogOpen.emit(true);
+    // OnPush: иначе диалог периода может не отрисоваться после клика ▶.
+    this.cdr.markForCheck();
   }
 
   closeRunDialog(): void {
     this.showPeriodDialog = false;
     this.periodDialogOpen.emit(false);
+    this.cdr.markForCheck();
   }
 
   confirmRunDialog(): void {
+    const from = String(this.periodFrom || '').trim();
+    const to = String(this.periodTo || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      alert('Укажите период теста: даты «С» и «По» (ГГГГ-ММ-ДД)');
+      return;
+    }
+    if (from > to) {
+      alert('Дата «С» не может быть позже даты «По»');
+      return;
+    }
     this.showPeriodDialog = false;
     this.periodDialogOpen.emit(false);
-    saveRememberedBacktestPeriod(
-      this.logicRow?.id,
-      this.periodFrom,
-      this.periodTo,
-    );
-    this.startBacktest.emit({ date_from: this.periodFrom, date_to: this.periodTo });
+    saveRememberedBacktestPeriod(this.logicRow?.id, from, to);
+    this.startBacktest.emit({ date_from: from, date_to: to });
+    this.cdr.markForCheck();
   }
 
 

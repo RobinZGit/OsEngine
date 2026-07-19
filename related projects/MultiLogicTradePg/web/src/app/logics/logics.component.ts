@@ -133,6 +133,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private signalIndicatorIdsByLogic = new Map<number, number[]>();
   backtestRuns = new Map<number, BacktestRunStatus>();
   private backtestPollIds = new Set<number>();
+  /** Один раз после первой загрузки логик — подхватить уже идущий тест (после F5). */
+  private backtestStatusHydrated = false;
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
@@ -322,6 +324,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
           });
           this.loading = false;
           this.error = null;
+          if (!this.backtestStatusHydrated) {
+            this.backtestStatusHydrated = true;
+            for (const row of rows) {
+              this.refreshBacktestStatus(row.id);
+            }
+          }
           // Сделки — read-only, обновляем; редактируемые блоки (параметры, формулы) — нет
           this.refreshAllTradesSummaries();
           this.refreshPnlSummaries();
@@ -1102,6 +1110,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedTestTradesBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
       this.loadTestTradesForLogic(logicId);
+      // После F5 иначе ▶ «молчит», а прогон уже идёт в БД.
       this.refreshBacktestStatus(logicId);
     }
   }
@@ -2496,14 +2505,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private doStartBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
+    // Сразу жёлтая строка / «Стоп» — не ждём ответа API (иначе кажется, что ▶ «ничего не делает»).
+    this.applyOptimisticBacktestStart(logicId, period);
     this.logicsService
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
-        next: () => {
+        next: (resp) => {
+          const runId = Number(resp?.run_id);
           this.backtestPollIds.add(logicId);
+          this.expandedLogics.add(logicId);
           this.expandedTestTradesBlocks.add(logicId);
           this.loadSignalsForLogic(logicId);
-          this.refreshBacktestStatus(logicId);
+          this.refreshBacktestStatus(logicId, Number.isFinite(runId) && runId > 0 ? runId : undefined);
         },
         error: (err) => {
           const body = err?.error;
@@ -2515,14 +2528,51 @@ export class LogicsComponent implements OnInit, OnDestroy {
             this.refreshBacktestStatus(logicId, Number(body.run_id));
             return;
           }
-          alert(body?.error || 'Не удалось запустить тест');
+          // Откат оптимистичного pending, если старт не удался.
+          const cur = this.backtestRuns.get(logicId);
+          if (cur && cur.status === 'pending' && cur.id < 0) {
+            this.backtestRuns.delete(logicId);
+            this.backtestPollIds.delete(logicId);
+          }
+          alert(body?.error || err?.message || 'Не удалось запустить тест');
         },
       });
+  }
+
+  /** Локальный pending до ответа /api/logic-backtest/start — чтобы UI сразу окрасился. */
+  private applyOptimisticBacktestStart(
+    logicId: number,
+    period: { date_from: string; date_to: string }
+  ): void {
+    this.backtestRuns.set(logicId, {
+      id: -logicId,
+      logic_id: logicId,
+      date_from: period.date_from,
+      date_to: period.date_to,
+      status: 'pending',
+      progress_pct: 0,
+      phase_message: 'Старт',
+      phase_detail: 'Запуск тестирования…',
+      total_bars: 0,
+      processed_bars: 0,
+      test_balance: null,
+      financial_result: null,
+      error_message: null,
+    });
+    this.backtestPollIds.add(logicId);
+    this.expandedLogics.add(logicId);
+    this.expandedTestTradesBlocks.add(logicId);
   }
 
   cancelBacktestRun(logicId: number): void {
     const run = this.backtestRuns.get(logicId);
     if (!run?.id) return;
+    // Оптимистичный id < 0 — ещё нет run в БД; просто сбрасываем UI.
+    if (Number(run.id) <= 0) {
+      this.backtestRuns.delete(logicId);
+      this.backtestPollIds.delete(logicId);
+      return;
+    }
     this.backtestRuns.set(logicId, {
       ...run,
       phase_message: 'Остановка…',
