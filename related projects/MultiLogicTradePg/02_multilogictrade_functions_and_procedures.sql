@@ -4087,6 +4087,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6260,6 +6262,11 @@ DECLARE
     v_is_simulated BOOLEAN;
     v_close_idx INTEGER := 0;
 BEGIN
+    -- Денежный фонд остаётся купленным: портфельный/бумажный SL не продаёт TMON/LQDT/SBMM.
+    IF logic_is_cash_fund_security(p_security_id) THEN
+        RETURN 0;
+    END IF;
+
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
 
     SELECT l.id, l.account_id, a.account_type
@@ -6588,6 +6595,7 @@ BEGIN
                   AND NOT lt.is_shadow
                   AND NOT lt.is_test
                   AND lt.status IN ('filled', 'submitted')
+                  AND NOT logic_is_cash_fund_security(lt.security_id)
             LOOP
                 v_closed := logic_close_security_positions_market(
                     p_logic_id, v_sec.security_id, FALSE
@@ -6600,6 +6608,7 @@ BEGIN
             SELECT ls.security_id
             FROM logic_securities ls
             WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+              AND NOT logic_is_cash_fund_security(ls.security_id)
         LOOP
             IF v_stop.scope_type = 'security_resume'
                AND EXISTS (
@@ -6710,6 +6719,58 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -10320,6 +10381,13 @@ DECLARE
     v_closed INTEGER := 0;
     v_balance NUMERIC := p_balance;
 BEGIN
+    -- Денежный фонд остаётся купленным: SL/TP/сигналы не закрывают TMON/LQDT/SBMM.
+    IF logic_is_cash_fund_security(p_security_id) THEN
+        o_closed := 0;
+        o_new_balance := v_balance;
+        RETURN;
+    END IF;
+
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
     SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
     SELECT id INTO v_action_short_id FROM actions WHERE name = 'Short' LIMIT 1;
@@ -10528,6 +10596,7 @@ BEGIN
                     FROM logic_trades lt
                     WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
                       AND lt.status IN ('filled', 'submitted')
+                      AND NOT logic_is_cash_fund_security(lt.security_id)
                 LOOP
                     SELECT *
                     INTO v_closed, p_balance
@@ -10541,6 +10610,7 @@ BEGIN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+                  AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
                 IF v_stop.scope_type = 'security_resume'
                    AND logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
@@ -10595,6 +10665,7 @@ BEGIN
                     FROM logic_trades lt
                     WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
                       AND lt.status IN ('filled', 'submitted')
+                      AND NOT logic_is_cash_fund_security(lt.security_id)
                 LOOP
                     SELECT *
                     INTO v_closed, p_balance
@@ -10608,6 +10679,7 @@ BEGIN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+                  AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
                 v_gain := logic_backtest_security_gain_pct(
                     p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
@@ -11943,6 +12015,20 @@ COMMENT ON FUNCTION configure_http_ssl() IS
 -- Вызов из run_trade_cycle / Node trade-runner
 -- ============================================
 
+CREATE OR REPLACE FUNCTION logic_is_cash_fund_security(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+    );
+$$;
+
+COMMENT ON FUNCTION logic_is_cash_fund_security(INTEGER) IS
+'TRUE если бумага — денежный фонд TMON/LQDT/SBMM (не закрывать стопами/сигналами)';
+
 CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
     p_logic_id INTEGER,
     p_code TEXT
@@ -12445,6 +12531,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
 
 
 

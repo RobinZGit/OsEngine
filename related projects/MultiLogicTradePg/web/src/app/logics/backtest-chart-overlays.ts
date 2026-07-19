@@ -56,11 +56,16 @@ export type PaperListRow = {
   security_id: number;
   security_name: string;
   security_prefix: string | null;
+  /** Реализованный финрез (сумма financial_result закрытий), не «баланс» и не MTM. */
   pnl: number;
   commission: number;
   trade_count: number;
   /** Нетто открытый остаток: Long +qty, Short −qty (по remaining_qty открытий). */
   open_qty: number;
+  /** Последняя цена (сделка в периоде или свеча as-of); для MTM. */
+  last_price: number | null;
+  /** |open_qty| × last_price — оценка позиции в портфеле. */
+  position_value: number;
 };
 
 function emptyPaperRow(
@@ -76,7 +81,17 @@ function emptyPaperRow(
     commission: 0,
     trade_count: 0,
     open_qty: 0,
+    last_price: null,
+    position_value: 0,
   };
+}
+
+export function paperPositionValue(openQty: number, lastPrice: number | null | undefined): number {
+  const px = Number(lastPrice);
+  if (!Number.isFinite(px) || px <= 0) return 0;
+  const qty = Math.abs(Number(openQty));
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  return qty * px;
 }
 
 /** Бумаги, по которым были сделки; optional pin (денежный фонд) — всегда сверху. */
@@ -91,6 +106,7 @@ export function papersWithTrades(
   const fromKey = fromDay ? `${fromDay} 00:00:00` : null;
   const toKey = toDay ? `${toDay} 23:59:59` : null;
   const map = new Map<number, PaperListRow>();
+  const lastTradeDt = new Map<number, string>();
   for (const t of trades) {
     if (t.status !== 'filled' && t.status !== 'submitted') continue;
     const key = dtKey(t.bar_dt || t.executed_at);
@@ -125,6 +141,15 @@ export function papersWithTrades(
         row.open_qty += t.action_name === 'Short' ? -rem : rem;
       }
     }
+    const px = Number(t.price);
+    if (Number.isFinite(px) && px > 0) {
+      const prevDt = lastTradeDt.get(t.security_id);
+      if (!prevDt || key >= prevDt) {
+        lastTradeDt.set(t.security_id, key);
+        row.last_price = px;
+      }
+    }
+    row.position_value = paperPositionValue(row.open_qty, row.last_price);
     map.set(t.security_id, row);
   }
   const sorted = [...map.values()].sort((a, b) =>
@@ -145,6 +170,8 @@ export function papersWithTrades(
     commission: fromTrades?.commission ?? 0,
     trade_count: fromTrades?.trade_count ?? 0,
     open_qty: fromTrades?.open_qty ?? 0,
+    last_price: fromTrades?.last_price ?? null,
+    position_value: fromTrades?.position_value ?? 0,
   };
   return [head, ...sorted.filter((r) => r.security_id !== pinned.security_id)];
 }

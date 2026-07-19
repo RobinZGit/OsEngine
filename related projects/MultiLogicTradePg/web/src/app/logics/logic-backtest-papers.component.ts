@@ -35,6 +35,7 @@ import {
   clipCandlesForBacktest,
   dtKey,
   PaperListRow,
+  paperPositionValue,
   papersWithTrades,
   tradeDtWindow,
   tradesForSecurity,
@@ -346,6 +347,43 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     return `${sign}${text}`;
   }
 
+  /** Подтянуть close as-of (тест: конец периода; бой: последняя свеча) для «в портф.». */
+  private refreshPaperMarkToMarket(): void {
+    const tfId = this.timeframeId != null ? Number(this.timeframeId) : null;
+    if (!tfId || !Number.isFinite(tfId) || this.paperRows.length === 0) {
+      return;
+    }
+    const ids = this.paperRows.map((p) => p.security_id);
+    const asOf = this.isLive
+      ? null
+      : this.dateTo
+        ? `${String(this.dateTo).slice(0, 10)} 23:59:59`
+        : null;
+    const sub = this.securitiesApi.getLastPrices(ids, tfId, asOf).subscribe({
+      next: (rows) => {
+        if (!rows?.length) {
+          this.cdr.detectChanges();
+          return;
+        }
+        const byId = new Map(rows.map((r) => [Number(r.security_id), Number(r.close_price)]));
+        let changed = false;
+        this.paperRows = this.paperRows.map((p) => {
+          const px = byId.get(p.security_id);
+          if (px == null || !Number.isFinite(px) || px <= 0) return p;
+          const position_value = paperPositionValue(p.open_qty, px);
+          if (p.last_price === px && p.position_value === position_value) return p;
+          changed = true;
+          return { ...p, last_price: px, position_value };
+        });
+        if (changed) this.cdr.detectChanges();
+      },
+      error: () => {
+        /* fallback — last trade price уже в paperRows */
+      },
+    });
+    this.subs.add(sub);
+  }
+
   onLoadOlder(securityId: number): void {
     const tfId = this.resolveTimeframeId(securityId);
     const st = this.chartState(securityId);
@@ -414,6 +452,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
       this.dateTo,
       this.pinnedPaper
     );
+    this.refreshPaperMarkToMarket();
     for (const paper of this.paperRows) {
       const secTrades = tradesForSecurity(
         this.trades,

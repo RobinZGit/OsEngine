@@ -418,6 +418,11 @@ DECLARE
     v_is_simulated BOOLEAN;
     v_close_idx INTEGER := 0;
 BEGIN
+    -- Денежный фонд остаётся купленным: портфельный/бумажный SL не продаёт TMON/LQDT/SBMM.
+    IF logic_is_cash_fund_security(p_security_id) THEN
+        RETURN 0;
+    END IF;
+
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
 
     SELECT l.id, l.account_id, a.account_type
@@ -746,6 +751,7 @@ BEGIN
                   AND NOT lt.is_shadow
                   AND NOT lt.is_test
                   AND lt.status IN ('filled', 'submitted')
+                  AND NOT logic_is_cash_fund_security(lt.security_id)
             LOOP
                 v_closed := logic_close_security_positions_market(
                     p_logic_id, v_sec.security_id, FALSE
@@ -758,6 +764,7 @@ BEGIN
             SELECT ls.security_id
             FROM logic_securities ls
             WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+              AND NOT logic_is_cash_fund_security(ls.security_id)
         LOOP
             IF v_stop.scope_type = 'security_resume'
                AND EXISTS (

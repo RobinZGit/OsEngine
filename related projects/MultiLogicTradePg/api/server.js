@@ -912,6 +912,47 @@ app.post('/api/securities', async (req, res) => {
   }
 });
 
+/** Последняя цена по списку бумаг (для MTM в списке «Бумаги»). */
+app.get('/api/prices/last', async (req, res) => {
+  const timeframeId = parseId(req.query.timeframe_id);
+  const idsRaw = String(req.query.security_ids || '')
+    .split(',')
+    .map((x) => Number(x.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  const securityIds = [...new Set(idsRaw)].slice(0, 200);
+  const asOfRaw = req.query.as_of != null ? String(req.query.as_of).trim() : '';
+  if (!timeframeId || securityIds.length === 0) {
+    res.status(400).json({ error: 'Укажите timeframe_id и security_ids' });
+    return;
+  }
+  try {
+    const params = [securityIds, timeframeId];
+    let asOfClause = '';
+    if (asOfRaw) {
+      params.push(asOfRaw);
+      asOfClause = `AND p.dt <= $${params.length}::timestamp`;
+    }
+    const { rows } = await pool.query(
+      `
+      SELECT DISTINCT ON (p.security_id)
+        p.security_id,
+        p.close_price::float8 AS close_price,
+        to_char(p.dt, 'YYYY-MM-DD HH24:MI:SS') AS dt
+      FROM prices p
+      WHERE p.security_id = ANY($1::int[])
+        AND p.timeframe_id = $2
+        ${asOfClause}
+      ORDER BY p.security_id, p.dt DESC
+      `,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /api/prices/last', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/prices', async (req, res) => {
   const securityId = parseId(req.query.security_id);
   const timeframeId = parseId(req.query.timeframe_id);

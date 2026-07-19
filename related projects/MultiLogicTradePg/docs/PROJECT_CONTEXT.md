@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: papers list shows open remainder (`ост.`) so unclosed TMON parks are not «0»
+**Последнее обновление:** 2026-07-19 — Ship: cash fund never closed by SL/TP (test+live); papers show `в портф.` MTM + labeled `финрез`
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -308,6 +308,7 @@
 - [x] SQL robots: `logic_backtest_run_bars` + thin Node test prep; live Node → `run_trade_cycle()` only; both installers + push (2026-07-19).
 - [x] Fix backtest cash-fund price prep: `CALL load_prices_http` 4 args (was 5 → always error); seed TMON/LQDT `tbank_figi`; UI badge + sort fund opens first (2026-07-19).
 - [x] Papers list: show open remainder (`ост.`) from Open `remaining_qty` — cash fund stays open so PnL alone looked like «0» (2026-07-19).
+- [x] Papers list (test+live): `в портф.` = |ост.| × last close (`/api/prices/last`); label `финрез` for realized PnL; stop SL/TP never closes TMON/LQDT/SBMM (2026-07-19).
 
 ---
 
@@ -327,6 +328,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: papers MTM value + exclude cash fund from stop closes |
 | 2026-07-19 | Ship: papers list open remainder for unclosed TMON / positions |
 | 2026-07-19 | Ship: TMON price prep CALL fix + FIGI seed; fund opens first in test UI |
 | 2026-07-19 | Ship: zombie backtest 409 without Stop — status prefers active, orphans cleared on API start |
@@ -591,3 +593,5 @@
 135. Test says already running but no Stop button — glitch (orphan run + status showed completed).
 136. «Testing has passed, Atemon did not buy again. Why? If there are corrections, immediately post them.» — DB had 17 TMON buys @ fallback 100; prep `load_prices_http` arity bug + empty FIGI.
 137. «In the transactions I see it, but in the papers list in testing it has a zero remainder. Correct and post.» — papers showed only realized PnL; add `open_qty` / «ост.».
+138. «TMON −60 in papers — commission? Add portfolio absolute value at last price in test+live papers; post.» — −60 was realized PnL from portfolio SL closing TMON; exclude funds from stops; add `в портф.` MTM.
+139. «No stop-losses and no take-profits should affect the fund. It should remain a purchased fund.» — guard close helpers + SL/TP loops; fund stays open.

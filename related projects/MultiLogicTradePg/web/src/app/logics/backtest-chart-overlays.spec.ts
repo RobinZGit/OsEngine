@@ -74,10 +74,13 @@ describe('backtest-chart-overlays', () => {
         commission: 0,
         trade_count: 0,
         open_qty: 0,
+        last_price: null,
+        position_value: 0,
       }
     );
     expect(rows[0].security_prefix).toBe('TMON');
     expect(rows[0].open_qty).toBe(0);
+    expect(rows[0].position_value).toBe(0);
     expect(rows.some((r) => r.security_prefix === 'SBER')).toBeTrue();
   });
 
@@ -119,6 +122,8 @@ describe('backtest-chart-overlays', () => {
     expect(rows[0].open_qty).toBe(21);
     expect(rows[0].pnl).toBe(0);
     expect(rows[0].trade_count).toBe(2);
+    expect(rows[0].last_price).toBe(100);
+    expect(rows[0].position_value).toBe(2100);
   });
 
   it('papersWithTrades accepts ISO date_from/date_to without dropping trades', () => {

@@ -527,6 +527,13 @@ DECLARE
     v_closed INTEGER := 0;
     v_balance NUMERIC := p_balance;
 BEGIN
+    -- Денежный фонд остаётся купленным: SL/TP/сигналы не закрывают TMON/LQDT/SBMM.
+    IF logic_is_cash_fund_security(p_security_id) THEN
+        o_closed := 0;
+        o_new_balance := v_balance;
+        RETURN;
+    END IF;
+
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
     SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
     SELECT id INTO v_action_short_id FROM actions WHERE name = 'Short' LIMIT 1;
@@ -735,6 +742,7 @@ BEGIN
                     FROM logic_trades lt
                     WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
                       AND lt.status IN ('filled', 'submitted')
+                      AND NOT logic_is_cash_fund_security(lt.security_id)
                 LOOP
                     SELECT *
                     INTO v_closed, p_balance
@@ -748,6 +756,7 @@ BEGIN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+                  AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
                 IF v_stop.scope_type = 'security_resume'
                    AND logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
@@ -802,6 +811,7 @@ BEGIN
                     FROM logic_trades lt
                     WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
                       AND lt.status IN ('filled', 'submitted')
+                      AND NOT logic_is_cash_fund_security(lt.security_id)
                 LOOP
                     SELECT *
                     INTO v_closed, p_balance
@@ -815,6 +825,7 @@ BEGIN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+                  AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
                 v_gain := logic_backtest_security_gain_pct(
                     p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
