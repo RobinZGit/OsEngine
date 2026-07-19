@@ -66,6 +66,36 @@ async function backtestLog(pool, runId, logicId, operation, message, payload = n
   }
 }
 
+/** Удаление тест-сделок с коротким lock_timeout и одним повтором (конфликт с trade_runner). */
+async function clearTestTradesForLogic(pool, logicId) {
+  const client = await pool.connect();
+  const delSql = `DELETE FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE`;
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL lock_timeout = '8s'`);
+    await client.query(delSql, [logicId]);
+    await client.query('COMMIT');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_e) {
+      /* ignore */
+    }
+    const msg = String(err?.message || err);
+    if (!/lock_timeout|canceling statement/i.test(msg)) {
+      throw err;
+    }
+    console.warn(`Backtest: DELETE test trades lock_timeout for logic ${logicId}, retry…`);
+    await new Promise((r) => setTimeout(r, 400));
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL lock_timeout = '20s'`);
+    await client.query(delSql, [logicId]);
+    await client.query('COMMIT');
+  } finally {
+    client.release();
+  }
+}
+
 async function updateRun(pool, runId, patch) {
   const { rows: curRows } = await pool.query(
     `SELECT status, cancel_requested FROM logic_backtest_runs WHERE id = $1`,
@@ -589,6 +619,14 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
   const reportProgress = createProgressReporter(pool, runId, 180);
 
   try {
+    // Сразу пишем фазу — иначе UI долго держит оптимистичное «Очистка…» без обновления.
+    await updateRun(pool, runId, {
+      status: 'pending',
+      progress_pct: 0,
+      phase_message: 'Подготовка',
+      phase_detail: 'Проверка токена и параметров…',
+    });
+
     if (!(await ensureTbankForBacktest(pool, runId, logicId))) {
       return;
     }
@@ -626,8 +664,29 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     );
     let balance = Number(balRows[0]?.bal ?? 1000000);
 
-    await pool.query('DELETE FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE', [logicId]);
+    const { rows: oldTradeCnt } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE`,
+      [logicId]
+    );
+    const oldN = Number(oldTradeCnt[0]?.n) || 0;
+    await updateRun(pool, runId, {
+      status: 'pending',
+      progress_pct: 0,
+      phase_message: 'Очистка',
+      phase_detail:
+        oldN > 0
+          ? `Удаление ${oldN} старых тест-сделок…`
+          : 'Старых тест-сделок нет',
+      test_balance: balance,
+    });
+
+    // lock_timeout: не ждать вечно, если trade_runner держит logic_trades.
+    await clearTestTradesForLogic(pool, logicId);
     await pool.query('DELETE FROM logic_backtest_security_state WHERE run_id = $1', [runId]);
+    await updateRun(pool, runId, {
+      phase_message: 'Очистка',
+      phase_detail: 'Сброс тестовых рейтингов…',
+    });
     await pool.query('SELECT logic_backtest_reset_signal_ratings($1)', [logicId]);
 
     // Денежный фонд в logic_securities (для UI и парковки); цены фонда не обязательны (fallback ~100).
@@ -661,11 +720,12 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       load_date_to: loadDateTo,
       load_date_from: loadDateFrom,
       price_concurrency: BACKTEST_PRICE_CONCURRENCY,
+      cleared_test_trades: oldN,
     });
 
     await updateRun(pool, runId, {
       status: 'loading_prices',
-      progress_pct: 0,
+      progress_pct: 2,
       phase_message: 'Подготовка данных',
       phase_detail: `Чтение бумаг (×${BACKTEST_PRICE_CONCURRENCY})`,
       test_balance: balance,

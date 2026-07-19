@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: separate backtest PG pool + Start retry; quiet processes status-0
+**Последнее обновление:** 2026-07-19 — Ship: live cleanup phases; skip trade_runner during backtest; lock_timeout DELETE
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -314,6 +314,7 @@
 - [x] Start always cancels active run + DELETE test trades; light diagnose (no per-sec detail hang at 100%); UI clears FinRES on Start (2026-07-19).
 - [x] Start: fast HTTP (supersede + terminate stuck CALL, DELETE in worker); debounce double-click; clearer status-0 error (2026-07-19).
 - [x] Status 0 on Start+/processes: separate backtest PG pool; Start auto-retry; quiet process bar; CORS localhost+127.0.0.1; API log file (2026-07-19).
+- [x] Long «Очистка»: live phase updates; skip trade_runner while backtest active; DELETE with lock_timeout+retry (2026-07-19).
 
 ---
 
@@ -333,6 +334,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: cleanup phases + skip runner during backtest |
 | 2026-07-19 | Ship: backtestPool + Start retry; quiet /processes status 0 |
 | 2026-07-19 | Ship: Start fast path + kill stuck SQL; fix browser 0 Unknown Error |
 | 2026-07-19 | Ship: Start supersedes old test; fix diagnose hang at 100% |
@@ -610,3 +612,4 @@
 142. «Yellow but testing not begun; must delete past testing and start again; FinRES stays old.» — supersede on Start + clear trades; diagnose hang.
 143. «Start worked only after second click; Http failure … start: 0 Unknown Error.» — DELETE locked behind stuck CALL; fast supersede + terminate.
 144. After reboot: Start again → same API alert + processes bar `Http failure … /api/processes: 0 Unknown Error`. — curl Start OK from CLI; browser storm; separate backtestPool + retry + soft process errors.
+145. «Something spinning, cleaning the old one a long time; observe to the end and post.» — optimistic «Очистка» stuck; live phases + skip trade_runner + lock_timeout DELETE.

@@ -2602,7 +2602,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       status: 'pending',
       progress_pct: 0,
       phase_message: 'Старт',
-      phase_detail: 'Очистка прошлого теста и запуск…',
+      phase_detail: 'Запуск…',
       total_bars: 0,
       processed_bars: 0,
       test_balance: null,

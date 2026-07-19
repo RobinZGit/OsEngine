@@ -11,6 +11,22 @@ let running = false;
  * Торговый мозг — SQL run_trade_cycle() (stops → trades → park, advisory lock внутри).
  * TRADE_RUNNER_ENABLED=0 — отключить.
  */
+async function hasActiveBacktest(pool) {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT 1
+      FROM logic_backtest_runs
+      WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+      LIMIT 1
+      `
+    );
+    return rows.length > 0;
+  } catch (_e) {
+    return false;
+  }
+}
+
 async function runTradeCycle(pool, opts = {}) {
   if (running) return { skipped: true, reason: 'node_busy' };
   if (!opts.manual && !isUiSessionActive()) {
@@ -20,6 +36,10 @@ async function runTradeCycle(pool, opts = {}) {
   try {
     if (!opts.manual && !(await isUiSessionActiveDb(pool))) {
       return { skipped: true, reason: 'ui_inactive' };
+    }
+    // Пока идёт тест — не держим logic_trades (DELETE очистки / SQL-прогон ждут лок).
+    if (!opts.manual && (await hasActiveBacktest(pool))) {
+      return { skipped: true, reason: 'backtest_active' };
     }
 
     const { rows } = await pool.query(`SELECT run_trade_cycle() AS result`);
