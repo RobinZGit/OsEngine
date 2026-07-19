@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship SQL robots: test=`logic_backtest_run_bars`, live=`run_trade_cycle`; Node thin shells; both installers
+**Последнее обновление:** 2026-07-19 — Ship: backtest PROCEDURE+COMMIT every 5 bars; no HTTP TMON price per bar; set-based equity; both installers
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -97,7 +97,7 @@
 - `logics` + `logic_indicator_signals` / `logic_params` — торговые правила и параметры (EAV); таблица **`logics_detail` удалена** (v39);
 - UI **Операции** (`/operations`): пять сворачиваемых блоков — **«Параметры логики»**, **«Сигналы на логике»**, **«Стоп-лосс и тейк-профит»**, **«Ценные бумаги»**, **«Сделки»** (по умолчанию свёрнуты);
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
-- **SQL robots (единый мозг):** бой — `run_trade_cycle()` (Node `trade-runner.js` только планирует); тест — `logic_backtest_run_bars(run_id)` после parallel prep цен в Node (`logic-backtest.js` без JS bar-loop). Полный SQL-путь: `run_logic_backtest`.
+- **SQL robots (единый мозг):** бой — `run_trade_cycle()` (Node `trade-runner.js` только планирует); тест — `CALL logic_backtest_run_bars(run_id)` (PROCEDURE, COMMIT каждые 5 баров — без длинного лока) после parallel prep в Node. Полный SQL-путь: `CALL run_logic_backtest(...)`.
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
 - **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **только при открытом Angular** (heartbeat → `APP_TRADE_RUNNER_HB`, TTL 90 с); ручной `POST /api/logic-trades/run`;
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
@@ -325,6 +325,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: backtest PROCEDURE+COMMIT/5 bars; no HTTP TMON/bar; set-based equity; installers |
+| 2026-07-19 | Fix backtest lock/slowness: run_bars PROCEDURE + COMMIT every 5 bars |
 | 2026-07-19 | Ship SQL robots: test run_bars + live run_trade_cycle; Node thin shells; Windows+Linux installers |
 | 2026-07-19 | Fix Node backtest: call TMON park / NTP / EOD each bar (root cause: UI runner skipped SQL park) |
 | 2026-07-19 | Ship: TMON park by equity excess; UI «Порог портфеля»; Windows+Linux installers |
@@ -580,3 +582,4 @@
 131. Same test: TMON must buy each candle on equity excess over 1M; +13k finres → buy as much free cash allows ≤ excess; do not sell fund / stay in it.
 132. Again same test one day TMON did not buy; finres 13k enough for a little — root cause Node runner never called park.
 133. Prefer tests and real trading through SQL; separate robot for testing, separate for worker — uniform and faster.
+134. Same test feels slower; lock is on — long SQL tx + HTTP TMON price every bar (~2s); fix PROCEDURE+COMMIT, no HTTP in price_at, set-based equity.

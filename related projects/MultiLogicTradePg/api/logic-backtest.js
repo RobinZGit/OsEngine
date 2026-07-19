@@ -734,6 +734,53 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       tfId
     );
 
+    // Цены денежного фонда один раз (не в цикле сигналов) — иначе park без свечей бил в HTTP на каждый бар.
+    if (['TMON', 'LQDT', 'SBMM'].includes(cashFundCode)) {
+      try {
+        const { rows: fundSecRows } = await pool.query(
+          `SELECT s.id
+           FROM securities s
+           JOIN security_prefixes sp ON sp.security_id = s.id
+           WHERE upper(sp.prefix) = $1
+           ORDER BY sp.exchange_id
+           LIMIT 1`,
+          [cashFundCode]
+        );
+        const fundSecId = fundSecRows[0]?.id;
+        if (fundSecId) {
+          await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date, $5)`, [
+            fundSecId,
+            tfId,
+            loadDateFrom,
+            loadDateTo,
+            pointCount,
+          ]);
+          knownSecIds.add(fundSecId);
+          await backtestLog(
+            pool,
+            runId,
+            logicId,
+            'backtest.cash_fund.prices',
+            `Цены ${cashFundCode} загружены для парковки`,
+            { security_id: fundSecId, fund: cashFundCode },
+            fundSecId,
+            tfId
+          );
+        }
+      } catch (fundPriceErr) {
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.cash_fund.prices.error',
+          fundPriceErr.message,
+          { fund: cashFundCode },
+          null,
+          tfId
+        );
+      }
+    }
+
     const pricesInPeriod = await countPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo);
     await backtestLog(
       pool,
@@ -842,10 +889,14 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
 
     const client = await pool.connect();
     try {
-      // Длинный прогон: отключить statement_timeout на сессии.
+      // PROCEDURE коммитит каждые 5 баров — прогресс виден, локи не держатся на весь тест.
+      // node-pg prepared CALL часто теряет аргументы → литерал bigint.
       await client.query(`SET statement_timeout = 0`);
-      await client.query(`SET lock_timeout = '30s'`);
-      await client.query(`SELECT logic_backtest_run_bars($1)`, [runId]);
+      const rid = Number(runId);
+      if (!Number.isFinite(rid) || rid <= 0) {
+        throw new Error(`Invalid backtest run id: ${runId}`);
+      }
+      await client.query(`CALL logic_backtest_run_bars(${rid}::bigint)`);
     } finally {
       client.release();
     }
