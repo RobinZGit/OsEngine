@@ -1027,9 +1027,37 @@ async function getBacktestStatus(pool, logicId, runId) {
     sql += ' AND id = $2';
     params.push(runId);
   }
-  sql += ' ORDER BY id DESC LIMIT 1';
+  // Активный прогон важнее свежего completed — иначе UI не видит «Стоп», а start даёт 409.
+  sql += `
+    ORDER BY
+      CASE WHEN status IN ('pending','loading_prices','loading_indicators','running') THEN 0 ELSE 1 END,
+      id DESC
+    LIMIT 1`;
   const { rows } = await pool.query(sql, params);
   return rows[0] ?? null;
+}
+
+/** После рестарта API фоновых воркеров нет — «висящие» active-статусы блокируют новый тест без кнопки Стоп. */
+async function failOrphanBacktestRuns(pool) {
+  const { rowCount } = await pool.query(
+    `
+    UPDATE logic_backtest_runs
+    SET status = 'failed',
+        phase_message = 'Прервано',
+        phase_detail = 'Прогон не завершён (рестарт API или обрыв воркера)',
+        error_message = COALESCE(
+          NULLIF(btrim(error_message), ''),
+          'Orphan backtest cleared on API start'
+        ),
+        finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP)
+    WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+      AND finished_at IS NULL
+    `
+  );
+  if (rowCount > 0) {
+    console.log(`Backtest: cleared ${rowCount} orphan run(s) on API start`);
+  }
+  return rowCount;
 }
 
 async function cancelBacktest(pool, runId) {
@@ -1090,6 +1118,7 @@ module.exports = {
   startBacktest,
   getBacktestStatus,
   cancelBacktest,
+  failOrphanBacktestRuns,
 };
 
 function shiftDate(isoDate, days) {

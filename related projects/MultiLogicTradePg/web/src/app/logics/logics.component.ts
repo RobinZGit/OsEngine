@@ -2499,7 +2499,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.loadSignalsForLogic(logicId);
           this.refreshBacktestStatus(logicId);
         },
-        error: (err) => alert(err?.error?.error || 'Не удалось запустить тест'),
+        error: (err) => {
+          const body = err?.error;
+          // 409: в БД уже есть active-прогон — подхватываем его и показываем «Стоп», а не только alert.
+          if (err?.status === 409 && body?.run_id) {
+            this.backtestPollIds.add(logicId);
+            this.expandedLogics.add(logicId);
+            this.expandedTestTradesBlocks.add(logicId);
+            this.refreshBacktestStatus(logicId, Number(body.run_id));
+            return;
+          }
+          alert(body?.error || 'Не удалось запустить тест');
+        },
       });
   }
 
@@ -2517,8 +2528,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  private refreshBacktestStatus(logicId: number): void {
-    this.logicsService.getBacktestStatus(logicId).pipe(takeUntil(this.destroy$)).subscribe({
+  private refreshBacktestStatus(logicId: number, runId?: number): void {
+    this.logicsService.getBacktestStatus(logicId, runId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (row) => {
         if (row) {
           this.backtestRuns.set(logicId, row);
@@ -2796,6 +2807,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
         const alive = new Set(rows.map((r) => r.id));
         for (const id of [...this.selectedExportIds]) {
           if (!alive.has(id)) this.selectedExportIds.delete(id);
+        }
+        // Подхватить «зомби»/активный прогон → кнопка «Стоп» (status API предпочитает active).
+        for (const row of rows) {
+          this.refreshBacktestStatus(row.id);
         }
       },
     });

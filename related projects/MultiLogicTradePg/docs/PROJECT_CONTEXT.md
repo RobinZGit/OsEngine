@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: backtest PROCEDURE+COMMIT every 5 bars; no HTTP TMON price per bar; set-based equity; both installers
+**Последнее обновление:** 2026-07-19 — Ship: fix zombie backtest (409 without Stop): prefer active run in status, clear orphans on API start, UI adopt 409
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -325,6 +325,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: zombie backtest 409 without Stop — status prefers active, orphans cleared on API start |
 | 2026-07-19 | Ship: backtest PROCEDURE+COMMIT/5 bars; no HTTP TMON/bar; set-based equity; installers |
 | 2026-07-19 | Fix backtest lock/slowness: run_bars PROCEDURE + COMMIT every 5 bars |
 | 2026-07-19 | Ship SQL robots: test run_bars + live run_trade_cycle; Node thin shells; Windows+Linux installers |
@@ -583,3 +584,4 @@
 132. Again same test one day TMON did not buy; finres 13k enough for a little — root cause Node runner never called park.
 133. Prefer tests and real trading through SQL; separate robot for testing, separate for worker — uniform and faster.
 134. Same test feels slower; lock is on — long SQL tx + HTTP TMON price every bar (~2s); fix PROCEDURE+COMMIT, no HTTP in price_at, set-based equity.
+135. Test says already running but no Stop button — glitch (orphan run + status showed completed).

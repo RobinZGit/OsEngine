@@ -18,7 +18,12 @@ const { Pool } = require('pg');
 const {
   hashToken,
 } = require('./tbank');
-const { startBacktest, getBacktestStatus, cancelBacktest } = require('./logic-backtest');
+const {
+  startBacktest,
+  getBacktestStatus,
+  cancelBacktest,
+  failOrphanBacktestRuns,
+} = require('./logic-backtest');
 const {
   startRatingPrecalc,
   getRatingPrecalcStatus,
@@ -3144,7 +3149,11 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       [logicId]
     );
     if (active.length > 0) {
-      res.status(409).json({ error: 'Тестирование уже выполняется', run_id: active[0].id });
+      res.status(409).json({
+        error: 'Тестирование уже выполняется',
+        run_id: active[0].id,
+        already_running: true,
+      });
       return;
     }
     const runId = await startBacktest(pool, logicId, dateFrom, dateTo);
@@ -4216,6 +4225,9 @@ app.use((_req, res) => {
 app.listen(port, () => {
   console.log(`MultiLogicTrade API: http://localhost:${port}`);
   console.log(`CORS origin: ${corsOrigin}`);
+  failOrphanBacktestRuns(pool).catch((err) => {
+    console.error('failOrphanBacktestRuns', err.message);
+  });
   startTradeRunner(pool);
   startMaintenanceScheduler(pool);
 });
