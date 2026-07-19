@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: visible % pulse + early progress_pct ticks in logic_backtest_runs
+**Последнее обновление:** 2026-07-19 — Ship: Stop always clickable; cancel aborts in-flight /start + terminate SQL
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -321,6 +321,7 @@
 - [x] TS2339: add `finished_at`/`started_at` to `BacktestRunStatus` (ng serve failed) (2026-07-19).
 - [x] /start status 0 after 0%: stop status-poll before Start (pool starve); Start on backtestPool; api.log timings (2026-07-19).
 - [x] 0% hang UX: optimistic pulse 0→5%; /start returns progress; early DB ticks 1/3/6/8/10%; detectChanges (2026-07-19).
+- [x] Stop stuck/disabled: never disable Stop; cancel in-flight start; terminate SQL on cancel (2026-07-19).
 
 ---
 
@@ -340,6 +341,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: Stop always clickable + cancel in-flight start |
 | 2026-07-19 | Ship: progress pulse + early logic_backtest_runs.progress_pct ticks |
 | 2026-07-19 | Ship: fix /start status-0 — no poll before Start; backtestPool |
 | 2026-07-19 | Ship: fix TS2339 finished_at on BacktestRunStatus |
@@ -631,3 +633,4 @@
 149. Start bat: TS2339 `finished_at` missing on `BacktestRunStatus` — add fields to interface.
 150. «0% then Нет ответа от API» — status poll before /start starved PG pool; abort→status 0.
 151. «Hangs at 0%, logging on; controller should write % to a table.» — % already in logic_backtest_runs; UI pulse + early ticks + apply run from /start.
+152. «Can't press Stop, stuck; Stop must always work.» — disabled after first click + optimistic cancel ignored /start; fix.

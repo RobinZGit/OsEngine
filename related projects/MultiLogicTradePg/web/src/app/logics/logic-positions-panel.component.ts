@@ -699,9 +699,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
     event.preventDefault();
     event.stopPropagation();
     if (this.isBacktestRunning) {
-      if (this.isCancelling) return;
+      // Стоп всегда можно нажать снова (не disabled) — иначе «залипает» после быстрого Стоп.
       this.cancelling = true;
+      this.localStarting = false;
       this.cancelBacktest.emit();
+      this.cdr.markForCheck();
     } else {
       this.cancelling = false;
       this.openRunDialog(event);

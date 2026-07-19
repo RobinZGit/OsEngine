@@ -78,12 +78,11 @@
             type="button"
             class="btn-run-backtest"
             [class.btn-stop]="isBacktestRunning"
-            [disabled]="isCancelling"
             [title]="isBacktestRunning ? 'Остановить тестирование' : 'Запустить тестирование'"
             (click)="onPlayOrStop($event)"
           >
             @if (isCancelling) {
-              Останавливаю…
+              Стоп…
             } @else if (isBacktestRunning) {
               Стоп
             } @else {

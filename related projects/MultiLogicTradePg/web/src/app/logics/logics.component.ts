@@ -143,6 +143,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private backtestOptimisticAtMs = new Map<number, number>();
   /** Частый poll статуса первые ~45 с после Start (основной timer 2 с слишком редкий). */
   private backtestFastPollTimers = new Map<number, ReturnType<typeof setInterval>>();
+  /** Если Стоп нажали до ответа /start — отменить run сразу, как только появится id. */
+  private backtestCancelRequested = new Set<number>();
   /** Локальная «крутилка» 0→4% пока ждём ответ /start (потом берём % из logic_backtest_runs). */
   private optimisticPulseTimers = new Map<number, ReturnType<typeof setInterval>>();
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
@@ -2545,6 +2547,27 @@ export class LogicsComponent implements OnInit, OnDestroy {
           console.log(
             `[backtest] /start OK run=${runId} in ${Date.now() - t0}ms logic=${logicId}`
           );
+          // Стоп нажали, пока /start был в полёте — сразу гасим новый run.
+          if (this.backtestCancelRequested.has(logicId)) {
+            this.backtestCancelRequested.delete(logicId);
+            if (Number.isFinite(runId) && runId > 0) {
+              this.preferredBacktestRunId.set(logicId, runId);
+              this.logicsService.cancelBacktest(runId).subscribe({
+                next: () => {
+                  this.setBacktestRun(logicId, null);
+                  this.backtestPollIds.delete(logicId);
+                  this.preferredBacktestRunId.delete(logicId);
+                },
+                error: () => {
+                  this.setBacktestRun(logicId, null);
+                  this.backtestPollIds.delete(logicId);
+                },
+              });
+            } else {
+              this.setBacktestRun(logicId, null);
+            }
+            return;
+          }
           this.backtestPollIds.add(logicId);
           this.expandedLogics.add(logicId);
           this.expandedTestTradesBlocks.add(logicId);
@@ -2754,25 +2777,64 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Если Стоп нажали до ответа /start — отменить run сразу, как только появится id. */
+  private backtestCancelRequested = new Set<number>();
+
   cancelBacktestRun(logicId: number): void {
+    this.backtestCancelRequested.add(logicId);
+    this.backtestStartInFlight.delete(logicId);
+    this.stopOptimisticPulse(logicId);
+    this.stopFastBacktestPoll(logicId);
+
     const run = this.backtestRuns.get(logicId);
-    if (!run?.id) return;
-    // Оптимистичный id < 0 — ещё нет run в БД; просто сбрасываем UI.
-    if (Number(run.id) <= 0) {
+    const preferred = this.preferredBacktestRunId.get(logicId);
+    const runId = Number(run?.id) > 0 ? Number(run?.id) : preferred;
+
+    // Оптимистичный id ещё нет — всё равно попробуем preferred; UI сбросим после cancel.
+    if (!Number.isFinite(runId) || runId <= 0) {
       this.setBacktestRun(logicId, null);
       this.backtestPollIds.delete(logicId);
-      this.stopFastBacktestPoll(logicId);
+      this.preferredBacktestRunId.delete(logicId);
       this.backtestOptimisticAtMs.delete(logicId);
+      this.backtestCancelRequested.delete(logicId);
       return;
     }
+
     this.setBacktestRun(logicId, {
-      ...run,
-      phase_message: 'Остановка…',
-      phase_detail: run.phase_detail || 'Запрос на остановку принят',
+      ...(run || {
+        id: runId,
+        logic_id: logicId,
+        date_from: '',
+        date_to: '',
+        status: 'running',
+        progress_pct: 0,
+        phase_message: null,
+        phase_detail: null,
+        total_bars: 0,
+        processed_bars: 0,
+        test_balance: null,
+        financial_result: null,
+        error_message: null,
+      }),
+      id: runId,
+      status: 'cancelled',
+      phase_message: 'Отменено',
+      phase_detail: 'Остановка по кнопке Стоп',
     });
-    this.logicsService.cancelBacktest(run.id).subscribe({
-      next: () => this.refreshBacktestStatus(logicId),
-      error: (err) => alert(err?.error?.error || 'Не удалось остановить тест'),
+    this.logicsService.cancelBacktest(runId).subscribe({
+      next: () => {
+        this.backtestCancelRequested.delete(logicId);
+        this.backtestPollIds.delete(logicId);
+        this.preferredBacktestRunId.delete(logicId);
+        this.backtestOptimisticAtMs.delete(logicId);
+        this.refreshBacktestStatus(logicId, runId);
+      },
+      error: (err) => {
+        this.backtestCancelRequested.delete(logicId);
+        // Оставляем кнопку Стоп живой — можно нажать снова.
+        alert(err?.error?.error || 'Не удалось остановить тест — нажмите Стоп ещё раз');
+        this.refreshBacktestStatus(logicId, runId);
+      },
     });
   }
 

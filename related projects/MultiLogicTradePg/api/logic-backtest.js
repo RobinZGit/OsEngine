@@ -1230,6 +1230,25 @@ async function cancelBacktest(pool, runId) {
   );
 
   try {
+    // Оборвать зависший CALL — иначе «Стоп» в UI есть, а SQL ещё крутится.
+    await pool.query(
+      `
+      SELECT pg_terminate_backend(a.pid)
+      FROM pg_stat_activity a
+      WHERE a.datname = current_database()
+        AND a.pid <> pg_backend_pid()
+        AND a.state <> 'idle'
+        AND (
+          a.query ILIKE '%logic_backtest_run_bars%'
+          OR a.query ILIKE '%load_prices%'
+        )
+      `
+    );
+  } catch (err) {
+    console.warn('Backtest cancel: pg_terminate_backend skipped:', err.message);
+  }
+
+  try {
     await backtestLog(
       pool,
       runId,
