@@ -748,12 +748,12 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
         );
         const fundSecId = fundSecRows[0]?.id;
         if (fundSecId) {
-          await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date, $5)`, [
+          // Сигнатура: load_prices_http(security_id, timeframe_id, date_from, date_to) — без point_count.
+          await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date)`, [
             fundSecId,
             tfId,
             loadDateFrom,
             loadDateTo,
-            pointCount,
           ]);
           knownSecIds.add(fundSecId);
           await backtestLog(

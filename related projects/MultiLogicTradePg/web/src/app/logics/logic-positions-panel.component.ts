@@ -218,9 +218,15 @@ export class LogicPositionsPanelComponent implements OnChanges {
   private rebuildTradeCaches(): void {
     const sortKey = (t: LogicTradeRow) =>
       new Date(this.isTest ? t.bar_dt || t.executed_at : t.executed_at || t.bar_dt).getTime();
+    const fundFirst = (a: LogicTradeRow, b: LogicTradeRow) => {
+      const af = a.signal_kind === 'cash_fund' ? 0 : 1;
+      const bf = b.signal_kind === 'cash_fund' ? 0 : 1;
+      if (af !== bf) return af - bf;
+      return sortKey(b) - sortKey(a);
+    };
     const open = this.trades
       .filter((t) => this.isOpenPositionTrade(t))
-      .sort((a, b) => sortKey(b) - sortKey(a));
+      .sort(fundFirst);
     const close = this.trades
       .filter((t) => t.side_name === 'Close' && (t.status === 'filled' || t.status === 'submitted'))
       .sort((a, b) => sortKey(b) - sortKey(a));

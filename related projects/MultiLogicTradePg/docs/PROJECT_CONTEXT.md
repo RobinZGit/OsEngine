@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: fix zombie backtest (409 without Stop): prefer active run in status, clear orphans on API start, UI adopt 409
+**Последнее обновление:** 2026-07-19 — Ship: fix TMON fund price prep (`load_prices_http` 4-arg + FIGI); UI pin cash_fund opens first
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -306,6 +306,7 @@
 - [x] Non-trading UI: add/edit/delete intervals; warning when «Учитывать…» is off; TMON park skip logs + end-of-backtest park; both installers (2026-07-19).
 - [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
 - [x] SQL robots: `logic_backtest_run_bars` + thin Node test prep; live Node → `run_trade_cycle()` only; both installers + push (2026-07-19).
+- [x] Fix backtest cash-fund price prep: `CALL load_prices_http` 4 args (was 5 → always error); seed TMON/LQDT `tbank_figi`; UI badge + sort fund opens first (2026-07-19).
 
 ---
 
@@ -325,6 +326,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: TMON price prep CALL fix + FIGI seed; fund opens first in test UI |
 | 2026-07-19 | Ship: zombie backtest 409 without Stop — status prefers active, orphans cleared on API start |
 | 2026-07-19 | Ship: backtest PROCEDURE+COMMIT/5 bars; no HTTP TMON/bar; set-based equity; installers |
 | 2026-07-19 | Fix backtest lock/slowness: run_bars PROCEDURE + COMMIT every 5 bars |
@@ -585,3 +587,4 @@
 133. Prefer tests and real trading through SQL; separate robot for testing, separate for worker — uniform and faster.
 134. Same test feels slower; lock is on — long SQL tx + HTTP TMON price every bar (~2s); fix PROCEDURE+COMMIT, no HTTP in price_at, set-based equity.
 135. Test says already running but no Stop button — glitch (orphan run + status showed completed).
+136. «Testing has passed, Atemon did not buy again. Why? If there are corrections, immediately post them.» — DB had 17 TMON buys @ fallback 100; prep `load_prices_http` arity bug + empty FIGI.

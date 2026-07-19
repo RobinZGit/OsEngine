@@ -225,6 +225,9 @@
                   <td [title]="isTest ? ('Исполнено прогоном: ' + formatTradeDt(tr.executed_at)) : ''">{{ tradeDisplayDt(tr) }}</td>
                   <td>
                     <strong>{{ tr.security_prefix || tr.security_name }}</strong>
+                    @if (tr.signal_kind === 'cash_fund') {
+                      <span class="trade-test-badge" title="Парковка избытка кэша в денежный фонд">фонд</span>
+                    }
                     @if (tr.is_shadow) {
                       <span class="trade-shadow-badge" title="Теневая сделка">теневая</span>
                     }

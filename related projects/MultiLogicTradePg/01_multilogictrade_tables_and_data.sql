@@ -397,19 +397,30 @@ JOIN security_types st ON st.name = v.type_name
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO security_prefixes (security_id, exchange_id, prefix, instrument_market, tbank_figi, note)
-SELECT s.id, e.id, v.prefix, 'other', NULL, v.note
+SELECT s.id, e.id, v.prefix, 'other', v.figi, v.note
 FROM exchanges e
 CROSS JOIN (VALUES
-    ('Т-Капитал денежный рынок (TMON)', 'TMON', 'БПИФ денежного рынка; парковка кэша'),
-    ('ВИМ Ликвидность (LQDT)', 'LQDT', 'БПИФ денежного рынка; парковка кэша'),
-    ('Сбер Первый / Сберегательный (SBMM)', 'SBMM', 'БПИФ денежного рынка; парковка кэша')
-) AS v(security_name, prefix, note)
+    ('Т-Капитал денежный рынок (TMON)', 'TMON', 'TCS70A106DL2', 'БПИФ денежного рынка; парковка кэша'),
+    ('ВИМ Ликвидность (LQDT)', 'LQDT', 'BBG00RPRPX12', 'БПИФ денежного рынка; парковка кэша'),
+    ('Сбер Первый / Сберегательный (SBMM)', 'SBMM', NULL, 'БПИФ денежного рынка; парковка кэша')
+) AS v(security_name, prefix, figi, note)
 JOIN securities s ON s.name = v.security_name
 WHERE e.name = 'MOEX'
 ON CONFLICT (security_id, exchange_id) DO UPDATE SET
     prefix = EXCLUDED.prefix,
     instrument_market = EXCLUDED.instrument_market,
-    note = EXCLUDED.note;
+    note = EXCLUDED.note,
+    tbank_figi = COALESCE(EXCLUDED.tbank_figi, security_prefixes.tbank_figi);
+
+-- Upgrade: FIGI денежных фондов (без них prep backtest не грузит свечи T-Bank → цена fallback 100).
+UPDATE security_prefixes sp
+SET tbank_figi = v.figi
+FROM (VALUES
+    ('TMON', 'TCS70A106DL2'),
+    ('LQDT', 'BBG00RPRPX12')
+) AS v(prefix, figi)
+WHERE upper(sp.prefix) = v.prefix
+  AND (sp.tbank_figi IS NULL OR btrim(sp.tbank_figi) = '');
 
 -- Лотность акций MOEX (штук в лоте TQBR; фьючерсы — 1 контракт)
 UPDATE securities s
