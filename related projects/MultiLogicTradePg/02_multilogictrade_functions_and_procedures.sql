@@ -4083,15 +4083,6 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
-
-
-
-
-
-
-
-
-
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6265,11 +6256,6 @@ DECLARE
     v_is_simulated BOOLEAN;
     v_close_idx INTEGER := 0;
 BEGIN
-    -- Денежный фонд остаётся купленным: портфельный/бумажный SL не продаёт TMON/LQDT/SBMM.
-    IF logic_is_cash_fund_security(p_security_id) THEN
-        RETURN 0;
-    END IF;
-
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
 
     SELECT l.id, l.account_id, a.account_type
@@ -6598,7 +6584,6 @@ BEGIN
                   AND NOT lt.is_shadow
                   AND NOT lt.is_test
                   AND lt.status IN ('filled', 'submitted')
-                  AND NOT logic_is_cash_fund_security(lt.security_id)
             LOOP
                 v_closed := logic_close_security_positions_market(
                     p_logic_id, v_sec.security_id, FALSE
@@ -6611,7 +6596,6 @@ BEGIN
             SELECT ls.security_id
             FROM logic_securities ls
             WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-              AND NOT logic_is_cash_fund_security(ls.security_id)
         LOOP
             IF v_stop.scope_type = 'security_resume'
                AND EXISTS (
@@ -6722,240 +6706,6 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
-CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
-RETURNS INTEGER
-LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(1, COALESCE(
-        (SELECT lot_size FROM securities WHERE id = p_security_id),
-        1
-    ));
-$$;
-
-COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
-'Лотность бумаги (штук в лоте); минимум 1';
-
-CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND sp.instrument_market = 'futures'
-    );
-$$;
-
-COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
-'True если у бумаги есть prefix с instrument_market = futures';
-
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -9718,8 +9468,8 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_trade_cycle() IS
-'SQL-робот боя: stops → trades → park (пропуск логик с активным бэктестом). '
-'Node trade-runner только планирует SELECT run_trade_cycle(); также pg_cron.';
+'Цикл торговли по включённым logics (пропуск логик с активным бэктестом). '
+'Node fallback предпочтителен: по логике отдельно (короткие tx). pg_cron — эта функция.';
 
 -- @include sql/logic_trading_sessions.sql
 -- ============================================
@@ -10031,15 +9781,39 @@ BEGIN
       AND p.timeframe_id = p_tf_id
       AND p.dt::date BETWEEN p_date_from AND p_date_to;
 
-    -- Без per-security detail: коррелированные COUNT по prices на каждую бумагу
-    -- подвешивали прогон на 100% (status=running, completed не писался).
     RETURN jsonb_build_object(
         'run_id', p_run_id,
         'securities', v_securities,
         'signals', v_signals,
         'prices_in_period', v_prices,
         'indicator_values_in_period', v_indicators,
-        'distinct_bars', v_bars
+        'distinct_bars', v_bars,
+        'securities_detail', (
+            SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'security_id', ls.security_id,
+                'name', s.name,
+                'prices_in_period', (
+                    SELECT COUNT(*)::INTEGER FROM prices p
+                    WHERE p.security_id = ls.security_id
+                      AND p.timeframe_id = p_tf_id
+                      AND p.dt::date BETWEEN p_date_from AND p_date_to
+                ),
+                'indicators_in_period', (
+                    SELECT COUNT(*)::INTEGER FROM indicator_values iv
+                    WHERE iv.security_id = ls.security_id
+                      AND iv.timeframe_id = p_tf_id
+                      AND iv.dt::date BETWEEN p_date_from AND p_date_to
+                ),
+                'test_trades', (
+                    SELECT COUNT(*)::INTEGER FROM logic_trades lt
+                    WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE
+                      AND lt.security_id = ls.security_id
+                )
+            ) ORDER BY ls.display_order, ls.id), '[]'::jsonb)
+            FROM logic_securities ls
+            JOIN securities s ON s.id = ls.security_id
+            WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+        )
     );
 END;
 $$;
@@ -10438,13 +10212,6 @@ DECLARE
     v_closed INTEGER := 0;
     v_balance NUMERIC := p_balance;
 BEGIN
-    -- Денежный фонд остаётся купленным: SL/TP/сигналы не закрывают TMON/LQDT/SBMM.
-    IF logic_is_cash_fund_security(p_security_id) THEN
-        o_closed := 0;
-        o_new_balance := v_balance;
-        RETURN;
-    END IF;
-
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
     SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
     SELECT id INTO v_action_short_id FROM actions WHERE name = 'Short' LIMIT 1;
@@ -10653,7 +10420,6 @@ BEGIN
                     FROM logic_trades lt
                     WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
                       AND lt.status IN ('filled', 'submitted')
-                      AND NOT logic_is_cash_fund_security(lt.security_id)
                 LOOP
                     SELECT *
                     INTO v_closed, p_balance
@@ -10667,7 +10433,6 @@ BEGIN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-                  AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
                 IF v_stop.scope_type = 'security_resume'
                    AND logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
@@ -10722,7 +10487,6 @@ BEGIN
                     FROM logic_trades lt
                     WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
                       AND lt.status IN ('filled', 'submitted')
-                      AND NOT logic_is_cash_fund_security(lt.security_id)
                 LOOP
                     SELECT *
                     INTO v_closed, p_balance
@@ -10736,7 +10500,6 @@ BEGIN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-                  AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
                 v_gain := logic_backtest_security_gain_pct(
                     p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
@@ -10969,8 +10732,7 @@ BEGIN
 END;
 $$;
 
--- Цена фонда для парковки на баре: только prices (+ fallback 100).
--- Без HTTP: иначе при отсутствии свечей TMON каждый бар зовёт T-Bank (~2с) и тест «висит».
+-- Цена фонда для парковки: свеча TF → любая свеча → HTTP resolve → константа ~100 ₽.
 CREATE OR REPLACE FUNCTION logic_cash_fund_price_at(
     p_security_id INTEGER,
     p_timeframe_id INTEGER,
@@ -10981,6 +10743,8 @@ RETURNS NUMERIC
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_price NUMERIC;
+    v_inst JSONB;
+    v_code TEXT := upper(btrim(COALESCE(p_code, '')));
 BEGIN
     SELECT p.close_price
     INTO v_price
@@ -11007,15 +10771,26 @@ BEGIN
         RETURN v_price;
     END IF;
 
-    -- БПИФ денежного рынка ~100 ₽/пай. HTTP — только в live logic_park_excess_cash (resolve).
+    BEGIN
+        v_inst := logic_resolve_cash_fund_instrument(v_code);
+        v_price := COALESCE((v_inst->>'price')::NUMERIC, 0);
+        IF v_price > 0 THEN
+            RETURN v_price;
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+
+    -- БПИФ денежного рынка обычно около 100 ₽/пай — без свечей всё равно паркуем.
     RETURN 100;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_cash_fund_price_at(INTEGER, INTEGER, TIMESTAMP, TEXT) IS
-'Цена TMON/LQDT/SBMM для парковки: prices → fallback 100 (без HTTP на каждый бар)';
+'Цена TMON/LQDT/SBMM для парковки: prices → resolve → fallback 100';
 
--- Equity теста на баре: один set-based запрос (без цикла по бумагам на каждый бар).
+-- Equity теста на баре: свободный кэш + MTM лонгов − MTM шортов (is_test).
 CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
@@ -11023,67 +10798,62 @@ CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
     p_cash_balance NUMERIC
 )
 RETURNS NUMERIC
-LANGUAGE sql STABLE AS $$
-    WITH pos AS (
-        SELECT
-            lt.security_id,
-            GREATEST(COALESCE(SUM(
-                CASE
-                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
-                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
-                    ELSE 0
-                END
-            ), 0), 0) AS long_qty,
-            GREATEST(COALESCE(SUM(
-                CASE
-                    WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
-                    WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
-                    ELSE 0
-                END
-            ), 0), 0) AS short_qty
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_total NUMERIC := COALESCE(p_cash_balance, 0);
+    v_sec RECORD;
+    v_long_qty NUMERIC;
+    v_short_qty NUMERIC;
+    v_price NUMERIC;
+BEGIN
+    FOR v_sec IN
+        SELECT DISTINCT lt.security_id
         FROM logic_trades lt
-        JOIN sides s ON s.id = lt.side_id
-        JOIN actions a ON a.id = lt.action_id
         WHERE lt.logic_id = p_logic_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = FALSE
           AND lt.status IN ('filled', 'submitted')
-        GROUP BY lt.security_id
-        HAVING GREATEST(COALESCE(SUM(
-                CASE
-                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
-                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
-                    ELSE 0
-                END
-            ), 0), 0) > 0
-            OR GREATEST(COALESCE(SUM(
-                CASE
-                    WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
-                    WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
-                    ELSE 0
-                END
-            ), 0), 0) > 0
-    ),
-    px AS (
-        SELECT DISTINCT ON (pos.security_id)
-            pos.long_qty,
-            pos.short_qty,
-            p.close_price
-        FROM pos
-        JOIN prices p
-          ON p.security_id = pos.security_id
-         AND p.timeframe_id = p_timeframe_id
-         AND p.dt <= p_bar_dt
-        ORDER BY pos.security_id, p.dt DESC
-    )
-    SELECT COALESCE(p_cash_balance, 0)
-         + COALESCE(SUM(px.long_qty * px.close_price - px.short_qty * px.close_price), 0)
-    FROM px
-    WHERE px.close_price > 0;
+    LOOP
+        v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
+        v_short_qty := logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
+        IF COALESCE(v_long_qty, 0) <= 0 AND COALESCE(v_short_qty, 0) <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        SELECT p.close_price
+        INTO v_price
+        FROM prices p
+        WHERE p.security_id = v_sec.security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt <= p_bar_dt
+        ORDER BY p.dt DESC
+        LIMIT 1;
+
+        IF v_price IS NULL OR v_price <= 0 THEN
+            SELECT p.close_price
+            INTO v_price
+            FROM prices p
+            WHERE p.security_id = v_sec.security_id
+              AND p.dt <= p_bar_dt
+            ORDER BY p.dt DESC
+            LIMIT 1;
+        END IF;
+
+        IF v_price IS NULL OR v_price <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        v_total := v_total
+            + COALESCE(v_long_qty, 0) * v_price
+            - COALESCE(v_short_qty, 0) * v_price;
+    END LOOP;
+
+    RETURN v_total;
+END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'Тест: equity = cash + long×price − short×price на bar_dt (set-based)';
+'Тест: equity = cash + long×price − short×price на bar_dt';
 
 -- Парковка: BUY фонда на min(свободный кэш, equity−порог−уже_в_фонде); без продажи фонда.
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
@@ -11171,8 +10941,26 @@ BEGIN
 
     v_lot := GREATEST(1, logic_security_lot_size(v_security_id));
     v_qty := (FLOOR(v_park_amount / (v_price * v_lot)))::INTEGER * v_lot;
-    -- Не логируем «мало для лота» на каждом баре — засоряет app_tech_log и тормозит прогон.
     IF v_qty < v_lot THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.skip',
+            format(
+                'Мало избытка для лота %s: park=%s equity=%s fund_mtm=%s price=%s',
+                v_code, round(v_park_amount, 2), round(v_equity, 2), round(v_fund_mtm, 2), v_price
+            ),
+            jsonb_build_object(
+                'fund', v_code,
+                'park_amount', v_park_amount,
+                'equity', v_equity,
+                'fund_mtm', v_fund_mtm,
+                'excess', v_excess,
+                'price', v_price,
+                'lot', v_lot,
+                'balance', v_balance,
+                'threshold', v_threshold
+            ),
+            v_security_id, p_timeframe_id
+        );
         RETURN v_balance;
     END IF;
 
@@ -11272,254 +11060,12 @@ $$;
 COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
--- Прогон по свечам (единый мозг теста): rate → risk → EOD → signals → park.
--- PROCEDURE + COMMIT каждые N баров: иначе одна длинная tx держит локи и UI не видит прогресс.
-DROP ROUTINE IF EXISTS logic_backtest_run_bars(BIGINT);
-
-CREATE OR REPLACE PROCEDURE logic_backtest_run_bars(p_run_id BIGINT)
-LANGUAGE plpgsql AS $$
-DECLARE
-    v_run RECORD;
-    v_logic RECORD;
-    v_tf_id INTEGER;
-    v_balance NUMERIC;
-    v_bars TIMESTAMP[];
-    v_total INTEGER;
-    v_i INTEGER;
-    v_bar_dt TIMESTAMP;
-    v_prev_bar TIMESTAMP;
-    v_next_bar TIMESTAMP;
-    v_pnl NUMERIC;
-    v_trades_created INTEGER;
-    v_diag JSONB;
-    v_commit_every INTEGER := 1;
-BEGIN
-    SELECT r.id, r.logic_id, r.date_from, r.date_to, r.status, r.cancel_requested, r.test_balance
-    INTO v_run
-    FROM logic_backtest_runs r
-    WHERE r.id = p_run_id;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'backtest run % не найден', p_run_id;
-    END IF;
-
-    IF v_run.status IN ('completed', 'cancelled', 'failed') THEN
-        RETURN;
-    END IF;
-
-    IF COALESCE(v_run.cancel_requested, FALSE) THEN
-        PERFORM logic_backtest_update_run(p_run_id, 'cancelled', NULL, 'Отменено', NULL);
-        COMMIT;
-        RETURN;
-    END IF;
-
-    SELECT l.id, l.account_id INTO v_logic
-    FROM logics l WHERE l.id = v_run.logic_id;
-    IF NOT FOUND THEN
-        PERFORM logic_backtest_update_run(
-            p_run_id, 'failed', 100, 'Логика не найдена', NULL, NULL, NULL, NULL, NULL, 0,
-            format('Логика %s не найдена', v_run.logic_id)
-        );
-        COMMIT;
-        RETURN;
-    END IF;
-
-    PERFORM logic_ensure_non_trading_periods(v_run.logic_id);
-
-    v_tf_id := logic_resolve_timeframe_id(v_run.logic_id);
-    IF v_tf_id IS NULL THEN
-        PERFORM logic_backtest_update_run(
-            p_run_id, 'failed', 100, 'Не задан timeframe', NULL, NULL, NULL, NULL, NULL, 0,
-            'Не задан timeframe'
-        );
-        COMMIT;
-        RETURN;
-    END IF;
-
-    v_balance := COALESCE(
-        v_run.test_balance,
-        get_logic_param_numeric(v_run.logic_id, 'initial_balance', 0),
-        1000000
-    );
-
-    SELECT array_agg(DISTINCT p.dt ORDER BY p.dt)
-    INTO v_bars
-    FROM prices p
-    JOIN logic_securities ls ON ls.security_id = p.security_id
-    WHERE ls.logic_id = v_run.logic_id AND ls.is_active = TRUE
-      AND p.timeframe_id = v_tf_id
-      AND p.dt::date BETWEEN v_run.date_from AND v_run.date_to;
-
-    v_total := COALESCE(array_length(v_bars, 1), 0);
-    UPDATE logic_backtest_runs
-    SET total_bars = v_total,
-        trades_created = 0,
-        processed_bars = 0
-    WHERE id = p_run_id;
-
-    IF v_total = 0 THEN
-        PERFORM logic_backtest_update_run(
-            p_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
-            'Нет цен в выбранном периоде'
-        );
-        COMMIT;
-        RETURN;
-    END IF;
-
-    PERFORM logic_backtest_update_run(
-        p_run_id, 'running', 40, 'Прогон по свечам',
-        format('0 / %s баров', v_total),
-        NULL, 0, NULL, v_balance
-    );
-    COMMIT;
-
-    FOR v_i IN 1..v_total LOOP
-        IF logic_backtest_cancel_requested(p_run_id) THEN
-            SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-            FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
-            PERFORM logic_backtest_log(
-                p_run_id, v_run.logic_id, 'backtest.cancelled',
-                format('Отменено на %s/%s', v_i, v_total), NULL
-            );
-            PERFORM logic_backtest_update_run(
-                p_run_id, 'cancelled',
-                round(40 + v_i::NUMERIC / v_total * 60, 2),
-                'Отменено пользователем', NULL, v_bars[v_i], v_i, NULL, v_balance, v_pnl
-            );
-            COMMIT;
-            RETURN;
-        END IF;
-
-        v_bar_dt := v_bars[v_i];
-        v_prev_bar := CASE WHEN v_i > 1 THEN v_bars[v_i - 1] ELSE NULL END;
-        v_next_bar := CASE WHEN v_i < v_total THEN v_bars[v_i + 1] ELSE NULL END;
-
-        PERFORM logic_backtest_rate_signals(p_run_id, v_run.logic_id, v_tf_id, v_bar_dt);
-        v_balance := logic_backtest_process_risk(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-        );
-
-        IF logic_is_eod_close_bar(v_run.logic_id, v_bar_dt, v_prev_bar, v_next_bar) THEN
-            v_balance := logic_backtest_close_all_except_funds(
-                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-            );
-        END IF;
-
-        IF NOT logic_is_non_trading_dt(v_run.logic_id, v_bar_dt) THEN
-            v_balance := logic_backtest_process_signals(
-                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-            );
-        END IF;
-
-        v_balance := logic_backtest_park_excess_cash(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-        );
-
-        IF v_i % v_commit_every = 0 OR v_i = v_total THEN
-            SELECT COUNT(*)::INTEGER INTO v_trades_created
-            FROM logic_trades
-            WHERE logic_id = v_run.logic_id AND is_test = TRUE;
-
-            SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-            FROM logic_trades
-            WHERE logic_id = v_run.logic_id AND is_test = TRUE;
-
-            PERFORM logic_backtest_update_run(
-                p_run_id, 'running',
-                round(40 + v_i::NUMERIC / v_total * 58, 2),
-                'Прогон по свечам',
-                format(
-                    '%s/%s баров · сделок %s · финрез %s · баланс %s',
-                    v_i, v_total, v_trades_created,
-                    round(v_pnl, 2), round(v_balance, 0)
-                ),
-                v_bar_dt, v_i, v_trades_created, v_balance, v_pnl
-            );
-            COMMIT;
-        END IF;
-    END LOOP;
-
-    PERFORM logic_backtest_update_run(
-        p_run_id, 'running', 98.5, 'Завершение',
-        'Парковка денежного фонда (TMON/LQDT)…',
-        CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
-        v_total, NULL, v_balance
-    );
-    COMMIT;
-
-    IF v_total > 0 THEN
-        v_balance := logic_backtest_park_excess_cash(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
-        );
-    END IF;
-
-    PERFORM logic_backtest_update_run(
-        p_run_id, 'running', 99.2, 'Завершение',
-        'Подсчёт финансового результата…',
-        CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
-        v_total, NULL, v_balance
-    );
-    COMMIT;
-
-    SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-    FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
-
-    SELECT COUNT(*)::INTEGER INTO v_trades_created
-    FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
-
-    PERFORM logic_backtest_update_run(
-        p_run_id, 'running', 99.6, 'Завершение',
-        format('Диагностика · сделок %s · финрез %s', v_trades_created, round(v_pnl, 2)),
-        CASE WHEN v_total > 0 THEN v_bars[v_total] ELSE NULL END,
-        v_total, v_trades_created, v_balance, v_pnl
-    );
-    COMMIT;
-
-    BEGIN
-        v_diag := logic_backtest_diagnose(
-            p_run_id, v_run.logic_id, v_tf_id, v_run.date_from, v_run.date_to
-        );
-    EXCEPTION WHEN OTHERS THEN
-        v_diag := jsonb_build_object('diagnose_error', SQLERRM);
-    END;
-
-    PERFORM logic_backtest_log(
-        p_run_id, v_run.logic_id, 'backtest.complete',
-        CASE WHEN v_trades_created > 0
-            THEN format('Завершено: %s сделок, PnL=%s', v_trades_created, round(v_pnl, 2))
-            ELSE format('Завершено без сделок (%s баров)', v_total)
-        END,
-        COALESCE(v_diag, '{}'::jsonb) || jsonb_build_object(
-            'trades_created', v_trades_created,
-            'financial_result', v_pnl,
-            'total_bars', v_total,
-            'engine', 'sql_procedure'
-        ),
-        NULL, v_tf_id
-    );
-
-    PERFORM logic_backtest_update_run(
-        p_run_id, 'completed', 100,
-        CASE WHEN v_trades_created > 0 THEN 'Тестирование завершено' ELSE 'Тест завершён — сделок нет' END,
-        format('%s баров, сделок: %s, финрез: %s', v_total, v_trades_created, round(v_pnl, 2)),
-        v_bars[v_total], v_total, v_trades_created, v_balance, v_pnl
-    );
-    COMMIT;
-END;
-$$;
-
-COMMENT ON PROCEDURE logic_backtest_run_bars(BIGINT) IS
-'SQL-робот теста: прогон баров с COMMIT каждый бар (UI видит progress_pct в logic_backtest_runs)';
-
-DROP ROUTINE IF EXISTS run_logic_backtest(INTEGER, DATE, DATE);
-DROP ROUTINE IF EXISTS run_logic_backtest(INTEGER, DATE, DATE, BIGINT);
-
-CREATE OR REPLACE PROCEDURE run_logic_backtest(
+CREATE OR REPLACE FUNCTION run_logic_backtest(
     p_logic_id INTEGER,
     p_date_from DATE,
-    p_date_to DATE,
-    INOUT o_run_id BIGINT DEFAULT NULL
+    p_date_to DATE
 )
+RETURNS BIGINT
 LANGUAGE plpgsql AS $$
 DECLARE
     v_run_id BIGINT;
@@ -11530,6 +11076,12 @@ DECLARE
     v_secs INTEGER;
     v_sec_i INTEGER := 0;
     v_sec RECORD;
+    v_ind RECORD;
+    v_bars TIMESTAMP[];
+    v_total INTEGER;
+    v_i INTEGER;
+    v_bar_dt TIMESTAMP;
+    v_pnl NUMERIC;
     v_date_from DATE;
     v_date_to DATE;
     v_load_from DATE;
@@ -11539,6 +11091,8 @@ DECLARE
     v_point_count INTEGER;
     v_prices_in_period INTEGER;
     v_ind_in_period INTEGER;
+    v_trades_created INTEGER;
+    v_diag JSONB;
     v_days_span INTEGER;
     v_tbank JSONB;
     v_pl INTEGER;
@@ -11546,6 +11100,8 @@ DECLARE
     v_is INTEGER;
     v_ic INTEGER;
     v_ie INTEGER;
+    v_prev_bar TIMESTAMP;
+    v_next_bar TIMESTAMP;
 BEGIN
     v_date_from := LEAST(p_date_from, p_date_to);
     v_date_to := GREATEST(p_date_from, p_date_to);
@@ -11596,8 +11152,6 @@ BEGIN
         'Загрузка цен', v_balance, CURRENT_TIMESTAMP
     )
     RETURNING id INTO v_run_id;
-    o_run_id := v_run_id;
-    COMMIT;
 
     IF v_tf_sec < 86400 THEN
         v_tbank := tbank_verify_token();
@@ -11611,8 +11165,7 @@ BEGIN
                 v_run_id, 'failed', 100, 'Нужен T-Bank', NULL, NULL, NULL, NULL, v_balance, 0,
                 COALESCE(v_tbank->>'error_message', 'Для M15 нужен валидный токен T-Bank')
             );
-            COMMIT;
-            RETURN;
+            RETURN v_run_id;
         END IF;
     END IF;
 
@@ -11639,8 +11192,7 @@ BEGIN
         IF logic_backtest_cancel_requested(v_run_id) THEN
             PERFORM logic_backtest_log(v_run_id, p_logic_id, 'backtest.cancelled', 'Отменено на загрузке', NULL);
             PERFORM logic_backtest_update_run(v_run_id, 'cancelled', NULL, 'Отменено', NULL);
-            COMMIT;
-            RETURN;
+            RETURN v_run_id;
         END IF;
         v_sec_i := v_sec_i + 1;
         BEGIN
@@ -11661,7 +11213,6 @@ BEGIN
             'Подготовка данных',
             format('Бумага %s/%s', v_sec_i, v_secs)
         );
-        COMMIT;
     END LOOP;
 
     -- Цены денежного фонда (сигналы по нему не гоняем, но парковка в тесте нужна).
@@ -11679,7 +11230,6 @@ BEGIN
                 v_cash_fund_id, v_tf_id
             );
         END;
-        COMMIT;
     END IF;
 
     SELECT COUNT(*)::INTEGER INTO v_prices_in_period
@@ -11701,8 +11251,7 @@ BEGIN
             v_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
             'Не загружены цены. Задайте токен T-Bank (M15) или см. price_load_log.'
         );
-        COMMIT;
-        RETURN;
+        RETURN v_run_id;
     END IF;
 
     SELECT COUNT(*)::INTEGER INTO v_ind_in_period
@@ -11718,25 +11267,130 @@ BEGIN
         jsonb_build_object('indicator_values_in_period', v_ind_in_period),
         NULL, v_tf_id
     );
-    COMMIT;
 
     IF v_ind_in_period = 0 THEN
         PERFORM logic_backtest_update_run(
             v_run_id, 'failed', 100, 'Нет индикаторов', NULL, NULL, NULL, NULL, v_balance, 0,
             'Индикаторы не рассчитаны. См. backtest.indicator.error.'
         );
-        COMMIT;
-        RETURN;
+        RETURN v_run_id;
     END IF;
 
-    -- Единый SQL-прогон баров (тот же путь, что вызывает Node после parallel prep).
-    CALL logic_backtest_run_bars(v_run_id);
-    o_run_id := v_run_id;
+    SELECT array_agg(DISTINCT p.dt ORDER BY p.dt)
+    INTO v_bars
+    FROM prices p
+    JOIN logic_securities ls ON ls.security_id = p.security_id
+    WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+      AND p.timeframe_id = v_tf_id
+      AND p.dt::date BETWEEN v_date_from AND v_date_to;
+
+    v_total := COALESCE(array_length(v_bars, 1), 0);
+    UPDATE logic_backtest_runs SET total_bars = v_total WHERE id = v_run_id;
+
+    IF v_total = 0 THEN
+        PERFORM logic_backtest_update_run(
+            v_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
+            'Нет цен в выбранном периоде'
+        );
+        RETURN v_run_id;
+    END IF;
+
+    PERFORM logic_backtest_update_run(
+        v_run_id, 'running', 40, 'Прогон по свечам',
+        format('0 / %s баров', v_total)
+    );
+
+    FOR v_i IN 1..v_total LOOP
+        IF logic_backtest_cancel_requested(v_run_id) THEN
+            SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
+            FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
+            PERFORM logic_backtest_log(v_run_id, p_logic_id, 'backtest.cancelled', format('Отменено на %s/%s', v_i, v_total), NULL);
+            PERFORM logic_backtest_update_run(
+                v_run_id, 'cancelled',
+                round(40 + v_i::NUMERIC / v_total * 60, 2),
+                'Отменено пользователем', NULL, v_bars[v_i], v_i, NULL, v_balance, v_pnl
+            );
+            RETURN v_run_id;
+        END IF;
+
+        v_bar_dt := v_bars[v_i];
+        v_prev_bar := CASE WHEN v_i > 1 THEN v_bars[v_i - 1] ELSE NULL END;
+        v_next_bar := CASE WHEN v_i < v_total THEN v_bars[v_i + 1] ELSE NULL END;
+
+        PERFORM logic_backtest_rate_signals(v_run_id, p_logic_id, v_tf_id, v_bar_dt);
+        v_balance := logic_backtest_process_risk(
+            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+        );
+
+        IF logic_is_eod_close_bar(p_logic_id, v_bar_dt, v_prev_bar, v_next_bar) THEN
+            v_balance := logic_backtest_close_all_except_funds(
+                v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+            );
+        END IF;
+
+        IF NOT logic_is_non_trading_dt(p_logic_id, v_bar_dt) THEN
+            v_balance := logic_backtest_process_signals(
+                v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+            );
+        END IF;
+
+        v_balance := logic_backtest_park_excess_cash(
+            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+        );
+
+        IF v_i % 5 = 0 OR v_i = v_total THEN
+            PERFORM logic_backtest_update_run(
+                v_run_id, 'running',
+                round(40 + v_i::NUMERIC / v_total * 60, 2),
+                'Прогон по свечам',
+                format('%s / %s баров', v_i, v_total),
+                v_bar_dt, v_i, NULL, v_balance
+            );
+        END IF;
+    END LOOP;
+
+    -- Финальная парковка после последнего бара (если кэш выше порога).
+    IF v_total > 0 THEN
+        v_balance := logic_backtest_park_excess_cash(
+            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
+        );
+    END IF;
+
+    SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
+    FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
+
+    SELECT COUNT(*)::INTEGER INTO v_trades_created
+    FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
+
+    v_diag := logic_backtest_diagnose(v_run_id, p_logic_id, v_tf_id, v_date_from, v_date_to);
+
+    PERFORM logic_backtest_log(
+        v_run_id, p_logic_id, 'backtest.complete',
+        CASE WHEN v_trades_created > 0
+            THEN format('Завершено: %s сделок, PnL=%s', v_trades_created, round(v_pnl, 2))
+            ELSE format('Завершено без сделок (%s баров)', v_total)
+        END,
+        v_diag || jsonb_build_object(
+            'trades_created', v_trades_created,
+            'financial_result', v_pnl,
+            'total_bars', v_total
+        ),
+        NULL, v_tf_id
+    );
+
+    PERFORM logic_backtest_update_run(
+        v_run_id, 'completed', 100,
+        CASE WHEN v_trades_created > 0 THEN 'Тестирование завершено' ELSE 'Тест завершён — сделок нет' END,
+        format('%s баров, сделок: %s', v_total, v_trades_created),
+        v_bars[v_total], v_total, v_trades_created, v_balance, v_pnl
+    );
+
+    RETURN v_run_id;
 END;
 $$;
 
-COMMENT ON PROCEDURE run_logic_backtest(INTEGER, DATE, DATE, BIGINT) IS
-'Исторический backtest (SQL PROCEDURE): загрузка + logic_backtest_run_bars с частыми COMMIT';
+COMMENT ON FUNCTION run_logic_backtest(INTEGER, DATE, DATE) IS
+'Исторический backtest: is_test=TRUE сделки, прогресс в logic_backtest_runs';
 
 CREATE OR REPLACE FUNCTION logic_backtest_request_cancel(p_run_id BIGINT)
 RETURNS BOOLEAN
@@ -12111,20 +11765,6 @@ COMMENT ON FUNCTION configure_http_ssl() IS
 -- Парковка свободного кэша в денежный фонд (TMON/LQDT/SBMM)
 -- Вызов из run_trade_cycle / Node trade-runner
 -- ============================================
-
-CREATE OR REPLACE FUNCTION logic_is_cash_fund_security(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
-    );
-$$;
-
-COMMENT ON FUNCTION logic_is_cash_fund_security(INTEGER) IS
-'TRUE если бумага — денежный фонд TMON/LQDT/SBMM (не закрывать стопами/сигналами)';
 
 CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
     p_logic_id INTEGER,
@@ -12628,15 +12268,6 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
-
-
-
-
-
-
-
-
-
 
 
 

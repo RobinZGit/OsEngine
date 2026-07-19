@@ -3,20 +3,6 @@
 -- Вызов из run_trade_cycle / Node trade-runner
 -- ============================================
 
-CREATE OR REPLACE FUNCTION logic_is_cash_fund_security(p_security_id INTEGER)
-RETURNS BOOLEAN
-LANGUAGE sql STABLE AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM security_prefixes sp
-        WHERE sp.security_id = p_security_id
-          AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
-    );
-$$;
-
-COMMENT ON FUNCTION logic_is_cash_fund_security(INTEGER) IS
-'TRUE если бумага — денежный фонд TMON/LQDT/SBMM (не закрывать стопами/сигналами)';
-
 CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
     p_logic_id INTEGER,
     p_code TEXT

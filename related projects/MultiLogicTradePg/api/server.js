@@ -18,15 +18,7 @@ const { Pool } = require('pg');
 const {
   hashToken,
 } = require('./tbank');
-const {
-  startBacktest,
-  supersedeActiveBacktests,
-  getBacktestStatus,
-  listActiveBacktests,
-  cancelBacktest,
-  failOrphanBacktestRuns,
-} = require('./logic-backtest');
-const { appendBacktestProgressLog } = require('./backtest-progress-log');
+const { startBacktest, getBacktestStatus, cancelBacktest } = require('./logic-backtest');
 const {
   startRatingPrecalc,
   getRatingPrecalcStatus,
@@ -179,35 +171,18 @@ function watchWarmupBacktest(pool, logicId, runId) {
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
-const corsOrigins = String(
-  process.env.CORS_ORIGIN || 'http://localhost:4200,http://127.0.0.1:4200'
-)
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const corsOrigin = corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins;
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';
 
-const pgPoolCommon = {
+const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
   port: Number(process.env.PGPORT) || 5432,
   database: process.env.PGDATABASE || 'multilogictrade',
   user: process.env.PGUSER || 'postgres',
   password: process.env.PGPASSWORD,
+  // Бой (по логикам) + бэктест (×2) + UI poll + прекалк рейтингов
+  max: Math.max(10, Math.min(40, Number(process.env.PGPOOL_MAX) || 24)),
   idleTimeoutMillis: 30_000,
-};
-
-// HTTP/UI: короткий timeout — иначе poll «процессов» висит и браузер показывает status 0.
-const pool = new Pool({
-  ...pgPoolCommon,
-  max: Math.max(8, Math.min(24, Number(process.env.PGPOOL_MAX) || 16)),
-  connectionTimeoutMillis: 8_000,
-});
-
-// Долгий CALL logic_backtest_run_bars / load_prices — отдельный пул, не забивает UI.
-const backtestPool = new Pool({
-  ...pgPoolCommon,
-  max: Math.max(2, Math.min(12, Number(process.env.PGPOOL_BACKTEST_MAX) || 6)),
-  connectionTimeoutMillis: 60_000,
+  connectionTimeoutMillis: 15_000,
 });
 
 app.use(cors({ origin: corsOrigin }));
@@ -929,47 +904,6 @@ app.post('/api/securities', async (req, res) => {
     handleDbError(res, err, 'POST /api/securities');
   } finally {
     client.release();
-  }
-});
-
-/** Последняя цена по списку бумаг (для MTM в списке «Бумаги»). */
-app.get('/api/prices/last', async (req, res) => {
-  const timeframeId = parseId(req.query.timeframe_id);
-  const idsRaw = String(req.query.security_ids || '')
-    .split(',')
-    .map((x) => Number(x.trim()))
-    .filter((n) => Number.isInteger(n) && n > 0);
-  const securityIds = [...new Set(idsRaw)].slice(0, 200);
-  const asOfRaw = req.query.as_of != null ? String(req.query.as_of).trim() : '';
-  if (!timeframeId || securityIds.length === 0) {
-    res.status(400).json({ error: 'Укажите timeframe_id и security_ids' });
-    return;
-  }
-  try {
-    const params = [securityIds, timeframeId];
-    let asOfClause = '';
-    if (asOfRaw) {
-      params.push(asOfRaw);
-      asOfClause = `AND p.dt <= $${params.length}::timestamp`;
-    }
-    const { rows } = await pool.query(
-      `
-      SELECT DISTINCT ON (p.security_id)
-        p.security_id,
-        p.close_price::float8 AS close_price,
-        to_char(p.dt, 'YYYY-MM-DD HH24:MI:SS') AS dt
-      FROM prices p
-      WHERE p.security_id = ANY($1::int[])
-        AND p.timeframe_id = $2
-        ${asOfClause}
-      ORDER BY p.security_id, p.dt DESC
-      `,
-      params
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error('GET /api/prices/last', err);
-    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1906,7 +1840,7 @@ app.patch('/api/logics/:id', async (req, res) => {
         }
         const dateTo = localIsoDate();
         const dateFrom = shiftLocalDate(dateTo, -(warmup.lookbackDays - 1));
-        const runId = await startBacktest(pool, id, dateFrom, dateTo, backtestPool);
+        const runId = await startBacktest(pool, id, dateFrom, dateTo);
         await pool.query(`UPDATE logics SET is_enabled = FALSE WHERE id = $1`, [id]);
         watchWarmupBacktest(pool, id, runId);
         await writeTechLogEvent(pool, {
@@ -3194,9 +3128,6 @@ app.post('/api/logic-backtest/start', async (req, res) => {
   const logicId = Number(req.body?.logic_id);
   const dateFrom = btrimStr(req.body?.date_from);
   const dateTo = btrimStr(req.body?.date_to);
-  const t0 = Date.now();
-  // Сразу в лог — до любых await (иначе «Нет ответа» без строки в api.log).
-  console.log(`Backtest start: received logic=${logicId} ${dateFrom}..${dateTo}`);
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;
@@ -3206,44 +3137,20 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     return;
   }
   try {
-    // ВАЖНО: INSERT/supersede только через HTTP-пул `pool` (короткий timeout).
-    // backtestPool занят load_prices/CALL — если Start ждёт его, Angular висит на 5% «Ожидание API».
-    console.log(`Backtest start: begin logic=${logicId} ${dateFrom}..${dateTo}`);
-    const superseded = await Promise.race([
-      supersedeActiveBacktests(pool, logicId),
-      new Promise((resolve) => setTimeout(() => resolve([]), 800)),
-    ]);
-    // workerPool = backtestPool — тяжёлая работа после 202, не блокирует ответ.
-    const runId = await startBacktest(pool, logicId, dateFrom, dateTo, backtestPool);
-    const ms = Date.now() - t0;
-    console.log(
-      `Backtest start: 202 run=${runId} logic=${logicId} superseded=${JSON.stringify(superseded)} in ${ms}ms`
+    const { rows: active } = await pool.query(
+      `SELECT id FROM logic_backtest_runs
+       WHERE logic_id = $1 AND status IN ('pending','loading_prices','loading_indicators','running')
+       LIMIT 1`,
+      [logicId]
     );
-    res.status(202).json({
-      ok: true,
-      run_id: runId,
-      status: 'pending',
-      progress_pct: 1,
-      phase_message: 'Запуск',
-      phase_detail: 'Прогон создан',
-      superseded_runs: superseded,
-      elapsed_ms: ms,
-    });
-    appendBacktestProgressLog('api-start', {
-      logic_id: logicId,
-      run_id: runId,
-      progress_pct: 1,
-      status: 'pending',
-      elapsed_ms: ms,
-      superseded,
-    });
+    if (active.length > 0) {
+      res.status(409).json({ error: 'Тестирование уже выполняется', run_id: active[0].id });
+      return;
+    }
+    const runId = await startBacktest(pool, logicId, dateFrom, dateTo);
+    res.status(202).json({ ok: true, run_id: runId });
   } catch (err) {
-    console.error(`POST /api/logic-backtest/start FAIL in ${Date.now() - t0}ms`, err);
-    appendBacktestProgressLog('api-start-fail', {
-      logic_id: logicId,
-      error: err.message,
-      elapsed_ms: Date.now() - t0,
-    });
+    console.error('POST /api/logic-backtest/start', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3251,73 +3158,21 @@ app.post('/api/logic-backtest/start', async (req, res) => {
 app.get('/api/logic-backtest/status', async (req, res) => {
   const logicId = Number(req.query.logic_id);
   const runId = req.query.run_id != null ? Number(req.query.run_id) : null;
-  const t0 = Date.now();
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;
   }
   try {
-    // HTTP-пул `pool` — status всегда быстрый; backtestPool может быть занят CALL.
     const row = await getBacktestStatus(pool, logicId, runId);
-    const ms = Date.now() - t0;
     if (!row) {
-      // Не пишем found:false в лог — UI раньше опрашивал ВСЕ логики и забивал диск/UI.
       res.status(404).json({ error: 'Run not found' });
       return;
-    }
-    appendBacktestProgressLog('api-status', {
-      logic_id: logicId,
-      run_id: Number(row.id),
-      status: row.status,
-      progress_pct: Number(row.progress_pct) || 0,
-      processed_bars: row.processed_bars,
-      total_bars: row.total_bars,
-      ms,
-    });
-    // Не спамить api.log на каждый poll — только медленные или смена %.
-    if (ms >= 200 || Number(row.progress_pct) === 1 || Number(row.progress_pct) >= 99) {
-      console.log(
-        `Backtest status: logic=${logicId} run=${row.id} ${row.status} ${row.progress_pct}% in ${ms}ms`
-      );
     }
     res.json(row);
   } catch (err) {
     console.error('GET /api/logic-backtest/status', err);
-    appendBacktestProgressLog('api-status-fail', {
-      logic_id: logicId,
-      run_id: runId,
-      error: err.message,
-      ms: Date.now() - t0,
-    });
     res.status(500).json({ error: err.message });
   }
-});
-
-/** Активные прогоны одним запросом (hydrate без N×/status на каждую логику). */
-app.get('/api/logic-backtest/active', async (_req, res) => {
-  try {
-    const rows = await listActiveBacktests(pool);
-    res.json(rows);
-  } catch (err) {
-    console.error('GET /api/logic-backtest/active', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/** Клиентский лог UI (apply %, poll error) → тот же backtest-progress.log. */
-app.post('/api/logic-backtest/ui-log', (req, res) => {
-  const body = req.body && typeof req.body === 'object' ? req.body : {};
-  appendBacktestProgressLog('ui', {
-    logic_id: body.logic_id != null ? Number(body.logic_id) : null,
-    run_id: body.run_id != null ? Number(body.run_id) : null,
-    event: body.event || 'ui',
-    ui_pct: body.ui_pct,
-    server_pct: body.server_pct,
-    status: body.status,
-    detail: body.detail,
-    error: body.error,
-  });
-  res.status(204).end();
 });
 
 app.post('/api/logic-backtest/cancel', async (req, res) => {
@@ -3332,7 +3187,6 @@ app.post('/api/logic-backtest/cancel', async (req, res) => {
       res.status(404).json({ error: 'Run not found or already finished' });
       return;
     }
-    appendBacktestProgressLog('api-cancel', { run_id: runId });
     res.json({ ok: true, run_id: runId });
   } catch (err) {
     console.error('POST /api/logic-backtest/cancel', err);
@@ -4359,12 +4213,9 @@ app.use((_req, res) => {
   });
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`MultiLogicTrade API: http://127.0.0.1:${port} (also localhost)`);
-  console.log(`CORS origin: ${Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin}`);
-  failOrphanBacktestRuns(pool).catch((err) => {
-    console.error('failOrphanBacktestRuns', err.message);
-  });
+app.listen(port, () => {
+  console.log(`MultiLogicTrade API: http://localhost:${port}`);
+  console.log(`CORS origin: ${corsOrigin}`);
   startTradeRunner(pool);
   startMaintenanceScheduler(pool);
 });

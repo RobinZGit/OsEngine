@@ -1,8 +1,8 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, switchMap, takeUntil, timer, forkJoin, of, Subscription } from 'rxjs';
-import { catchError, map, timeout } from 'rxjs/operators';
+import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import { LogicsService } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
@@ -133,8 +133,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private signalIndicatorIdsByLogic = new Map<number, number[]>();
   backtestRuns = new Map<number, BacktestRunStatus>();
   private backtestPollIds = new Set<number>();
-  /** Отдельный частый poll статуса теста (не через getLogics — иначе % замирает при busy API). */
-  private backtestStatusPollSub: Subscription | null = null;
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
@@ -297,6 +295,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
         next: (rows) => {
           // Диалог «период теста»: не гонять CD/trades — иначе date input «дубовый».
           if (this.uiInteractionPause) {
+            for (const logicId of this.backtestPollIds) {
+              this.refreshBacktestStatus(logicId);
+            }
             return;
           }
           this.logics = rows.map((row) => {
@@ -337,7 +338,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.stopBacktestStatusPoll();
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -2276,7 +2276,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
         );
         if (resp.warmup_pretest?.started) {
           this.backtestPollIds.add(row.id);
-          this.ensureBacktestStatusPoll();
           this.expandedLogics.add(row.id);
           this.expandedTestTradesBlocks.add(row.id);
           this.refreshBacktestStatus(row.id);
@@ -2431,9 +2430,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
     pnl: number;
     commission: number;
     trade_count: number;
-    open_qty: number;
-    last_price: number | null;
-    position_value: number;
   } | null {
     const code = String(row.cash_fund_code ?? '')
       .trim()
@@ -2460,9 +2456,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
       pnl: 0,
       commission: 0,
       trade_count: 0,
-      open_qty: 0,
-      last_price: null,
-      position_value: 0,
     };
   }
 
@@ -2502,7 +2495,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.backtestPollIds.add(logicId);
-          this.ensureBacktestStatusPoll();
           this.expandedTestTradesBlocks.add(logicId);
           this.loadSignalsForLogic(logicId);
           this.refreshBacktestStatus(logicId);
@@ -2519,72 +2511,32 @@ export class LogicsComponent implements OnInit, OnDestroy {
       phase_message: 'Остановка…',
       phase_detail: run.phase_detail || 'Запрос на остановку принят',
     });
-    this.backtestRuns = new Map(this.backtestRuns);
     this.logicsService.cancelBacktest(run.id).subscribe({
       next: () => this.refreshBacktestStatus(logicId),
       error: (err) => alert(err?.error?.error || 'Не удалось остановить тест'),
     });
   }
 
-  /** 500мс poll только для активных тестов — не зависит от getLogics / switchMap. */
-  private ensureBacktestStatusPoll(): void {
-    if (this.backtestStatusPollSub) return;
-    this.backtestStatusPollSub = timer(0, 500)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(() => {
-        if (this.backtestPollIds.size === 0) {
-          this.stopBacktestStatusPoll();
-          return;
-        }
-        for (const logicId of [...this.backtestPollIds]) {
-          this.refreshBacktestStatus(logicId);
-        }
-      });
-  }
-
-  private stopBacktestStatusPoll(): void {
-    if (this.backtestStatusPollSub) {
-      this.backtestStatusPollSub.unsubscribe();
-      this.backtestStatusPollSub = null;
-    }
-  }
-
   private refreshBacktestStatus(logicId: number): void {
-    this.logicsService
-      .getBacktestStatus(logicId)
-      .pipe(
-        takeUntil(this.destroy$),
-        timeout(8_000),
-        catchError(() => of(null))
-      )
-      .subscribe({
-        next: (row) => {
-          if (row) {
-            const st = String(row.status ?? '');
-            const active = ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st);
-            let pct = Number(row.progress_pct) || 0;
-            if (st === 'completed') pct = 100;
-            this.backtestRuns.set(logicId, { ...row, progress_pct: pct });
-            this.backtestRuns = new Map(this.backtestRuns);
-            if (active) {
-              this.backtestPollIds.add(logicId);
-              this.ensureBacktestStatusPoll();
-            } else {
-              this.backtestPollIds.delete(logicId);
-              this.loadTestTradesForLogic(logicId, true);
-              if (this.backtestPollIds.size === 0) {
-                this.stopBacktestStatusPoll();
-              }
-            }
-            this.rebuildTestTradesView(logicId);
-          } else if (!this.backtestPollIds.has(logicId)) {
-            this.backtestRuns.delete(logicId);
-            this.backtestRuns = new Map(this.backtestRuns);
-            this.rebuildTestTradesView(logicId);
+    this.logicsService.getBacktestStatus(logicId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (row) => {
+        if (row) {
+          this.backtestRuns.set(logicId, row);
+          const st = String(row.status ?? '');
+          if (['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st)) {
+            this.backtestPollIds.add(logicId);
+          } else {
+            this.backtestPollIds.delete(logicId);
+            this.loadTestTradesForLogic(logicId, true);
           }
-          // null при active poll = сетевой сбой: оставляем жёлтый UI, ждём следующий tick
-        },
-      });
+          this.rebuildTestTradesView(logicId);
+        } else {
+          this.backtestRuns.delete(logicId);
+          this.backtestPollIds.delete(logicId);
+          this.rebuildTestTradesView(logicId);
+        }
+      },
+    });
   }
 
   private loadTradesForLogic(logicId: number, silent = false): void {

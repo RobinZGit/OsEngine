@@ -4,7 +4,7 @@
  */
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, of, timeout } from 'rxjs';
+import { Observable, timeout } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import {
   ChartIndicatorSeries,
@@ -63,30 +63,6 @@ export class SecuritiesService {
     }
     return this.http
       .get<PriceCandle[]>(`${this.appConfig.apiUrl}/prices`, { params })
-      .pipe(timeout(15_000));
-  }
-
-  /** Последняя цена (close) по бумагам; asOf — верхняя граница dt (конец теста). */
-  getLastPrices(
-    securityIds: number[],
-    timeframeId: number,
-    asOf?: string | null
-  ): Observable<{ security_id: number; close_price: number; dt: string }[]> {
-    const ids = [...new Set(securityIds.filter((id) => Number.isInteger(id) && id > 0))];
-    if (ids.length === 0) {
-      return of([]);
-    }
-    let params = new HttpParams()
-      .set('security_ids', ids.join(','))
-      .set('timeframe_id', String(timeframeId));
-    if (asOf) {
-      params = params.set('as_of', asOf);
-    }
-    return this.http
-      .get<{ security_id: number; close_price: number; dt: string }[]>(
-        `${this.appConfig.apiUrl}/prices/last`,
-        { params }
-      )
       .pipe(timeout(15_000));
   }
 

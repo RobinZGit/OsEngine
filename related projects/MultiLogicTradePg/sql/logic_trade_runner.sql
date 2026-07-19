@@ -1369,5 +1369,5 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_trade_cycle() IS
-'SQL-робот боя: stops → trades → park (пропуск логик с активным бэктестом). '
-'Node trade-runner только планирует SELECT run_trade_cycle(); также pg_cron.';
+'Цикл торговли по включённым logics (пропуск логик с активным бэктестом). '
+'Node fallback предпочтителен: по логике отдельно (короткие tx). pg_cron — эта функция.';

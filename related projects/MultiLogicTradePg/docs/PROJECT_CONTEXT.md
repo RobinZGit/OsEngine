@@ -1,4 +1,4 @@
-﻿# MultiLogicTradePg — контекст проекта
+# MultiLogicTradePg — контекст проекта
 
 > Живой файл контекста для продолжения работы с разных устройств и в Cursor.  
 > **Обновлять перед каждым push в репозиторий** — см. `.cursor/rules/project-context.mdc`.
@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Rollback Angular backtest UI to pre-SQL-robots (29ed3ba) + dedicated 500ms status poll
+**Последнее обновление:** 2026-07-19 — HARD rollback of MultiLogicTradePg tree to `29ed3ba` (pre-SQL-robots, ~12:57)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -97,8 +97,6 @@
 - `logics` + `logic_indicator_signals` / `logic_params` — торговые правила и параметры (EAV); таблица **`logics_detail` удалена** (v39);
 - UI **Операции** (`/operations`): пять сворачиваемых блоков — **«Параметры логики»**, **«Сигналы на логике»**, **«Стоп-лосс и тейк-профит»**, **«Ценные бумаги»**, **«Сделки»** (по умолчанию свёрнуты);
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
-- **Тест (оркестрация):** Node `api/logic-backtest.js` — цикл по барам вызывает SQL-функции (`rate_signals` / `process_risk` / EOD / NTP / `process_signals` / `park_excess_cash`); прогресс в `logic_backtest_runs`. `CALL logic_backtest_run_bars` остаётся в БД, но UI-тест его больше не вызывает (откат 2026-07-19 после зависаний).
-- **SQL robots (бой):** `run_trade_cycle()` (Node `trade-runner.js` только планирует). Полный SQL-путь теста (опционально): `CALL run_logic_backtest(...)`.
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
 - **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **только при открытом Angular** (heartbeat → `APP_TRADE_RUNNER_HB`, TTL 90 с); ручной `POST /api/logic-trades/run`;
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
@@ -306,31 +304,6 @@
 - [x] Linux installer: `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` + `install.sh`; freshness rule for Windows+Linux; `build-all-installers.ps1` (2026-07-19).
 - [x] Non-trading UI: add/edit/delete intervals; warning when «Учитывать…» is off; TMON park skip logs + end-of-backtest park; both installers (2026-07-19).
 - [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
-- [x] SQL robots: `logic_backtest_run_bars` + thin Node test prep; live Node → `run_trade_cycle()` only; both installers + push (2026-07-19).
-- [x] Rollback UI test to Node bar-loop (pre-`CALL logic_backtest_run_bars`); live still `run_trade_cycle`; keep Start/status on HTTP pool (2026-07-19).
-- [x] Fix backtest cash-fund price prep: `CALL load_prices_http` 4 args (was 5 → always error); seed TMON/LQDT `tbank_figi`; UI badge + sort fund opens first (2026-07-19).
-- [x] Papers list: show open remainder (`ост.`) from Open `remaining_qty` — cash fund stays open so PnL alone looked like «0» (2026-07-19).
-- [x] Papers list (test+live): `в портф.` = |ост.| × last close (`/api/prices/last`); label `финрез` for realized PnL; stop SL/TP never closes TMON/LQDT/SBMM (2026-07-19).
-- [x] Fix NG5002: literal `@` in papers template → `&#64;` (2026-07-19).
-- [x] Backtest Start: optimistic pending UI, hydrate active runs on load, OnPush markForCheck for period dialog (2026-07-19).
-- [x] Start always cancels active run + DELETE test trades; light diagnose (no per-sec detail hang at 100%); UI clears FinRES on Start (2026-07-19).
-- [x] Start: fast HTTP (supersede + terminate stuck CALL, DELETE in worker); debounce double-click; clearer status-0 error (2026-07-19).
-- [x] Status 0 on Start+/processes: separate backtest PG pool; Start auto-retry; quiet process bar; CORS localhost+127.0.0.1; API log file (2026-07-19).
-- [x] Long «Очистка»: live phase updates; skip trade_runner while backtest active; DELETE with lock_timeout+retry (2026-07-19).
-- [x] Start yellow+↻% immediately (no T-Bank validate wait); panel localStarting for OnPush (2026-07-19).
-- [x] Stuck at optimistic 1%: prefer run_id, 500ms status poll, don’t clobber with old completed, Map CD (2026-07-19).
-- [x] Stuck at 0% «Ожидание сервера»: fast poll BEFORE /start returns; always apply active runs; start supersede ≤2s (2026-07-19).
-- [x] TS2339: add `finished_at`/`started_at` to `BacktestRunStatus` (ng serve failed) (2026-07-19).
-- [x] /start status 0 after 0%: stop status-poll before Start (pool starve); Start on backtestPool; api.log timings (2026-07-19).
-- [x] 0% hang UX: optimistic pulse 0→5%; /start returns progress; early DB ticks 1/3/6/8/10%; detectChanges (2026-07-19).
-- [x] Stop stuck/disabled: never disable Stop; cancel in-flight start; terminate SQL on cancel (2026-07-19).
-- [x] Smooth progress bar: SQL COMMIT every bar → logic_backtest_runs.progress_pct; UI poll without detectChanges thrash / 80ms lerp freeze (2026-07-19).
-- [x] Stuck at 1% while DB completed 100%: race stale /status overwrote UI; switchMap poll + monotonic % + completed→100%; OnPush markForCheck (2026-07-19).
-- [x] Stuck at 1% again: root cause switchMap cancelled slow /status every 500ms; exhaustMap + backtestPool status + `api/logs/backtest-progress.log` + UI ui-log (2026-07-19).
-- [x] Form freeze + stuck ~38%: hydrate polled ALL logics → 404 retry forever; `/active` + no 404 retry; richer phase_detail (bars/trades/finres) (2026-07-19).
-- [x] «Нет ответа от API» + no %: sync progress-log blocked Node; async log + keep optimistic % on start fail (2026-07-19).
-- [x] At 3% «Нет ответа от API»: CLI /start OK 177ms — browser slot starve; pause polls + 127.0.0.1 API URL (2026-07-19).
-- [x] At 5% «Ожидание API»: /start used backtestPool (blocked by CALL); control plane on HTTP `pool`; terminate async (2026-07-19).
 
 ---
 
@@ -350,37 +323,7 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-07-19 | Rollback Angular backtest UI to 29ed3ba + 500ms status poll (fix 1% hang) |
-| 2026-07-19 | Reword Start progress: «Запускаем тест…» (not «в PostgreSQL»); engine unchanged |
-| 2026-07-19 | Rollback UI backtest to Node bar-loop (EOD/NTP/park); Start/status still on HTTP pool |
-| 2026-07-19 | Start/status on HTTP pool only; backtestPool for workers; no 5% wait behind CALL |
-| 2026-07-19 | Fix Start status-0 at 3%: pause all polls during /start; API URL 127.0.0.1 |
-| 2026-07-19 | Fix «Нет ответа от API»: async progress log; keep optimistic % on start fail |
-| 2026-07-19 | Fix UI freeze: stop N×/status 404 retries; GET /active; richer progress (bars/trades/finres) |
-| 2026-07-19 | Fix stuck 1%: exhaustMap (don't cancel /status); backtest-progress.log; status on backtestPool |
-| 2026-07-19 | Fix: UI stuck at 1% while DB completed — switchMap status poll, monotonic %, completed→100% |
-| 2026-07-19 | Ship: Stop always clickable + cancel in-flight start |
-| 2026-07-19 | Ship: progress pulse + early logic_backtest_runs.progress_pct ticks |
-| 2026-07-19 | Ship: fix /start status-0 — no poll before Start; backtestPool |
-| 2026-07-19 | Ship: smooth bar — commit every bar into logic_backtest_runs |
-| 2026-07-19 | Ship: fix TS18048 runId undefined on cancelBacktest |
-| 2026-07-19 | Ship: poll before /start returns — no freeze at 0% |
-| 2026-07-19 | Ship: fix stuck optimistic 1% (fast poll + run_id) |
-| 2026-07-19 | Ship: instant yellow Start UI (no token HTTP first) |
-| 2026-07-19 | Ship: cleanup phases + skip runner during backtest |
-| 2026-07-19 | Ship: backtestPool + Start retry; quiet /processes status 0 |
-| 2026-07-19 | Ship: Start fast path + kill stuck SQL; fix browser 0 Unknown Error |
-| 2026-07-19 | Ship: Start supersedes old test; fix diagnose hang at 100% |
-| 2026-07-19 | Ship: backtest Start UX (optimistic + hydrate + period dialog OnPush) |
-| 2026-07-19 | Ship: fix NG5002 `@` → `&#64;` in papers last-price label |
-| 2026-07-19 | Ship: papers MTM value + exclude cash fund from stop closes |
-| 2026-07-19 | Ship: papers list open remainder for unclosed TMON / positions |
-| 2026-07-19 | Ship: TMON price prep CALL fix + FIGI seed; fund opens first in test UI |
-| 2026-07-19 | Ship: zombie backtest 409 without Stop — status prefers active, orphans cleared on API start |
-| 2026-07-19 | Ship: backtest PROCEDURE+COMMIT/5 bars; no HTTP TMON/bar; set-based equity; installers |
-| 2026-07-19 | Fix backtest lock/slowness: run_bars PROCEDURE + COMMIT every 5 bars |
-| 2026-07-19 | Ship SQL robots: test run_bars + live run_trade_cycle; Node thin shells; Windows+Linux installers |
-| 2026-07-19 | Fix Node backtest: call TMON park / NTP / EOD each bar (root cause: UI runner skipped SQL park) |
+| 2026-07-19 | HARD rollback MultiLogicTradePg tree to `29ed3ba` (pre-SQL-robots ~12:57) |
 | 2026-07-19 | Ship: TMON park by equity excess; UI «Порог портфеля»; Windows+Linux installers |
 | 2026-07-19 | Ship: non-trading interval CRUD UI; NTP-off warning; TMON park fix/logs; Windows+Linux installers |
 | 2026-07-19 | Linux installer tar.gz + install.sh; freshness rule Windows+Linux; build-all-installers.ps1 |
@@ -632,34 +575,4 @@
 129. «Make another installer for linux for macbook… updated every time when changing the project» — Linux tar.gz + freshness like Windows.
 130. Sunday trades with NTP off; need add/delete/edit period lines; TMON not bought with positive PnL; reassemble installer and post.
 131. Same test: TMON must buy each candle on equity excess over 1M; +13k finres → buy as much free cash allows ≤ excess; do not sell fund / stay in it.
-132. Again same test one day TMON did not buy; finres 13k enough for a little — root cause Node runner never called park.
-133. Prefer tests and real trading through SQL; separate robot for testing, separate for worker — uniform and faster.
-134. Same test feels slower; lock is on — long SQL tx + HTTP TMON price every bar (~2s); fix PROCEDURE+COMMIT, no HTTP in price_at, set-based equity.
-135. Test says already running but no Stop button — glitch (orphan run + status showed completed).
-136. «Testing has passed, Atemon did not buy again. Why? If there are corrections, immediately post them.» — DB had 17 TMON buys @ fallback 100; prep `load_prices_http` arity bug + empty FIGI.
-137. «In the transactions I see it, but in the papers list in testing it has a zero remainder. Correct and post.» — papers showed only realized PnL; add `open_qty` / «ост.».
-138. «TMON −60 in papers — commission? Add portfolio absolute value at last price in test+live papers; post.» — −60 was realized PnL from portfolio SL closing TMON; exclude funds from stops; add `в портф.` MTM.
-139. «No stop-losses and no take-profits should affect the fund. It should remain a purchased fund.» — guard close helpers + SL/TP loops; fund stays open.
-140. Installer start failed: NG5002 Incomplete block `@` in papers template — escape as `&#64;`.
-141. «When you press the start button, nothing happens, the color of the board does not change, testing does not start.» — optimistic UI + hydrate + OnPush dialog.
-142. «Yellow but testing not begun; must delete past testing and start again; FinRES stays old.» — supersede on Start + clear trades; diagnose hang.
-143. «Start worked only after second click; Http failure … start: 0 Unknown Error.» — DELETE locked behind stuck CALL; fast supersede + terminate.
-144. After reboot: Start again → same API alert + processes bar `Http failure … /api/processes: 0 Unknown Error`. — curl Start OK from CLI; browser storm; separate backtestPool + retry + soft process errors.
-145. «Something spinning, cleaning the old one a long time; observe to the end and post.» — optimistic «Очистка» stuck; live phases + skip trade_runner + lock_timeout DELETE.
-146. «Hangs first then yellow; make yellow+percent spin immediately.» — Program Files still waited getTbankTokenStatus(true); paint UI first + panel localStarting.
-147. «New setup: yellow OK then hung at 1%.» — optimistic pct; status poll lost/clobbered; fast poll + prefer run_id.
-148. «Yellow 0% hangs again.» — fast poll waited for /start; now poll immediately + always take active runs.
-149. Start bat: TS2339 `finished_at` missing on `BacktestRunStatus` — add fields to interface.
-150. «0% then Нет ответа от API» — status poll before /start starved PG pool; abort→status 0.
-151. «Hangs at 0%, logging on; controller should write % to a table.» — % already in logic_backtest_runs; UI pulse + early ticks + apply run from /start.
-152. «Can't press Stop, stuck; Stop must always work.» — disabled after first click + optimistic cancel ignored /start; fix.
-153. «Progress bar not smooth; Oracle should write % to a table.» — already PostgreSQL logic_backtest_runs; commit every bar + UI lerp.
-154. «In the test, I am dependent on 1%. Look.» — UI stuck at 1% while API/DB run 66 already completed 100%; race + force completed→100%.
-155. «1% is stuck again look why maybe you add something to the log» — switchMap cancelled /status; exhaustMap + progress log file.
-156. «Hanging at 38%… progress more informative» + «form hangs stuck» — 404 status storm freeze; informative bar from table; `/active` hydrate.
-157. «No percent, hung, then Нет ответа от API» — sync backtest-progress.log blocked API; keep % on error.
-158. «At 3% error, no response from API» — browser HTTP slot starve during Start; pause polls; use 127.0.0.1.
-159. «Expectation of an answer from API for 5%» — Start/status waited on backtestPool; split control vs worker pools.
-160. «It's hanging again… roll back all the testing to when it was not in Postgres… still in Angular… until I asked you to redo everything in Postgres» — restore Node bar-loop orchestration; keep UI Start fixes + HTTP control plane.
-161. «I see … create a program in Postgres… roll back even earlier» + chose **A** — only reword Start texts («Запускаем тест…»); no further architecture rollback.
-162. «Hangs at 1% again… reboot disk full… roll Angular too until my message» — logs: DB completed 100%, UI stuck after `/status` HTTP 0; restore Angular from `29ed3ba` + dedicated 500ms status poll.
+132. After SQL-robots / hang fixes: hard rewind — «I'll have to twist this very tightly» to **19.07.2026 ~12:57 / `29ed3ba`** (last ship before SQL-robots message).

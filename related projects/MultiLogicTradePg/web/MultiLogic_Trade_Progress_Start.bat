@@ -54,7 +54,7 @@ if "%PGHOST%"=="" set "PGHOST=localhost"
 if "%PGDATABASE%"=="" set "PGDATABASE=multilogictrade"
 if "%PGUSER%"=="" set "PGUSER=postgres"
 if "%PORT%"=="" set "PORT=3000"
-set "CORS_ORIGIN=http://localhost:4200,http://127.0.0.1:4200"
+set "CORS_ORIGIN=http://localhost:4200"
 set "TRADE_RUNNER_INTERVAL_MS=15000"
 
 if not exist "%API%\server.js" (
@@ -123,10 +123,7 @@ echo  --------------------------------------------------------
 echo.
 
 pushd "%API%"
-if not exist "logs" mkdir "logs" 2>nul
-echo.>> "logs\api.log"
-echo ===== API start %DATE% %TIME% =====>> "logs\api.log"
-start "MultiLogic API" /b cmd /c "node server.js >> logs\api.log 2>&1"
+start "MultiLogic API" /b cmd /c node server.js
 popd
 
 REM Give API a moment to bind the port.

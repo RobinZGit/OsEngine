@@ -157,47 +157,6 @@
   font-size: 0.88rem;
 }
 
-.paper-pnl-label {
-  margin-right: 0.2rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: lowercase;
-}
-
-.paper-open-qty {
-  margin-left: 0.45rem;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: #0f766e;
-}
-
-.paper-open-qty-zero {
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.paper-position-value {
-  margin-left: 0.45rem;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: #1d4ed8;
-}
-
-.paper-position-value-zero {
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.paper-last-px {
-  margin-left: 0.15rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: #64748b;
-}
-
 .paper-comm {
   margin-left: 0.45rem;
   font-size: 0.75rem;

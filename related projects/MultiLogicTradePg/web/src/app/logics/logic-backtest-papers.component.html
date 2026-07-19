@@ -53,33 +53,10 @@
                   class="trade-pnl paper-pnl"
                   [class.trade-pnl-pos]="paper.pnl > 0"
                   [class.trade-pnl-neg]="paper.pnl < 0"
-                  title="Реализованный финрез по закрытиям (не оценка открытой позиции)"
                 >
-                  <span class="paper-pnl-label">финрез</span>
                   {{ formatPnl(paper.pnl) }}
                   @if (paperPnlPct(paper.pnl) != null) {
                     <span class="pnl-deposit-pct">({{ formatPnlPct(paperPnlPct(paper.pnl)) }})</span>
-                  }
-                </span>
-                <span
-                  class="paper-open-qty"
-                  [class.paper-open-qty-zero]="paper.open_qty === 0"
-                  title="Открытый остаток позиции (лонг +, шорт −)"
-                >
-                  ост. {{ formatOpenQty(paper.open_qty) }}
-                </span>
-                <span
-                  class="paper-position-value"
-                  [class.paper-position-value-zero]="paper.position_value <= 0"
-                  [title]="
-                    paper.last_price != null
-                      ? 'Оценка в портфеле: |ост.| × последняя цена ' + paper.last_price
-                      : 'Оценка в портфеле: нет цены'
-                  "
-                >
-                  в портф. {{ formatMoney(paper.position_value) }}
-                  @if (paper.last_price != null) {
-                    <span class="paper-last-px">&#64; {{ formatMoney(paper.last_price) }}</span>
                   }
                 </span>
                 <span class="paper-comm" title="Комиссия по сделкам бумаги">

@@ -73,57 +73,10 @@ describe('backtest-chart-overlays', () => {
         pnl: 0,
         commission: 0,
         trade_count: 0,
-        open_qty: 0,
-        last_price: null,
-        position_value: 0,
       }
     );
     expect(rows[0].security_prefix).toBe('TMON');
-    expect(rows[0].open_qty).toBe(0);
-    expect(rows[0].position_value).toBe(0);
     expect(rows.some((r) => r.security_prefix === 'SBER')).toBeTrue();
-  });
-
-  it('papersWithTrades sums open remaining qty for cash fund parks', () => {
-    const rows = papersWithTrades(
-      [
-        trade({
-          security_id: 327,
-          security_name: 'TMON',
-          security_prefix: 'TMON',
-          side_name: 'Open',
-          action_name: 'Long',
-          quantity: 16,
-          remaining_qty: 16,
-          signal_kind: 'cash_fund',
-          financial_result: null,
-          bar_dt: '2026-06-28 10:00:00',
-          executed_at: '2026-06-28 10:00:00',
-        }),
-        trade({
-          id: 2,
-          security_id: 327,
-          security_name: 'TMON',
-          security_prefix: 'TMON',
-          side_name: 'Open',
-          action_name: 'Long',
-          quantity: 5,
-          remaining_qty: 5,
-          signal_kind: 'cash_fund',
-          financial_result: null,
-          bar_dt: '2026-06-28 11:00:00',
-          executed_at: '2026-06-28 11:00:00',
-        }),
-      ],
-      '2026-06-28',
-      '2026-06-28'
-    );
-    expect(rows.length).toBe(1);
-    expect(rows[0].open_qty).toBe(21);
-    expect(rows[0].pnl).toBe(0);
-    expect(rows[0].trade_count).toBe(2);
-    expect(rows[0].last_price).toBe(100);
-    expect(rows[0].position_value).toBe(2100);
   });
 
   it('papersWithTrades accepts ISO date_from/date_to without dropping trades', () => {
