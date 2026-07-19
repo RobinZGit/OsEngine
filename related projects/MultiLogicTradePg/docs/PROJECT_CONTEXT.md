@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: fix UI freeze (remove detectChanges thrash); progress from logic_backtest_runs
+**Последнее обновление:** 2026-07-19 — Fix stuck UI at 1%: switchMap status poll + never clobber %; completed → 100%
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 - [x] 0% hang UX: optimistic pulse 0→5%; /start returns progress; early DB ticks 1/3/6/8/10%; detectChanges (2026-07-19).
 - [x] Stop stuck/disabled: never disable Stop; cancel in-flight start; terminate SQL on cancel (2026-07-19).
 - [x] Smooth progress bar: SQL COMMIT every bar → logic_backtest_runs.progress_pct; UI poll without detectChanges thrash / 80ms lerp freeze (2026-07-19).
+- [x] Stuck at 1% while DB completed 100%: race stale /status overwrote UI; switchMap poll + monotonic % + completed→100%; OnPush markForCheck (2026-07-19).
 
 ---
 
@@ -342,6 +343,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Fix: UI stuck at 1% while DB completed — switchMap status poll, monotonic %, completed→100% |
 | 2026-07-19 | Ship: Stop always clickable + cancel in-flight start |
 | 2026-07-19 | Ship: progress pulse + early logic_backtest_runs.progress_pct ticks |
 | 2026-07-19 | Ship: fix /start status-0 — no poll before Start; backtestPool |
@@ -637,3 +639,4 @@
 151. «Hangs at 0%, logging on; controller should write % to a table.» — % already in logic_backtest_runs; UI pulse + early ticks + apply run from /start.
 152. «Can't press Stop, stuck; Stop must always work.» — disabled after first click + optimistic cancel ignored /start; fix.
 153. «Progress bar not smooth; Oracle should write % to a table.» — already PostgreSQL logic_backtest_runs; commit every bar + UI lerp.
+154. «In the test, I am dependent on 1%. Look.» — UI stuck at 1% while API/DB run 66 already completed 100%; race + force completed→100%.

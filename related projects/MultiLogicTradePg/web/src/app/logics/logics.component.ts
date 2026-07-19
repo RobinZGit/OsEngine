@@ -1,7 +1,7 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
+import { Subject, switchMap, takeUntil, timer, forkJoin, of, Subscription } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { LogicsService } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
@@ -141,8 +141,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private preferredBacktestRunId = new Map<number, number>();
   /** Момент клика Start (ms) — чтобы игнорировать только старые completed. */
   private backtestOptimisticAtMs = new Map<number, number>();
-  /** Частый poll статуса первые ~45 с после Start (основной timer 2 с слишком редкий). */
-  private backtestFastPollTimers = new Map<number, ReturnType<typeof setInterval>>();
+  /** Частый poll статуса после Start (switchMap — без гонок устаревших %). */
+  private backtestFastPollSubs = new Map<number, Subscription>();
+  /** Игнор устаревших ответов /status (иначе 1% перетирает актуальный %). */
+  private backtestStatusSeq = new Map<number, number>();
   /** Если Стоп нажали до ответа /start — отменить run сразу, как только появится id. */
   private backtestCancelRequested = new Set<number>();
   /** Локальная «крутилка» 0→4% пока ждём ответ /start (потом берём % из logic_backtest_runs). */
@@ -361,7 +363,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    for (const logicId of [...this.backtestFastPollTimers.keys()]) {
+    for (const logicId of [...this.backtestFastPollSubs.keys()]) {
       this.stopFastBacktestPoll(logicId);
     }
     for (const logicId of [...this.optimisticPulseTimers.keys()]) {
@@ -2742,36 +2744,41 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Частый poll: читаем progress_pct из logic_backtest_runs через /status. */
+  /** Частый poll: progress_pct из logic_backtest_runs; switchMap — без гонок 1% поверх 50%. */
   private startFastBacktestPoll(logicId: number, runId?: number): void {
     if (runId != null && Number.isFinite(runId) && runId > 0) {
       this.preferredBacktestRunId.set(logicId, runId);
     }
     this.stopFastBacktestPoll(logicId);
-    this.refreshBacktestStatus(logicId, runId);
-    let ticks = 0;
-    const timer = window.setInterval(() => {
-      ticks += 1;
-      const preferred = this.preferredBacktestRunId.get(logicId);
-      this.refreshBacktestStatus(logicId, preferred);
-      const cur = this.backtestRuns.get(logicId);
-      const st = String(cur?.status ?? '');
-      const done =
-        ticks >= 120 ||
-        (Number(cur?.id) > 0 &&
-          !['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st));
-      if (done) {
-        this.stopFastBacktestPoll(logicId);
-      }
-    }, 500);
-    this.backtestFastPollTimers.set(logicId, timer);
+    const sub = timer(0, 500)
+      .pipe(
+        takeUntil(this.destroy$),
+        switchMap(() => {
+          const preferred = this.preferredBacktestRunId.get(logicId);
+          return this.logicsService.getBacktestStatus(logicId, preferred).pipe(
+            catchError(() => of(null))
+          );
+        })
+      )
+      .subscribe((row) => {
+        this.applyBacktestStatusRow(logicId, row);
+        const cur = this.backtestRuns.get(logicId);
+        const st = String(cur?.status ?? '');
+        if (
+          Number(cur?.id) > 0 &&
+          !['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st)
+        ) {
+          this.stopFastBacktestPoll(logicId);
+        }
+      });
+    this.backtestFastPollSubs.set(logicId, sub);
   }
 
   private stopFastBacktestPoll(logicId: number): void {
-    const t = this.backtestFastPollTimers.get(logicId);
-    if (t != null) {
-      window.clearInterval(t);
-      this.backtestFastPollTimers.delete(logicId);
+    const sub = this.backtestFastPollSubs.get(logicId);
+    if (sub) {
+      sub.unsubscribe();
+      this.backtestFastPollSubs.delete(logicId);
     }
   }
 
@@ -2841,67 +2848,82 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   private refreshBacktestStatus(logicId: number, runId?: number): void {
     const preferred = runId ?? this.preferredBacktestRunId.get(logicId);
+    const seq = (this.backtestStatusSeq.get(logicId) || 0) + 1;
+    this.backtestStatusSeq.set(logicId, seq);
     this.logicsService
       .getBacktestStatus(logicId, preferred)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (row) => {
-          const cur = this.backtestRuns.get(logicId);
-          const active = (s: string) =>
-            ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(s);
-          // Активный прогон всегда берём — даже пока /start ещё в полёте.
-          if (row && active(String(row.status ?? ''))) {
-            this.setBacktestRun(logicId, row);
-            this.backtestPollIds.add(logicId);
-            if (Number(row.id) > 0) {
-              this.preferredBacktestRunId.set(logicId, Number(row.id));
-            }
-            this.rebuildTestTradesView(logicId);
-            return;
-          }
-          // Старый completed (закончился до клика Start) — не затираем жёлтый «Запуск».
-          if (cur && cur.id < 0 && row && !active(String(row.status ?? ''))) {
-            const t0 = this.backtestOptimisticAtMs.get(logicId) ?? 0;
-            const finished = row.finished_at ? Date.parse(String(row.finished_at)) : 0;
-            if (t0 > 0 && finished > 0 && finished < t0) {
-              return;
-            }
-            if (preferred != null && Number(row.id) !== preferred) {
-              return;
-            }
-          }
-          if (!row) {
-            if (cur && cur.id < 0) {
-              return;
-            }
-            this.setBacktestRun(logicId, null);
-            this.backtestPollIds.delete(logicId);
-            this.preferredBacktestRunId.delete(logicId);
-            this.stopFastBacktestPoll(logicId);
-            this.backtestOptimisticAtMs.delete(logicId);
-            this.rebuildTestTradesView(logicId);
-            return;
-          }
-          this.setBacktestRun(logicId, row);
-          const st = String(row.status ?? '');
-          if (active(st)) {
-            this.backtestPollIds.add(logicId);
-            if (Number(row.id) > 0) {
-              this.preferredBacktestRunId.set(logicId, Number(row.id));
-            }
-          } else {
-            this.backtestPollIds.delete(logicId);
-            this.preferredBacktestRunId.delete(logicId);
-            this.stopFastBacktestPoll(logicId);
-            this.backtestOptimisticAtMs.delete(logicId);
-            this.loadTestTradesForLogic(logicId, true);
-          }
-          this.rebuildTestTradesView(logicId);
+          if (this.backtestStatusSeq.get(logicId) !== seq) return;
+          this.applyBacktestStatusRow(logicId, row);
         },
         error: () => {
           window.setTimeout(() => this.refreshBacktestStatus(logicId, preferred), 600);
         },
       });
+  }
+
+  /** Применить строку из logic_backtest_runs; % не понижаем для того же run_id. */
+  private applyBacktestStatusRow(logicId: number, row: BacktestRunStatus | null): void {
+    const cur = this.backtestRuns.get(logicId);
+    const active = (s: string) =>
+      ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(s);
+    const preferred = this.preferredBacktestRunId.get(logicId);
+
+    if (cur && cur.id < 0 && row && !active(String(row.status ?? ''))) {
+      const t0 = this.backtestOptimisticAtMs.get(logicId) ?? 0;
+      const finished = row.finished_at ? Date.parse(String(row.finished_at)) : 0;
+      if (t0 > 0 && finished > 0 && finished < t0) {
+        return;
+      }
+      if (preferred != null && Number(row.id) !== preferred) {
+        return;
+      }
+    }
+
+    if (!row) {
+      if (cur && cur.id < 0) {
+        return;
+      }
+      this.setBacktestRun(logicId, null);
+      this.backtestPollIds.delete(logicId);
+      this.preferredBacktestRunId.delete(logicId);
+      this.stopFastBacktestPoll(logicId);
+      this.backtestOptimisticAtMs.delete(logicId);
+      this.rebuildTestTradesView(logicId);
+      return;
+    }
+
+    const st = String(row.status ?? '');
+    const prevPct =
+      cur && Number(cur.id) === Number(row.id) ? Number(cur.progress_pct) || 0 : 0;
+    let nextPct = Number(row.progress_pct) || 0;
+    // Completed всегда 100% — иначе UI «залипает» на 1% из ответа /start.
+    if (st === 'completed') {
+      nextPct = 100;
+    } else if (active(st) && Number(cur?.id) === Number(row.id) && nextPct < prevPct) {
+      // Не даём устаревшему /status вернуть полоску назад (1% поверх 50%).
+      nextPct = prevPct;
+    } else if (!active(st) && nextPct < prevPct) {
+      nextPct = prevPct;
+    }
+    const nextRow: BacktestRunStatus = { ...row, progress_pct: nextPct };
+
+    this.setBacktestRun(logicId, nextRow);
+    if (active(st)) {
+      this.backtestPollIds.add(logicId);
+      if (Number(nextRow.id) > 0) {
+        this.preferredBacktestRunId.set(logicId, Number(nextRow.id));
+      }
+    } else {
+      this.backtestPollIds.delete(logicId);
+      this.preferredBacktestRunId.delete(logicId);
+      this.stopFastBacktestPoll(logicId);
+      this.backtestOptimisticAtMs.delete(logicId);
+      this.loadTestTradesForLogic(logicId, true);
+    }
+    this.rebuildTestTradesView(logicId);
   }
 
   private loadTradesForLogic(logicId: number, silent = false): void {

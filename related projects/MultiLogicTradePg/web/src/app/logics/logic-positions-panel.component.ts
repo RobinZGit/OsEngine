@@ -211,6 +211,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
         this.cancelling = false;
         this.localStarting = false;
       }
+      // OnPush: каждый новый %/status с родителя должен перерисовать полоску.
+      this.cdr.markForCheck();
     }
     if (changes['trades'] || changes['logicRow'] || changes['backtestRun']) {
       this.rebuildTradeCaches();
