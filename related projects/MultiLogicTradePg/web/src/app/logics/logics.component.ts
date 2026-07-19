@@ -139,6 +139,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private backtestStartInFlight = new Set<number>();
   /** После Start — всегда poll этого run_id (не подхватывать старый completed). */
   private preferredBacktestRunId = new Map<number, number>();
+  /** Момент клика Start (ms) — чтобы игнорировать только старые completed. */
+  private backtestOptimisticAtMs = new Map<number, number>();
   /** Частый poll статуса первые ~45 с после Start (основной timer 2 с слишком редкий). */
   private backtestFastPollTimers = new Map<number, ReturnType<typeof setInterval>>();
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
@@ -2504,8 +2506,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (this.backtestStartInFlight.has(logicId)) {
       return;
     }
-    // Сразу жёлтая строка + ↻% — до проверки токена и до ответа /start (иначе «ничего не работает»).
+    // Сразу жёлтая строка + частый poll статуса — НЕ ждать ответа /start (иначе 0% навсегда).
     this.applyOptimisticBacktestStart(logicId, period);
+    this.startFastBacktestPoll(logicId);
     this.doStartBacktestRun(logicId, period, false, true);
   }
 
@@ -2521,6 +2524,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.backtestStartInFlight.add(logicId);
     if (!isRetry && !alreadyOptimistic) {
       this.applyOptimisticBacktestStart(logicId, period);
+      this.startFastBacktestPoll(logicId);
     }
     this.logicsService
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
@@ -2551,18 +2555,30 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.backtestStartInFlight.delete(logicId);
           // 409: в БД уже есть active-прогон — подхватываем его и показываем «Стоп», а не только alert.
           if (err?.status === 409 && body?.run_id) {
+            const rid = Number(body.run_id);
             this.backtestPollIds.add(logicId);
             this.expandedLogics.add(logicId);
             this.expandedTestTradesBlocks.add(logicId);
-            this.refreshBacktestStatus(logicId, Number(body.run_id));
+            if (Number.isFinite(rid) && rid > 0) {
+              this.preferredBacktestRunId.set(logicId, rid);
+              this.startFastBacktestPoll(logicId, rid);
+            } else {
+              this.refreshBacktestStatus(logicId);
+            }
             return;
           }
-          // Откат оптимистичного pending, если старт не удался.
+          // Если poll уже нашёл живой прогон — не откатываем жёлтый UI и не орём alert.
           const cur = this.backtestRuns.get(logicId);
+          if (cur && Number(cur.id) > 0) {
+            this.backtestPollIds.add(logicId);
+            return;
+          }
+          // Откат оптимистичного pending, если старт не удался и прогона нет.
           if (cur && cur.status === 'pending' && cur.id < 0) {
-            this.backtestRuns.delete(logicId);
+            this.setBacktestRun(logicId, null);
             this.backtestPollIds.delete(logicId);
-            this.backtestRuns = new Map(this.backtestRuns);
+            this.stopFastBacktestPoll(logicId);
+            this.backtestOptimisticAtMs.delete(logicId);
           }
           alert(this.formatBacktestStartError(err, body));
         },
@@ -2580,7 +2596,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       );
     }
     if (name === 'TimeoutError' || /timeout/i.test(msg)) {
-      return 'API не ответил за 30 с на запуск теста. Перезапустите Start bat и попробуйте снова.';
+      return 'API не ответил за 12 с на запуск теста. Перезапустите Start bat и попробуйте снова.';
     }
     return body?.error || msg || 'Не удалось запустить тест';
   }
@@ -2601,6 +2617,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       date_to: period.date_to,
     });
     // Новый Map — чтобы биндинги/OnPush панели сразу увидели жёлтый ряд и ↻%.
+    this.backtestOptimisticAtMs.set(logicId, Date.now());
     const next = new Map(this.backtestRuns);
     next.set(logicId, {
       id: -logicId,
@@ -2633,22 +2650,28 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.backtestRuns = next;
   }
 
-  private startFastBacktestPoll(logicId: number, runId: number): void {
+  /** Частый poll: сначала без run_id (ищем active), после /start — с конкретным id. */
+  private startFastBacktestPoll(logicId: number, runId?: number): void {
+    if (runId != null && Number.isFinite(runId) && runId > 0) {
+      this.preferredBacktestRunId.set(logicId, runId);
+    }
     this.stopFastBacktestPoll(logicId);
     this.refreshBacktestStatus(logicId, runId);
     let ticks = 0;
     const timer = window.setInterval(() => {
       ticks += 1;
-      this.refreshBacktestStatus(logicId, runId);
+      const preferred = this.preferredBacktestRunId.get(logicId);
+      this.refreshBacktestStatus(logicId, preferred);
       const cur = this.backtestRuns.get(logicId);
       const st = String(cur?.status ?? '');
       const done =
-        ticks >= 90 ||
-        !['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st);
+        ticks >= 120 ||
+        (Number(cur?.id) > 0 &&
+          !['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st));
       if (done) {
         this.stopFastBacktestPoll(logicId);
       }
-    }, 500);
+    }, 400);
     this.backtestFastPollTimers.set(logicId, timer);
   }
 
@@ -2665,11 +2688,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (!run?.id) return;
     // Оптимистичный id < 0 — ещё нет run в БД; просто сбрасываем UI.
     if (Number(run.id) <= 0) {
-      this.backtestRuns.delete(logicId);
+      this.setBacktestRun(logicId, null);
       this.backtestPollIds.delete(logicId);
+      this.stopFastBacktestPoll(logicId);
+      this.backtestOptimisticAtMs.delete(logicId);
       return;
     }
-    this.backtestRuns.set(logicId, {
+    this.setBacktestRun(logicId, {
       ...run,
       phase_message: 'Остановка…',
       phase_detail: run.phase_detail || 'Запрос на остановку принят',
@@ -2690,16 +2715,26 @@ export class LogicsComponent implements OnInit, OnDestroy {
           const cur = this.backtestRuns.get(logicId);
           const active = (s: string) =>
             ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(s);
-          // Пока ждём /start или новый run — не подменять оптимистичный UI старым completed.
-          if (
-            cur &&
-            cur.id < 0 &&
-            row &&
-            !active(String(row.status ?? '')) &&
-            (this.backtestStartInFlight.has(logicId) ||
-              (preferred != null && Number(row.id) !== preferred))
-          ) {
+          // Активный прогон всегда берём — даже пока /start ещё в полёте.
+          if (row && active(String(row.status ?? ''))) {
+            this.setBacktestRun(logicId, row);
+            this.backtestPollIds.add(logicId);
+            if (Number(row.id) > 0) {
+              this.preferredBacktestRunId.set(logicId, Number(row.id));
+            }
+            this.rebuildTestTradesView(logicId);
             return;
+          }
+          // Старый completed (закончился до клика Start) — не затираем жёлтый «Запуск».
+          if (cur && cur.id < 0 && row && !active(String(row.status ?? ''))) {
+            const t0 = this.backtestOptimisticAtMs.get(logicId) ?? 0;
+            const finished = row.finished_at ? Date.parse(String(row.finished_at)) : 0;
+            if (t0 > 0 && finished > 0 && finished < t0) {
+              return;
+            }
+            if (preferred != null && Number(row.id) !== preferred) {
+              return;
+            }
           }
           if (!row) {
             if (cur && cur.id < 0) {
@@ -2709,6 +2744,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
             this.backtestPollIds.delete(logicId);
             this.preferredBacktestRunId.delete(logicId);
             this.stopFastBacktestPoll(logicId);
+            this.backtestOptimisticAtMs.delete(logicId);
             this.rebuildTestTradesView(logicId);
             return;
           }
@@ -2723,12 +2759,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
             this.backtestPollIds.delete(logicId);
             this.preferredBacktestRunId.delete(logicId);
             this.stopFastBacktestPoll(logicId);
+            this.backtestOptimisticAtMs.delete(logicId);
             this.loadTestTradesForLogic(logicId, true);
           }
           this.rebuildTestTradesView(logicId);
         },
         error: () => {
-          // Не молчать: иначе UI навсегда остаётся на оптимистичных 0%/«Запуск».
           window.setTimeout(() => this.refreshBacktestStatus(logicId, preferred), 600);
         },
       });

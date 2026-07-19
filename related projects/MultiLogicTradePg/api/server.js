@@ -3201,9 +3201,11 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     return;
   }
   try {
-    // Быстрый ответ браузеру: только cancel + INSERT; тяжёлый прогон — в backtestPool.
-    // DELETE тест-сделок — в фоне (runBacktestAsync), иначе при зависшем CALL → «0 Unknown Error».
-    const superseded = await supersedeActiveBacktests(pool, logicId);
+    // Не блокировать 202 дольше 2 с на cancel — иначе браузер сидит на 0% «Ожидание сервера».
+    const superseded = await Promise.race([
+      supersedeActiveBacktests(pool, logicId),
+      new Promise((resolve) => setTimeout(() => resolve([]), 2000)),
+    ]);
     const runId = await startBacktest(pool, logicId, dateFrom, dateTo, backtestPool);
     res.status(202).json({
       ok: true,
