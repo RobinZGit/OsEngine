@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
@@ -143,6 +143,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private backtestOptimisticAtMs = new Map<number, number>();
   /** Частый poll статуса первые ~45 с после Start (основной timer 2 с слишком редкий). */
   private backtestFastPollTimers = new Map<number, ReturnType<typeof setInterval>>();
+  /** Локальная «крутилка» 0→4% пока ждём ответ /start (потом берём % из logic_backtest_runs). */
+  private optimisticPulseTimers = new Map<number, ReturnType<typeof setInterval>>();
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
@@ -285,7 +287,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     private readonly securitiesService: SecuritiesService,
     private readonly settings: SettingsService,
     private readonly techLog: TechLogService,
-    private readonly appConfig: AppConfigService
+    private readonly appConfig: AppConfigService,
+    private readonly cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -359,6 +362,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     for (const logicId of [...this.backtestFastPollTimers.keys()]) {
       this.stopFastBacktestPoll(logicId);
+    }
+    for (const logicId of [...this.optimisticPulseTimers.keys()]) {
+      this.stopOptimisticPulse(logicId);
     }
     this.destroy$.next();
     this.destroy$.complete();
@@ -2506,9 +2512,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (this.backtestStartInFlight.has(logicId)) {
       return;
     }
-    // Сразу жёлтый UI. Частый poll статуса — ТОЛЬКО после 202 /start,
-    // иначе status-запросы забивают PG pool и /start получает status 0.
+    // Сразу жёлтый UI + локальный пульс %. Poll /status — только после 202 /start.
     this.applyOptimisticBacktestStart(logicId, period);
+    this.startOptimisticPulse(logicId);
     this.doStartBacktestRun(logicId, period, false, true);
   }
 
@@ -2534,6 +2540,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (resp) => {
           this.backtestStartInFlight.delete(logicId);
+          this.stopOptimisticPulse(logicId);
           const runId = Number(resp?.run_id);
           console.log(
             `[backtest] /start OK run=${runId} in ${Date.now() - t0}ms logic=${logicId}`
@@ -2544,6 +2551,22 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.loadSignalsForLogic(logicId);
           if (Number.isFinite(runId) && runId > 0) {
             this.preferredBacktestRunId.set(logicId, runId);
+            // Сразу подставить run из ответа — не ждать первого /status (иначе «висит» на 0%).
+            this.setBacktestRun(logicId, {
+              id: runId,
+              logic_id: logicId,
+              date_from: period.date_from,
+              date_to: period.date_to,
+              status: String(resp?.status || 'pending'),
+              progress_pct: Number(resp?.progress_pct) > 0 ? Number(resp.progress_pct) : 1,
+              phase_message: String(resp?.phase_message || 'Запуск'),
+              phase_detail: String(resp?.phase_detail || 'Прогон создан в БД'),
+              total_bars: 0,
+              processed_bars: 0,
+              test_balance: null,
+              financial_result: 0,
+              error_message: null,
+            });
             this.startFastBacktestPoll(logicId, runId);
           } else {
             this.refreshBacktestStatus(logicId);
@@ -2564,6 +2587,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
             return;
           }
           this.backtestStartInFlight.delete(logicId);
+          this.stopOptimisticPulse(logicId);
           // 409: в БД уже есть active-прогон — подхватываем его и показываем «Стоп», а не только alert.
           if (err?.status === 409 && body?.run_id) {
             const rid = Number(body.run_id);
@@ -2665,9 +2689,39 @@ export class LogicsComponent implements OnInit, OnDestroy {
       next.delete(logicId);
     }
     this.backtestRuns = next;
+    this.cdr.detectChanges();
   }
 
-  /** Частый poll: сначала без run_id (ищем active), после /start — с конкретным id. */
+  /** Пока id&lt;0 — двигаем 0→5% локально, чтобы ↻ не «замирал», пока /start в полёте. */
+  private startOptimisticPulse(logicId: number): void {
+    this.stopOptimisticPulse(logicId);
+    let step = 0;
+    const timer = window.setInterval(() => {
+      const cur = this.backtestRuns.get(logicId);
+      if (!cur || Number(cur.id) > 0 || !this.backtestStartInFlight.has(logicId)) {
+        this.stopOptimisticPulse(logicId);
+        return;
+      }
+      step = Math.min(5, step + 1);
+      this.setBacktestRun(logicId, {
+        ...cur,
+        progress_pct: step,
+        phase_message: 'Запуск',
+        phase_detail: 'Ожидание ответа API…',
+      });
+    }, 450);
+    this.optimisticPulseTimers.set(logicId, timer);
+  }
+
+  private stopOptimisticPulse(logicId: number): void {
+    const t = this.optimisticPulseTimers.get(logicId);
+    if (t != null) {
+      window.clearInterval(t);
+      this.optimisticPulseTimers.delete(logicId);
+    }
+  }
+
+  /** Частый poll: читаем progress_pct из logic_backtest_runs через /status. */
   private startFastBacktestPoll(logicId: number, runId?: number): void {
     if (runId != null && Number.isFinite(runId) && runId > 0) {
       this.preferredBacktestRunId.set(logicId, runId);

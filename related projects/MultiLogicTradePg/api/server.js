@@ -3216,6 +3216,10 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     res.status(202).json({
       ok: true,
       run_id: runId,
+      status: 'pending',
+      progress_pct: 1,
+      phase_message: 'Запуск',
+      phase_detail: 'Прогон создан в БД',
       superseded_runs: superseded,
       elapsed_ms: ms,
     });

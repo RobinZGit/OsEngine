@@ -425,9 +425,25 @@ export class LogicsService {
     logic_id: number;
     date_from: string;
     date_to: string;
-  }): Observable<{ ok: boolean; run_id: number; superseded_runs?: number[] }> {
+  }): Observable<{
+    ok: boolean;
+    run_id: number;
+    status?: string;
+    progress_pct?: number;
+    phase_message?: string;
+    phase_detail?: string;
+    superseded_runs?: number[];
+  }> {
     return this.http
-      .post<{ ok: boolean; run_id: number; superseded_runs?: number[] }>(
+      .post<{
+        ok: boolean;
+        run_id: number;
+        status?: string;
+        progress_pct?: number;
+        phase_message?: string;
+        phase_detail?: string;
+        superseded_runs?: number[];
+      }>(
         `${this.appConfig.apiUrl}/logic-backtest/start`,
         body
       )

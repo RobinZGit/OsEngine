@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: fix /start status-0 (don’t poll before start; use backtestPool + logs)
+**Последнее обновление:** 2026-07-19 — Ship: visible % pulse + early progress_pct ticks in logic_backtest_runs
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -320,6 +320,7 @@
 - [x] Stuck at 0% «Ожидание сервера»: fast poll BEFORE /start returns; always apply active runs; start supersede ≤2s (2026-07-19).
 - [x] TS2339: add `finished_at`/`started_at` to `BacktestRunStatus` (ng serve failed) (2026-07-19).
 - [x] /start status 0 after 0%: stop status-poll before Start (pool starve); Start on backtestPool; api.log timings (2026-07-19).
+- [x] 0% hang UX: optimistic pulse 0→5%; /start returns progress; early DB ticks 1/3/6/8/10%; detectChanges (2026-07-19).
 
 ---
 
@@ -339,6 +340,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: progress pulse + early logic_backtest_runs.progress_pct ticks |
 | 2026-07-19 | Ship: fix /start status-0 — no poll before Start; backtestPool |
 | 2026-07-19 | Ship: fix TS2339 finished_at on BacktestRunStatus |
 | 2026-07-19 | Ship: poll before /start returns — no freeze at 0% |
@@ -628,3 +630,4 @@
 148. «Yellow 0% hangs again.» — fast poll waited for /start; now poll immediately + always take active runs.
 149. Start bat: TS2339 `finished_at` missing on `BacktestRunStatus` — add fields to interface.
 150. «0% then Нет ответа от API» — status poll before /start starved PG pool; abort→status 0.
+151. «Hangs at 0%, logging on; controller should write % to a table.» — % already in logic_backtest_runs; UI pulse + early ticks + apply run from /start.

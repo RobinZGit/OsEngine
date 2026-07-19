@@ -622,7 +622,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     // Сразу пишем фазу — иначе UI долго держит оптимистичное «Очистка…» без обновления.
     await updateRun(pool, runId, {
       status: 'pending',
-      progress_pct: 0,
+      progress_pct: 3,
       phase_message: 'Подготовка',
       phase_detail: 'Проверка токена и параметров…',
     });
@@ -671,7 +671,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     const oldN = Number(oldTradeCnt[0]?.n) || 0;
     await updateRun(pool, runId, {
       status: 'pending',
-      progress_pct: 0,
+      progress_pct: 6,
       phase_message: 'Очистка',
       phase_detail:
         oldN > 0
@@ -686,6 +686,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     await updateRun(pool, runId, {
       phase_message: 'Очистка',
       phase_detail: 'Сброс тестовых рейтингов…',
+      progress_pct: 8,
     });
     await pool.query('SELECT logic_backtest_reset_signal_ratings($1)', [logicId]);
 
@@ -725,7 +726,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
 
     await updateRun(pool, runId, {
       status: 'loading_prices',
-      progress_pct: 2,
+      progress_pct: 10,
       phase_message: 'Подготовка данных',
       phase_detail: `Чтение бумаг (×${BACKTEST_PRICE_CONCURRENCY})`,
       test_balance: balance,
@@ -1120,8 +1121,8 @@ async function supersedeActiveBacktests(pool, logicId) {
 async function startBacktest(pool, logicId, dateFrom, dateTo, workerPool = pool) {
   const { rows } = await pool.query(
     `
-    INSERT INTO logic_backtest_runs (logic_id, date_from, date_to, status, progress_pct, phase_message, started_at)
-    VALUES ($1, $2, $3, 'pending', 0, 'Старт', CURRENT_TIMESTAMP)
+    INSERT INTO logic_backtest_runs (logic_id, date_from, date_to, status, progress_pct, phase_message, phase_detail, started_at)
+    VALUES ($1, $2, $3, 'pending', 1, 'Запуск', 'Прогон создан', CURRENT_TIMESTAMP)
     RETURNING id
     `,
     [logicId, dateFrom, dateTo]
