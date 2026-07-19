@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Start/status on HTTP pool (not backtestPool) — no wait behind load_prices/CALL
+**Последнее обновление:** 2026-07-19 — Rollback UI backtest to Node bar-loop (pre-SQL-robots); keep Start/status on HTTP pool
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -97,7 +97,8 @@
 - `logics` + `logic_indicator_signals` / `logic_params` — торговые правила и параметры (EAV); таблица **`logics_detail` удалена** (v39);
 - UI **Операции** (`/operations`): пять сворачиваемых блоков — **«Параметры логики»**, **«Сигналы на логике»**, **«Стоп-лосс и тейк-профит»**, **«Ценные бумаги»**, **«Сделки»** (по умолчанию свёрнуты);
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
-- **SQL robots (единый мозг):** бой — `run_trade_cycle()` (Node `trade-runner.js` только планирует); тест — `CALL logic_backtest_run_bars(run_id)` (PROCEDURE, COMMIT каждые 5 баров — без длинного лока) после parallel prep в Node. Полный SQL-путь: `CALL run_logic_backtest(...)`.
+- **Тест (оркестрация):** Node `api/logic-backtest.js` — цикл по барам вызывает SQL-функции (`rate_signals` / `process_risk` / EOD / NTP / `process_signals` / `park_excess_cash`); прогресс в `logic_backtest_runs`. `CALL logic_backtest_run_bars` остаётся в БД, но UI-тест его больше не вызывает (откат 2026-07-19 после зависаний).
+- **SQL robots (бой):** `run_trade_cycle()` (Node `trade-runner.js` только планирует). Полный SQL-путь теста (опционально): `CALL run_logic_backtest(...)`.
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
 - **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **только при открытом Angular** (heartbeat → `APP_TRADE_RUNNER_HB`, TTL 90 с); ручной `POST /api/logic-trades/run`;
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
@@ -306,6 +307,7 @@
 - [x] Non-trading UI: add/edit/delete intervals; warning when «Учитывать…» is off; TMON park skip logs + end-of-backtest park; both installers (2026-07-19).
 - [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
 - [x] SQL robots: `logic_backtest_run_bars` + thin Node test prep; live Node → `run_trade_cycle()` only; both installers + push (2026-07-19).
+- [x] Rollback UI test to Node bar-loop (pre-`CALL logic_backtest_run_bars`); live still `run_trade_cycle`; keep Start/status on HTTP pool (2026-07-19).
 - [x] Fix backtest cash-fund price prep: `CALL load_prices_http` 4 args (was 5 → always error); seed TMON/LQDT `tbank_figi`; UI badge + sort fund opens first (2026-07-19).
 - [x] Papers list: show open remainder (`ост.`) from Open `remaining_qty` — cash fund stays open so PnL alone looked like «0» (2026-07-19).
 - [x] Papers list (test+live): `в портф.` = |ост.| × last close (`/api/prices/last`); label `финрез` for realized PnL; stop SL/TP never closes TMON/LQDT/SBMM (2026-07-19).
@@ -348,6 +350,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Rollback UI backtest to Node bar-loop (EOD/NTP/park); Start/status still on HTTP pool |
 | 2026-07-19 | Start/status on HTTP pool only; backtestPool for workers; no 5% wait behind CALL |
 | 2026-07-19 | Fix Start status-0 at 3%: pause all polls during /start; API URL 127.0.0.1 |
 | 2026-07-19 | Fix «Нет ответа от API»: async progress log; keep optimistic % on start fail |
@@ -655,3 +658,4 @@
 157. «No percent, hung, then Нет ответа от API» — sync backtest-progress.log blocked API; keep % on error.
 158. «At 3% error, no response from API» — browser HTTP slot starve during Start; pause polls; use 127.0.0.1.
 159. «Expectation of an answer from API for 5%» — Start/status waited on backtestPool; split control vs worker pools.
+160. «It's hanging again… roll back all the testing to when it was not in Postgres… still in Angular… until I asked you to redo everything in Postgres» — restore Node bar-loop orchestration; keep UI Start fixes + HTTP control plane.

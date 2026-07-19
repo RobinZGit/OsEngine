@@ -1906,7 +1906,7 @@ app.patch('/api/logics/:id', async (req, res) => {
         }
         const dateTo = localIsoDate();
         const dateFrom = shiftLocalDate(dateTo, -(warmup.lookbackDays - 1));
-        const runId = await startBacktest(pool, id, dateFrom, dateTo);
+        const runId = await startBacktest(pool, id, dateFrom, dateTo, backtestPool);
         await pool.query(`UPDATE logics SET is_enabled = FALSE WHERE id = $1`, [id]);
         watchWarmupBacktest(pool, id, runId);
         await writeTechLogEvent(pool, {
