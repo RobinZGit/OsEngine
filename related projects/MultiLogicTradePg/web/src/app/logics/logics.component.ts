@@ -137,6 +137,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private backtestStatusHydrated = false;
   /** Защита от двойного ▶ / повторного OK пока HTTP start ещё в полёте. */
   private backtestStartInFlight = new Set<number>();
+  /** После Start — всегда poll этого run_id (не подхватывать старый completed). */
+  private preferredBacktestRunId = new Map<number, number>();
+  /** Частый poll статуса первые ~45 с после Start (основной timer 2 с слишком редкий). */
+  private backtestFastPollTimers = new Map<number, ReturnType<typeof setInterval>>();
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
@@ -351,6 +355,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    for (const logicId of [...this.backtestFastPollTimers.keys()]) {
+      this.stopFastBacktestPoll(logicId);
+    }
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -2525,7 +2532,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.expandedLogics.add(logicId);
           this.expandedTestTradesBlocks.add(logicId);
           this.loadSignalsForLogic(logicId);
-          this.refreshBacktestStatus(logicId, Number.isFinite(runId) && runId > 0 ? runId : undefined);
+          if (Number.isFinite(runId) && runId > 0) {
+            this.preferredBacktestRunId.set(logicId, runId);
+            this.startFastBacktestPoll(logicId, runId);
+          } else {
+            this.refreshBacktestStatus(logicId);
+          }
         },
         error: (err) => {
           const body = err?.error;
@@ -2596,9 +2608,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
       date_from: period.date_from,
       date_to: period.date_to,
       status: 'pending',
-      progress_pct: 1,
+      progress_pct: 0,
       phase_message: 'Запуск',
-      phase_detail: 'Старт…',
+      phase_detail: 'Ожидание сервера…',
       total_bars: 0,
       processed_bars: 0,
       test_balance: null,
@@ -2609,6 +2621,43 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.backtestPollIds.add(logicId);
     this.expandedLogics.add(logicId);
     this.expandedTestTradesBlocks.add(logicId);
+  }
+
+  private setBacktestRun(logicId: number, row: BacktestRunStatus | null): void {
+    const next = new Map(this.backtestRuns);
+    if (row) {
+      next.set(logicId, row);
+    } else {
+      next.delete(logicId);
+    }
+    this.backtestRuns = next;
+  }
+
+  private startFastBacktestPoll(logicId: number, runId: number): void {
+    this.stopFastBacktestPoll(logicId);
+    this.refreshBacktestStatus(logicId, runId);
+    let ticks = 0;
+    const timer = window.setInterval(() => {
+      ticks += 1;
+      this.refreshBacktestStatus(logicId, runId);
+      const cur = this.backtestRuns.get(logicId);
+      const st = String(cur?.status ?? '');
+      const done =
+        ticks >= 90 ||
+        !['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st);
+      if (done) {
+        this.stopFastBacktestPoll(logicId);
+      }
+    }, 500);
+    this.backtestFastPollTimers.set(logicId, timer);
+  }
+
+  private stopFastBacktestPoll(logicId: number): void {
+    const t = this.backtestFastPollTimers.get(logicId);
+    if (t != null) {
+      window.clearInterval(t);
+      this.backtestFastPollTimers.delete(logicId);
+    }
   }
 
   cancelBacktestRun(logicId: number): void {
@@ -2632,25 +2681,57 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private refreshBacktestStatus(logicId: number, runId?: number): void {
-    this.logicsService.getBacktestStatus(logicId, runId).pipe(takeUntil(this.destroy$)).subscribe({
-      next: (row) => {
-        if (row) {
-          this.backtestRuns.set(logicId, row);
+    const preferred = runId ?? this.preferredBacktestRunId.get(logicId);
+    this.logicsService
+      .getBacktestStatus(logicId, preferred)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (row) => {
+          const cur = this.backtestRuns.get(logicId);
+          const active = (s: string) =>
+            ['pending', 'loading_prices', 'loading_indicators', 'running'].includes(s);
+          // Пока ждём /start или новый run — не подменять оптимистичный UI старым completed.
+          if (
+            cur &&
+            cur.id < 0 &&
+            row &&
+            !active(String(row.status ?? '')) &&
+            (this.backtestStartInFlight.has(logicId) ||
+              (preferred != null && Number(row.id) !== preferred))
+          ) {
+            return;
+          }
+          if (!row) {
+            if (cur && cur.id < 0) {
+              return;
+            }
+            this.setBacktestRun(logicId, null);
+            this.backtestPollIds.delete(logicId);
+            this.preferredBacktestRunId.delete(logicId);
+            this.stopFastBacktestPoll(logicId);
+            this.rebuildTestTradesView(logicId);
+            return;
+          }
+          this.setBacktestRun(logicId, row);
           const st = String(row.status ?? '');
-          if (['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st)) {
+          if (active(st)) {
             this.backtestPollIds.add(logicId);
+            if (Number(row.id) > 0) {
+              this.preferredBacktestRunId.set(logicId, Number(row.id));
+            }
           } else {
             this.backtestPollIds.delete(logicId);
+            this.preferredBacktestRunId.delete(logicId);
+            this.stopFastBacktestPoll(logicId);
             this.loadTestTradesForLogic(logicId, true);
           }
           this.rebuildTestTradesView(logicId);
-        } else {
-          this.backtestRuns.delete(logicId);
-          this.backtestPollIds.delete(logicId);
-          this.rebuildTestTradesView(logicId);
-        }
-      },
-    });
+        },
+        error: () => {
+          // Не молчать: иначе UI навсегда остаётся на оптимистичных 0%/«Запуск».
+          window.setTimeout(() => this.refreshBacktestStatus(logicId, preferred), 600);
+        },
+      });
   }
 
   private loadTradesForLogic(logicId: number, silent = false): void {

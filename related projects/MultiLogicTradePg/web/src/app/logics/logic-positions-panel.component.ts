@@ -323,7 +323,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     const serverActive =
       s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
     if (this.localStarting && !serverActive) {
-      return { progress_pct: 1, phase_message: 'Запуск', phase_detail: 'Старт…' };
+      return { progress_pct: 0, phase_message: 'Запуск', phase_detail: 'Ожидание сервера…' };
     }
     return {
       progress_pct: Number(this.backtestRun?.progress_pct) || 0,
