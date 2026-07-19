@@ -1375,6 +1375,197 @@ $$;
 COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
+-- Прогон по свечам (единый мозг теста): rate → risk → EOD → signals → park.
+-- Вызов после загрузки цен/индикаторов (из Node prep или из run_logic_backtest).
+CREATE OR REPLACE FUNCTION logic_backtest_run_bars(p_run_id BIGINT)
+RETURNS BIGINT
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_run RECORD;
+    v_logic RECORD;
+    v_tf_id INTEGER;
+    v_balance NUMERIC;
+    v_bars TIMESTAMP[];
+    v_total INTEGER;
+    v_i INTEGER;
+    v_bar_dt TIMESTAMP;
+    v_prev_bar TIMESTAMP;
+    v_next_bar TIMESTAMP;
+    v_pnl NUMERIC;
+    v_trades_created INTEGER;
+    v_diag JSONB;
+BEGIN
+    SELECT r.id, r.logic_id, r.date_from, r.date_to, r.status, r.cancel_requested, r.test_balance
+    INTO v_run
+    FROM logic_backtest_runs r
+    WHERE r.id = p_run_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'backtest run % не найден', p_run_id;
+    END IF;
+
+    IF v_run.status IN ('completed', 'cancelled', 'failed') THEN
+        RETURN p_run_id;
+    END IF;
+
+    IF COALESCE(v_run.cancel_requested, FALSE) THEN
+        PERFORM logic_backtest_update_run(p_run_id, 'cancelled', NULL, 'Отменено', NULL);
+        RETURN p_run_id;
+    END IF;
+
+    SELECT l.id, l.account_id INTO v_logic
+    FROM logics l WHERE l.id = v_run.logic_id;
+    IF NOT FOUND THEN
+        PERFORM logic_backtest_update_run(
+            p_run_id, 'failed', 100, 'Логика не найдена', NULL, NULL, NULL, NULL, NULL, 0,
+            format('Логика %s не найдена', v_run.logic_id)
+        );
+        RETURN p_run_id;
+    END IF;
+
+    PERFORM logic_ensure_non_trading_periods(v_run.logic_id);
+
+    v_tf_id := logic_resolve_timeframe_id(v_run.logic_id);
+    IF v_tf_id IS NULL THEN
+        PERFORM logic_backtest_update_run(
+            p_run_id, 'failed', 100, 'Не задан timeframe', NULL, NULL, NULL, NULL, NULL, 0,
+            'Не задан timeframe'
+        );
+        RETURN p_run_id;
+    END IF;
+
+    v_balance := COALESCE(
+        v_run.test_balance,
+        get_logic_param_numeric(v_run.logic_id, 'initial_balance', 0),
+        1000000
+    );
+
+    SELECT array_agg(DISTINCT p.dt ORDER BY p.dt)
+    INTO v_bars
+    FROM prices p
+    JOIN logic_securities ls ON ls.security_id = p.security_id
+    WHERE ls.logic_id = v_run.logic_id AND ls.is_active = TRUE
+      AND p.timeframe_id = v_tf_id
+      AND p.dt::date BETWEEN v_run.date_from AND v_run.date_to;
+
+    v_total := COALESCE(array_length(v_bars, 1), 0);
+    UPDATE logic_backtest_runs
+    SET total_bars = v_total,
+        trades_created = 0,
+        processed_bars = 0
+    WHERE id = p_run_id;
+
+    IF v_total = 0 THEN
+        PERFORM logic_backtest_update_run(
+            p_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
+            'Нет цен в выбранном периоде'
+        );
+        RETURN p_run_id;
+    END IF;
+
+    PERFORM logic_backtest_update_run(
+        p_run_id, 'running', 40, 'Прогон по свечам',
+        format('0 / %s баров', v_total),
+        NULL, 0, NULL, v_balance
+    );
+
+    FOR v_i IN 1..v_total LOOP
+        IF logic_backtest_cancel_requested(p_run_id) THEN
+            SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
+            FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+            PERFORM logic_backtest_log(
+                p_run_id, v_run.logic_id, 'backtest.cancelled',
+                format('Отменено на %s/%s', v_i, v_total), NULL
+            );
+            PERFORM logic_backtest_update_run(
+                p_run_id, 'cancelled',
+                round(40 + v_i::NUMERIC / v_total * 60, 2),
+                'Отменено пользователем', NULL, v_bars[v_i], v_i, NULL, v_balance, v_pnl
+            );
+            RETURN p_run_id;
+        END IF;
+
+        v_bar_dt := v_bars[v_i];
+        v_prev_bar := CASE WHEN v_i > 1 THEN v_bars[v_i - 1] ELSE NULL END;
+        v_next_bar := CASE WHEN v_i < v_total THEN v_bars[v_i + 1] ELSE NULL END;
+
+        PERFORM logic_backtest_rate_signals(p_run_id, v_run.logic_id, v_tf_id, v_bar_dt);
+        v_balance := logic_backtest_process_risk(
+            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+        );
+
+        IF logic_is_eod_close_bar(v_run.logic_id, v_bar_dt, v_prev_bar, v_next_bar) THEN
+            v_balance := logic_backtest_close_all_except_funds(
+                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+            );
+        END IF;
+
+        IF NOT logic_is_non_trading_dt(v_run.logic_id, v_bar_dt) THEN
+            v_balance := logic_backtest_process_signals(
+                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+            );
+        END IF;
+
+        v_balance := logic_backtest_park_excess_cash(
+            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+        );
+
+        IF v_i % 5 = 0 OR v_i = v_total THEN
+            PERFORM logic_backtest_update_run(
+                p_run_id, 'running',
+                round(40 + v_i::NUMERIC / v_total * 60, 2),
+                'Прогон по свечам',
+                format('%s / %s баров', v_i, v_total),
+                v_bar_dt, v_i, NULL, v_balance
+            );
+        END IF;
+    END LOOP;
+
+    IF v_total > 0 THEN
+        v_balance := logic_backtest_park_excess_cash(
+            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
+        );
+    END IF;
+
+    SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
+    FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+
+    SELECT COUNT(*)::INTEGER INTO v_trades_created
+    FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+
+    v_diag := logic_backtest_diagnose(
+        p_run_id, v_run.logic_id, v_tf_id, v_run.date_from, v_run.date_to
+    );
+
+    PERFORM logic_backtest_log(
+        p_run_id, v_run.logic_id, 'backtest.complete',
+        CASE WHEN v_trades_created > 0
+            THEN format('Завершено: %s сделок, PnL=%s', v_trades_created, round(v_pnl, 2))
+            ELSE format('Завершено без сделок (%s баров)', v_total)
+        END,
+        v_diag || jsonb_build_object(
+            'trades_created', v_trades_created,
+            'financial_result', v_pnl,
+            'total_bars', v_total,
+            'engine', 'sql'
+        ),
+        NULL, v_tf_id
+    );
+
+    PERFORM logic_backtest_update_run(
+        p_run_id, 'completed', 100,
+        CASE WHEN v_trades_created > 0 THEN 'Тестирование завершено' ELSE 'Тест завершён — сделок нет' END,
+        format('%s баров, сделок: %s', v_total, v_trades_created),
+        v_bars[v_total], v_total, v_trades_created, v_balance, v_pnl
+    );
+
+    RETURN p_run_id;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_run_bars(BIGINT) IS
+'SQL-робот теста: прогон баров (rate/risk/EOD/signals/park). Node только prep цен.';
+
 CREATE OR REPLACE FUNCTION run_logic_backtest(
     p_logic_id INTEGER,
     p_date_from DATE,
@@ -1391,12 +1582,6 @@ DECLARE
     v_secs INTEGER;
     v_sec_i INTEGER := 0;
     v_sec RECORD;
-    v_ind RECORD;
-    v_bars TIMESTAMP[];
-    v_total INTEGER;
-    v_i INTEGER;
-    v_bar_dt TIMESTAMP;
-    v_pnl NUMERIC;
     v_date_from DATE;
     v_date_to DATE;
     v_load_from DATE;
@@ -1406,8 +1591,6 @@ DECLARE
     v_point_count INTEGER;
     v_prices_in_period INTEGER;
     v_ind_in_period INTEGER;
-    v_trades_created INTEGER;
-    v_diag JSONB;
     v_days_span INTEGER;
     v_tbank JSONB;
     v_pl INTEGER;
@@ -1415,8 +1598,6 @@ DECLARE
     v_is INTEGER;
     v_ic INTEGER;
     v_ie INTEGER;
-    v_prev_bar TIMESTAMP;
-    v_next_bar TIMESTAMP;
 BEGIN
     v_date_from := LEAST(p_date_from, p_date_to);
     v_date_to := GREATEST(p_date_from, p_date_to);
@@ -1591,121 +1772,13 @@ BEGIN
         RETURN v_run_id;
     END IF;
 
-    SELECT array_agg(DISTINCT p.dt ORDER BY p.dt)
-    INTO v_bars
-    FROM prices p
-    JOIN logic_securities ls ON ls.security_id = p.security_id
-    WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-      AND p.timeframe_id = v_tf_id
-      AND p.dt::date BETWEEN v_date_from AND v_date_to;
-
-    v_total := COALESCE(array_length(v_bars, 1), 0);
-    UPDATE logic_backtest_runs SET total_bars = v_total WHERE id = v_run_id;
-
-    IF v_total = 0 THEN
-        PERFORM logic_backtest_update_run(
-            v_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
-            'Нет цен в выбранном периоде'
-        );
-        RETURN v_run_id;
-    END IF;
-
-    PERFORM logic_backtest_update_run(
-        v_run_id, 'running', 40, 'Прогон по свечам',
-        format('0 / %s баров', v_total)
-    );
-
-    FOR v_i IN 1..v_total LOOP
-        IF logic_backtest_cancel_requested(v_run_id) THEN
-            SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-            FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
-            PERFORM logic_backtest_log(v_run_id, p_logic_id, 'backtest.cancelled', format('Отменено на %s/%s', v_i, v_total), NULL);
-            PERFORM logic_backtest_update_run(
-                v_run_id, 'cancelled',
-                round(40 + v_i::NUMERIC / v_total * 60, 2),
-                'Отменено пользователем', NULL, v_bars[v_i], v_i, NULL, v_balance, v_pnl
-            );
-            RETURN v_run_id;
-        END IF;
-
-        v_bar_dt := v_bars[v_i];
-        v_prev_bar := CASE WHEN v_i > 1 THEN v_bars[v_i - 1] ELSE NULL END;
-        v_next_bar := CASE WHEN v_i < v_total THEN v_bars[v_i + 1] ELSE NULL END;
-
-        PERFORM logic_backtest_rate_signals(v_run_id, p_logic_id, v_tf_id, v_bar_dt);
-        v_balance := logic_backtest_process_risk(
-            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-        );
-
-        IF logic_is_eod_close_bar(p_logic_id, v_bar_dt, v_prev_bar, v_next_bar) THEN
-            v_balance := logic_backtest_close_all_except_funds(
-                v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-            );
-        END IF;
-
-        IF NOT logic_is_non_trading_dt(p_logic_id, v_bar_dt) THEN
-            v_balance := logic_backtest_process_signals(
-                v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-            );
-        END IF;
-
-        v_balance := logic_backtest_park_excess_cash(
-            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-        );
-
-        IF v_i % 5 = 0 OR v_i = v_total THEN
-            PERFORM logic_backtest_update_run(
-                v_run_id, 'running',
-                round(40 + v_i::NUMERIC / v_total * 60, 2),
-                'Прогон по свечам',
-                format('%s / %s баров', v_i, v_total),
-                v_bar_dt, v_i, NULL, v_balance
-            );
-        END IF;
-    END LOOP;
-
-    -- Финальная парковка после последнего бара (если кэш выше порога).
-    IF v_total > 0 THEN
-        v_balance := logic_backtest_park_excess_cash(
-            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
-        );
-    END IF;
-
-    SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-    FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
-
-    SELECT COUNT(*)::INTEGER INTO v_trades_created
-    FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
-
-    v_diag := logic_backtest_diagnose(v_run_id, p_logic_id, v_tf_id, v_date_from, v_date_to);
-
-    PERFORM logic_backtest_log(
-        v_run_id, p_logic_id, 'backtest.complete',
-        CASE WHEN v_trades_created > 0
-            THEN format('Завершено: %s сделок, PnL=%s', v_trades_created, round(v_pnl, 2))
-            ELSE format('Завершено без сделок (%s баров)', v_total)
-        END,
-        v_diag || jsonb_build_object(
-            'trades_created', v_trades_created,
-            'financial_result', v_pnl,
-            'total_bars', v_total
-        ),
-        NULL, v_tf_id
-    );
-
-    PERFORM logic_backtest_update_run(
-        v_run_id, 'completed', 100,
-        CASE WHEN v_trades_created > 0 THEN 'Тестирование завершено' ELSE 'Тест завершён — сделок нет' END,
-        format('%s баров, сделок: %s', v_total, v_trades_created),
-        v_bars[v_total], v_total, v_trades_created, v_balance, v_pnl
-    );
-
-    RETURN v_run_id;
+    -- Единый SQL-прогон баров (тот же путь, что вызывает Node после parallel prep).
+    RETURN logic_backtest_run_bars(v_run_id);
 END;
 $$;
 
 COMMENT ON FUNCTION run_logic_backtest(INTEGER, DATE, DATE) IS
-'Исторический backtest: is_test=TRUE сделки, прогресс в logic_backtest_runs';
+'Исторический backtest (SQL): загрузка данных + logic_backtest_run_bars';
 
 CREATE OR REPLACE FUNCTION logic_backtest_request_cancel(p_run_id BIGINT)
 RETURNS BOOLEAN

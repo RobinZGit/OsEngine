@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: TMON park by equity excess (min cash, equity−threshold−fund MTM); UI «Порог портфеля»; both installers
+**Последнее обновление:** 2026-07-19 — Ship SQL robots: test=`logic_backtest_run_bars`, live=`run_trade_cycle`; Node thin shells; both installers
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -97,6 +97,7 @@
 - `logics` + `logic_indicator_signals` / `logic_params` — торговые правила и параметры (EAV); таблица **`logics_detail` удалена** (v39);
 - UI **Операции** (`/operations`): пять сворачиваемых блоков — **«Параметры логики»**, **«Сигналы на логике»**, **«Стоп-лосс и тейк-профит»**, **«Ценные бумаги»**, **«Сделки»** (по умолчанию свёрнуты);
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
+- **SQL robots (единый мозг):** бой — `run_trade_cycle()` (Node `trade-runner.js` только планирует); тест — `logic_backtest_run_bars(run_id)` после parallel prep цен в Node (`logic-backtest.js` без JS bar-loop). Полный SQL-путь: `run_logic_backtest`.
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
 - **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **только при открытом Angular** (heartbeat → `APP_TRADE_RUNNER_HB`, TTL 90 с); ручной `POST /api/logic-trades/run`;
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
@@ -304,6 +305,7 @@
 - [x] Linux installer: `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` + `install.sh`; freshness rule for Windows+Linux; `build-all-installers.ps1` (2026-07-19).
 - [x] Non-trading UI: add/edit/delete intervals; warning when «Учитывать…» is off; TMON park skip logs + end-of-backtest park; both installers (2026-07-19).
 - [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
+- [x] SQL robots: `logic_backtest_run_bars` + thin Node test prep; live Node → `run_trade_cycle()` only; both installers + push (2026-07-19).
 
 ---
 
@@ -323,6 +325,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship SQL robots: test run_bars + live run_trade_cycle; Node thin shells; Windows+Linux installers |
+| 2026-07-19 | Fix Node backtest: call TMON park / NTP / EOD each bar (root cause: UI runner skipped SQL park) |
 | 2026-07-19 | Ship: TMON park by equity excess; UI «Порог портфеля»; Windows+Linux installers |
 | 2026-07-19 | Ship: non-trading interval CRUD UI; NTP-off warning; TMON park fix/logs; Windows+Linux installers |
 | 2026-07-19 | Linux installer tar.gz + install.sh; freshness rule Windows+Linux; build-all-installers.ps1 |
@@ -574,3 +578,5 @@
 129. «Make another installer for linux for macbook… updated every time when changing the project» — Linux tar.gz + freshness like Windows.
 130. Sunday trades with NTP off; need add/delete/edit period lines; TMON not bought with positive PnL; reassemble installer and post.
 131. Same test: TMON must buy each candle on equity excess over 1M; +13k finres → buy as much free cash allows ≤ excess; do not sell fund / stay in it.
+132. Again same test one day TMON did not buy; finres 13k enough for a little — root cause Node runner never called park.
+133. Prefer tests and real trading through SQL; separate robot for testing, separate for worker — uniform and faster.
