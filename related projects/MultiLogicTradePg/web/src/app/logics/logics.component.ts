@@ -1439,11 +1439,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (a.length === 0) return true;
     const lastA = a[a.length - 1];
     const lastB = b[b.length - 1];
+    const remA = Number(lastA.remaining_qty ?? lastA.quantity);
+    const remB = Number(lastB.remaining_qty ?? lastB.quantity);
     return (
       a[0].id === b[0].id &&
       lastA.id === lastB.id &&
       Number(lastA.financial_result) === Number(lastB.financial_result) &&
-      String(lastA.bar_dt) === String(lastB.bar_dt)
+      String(lastA.bar_dt) === String(lastB.bar_dt) &&
+      remA === remB
     );
   }
 
@@ -2431,6 +2434,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     commission: number;
     trade_count: number;
     open_qty: number;
+    last_price: number | null;
+    position_value: number;
   } | null {
     const code = String(row.cash_fund_code ?? '')
       .trim()
@@ -2451,13 +2456,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return null;
     }
     return {
-      security_id: sec.security_id,
+      security_id: Number(sec.security_id),
       security_name: sec.security_name,
       security_prefix: sec.prefix,
       pnl: 0,
       commission: 0,
       trade_count: 0,
       open_qty: 0,
+      last_price: null,
+      position_value: 0,
     };
   }
 

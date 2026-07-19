@@ -21,6 +21,12 @@ function periodDay(raw: string | null | undefined): string | null {
   return asDateOnly(raw);
 }
 
+/** Единый числовой id бумаги — иначе pin «327» vs сделки 327 → ост. 0 и дубль строки. */
+function paperSecurityId(raw: unknown): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** Минимальная / максимальная дата сделок бумаги (для окна графика). */
 export function tradeDtWindow(trades: LogicTradeRow[]): { from: string; to: string } | null {
   const keys = trades
@@ -41,9 +47,10 @@ export function tradesForSecurity(
   const toDay = periodDay(dateTo);
   const fromKey = fromDay ? `${fromDay} 00:00:00` : null;
   const toKey = toDay ? `${toDay} 23:59:59` : null;
+  const secId = paperSecurityId(securityId);
   return trades
     .filter((t) => {
-      if (t.security_id !== securityId) return false;
+      if (paperSecurityId(t.security_id) !== secId) return false;
       const key = dtKey(t.bar_dt || t.executed_at);
       if (fromKey && key < fromKey) return false;
       if (toKey && key > toKey) return false;
@@ -56,11 +63,16 @@ export type PaperListRow = {
   security_id: number;
   security_name: string;
   security_prefix: string | null;
+  /** Реализованный финрез (закрытия). У непродаваемого фонда обычно 0. */
   pnl: number;
   commission: number;
   trade_count: number;
   /** Нетто открытый остаток: Long +qty, Short −qty (по remaining_qty открытий). */
   open_qty: number;
+  /** Последняя известная цена (сделка / свеча) для оценки остатка. */
+  last_price: number | null;
+  /** Оценка остатка в деньгах: |open_qty| × last_price. */
+  position_value: number;
 };
 
 function emptyPaperRow(
@@ -76,6 +88,8 @@ function emptyPaperRow(
     commission: 0,
     trade_count: 0,
     open_qty: 0,
+    last_price: null,
+    position_value: 0,
   };
 }
 
@@ -91,14 +105,18 @@ export function papersWithTrades(
   const fromKey = fromDay ? `${fromDay} 00:00:00` : null;
   const toKey = toDay ? `${toDay} 23:59:59` : null;
   const map = new Map<number, PaperListRow>();
+  /** Последняя цена Open по бумаге (до подгрузки свечи периода). */
+  const lastOpenPx = new Map<number, { dt: string; px: number }>();
   for (const t of trades) {
     if (t.status !== 'filled' && t.status !== 'submitted') continue;
     const key = dtKey(t.bar_dt || t.executed_at);
     if (fromKey && key < fromKey) continue;
     if (toKey && key > toKey) continue;
+    const secId = paperSecurityId(t.security_id);
+    if (secId <= 0) continue;
     const row =
-      map.get(t.security_id) ??
-      emptyPaperRow(t.security_id, t.security_name, t.security_prefix);
+      map.get(secId) ??
+      emptyPaperRow(secId, t.security_name, t.security_prefix);
     row.trade_count += 1;
     if (
       !t.is_shadow &&
@@ -123,9 +141,19 @@ export function papersWithTrades(
           : Number(remRaw);
       if (rem > 0) {
         row.open_qty += t.action_name === 'Short' ? -rem : rem;
+        const px = Number(t.price);
+        if (Number.isFinite(px) && px > 0) {
+          const prev = lastOpenPx.get(secId);
+          if (!prev || key >= prev.dt) {
+            lastOpenPx.set(secId, { dt: key, px });
+          }
+        }
       }
     }
-    map.set(t.security_id, row);
+    map.set(secId, row);
+  }
+  for (const [secId, row] of map) {
+    applyPaperMarkValue(row, lastOpenPx.get(secId)?.px ?? null);
   }
   const sorted = [...map.values()].sort((a, b) =>
     (a.security_prefix || a.security_name).localeCompare(
@@ -133,20 +161,55 @@ export function papersWithTrades(
       'ru'
     )
   );
-  if (!pinned?.security_id) {
+  const pinId = paperSecurityId(pinned?.security_id);
+  if (!pinned || pinId <= 0) {
     return sorted;
   }
-  const fromTrades = map.get(pinned.security_id);
+  const pinPrefix = String(pinned.security_prefix ?? '')
+    .trim()
+    .toUpperCase();
+  let fromTrades = map.get(pinId);
+  if (!fromTrades && pinPrefix) {
+    fromTrades = sorted.find(
+      (r) =>
+        String(r.security_prefix ?? '')
+          .trim()
+          .toUpperCase() === pinPrefix
+    );
+  }
+  const headId = fromTrades?.security_id ?? pinId;
   const head: PaperListRow = {
-    security_id: pinned.security_id,
+    security_id: headId,
     security_name: pinned.security_name || fromTrades?.security_name || '',
     security_prefix: pinned.security_prefix ?? fromTrades?.security_prefix ?? null,
     pnl: fromTrades?.pnl ?? 0,
     commission: fromTrades?.commission ?? 0,
     trade_count: fromTrades?.trade_count ?? 0,
     open_qty: fromTrades?.open_qty ?? 0,
+    last_price: fromTrades?.last_price ?? null,
+    position_value: fromTrades?.position_value ?? 0,
   };
-  return [head, ...sorted.filter((r) => r.security_id !== pinned.security_id)];
+  return [
+    head,
+    ...sorted.filter((r) => paperSecurityId(r.security_id) !== paperSecurityId(headId)),
+  ];
+}
+
+/** Оценка открытого остатка в деньгах. */
+export function applyPaperMarkValue(
+  row: PaperListRow,
+  markPrice: number | null | undefined
+): void {
+  const px = Number(markPrice);
+  if (!Number.isFinite(px) || px <= 0 || row.open_qty === 0) {
+    if (row.open_qty === 0) {
+      row.last_price = null;
+      row.position_value = 0;
+    }
+    return;
+  }
+  row.last_price = px;
+  row.position_value = Math.abs(row.open_qty) * px;
 }
 
 export function buildTradeMarkers(trades: LogicTradeRow[]): ChartTradeMarker[] {

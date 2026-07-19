@@ -84,6 +84,10 @@ BEGIN
     IF v_close.status NOT IN ('filled', 'submitted') THEN
         RETURN;
     END IF;
+    -- Денежный фонд не закрываем пакетами (остаток Open должен оставаться).
+    IF logic_is_cash_fund_security(v_close.security_id) THEN
+        RETURN;
+    END IF;
 
     DELETE FROM logic_trade_lots WHERE close_trade_id = p_close_trade_id;
 

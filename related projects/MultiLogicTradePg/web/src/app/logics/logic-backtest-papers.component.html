@@ -53,6 +53,7 @@
                   class="trade-pnl paper-pnl"
                   [class.trade-pnl-pos]="paper.pnl > 0"
                   [class.trade-pnl-neg]="paper.pnl < 0"
+                  title="Реализованный финансовый результат (закрытия)"
                 >
                   {{ formatPnl(paper.pnl) }}
                   @if (paperPnlPct(paper.pnl) != null) {
@@ -65,6 +66,24 @@
                   title="Открытый остаток позиции (лонг +, шорт −)"
                 >
                   ост. {{ formatOpenQty(paper.open_qty) }}
+                </span>
+                <span
+                  class="paper-mtm"
+                  [class.paper-mtm-zero]="paper.position_value === 0"
+                  title="Остаток в деньгах (|ост.| × цена)"
+                >
+                  сум. {{ formatMoney(paper.position_value) }}
+                </span>
+                <span
+                  class="paper-last-px"
+                  [class.paper-last-px-empty]="paper.last_price == null"
+                  title="Текущая цена (тест — на конец периода, бой — последняя свеча)"
+                >
+                  @if (paper.last_price != null) {
+                    цена {{ formatMoney(paper.last_price) }}
+                  } @else {
+                    цена —
+                  }
                 </span>
                 <span class="paper-comm" title="Комиссия по сделкам бумаги">
                   ком. {{ formatMoney(paper.commission) }}

@@ -4084,6 +4084,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6948,6 +6949,32 @@ $$;
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -9006,12 +9033,7 @@ BEGIN
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
           -- Денежный фонд только для парковки кэша, не для сигналов
-          AND NOT EXISTS (
-              SELECT 1
-              FROM security_prefixes sp
-              WHERE sp.security_id = ls.security_id
-                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
-          )
+          AND NOT logic_is_cash_fund_security(ls.security_id)
     LOOP
         v_is_shadow := v_sec.real_trading_paused;
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
@@ -10168,6 +10190,12 @@ DECLARE
     v_position_event TEXT;
 BEGIN
     SELECT sd.name INTO v_side_name FROM sides sd WHERE sd.id = p_side_id;
+    -- Денежный фонд после покупки не продаём: запрет Close (SL/TP/сигналы/EOD).
+    IF v_side_name = 'Close' AND logic_is_cash_fund_security(p_security_id) THEN
+        o_trade_id := NULL;
+        o_new_balance := v_balance;
+        RETURN;
+    END IF;
     v_position_event := COALESCE(
         NULLIF(btrim(p_position_event), ''),
         CASE WHEN v_side_name = 'Close' THEN 'close' ELSE 'open' END
@@ -10621,11 +10649,7 @@ BEGIN
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-          AND NOT EXISTS (
-              SELECT 1 FROM security_prefixes sp
-              WHERE sp.security_id = ls.security_id
-                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
-          )
+          AND NOT logic_is_cash_fund_security(ls.security_id)
     LOOP
         v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id);
         v_eff_inversion := (
@@ -12396,6 +12420,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

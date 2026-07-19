@@ -165,6 +165,31 @@
   color: #0f766e;
 }
 
+.paper-mtm {
+  margin-left: 0.45rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.paper-mtm-zero {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.paper-last-px {
+  margin-left: 0.45rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: #475569;
+}
+
+.paper-last-px-empty {
+  color: #94a3b8;
+}
+
 .paper-open-qty-zero {
   color: #94a3b8;
   font-weight: 500;
