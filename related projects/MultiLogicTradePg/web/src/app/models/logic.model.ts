@@ -21,7 +21,7 @@ export interface LogicRow {
   warmup_pretest?: boolean;
   /** Денежный фонд для парковки кэша: '' | TMON | LQDT | SBMM (runner later). */
   cash_fund_code?: string;
-  /** Порог свободных денег (₽) выше которого парковать в фонд. */
+  /** Порог equity портфеля (₽): парковать min(кэш, equity−порог−уже_в_фонде). */
   cash_fund_threshold?: number;
   /** Учитывать неторговые периоды при открытии сделок. */
   use_non_trading_periods?: boolean;

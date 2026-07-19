@@ -216,6 +216,10 @@ DECLARE
     v_side_open_id INTEGER;
     v_action_long_id INTEGER;
     v_trade_id BIGINT;
+    v_equity NUMERIC;
+    v_fund_qty NUMERIC;
+    v_fund_mtm NUMERIC;
+    v_excess NUMERIC;
 BEGIN
     SELECT l.id, l.account_id, a.account_type, a.is_active
     INTO v_logic
@@ -238,13 +242,11 @@ BEGIN
         v_threshold := 0;
     END IF;
 
-    -- v1: свободный кэш = current_balance (без вычета открытых позиций)
     v_balance := COALESCE(logic_ensure_balance(p_logic_id), 0);
-    v_park_amount := v_balance - v_threshold;
-    IF v_park_amount <= 0 THEN
+    IF v_balance <= 0 THEN
         RETURN jsonb_build_object(
             'skipped', TRUE,
-            'reason', 'below_threshold',
+            'reason', 'no_cash',
             'balance', v_balance,
             'threshold', v_threshold
         );
@@ -322,6 +324,29 @@ BEGIN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'bad_price', 'detail', v_inst);
     END IF;
 
+    -- Избыток = equity − порог; докупаем min(кэш, избыток − уже_в_фонде); фонд не продаём.
+    v_equity := COALESCE(logic_portfolio_equity(p_logic_id, v_tf_id), v_balance);
+    v_fund_qty := CASE
+        WHEN v_security_id IS NOT NULL
+            THEN logic_long_position_qty(p_logic_id, v_security_id, FALSE, FALSE)
+        ELSE 0
+    END;
+    v_fund_mtm := COALESCE(v_fund_qty, 0) * v_price;
+    v_excess := v_equity - v_threshold;
+    v_park_amount := LEAST(v_balance, GREATEST(0, v_excess - v_fund_mtm));
+
+    IF v_park_amount <= 0 THEN
+        RETURN jsonb_build_object(
+            'skipped', TRUE,
+            'reason', 'below_threshold',
+            'balance', v_balance,
+            'equity', v_equity,
+            'fund_mtm', v_fund_mtm,
+            'excess', v_excess,
+            'threshold', v_threshold
+        );
+    END IF;
+
     v_qty := (floor(v_park_amount / v_price)::INTEGER / v_lot) * v_lot;
     IF v_qty < v_lot THEN
         PERFORM logic_trade_log(
@@ -331,6 +356,9 @@ BEGIN
             jsonb_build_object(
                 'fund', v_code,
                 'park_amount', v_park_amount,
+                'equity', v_equity,
+                'fund_mtm', v_fund_mtm,
+                'excess', v_excess,
                 'price', v_price,
                 'lot', v_lot
             ),
@@ -341,6 +369,7 @@ BEGIN
             'skipped', TRUE,
             'reason', 'qty_below_lot',
             'park_amount', v_park_amount,
+            'equity', v_equity,
             'price', v_price,
             'lot', v_lot
         );
@@ -474,4 +503,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
-'Каждая закрытая свеча TF: если balance > threshold — BUY фонда; real→T-Bank, fake/без FIGI→sim сделка в боевой книге';
+'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';

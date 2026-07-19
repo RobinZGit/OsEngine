@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Ship: edit non-trading intervals (+/✕/time); NTP off warning; TMON park logs + final park; both installers
+**Последнее обновление:** 2026-07-19 — Ship: TMON park by equity excess (min cash, equity−threshold−fund MTM); UI «Порог портфеля»; both installers
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -86,7 +86,7 @@
 - **`logic_securities`** — портфель бумаг логики (`logic_id`, `security_id`, `display_order`, `is_active`);
 - **`logic_trades`** — сделки: `position_event`, `signal_kind`, `is_simulated`, **`is_fictitious`**, `commission`, **`financial_result`** (только Close), **`run_id`** (прогон теста → `logic_backtest_runs`; NULL у боя), `bar_dt`, `status`; side Open/Close через `sides`; уникальность бара: `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`;
 - **`logic_trade_lots`** — пакеты закрытия (FIFO / средняя): связь close↔open, суммы, комиссии, PnL по пакету;
-- **`logic_param_defs`** + **`logic_params`** — параметры торговли (EAV): **`timeframe`**, `position_size_pct`, `max_open_positions`, `initial_balance`, `current_balance`, **`commission_pct`**, **`cost_method`** (FIFO|AVERAGE), **`base_annual_rate_pct`**, **`cash_fund_code`** / **`cash_fund_threshold`** / **`last_cash_fund_bar_dt`** (runner `logic_park_excess_cash`), `last_trade_check_at`;
+- **`logic_param_defs`** + **`logic_params`** — параметры торговли (EAV): **`timeframe`**, `position_size_pct`, `max_open_positions`, `initial_balance`, `current_balance`, **`commission_pct`**, **`cost_method`** (FIFO|AVERAGE), **`base_annual_rate_pct`**, **`cash_fund_code`** / **`cash_fund_threshold`** (порог **equity**, не только кэша) / **`last_cash_fund_bar_dt`** (`logic_park_excess_cash` / `logic_backtest_park_excess_cash`: BUY `min(кэш, equity−порог−уже_в_фонде)`), `last_trade_check_at`;
 - **Общие настройки (шестерёнка):** `APP_CLEANUP_DISK` + `cleanup_trading_disk_space()` / `run_cleanup_if_enabled()`; pg_cron 03:30 + Node `maintenance-scheduler.js`; API cleanup; иконка БД → схема, шестерёнка → настройки;
 - **`indicators.formula`** — многочлен для `calc_poly_formula_array`; **`is_custom`** — подсветка в списке;
 - **`sma`**, **`ema`**, **`ww()`** — от close; **`sma(period=20)`**, **`sma(period=20, series=VALUE)`** — параметры в ();
@@ -303,6 +303,7 @@
 - [x] v46 ship: test `executed_at`=`bar_dt`; `logic_non_trading_intervals` + UI «Торговые периоды» / MOEX; `use_non_trading_periods` (default on); `close_positions_eod` (default off, except funds); installer (2026-07-19).
 - [x] Linux installer: `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` + `install.sh`; freshness rule for Windows+Linux; `build-all-installers.ps1` (2026-07-19).
 - [x] Non-trading UI: add/edit/delete intervals; warning when «Учитывать…» is off; TMON park skip logs + end-of-backtest park; both installers (2026-07-19).
+- [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
 
 ---
 
@@ -322,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: TMON park by equity excess; UI «Порог портфеля»; Windows+Linux installers |
 | 2026-07-19 | Ship: non-trading interval CRUD UI; NTP-off warning; TMON park fix/logs; Windows+Linux installers |
 | 2026-07-19 | Linux installer tar.gz + install.sh; freshness rule Windows+Linux; build-all-installers.ps1 |
 | 2026-07-19 | Ship v46: bar_dt trade time; non-trading periods MOEX UI; EOD close except funds; installer |
@@ -571,3 +573,4 @@
 128. «В тесте дата/время сделки = по свечам, не wall-clock прогона; блок «Торговые периоды» до ЦБ с галочкой учитывать неторговые (вкл. по умолчанию) и кнопкой установить как на MOEX; параметр закрывать позиции в конце дня (кроме фондов), выкл. по умолчанию.»
 129. «Make another installer for linux for macbook… updated every time when changing the project» — Linux tar.gz + freshness like Windows.
 130. Sunday trades with NTP off; need add/delete/edit period lines; TMON not bought with positive PnL; reassemble installer and post.
+131. Same test: TMON must buy each candle on equity excess over 1M; +13k finres → buy as much free cash allows ≤ excess; do not sell fund / stay in it.

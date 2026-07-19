@@ -4082,6 +4082,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6705,6 +6706,32 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -10763,7 +10790,72 @@ $$;
 COMMENT ON FUNCTION logic_cash_fund_price_at(INTEGER, INTEGER, TIMESTAMP, TEXT) IS
 'Цена TMON/LQDT/SBMM для парковки: prices → resolve → fallback 100';
 
--- Парковка свободного кэша в TMON/LQDT/SBMM внутри теста (каждый бар с избытком).
+-- Equity теста на баре: свободный кэш + MTM лонгов − MTM шортов (is_test).
+CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_cash_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_total NUMERIC := COALESCE(p_cash_balance, 0);
+    v_sec RECORD;
+    v_long_qty NUMERIC;
+    v_short_qty NUMERIC;
+    v_price NUMERIC;
+BEGIN
+    FOR v_sec IN
+        SELECT DISTINCT lt.security_id
+        FROM logic_trades lt
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = FALSE
+          AND lt.status IN ('filled', 'submitted')
+    LOOP
+        v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
+        v_short_qty := logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
+        IF COALESCE(v_long_qty, 0) <= 0 AND COALESCE(v_short_qty, 0) <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        SELECT p.close_price
+        INTO v_price
+        FROM prices p
+        WHERE p.security_id = v_sec.security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt <= p_bar_dt
+        ORDER BY p.dt DESC
+        LIMIT 1;
+
+        IF v_price IS NULL OR v_price <= 0 THEN
+            SELECT p.close_price
+            INTO v_price
+            FROM prices p
+            WHERE p.security_id = v_sec.security_id
+              AND p.dt <= p_bar_dt
+            ORDER BY p.dt DESC
+            LIMIT 1;
+        END IF;
+
+        IF v_price IS NULL OR v_price <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        v_total := v_total
+            + COALESCE(v_long_qty, 0) * v_price
+            - COALESCE(v_short_qty, 0) * v_price;
+    END LOOP;
+
+    RETURN v_total;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
+'Тест: equity = cash + long×price − short×price на bar_dt';
+
+-- Парковка: BUY фонда на min(свободный кэш, equity−порог−уже_в_фонде); без продажи фонда.
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -10786,6 +10878,10 @@ DECLARE
     v_action_long_id INTEGER;
     v_trade_id BIGINT;
     v_balance NUMERIC := p_balance;
+    v_equity NUMERIC;
+    v_fund_qty NUMERIC;
+    v_fund_mtm NUMERIC;
+    v_excess NUMERIC;
 BEGIN
     v_code := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'cash_fund_code'), '')));
     IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
@@ -10797,10 +10893,8 @@ BEGIN
         v_threshold := 0;
     END IF;
 
-    v_park_amount := v_balance - v_threshold;
-    IF v_park_amount <= 0 OR v_balance IS NULL THEN
-        -- Типичная причина «TMON не купился»: порог ≥ свободный кэш (часто порог = initial_balance).
-        RETURN v_balance;
+    IF v_balance IS NULL OR v_balance <= 0 THEN
+        RETURN COALESCE(v_balance, p_balance);
     END IF;
 
     PERFORM logic_ensure_cash_fund_security(p_logic_id, v_code);
@@ -10834,15 +10928,32 @@ BEGIN
         RETURN v_balance;
     END IF;
 
+    -- Избыток портфеля над порогом; уже купленный фонд в equity учитываем, чтобы не докупать снова.
+    v_equity := logic_backtest_portfolio_equity(p_logic_id, p_timeframe_id, p_bar_dt, v_balance);
+    v_fund_qty := logic_long_position_qty(p_logic_id, v_security_id, FALSE, TRUE);
+    v_fund_mtm := COALESCE(v_fund_qty, 0) * v_price;
+    v_excess := COALESCE(v_equity, 0) - v_threshold;
+    v_park_amount := LEAST(v_balance, GREATEST(0, v_excess - v_fund_mtm));
+
+    IF v_park_amount <= 0 THEN
+        RETURN v_balance;
+    END IF;
+
     v_lot := GREATEST(1, logic_security_lot_size(v_security_id));
     v_qty := (FLOOR(v_park_amount / (v_price * v_lot)))::INTEGER * v_lot;
     IF v_qty < v_lot THEN
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.cash_fund.skip',
-            format('Мало избытка для лота %s: park=%s price=%s', v_code, round(v_park_amount, 2), v_price),
+            format(
+                'Мало избытка для лота %s: park=%s equity=%s fund_mtm=%s price=%s',
+                v_code, round(v_park_amount, 2), round(v_equity, 2), round(v_fund_mtm, 2), v_price
+            ),
             jsonb_build_object(
                 'fund', v_code,
                 'park_amount', v_park_amount,
+                'equity', v_equity,
+                'fund_mtm', v_fund_mtm,
+                'excess', v_excess,
                 'price', v_price,
                 'lot', v_lot,
                 'balance', v_balance,
@@ -10881,6 +10992,9 @@ BEGIN
                 'quantity', v_qty,
                 'price', v_price,
                 'park_amount', v_park_amount,
+                'equity', v_equity,
+                'fund_mtm', v_fund_mtm,
+                'excess', v_excess,
                 'trade_id', v_trade_id,
                 'bar_dt', p_bar_dt
             ),
@@ -10893,7 +11007,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_park_excess_cash(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'Тест: на каждом баре, если balance > cash_fund_threshold — BUY фонда на избыток (цена из prices или fallback 100)';
+'Тест: на каждом баре BUY фонда на min(кэш, equity−порог−уже_в_фонде); фонд не продаём';
 
 -- Закрыть все test-позиции кроме денежного фонда (TMON/LQDT/SBMM).
 CREATE OR REPLACE FUNCTION logic_backtest_close_all_except_funds(
@@ -11865,6 +11979,10 @@ DECLARE
     v_side_open_id INTEGER;
     v_action_long_id INTEGER;
     v_trade_id BIGINT;
+    v_equity NUMERIC;
+    v_fund_qty NUMERIC;
+    v_fund_mtm NUMERIC;
+    v_excess NUMERIC;
 BEGIN
     SELECT l.id, l.account_id, a.account_type, a.is_active
     INTO v_logic
@@ -11887,13 +12005,11 @@ BEGIN
         v_threshold := 0;
     END IF;
 
-    -- v1: свободный кэш = current_balance (без вычета открытых позиций)
     v_balance := COALESCE(logic_ensure_balance(p_logic_id), 0);
-    v_park_amount := v_balance - v_threshold;
-    IF v_park_amount <= 0 THEN
+    IF v_balance <= 0 THEN
         RETURN jsonb_build_object(
             'skipped', TRUE,
-            'reason', 'below_threshold',
+            'reason', 'no_cash',
             'balance', v_balance,
             'threshold', v_threshold
         );
@@ -11971,6 +12087,29 @@ BEGIN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'bad_price', 'detail', v_inst);
     END IF;
 
+    -- Избыток = equity − порог; докупаем min(кэш, избыток − уже_в_фонде); фонд не продаём.
+    v_equity := COALESCE(logic_portfolio_equity(p_logic_id, v_tf_id), v_balance);
+    v_fund_qty := CASE
+        WHEN v_security_id IS NOT NULL
+            THEN logic_long_position_qty(p_logic_id, v_security_id, FALSE, FALSE)
+        ELSE 0
+    END;
+    v_fund_mtm := COALESCE(v_fund_qty, 0) * v_price;
+    v_excess := v_equity - v_threshold;
+    v_park_amount := LEAST(v_balance, GREATEST(0, v_excess - v_fund_mtm));
+
+    IF v_park_amount <= 0 THEN
+        RETURN jsonb_build_object(
+            'skipped', TRUE,
+            'reason', 'below_threshold',
+            'balance', v_balance,
+            'equity', v_equity,
+            'fund_mtm', v_fund_mtm,
+            'excess', v_excess,
+            'threshold', v_threshold
+        );
+    END IF;
+
     v_qty := (floor(v_park_amount / v_price)::INTEGER / v_lot) * v_lot;
     IF v_qty < v_lot THEN
         PERFORM logic_trade_log(
@@ -11980,6 +12119,9 @@ BEGIN
             jsonb_build_object(
                 'fund', v_code,
                 'park_amount', v_park_amount,
+                'equity', v_equity,
+                'fund_mtm', v_fund_mtm,
+                'excess', v_excess,
                 'price', v_price,
                 'lot', v_lot
             ),
@@ -11990,6 +12132,7 @@ BEGIN
             'skipped', TRUE,
             'reason', 'qty_below_lot',
             'park_amount', v_park_amount,
+            'equity', v_equity,
             'price', v_price,
             'lot', v_lot
         );
@@ -12123,8 +12266,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
-'Каждая закрытая свеча TF: если balance > threshold — BUY фонда; real→T-Bank, fake/без FIGI→sim сделка в боевой книге';
+'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 
