@@ -2,7 +2,7 @@ import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/co
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, exhaustMap, switchMap, takeUntil, timer, forkJoin, of, Subscription, EMPTY } from 'rxjs';
-import { catchError, map, timeout } from 'rxjs/operators';
+import { catchError, filter, map, timeout } from 'rxjs/operators';
 import { LogicsService } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
@@ -305,6 +305,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     timer(0, POLL_INTERVAL_MS)
       .pipe(
         takeUntil(this.destroy$),
+        // Пока /start в полёте — не занимать слоты браузера (лимит ~6) → иначе status 0.
+        filter(() => this.backtestStartInFlight.size === 0),
         switchMap(() => this.logicsService.getLogics())
       )
       .subscribe({
@@ -312,6 +314,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           // Диалог «период теста»: не гонять CD/trades — иначе date input «дубовый».
           if (this.uiInteractionPause) {
             for (const logicId of this.backtestPollIds) {
+              if (this.backtestStartInFlight.has(logicId)) continue;
               this.refreshBacktestStatus(logicId);
             }
             return;
@@ -2513,10 +2516,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (this.backtestStartInFlight.has(logicId)) {
       return;
     }
-    // Сразу жёлтый UI + локальный пульс %. Poll /status — только после 202 /start.
+    // Сразу слот «старт» — до любого poll, иначе getLogics/status забивают браузер.
+    this.backtestStartInFlight.add(logicId);
     this.applyOptimisticBacktestStart(logicId, period);
     this.startOptimisticPulse(logicId);
-    this.doStartBacktestRun(logicId, period, false, true);
+    // Остановить все status-poll — освободить HTTP-слоты под POST /start.
+    for (const id of [...this.backtestFastPollSubs.keys()]) {
+      this.stopFastBacktestPoll(id);
+    }
+    // Краткая пауза: дождаться завершения уже ушедших запросов (лимит Chrome ~6/host).
+    window.setTimeout(() => this.doStartBacktestRun(logicId, period, false, true), 350);
   }
 
   private doStartBacktestRun(
@@ -2532,10 +2541,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (!isRetry && !alreadyOptimistic) {
       this.applyOptimisticBacktestStart(logicId, period);
     }
-    // Пока ждём /start — не долбить /status (конкуренция за пул → «Нет ответа от API»).
     this.stopFastBacktestPoll(logicId);
     const t0 = Date.now();
     console.log(`[backtest] POST /start logic=${logicId} retry=${isRetry} t=${t0}`);
+    this.postBacktestUiLog(logicId, 'start_post', {
+      detail: `retry=${isRetry}`,
+      ui_pct: Number(this.backtestRuns.get(logicId)?.progress_pct) || 1,
+    });
     this.logicsService
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
@@ -2546,6 +2558,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
           console.log(
             `[backtest] /start OK run=${runId} in ${Date.now() - t0}ms logic=${logicId}`
           );
+          this.postBacktestUiLog(logicId, 'start_ok', {
+            run_id: runId,
+            detail: `${Date.now() - t0}ms`,
+            ui_pct: 1,
+          });
           // Стоп нажали, пока /start был в полёте — сразу гасим новый run.
           if (this.backtestCancelRequested.has(logicId)) {
             this.backtestCancelRequested.delete(logicId);
@@ -2603,9 +2620,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
             `[backtest] /start FAIL in ${Date.now() - t0}ms logic=${logicId}`,
             { status, name, msg, body }
           );
+          this.postBacktestUiLog(logicId, 'start_fail', {
+            detail: `status=${status} ${name} ${msg}`.slice(0, 200),
+            error: String(body?.error || msg || name),
+            ui_pct: Number(this.backtestRuns.get(logicId)?.progress_pct) || 3,
+          });
           // Один повтор при status 0 (краткий обрыв / aborted) — без второго alert.
           if (!isRetry && (status === 0 || /Unknown Error/i.test(msg) || name === 'TimeoutError')) {
-            window.setTimeout(() => this.doStartBacktestRun(logicId, period, true, true), 700);
+            // Ещё раз освободить слоты, потом повтор.
+            for (const id of [...this.backtestFastPollSubs.keys()]) {
+              this.stopFastBacktestPoll(id);
+            }
+            window.setTimeout(() => this.doStartBacktestRun(logicId, period, true, true), 900);
             return;
           }
           this.backtestStartInFlight.delete(logicId);
@@ -2660,7 +2686,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     if (status === 0 || /Unknown Error/i.test(msg)) {
       return (
-        'Нет ответа от API (localhost:3000). Чаще всего API перезапускался, /start ждал пул БД,\n' +
+        'Нет ответа от API (127.0.0.1:3000). Чаще всего API перезапускался, браузер забил слоты запросами,\n' +
         'или запрос был оборван. Перезапустите окно Start (API+Angular) и нажмите ▶ ещё раз.\n' +
         'Лог: C:\\Program Files\\MultiLogicTradePg\\api\\logs\\api.log'
       );
@@ -2702,7 +2728,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       error_message: null,
     });
     this.backtestRuns = next;
-    this.backtestPollIds.add(logicId);
+    // В pollIds — только после 202 /start (иначе refreshAllTradesSummaries бьёт /status во время Start).
     this.expandedLogics.add(logicId);
     this.expandedTestTradesBlocks.add(logicId);
   }

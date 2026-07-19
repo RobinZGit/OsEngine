@@ -4357,8 +4357,8 @@ app.use((_req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`MultiLogicTrade API: http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`MultiLogicTrade API: http://127.0.0.1:${port} (also localhost)`);
   console.log(`CORS origin: ${Array.isArray(corsOrigin) ? corsOrigin.join(', ') : corsOrigin}`);
   failOrphanBacktestRuns(pool).catch((err) => {
     console.error('failOrphanBacktestRuns', err.message);
