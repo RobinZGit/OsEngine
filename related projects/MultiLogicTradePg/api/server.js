@@ -3195,6 +3195,8 @@ app.post('/api/logic-backtest/start', async (req, res) => {
   const dateFrom = btrimStr(req.body?.date_from);
   const dateTo = btrimStr(req.body?.date_to);
   const t0 = Date.now();
+  // Сразу в лог — до любых await (иначе «Нет ответа» без строки в api.log).
+  console.log(`Backtest start: received logic=${logicId} ${dateFrom}..${dateTo}`);
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;

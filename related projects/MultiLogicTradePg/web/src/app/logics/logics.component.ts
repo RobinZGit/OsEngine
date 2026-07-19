@@ -2631,12 +2631,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
             this.startFastBacktestPoll(logicId, Number(cur.id));
             return;
           }
-          // Откат оптимистичного pending, если старт не удался и прогона нет.
-          if (cur && cur.status === 'pending' && cur.id < 0) {
-            this.setBacktestRun(logicId, null);
-            this.backtestPollIds.delete(logicId);
-            this.stopFastBacktestPoll(logicId);
-            this.backtestOptimisticAtMs.delete(logicId);
+          // Не сбрасываем %/жёлтый — иначе «пропал процент» после «Нет ответа от API».
+          if (cur && Number(cur.id) < 0) {
+            this.setBacktestRun(logicId, {
+              ...cur,
+              progress_pct: Math.max(1, Number(cur.progress_pct) || 1),
+              phase_message: 'Нет ответа API',
+              phase_detail: 'Перезапустите Start bat и нажмите ▶ ещё раз',
+              error_message: this.formatBacktestStartError(err, body),
+            });
+            this.backtestPollIds.add(logicId);
           }
           alert(this.formatBacktestStartError(err, body));
         },
@@ -2650,7 +2654,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     // timeout() отменяет HTTP → часто приходит как status 0 / Unknown Error — сначала это.
     if (name === 'TimeoutError' || /timeout/i.test(msg)) {
       return (
-        'Запуск теста не получил ответ API за 15 с (часто из‑за перегрузки запросов к БД).\n' +
+        'Запуск теста не получил ответ API за 20 с (часто API был занят или перезапускался).\n' +
         'Перезапустите окно Start и нажмите ▶ ещё раз. Смотрите api\\logs\\api.log.'
       );
     }
@@ -2688,7 +2692,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       date_from: period.date_from,
       date_to: period.date_to,
       status: 'pending',
-      progress_pct: 0,
+      progress_pct: 1,
       phase_message: 'Запуск',
       phase_detail: 'Ожидание сервера…',
       total_bars: 0,
@@ -2713,10 +2717,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.backtestRuns = next;
   }
 
-  /** Пока id&lt;0 — двигаем 0→5% локально, чтобы ↻ не «замирал», пока /start в полёте. */
+  /** Пока id&lt;0 — двигаем 1→5% локально, чтобы ↻ не «замирал», пока /start в полёте. */
   private startOptimisticPulse(logicId: number): void {
     this.stopOptimisticPulse(logicId);
-    let step = 0;
+    let step = 1;
     const timer = window.setInterval(() => {
       const cur = this.backtestRuns.get(logicId);
       if (!cur || Number(cur.id) > 0 || !this.backtestStartInFlight.has(logicId)) {

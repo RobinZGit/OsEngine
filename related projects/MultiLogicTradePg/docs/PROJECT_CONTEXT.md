@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — Fix UI freeze (stop N×status 404 retry); informative progress from logic_backtest_runs
+**Последнее обновление:** 2026-07-19 — Fix «Нет ответа от API»: async progress log (no event-loop block); keep % on start error
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -326,6 +326,7 @@
 - [x] Stuck at 1% while DB completed 100%: race stale /status overwrote UI; switchMap poll + monotonic % + completed→100%; OnPush markForCheck (2026-07-19).
 - [x] Stuck at 1% again: root cause switchMap cancelled slow /status every 500ms; exhaustMap + backtestPool status + `api/logs/backtest-progress.log` + UI ui-log (2026-07-19).
 - [x] Form freeze + stuck ~38%: hydrate polled ALL logics → 404 retry forever; `/active` + no 404 retry; richer phase_detail (bars/trades/finres) (2026-07-19).
+- [x] «Нет ответа от API» + no %: sync progress-log blocked Node; async log + keep optimistic % on start fail (2026-07-19).
 
 ---
 
@@ -345,6 +346,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Fix «Нет ответа от API»: async progress log; keep optimistic % on start fail |
 | 2026-07-19 | Fix UI freeze: stop N×/status 404 retries; GET /active; richer progress (bars/trades/finres) |
 | 2026-07-19 | Fix stuck 1%: exhaustMap (don't cancel /status); backtest-progress.log; status on backtestPool |
 | 2026-07-19 | Fix: UI stuck at 1% while DB completed — switchMap status poll, monotonic %, completed→100% |
@@ -646,3 +648,4 @@
 154. «In the test, I am dependent on 1%. Look.» — UI stuck at 1% while API/DB run 66 already completed 100%; race + force completed→100%.
 155. «1% is stuck again look why maybe you add something to the log» — switchMap cancelled /status; exhaustMap + progress log file.
 156. «Hanging at 38%… progress more informative» + «form hangs stuck» — 404 status storm freeze; informative bar from table; `/active` hydrate.
+157. «No percent, hung, then Нет ответа от API» — sync backtest-progress.log blocked API; keep % on error.
