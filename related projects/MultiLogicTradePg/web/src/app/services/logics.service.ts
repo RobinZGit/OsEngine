@@ -5,7 +5,7 @@
  */
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map, timeout } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import {
   LogicIndicatorSignalRow,
@@ -425,29 +425,11 @@ export class LogicsService {
     logic_id: number;
     date_from: string;
     date_to: string;
-  }): Observable<{
-    ok: boolean;
-    run_id: number;
-    status?: string;
-    progress_pct?: number;
-    phase_message?: string;
-    phase_detail?: string;
-    superseded_runs?: number[];
-  }> {
-    return this.http
-      .post<{
-        ok: boolean;
-        run_id: number;
-        status?: string;
-        progress_pct?: number;
-        phase_message?: string;
-        phase_detail?: string;
-        superseded_runs?: number[];
-      }>(
-        `${this.appConfig.apiUrl}/logic-backtest/start`,
-        body
-      )
-      .pipe(timeout(20_000));
+  }): Observable<{ ok: boolean; run_id: number }> {
+    return this.http.post<{ ok: boolean; run_id: number }>(
+      `${this.appConfig.apiUrl}/logic-backtest/start`,
+      body
+    );
   }
 
   getBacktestStatus(logicId: number, runId?: number): Observable<BacktestRunStatus | null> {
@@ -457,25 +439,6 @@ export class LogicsService {
       `${this.appConfig.apiUrl}/logic-backtest/status`,
       { params }
     );
-  }
-
-  /** Только активные прогоны — без опроса каждой логики. */
-  listActiveBacktests(): Observable<BacktestRunStatus[]> {
-    return this.http.get<BacktestRunStatus[]>(`${this.appConfig.apiUrl}/logic-backtest/active`);
-  }
-
-  /** Диагностика: UI → api/logs/backtest-progress.log */
-  postBacktestUiLog(body: {
-    logic_id: number;
-    event: string;
-    run_id?: number | null;
-    ui_pct?: number;
-    server_pct?: number;
-    status?: string;
-    detail?: string;
-    error?: string;
-  }): Observable<void> {
-    return this.http.post<void>(`${this.appConfig.apiUrl}/logic-backtest/ui-log`, body);
   }
 
   cancelBacktest(runId: number): Observable<{ ok: boolean; run_id: number }> {

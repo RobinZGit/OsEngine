@@ -1,6 +1,5 @@
 import {
   ChangeDetectionStrategy,
-  ChangeDetectorRef,
   Component,
   EventEmitter,
   HostBinding,
@@ -8,7 +7,6 @@ import {
   OnChanges,
   Output,
   SimpleChanges,
-  inject,
 } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
@@ -45,22 +43,33 @@ import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
 
 
 export interface BacktestRunStatus {
+
   id: number;
+
   logic_id: number;
+
   date_from: string;
+
   date_to: string;
+
   status: string;
+
   progress_pct: number;
+
   phase_message: string | null;
+
   phase_detail: string | null;
+
   total_bars: number;
+
   processed_bars: number;
-  trades_created?: number;
+
   test_balance: number | null;
+
   financial_result: number | null;
+
   error_message: string | null;
-  started_at?: string | null;
-  finished_at?: string | null;
+
 }
 
 
@@ -87,7 +96,6 @@ export interface BacktestRunStatus {
 })
 
 export class LogicPositionsPanelComponent implements OnChanges {
-  private readonly cdr = inject(ChangeDetectorRef);
 
   @Input({ required: true }) logicRow!: LogicRow;
 
@@ -199,21 +207,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['backtestRun']) {
-      const s = this.backtestRun?.status;
-      if (
-        s === 'pending' ||
-        s === 'loading_prices' ||
-        s === 'loading_indicators' ||
-        s === 'running'
-      ) {
-        this.localStarting = false;
-      } else if (!this.isBacktestRunning) {
-        this.cancelling = false;
-        this.localStarting = false;
-      }
-      // OnPush: каждый новый %/status с родителя должен перерисовать полоску.
-      this.cdr.markForCheck();
+    if (changes['backtestRun'] && !this.isBacktestRunning) {
+      this.cancelling = false;
     }
     if (changes['trades'] || changes['logicRow'] || changes['backtestRun']) {
       this.rebuildTradeCaches();
@@ -223,15 +218,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   private rebuildTradeCaches(): void {
     const sortKey = (t: LogicTradeRow) =>
       new Date(this.isTest ? t.bar_dt || t.executed_at : t.executed_at || t.bar_dt).getTime();
-    const fundFirst = (a: LogicTradeRow, b: LogicTradeRow) => {
-      const af = a.signal_kind === 'cash_fund' ? 0 : 1;
-      const bf = b.signal_kind === 'cash_fund' ? 0 : 1;
-      if (af !== bf) return af - bf;
-      return sortKey(b) - sortKey(a);
-    };
     const open = this.trades
       .filter((t) => this.isOpenPositionTrade(t))
-      .sort(fundFirst);
+      .sort((a, b) => sortKey(b) - sortKey(a));
     const close = this.trades
       .filter((t) => t.side_name === 'Close' && (t.status === 'filled' || t.status === 'submitted'))
       .sort((a, b) => sortKey(b) - sortKey(a));
@@ -295,53 +284,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
   /** Локальный флаг сразу после нажатия «Стоп», пока статус ещё running. */
   cancelling = false;
 
-  /** Сразу после OK в диалоге периода — жёлтый UI до прихода backtestRun с родителя. */
-  private localStarting = false;
-
   get isBacktestRunning(): boolean {
-    if (this.localStarting) return true;
-    const s = this.backtestRun?.status;
-    return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
-  }
 
-  /** % и фазы — из таблицы logic_backtest_runs (через API status). */
-  get backtestProgressView(): {
-    progress_pct: number;
-    phase_message: string | null;
-    phase_detail: string | null;
-    bars_label: string | null;
-    trades_label: string | null;
-    pnl_label: string | null;
-    balance_label: string | null;
-  } {
     const s = this.backtestRun?.status;
-    const serverActive =
-      s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
-    if (this.localStarting && !serverActive) {
-      return {
-        progress_pct: 0,
-        phase_message: 'Запуск',
-        phase_detail: 'Ожидание сервера…',
-        bars_label: null,
-        trades_label: null,
-        pnl_label: null,
-        balance_label: null,
-      };
-    }
-    const processed = Number(this.backtestRun?.processed_bars) || 0;
-    const total = Number(this.backtestRun?.total_bars) || 0;
-    const trades = Number(this.backtestRun?.trades_created) || 0;
-    const pnl = Number(this.backtestRun?.financial_result);
-    const bal = Number(this.backtestRun?.test_balance);
-    return {
-      progress_pct: Number(this.backtestRun?.progress_pct) || 0,
-      phase_message: this.backtestRun?.phase_message ?? null,
-      phase_detail: this.backtestRun?.phase_detail ?? null,
-      bars_label: total > 0 ? `Бары ${processed}/${total}` : null,
-      trades_label: trades > 0 || (serverActive && total > 0) ? `Сделок ${trades}` : null,
-      pnl_label: Number.isFinite(pnl) ? `Финрез ${pnl.toFixed(2)}` : null,
-      balance_label: Number.isFinite(bal) ? `Баланс ${Math.round(bal)}` : null,
-    };
+
+    return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
+
   }
 
   get isCancelling(): boolean {
@@ -676,35 +624,22 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.periodTo = remembered.to;
     this.showPeriodDialog = true;
     this.periodDialogOpen.emit(true);
-    // OnPush: иначе диалог периода может не отрисоваться после клика ▶.
-    this.cdr.markForCheck();
   }
 
   closeRunDialog(): void {
     this.showPeriodDialog = false;
     this.periodDialogOpen.emit(false);
-    this.cdr.markForCheck();
   }
 
   confirmRunDialog(): void {
-    const from = String(this.periodFrom || '').trim();
-    const to = String(this.periodTo || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-      alert('Укажите период теста: даты «С» и «По» (ГГГГ-ММ-ДД)');
-      return;
-    }
-    if (from > to) {
-      alert('Дата «С» не может быть позже даты «По»');
-      return;
-    }
-    // Сразу Стоп/жёлтый блок — не ждать HTTP токена/start у родителя (OnPush иначе «висит»).
-    this.localStarting = true;
-    this.cancelling = false;
     this.showPeriodDialog = false;
     this.periodDialogOpen.emit(false);
-    saveRememberedBacktestPeriod(this.logicRow?.id, from, to);
-    this.startBacktest.emit({ date_from: from, date_to: to });
-    this.cdr.markForCheck();
+    saveRememberedBacktestPeriod(
+      this.logicRow?.id,
+      this.periodFrom,
+      this.periodTo,
+    );
+    this.startBacktest.emit({ date_from: this.periodFrom, date_to: this.periodTo });
   }
 
 
@@ -723,11 +658,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
     event.preventDefault();
     event.stopPropagation();
     if (this.isBacktestRunning) {
-      // Стоп всегда можно нажать снова (не disabled) — иначе «залипает» после быстрого Стоп.
+      if (this.isCancelling) return;
       this.cancelling = true;
-      this.localStarting = false;
       this.cancelBacktest.emit();
-      this.cdr.markForCheck();
     } else {
       this.cancelling = false;
       this.openRunDialog(event);

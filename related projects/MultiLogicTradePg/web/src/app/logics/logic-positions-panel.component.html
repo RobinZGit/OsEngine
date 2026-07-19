@@ -78,11 +78,12 @@
             type="button"
             class="btn-run-backtest"
             [class.btn-stop]="isBacktestRunning"
+            [disabled]="isCancelling"
             [title]="isBacktestRunning ? 'Остановить тестирование' : 'Запустить тестирование'"
             (click)="onPlayOrStop($event)"
           >
             @if (isCancelling) {
-              Стоп…
+              Останавливаю…
             } @else if (isBacktestRunning) {
               Стоп
             } @else {
@@ -132,28 +133,12 @@
   @if (isTest && isBacktestRunning) {
     <div class="backtest-progress backtest-progress-in-block">
       <div class="backtest-progress-bar">
-        <div class="backtest-progress-fill" [style.width.%]="backtestProgressView.progress_pct"></div>
+        <div class="backtest-progress-fill" [style.width.%]="backtestRun?.progress_pct ?? 0"></div>
       </div>
       <div class="backtest-progress-meta">
-        <span class="bp-phase">{{ backtestProgressView.phase_message }}</span>
-        <span class="bp-pct">{{ backtestProgressView.progress_pct | number:'1.0-1' }}%</span>
-      </div>
-      @if (backtestProgressView.phase_detail) {
-        <div class="backtest-progress-detail">{{ backtestProgressView.phase_detail }}</div>
-      }
-      <div class="backtest-progress-stats">
-        @if (backtestProgressView.bars_label) {
-          <span>{{ backtestProgressView.bars_label }}</span>
-        }
-        @if (backtestProgressView.trades_label) {
-          <span>{{ backtestProgressView.trades_label }}</span>
-        }
-        @if (backtestProgressView.pnl_label) {
-          <span>{{ backtestProgressView.pnl_label }}</span>
-        }
-        @if (backtestProgressView.balance_label) {
-          <span>{{ backtestProgressView.balance_label }}</span>
-        }
+        <span>{{ backtestRun?.phase_message }}</span>
+        <span>{{ backtestRun?.phase_detail }}</span>
+        <span>{{ (backtestRun?.progress_pct ?? 0) | number:'1.0-1' }}%</span>
         @if (periodLabel) {
           <span class="positions-period-label">{{ periodLabel }}</span>
         }
@@ -240,9 +225,6 @@
                   <td [title]="isTest ? ('Исполнено прогоном: ' + formatTradeDt(tr.executed_at)) : ''">{{ tradeDisplayDt(tr) }}</td>
                   <td>
                     <strong>{{ tr.security_prefix || tr.security_name }}</strong>
-                    @if (tr.signal_kind === 'cash_fund') {
-                      <span class="trade-test-badge" title="Парковка избытка кэша в денежный фонд">фонд</span>
-                    }
                     @if (tr.is_shadow) {
                       <span class="trade-shadow-badge" title="Теневая сделка">теневая</span>
                     }

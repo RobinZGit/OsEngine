@@ -282,11 +282,6 @@
   cursor: wait;
 }
 
-.positions-panel-outer .panel-backtest-active > summary.signals-summary {
-  background: #fde68a;
-  box-shadow: inset 3px 0 0 #f59e0b;
-}
-
 .positions-panel-outer .panel-backtest-active .signals-summary-head .positions-summary-pnl {
   opacity: 0.85;
 }
@@ -466,47 +461,16 @@
 .backtest-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #3b82f6, #2563eb);
-  transition: width 0.45s linear;
+  transition: width 0.3s ease;
 }
 
 .backtest-progress-meta {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
   gap: 0.5rem 1rem;
   margin-top: 0.35rem;
-  font-size: 0.82rem;
-  color: #374151;
-}
-
-.backtest-progress-meta .bp-phase {
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.backtest-progress-meta .bp-pct {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  color: #1d4ed8;
-}
-
-.backtest-progress-detail {
-  margin-top: 0.2rem;
   font-size: 0.78rem;
   color: #4b5563;
-  line-height: 1.35;
-  word-break: break-word;
-}
-
-.backtest-progress-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.85rem;
-  margin-top: 0.3rem;
-  font-size: 0.75rem;
-  color: #6b7280;
-  font-variant-numeric: tabular-nums;
 }
 
 .trade-test-badge {

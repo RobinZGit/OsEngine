@@ -659,9 +659,9 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
 
     await updateRun(pool, runId, {
       status: 'loading_prices',
-      progress_pct: 0,
+      progress_pct: 3,
       phase_message: 'Подготовка данных',
-      phase_detail: `Чтение бумаг (×${BACKTEST_PRICE_CONCURRENCY})`,
+      phase_detail: `Загрузка цен и индикаторов (×${BACKTEST_PRICE_CONCURRENCY})`,
       test_balance: balance,
     });
 
@@ -1075,7 +1075,7 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, workerPool = pool)
   const { rows } = await pool.query(
     `
     INSERT INTO logic_backtest_runs (logic_id, date_from, date_to, status, progress_pct, phase_message, phase_detail, started_at)
-    VALUES ($1, $2, $3, 'pending', 1, 'Запуск', 'Прогон создан', CURRENT_TIMESTAMP)
+    VALUES ($1, $2, $3, 'pending', 2, 'Запуск', 'Прогон создан', CURRENT_TIMESTAMP)
     RETURNING id
     `,
     [logicId, dateFrom, dateTo]
