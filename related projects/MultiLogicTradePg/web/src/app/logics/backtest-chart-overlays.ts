@@ -59,7 +59,25 @@ export type PaperListRow = {
   pnl: number;
   commission: number;
   trade_count: number;
+  /** Нетто открытый остаток: Long +qty, Short −qty (по remaining_qty открытий). */
+  open_qty: number;
 };
+
+function emptyPaperRow(
+  securityId: number,
+  securityName: string,
+  securityPrefix: string | null
+): PaperListRow {
+  return {
+    security_id: securityId,
+    security_name: securityName,
+    security_prefix: securityPrefix,
+    pnl: 0,
+    commission: 0,
+    trade_count: 0,
+    open_qty: 0,
+  };
+}
 
 /** Бумаги, по которым были сделки; optional pin (денежный фонд) — всегда сверху. */
 export function papersWithTrades(
@@ -78,14 +96,9 @@ export function papersWithTrades(
     const key = dtKey(t.bar_dt || t.executed_at);
     if (fromKey && key < fromKey) continue;
     if (toKey && key > toKey) continue;
-    const row = map.get(t.security_id) ?? {
-      security_id: t.security_id,
-      security_name: t.security_name,
-      security_prefix: t.security_prefix,
-      pnl: 0,
-      commission: 0,
-      trade_count: 0,
-    };
+    const row =
+      map.get(t.security_id) ??
+      emptyPaperRow(t.security_id, t.security_name, t.security_prefix);
     row.trade_count += 1;
     if (
       !t.is_shadow &&
@@ -100,6 +113,17 @@ export function papersWithTrades(
       Number.isFinite(Number(t.commission))
     ) {
       row.commission += Number(t.commission);
+    }
+    // Остаток позиции: сумма remaining по Open (фонд не закрывается → иначе всегда «0» в списке).
+    if (!t.is_shadow && t.side_name === 'Open') {
+      const remRaw = t.remaining_qty;
+      const rem =
+        remRaw == null || !Number.isFinite(Number(remRaw))
+          ? Number(t.quantity)
+          : Number(remRaw);
+      if (rem > 0) {
+        row.open_qty += t.action_name === 'Short' ? -rem : rem;
+      }
     }
     map.set(t.security_id, row);
   }
@@ -120,6 +144,7 @@ export function papersWithTrades(
     pnl: fromTrades?.pnl ?? 0,
     commission: fromTrades?.commission ?? 0,
     trade_count: fromTrades?.trade_count ?? 0,
+    open_qty: fromTrades?.open_qty ?? 0,
   };
   return [head, ...sorted.filter((r) => r.security_id !== pinned.security_id)];
 }
