@@ -4081,6 +4081,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -6704,6 +6705,32 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -10772,6 +10799,7 @@ BEGIN
 
     v_park_amount := v_balance - v_threshold;
     IF v_park_amount <= 0 OR v_balance IS NULL THEN
+        -- Типичная причина «TMON не купился»: порог ≥ свободный кэш (часто порог = initial_balance).
         RETURN v_balance;
     END IF;
 
@@ -10789,7 +10817,7 @@ BEGIN
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.cash_fund.skip',
             format('Фонд %s не найден в securities', v_code),
-            jsonb_build_object('fund', v_code),
+            jsonb_build_object('fund', v_code, 'balance', v_balance, 'threshold', v_threshold),
             NULL, p_timeframe_id
         );
         RETURN v_balance;
@@ -10797,12 +10825,31 @@ BEGIN
 
     v_price := logic_cash_fund_price_at(v_security_id, p_timeframe_id, p_bar_dt, v_code);
     IF v_price IS NULL OR v_price <= 0 THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.skip',
+            format('Нет цены для %s на %s', v_code, p_bar_dt),
+            jsonb_build_object('fund', v_code, 'bar_dt', p_bar_dt),
+            v_security_id, p_timeframe_id
+        );
         RETURN v_balance;
     END IF;
 
     v_lot := GREATEST(1, logic_security_lot_size(v_security_id));
     v_qty := (FLOOR(v_park_amount / (v_price * v_lot)))::INTEGER * v_lot;
     IF v_qty < v_lot THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.skip',
+            format('Мало избытка для лота %s: park=%s price=%s', v_code, round(v_park_amount, 2), v_price),
+            jsonb_build_object(
+                'fund', v_code,
+                'park_amount', v_park_amount,
+                'price', v_price,
+                'lot', v_lot,
+                'balance', v_balance,
+                'threshold', v_threshold
+            ),
+            v_security_id, p_timeframe_id
+        );
         RETURN v_balance;
     END IF;
 
@@ -11187,6 +11234,13 @@ BEGIN
             );
         END IF;
     END LOOP;
+
+    -- Финальная парковка после последнего бара (если кэш выше порога).
+    IF v_total > 0 THEN
+        v_balance := logic_backtest_park_excess_cash(
+            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
+        );
+    END IF;
 
     SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
     FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
@@ -12071,6 +12125,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если balance > threshold — BUY фонда; real→T-Bank, fake/без FIGI→sim сделка в боевой книге';
 -- @end logic_cash_fund_park_http
+
 
 
 

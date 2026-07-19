@@ -1141,6 +1141,7 @@ BEGIN
 
     v_park_amount := v_balance - v_threshold;
     IF v_park_amount <= 0 OR v_balance IS NULL THEN
+        -- Типичная причина «TMON не купился»: порог ≥ свободный кэш (часто порог = initial_balance).
         RETURN v_balance;
     END IF;
 
@@ -1158,7 +1159,7 @@ BEGIN
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.cash_fund.skip',
             format('Фонд %s не найден в securities', v_code),
-            jsonb_build_object('fund', v_code),
+            jsonb_build_object('fund', v_code, 'balance', v_balance, 'threshold', v_threshold),
             NULL, p_timeframe_id
         );
         RETURN v_balance;
@@ -1166,12 +1167,31 @@ BEGIN
 
     v_price := logic_cash_fund_price_at(v_security_id, p_timeframe_id, p_bar_dt, v_code);
     IF v_price IS NULL OR v_price <= 0 THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.skip',
+            format('Нет цены для %s на %s', v_code, p_bar_dt),
+            jsonb_build_object('fund', v_code, 'bar_dt', p_bar_dt),
+            v_security_id, p_timeframe_id
+        );
         RETURN v_balance;
     END IF;
 
     v_lot := GREATEST(1, logic_security_lot_size(v_security_id));
     v_qty := (FLOOR(v_park_amount / (v_price * v_lot)))::INTEGER * v_lot;
     IF v_qty < v_lot THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.skip',
+            format('Мало избытка для лота %s: park=%s price=%s', v_code, round(v_park_amount, 2), v_price),
+            jsonb_build_object(
+                'fund', v_code,
+                'park_amount', v_park_amount,
+                'price', v_price,
+                'lot', v_lot,
+                'balance', v_balance,
+                'threshold', v_threshold
+            ),
+            v_security_id, p_timeframe_id
+        );
         RETURN v_balance;
     END IF;
 
@@ -1556,6 +1576,13 @@ BEGIN
             );
         END IF;
     END LOOP;
+
+    -- Финальная парковка после последнего бара (если кэш выше порога).
+    IF v_total > 0 THEN
+        v_balance := logic_backtest_park_excess_cash(
+            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
+        );
+    END IF;
 
     SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
     FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;

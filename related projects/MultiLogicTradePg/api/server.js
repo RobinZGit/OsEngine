@@ -2611,6 +2611,212 @@ app.post('/api/logics/:id/non-trading-periods/moex-defaults', async (req, res) =
   }
 });
 
+function parseTimeHm(raw) {
+  const s = String(raw ?? '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isInteger(h) || !Number.isInteger(min) || h < 0 || h > 23 || min < 0 || min > 59) {
+    return null;
+  }
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+}
+
+async function fetchNonTradingIntervals(pool, logicId) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      id,
+      logic_id,
+      day_of_week,
+      to_char(time_from, 'HH24:MI') AS time_from,
+      to_char(time_to, 'HH24:MI') AS time_to,
+      note,
+      display_order,
+      is_active
+    FROM logic_non_trading_intervals
+    WHERE logic_id = $1
+    ORDER BY day_of_week, time_from, id
+    `,
+    [logicId]
+  );
+  return rows;
+}
+
+app.post('/api/logics/:id/non-trading-periods', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  const day = Math.round(Number(req.body?.day_of_week));
+  const timeFrom = parseTimeHm(req.body?.time_from);
+  const timeTo = parseTimeHm(req.body?.time_to);
+  const note =
+    req.body?.note == null || req.body?.note === ''
+      ? null
+      : String(req.body.note).trim().slice(0, 200);
+  if (!Number.isInteger(day) || day < 1 || day > 7) {
+    res.status(400).json({ error: 'day_of_week: целое 1…7 (Пн…Вс)' });
+    return;
+  }
+  if (!timeFrom || !timeTo) {
+    res.status(400).json({ error: 'time_from / time_to: формат ЧЧ:ММ' });
+    return;
+  }
+  if (timeFrom > timeTo) {
+    res.status(400).json({ error: 'time_from не позже time_to' });
+    return;
+  }
+  try {
+    const { rows: exists } = await pool.query('SELECT id FROM logics WHERE id = $1', [id]);
+    if (exists.length === 0) {
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    const { rows: ord } = await pool.query(
+      `
+      SELECT COALESCE(MAX(display_order), 0) + 1 AS n
+      FROM logic_non_trading_intervals
+      WHERE logic_id = $1
+      `,
+      [id]
+    );
+    await pool.query(
+      `
+      INSERT INTO logic_non_trading_intervals (
+        logic_id, day_of_week, time_from, time_to, note, display_order, is_active
+      )
+      VALUES ($1, $2, $3::time, $4::time, $5, $6, TRUE)
+      `,
+      [id, day, timeFrom, timeTo, note, Number(ord[0]?.n ?? 1)]
+    );
+    const trading = await getTradingParams(pool, id);
+    res.status(201).json({
+      logic_id: id,
+      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      intervals: await fetchNonTradingIntervals(pool, id),
+    });
+  } catch (err) {
+    console.error('POST /api/logics/:id/non-trading-periods', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/logic-non-trading-intervals/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid interval id' });
+    return;
+  }
+  const patches = [];
+  const vals = [];
+  let n = 1;
+  if (req.body?.day_of_week !== undefined) {
+    const day = Math.round(Number(req.body.day_of_week));
+    if (!Number.isInteger(day) || day < 1 || day > 7) {
+      res.status(400).json({ error: 'day_of_week: целое 1…7' });
+      return;
+    }
+    patches.push(`day_of_week = $${n++}`);
+    vals.push(day);
+  }
+  if (req.body?.time_from !== undefined) {
+    const t = parseTimeHm(req.body.time_from);
+    if (!t) {
+      res.status(400).json({ error: 'time_from: ЧЧ:ММ' });
+      return;
+    }
+    patches.push(`time_from = $${n++}::time`);
+    vals.push(t);
+  }
+  if (req.body?.time_to !== undefined) {
+    const t = parseTimeHm(req.body.time_to);
+    if (!t) {
+      res.status(400).json({ error: 'time_to: ЧЧ:ММ' });
+      return;
+    }
+    patches.push(`time_to = $${n++}::time`);
+    vals.push(t);
+  }
+  if (req.body?.note !== undefined) {
+    const note =
+      req.body.note == null || req.body.note === ''
+        ? null
+        : String(req.body.note).trim().slice(0, 200);
+    patches.push(`note = $${n++}`);
+    vals.push(note);
+  }
+  if (req.body?.is_active !== undefined) {
+    patches.push(`is_active = $${n++}`);
+    vals.push(Boolean(req.body.is_active));
+  }
+  if (patches.length === 0) {
+    res.status(400).json({ error: 'Нечего обновлять' });
+    return;
+  }
+  vals.push(id);
+  try {
+    const { rows } = await pool.query(
+      `
+      UPDATE logic_non_trading_intervals
+      SET ${patches.join(', ')}
+      WHERE id = $${n}
+      RETURNING logic_id
+      `,
+      vals
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Interval not found' });
+      return;
+    }
+    const logicId = rows[0].logic_id;
+    const trading = await getTradingParams(pool, logicId);
+    res.json({
+      logic_id: logicId,
+      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      intervals: await fetchNonTradingIntervals(pool, logicId),
+    });
+  } catch (err) {
+    console.error('PATCH /api/logic-non-trading-intervals/:id', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/logic-non-trading-intervals/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid interval id' });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `
+      DELETE FROM logic_non_trading_intervals
+      WHERE id = $1
+      RETURNING logic_id
+      `,
+      [id]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Interval not found' });
+      return;
+    }
+    const logicId = rows[0].logic_id;
+    const trading = await getTradingParams(pool, logicId);
+    res.json({
+      ok: true,
+      logic_id: logicId,
+      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      intervals: await fetchNonTradingIntervals(pool, logicId),
+    });
+  } catch (err) {
+    console.error('DELETE /api/logic-non-trading-intervals/:id', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const LOGIC_TRADE_SELECT = `
   SELECT
     lt.id,

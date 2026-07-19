@@ -1130,12 +1130,27 @@ tbody tr.logic-main-row:hover {
   padding: 0.4rem 0.35rem;
 }
 
+.periods-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  margin-bottom: 0.35rem;
+}
+
 .periods-day-title {
   font-weight: 700;
   font-size: 0.8rem;
   text-align: center;
-  margin-bottom: 0.35rem;
   color: #1e293b;
+  flex: 1;
+}
+
+.periods-add-btn {
+  min-width: 1.5rem;
+  padding: 0.1rem 0.35rem;
+  line-height: 1.2;
+  font-weight: 700;
 }
 
 .periods-day-intervals {
@@ -1157,9 +1172,50 @@ tbody tr.logic-main-row:hover {
   white-space: nowrap;
 }
 
+.periods-interval-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border-radius: 4px;
+  background: #fee2e2;
+}
+
+.periods-time {
+  width: 5.2rem;
+  min-width: 0;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.15rem;
+  border: 1px solid #fca5a5;
+  border-radius: 3px;
+  background: #fff;
+  color: #7f1d1d;
+}
+
+.periods-time-sep {
+  font-size: 0.7rem;
+  color: #991b1b;
+}
+
+.periods-del-btn {
+  width: 1.35rem;
+  height: 1.35rem;
+  min-width: 1.35rem;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
 .periods-interval-empty {
   background: #f1f5f9;
   color: #94a3b8;
+}
+
+.periods-warn {
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
 }
 
 .btn-securities {

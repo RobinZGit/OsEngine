@@ -9,6 +9,7 @@ import { Observable, map } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import {
   LogicIndicatorSignalRow,
+  LogicNonTradingIntervalPayload,
   LogicNonTradingPeriodsResponse,
   LogicRow,
   LogicParamsResponse,
@@ -215,6 +216,34 @@ export class LogicsService {
     return this.http.post<LogicNonTradingPeriodsResponse>(
       `${this.appConfig.apiUrl}/logics/${logicId}/non-trading-periods/moex-defaults`,
       {}
+    );
+  }
+
+  addNonTradingPeriod(
+    logicId: number,
+    payload: LogicNonTradingIntervalPayload
+  ): Observable<LogicNonTradingPeriodsResponse> {
+    return this.http.post<LogicNonTradingPeriodsResponse>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/non-trading-periods`,
+      payload
+    );
+  }
+
+  updateNonTradingPeriod(
+    intervalId: number,
+    payload: LogicNonTradingIntervalPayload
+  ): Observable<LogicNonTradingPeriodsResponse> {
+    return this.http.patch<LogicNonTradingPeriodsResponse>(
+      `${this.appConfig.apiUrl}/logic-non-trading-intervals/${intervalId}`,
+      payload
+    );
+  }
+
+  deleteNonTradingPeriod(
+    intervalId: number
+  ): Observable<LogicNonTradingPeriodsResponse & { ok?: boolean }> {
+    return this.http.delete<LogicNonTradingPeriodsResponse & { ok?: boolean }>(
+      `${this.appConfig.apiUrl}/logic-non-trading-intervals/${intervalId}`
     );
   }
 

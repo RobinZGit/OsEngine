@@ -162,8 +162,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
   periodsApplying = new Set<number>();
   nonTradingByLogic = new Map<
     number,
-    { use_non_trading_periods: boolean; intervals: { day_of_week: number; time_from: string; time_to: string; note?: string | null }[] }
+    {
+      use_non_trading_periods: boolean;
+      intervals: {
+        id: number;
+        day_of_week: number;
+        time_from: string;
+        time_to: string;
+        note?: string | null;
+      }[];
+    }
   >();
+  periodsSaving = new Set<number>();
   readonly weekDayLabels = [
     { dow: 1, label: 'Пн' },
     { dow: 2, label: 'Вт' },
@@ -909,10 +919,105 @@ export class LogicsComponent implements OnInit, OnDestroy {
   intervalsForDay(
     logicId: number,
     dayOfWeek: number
-  ): { time_from: string; time_to: string; note?: string | null }[] {
+  ): {
+    id: number;
+    day_of_week: number;
+    time_from: string;
+    time_to: string;
+    note?: string | null;
+  }[] {
     const row = this.nonTradingByLogic.get(logicId);
     if (!row) return [];
     return row.intervals.filter((i) => i.day_of_week === dayOfWeek);
+  }
+
+  private applyNonTradingResponse(
+    logicId: number,
+    resp: {
+      use_non_trading_periods?: boolean;
+      intervals?: {
+        id: number;
+        day_of_week: number;
+        time_from: string;
+        time_to: string;
+        note?: string | null;
+      }[];
+    }
+  ): void {
+    this.nonTradingByLogic.set(logicId, {
+      use_non_trading_periods: resp.use_non_trading_periods !== false,
+      intervals: resp.intervals ?? [],
+    });
+  }
+
+  addNonTradingInterval(logicId: number, dayOfWeek: number, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.periodsSaving.has(logicId)) return;
+    this.periodsSaving.add(logicId);
+    const defaults =
+      dayOfWeek >= 6
+        ? { time_from: '00:00', time_to: '23:59' }
+        : { time_from: '18:40', time_to: '23:59' };
+    this.logicsService
+      .addNonTradingPeriod(logicId, {
+        day_of_week: dayOfWeek,
+        time_from: defaults.time_from,
+        time_to: defaults.time_to,
+      })
+      .subscribe({
+        next: (resp) => {
+          this.applyNonTradingResponse(logicId, resp);
+          this.periodsSaving.delete(logicId);
+        },
+        error: (err) => {
+          console.error('addNonTradingPeriod', err);
+          this.periodsSaving.delete(logicId);
+        },
+      });
+  }
+
+  onNonTradingIntervalTimeChange(
+    logicId: number,
+    intervalId: number,
+    field: 'time_from' | 'time_to',
+    value: string
+  ): void {
+    const raw = String(value ?? '').trim();
+    if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) return;
+    const hm = raw.slice(0, 5);
+    if (this.periodsSaving.has(intervalId)) return;
+    this.periodsSaving.add(intervalId);
+    this.logicsService
+      .updateNonTradingPeriod(intervalId, { [field]: hm })
+      .subscribe({
+        next: (resp) => {
+          this.applyNonTradingResponse(logicId, resp);
+          this.periodsSaving.delete(intervalId);
+        },
+        error: (err) => {
+          console.error('updateNonTradingPeriod', err);
+          this.periodsSaving.delete(intervalId);
+          this.loadNonTradingPeriods(logicId, true);
+        },
+      });
+  }
+
+  deleteNonTradingInterval(logicId: number, intervalId: number, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.periodsSaving.has(intervalId)) return;
+    this.periodsSaving.add(intervalId);
+    this.logicsService.deleteNonTradingPeriod(intervalId).subscribe({
+      next: (resp) => {
+        this.applyNonTradingResponse(logicId, resp);
+        this.periodsSaving.delete(intervalId);
+      },
+      error: (err) => {
+        console.error('deleteNonTradingPeriod', err);
+        this.periodsSaving.delete(intervalId);
+      },
+    });
   }
 
   useNonTradingPeriods(logicId: number): boolean {

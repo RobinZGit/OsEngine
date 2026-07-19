@@ -84,6 +84,14 @@ export interface LogicNonTradingIntervalRow {
   is_active: boolean;
 }
 
+export interface LogicNonTradingIntervalPayload {
+  day_of_week?: number;
+  time_from?: string;
+  time_to?: string;
+  note?: string | null;
+  is_active?: boolean;
+}
+
 export interface LogicNonTradingPeriodsResponse {
   logic_id: number;
   use_non_trading_periods: boolean;

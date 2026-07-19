@@ -724,7 +724,8 @@
                               </td>
 
                               <td class="params-hint">
-                                Паркуется только сумма выше порога. Если порог ≥ начальный баланс — до прибыли фонд не купится
+                                Паркуется свободный кэш выше порога. Если порог = начальный баланс (напр. оба 1 000 000) —
+                                фонд купится только когда свободных денег станет больше порога (не путать с финрезом в позициях)
                               </td>
 
                             </tr>
@@ -1485,20 +1486,61 @@
 
                         <p class="signals-help">
                           Неторговые интервалы (МСК) — в эти окна новые сделки по сигналам не открываются.
-                          По умолчанию: основная сессия TQBR ≈ 10:00–18:40 пн–пт.
+                          Стоп-лоссы по уже открытым позициям могут сработать и в неторговое время.
+                          По умолчанию TQBR ≈ вне 10:00–18:40 пн–пт + выходные целиком.
                         </p>
+
+                        @if (!useNonTradingPeriods(row.id)) {
+                          <p class="signals-help periods-warn">
+                            Галочка «Учитывать неторговые периоды» выключена — интервалы ниже
+                            <strong>не применяются</strong>, сделки возможны в любое время, включая субботу и воскресенье.
+                          </p>
+                        }
 
                         <div class="periods-days">
                           @for (day of weekDayLabels; track day.dow) {
                             <div class="periods-day">
-                              <div class="periods-day-title">{{ day.label }}</div>
+                              <div class="periods-day-head">
+                                <div class="periods-day-title">{{ day.label }}</div>
+                                <button
+                                  type="button"
+                                  class="btn btn-sm periods-add-btn"
+                                  title="Добавить интервал"
+                                  (click)="addNonTradingInterval(row.id, day.dow, $event)"
+                                >
+                                  +
+                                </button>
+                              </div>
                               <div class="periods-day-intervals">
-                                @for (iv of intervalsForDay(row.id, day.dow); track iv.time_from + iv.time_to) {
-                                  <span class="periods-interval" [title]="iv.note || ''">
-                                    {{ iv.time_from }}–{{ iv.time_to }}
-                                  </span>
+                                @for (iv of intervalsForDay(row.id, day.dow); track iv.id) {
+                                  <div class="periods-interval-row" [title]="iv.note || ''">
+                                    <input
+                                      type="time"
+                                      class="periods-time"
+                                      [ngModel]="iv.time_from"
+                                      (ngModelChange)="onNonTradingIntervalTimeChange(row.id, iv.id, 'time_from', $event)"
+                                      (click)="$event.stopPropagation()"
+                                    />
+                                    <span class="periods-time-sep">–</span>
+                                    <input
+                                      type="time"
+                                      class="periods-time"
+                                      [ngModel]="iv.time_to"
+                                      (ngModelChange)="onNonTradingIntervalTimeChange(row.id, iv.id, 'time_to', $event)"
+                                      (click)="$event.stopPropagation()"
+                                    />
+                                    <button
+                                      type="button"
+                                      class="icon-btn icon-danger periods-del-btn"
+                                      title="Удалить интервал"
+                                      aria-label="Удалить интервал"
+                                      (click)="deleteNonTradingInterval(row.id, iv.id, $event)"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
                                 } @empty {
-                                  <span class="periods-interval periods-interval-empty">—</span>
+                                  <span class="periods-interval periods-interval-empty">нет</span>
                                 }
                               </div>
                             </div>
