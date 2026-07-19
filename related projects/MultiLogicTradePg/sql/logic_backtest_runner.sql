@@ -457,13 +457,13 @@ BEGIN
     INSERT INTO logic_trades (
         logic_id, account_id, security_id, timeframe_id,
         side_id, action_id, position_event, signal_kind, signal_formula,
-        quantity, price, bar_dt, is_simulated, is_fictitious,
+        quantity, price, bar_dt, executed_at, is_simulated, is_fictitious,
         is_shadow, is_test, run_id, trade_reason, status
     )
     VALUES (
         p_logic_id, p_account_id, p_security_id, p_timeframe_id,
         p_side_id, p_action_id, v_position_event, p_signal_kind, p_formula,
-        p_quantity, p_price, p_bar_dt, TRUE, FALSE,
+        p_quantity, p_price, p_bar_dt, p_bar_dt, TRUE, FALSE,
         p_is_shadow, TRUE, p_run_id, p_trade_reason, 'filled'
     )
     ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow) DO NOTHING
@@ -1047,7 +1047,65 @@ BEGIN
 END;
 $$;
 
--- Парковка свободного кэша в TMON/LQDT/SBMM внутри теста (is_test=TRUE).
+-- Цена фонда для парковки: свеча TF → любая свеча → HTTP resolve → константа ~100 ₽.
+CREATE OR REPLACE FUNCTION logic_cash_fund_price_at(
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_code TEXT
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_price NUMERIC;
+    v_inst JSONB;
+    v_code TEXT := upper(btrim(COALESCE(p_code, '')));
+BEGIN
+    SELECT p.close_price
+    INTO v_price
+    FROM prices p
+    WHERE p.security_id = p_security_id
+      AND p.timeframe_id = p_timeframe_id
+      AND p.dt <= p_bar_dt
+    ORDER BY p.dt DESC
+    LIMIT 1;
+
+    IF v_price IS NOT NULL AND v_price > 0 THEN
+        RETURN v_price;
+    END IF;
+
+    SELECT p.close_price
+    INTO v_price
+    FROM prices p
+    WHERE p.security_id = p_security_id
+      AND p.dt <= p_bar_dt
+    ORDER BY p.dt DESC
+    LIMIT 1;
+
+    IF v_price IS NOT NULL AND v_price > 0 THEN
+        RETURN v_price;
+    END IF;
+
+    BEGIN
+        v_inst := logic_resolve_cash_fund_instrument(v_code);
+        v_price := COALESCE((v_inst->>'price')::NUMERIC, 0);
+        IF v_price > 0 THEN
+            RETURN v_price;
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+
+    -- БПИФ денежного рынка обычно около 100 ₽/пай — без свечей всё равно паркуем.
+    RETURN 100;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_cash_fund_price_at(INTEGER, INTEGER, TIMESTAMP, TEXT) IS
+'Цена TMON/LQDT/SBMM для парковки: prices → resolve → fallback 100';
+
+-- Парковка свободного кэша в TMON/LQDT/SBMM внутри теста (каждый бар с избытком).
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -1097,19 +1155,16 @@ BEGIN
     LIMIT 1;
 
     IF v_security_id IS NULL THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.skip',
+            format('Фонд %s не найден в securities', v_code),
+            jsonb_build_object('fund', v_code),
+            NULL, p_timeframe_id
+        );
         RETURN v_balance;
     END IF;
 
-    -- Ближайшая цена на/до бара (у фонда могут быть другие часы, чем у акций).
-    SELECT p.close_price
-    INTO v_price
-    FROM prices p
-    WHERE p.security_id = v_security_id
-      AND p.timeframe_id = p_timeframe_id
-      AND p.dt <= p_bar_dt
-    ORDER BY p.dt DESC
-    LIMIT 1;
-
+    v_price := logic_cash_fund_price_at(v_security_id, p_timeframe_id, p_bar_dt, v_code);
     IF v_price IS NULL OR v_price <= 0 THEN
         RETURN v_balance;
     END IF;
@@ -1139,12 +1194,79 @@ BEGIN
         'open'
     );
 
+    IF v_trade_id IS NOT NULL THEN
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.cash_fund.park',
+            format('Тест: куплено %s qty=%s price=%s bar=%s', v_code, v_qty, v_price, p_bar_dt),
+            jsonb_build_object(
+                'fund', v_code,
+                'quantity', v_qty,
+                'price', v_price,
+                'park_amount', v_park_amount,
+                'trade_id', v_trade_id,
+                'bar_dt', p_bar_dt
+            ),
+            v_security_id, p_timeframe_id
+        );
+    END IF;
+
     RETURN v_balance;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_park_excess_cash(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'Тест: если test_balance > cash_fund_threshold — BUY фонда (TMON/LQDT/SBMM) на избыток кэша';
+'Тест: на каждом баре, если balance > cash_fund_threshold — BUY фонда на избыток (цена из prices или fallback 100)';
+
+-- Закрыть все test-позиции кроме денежного фонда (TMON/LQDT/SBMM).
+CREATE OR REPLACE FUNCTION logic_backtest_close_all_except_funds(
+    p_run_id BIGINT,
+    p_logic_id INTEGER,
+    p_account_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_sec RECORD;
+    v_balance NUMERIC := p_balance;
+    v_closed INTEGER;
+    v_new NUMERIC;
+BEGIN
+    FOR v_sec IN
+        SELECT DISTINCT lt.security_id
+        FROM logic_trades lt
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.status IN ('filled', 'submitted')
+          AND NOT EXISTS (
+              SELECT 1 FROM security_prefixes sp
+              WHERE sp.security_id = lt.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
+    LOOP
+        SELECT o_closed, o_new_balance
+        INTO v_closed, v_new
+        FROM logic_backtest_close_security(
+            p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_timeframe_id,
+            p_bar_dt, FALSE, 'eod.close', v_balance
+        );
+        v_balance := v_new;
+        SELECT o_closed, o_new_balance
+        INTO v_closed, v_new
+        FROM logic_backtest_close_security(
+            p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_timeframe_id,
+            p_bar_dt, TRUE, 'eod.close', v_balance
+        );
+        v_balance := v_new;
+    END LOOP;
+    RETURN v_balance;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
+'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
 CREATE OR REPLACE FUNCTION run_logic_backtest(
     p_logic_id INTEGER,
@@ -1186,6 +1308,8 @@ DECLARE
     v_is INTEGER;
     v_ic INTEGER;
     v_ie INTEGER;
+    v_prev_bar TIMESTAMP;
+    v_next_bar TIMESTAMP;
 BEGIN
     v_date_from := LEAST(p_date_from, p_date_to);
     v_date_to := GREATEST(p_date_from, p_date_to);
@@ -1197,6 +1321,8 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Логика % не найдена', p_logic_id;
     END IF;
+
+    PERFORM logic_ensure_non_trading_periods(p_logic_id);
 
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
     IF v_tf_id IS NULL THEN
@@ -1396,13 +1522,26 @@ BEGIN
         END IF;
 
         v_bar_dt := v_bars[v_i];
+        v_prev_bar := CASE WHEN v_i > 1 THEN v_bars[v_i - 1] ELSE NULL END;
+        v_next_bar := CASE WHEN v_i < v_total THEN v_bars[v_i + 1] ELSE NULL END;
+
         PERFORM logic_backtest_rate_signals(v_run_id, p_logic_id, v_tf_id, v_bar_dt);
         v_balance := logic_backtest_process_risk(
             v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
         );
-        v_balance := logic_backtest_process_signals(
-            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-        );
+
+        IF logic_is_eod_close_bar(p_logic_id, v_bar_dt, v_prev_bar, v_next_bar) THEN
+            v_balance := logic_backtest_close_all_except_funds(
+                v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+            );
+        END IF;
+
+        IF NOT logic_is_non_trading_dt(p_logic_id, v_bar_dt) THEN
+            v_balance := logic_backtest_process_signals(
+                v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+            );
+        END IF;
+
         v_balance := logic_backtest_park_excess_cash(
             v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
         );

@@ -116,6 +116,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   combatRatingReloadToken = new Map<number, number>();
   private ratingPrecalcPollIds = new Set<number>();
   expandedStopsBlocks = new Set<number>();
+  expandedPeriodsBlocks = new Set<number>();
   expandedSecuritiesBlocks = new Set<number>();
   expandedTradesBlocks = new Set<number>();
   expandedTestTradesBlocks = new Set<number>();
@@ -157,6 +158,21 @@ export class LogicsComponent implements OnInit, OnDestroy {
   signalsLoading = new Set<number>();
   stopsLoading = new Set<number>();
   securitiesLoading = new Set<number>();
+  periodsLoading = new Set<number>();
+  periodsApplying = new Set<number>();
+  nonTradingByLogic = new Map<
+    number,
+    { use_non_trading_periods: boolean; intervals: { day_of_week: number; time_from: string; time_to: string; note?: string | null }[] }
+  >();
+  readonly weekDayLabels = [
+    { dow: 1, label: 'Пн' },
+    { dow: 2, label: 'Вт' },
+    { dow: 3, label: 'Ср' },
+    { dow: 4, label: 'Чт' },
+    { dow: 5, label: 'Пт' },
+    { dow: 6, label: 'Сб' },
+    { dow: 7, label: 'Вс' },
+  ];
   tradesLoading = new Set<number>();
   private testTradesInFlight = new Set<number>();
   private liveTradesInFlight = new Set<number>();
@@ -226,6 +242,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       warmup_pretest: boolean;
       cash_fund_code: string;
       cash_fund_threshold: string;
+      use_non_trading_periods: boolean;
+      close_positions_eod: boolean;
       reset_balance: boolean;
     }
   >();
@@ -341,6 +359,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   isSecuritiesBlockExpanded(id: number): boolean {
     return this.expandedSecuritiesBlocks.has(id);
+  }
+
+  isPeriodsBlockExpanded(id: number): boolean {
+    return this.expandedPeriodsBlocks.has(id);
   }
 
   isTradesBlockExpanded(id: number): boolean {
@@ -495,6 +517,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsClosePositionsEodChange(logicId: number, value: boolean): void {
+    this.getParamsDraft(logicId).close_positions_eod = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   private formatPctParam(value: number | string | null | undefined): string {
     if (value == null || value === '') return '10';
     const n =
@@ -575,6 +603,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       warmup_pretest?: boolean;
       cash_fund_code?: string;
       cash_fund_threshold?: number;
+      use_non_trading_periods?: boolean;
+      close_positions_eod?: boolean;
     }
   ): void {
     const idx = this.logics.findIndex((l) => l.id === logicId);
@@ -598,6 +628,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     warmup_pretest?: boolean;
     cash_fund_code?: string;
     cash_fund_threshold?: number;
+    use_non_trading_periods?: boolean;
+    close_positions_eod?: boolean;
   }): {
     timeframe: string;
     position_size_pct: string;
@@ -612,6 +644,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     warmup_pretest: boolean;
     cash_fund_code: string;
     cash_fund_threshold: string;
+    use_non_trading_periods: boolean;
+    close_positions_eod: boolean;
     reset_balance: boolean;
   } {
     const method: 'FIFO' | 'AVERAGE' =
@@ -638,6 +672,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold: this.formatBalanceDraft(
         trading.cash_fund_threshold != null ? trading.cash_fund_threshold : 100000
       ),
+      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      close_positions_eod: trading.close_positions_eod === true,
       reset_balance: false,
     };
   }
@@ -678,6 +714,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       warmup_pretest: row.warmup_pretest,
       cash_fund_code: row.cash_fund_code,
       cash_fund_threshold: row.cash_fund_threshold,
+      use_non_trading_periods: row.use_non_trading_periods,
+      close_positions_eod: row.close_positions_eod,
     });
   }
 
@@ -765,6 +803,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
         warmup_pretest: draft.warmup_pretest,
         cash_fund_code,
         cash_fund_threshold,
+        use_non_trading_periods: draft.use_non_trading_periods,
+        close_positions_eod: draft.close_positions_eod,
         reset_balance: draft.reset_balance,
       })
       .subscribe({
@@ -774,6 +814,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.paramsDirtyIds.delete(row.id);
           this.savingParamsIds.delete(row.id);
           this.paramsSaveErrors.delete(row.id);
+          const nt = this.nonTradingByLogic.get(row.id);
+          if (nt) {
+            this.nonTradingByLogic.set(row.id, {
+              ...nt,
+              use_non_trading_periods: resp.trading.use_non_trading_periods !== false,
+            });
+          }
           // Денежный фонд добавлен/снят в logic_securities — обновить список «Ценные бумаги»
           this.loadSecuritiesForLogic(row.id, true);
           this.techLog.event(
@@ -838,6 +885,103 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedSecuritiesBlocks.add(logicId);
       this.loadSecuritiesForLogic(logicId);
     }
+  }
+
+  togglePeriodsBlock(logicId: number, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.expandedPeriodsBlocks.has(logicId)) {
+      this.expandedPeriodsBlocks.delete(logicId);
+    } else {
+      this.expandedPeriodsBlocks.add(logicId);
+      this.loadNonTradingPeriods(logicId);
+    }
+  }
+
+  isPeriodsLoading(logicId: number): boolean {
+    return this.periodsLoading.has(logicId);
+  }
+
+  isPeriodsApplying(logicId: number): boolean {
+    return this.periodsApplying.has(logicId);
+  }
+
+  intervalsForDay(
+    logicId: number,
+    dayOfWeek: number
+  ): { time_from: string; time_to: string; note?: string | null }[] {
+    const row = this.nonTradingByLogic.get(logicId);
+    if (!row) return [];
+    return row.intervals.filter((i) => i.day_of_week === dayOfWeek);
+  }
+
+  useNonTradingPeriods(logicId: number): boolean {
+    const cached = this.nonTradingByLogic.get(logicId);
+    if (cached) return cached.use_non_trading_periods;
+    return this.getParamsDraft(logicId).use_non_trading_periods !== false;
+  }
+
+  onUseNonTradingPeriodsChange(logicId: number, value: boolean, event?: Event): void {
+    event?.stopPropagation();
+    this.getParamsDraft(logicId).use_non_trading_periods = value;
+    const cached = this.nonTradingByLogic.get(logicId);
+    if (cached) {
+      this.nonTradingByLogic.set(logicId, { ...cached, use_non_trading_periods: value });
+    }
+    this.logicsService
+      .saveLogicParams(logicId, { use_non_trading_periods: value })
+      .subscribe({
+        next: (resp) => {
+          this.applyTradingParamsToLogic(logicId, resp.trading);
+          this.getParamsDraft(logicId).use_non_trading_periods =
+            resp.trading.use_non_trading_periods !== false;
+        },
+        error: (err) => {
+          console.error('use_non_trading_periods save', err);
+        },
+      });
+  }
+
+  applyMoexNonTradingPeriods(logicId: number, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.periodsApplying.add(logicId);
+    this.logicsService.applyMoexNonTradingPeriods(logicId).subscribe({
+      next: (resp) => {
+        this.nonTradingByLogic.set(logicId, {
+          use_non_trading_periods: resp.use_non_trading_periods !== false,
+          intervals: resp.intervals ?? [],
+        });
+        this.periodsApplying.delete(logicId);
+        this.expandedPeriodsBlocks.add(logicId);
+      },
+      error: (err) => {
+        console.error('applyMoexNonTradingPeriods', err);
+        this.periodsApplying.delete(logicId);
+      },
+    });
+  }
+
+  private loadNonTradingPeriods(logicId: number, force = false): void {
+    if (!force && this.nonTradingByLogic.has(logicId) && !this.periodsLoading.has(logicId)) {
+      return;
+    }
+    this.periodsLoading.add(logicId);
+    this.logicsService.getNonTradingPeriods(logicId).subscribe({
+      next: (resp) => {
+        this.nonTradingByLogic.set(logicId, {
+          use_non_trading_periods: resp.use_non_trading_periods !== false,
+          intervals: resp.intervals ?? [],
+        });
+        this.getParamsDraft(logicId).use_non_trading_periods =
+          resp.use_non_trading_periods !== false;
+        this.periodsLoading.delete(logicId);
+      },
+      error: (err) => {
+        console.error('getNonTradingPeriods', err);
+        this.periodsLoading.delete(logicId);
+      },
+    });
   }
 
   isTestTradesBlockExpanded(id: number): boolean {

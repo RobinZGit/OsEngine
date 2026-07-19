@@ -7,7 +7,16 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { AppConfigService } from './app-config.service';
-import { LogicIndicatorSignalRow, LogicRow, LogicParamsResponse, LogicSecurityRow, LogicStopRow, LogicTradingParamsPayload, LogicTradingParamsResponse } from '../models/logic.model';
+import {
+  LogicIndicatorSignalRow,
+  LogicNonTradingPeriodsResponse,
+  LogicRow,
+  LogicParamsResponse,
+  LogicSecurityRow,
+  LogicStopRow,
+  LogicTradingParamsPayload,
+  LogicTradingParamsResponse,
+} from '../models/logic.model';
 import { LogicTradeLotRow, LogicTradeRow } from '../shared/logic-trade';
 import type { BacktestRunStatus } from '../logics/logic-positions-panel.component';
 import { LogicPayload } from '../models/lookup.model';
@@ -191,6 +200,21 @@ export class LogicsService {
   deleteLogic(id: number): Observable<{ ok: boolean; id: number }> {
     return this.http.delete<{ ok: boolean; id: number }>(
       `${this.appConfig.apiUrl}/logics/${id}`
+    );
+  }
+
+  getNonTradingPeriods(logicId: number): Observable<LogicNonTradingPeriodsResponse> {
+    return this.http.get<LogicNonTradingPeriodsResponse>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/non-trading-periods`
+    );
+  }
+
+  applyMoexNonTradingPeriods(
+    logicId: number
+  ): Observable<LogicNonTradingPeriodsResponse> {
+    return this.http.post<LogicNonTradingPeriodsResponse>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/non-trading-periods/moex-defaults`,
+      {}
     );
   }
 

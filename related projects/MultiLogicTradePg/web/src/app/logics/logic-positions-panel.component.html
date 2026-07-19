@@ -195,7 +195,7 @@
               <tr>
                 <th></th>
                 <th>#</th>
-                <th>Время</th>
+                <th>{{ isTest ? 'Бар' : 'Время' }}</th>
                 <th>Бумага</th>
                 <th>Операция</th>
                 <th>Открыто</th>
@@ -222,7 +222,7 @@
                     }
                   </td>
                   <td>#{{ tr.id }}</td>
-                  <td>{{ formatTradeDt(tr.executed_at) }}</td>
+                  <td [title]="isTest ? ('Исполнено прогоном: ' + formatTradeDt(tr.executed_at)) : ''">{{ tradeDisplayDt(tr) }}</td>
                   <td>
                     <strong>{{ tr.security_prefix || tr.security_name }}</strong>
                     @if (tr.is_shadow) {
@@ -307,7 +307,7 @@
               <tr>
                 <th></th>
                 <th>#</th>
-                <th>Время</th>
+                <th>{{ isTest ? 'Бар' : 'Время' }}</th>
                 <th>Бумага</th>
                 <th>Операция</th>
                 <th>Кол-во</th>
@@ -329,7 +329,7 @@
                     <span class="trade-row-chevron" [class.open]="isTradeRowExpanded(tr.id)" aria-hidden="true">▸</span>
                   </td>
                   <td>#{{ tr.id }}</td>
-                  <td>{{ formatTradeDt(tr.executed_at) }}</td>
+                  <td [title]="isTest ? ('Исполнено прогоном: ' + formatTradeDt(tr.executed_at)) : ''">{{ tradeDisplayDt(tr) }}</td>
                   <td>
                     <strong>{{ tr.security_prefix || tr.security_name }}</strong>
                     @if (tr.is_shadow) {

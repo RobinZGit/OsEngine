@@ -1656,6 +1656,19 @@ app.post('/api/logics/:id/copy', async (req, res) => {
       [copy.id, id]
     );
 
+    await client.query(
+      `
+      INSERT INTO logic_non_trading_intervals (
+        logic_id, day_of_week, time_from, time_to, note, display_order, is_active
+      )
+      SELECT $1, day_of_week, time_from, time_to, note, display_order, is_active
+      FROM logic_non_trading_intervals
+      WHERE logic_id = $2
+      ORDER BY display_order, id
+      `,
+      [copy.id, id]
+    );
+
     await client.query('COMMIT');
     const { rows: fullRows } = await pool.query(
       `
@@ -2503,6 +2516,97 @@ app.delete('/api/logic-securities/:id', async (req, res) => {
     res.json({ ok: true, id });
   } catch (err) {
     console.error('DELETE /api/logic-securities/:id', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/logics/:id/non-trading-periods', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    await pool.query('SELECT logic_ensure_non_trading_periods($1)', [id]);
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        logic_id,
+        day_of_week,
+        to_char(time_from, 'HH24:MI') AS time_from,
+        to_char(time_to, 'HH24:MI') AS time_to,
+        note,
+        display_order,
+        is_active
+      FROM logic_non_trading_intervals
+      WHERE logic_id = $1
+      ORDER BY day_of_week, time_from, id
+      `,
+      [id]
+    );
+    const trading = await getTradingParams(pool, id);
+    res.json({
+      logic_id: id,
+      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      intervals: rows,
+    });
+  } catch (err) {
+    console.error('GET /api/logics/:id/non-trading-periods', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/logics/:id/non-trading-periods/moex-defaults', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows: exists } = await pool.query('SELECT id FROM logics WHERE id = $1', [id]);
+    if (exists.length === 0) {
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    const { rows } = await pool.query(
+      'SELECT logic_apply_moex_non_trading_periods($1::INTEGER) AS n',
+      [id]
+    );
+    const { rows: intervals } = await pool.query(
+      `
+      SELECT
+        id,
+        logic_id,
+        day_of_week,
+        to_char(time_from, 'HH24:MI') AS time_from,
+        to_char(time_to, 'HH24:MI') AS time_to,
+        note,
+        display_order,
+        is_active
+      FROM logic_non_trading_intervals
+      WHERE logic_id = $1
+      ORDER BY day_of_week, time_from, id
+      `,
+      [id]
+    );
+    const trading = await getTradingParams(pool, id);
+    await writeTechLogEvent(pool, {
+      threadKey: `logic:${id}:sessions`,
+      operation: 'logic.non_trading.moex_defaults',
+      message: 'Неторговые периоды установлены как на MOEX',
+      source: 'api',
+      logicId: id,
+      payload: { count: rows[0]?.n ?? intervals.length },
+    });
+    res.json({
+      logic_id: id,
+      applied: Number(rows[0]?.n ?? 0),
+      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      intervals,
+    });
+  } catch (err) {
+    console.error('POST /api/logics/:id/non-trading-periods/moex-defaults', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3429,6 +3533,16 @@ function parseLogicTradingParams(body) {
       return { error: 'Порог свободных денег: число ≥ 0' };
     }
     out.cash_fund_threshold = v;
+    hasField = true;
+  }
+
+  if (body?.use_non_trading_periods !== undefined) {
+    out.use_non_trading_periods = Boolean(body.use_non_trading_periods);
+    hasField = true;
+  }
+
+  if (body?.close_positions_eod !== undefined) {
+    out.close_positions_eod = Boolean(body.close_positions_eod);
     hasField = true;
   }
 

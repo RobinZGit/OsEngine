@@ -883,6 +883,44 @@ BEGIN
     -- Рейтинг сигнала на логике: проверить прошлые срабатывания на следующей свече
     PERFORM logic_signal_rating_resolve_pending(p_logic_id, v_tf_id, v_closed_bar_dt);
 
+    PERFORM logic_ensure_non_trading_periods(p_logic_id);
+
+    -- EOD: закрыть позиции (кроме фондов) на первой свече вечернего окна / последней свече дня
+    IF logic_is_eod_close_bar(
+        p_logic_id,
+        v_closed_bar_dt,
+        v_last_bar_dt,
+        v_closed_bar_dt + make_interval(secs => v_tf_sec)
+    ) THEN
+        PERFORM logic_close_positions_eod_except_funds(p_logic_id);
+        v_balance := logic_ensure_balance(p_logic_id);
+        v_open_positions := logic_count_open_positions(p_logic_id);
+    END IF;
+
+    IF logic_is_non_trading_dt(p_logic_id, v_closed_bar_dt) THEN
+        PERFORM logic_trade_log(
+            p_logic_id,
+            'trade.non_trading_skip',
+            format('Неторговый период: свеча %s — сигналы пропущены', v_closed_bar_dt),
+            jsonb_build_object('closed_bar', v_closed_bar_dt),
+            NULL,
+            v_tf_id
+        );
+        PERFORM logic_upsert_param(
+            p_logic_id,
+            'last_trade_check_at',
+            to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS'),
+            'text'
+        );
+        PERFORM logic_upsert_param(
+            p_logic_id,
+            'last_trade_bar_dt',
+            to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+            'text'
+        );
+        RETURN 0;
+    END IF;
+
     PERFORM logic_trade_log(
         p_logic_id,
         'trade.bar_check',

@@ -116,7 +116,13 @@ $$;
 COMMENT ON FUNCTION logic_ensure_security_market_price(INTEGER, INTEGER, INTEGER) IS
 'Последняя цена для закрытия: из БД или load_prices (T-Bank/MOEX), затем fallback по любому TF';
 
-CREATE OR REPLACE FUNCTION logic_close_all_positions_at_market(p_logic_id INTEGER)
+-- Снять старую одноаргументную сигнатуру (иначе в PG останутся два overload).
+DROP FUNCTION IF EXISTS logic_close_all_positions_at_market(INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_close_all_positions_at_market(
+    p_logic_id INTEGER,
+    p_except_cash_funds BOOLEAN DEFAULT FALSE
+)
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -135,7 +141,10 @@ DECLARE
     v_skipped INTEGER := 0;
     v_errors JSONB := '[]'::jsonb;
     v_bar_dt TIMESTAMP;
-    v_formula TEXT := 'market:close_all';
+    v_formula TEXT := CASE
+        WHEN p_except_cash_funds THEN 'eod.close'
+        ELSE 'market:close_all'
+    END;
     v_quantity INTEGER;
     v_notional NUMERIC;
     v_is_simulated BOOLEAN;
@@ -194,6 +203,14 @@ BEGIN
           AND NOT lt.is_shadow
           AND NOT lt.is_test
           AND lt.status IN ('filled', 'submitted')
+          AND (
+              NOT p_except_cash_funds
+              OR NOT EXISTS (
+                  SELECT 1 FROM security_prefixes sp
+                  WHERE sp.security_id = lt.security_id
+                    AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+              )
+          )
     LOOP
         v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
         v_short_qty := logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE);
@@ -432,5 +449,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION logic_close_all_positions_at_market(INTEGER) IS
-'Ручное закрытие всех открытых long/short; цена из БД или load_prices; PnL через logic_trade_finalize';
+COMMENT ON FUNCTION logic_close_all_positions_at_market(INTEGER, BOOLEAN) IS
+'Ручное закрытие long/short по рынку; p_except_cash_funds=TRUE — не трогать TMON/LQDT/SBMM';

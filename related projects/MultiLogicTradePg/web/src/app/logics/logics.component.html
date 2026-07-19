@@ -700,7 +700,7 @@
                               </td>
 
                               <td class="params-hint">
-                                Пусто = не покупать. TMON / LQDT / SBMM — парковка избытка в тесте и на реальном счёте (бой: T-Bank; fake в бою только лог)
+                                Пусто = не покупать. TMON / LQDT / SBMM — на каждой закрытой свече TF: избыток выше порога → BUY (тест и бой; fake — sim-сделка)
                               </td>
 
                             </tr>
@@ -754,6 +754,18 @@
                                   />
 
                                   Прогрев (предварительное тестирование)
+
+                                </label>
+
+                                <label class="params-reset" (click)="$event.stopPropagation()">
+
+                                  <input
+                                    type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).close_positions_eod"
+                                    (ngModelChange)="onParamsClosePositionsEodChange(row.id, $event)"
+                                  />
+
+                                  Закрывать позиции в конце дня (кроме фондов)
 
                                 </label>
 
@@ -1414,6 +1426,84 @@
                           <strong>По всему портфелю логики</strong> — на весь портфель торговли.
                           Единица: <strong>%</strong> или <strong>ATR</strong> (параметр ATR — позже).
                         </p>
+
+                      </div>
+
+                    </details>
+
+                    <details class="signals-block periods-block" [open]="isPeriodsBlockExpanded(row.id)">
+
+                      <summary class="signals-summary">
+
+                        <span
+                          class="signals-summary-head"
+                          (click)="togglePeriodsBlock(row.id, $event)"
+                        >
+
+                          <span
+                            class="signals-chevron"
+                            [class.open]="isPeriodsBlockExpanded(row.id)"
+                            aria-hidden="true"
+                          >▸</span>
+
+                          <span class="signals-title">Торговые периоды</span>
+
+                          @if (isPeriodsLoading(row.id)) {
+                            <span class="signals-loading">загрузка…</span>
+                          }
+
+                        </span>
+
+                        <span class="signals-summary-actions periods-summary-actions">
+
+                          <label
+                            class="periods-use-flag"
+                            (click)="$event.stopPropagation()"
+                          >
+                            <input
+                              type="checkbox"
+                              [checked]="useNonTradingPeriods(row.id)"
+                              (change)="onUseNonTradingPeriodsChange(row.id, $any($event.target).checked, $event)"
+                            />
+                            Учитывать неторговые периоды
+                          </label>
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-securities"
+                            [disabled]="isPeriodsApplying(row.id)"
+                            (click)="applyMoexNonTradingPeriods(row.id, $event)"
+                          >
+                            {{ isPeriodsApplying(row.id) ? 'Установка…' : 'Установить как на MOEX' }}
+                          </button>
+
+                        </span>
+
+                      </summary>
+
+                      <div class="signals-body">
+
+                        <p class="signals-help">
+                          Неторговые интервалы (МСК) — в эти окна новые сделки по сигналам не открываются.
+                          По умолчанию: основная сессия TQBR ≈ 10:00–18:40 пн–пт.
+                        </p>
+
+                        <div class="periods-days">
+                          @for (day of weekDayLabels; track day.dow) {
+                            <div class="periods-day">
+                              <div class="periods-day-title">{{ day.label }}</div>
+                              <div class="periods-day-intervals">
+                                @for (iv of intervalsForDay(row.id, day.dow); track iv.time_from + iv.time_to) {
+                                  <span class="periods-interval" [title]="iv.note || ''">
+                                    {{ iv.time_from }}–{{ iv.time_to }}
+                                  </span>
+                                } @empty {
+                                  <span class="periods-interval periods-interval-empty">—</span>
+                                }
+                              </div>
+                            </div>
+                          }
+                        </div>
 
                       </div>
 

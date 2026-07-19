@@ -16,6 +16,8 @@ const PARAM_KEYS = {
   WARMUP_PRETEST: 'warmup_pretest',
   CASH_FUND_CODE: 'cash_fund_code',
   CASH_FUND_THRESHOLD: 'cash_fund_threshold',
+  USE_NON_TRADING_PERIODS: 'use_non_trading_periods',
+  CLOSE_POSITIONS_EOD: 'close_positions_eod',
 };
 
 const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
@@ -35,6 +37,8 @@ const DEFAULTS = {
   [PARAM_KEYS.WARMUP_PRETEST]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CASH_FUND_CODE]: { value: '', type: 'text' },
   [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '100000', type: 'money' },
+  [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
+  [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -120,6 +124,8 @@ function rowsToTradingParams(rows) {
       map[PARAM_KEYS.CASH_FUND_THRESHOLD] != null
         ? Number(map[PARAM_KEYS.CASH_FUND_THRESHOLD])
         : 100000,
+    use_non_trading_periods: map[PARAM_KEYS.USE_NON_TRADING_PERIODS] !== false,
+    close_positions_eod: map[PARAM_KEYS.CLOSE_POSITIONS_EOD] === true,
   };
 }
 
@@ -163,6 +169,11 @@ async function ensureDefaultParams(pool, logicId) {
       `,
       [logicId]
     );
+    try {
+      await client.query('SELECT logic_ensure_non_trading_periods($1)', [logicId]);
+    } catch (_e) {
+      /* функция может ещё не быть в БД до применения 02 */
+    }
     await client.query('COMMIT');
     ensuredDefaultParams.add(logicId);
   } catch (err) {
@@ -342,6 +353,26 @@ async function saveTradingParams(pool, logicId, payload) {
       throw new Error('Порог свободных денег: число ≥ 0');
     }
     await upsertParam(pool, logicId, PARAM_KEYS.CASH_FUND_THRESHOLD, v, 'money');
+  }
+
+  if (payload.use_non_trading_periods !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.USE_NON_TRADING_PERIODS,
+      payload.use_non_trading_periods ? 'true' : 'false',
+      'boolean'
+    );
+  }
+
+  if (payload.close_positions_eod !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.CLOSE_POSITIONS_EOD,
+      payload.close_positions_eod ? 'true' : 'false',
+      'boolean'
+    );
   }
 
   return getTradingParams(pool, logicId);

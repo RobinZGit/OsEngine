@@ -1090,6 +1090,78 @@ tbody tr.logic-main-row:hover {
   margin-top: 0;
 }
 
+.periods-block {
+  margin-top: 0;
+}
+
+.periods-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.periods-use-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+}
+
+.periods-days {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.periods-day {
+  flex: 1 1 0;
+  min-width: 5.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 0.4rem 0.35rem;
+}
+
+.periods-day-title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-align: center;
+  margin-bottom: 0.35rem;
+  color: #1e293b;
+}
+
+.periods-day-intervals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: stretch;
+}
+
+.periods-interval {
+  display: block;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  padding: 0.2rem 0.15rem;
+  border-radius: 4px;
+  background: #fee2e2;
+  color: #991b1b;
+  white-space: nowrap;
+}
+
+.periods-interval-empty {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
 .btn-securities {
   border-color: #a5b4fc;
   color: #4338ca;

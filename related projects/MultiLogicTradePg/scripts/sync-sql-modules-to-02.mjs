@@ -206,20 +206,33 @@ sql02 = replaceBetween(
   'signal rating + process_logic_trades + run_trade_cycle'
 );
 
+const sessionsBlock = read('sql/logic_trading_sessions.sql').trimEnd() + '\n\n';
 const backtestBlock = read('sql/logic_backtest_runner.sql').trimEnd() + '\n\n';
-if (sql02.includes('-- @include sql/logic_backtest_runner.sql')) {
+const sessionsAndBacktest =
+  `-- @include sql/logic_trading_sessions.sql\n${sessionsBlock}` +
+  `-- @include sql/logic_backtest_runner.sql (см. sql/logic_backtest_runner.sql — дублируется ниже)\n${backtestBlock}`;
+
+if (sql02.includes('-- @include sql/logic_trading_sessions.sql')) {
+  sql02 = replaceBetween(
+    sql02,
+    '-- @include sql/logic_trading_sessions.sql',
+    '-- @optional-pgcron-block',
+    () => sessionsAndBacktest,
+    'logic_trading_sessions + logic_backtest_runner'
+  );
+} else if (sql02.includes('-- @include sql/logic_backtest_runner.sql')) {
   sql02 = replaceBetween(
     sql02,
     '-- @include sql/logic_backtest_runner.sql',
     '-- @optional-pgcron-block',
-    () =>
-      `-- @include sql/logic_backtest_runner.sql (см. sql/logic_backtest_runner.sql — дублируется ниже)\n${backtestBlock}`,
-    'logic_backtest_runner'
+    () => sessionsAndBacktest,
+    'logic_trading_sessions + logic_backtest_runner'
   );
 } else {
-  const insertBacktest = () =>
-    `-- @include sql/logic_backtest_runner.sql (см. sql/logic_backtest_runner.sql — дублируется ниже)\n${backtestBlock}-- @optional-pgcron-block`;
-  sql02 = sql02.replace('-- @optional-pgcron-block', insertBacktest);
+  sql02 = sql02.replace(
+    '-- @optional-pgcron-block',
+    () => `${sessionsAndBacktest}-- @optional-pgcron-block`
+  );
 }
 
 const calcExtra = read('sql/calc_ind_extra.sql').trimEnd() + '\n';

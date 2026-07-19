@@ -216,12 +216,14 @@ export class LogicPositionsPanelComponent implements OnChanges {
   }
 
   private rebuildTradeCaches(): void {
+    const sortKey = (t: LogicTradeRow) =>
+      new Date(this.isTest ? t.bar_dt || t.executed_at : t.executed_at || t.bar_dt).getTime();
     const open = this.trades
       .filter((t) => this.isOpenPositionTrade(t))
-      .sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
+      .sort((a, b) => sortKey(b) - sortKey(a));
     const close = this.trades
       .filter((t) => t.side_name === 'Close' && (t.status === 'filled' || t.status === 'submitted'))
-      .sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
+      .sort((a, b) => sortKey(b) - sortKey(a));
     let pnl = 0;
     let commission = 0;
     for (const t of this.trades) {
@@ -488,13 +490,17 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
   formatTradeDt(iso: string): string {
-
     if (!iso) return '—';
-
     const d = new Date(iso);
-
     return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('ru-RU');
+  }
 
+  /** В тесте показываем время бара (логика), не wall-clock executed_at прогона. */
+  tradeDisplayDt(tr: { bar_dt?: string | null; executed_at?: string | null }): string {
+    if (this.isTest) {
+      return this.formatTradeDt(tr.bar_dt || tr.executed_at || '');
+    }
+    return this.formatTradeDt(tr.executed_at || tr.bar_dt || '');
   }
 
 

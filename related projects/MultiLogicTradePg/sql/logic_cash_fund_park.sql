@@ -212,6 +212,10 @@ DECLARE
     v_broker_order_id TEXT;
     v_status TEXT;
     v_note TEXT;
+    v_security_id INTEGER;
+    v_side_open_id INTEGER;
+    v_action_long_id INTEGER;
+    v_trade_id BIGINT;
 BEGIN
     SELECT l.id, l.account_id, a.account_type, a.is_active
     INTO v_logic
@@ -284,46 +288,36 @@ BEGIN
     -- Фонд в портфеле логики (сверху списка «Ценные бумаги»)
     PERFORM logic_ensure_cash_fund_security(p_logic_id, v_code);
 
-    IF v_logic.account_type = 'fake' THEN
-        PERFORM logic_trade_log(
-            p_logic_id,
-            'cash_fund.skip_fake',
-            format('Фейк-счёт: парковка %s на %s ₽ не отправляется в T-Bank', v_code, v_park_amount),
-            jsonb_build_object(
-                'fund', v_code,
-                'park_amount', v_park_amount,
-                'balance', v_balance,
-                'threshold', v_threshold,
-                'closed_bar', v_closed_bar_dt
-            ),
-            NULL,
-            v_tf_id
-        );
-        RETURN jsonb_build_object(
-            'skipped', TRUE,
-            'reason', 'fake_account',
-            'fund', v_code,
-            'park_amount', v_park_amount
-        );
-    END IF;
+    SELECT s.id
+    INTO v_security_id
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id
+    WHERE upper(sp.prefix) = v_code
+    ORDER BY sp.exchange_id
+    LIMIT 1;
 
-    v_inst := logic_resolve_cash_fund_instrument(v_code);
-    IF v_inst IS NULL OR v_inst ? 'error' THEN
-        v_note := COALESCE(v_inst->>'error', 'resolve_failed');
-        PERFORM logic_trade_log(
-            p_logic_id,
-            'cash_fund.resolve_fail',
-            format('Не удалось найти фонд %s: %s', v_code, v_note),
-            v_inst,
-            NULL,
-            v_tf_id
-        );
-        RETURN jsonb_build_object('ok', FALSE, 'reason', 'resolve_failed', 'detail', v_inst);
-    END IF;
+    v_inst := NULL;
+    BEGIN
+        v_inst := logic_resolve_cash_fund_instrument(v_code);
+    EXCEPTION
+        WHEN OTHERS THEN
+            v_inst := NULL;
+    END;
 
     v_figi := v_inst->>'figi';
-    v_lot := GREATEST(1, COALESCE((v_inst->>'lot')::INTEGER, 1));
-    v_price := COALESCE((v_inst->>'price')::NUMERIC, 0);
+    v_lot := GREATEST(
+        1,
+        COALESCE((v_inst->>'lot')::INTEGER, NULLIF(logic_security_lot_size(v_security_id), 0), 1)
+    );
+    v_price := COALESCE(
+        NULLIF((v_inst->>'price')::NUMERIC, 0),
+        CASE WHEN v_security_id IS NOT NULL
+            THEN logic_cash_fund_price_at(v_security_id, v_tf_id, v_closed_bar_dt, v_code)
+            ELSE NULL
+        END,
+        100
+    );
+
     IF v_price <= 0 THEN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'bad_price', 'detail', v_inst);
     END IF;
@@ -340,7 +334,7 @@ BEGIN
                 'price', v_price,
                 'lot', v_lot
             ),
-            NULL,
+            v_security_id,
             v_tf_id
         );
         RETURN jsonb_build_object(
@@ -349,6 +343,73 @@ BEGIN
             'park_amount', v_park_amount,
             'price', v_price,
             'lot', v_lot
+        );
+    END IF;
+
+    -- Fake / нет FIGI: симулируем BUY в боевой книге (как в тесте).
+    IF v_logic.account_type = 'fake' OR v_figi IS NULL OR btrim(v_figi) = '' THEN
+        SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
+        SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
+        IF v_security_id IS NULL OR v_side_open_id IS NULL OR v_action_long_id IS NULL THEN
+            RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_security_or_sides');
+        END IF;
+
+        INSERT INTO logic_trades (
+            logic_id, account_id, security_id, timeframe_id,
+            side_id, action_id, position_event, signal_kind, signal_formula,
+            quantity, price, bar_dt, executed_at, is_simulated, is_fictitious,
+            is_shadow, is_test, trade_reason, status
+        )
+        VALUES (
+            p_logic_id, v_logic.account_id, v_security_id, v_tf_id,
+            v_side_open_id, v_action_long_id, 'open', 'cash_fund',
+            format('cash_fund.park %s', v_code),
+            v_qty, v_price, v_closed_bar_dt, v_closed_bar_dt, TRUE, FALSE,
+            FALSE, FALSE, format('cash_fund.park:%s', v_code), 'filled'
+        )
+        ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)
+        DO NOTHING
+        RETURNING id INTO v_trade_id;
+
+        IF v_trade_id IS NOT NULL THEN
+            PERFORM logic_trade_finalize(v_trade_id, v_balance);
+            v_balance := v_balance - (v_qty * v_price);
+            PERFORM logic_upsert_param(
+                p_logic_id, 'current_balance', v_balance::TEXT, 'numeric'
+            );
+        END IF;
+
+        PERFORM logic_trade_log(
+            p_logic_id,
+            CASE WHEN v_trade_id IS NOT NULL THEN 'cash_fund.sim_ok' ELSE 'cash_fund.sim_dup' END,
+            format(
+                'Бой (sim): парковка %s qty=%s price=%s bar=%s',
+                v_code, v_qty, v_price, v_closed_bar_dt
+            ),
+            jsonb_build_object(
+                'fund', v_code,
+                'quantity', v_qty,
+                'price', v_price,
+                'park_amount', v_park_amount,
+                'balance', v_balance,
+                'threshold', v_threshold,
+                'trade_id', v_trade_id,
+                'closed_bar', v_closed_bar_dt,
+                'simulated', TRUE
+            ),
+            v_security_id,
+            v_tf_id
+        );
+
+        RETURN jsonb_build_object(
+            'ok', v_trade_id IS NOT NULL,
+            'simulated', TRUE,
+            'fund', v_code,
+            'quantity', v_qty,
+            'price', v_price,
+            'park_amount', v_park_amount,
+            'trade_id', v_trade_id,
+            'closed_bar', v_closed_bar_dt
         );
     END IF;
 
@@ -394,7 +455,7 @@ BEGIN
             'note', v_note,
             'closed_bar', v_closed_bar_dt
         ),
-        NULL,
+        v_security_id,
         v_tf_id
     );
 
@@ -413,4 +474,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
-'Если cash_fund_code задан и current_balance > threshold — BUY фонда на реальном счёте (1 раз на закрытую свечу TF); fake только логирует';
+'Каждая закрытая свеча TF: если balance > threshold — BUY фонда; real→T-Bank, fake/без FIGI→sim сделка в боевой книге';

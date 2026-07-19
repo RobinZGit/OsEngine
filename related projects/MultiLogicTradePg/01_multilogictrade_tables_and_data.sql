@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v45 (идемпотентный запуск)
+-- Версия: v46 (идемпотентный запуск)
+-- v46: неторговые периоды MOEX; close_positions_eod; use_non_trading_periods
 -- v45: +5 тренд +10 контртренд OsEngine; seed без DELETE (INSERT IF NOT EXISTS / DO NOTHING)
 -- v44: logics.note — примечание; +5 контртрендовых OsEngine; подписи типа стратегии у seed
 -- v43c: logic_trades.run_id — привязка тестовых сделок к прогону (изоляция финреза)
@@ -1253,6 +1254,10 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'Пусто = не покупать. TMON / LQDT / SBMM — runner паркует избыток кэша на реальном счёте (1 раз на закрытую свечу TF)', 12),
     ('cash_fund_threshold', 'Порог свободных денег, ₽', 'money', '100000',
      'Если current_balance выше порога и выбран фонд — парковать избыток (buy-only)', 13),
+    ('use_non_trading_periods', 'Учитывать неторговые периоды', 'boolean', 'true',
+     'Не открывать сделки в интервалах из блока «Торговые периоды» (шаблон MOEX TQBR по умолчанию)', 14),
+    ('close_positions_eod', 'Закрывать позиции в конце дня (кроме фондов)', 'boolean', 'false',
+     'В конце торговой сессии (или на последней свече дня) закрыть все позиции, кроме денежного фонда TMON/LQDT/SBMM', 15),
     ('last_cash_fund_bar_dt', 'Последняя парковка кэша', 'text', '',
      'Служебный: open time закрытой свечи TF последней попытки парковки в фонд', 96),
     ('last_stop_bar_dt', 'Последняя свеча стоп-лосса', 'text', '',
@@ -1634,6 +1639,35 @@ EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
 COMMENT ON COLUMN logic_stops.value_unit IS 'percent | atr';
+
+-- Неторговые интервалы логики (MSK): сделки в эти окна не открываются при use_non_trading_periods
+CREATE TABLE IF NOT EXISTS logic_non_trading_intervals (
+    id SERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),
+    time_from TIME NOT NULL,
+    time_to TIME NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (time_from <= time_to)
+);
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS day_of_week SMALLINT;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS time_from TIME;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS time_to TIME;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE logic_non_trading_intervals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_logic_non_trading_logic_id
+    ON logic_non_trading_intervals(logic_id);
+
+COMMENT ON TABLE logic_non_trading_intervals IS
+'Неторговые окна логики (день недели ISO 1=Пн…7=Вс + интервал времени MSK)';
+COMMENT ON COLUMN logic_non_trading_intervals.day_of_week IS '1=понедельник … 7=воскресенье (ISO)';
 
 -- Ценные бумаги, привязанные к торговой логике (портфель логики)
 CREATE TABLE IF NOT EXISTS logic_securities (
@@ -2774,7 +2808,7 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
     position_event VARCHAR(10) NOT NULL DEFAULT 'open'
         CHECK (position_event IN ('open', 'close')),
-    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
+    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter', 'cash_fund')),
     signal_formula TEXT NOT NULL,
     quantity NUMERIC(20, 6) NOT NULL DEFAULT 1 CHECK (quantity > 0),
     price NUMERIC(18, 6) NOT NULL CHECK (price > 0),
@@ -2802,8 +2836,17 @@ ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCE
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS side_id INTEGER REFERENCES sides(id) ON DELETE RESTRICT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS action_id INTEGER REFERENCES actions(id) ON DELETE RESTRICT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close'));
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter'));
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter', 'cash_fund'));
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_formula TEXT;
+-- Upgrade: парковка денежного фонда пишет signal_kind=cash_fund
+ALTER TABLE logic_trades DROP CONSTRAINT IF EXISTS logic_trades_signal_kind_check;
+DO $$
+BEGIN
+    ALTER TABLE logic_trades ADD CONSTRAINT logic_trades_signal_kind_check
+        CHECK (signal_kind IN ('trend', 'counter', 'cash_fund'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS quantity NUMERIC(20, 6) NOT NULL DEFAULT 1 CHECK (quantity > 0);
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS price NUMERIC(18, 6) CHECK (price > 0);
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS bar_dt TIMESTAMP;
@@ -3355,7 +3398,7 @@ COMMENT ON COLUMN logic_trades.timeframe_id IS 'FK → timeframes — TF сиг�
 COMMENT ON COLUMN logic_trades.side_id IS 'FK → sides: Open | Close';
 COMMENT ON COLUMN logic_trades.action_id IS 'FK → actions: Long | Short';
 COMMENT ON COLUMN logic_trades.position_event IS 'open | close — действие сигнала (копия с logic_indicator_signals)';
-COMMENT ON COLUMN logic_trades.signal_kind IS 'trend | counter — какой тип сигнала сработал';
+COMMENT ON COLUMN logic_trades.signal_kind IS 'trend | counter | cash_fund — сигнал или парковка денежного фонда';
 COMMENT ON COLUMN logic_trades.signal_formula IS 'Копия формулы logic_indicator_signals на момент сделки';
 COMMENT ON COLUMN logic_trades.quantity IS 'Объём в лотах/штуках';
 COMMENT ON COLUMN logic_trades.price IS 'Цена исполнения';
@@ -3447,6 +3490,38 @@ COMMENT ON COLUMN app_tech_log.sync_gen IS 'Поколение sync график
 COMMENT ON COLUMN app_tech_log.message IS 'Краткое сообщение';
 COMMENT ON COLUMN app_tech_log.payload IS 'JSON с деталями';
 COMMENT ON COLUMN app_tech_log.created_at IS 'Время записи в журнал';
+
+-- Неторговые периоды MOEX TQBR по умолчанию (если у логики ещё пусто)
+INSERT INTO logic_non_trading_intervals (
+    logic_id, day_of_week, time_from, time_to, note, display_order, is_active
+)
+SELECT
+    l.id,
+    v.day_of_week,
+    v.time_from,
+    v.time_to,
+    v.note,
+    v.ord,
+    TRUE
+FROM logics l
+CROSS JOIN (
+    VALUES
+        (1::SMALLINT, TIME '00:00', TIME '09:59:59', 'Пн до открытия', 1),
+        (1::SMALLINT, TIME '18:40', TIME '23:59:59', 'Пн после сессии', 2),
+        (2::SMALLINT, TIME '00:00', TIME '09:59:59', 'Вт до открытия', 3),
+        (2::SMALLINT, TIME '18:40', TIME '23:59:59', 'Вт после сессии', 4),
+        (3::SMALLINT, TIME '00:00', TIME '09:59:59', 'Ср до открытия', 5),
+        (3::SMALLINT, TIME '18:40', TIME '23:59:59', 'Ср после сессии', 6),
+        (4::SMALLINT, TIME '00:00', TIME '09:59:59', 'Чт до открытия', 7),
+        (4::SMALLINT, TIME '18:40', TIME '23:59:59', 'Чт после сессии', 8),
+        (5::SMALLINT, TIME '00:00', TIME '09:59:59', 'Пт до открытия', 9),
+        (5::SMALLINT, TIME '18:40', TIME '23:59:59', 'Пт после сессии', 10),
+        (6::SMALLINT, TIME '00:00', TIME '23:59:59', 'Суббота', 11),
+        (7::SMALLINT, TIME '00:00', TIME '23:59:59', 'Воскресенье', 12)
+) AS v(day_of_week, time_from, time_to, note, ord)
+WHERE NOT EXISTS (
+    SELECT 1 FROM logic_non_trading_intervals x WHERE x.logic_id = l.id
+);
 
 -- ============================================
 -- Готово: шаг 1 завершён

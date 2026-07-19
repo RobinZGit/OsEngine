@@ -23,6 +23,10 @@ export interface LogicRow {
   cash_fund_code?: string;
   /** Порог свободных денег (₽) выше которого парковать в фонд. */
   cash_fund_threshold?: number;
+  /** Учитывать неторговые периоды при открытии сделок. */
+  use_non_trading_periods?: boolean;
+  /** Закрывать позиции в конце дня (кроме денежных фондов). */
+  close_positions_eod?: boolean;
   account_code: string;
   account_name: string;
   account_type: 'real' | 'fake';
@@ -46,6 +50,8 @@ export interface LogicTradingParamsPayload {
   warmup_pretest?: boolean;
   cash_fund_code?: string;
   cash_fund_threshold?: number;
+  use_non_trading_periods?: boolean;
+  close_positions_eod?: boolean;
 }
 
 export interface LogicTradingParamsResponse {
@@ -63,6 +69,26 @@ export interface LogicTradingParamsResponse {
   warmup_pretest: boolean;
   cash_fund_code: string;
   cash_fund_threshold: number;
+  use_non_trading_periods: boolean;
+  close_positions_eod: boolean;
+}
+
+export interface LogicNonTradingIntervalRow {
+  id: number;
+  logic_id: number;
+  day_of_week: number;
+  time_from: string;
+  time_to: string;
+  note?: string | null;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface LogicNonTradingPeriodsResponse {
+  logic_id: number;
+  use_non_trading_periods: boolean;
+  intervals: LogicNonTradingIntervalRow[];
+  applied?: number;
 }
 
 export interface LogicParamRow {
