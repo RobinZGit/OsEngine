@@ -1058,7 +1058,10 @@ async function startBacktest(pool, logicId, dateFrom, dateTo) {
 async function getBacktestStatus(pool, logicId, runId) {
   const params = [logicId];
   let sql = `
-    SELECT id, logic_id, date_from, date_to, status,
+    SELECT id, logic_id,
+      date_from::text AS date_from,
+      date_to::text AS date_to,
+      status,
       progress_pct::float8 AS progress_pct,
       phase_message, phase_detail, current_bar_dt,
       total_bars, processed_bars, trades_created,

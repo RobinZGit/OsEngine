@@ -38,6 +38,7 @@ import {
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import { buildEquityPoints, buildPortfolioStopMarkers } from './backtest-chart-overlays';
 import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
+import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
 
 
 
@@ -249,12 +250,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   /** Окно дат для блока Бумаги / эквити (тест — период прогона, бой — по сделкам). */
   papersDateFrom(): string | null {
-    if (this.isTest) return this.backtestRun?.date_from ?? null;
+    if (this.isTest) return asDateOnly(this.backtestRun?.date_from) ?? null;
     return this.tradesDateBound('from');
   }
 
   papersDateTo(): string | null {
-    if (this.isTest) return this.backtestRun?.date_to ?? null;
+    if (this.isTest) return asDateOnly(this.backtestRun?.date_to) ?? null;
     return this.tradesDateBound('to');
   }
 
@@ -302,11 +303,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
   get periodLabel(): string {
-
     if (!this.backtestRun) return '';
-
-    return `${this.backtestRun.date_from} — ${this.backtestRun.date_to}`;
-
+    return formatDateRangeLabel(this.backtestRun.date_from, this.backtestRun.date_to);
   }
 
 
@@ -681,12 +679,9 @@ function defaultBacktestWeek(): { from: string; to: string } {
 
 const BACKTEST_PERIOD_LS_PREFIX = 'mlt.backtestPeriod.';
 
-/** YYYY-MM-DD from API date / ISO string. */
+/** YYYY-MM-DD for <input type="date">. */
 function asDateInputValue(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : null;
+  return asDateOnly(raw);
 }
 
 function loadRememberedBacktestPeriod(

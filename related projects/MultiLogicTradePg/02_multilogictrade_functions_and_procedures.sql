@@ -4076,6 +4076,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -5828,1183 +5830,7 @@ BEGIN
 END;
 $$;
 
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / security_inversion / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / security_inversion / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / security_inversion / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / security_inversion / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
--- ============================================
--- Stop-loss runner: security / security_resume / security_inversion / portfolio
--- ============================================
-
-CREATE OR REPLACE FUNCTION logic_resolve_stop_timeframe_id(p_logic_id INTEGER)
-RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_tf TEXT;
-    v_id INTEGER;
-BEGIN
-    v_tf := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), 'M5')));
-    SELECT t.id INTO v_id
-    FROM timeframes t
-    WHERE upper(t.tf) = v_tf AND COALESCE(t.is_active, TRUE)
-    ORDER BY t.sec
-    LIMIT 1;
-    IF v_id IS NULL THEN
-        SELECT t.id INTO v_id FROM timeframes t WHERE upper(t.tf) = 'M5' LIMIT 1;
-    END IF;
-    RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
-
--- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)
+-- @begin logic_stop_runner
 -- ============================================
 -- Stop-loss runner: security / security_resume / security_inversion / portfolio
 -- ============================================
@@ -7874,6 +6700,58 @@ $$;
 
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
+-- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -11453,6 +10331,105 @@ BEGIN
 END;
 $$;
 
+-- Парковка свободного кэша в TMON/LQDT/SBMM внутри теста (is_test=TRUE).
+CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
+    p_run_id BIGINT,
+    p_logic_id INTEGER,
+    p_account_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_code TEXT;
+    v_threshold NUMERIC;
+    v_park_amount NUMERIC;
+    v_security_id INTEGER;
+    v_price NUMERIC;
+    v_lot INTEGER;
+    v_qty INTEGER;
+    v_side_open_id INTEGER;
+    v_action_long_id INTEGER;
+    v_trade_id BIGINT;
+    v_balance NUMERIC := p_balance;
+BEGIN
+    v_code := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'cash_fund_code'), '')));
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN v_balance;
+    END IF;
+
+    v_threshold := COALESCE(get_logic_param_numeric(p_logic_id, 'cash_fund_threshold', 100000), 100000);
+    IF v_threshold < 0 THEN
+        v_threshold := 0;
+    END IF;
+
+    v_park_amount := v_balance - v_threshold;
+    IF v_park_amount <= 0 OR v_balance IS NULL THEN
+        RETURN v_balance;
+    END IF;
+
+    PERFORM logic_ensure_cash_fund_security(p_logic_id, v_code);
+
+    SELECT s.id
+    INTO v_security_id
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id
+    WHERE upper(sp.prefix) = v_code
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    IF v_security_id IS NULL THEN
+        RETURN v_balance;
+    END IF;
+
+    -- Ближайшая цена на/до бара (у фонда могут быть другие часы, чем у акций).
+    SELECT p.close_price
+    INTO v_price
+    FROM prices p
+    WHERE p.security_id = v_security_id
+      AND p.timeframe_id = p_timeframe_id
+      AND p.dt <= p_bar_dt
+    ORDER BY p.dt DESC
+    LIMIT 1;
+
+    IF v_price IS NULL OR v_price <= 0 THEN
+        RETURN v_balance;
+    END IF;
+
+    v_lot := GREATEST(1, logic_security_lot_size(v_security_id));
+    v_qty := (FLOOR(v_park_amount / (v_price * v_lot)))::INTEGER * v_lot;
+    IF v_qty < v_lot THEN
+        RETURN v_balance;
+    END IF;
+
+    SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
+    SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
+    IF v_side_open_id IS NULL OR v_action_long_id IS NULL THEN
+        RETURN v_balance;
+    END IF;
+
+    SELECT o_trade_id, o_new_balance
+    INTO v_trade_id, v_balance
+    FROM logic_backtest_insert_trade(
+        p_run_id, p_logic_id, p_account_id, v_security_id, p_timeframe_id,
+        v_side_open_id, v_action_long_id,
+        'cash_fund',
+        format('cash_fund.park %s', v_code),
+        v_qty, v_price, p_bar_dt, FALSE,
+        format('cash_fund.park:%s', v_code),
+        v_balance,
+        'open'
+    );
+
+    RETURN v_balance;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_park_excess_cash(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
+'Тест: если test_balance > cash_fund_threshold — BUY фонда (TMON/LQDT/SBMM) на избыток кэша';
+
 CREATE OR REPLACE FUNCTION run_logic_backtest(
     p_logic_id INTEGER,
     p_date_from DATE,
@@ -11478,6 +10455,8 @@ DECLARE
     v_date_from DATE;
     v_date_to DATE;
     v_load_from DATE;
+    v_cash_fund_code TEXT;
+    v_cash_fund_id INTEGER;
     v_end_dt TIMESTAMP;
     v_point_count INTEGER;
     v_prices_in_period INTEGER;
@@ -11515,6 +10494,20 @@ BEGIN
 
     DELETE FROM logic_trades WHERE logic_id = p_logic_id AND is_test = TRUE;
     PERFORM logic_backtest_reset_signal_ratings(p_logic_id);
+
+    v_cash_fund_code := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'cash_fund_code'), '')));
+    IF v_cash_fund_code IN ('TMON', 'LQDT', 'SBMM') THEN
+        PERFORM logic_ensure_cash_fund_security(p_logic_id, v_cash_fund_code);
+        SELECT s.id
+        INTO v_cash_fund_id
+        FROM securities s
+        JOIN security_prefixes sp ON sp.security_id = s.id
+        WHERE upper(sp.prefix) = v_cash_fund_code
+        ORDER BY sp.exchange_id
+        LIMIT 1;
+    ELSE
+        v_cash_fund_id := NULL;
+    END IF;
 
     INSERT INTO logic_backtest_runs (
         logic_id, date_from, date_to, status, progress_pct,
@@ -11587,6 +10580,23 @@ BEGIN
             format('Бумага %s/%s', v_sec_i, v_secs)
         );
     END LOOP;
+
+    -- Цены денежного фонда (сигналы по нему не гоняем, но парковка в тесте нужна).
+    IF v_cash_fund_id IS NOT NULL THEN
+        BEGIN
+            CALL logic_backtest_ensure_security_data(
+                v_run_id, p_logic_id, v_cash_fund_id, v_tf_id,
+                v_load_from, v_date_from, v_date_to, v_end_dt, v_point_count,
+                v_pl, v_pc, v_is, v_ic, v_ie
+            );
+        EXCEPTION WHEN OTHERS THEN
+            PERFORM logic_backtest_log(
+                v_run_id, p_logic_id, 'backtest.cash_fund.prices.error', SQLERRM,
+                jsonb_build_object('security_id', v_cash_fund_id, 'fund', v_cash_fund_code),
+                v_cash_fund_id, v_tf_id
+            );
+        END;
+    END IF;
 
     SELECT COUNT(*)::INTEGER INTO v_prices_in_period
     FROM prices p
@@ -11675,6 +10685,9 @@ BEGIN
             v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
         );
         v_balance := logic_backtest_process_signals(
+            v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+        );
+        v_balance := logic_backtest_park_excess_cash(
             v_run_id, p_logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
         );
 
@@ -12511,6 +11524,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Если cash_fund_code задан и current_balance > threshold — BUY фонда на реальном счёте (1 раз на закрытую свечу TF); fake только логирует';
 -- @end logic_cash_fund_park_http
+
+
 
 
 

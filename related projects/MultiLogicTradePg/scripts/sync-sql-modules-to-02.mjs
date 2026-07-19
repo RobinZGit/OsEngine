@@ -28,14 +28,30 @@ function replaceBetween(content, startMarker, endMarker, replacement, label) {
 let sql02 = read('02_multilogictrade_functions_and_procedures.sql');
 const tradeTail = read('sql/logic_trade_runner.sql');
 
-const stopRunner = read('sql/logic_stop_runner.sql').trimEnd() + '\n\n';
-sql02 = replaceBetween(
-  sql02,
-  'CREATE OR REPLACE FUNCTION logic_long_position_qty(',
-  'CREATE OR REPLACE FUNCTION logic_calc_open_quantity(',
-  `-- @include sql/logic_stop_runner.sql (см. sql/logic_stop_runner.sql — дублируется ниже)\n${stopRunner}`,
-  'logic_stop_runner'
-);
+// stop_runner: только @begin/@end. Нельзя якориться на logic_long_position_qty —
+// эта функция внутри модуля; старый sync вкладывал include сам в себя (×N).
+{
+  const stopRunner = read('sql/logic_stop_runner.sql').trimEnd() + '\n';
+  const beginMark = '-- @begin logic_stop_runner';
+  const endMark = '-- @end logic_stop_runner';
+  const includeMark = '-- @include sql/logic_stop_runner.sql';
+  const block = `${beginMark}\n${stopRunner}${endMark}\n`;
+
+  let start = sql02.indexOf(beginMark);
+  if (start === -1) start = sql02.indexOf(includeMark);
+  // Хвост после stop_runner — lot helpers из trade_runner (не calc_open: его вырезает следующий sync).
+  const lotAnchor = 'CREATE OR REPLACE FUNCTION logic_security_lot_size(';
+  let endExclusive = sql02.indexOf(lotAnchor);
+  if (endExclusive === -1) {
+    endExclusive = sql02.indexOf('CREATE OR REPLACE FUNCTION logic_calc_open_quantity(');
+  }
+  if (start === -1 || endExclusive === -1 || endExclusive <= start) {
+    throw new Error(
+      'sync-02: cannot place logic_stop_runner (need @begin/@include and logic_security_lot_size or logic_calc_open_quantity)'
+    );
+  }
+  sql02 = sql02.slice(0, start) + block + sql02.slice(endExclusive);
+}
 
 const lotStart = tradeTail.indexOf('CREATE OR REPLACE FUNCTION logic_security_lot_size');
 const lotEnd = tradeTail.indexOf('CREATE OR REPLACE FUNCTION logic_upsert_param(');

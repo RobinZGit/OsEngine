@@ -6,6 +6,7 @@ import {
   PriceCandle,
 } from '../models/market.model';
 import { LogicTradeRow } from '../shared/logic-trade';
+import { asDateOnly } from '../shared/date-format';
 
 export function dtKey(dt: string): string {
   return String(dt || '')
@@ -13,6 +14,11 @@ export function dtKey(dt: string): string {
     .replace(/Z$/i, '')
     .replace(/\.\d+/, '')
     .slice(0, 19);
+}
+
+/** YYYY-MM-DD for period filters (ISO date_from from API must not break papers list). */
+function periodDay(raw: string | null | undefined): string | null {
+  return asDateOnly(raw);
 }
 
 /** Минимальная / максимальная дата сделок бумаги (для окна графика). */
@@ -31,8 +37,10 @@ export function tradesForSecurity(
   dateFrom?: string | null,
   dateTo?: string | null
 ): LogicTradeRow[] {
-  const fromKey = dateFrom ? `${dateFrom} 00:00:00` : null;
-  const toKey = dateTo ? `${dateTo} 23:59:59` : null;
+  const fromDay = periodDay(dateFrom);
+  const toDay = periodDay(dateTo);
+  const fromKey = fromDay ? `${fromDay} 00:00:00` : null;
+  const toKey = toDay ? `${toDay} 23:59:59` : null;
   return trades
     .filter((t) => {
       if (t.security_id !== securityId) return false;
@@ -60,12 +68,16 @@ export function papersWithTrades(
   dateTo?: string | null,
   pinned?: PaperListRow | null
 ): PaperListRow[] {
+  const fromDay = periodDay(dateFrom);
+  const toDay = periodDay(dateTo);
+  const fromKey = fromDay ? `${fromDay} 00:00:00` : null;
+  const toKey = toDay ? `${toDay} 23:59:59` : null;
   const map = new Map<number, PaperListRow>();
   for (const t of trades) {
     if (t.status !== 'filled' && t.status !== 'submitted') continue;
     const key = dtKey(t.bar_dt || t.executed_at);
-    if (dateFrom && key < `${dateFrom} 00:00:00`) continue;
-    if (dateTo && key > `${dateTo} 23:59:59`) continue;
+    if (fromKey && key < fromKey) continue;
+    if (toKey && key > toKey) continue;
     const row = map.get(t.security_id) ?? {
       security_id: t.security_id,
       security_name: t.security_name,

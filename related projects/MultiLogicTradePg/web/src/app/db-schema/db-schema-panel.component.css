@@ -60,6 +60,11 @@
   line-height: 1.35;
 }
 
+.offline-note.live-note {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.12);
+}
+
 .panel-actions {
   display: flex;
   gap: 0.35rem;

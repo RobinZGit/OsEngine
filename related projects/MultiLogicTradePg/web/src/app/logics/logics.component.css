@@ -92,7 +92,7 @@
 .col-test-pnl {
   text-align: right;
   white-space: nowrap;
-  min-width: 6.5rem;
+  min-width: 7.5rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -100,6 +100,22 @@
 .logic-test-pnl {
   font-weight: 700;
   font-size: 0.9rem;
+}
+
+.logic-test-pnl-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  max-width: 100%;
+}
+
+.logic-test-period {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+  line-height: 1.15;
 }
 
 .pnl-deposit-pct {

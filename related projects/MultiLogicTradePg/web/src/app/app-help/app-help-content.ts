@@ -17,7 +17,7 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 В шапке:
 • Логирование — пишет события в app_tech_log (trade runner, сигналы, ошибки).
 • Книга (эта справка) — описание экранов и понятий.
-• Шестерёнка — структура БД: таблицы, функции/процедуры с комментариями, диаграмма связей.`,
+• Шестерёнка — структура БД (таблицы / функции / процедуры / диаграмма FK). При работающем API читает живую PostgreSQL; если БД недоступна — из SQL-скриптов репозитория (schema-offline.json).`,
   },
   {
     id: 'tabs',
@@ -34,7 +34,7 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 Копирование: создаёт выключенную копию с именем «… copy» (параметры, сигналы, стопы, бумаги; без сделок). После OK список прокручивается к новой развёрнутой строке.
 
 Раскрытие строки — блоки:
-• Параметры — таймфрейм, % позиции, лимит позиций, балансы, комиссия, FIFO/AVERAGE, базовая ставка рейтинга, lookback, инверсия, прогрев (warmup_pretest), денежный фонд (cash_fund_code / cash_fund_threshold), сброс баланса.
+• Параметры — таймфрейм, % позиции, лимит позиций, балансы, комиссия, FIFO/AVERAGE, базовая ставка рейтинга, lookback, инверсия, прогрев (warmup_pretest), денежный фонд (cash_fund_code / cash_fund_threshold: порог свободного кэша; парковка в тесте и на реальном счёте, если баланс > порога), сброс баланса.
 • Сигналы — open/close × long/short; AND внутри группы (все условия группы должны сработать). Формула вида @SMA(period=20) VALUE > pp. Рейтинг боя — сумма по бумагам.
 • Стоп-лосс / тейк-профит — по бумаге, портфелю, security_resume, security_inversion (% или ATR).
 • Ценные бумаги — портфель логики; лотность учитывается при открытии.
@@ -54,12 +54,17 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
   {
     id: 'schema',
     title: 'Структура БД и комментарии',
-    body: `Шестерёнка открывает дерево таблиц, функций и процедур PostgreSQL.
-У каждой функции/процедуры в базе есть COMMENT ON — краткое описание на русском (видно под именем). Кнопка SQL — исходный текст.
+    body: `Шестерёнка (иконка БД) открывает дерево таблиц, функций и процедур.
 
-Скрипт 01: CREATE TABLE IF NOT EXISTS — полная схема; сразу после — ALTER ADD COLUMN IF NOT EXISTS для upgrade старых БД (CREATE существующую таблицу не меняет). Функции/процедуры — в 02.
+Откуда берётся структура:
+• Есть связь с PostgreSQL (API /api/schema) — таблицы, колонки, индексы, FK и все прикладные функции/процедуры public читаются из каталога БД. Кнопка SQL — pg_get_functiondef. COMMENT ON видно под именем.
+• Нет связи (Pages / API выключен) — тот же вид из schema-offline.json, собранного из скриптов 01 и 02 (npm run generate:schema). Берутся CREATE TABLE + ALTER ADD COLUMN IF NOT EXISTS и все CREATE OR REPLACE FUNCTION/PROCEDURE из 02; при дублях в файле остаётся последнее определение (как OR REPLACE).
 
-Комментарии SQL: 01/02 и sql/routine_comments_missing.sql. После наката 02 — в obj_description.`,
+Идемпотентность скриптов (upgrade без потери данных):
+• 01 — CREATE TABLE IF NOT EXISTS; новые колонки — ALTER … ADD COLUMN IF NOT EXISTS; seed логик — INSERT IF NOT EXISTS / ON CONFLICT DO NOTHING (копии и правки пользователя не стираются).
+• 02 — CREATE OR REPLACE для функций/процедур; модули sql/*.sql подставляются в 02 (sync-sql-modules-to-02).
+
+Комментарии: COMMENT ON в 01/02 и sql/routine_comments_missing.sql → obj_description после наката 02.`,
   },
   {
     id: 'api',

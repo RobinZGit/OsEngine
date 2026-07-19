@@ -10,9 +10,13 @@
       <div>
         <h2>Структура базы данных</h2>
         @if (schema) {
-          <p class="meta">{{ schema.database }} · схема {{ schema.schema }}</p>
-          @if (schemaMode === 'offline') {
-            <p class="offline-note">{{ schema.sourceNote }}</p>
+          <p class="meta">
+            {{ schema.database }} · схема {{ schema.schema }}
+            ·
+            {{ schemaMode === 'live' ? 'из PostgreSQL' : 'из SQL-скриптов' }}
+          </p>
+          @if (schema.sourceNote) {
+            <p class="offline-note" [class.live-note]="schemaMode === 'live'">{{ schema.sourceNote }}</p>
           }
         }
       </div>

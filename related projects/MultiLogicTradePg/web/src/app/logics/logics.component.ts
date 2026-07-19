@@ -49,6 +49,7 @@ import {
   LogicTradeLotRow,
   LogicTradeRow,
 } from '../shared/logic-trade';
+import { formatDateRangeLabel } from '../shared/date-format';
 import {
   BacktestRunStatus,
   LogicPositionsPanelComponent,
@@ -139,7 +140,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
   testPnlByLogic = new Map<
     number,
-    { financial_result: number; commission: number; trade_count: number }
+    {
+      financial_result: number;
+      commission: number;
+      trade_count: number;
+      date_from?: string | null;
+      date_to?: string | null;
+    }
   >();
   /** Онлайн-сводка боевого финреза (is_test=0). */
   combatPnlByLogic = new Map<
@@ -958,7 +965,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (!row) return '';
     const pnl = this.formatPnl(row.financial_result);
     const com = this.formatMoney(row.commission);
-    return `Тест: финрез ${pnl}, комиссия ${com}, сделок ${row.trade_count}`;
+    const period = this.testPeriodLabel(logicId);
+    const periodPart = period ? `, период ${period}` : '';
+    return `Тест: финрез ${pnl}, комиссия ${com}, сделок ${row.trade_count}${periodPart}`;
+  }
+
+  /** Период последнего теста: день.месяц.год — без времени. */
+  testPeriodLabel(logicId: number): string {
+    const row = this.testPnlByLogic.get(logicId);
+    const fromRun = this.backtestRuns.get(logicId);
+    return formatDateRangeLabel(
+      row?.date_from ?? fromRun?.date_from,
+      row?.date_to ?? fromRun?.date_to,
+    );
   }
 
   hasCombatFinancialResult(logicId: number): boolean {
@@ -1230,7 +1249,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const pct = this.backtestProgressPct(logicId);
     const phase = run.phase_message || run.status || '';
     const detail = run.phase_detail ? ` — ${run.phase_detail}` : '';
-    return `Тест ${pct}%: ${phase}${detail}`;
+    const period = formatDateRangeLabel(run.date_from, run.date_to);
+    const periodPart = period ? ` (${period})` : '';
+    return `Тест ${pct}%: ${phase}${detail}${periodPart}`;
   }
 
   isTradesLoading(logicId: number): boolean {
@@ -2366,7 +2387,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
       next: (resp) => {
         const next = new Map<
           number,
-          { financial_result: number; commission: number; trade_count: number }
+          {
+            financial_result: number;
+            commission: number;
+            trade_count: number;
+            date_from?: string | null;
+            date_to?: string | null;
+          }
         >();
         for (const r of resp.rows ?? []) {
           const logicId = Number(r.logic_id);
@@ -2376,6 +2403,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
             financial_result: Number.isFinite(pnl) ? pnl : 0,
             commission: Number(r.commission) || 0,
             trade_count: Number(r.trade_count) || 0,
+            date_from: r.date_from ?? null,
+            date_to: r.date_to ?? null,
           });
         }
         this.testPnlByLogic = next;
@@ -2416,7 +2445,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private refreshTestPnlFromBacktestRuns(): void {
     const next = new Map<
       number,
-      { financial_result: number; commission: number; trade_count: number }
+      {
+        financial_result: number;
+        commission: number;
+        trade_count: number;
+        date_from?: string | null;
+        date_to?: string | null;
+      }
     >();
     for (const row of this.logics) {
       const trades = this.logicTradesTest.get(Number(row.id)) ?? [];
@@ -2433,10 +2468,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
         (sum, t) => sum + (Number(t.commission) || 0),
         0
       );
+      const run = this.backtestRuns.get(Number(row.id));
       next.set(Number(row.id), {
         financial_result,
         commission,
         trade_count: live.length,
+        date_from: run?.date_from ?? null,
+        date_to: run?.date_to ?? null,
       });
     }
     this.testPnlByLogic = next;

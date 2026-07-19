@@ -326,6 +326,8 @@ export class LogicsService {
       financial_result: number;
       commission: number;
       trade_count: number;
+      date_from?: string | null;
+      date_to?: string | null;
     }>;
   }> {
     return this.http.get<{
@@ -335,6 +337,8 @@ export class LogicsService {
         financial_result: number;
         commission: number;
         trade_count: number;
+        date_from?: string | null;
+        date_to?: string | null;
       }>;
     }>(`${this.appConfig.apiUrl}/logic-trades/pnl-summary`, {
       params: { is_test: isTest ? '1' : '0' },

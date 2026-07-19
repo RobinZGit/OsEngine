@@ -166,9 +166,11 @@
 }
 
 .positions-panel-outer .positions-period-label {
-  font-size: 0.78rem;
-  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #475569;
   margin-left: 0.35rem;
+  white-space: nowrap;
 }
 
 .positions-panel-outer .trades-scroll {

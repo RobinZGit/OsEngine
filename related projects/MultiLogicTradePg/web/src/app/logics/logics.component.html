@@ -291,15 +291,19 @@
 
               <td class="col-test-pnl">
                 @if (hasTestFinancialResult(row.id)) {
-                  <span
-                    class="trade-pnl logic-test-pnl"
-                    [class.trade-pnl-pos]="(testFinancialResult(row.id) ?? 0) > 0"
-                    [class.trade-pnl-neg]="(testFinancialResult(row.id) ?? 0) < 0"
-                    [title]="testFinancialResultTitle(row.id)"
-                  >
-                    {{ formatPnl(testFinancialResult(row.id)) }}
-                    @if (testFinancialResultPct(row.id, row.initial_balance) != null) {
-                      <span class="pnl-deposit-pct">({{ formatPnlPct(testFinancialResultPct(row.id, row.initial_balance)) }})</span>
+                  <span class="logic-test-pnl-cell" [title]="testFinancialResultTitle(row.id)">
+                    <span
+                      class="trade-pnl logic-test-pnl"
+                      [class.trade-pnl-pos]="(testFinancialResult(row.id) ?? 0) > 0"
+                      [class.trade-pnl-neg]="(testFinancialResult(row.id) ?? 0) < 0"
+                    >
+                      {{ formatPnl(testFinancialResult(row.id)) }}
+                      @if (testFinancialResultPct(row.id, row.initial_balance) != null) {
+                        <span class="pnl-deposit-pct">({{ formatPnlPct(testFinancialResultPct(row.id, row.initial_balance)) }})</span>
+                      }
+                    </span>
+                    @if (testPeriodLabel(row.id)) {
+                      <span class="logic-test-period">{{ testPeriodLabel(row.id) }}</span>
                     }
                   </span>
                 } @else {
@@ -696,7 +700,7 @@
                               </td>
 
                               <td class="params-hint">
-                                Пусто = не покупать. TMON / LQDT / SBMM — runner паркует избыток на реальном счёте (1 раз на закрытую свечу TF; fake только лог)
+                                Пусто = не покупать. TMON / LQDT / SBMM — парковка избытка в тесте и на реальном счёте (бой: T-Bank; fake в бою только лог)
                               </td>
 
                             </tr>
@@ -720,7 +724,7 @@
                               </td>
 
                               <td class="params-hint">
-                                Если свободный кэш выше порога и выбран фонд — парковать избыток
+                                Паркуется только сумма выше порога. Если порог ≥ начальный баланс — до прибыли фонд не купится
                               </td>
 
                             </tr>

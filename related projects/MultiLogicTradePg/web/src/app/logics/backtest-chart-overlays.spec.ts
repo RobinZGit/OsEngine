@@ -79,6 +79,24 @@ describe('backtest-chart-overlays', () => {
     expect(rows.some((r) => r.security_prefix === 'SBER')).toBeTrue();
   });
 
+  it('papersWithTrades accepts ISO date_from/date_to without dropping trades', () => {
+    const rows = papersWithTrades(
+      [
+        trade({
+          security_id: 1,
+          security_name: 'A',
+          security_prefix: 'A',
+          bar_dt: '2026-06-28 02:00:00',
+          financial_result: 10,
+        }),
+      ],
+      '2026-06-28T00:00:00.000Z',
+      '2026-06-28T00:00:00.000Z'
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].security_prefix).toBe('A');
+  });
+
   it('papersWithTrades returns only securities with trades in period', () => {
     const rows = papersWithTrades(
       [

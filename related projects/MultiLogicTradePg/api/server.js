@@ -2625,7 +2625,9 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
         WITH latest_run AS (
           SELECT DISTINCT ON (r.logic_id)
             r.logic_id,
-            r.id AS run_id
+            r.id AS run_id,
+            r.date_from::text AS date_from,
+            r.date_to::text AS date_to
           FROM logic_backtest_runs r
           ORDER BY r.logic_id, r.id DESC
         )
@@ -2633,7 +2635,9 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
           lt.logic_id,
           COALESCE(SUM(lt.financial_result), 0)::float8 AS financial_result,
           COALESCE(SUM(COALESCE(lt.commission, 0)), 0)::float8 AS commission,
-          COUNT(*)::int AS trade_count
+          COUNT(*)::int AS trade_count,
+          MAX(lr.date_from) AS date_from,
+          MAX(lr.date_to) AS date_to
         FROM logic_trades lt
         LEFT JOIN latest_run lr ON lr.logic_id = lt.logic_id
         WHERE lt.is_test = TRUE
@@ -2664,6 +2668,8 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
           financial_result: Number(r.financial_result),
           commission: Number(r.commission),
           trade_count: Number(r.trade_count),
+          date_from: r.date_from != null ? String(r.date_from) : null,
+          date_to: r.date_to != null ? String(r.date_to) : null,
         })),
       });
       return;
@@ -3136,7 +3142,16 @@ app.get('/api/schema', async (_req, res) => {
           obj_description(p.oid, 'pg_proc') AS description
         FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')
+        WHERE n.nspname = 'public'
+          AND p.prokind IN ('f', 'p')
+          -- не тащим функции расширений (pgsql-http и т.п.) — только прикладные из 02
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pg_depend d
+            JOIN pg_extension e ON e.oid = d.refobjid
+            WHERE d.objid = p.oid
+              AND d.deptype = 'e'
+          )
         ORDER BY p.prokind, p.proname, p.oid
       `),
       pool.query(`
@@ -3216,6 +3231,9 @@ app.get('/api/schema', async (_req, res) => {
     res.json({
       schema: 'public',
       database: process.env.PGDATABASE || 'multilogictrade',
+      sourceMode: 'live',
+      sourceNote:
+        'Структура из подключённой PostgreSQL (таблицы, колонки, индексы, ограничения; все функции/процедуры public кроме расширений).',
       tables,
       routines: routinesResult.rows.map(formatRoutine),
       extensions: extensionsResult.rows,

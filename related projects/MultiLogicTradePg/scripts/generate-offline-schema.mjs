@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 /**
- * Парсит 01_*.sql и 02_*.sql → assets/schema-offline.json для GitHub Pages
- * (когда API/PostgreSQL недоступны).
+ * Парсит актуальные 01_*.sql и 02_*.sql → web/src/assets/schema-offline.json
+ * (GitHub Pages / UI без PostgreSQL).
+ *
+ * Правила:
+ * - таблицы: CREATE TABLE + ALTER ADD COLUMN IF NOT EXISTS (идемпотентный 01);
+ * - функции/процедуры: все CREATE OR REPLACE из 02, включая HTTP-блок;
+ * - дубликаты по (kind, name, args) — побеждает последнее определение (как CREATE OR REPLACE).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -83,11 +88,11 @@ function parseTables(sql01Text) {
       });
     }
     const t = tables.get(name);
+    t.comment = tableComments.get(name) || t.comment;
     for (const col of columns) {
       if (!t.columns.find((c) => c.name === col.name)) {
         t.columns.push(col);
       }
-      // Offline: FK из inline REFERENCES — для вкладки «Диаграмма»
       const ref = col.type.match(/REFERENCES\s+(\w+)\s*\((\w+)\)/i);
       if (ref) {
         const conName = `${name}_${col.name}_fkey`;
@@ -131,7 +136,6 @@ function parseTables(sql01Text) {
     if (t.columns.find((c) => c.name === colName)) continue;
     const nullable = !/\bNOT NULL\b/i.test(rest);
     rest = rest.replace(/\bNOT NULL\b/gi, '').replace(/\bNULL\b/gi, '');
-    const refMatch = rest.match(/\bREFERENCES\s+.+/i);
     const type = rest.replace(/\bREFERENCES\s+.+/i, '').trim();
     t.columns.push({
       name: colName,
@@ -157,38 +161,50 @@ function parseTables(sql01Text) {
   return [...tables.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function normalizeArgList(argsBlock) {
+  return argsBlock
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean)
+    .map((a) => {
+      // p_name TYPE DEFAULT … → p_name
+      const parts = a.split(/\s+/);
+      return parts[0] || a;
+    })
+    .join(', ');
+}
+
 function parseRoutines(sql02Text) {
-  const routines = [];
   const commentRe =
     /COMMENT ON (FUNCTION|PROCEDURE)\s+([^(]+)\(([^)]*)\)\s+IS\s+'((?:''|[^'])*)'/gi;
   const comments = new Map();
   for (const m of sql02Text.matchAll(commentRe)) {
-    const key = `${m[1].toUpperCase()}:${m[2].trim()}(${m[3].trim()})`;
-    comments.set(key, unquoteSqlString(`'${m[4]}'`));
+    const kind = m[1].toUpperCase();
+    const name = m[2].trim().replace(/^public\./i, '');
+    const args = m[3].replace(/\s+/g, ' ').trim();
+    comments.set(`${kind}:${name}(${args})`, unquoteSqlString(`'${m[4]}'`));
+    // короткий ключ по имени — запасной
+    if (!comments.has(`${kind}:${name}`)) {
+      comments.set(`${kind}:${name}`, unquoteSqlString(`'${m[4]}'`));
+    }
   }
 
-  const skipHttp = sql02Text.indexOf('-- HTTP-ЗАГРУЗКА:');
-  const coreSql =
-    skipHttp > 0 ? sql02Text.slice(0, skipHttp) : sql02Text;
-
+  // Весь 02, включая HTTP — Help должен видеть все routines скрипта.
   const createRe =
-    /CREATE OR REPLACE (FUNCTION|PROCEDURE)\s+(\w+)\s*\(([\s\S]*?)\)\s*([\s\S]*?)(?=CREATE OR REPLACE (?:FUNCTION|PROCEDURE)|-- HTTP-ЗАГРУЗКА:|-- ===== КОНЕЦ|$)/gi;
+    /CREATE OR REPLACE (FUNCTION|PROCEDURE)\s+(\w+)\s*\(([\s\S]*?)\)\s*([\s\S]*?)(?=CREATE OR REPLACE (?:FUNCTION|PROCEDURE)|$)/gi;
 
+  /** @type {Map<string, object>} */
+  const byKey = new Map();
   let oid = 900001;
-  for (const m of coreSql.matchAll(createRe)) {
-    const kind = m[1].toLowerCase() === 'procedure' ? 'procedure' : 'function';
+
+  for (const m of sql02Text.matchAll(createRe)) {
+    const kindWord = m[1].toUpperCase();
+    const kind = kindWord === 'PROCEDURE' ? 'procedure' : 'function';
     const name = m[2];
-    const argsBlock = m[3].replace(/\s+/g, ' ').trim();
+    const args = normalizeArgList(m[3]);
     const tail = m[4].trim();
-    const args = argsBlock
-      .split(',')
-      .map((a) => a.trim())
-      .filter(Boolean)
-      .map((a) => {
-        const parts = a.split(/\s+/);
-        return parts[0];
-      })
-      .join(', ');
 
     let result_type = null;
     if (kind === 'function') {
@@ -197,13 +213,13 @@ function parseRoutines(sql02Text) {
     }
 
     const source = `CREATE OR REPLACE ${m[1]} ${name}(${m[3].trim()})\n${tail}`.trim();
-    const commentKey = `${m[1].toUpperCase()}:${name}(${args.replace(/\s/g, '')})`;
-    let description = null;
-    for (const [k, v] of comments) {
-      if (k.includes(name)) description = v;
-    }
+    const description =
+      comments.get(`${kindWord}:${name}(${args})`) ||
+      comments.get(`${kindWord}:${name}`) ||
+      null;
 
-    routines.push({
+    const key = `${kind}:${name}(${args})`;
+    byKey.set(key, {
       oid: oid++,
       name,
       kind,
@@ -214,7 +230,7 @@ function parseRoutines(sql02Text) {
     });
   }
 
-  return routines.sort((a, b) =>
+  return [...byKey.values()].sort((a, b) =>
     a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind.localeCompare(b.kind)
   );
 }
@@ -223,25 +239,41 @@ function main() {
   const sql01Text = read(sql01);
   const sql02Text = read(sql02);
 
+  const tables = parseTables(sql01Text);
+  const routines = parseRoutines(sql02Text);
+  const createCount = [
+    ...sql02Text.matchAll(/CREATE OR REPLACE (FUNCTION|PROCEDURE)\s+\w+/gi),
+  ].length;
+
   const schema = {
     schema: 'public',
     database: 'multilogictrade',
     sourceMode: 'offline',
     sourceNote:
-      'Структура из SQL-скриптов репозитория (01, 02). PostgreSQL не подключена.',
+      'Структура из SQL-скриптов репозитория (01 таблицы + ALTER; 02 все функции/процедуры, последнее определение при дублях). PostgreSQL не подключена.',
     generatedFrom: [
       '01_multilogictrade_tables_and_data.sql',
       '02_multilogictrade_functions_and_procedures.sql',
     ],
-    tables: parseTables(sql01Text),
-    routines: parseRoutines(sql02Text),
+    generatedAt: new Date().toISOString(),
+    stats: {
+      tables: tables.length,
+      routines: routines.length,
+      createStatementsIn02: createCount,
+      dedupedFromCreates: createCount - routines.length,
+    },
+    tables,
+    routines,
     extensions: [{ name: 'http', version: 'опционально (блок HTTP в 02)' }],
   };
 
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(schema, null, 2), 'utf8');
   console.log(
-    `schema-offline.json: ${schema.tables.length} tables, ${schema.routines.length} routines`
+    `schema-offline.json: ${tables.length} tables, ${routines.length} routines` +
+      (createCount !== routines.length
+        ? ` (deduped from ${createCount} CREATE in 02)`
+        : '')
   );
 }
 

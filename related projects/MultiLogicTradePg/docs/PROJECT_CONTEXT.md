@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-19 — v45: +5 trend +10 counter OsEngine logics; seed insert-only (preserve copies)
+**Последнее обновление:** 2026-07-19 — Ship: readable test period; Help schema live/offline; empty papers ISO fix; backtest TMON park; installer
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -298,6 +298,8 @@
 - [x] Futures testing/live: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token restore on bad verify (2026-07-18).
 - [x] Logics export/import JSON (checkboxes, papers yes / tests no) (2026-07-19).
 - [x] v45: +5 trend +10 counter OsEngine seed logics; seed idempotent (no DELETE) (2026-07-19).
+- [x] Help/schema: live PG vs offline 01/02; fix nested stop_runner in 02; regen schema-offline (2026-07-19).
+- [x] Readable test period on test line + Финрез теста; empty papers ISO fix; backtest cash-fund park (2026-07-19).
 
 ---
 
@@ -317,6 +319,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-19 | Ship: test period UI; Help schema live/offline; ISO papers fix; backtest TMON park; fix stop_runner nest; installer |
+| 2026-07-19 | Help/DB schema: live from PG, offline from 01+02; fix stop_runner ×N nest in sync-02; schema-offline regen |
 | 2026-07-19 | v45 seed: +5 trend +10 counter OsEngine logics; no DELETE on re-seed (preserve copies/edits) |
 | 2026-07-19 | Logics export/import: right checkboxes, header Export/Import, JSON with papers/params/signals/stops, no tests |
 | 2026-07-18 | Futures backtest fix: partial coverage still runs indicators; MOEX M10→M15; T-Bank partial→MOEX; concurrency=1 |
@@ -554,3 +558,7 @@
 121. «Futures again, not a single test transaction… look, is it right or again something fell?»
 122. «Add export/import for logics: checkboxes on the right, Export/Import buttons on the subtitle row; message with names; papers included, tests not.»
 123. «Add 5 trend + 10 counter-trend OsEngine logics not yet in seed; on upgrade do not erase existing/copied logics — insert if not exists.»
+124. «Update Help DB structure for all changes and idempotence; tables/routines from DB when connected, else from SQL scripts; check it is not broken.»
+125. «Show testing period on the test line as day/month/year from–to, readable; keep existing places.»
+126. «TMON not purchased in test; empty papers list though params set.»
+127. «Post changes in the repository. Only the installer needs to be assembled first.»
