@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Export trades (test/live): full JSON + logic params/signals/stops/papers
+**Последнее обновление:** 2026-07-21 — Indicator SQUARE (quadratic channel) + seed logic Square Fade
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | Indicator SQUARE (b+a·x+c·x² channel) + Square Fade seed (like LinReg Fade) |
 | 2026-07-21 | Trades export (Позиции/Тестирование): full dump + logic params/signals/stops/papers/NTP |
 | 2026-07-21 | Remove LINREGV + LinRegV Fade (seed/functions/dispatch); upgrade DELETE/DROP; installers |
 | 2026-07-21 | Fix delete logic: cascade/remove logic_trades (FK was RESTRICT) |
@@ -596,3 +597,4 @@
 139. Default seed SL: portfolio (whole logic), not paper security_resume; check upgrade re-apply.
 140. Remove unsuccessful LINREGV / LinRegV Fade and related functions from scripts.
 141. Export button on test+live trades: all open/close/shadow/etc. + logic params and full context for AI analysis.
+142. Quadratic indicator SQUARE (like LINREG but b+a·x+c·x²) + Square Fade logic like LinReg Fade.

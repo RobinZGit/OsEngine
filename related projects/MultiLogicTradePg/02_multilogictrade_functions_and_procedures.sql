@@ -3827,7 +3827,6 @@ COMMENT ON FUNCTION calc_ind_linreg_array(INTEGER, NUMERIC, VARCHAR, INTEGER, IN
 DROP FUNCTION IF EXISTS calc_ind_linregv(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER);
 DROP FUNCTION IF EXISTS calc_ind_linregv_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP);
 
-
 -- =====================================================================
 -- Скалярные calc_ind_* (тот же контракт, что у SMA/STOCH: script → calc_ind_*)
 -- =====================================================================
@@ -3968,6 +3967,177 @@ COMMENT ON FUNCTION calc_ind_adx(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, 
 COMMENT ON FUNCTION calc_ind_linreg(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
 'Скаляр LinReg-канала на баре — через calc_ind_linreg_array';
 
+-- ========== SQUARE: квадратичный канал (y = b + a·x + c·x²; mid ± Dev·σ остатков) ==========
+-- Те же серии, что у LINREG (MIDDLE/UPPER/LOWER/SLOPE) + C (квадратичный коэффициент).
+-- SLOPE = мгновенный наклон в конце окна: a + 2·c·(period−1).
+CREATE OR REPLACE FUNCTION calc_ind_square_array(
+    p_period INTEGER,
+    p_std_dev NUMERIC,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    v_period INTEGER;
+    v_dev NUMERIC;
+    v_ser TEXT;
+    i INTEGER;
+    j INTEGER;
+    x NUMERIC;
+    y NUMERIC;
+    v_start INTEGER;
+    s0 NUMERIC;
+    s1 NUMERIC;
+    s2 NUMERIC;
+    s3 NUMERIC;
+    s4 NUMERIC;
+    sy NUMERIC;
+    sxy NUMERIC;
+    sx2y NUMERIC;
+    det NUMERIC;
+    det_b NUMERIC;
+    det_a NUMERIC;
+    det_c NUMERIC;
+    v_b NUMERIC;
+    v_a NUMERIC;
+    v_c NUMERIC;
+    v_mid NUMERIC;
+    v_var NUMERIC;
+    v_std NUMERIC;
+    v_pred NUMERIC;
+    v_x_end NUMERIC;
+BEGIN
+    v_ser := upper(btrim(COALESCE(p_series, 'VALUE')));
+    IF v_ser NOT IN ('VALUE', 'MIDDLE', 'UPPER', 'LOWER', 'SLOPE', 'C') THEN
+        RETURN;
+    END IF;
+    IF v_ser = 'VALUE' THEN v_ser := 'MIDDLE'; END IF;
+    -- Минимум 3 точки для трёх коэффициентов (b, a, c).
+    v_period := GREATEST(COALESCE(p_period, 20), 3);
+    v_dev := GREATEST(COALESCE(p_std_dev, 2.0), 0.1);
+
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(v_period, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.close_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_closes, v_n
+    FROM (
+        SELECT p.dt, p.close_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    IF v_n IS NULL OR v_n < v_period THEN RETURN; END IF;
+
+    v_start := GREATEST(v_period, v_n - p_point_count + 1);
+    s0 := v_period;
+    v_x_end := v_period - 1;
+
+    FOR i IN v_period .. v_n LOOP
+        IF i < v_start THEN CONTINUE; END IF;
+
+        s1 := 0; s2 := 0; s3 := 0; s4 := 0;
+        sy := 0; sxy := 0; sx2y := 0;
+        FOR j IN 0 .. (v_period - 1) LOOP
+            x := j;
+            y := v_closes[i - v_period + 1 + j];
+            s1 := s1 + x;
+            s2 := s2 + x * x;
+            s3 := s3 + x * x * x;
+            s4 := s4 + x * x * x * x;
+            sy := sy + y;
+            sxy := sxy + x * y;
+            sx2y := sx2y + x * x * y;
+        END LOOP;
+
+        -- Нормальные уравнения: [s0 s1 s2; s1 s2 s3; s2 s3 s4] · [b;a;c] = [sy;sxy;sx2y]
+        det := s0 * (s2 * s4 - s3 * s3)
+             - s1 * (s1 * s4 - s2 * s3)
+             + s2 * (s1 * s3 - s2 * s2);
+        IF det IS NULL OR abs(det) < 1e-18 THEN
+            CONTINUE;
+        END IF;
+
+        det_b := sy * (s2 * s4 - s3 * s3)
+               - s1 * (sxy * s4 - s3 * sx2y)
+               + s2 * (sxy * s3 - s2 * sx2y);
+        det_a := s0 * (sxy * s4 - s3 * sx2y)
+               - sy * (s1 * s4 - s2 * s3)
+               + s2 * (s1 * sx2y - s2 * sxy);
+        det_c := s0 * (s2 * sx2y - s3 * sxy)
+               - s1 * (s1 * sx2y - s2 * sxy)
+               + sy * (s1 * s3 - s2 * s2);
+
+        v_b := det_b / det;
+        v_a := det_a / det;
+        v_c := det_c / det;
+        v_mid := v_b + v_a * v_x_end + v_c * v_x_end * v_x_end;
+
+        v_var := 0;
+        FOR j IN 0 .. (v_period - 1) LOOP
+            x := j;
+            v_pred := v_b + v_a * x + v_c * x * x;
+            v_var := v_var + power(v_closes[i - v_period + 1 + j] - v_pred, 2);
+        END LOOP;
+        v_std := sqrt(v_var / s0);
+
+        dt := v_dts[i];
+        value := CASE v_ser
+            WHEN 'MIDDLE' THEN v_mid
+            WHEN 'UPPER' THEN v_mid + v_dev * v_std
+            WHEN 'LOWER' THEN v_mid - v_dev * v_std
+            WHEN 'SLOPE' THEN v_a + 2 * v_c * v_x_end
+            WHEN 'C' THEN v_c
+        END;
+        RETURN NEXT;
+    END LOOP;
+END;
+$$;
+
+COMMENT ON FUNCTION calc_ind_square_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
+'Квадратичная регрессия по close (b+a·x+c·x²): MIDDLE/UPPER/LOWER/SLOPE/C (канал Dev·σ остатков)';
+
+CREATE OR REPLACE FUNCTION calc_ind_square(
+    p_period INTEGER,
+    p_std_dev NUMERIC,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN (
+        SELECT a.value
+        FROM calc_ind_square_array(
+            p_period, COALESCE(p_std_dev, 2.0), p_series,
+            p_security_id, p_timeframe_id, 1, p_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION calc_ind_square(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
+'Скаляр SQUARE-канала на баре — через calc_ind_square_array';
+
 -- =====================================================================
 -- Параметры серии из @IND(...period=N...) в formula сигнала (до sync)
 -- тот же парсер сигналов, что у SMA (@SMA(period=20,series=VALUE) …)
@@ -4091,6 +4261,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -4158,6 +4329,10 @@ BEGIN
             RETURN QUERY SELECT * FROM calc_ind_linreg_array(
                 COALESCE(p_period, 20), COALESCE(p_std_dev, 2.0), p_series,
                 p_security_id, p_timeframe_id, p_point_count, p_end_dt);
+        WHEN 'SQUARE' THEN
+            RETURN QUERY SELECT * FROM calc_ind_square_array(
+                COALESCE(p_period, 20), COALESCE(p_std_dev, 2.0), p_series,
+                p_security_id, p_timeframe_id, p_point_count, p_end_dt);
         ELSE
             RETURN;
     END CASE;
@@ -4181,7 +4356,7 @@ BEGIN
     param_period := CASE upper(p_indicator_code)
         WHEN 'RSI' THEN 14 WHEN 'SMA' THEN 20 WHEN 'EMA' THEN 20 WHEN 'BB' THEN 20
         WHEN 'ATR' THEN 14 WHEN 'STOCH' THEN 14 WHEN 'SMAT3' THEN 20
-        WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20
+        WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20 WHEN 'SQUARE' THEN 20
         ELSE 14 END;
     BEGIN
         SELECT pv.value::INTEGER INTO param_period
@@ -6721,6 +6896,32 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -12452,6 +12653,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

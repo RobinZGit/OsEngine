@@ -780,7 +780,8 @@ INSERT INTO indicators (code, name, description, category) VALUES
     ('HMA', 'Hull Moving Average', 'Скользящее среднее Халла', 'trend'),
     ('ZLEMA', 'Zero Lag EMA', 'EMA с нулевым запаздыванием', 'trend'),
     ('SMAT3', 'SMA Triple', 'Тройное SMA (тройная свёртка)', 'trend'),
-    ('LINREG', 'Linear Regression Channel', 'Канал линейной регрессии (mid ± Dev·σ остатков)', 'trend')
+    ('LINREG', 'Linear Regression Channel', 'Канал линейной регрессии (mid ± Dev·σ остатков)', 'trend'),
+    ('SQUARE', 'Quadratic Regression Channel', 'Квадратичный канал (b+a·x+c·x²; mid ± Dev·σ остатков)', 'trend')
 ON CONFLICT (code) DO NOTHING;
 
 -- Шаблоны расчёта (функция + параметры; :series подставляется для каждой линии индикатора)
@@ -794,6 +795,7 @@ UPDATE indicators SET script = 'SELECT calc_ind_stoch(:k_period, :d_period, :smo
 UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'CCI';
 UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
 UPDATE indicators SET script = 'SELECT calc_ind_linreg(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREG';
+UPDATE indicators SET script = 'SELECT calc_ind_square(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'SQUARE';
 
 -- Профиль шаблонов сигнала: какие двоичные смыслы «по течению / против» типичны для индикатора
 
@@ -812,7 +814,7 @@ UPDATE indicators SET formula = 'ema', is_custom = FALSE WHERE code = 'EMA';
 UPDATE indicators SET formula = 'pp * (1; -2; 1)', is_custom = TRUE WHERE code = 'PACC';
 UPDATE indicators SET formula = 'sma(period=20, series=VALUE) * sma(period=20, series=VALUE) * sma(period=20, series=VALUE)', is_custom = TRUE WHERE code = 'SMAT3';
 -- Как у STOCH/ATR/MACD: пустая formula → calc_indicator_series_array / calc_ind_*_array (не poly)
-UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code IN ('CCI', 'ADX', 'LINREG', 'ATR', 'STOCH', 'MACD', 'BB', 'RSI');
+UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code IN ('CCI', 'ADX', 'LINREG', 'SQUARE', 'ATR', 'STOCH', 'MACD', 'BB', 'RSI');
 
 -- Профили + шаблоны follow(trend) / fade(counter)
 -- trend_line: цена относительно линии
@@ -820,7 +822,7 @@ UPDATE indicators SET
     sig_profile = 'trend_line',
     sig_trend_def = 'pp > VALUE',
     sig_ct_def = 'pp < VALUE'
-WHERE code IN ('SMA', 'EMA', 'WMA', 'HMA', 'ZLEMA', 'SMAT3', 'ICHIMOKU', 'PSAR', 'SAR', 'LINREG');
+WHERE code IN ('SMA', 'EMA', 'WMA', 'HMA', 'ZLEMA', 'SMAT3', 'ICHIMOKU', 'PSAR', 'SAR', 'LINREG', 'SQUARE');
 
 -- oscillator 0..100: follow = бычья половина / кросс; fade = зона перепроданности
 UPDATE indicators SET
@@ -1031,6 +1033,11 @@ JOIN (VALUES
     ('LINREG', 'UPPER', 'Верхняя граница', 'float', FALSE, NULL, 'mid + Dev·σ', 2),
     ('LINREG', 'LOWER', 'Нижняя граница', 'float', FALSE, NULL, 'mid − Dev·σ', 3),
     ('LINREG', 'SLOPE', 'Наклон LinReg', 'float', FALSE, NULL, 'Наклон регрессии', 4),
+    ('SQUARE', 'MIDDLE', 'Линия Square', 'float', FALSE, NULL, 'Середина квадратичного канала', 1),
+    ('SQUARE', 'UPPER', 'Верхняя граница', 'float', FALSE, NULL, 'mid + Dev·σ', 2),
+    ('SQUARE', 'LOWER', 'Нижняя граница', 'float', FALSE, NULL, 'mid − Dev·σ', 3),
+    ('SQUARE', 'SLOPE', 'Наклон Square', 'float', FALSE, NULL, 'Мгновенный наклон a+2·c·x на конце окна', 4),
+    ('SQUARE', 'C', 'Коэффициент C', 'float', FALSE, NULL, 'Квадратичный коэффициент c в b+a·x+c·x²', 5),
     ('PACC', 'VALUE', 'Ускорение цены', 'float', FALSE, NULL, 'pp * (1;-2;1)', 1),
     ('SMAT3', 'VALUE', 'SMA³ свёртка', 'float', FALSE, NULL, 'sma(period=20,series=VALUE)*3', 1),
     ('SMA', 'VALUE', 'Значение MA', 'float', FALSE, NULL, 'SMA value', 1),
@@ -2219,6 +2226,10 @@ CROSS JOIN (VALUES
         'Контртрендовая. OsEngine-style fade по каналу LinReg: отскок от нижней/верхней границы к середине канала.'
     ),
     (
+        'Square Fade',
+        'Контртрендовая. Как LinReg Fade, но канал SQUARE (квадратичная регрессия b+a·x+c·x²): отскок от границ к середине.'
+    ),
+    (
         'ADX Range RSI',
         'Контртрендовая (боковик). Слабый тренд ADX < 25 + перепроданность/перекупленность RSI — OsEngine range-trading.'
     ),
@@ -2250,7 +2261,7 @@ CROSS JOIN (VALUES
     ('rating_lookback_days', '7', 'integer')
 ) AS v(param_key, param_value, value_type)
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+    'CCI Countertrade', 'LinReg Fade', 'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -2259,7 +2270,7 @@ SELECT l.id, d.param_key, d.default_value, d.value_type
 FROM logics l
 CROSS JOIN logic_param_defs d
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+    'CCI Countertrade', 'LinReg Fade', 'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -2293,6 +2304,21 @@ CROSS JOIN (VALUES
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'LinReg Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SQUARE', 'open',  'long',  'counter', '@SQUARE(period=20,std_dev=2,series=LOWER) pp <= VALUE', 0),
+    ('SQUARE', 'close', 'long',  'trend',   '@SQUARE(period=20,std_dev=2,series=MIDDLE) pp >= VALUE', 1),
+    ('SQUARE', 'open',  'short', 'counter', '@SQUARE(period=20,std_dev=2,series=UPPER) pp >= VALUE', 2),
+    ('SQUARE', 'close', 'short', 'trend',   '@SQUARE(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Square Fade'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 -- Upgrade: убрать неудачный LINREGV / LinRegV Fade (если ставили раньше)
@@ -2364,7 +2390,7 @@ CROSS JOIN LATERAL (
     ORDER BY s.id, sp.prefix
 ) q
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+    'CCI Countertrade', 'LinReg Fade', 'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
 ON CONFLICT (logic_id, security_id) DO NOTHING;
 
@@ -2378,7 +2404,7 @@ CROSS JOIN (VALUES
     ('take_profit', 'security',        3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+    'CCI Countertrade', 'LinReg Fade', 'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
