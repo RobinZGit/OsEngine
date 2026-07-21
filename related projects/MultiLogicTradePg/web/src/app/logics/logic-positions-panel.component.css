@@ -282,6 +282,17 @@
   cursor: wait;
 }
 
+.positions-panel-outer .panel-backtest-active {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.positions-panel-outer .panel-backtest-active > .signals-summary,
+.positions-panel-outer .panel-backtest-active.signals-block {
+  background: #fde68a;
+}
+
 .positions-panel-outer .panel-backtest-active .signals-summary-head .positions-summary-pnl {
   opacity: 0.85;
 }

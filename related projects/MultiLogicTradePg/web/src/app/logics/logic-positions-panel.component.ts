@@ -289,7 +289,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   get isBacktestRunning(): boolean {
 
-    const s = this.backtestRun?.status;
+    const s = String(this.backtestRun?.status ?? '')
+      .trim()
+      .toLowerCase();
 
     return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
 

@@ -94,20 +94,29 @@ export class BacktestUiStateService implements OnDestroy {
       return;
     }
     this.runs.set(id, row);
-    const st = String(row.status ?? '');
+    const st = String(row.status ?? '').trim().toLowerCase();
     if (ACTIVE_STATUSES.has(st)) {
       this.pollIds.add(id);
       this.expandTestBlocks.add(id);
       this.ensureTimer();
     } else {
       this.pollIds.delete(id);
+      // Finished/cancelled — stop forcing «Тестирование» open on remount.
+      this.expandTestBlocks.delete(id);
     }
     this.bump();
   }
 
   isRunning(logicId: number): boolean {
-    const s = this.runs.get(Number(logicId))?.status;
-    return !!s && ACTIVE_STATUSES.has(String(s));
+    const s = String(this.runs.get(Number(logicId))?.status ?? '')
+      .trim()
+      .toLowerCase();
+    return ACTIVE_STATUSES.has(s);
+  }
+
+  /** Tick for templates — changes when any run map updates. */
+  get uiTick(): number {
+    return this.bump$.value;
   }
 
   recoverActive(): void {

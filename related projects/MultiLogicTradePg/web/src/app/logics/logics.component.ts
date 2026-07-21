@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
@@ -281,7 +281,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     private readonly settings: SettingsService,
     private readonly techLog: TechLogService,
     private readonly appConfig: AppConfigService,
-    private readonly backtestUi: BacktestUiStateService
+    private readonly backtestUi: BacktestUiStateService,
+    private readonly cdr: ChangeDetectorRef
   ) {
     this.backtestRuns = this.backtestUi.runs;
     this.backtestPollIds = this.backtestUi.pollIds;
@@ -295,10 +296,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedLogics.add(logicId);
     }
     this.backtestUi.changes$.pipe(takeUntil(this.destroy$)).subscribe(() => {
-      for (const logicId of this.backtestUi.expandTestBlocks) {
-        this.expandedTestTradesBlocks.add(logicId);
-      }
-      // Background poll updated runs while we were on another route / tab.
+      // Do not force-reopen «Тестирование» on every poll — only refresh UI.
       for (const logicId of [...this.backtestPollIds]) {
         if (!this.isBacktestRunning(logicId)) {
           this.loadTestTradesForLogic(logicId, true);
@@ -306,6 +304,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.rebuildTestTradesView(logicId);
       }
       this.refreshTestPnlSummary();
+      this.cdr.markForCheck();
     });
     this.loadIndicatorsCatalog();
     this.loadMoexExchangeId();
@@ -350,11 +349,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
           });
           this.loading = false;
           this.error = null;
+          // Re-sync yellow/progress from DB (covers remount / F5 / lost local map).
+          if (this.pollTick % 5 === 0) {
+            this.backtestUi.recoverActive();
+          }
           // Сделки — read-only, обновляем; редактируемые блоки (параметры, формулы) — нет
           this.refreshAllTradesSummaries();
           this.refreshPnlSummaries();
           this.refreshProcesses();
           this.maybeCheckTbankTokenForTrades();
+          this.cdr.markForCheck();
         },
         error: (err) => {
           if (this.loading || this.logics.length === 0) {
@@ -1582,8 +1586,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   isBacktestRunning(logicId: number): boolean {
-    const s = this.backtestRuns.get(logicId)?.status;
-    return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
+    return this.backtestUi.isRunning(logicId);
+  }
+
+  /** Bound in template so CD sees Map updates from the shared service. */
+  backtestUiTick(): number {
+    return this.backtestUi.uiTick;
   }
 
   backtestProgressPct(logicId: number): number {
@@ -2767,6 +2775,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
       next: (resp) => {
         this.processRows = resp.rows ?? [];
         this.processError = null;
+        // Processes strip also lists active backtests — keep yellow/watch in sync.
+        for (const p of this.processRows) {
+          if (p.type === 'backtest' && p.logic_id != null) {
+            const id = Number(p.logic_id);
+            if (Number.isFinite(id) && id > 0 && !this.backtestUi.isRunning(id)) {
+              this.backtestUi.watch(id);
+            }
+          }
+        }
       },
       error: (err) => {
         this.processRows = [];
