@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Force-rebuild Windows+Linux installers (token + LINREGV/LinRegV Fade) per freshness rule
+**Последнее обновление:** 2026-07-21 — Seed default SL: portfolio 1% (was security_resume); upgrade UPDATE for old seed pattern
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | Seed SL default → portfolio 1%; upgrade UPDATE for old security_resume 1% seed; installers |
 | 2026-07-21 | Force-rebuild both installers (freshness rule) after token+LINREGV ships |
 | 2026-07-21 | Test Start + enable fake: global TBANK token for all logics/copies (no HTTP re-prompt) |
 | 2026-07-21 | Indicator LINREGV (period max→3, min max\|residual\|) + seed logic LinRegV Fade |
@@ -589,3 +590,4 @@
 136. Papers list: next to ост. — short money remainder + current price; test and live.
 137. New indicator ≈ LINREG but vary period max→3, pick min max|distance to line|; logic like LinReg Fade with new indicator.
 138. Copied logics ask for T-Bank token again on test; defaults don’t — use same saved global token.
+139. Default seed SL: portfolio (whole logic), not paper security_resume; check upgrade re-apply.

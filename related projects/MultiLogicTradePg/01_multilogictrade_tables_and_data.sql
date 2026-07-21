@@ -1767,14 +1767,14 @@ CROSS JOIN LATERAL (
 WHERE l.name = 'SMA Price Cross Demo'
 ON CONFLICT (logic_id, security_id) DO NOTHING;
 
--- Стоп-лосс 1% по бумаге с возобновлением (security_resume) и тейк-профит 3% по бумаге
+-- Стоп-лосс 1% по всему портфелю логики (portfolio) и тейк-профит 3% по бумаге
 -- Демо-стопы: insert only if empty
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',    'security_resume', 1.0, 'percent', 0),
+    ('stop_loss',    'portfolio', 1.0, 'percent', 0),
     ('take_profit',  'security', 3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name = 'SMA Price Cross Demo'
@@ -1783,7 +1783,7 @@ WHERE l.name = 'SMA Price Cross Demo'
 -- =====================================================================
 -- v41: классические стратегии (по мотивам OsEngine Robots / Custom)
 -- Демо «SMA Price Cross Demo» выше не трогаем.
--- Все на FAKE-EFF-001, выключены, все акции, SL 1% resume / TP 3%.
+-- Все на FAKE-EFF-001, выключены, все акции, SL 1% portfolio / TP 3%.
 -- =====================================================================
 
 INSERT INTO logics (name, account_id, is_enabled)
@@ -2034,7 +2034,7 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
     ('take_profit', 'security',        3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
@@ -2199,7 +2199,7 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
     ('take_profit', 'security',        3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
@@ -2209,7 +2209,7 @@ WHERE l.name IN (
 
 -- =====================================================================
 -- v44: ещё 5 контртрендовых стратегий (OsEngine-style)
--- FAKE, выключены, все акции, SL 1% resume / TP 3%.
+-- FAKE, выключены, все акции, SL 1% portfolio / TP 3%.
 -- =====================================================================
 
 INSERT INTO logics (name, account_id, is_enabled, note)
@@ -2374,7 +2374,7 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
     ('take_profit', 'security',        3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name = 'LinRegV Fade'
@@ -2451,7 +2451,7 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
     ('take_profit', 'security',        3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
@@ -2461,7 +2461,7 @@ WHERE l.name IN (
 
 -- =====================================================================
 -- v45: +5 трендовых и +10 контртрендовых (OsEngine-style), ещё не в seed
--- FAKE, выключены, все акции, SL 1% resume / TP 3%.
+-- FAKE, выключены, все акции, SL 1% portfolio / TP 3%.
 -- Только INSERT IF NOT EXISTS — копии пользователя и правки не затираются.
 -- =====================================================================
 
@@ -2789,7 +2789,7 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
     ('take_profit', 'security',        3.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
@@ -2798,6 +2798,17 @@ WHERE l.name IN (
     'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade'
 )
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
+
+-- Upgrade (01 re-run): старый seed-дефолт SL «по бумаге с resume 1%» → portfolio 1%.
+-- INSERT выше не трогает логики, у которых stops уже есть (NOT EXISTS).
+-- Этот UPDATE меняет только точное совпадение со старым seed (value=1%, unit=percent, security_resume).
+-- Ручные правки (другой %, scope security/inversion, portfolio уже) не затираются.
+UPDATE logic_stops
+SET scope_type = 'portfolio'
+WHERE rule_kind = 'stop_loss'
+  AND scope_type = 'security_resume'
+  AND value_unit = 'percent'
+  AND value = 1.0;
 
 -- Примечания ко всем seed-логикам (тип стратегии + источник)
 UPDATE logics l
