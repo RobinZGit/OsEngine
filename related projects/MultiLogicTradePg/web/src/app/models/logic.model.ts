@@ -17,6 +17,8 @@ export interface LogicRow {
   rating_lookback_days?: number;
   /** Инверсия логики: условия наоборот и Long↔Short. */
   inversion?: boolean;
+  /** portfolio_resume SL: весь портфель в shadow до восстановления. */
+  portfolio_trading_paused?: boolean;
   /** Перед включением боя: предварительный тест для stop resume / inversion states. */
   warmup_pretest?: boolean;
   /** Денежный фонд для парковки кэша: '' | TMON | LQDT | SBMM (runner later). */
@@ -138,7 +140,7 @@ export interface LogicStopRow {
   id: number;
   logic_id: number;
   rule_kind: 'stop_loss' | 'take_profit';
-  scope_type: 'security' | 'security_resume' | 'security_inversion' | 'portfolio';
+  scope_type: 'security' | 'security_resume' | 'security_inversion' | 'portfolio' | 'portfolio_resume';
   value: number;
   value_unit: 'percent' | 'atr';
   display_order: number;

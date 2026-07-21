@@ -758,6 +758,78 @@ BEGIN
                     );
                 END LOOP;
             END IF;
+        ELSIF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'portfolio_resume' THEN
+            -- Resume check while paused
+            SELECT COALESCE(r.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
+                   r.portfolio_stop_resume_equity,
+                   r.portfolio_stop_resume_baseline,
+                   r.portfolio_equity_peak
+            INTO v_state
+            FROM logic_backtest_runs r
+            WHERE r.id = p_run_id;
+
+            IF COALESCE(v_state.portfolio_trading_paused, FALSE) THEN
+                SELECT COALESCE(SUM(lt.financial_result), 0) INTO v_track_after
+                FROM logic_trades lt
+                WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND lt.is_shadow = TRUE
+                  AND lt.status IN ('filled', 'submitted')
+                  AND lt.financial_result IS NOT NULL;
+
+                IF COALESCE(v_state.portfolio_stop_resume_baseline, 0) + COALESCE(v_track_after, 0)
+                   >= COALESCE(v_state.portfolio_stop_resume_equity, 0) THEN
+                    UPDATE logic_backtest_runs
+                    SET portfolio_trading_paused = FALSE,
+                        portfolio_stop_resume_equity = NULL,
+                        portfolio_stop_resume_baseline = NULL,
+                        portfolio_equity_peak = GREATEST(
+                            COALESCE(portfolio_equity_peak, 0),
+                            COALESCE(v_state.portfolio_stop_resume_equity, 0),
+                            p_balance
+                        )
+                    WHERE id = p_run_id;
+                END IF;
+            ELSE
+                -- Update peak from balance (test equity ≈ cash after closes)
+                UPDATE logic_backtest_runs
+                SET portfolio_equity_peak = GREATEST(
+                    COALESCE(portfolio_equity_peak, 0),
+                    COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0),
+                    p_balance
+                )
+                WHERE id = p_run_id
+                  AND COALESCE(portfolio_trading_paused, FALSE) = FALSE;
+
+                SELECT COALESCE(portfolio_equity_peak, p_balance) INTO v_track_before
+                FROM logic_backtest_runs WHERE id = p_run_id;
+
+                v_drawdown := 0;
+                IF v_track_before > 0 AND p_balance < v_track_before THEN
+                    v_drawdown := (v_track_before - p_balance) / v_track_before * 100.0;
+                END IF;
+
+                IF v_drawdown >= v_stop.value THEN
+                    v_reason := format('stop_loss:portfolio_resume (%s%%)', round(v_drawdown, 2));
+                    FOR v_sec IN
+                        SELECT DISTINCT lt.security_id
+                        FROM logic_trades lt
+                        WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
+                          AND lt.status IN ('filled', 'submitted')
+                          AND NOT logic_is_cash_fund_security(lt.security_id)
+                    LOOP
+                        SELECT *
+                        INTO v_closed, p_balance
+                        FROM logic_backtest_close_security(
+                            p_run_id, p_logic_id, p_account_id, v_sec.security_id,
+                            p_tf_id, p_bar_dt, FALSE, v_reason, p_balance
+                        );
+                    END LOOP;
+                    UPDATE logic_backtest_runs
+                    SET portfolio_trading_paused = TRUE,
+                        portfolio_stop_resume_equity = v_track_before,
+                        portfolio_stop_resume_baseline = p_balance
+                    WHERE id = p_run_id;
+                END IF;
+            END IF;
         ELSIF v_stop.rule_kind = 'stop_loss' THEN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
@@ -910,7 +982,11 @@ BEGIN
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
           AND NOT logic_is_cash_fund_security(ls.security_id)
     LOOP
-        v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id);
+        v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id)
+            OR COALESCE(
+                (SELECT r.portfolio_trading_paused FROM logic_backtest_runs r WHERE r.id = p_run_id),
+                FALSE
+            );
         v_eff_inversion := (
             v_inversion <> COALESCE(
                 (SELECT st.real_trading_inverted

@@ -43,7 +43,7 @@ DO $$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
-        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio'));
+        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'));
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN duplicate_object THEN NULL;
@@ -76,7 +76,7 @@ DO $$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
-        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio'));
+        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'));
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN duplicate_object THEN NULL;
@@ -1182,6 +1182,20 @@ ALTER TABLE logics ADD COLUMN IF NOT EXISTS name VARCHAR(100);
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE RESTRICT;
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_equity_peak NUMERIC(20, 6);
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_equity NUMERIC(20, 6);
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_baseline NUMERIC(20, 6);
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_at TIMESTAMP;
+
+COMMENT ON COLUMN logics.portfolio_trading_paused IS
+'portfolio_resume SL: реал остановлен, сделки идут в shadow до восстановления equity';
+COMMENT ON COLUMN logics.portfolio_equity_peak IS
+'Пик equity портфеля (обновляется на баре, пока нет portfolio pause)';
+COMMENT ON COLUMN logics.portfolio_stop_resume_equity IS
+'Цель возобновления реальной торговли (уровень до срабатывания portfolio_resume)';
+COMMENT ON COLUMN logics.portfolio_stop_resume_baseline IS
+'Equity после закрытия реальных позиций при portfolio_resume';
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -1609,7 +1623,7 @@ CREATE TABLE IF NOT EXISTS logic_stops (
     id SERIAL PRIMARY KEY,
     logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
     rule_kind VARCHAR(20) NOT NULL CHECK (rule_kind IN ('stop_loss', 'take_profit')),
-    scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio')),
+    scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume')),
     value NUMERIC(18, 6) NOT NULL CHECK (value > 0),
     value_unit VARCHAR(10) NOT NULL CHECK (value_unit IN ('percent', 'atr')),
     display_order INTEGER NOT NULL DEFAULT 0,
@@ -1619,7 +1633,7 @@ CREATE TABLE IF NOT EXISTS logic_stops (
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS rule_kind VARCHAR(20) CHECK (rule_kind IN ('stop_loss', 'take_profit'));
-ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20) CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio'));
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20) CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'));
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value NUMERIC(18, 6) CHECK (value > 0);
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value_unit VARCHAR(10) CHECK (value_unit IN ('percent', 'atr'));
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
@@ -1638,11 +1652,11 @@ COMMENT ON TABLE logic_stops IS
 'Стоп-лосс и тейк-профит для logics: security (по бумаге) или portfolio (портфель логики)';
 COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
 COMMENT ON COLUMN logic_stops.scope_type IS
-'stop_loss: security | security_resume | security_inversion | portfolio; take_profit: security | portfolio';
+'stop_loss: security | security_resume | security_inversion | portfolio | portfolio_resume; take_profit: security | portfolio';
 
 UPDATE logic_stops
 SET scope_type = 'security'
-WHERE rule_kind = 'take_profit' AND scope_type IN ('security_resume', 'security_inversion');
+WHERE rule_kind = 'take_profit' AND scope_type IN ('security_resume', 'security_inversion', 'portfolio_resume');
 
 DO $$
 BEGIN
@@ -3023,6 +3037,10 @@ ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS test_balance NUMERIC(20
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_equity_peak NUMERIC(20, 6);
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_stop_resume_equity NUMERIC(20, 6);
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_stop_resume_baseline NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;

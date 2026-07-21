@@ -383,7 +383,7 @@ async function importLogicBundle(pool, bundle) {
           [
             logicId,
             st.rule_kind === 'take_profit' ? 'take_profit' : 'stop_loss',
-            ['security', 'security_resume', 'security_inversion', 'portfolio'].includes(st.scope_type)
+            ['security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'].includes(st.scope_type)
               ? st.scope_type
               : 'security',
             Number(st.value) || 0,

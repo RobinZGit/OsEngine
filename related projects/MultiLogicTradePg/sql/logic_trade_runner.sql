@@ -803,7 +803,8 @@ DECLARE
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
 BEGIN
-    SELECT l.id, l.account_id, a.account_type
+    SELECT l.id, l.account_id, a.account_type,
+           COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
     INTO v_logic
     FROM logics l
     JOIN accounts a ON a.id = l.account_id
@@ -940,7 +941,7 @@ BEGIN
           -- Денежный фонд только для парковки кэша, не для сигналов
           AND NOT logic_is_cash_fund_security(ls.security_id)
     LOOP
-        v_is_shadow := v_sec.real_trading_paused;
+        v_is_shadow := v_sec.real_trading_paused OR COALESCE(v_logic.portfolio_trading_paused, FALSE);
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);
         v_is_futures := logic_security_is_futures(v_sec.security_id);

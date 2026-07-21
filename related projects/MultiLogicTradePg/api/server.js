@@ -39,7 +39,13 @@ const {
 const { buildLogicBundle, importLogicBundle } = require('./lib/logic-bundle');
 const { writeTechLogEvent } = require('./lib/tech-log');
 
-const VALID_STOP_SCOPES = new Set(['security', 'security_resume', 'security_inversion', 'portfolio']);
+const VALID_STOP_SCOPES = new Set([
+  'security',
+  'security_resume',
+  'security_inversion',
+  'portfolio',
+  'portfolio_resume',
+]);
 const TAKE_PROFIT_SCOPES = new Set(['security', 'portfolio']);
 
 function isScopeValidForRuleKind(ruleKind, scopeType) {
@@ -1083,6 +1089,7 @@ app.get('/api/logics', async (_req, res) => {
         l.account_id,
         l.is_enabled,
         l.note,
+        COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
         a.account_code,
         a.name AS account_name,
         a.account_type,

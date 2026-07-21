@@ -407,6 +407,12 @@ tbody tr.logic-main-row:hover {
   box-shadow: inset 4px 0 0 #dc2626;
 }
 
+.row-portfolio-paused {
+  outline: 2px solid #0f766e;
+  outline-offset: -2px;
+  box-shadow: inset 4px 0 0 #0f766e;
+}
+
 .logic-name-cell {
   display: flex;
   flex-direction: column;

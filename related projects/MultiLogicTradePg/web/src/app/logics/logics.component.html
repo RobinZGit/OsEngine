@@ -192,6 +192,7 @@
 
               [class.row-testing]="isBacktestRunning(row.id)"
               [class.row-inversion]="row.inversion"
+              [class.row-portfolio-paused]="row.portfolio_trading_paused"
 
               (click)="toggleLogicExpand(row, $event)"
 
@@ -237,6 +238,12 @@
                 <span class="logic-name-cell">
                   <span class="logic-name-main">
                     <span class="logic-name-text">{{ displayLogicName(row) }}</span>
+                    @if (row.portfolio_trading_paused) {
+                      <span
+                        class="sec-paused-badge"
+                        title="Портфель на паузе (portfolio_resume): реал остановлен, идут теневые сделки до восстановления equity"
+                      >портфель: теневой</span>
+                    }
                     @if (isBacktestRunning(row.id)) {
                       <span
                         class="logic-test-progress"
