@@ -481,6 +481,17 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Shadow: считаем FR/комиссии, но не трогаем тестовый cash (как в бою).
+    IF p_is_shadow THEN
+        PERFORM logic_trade_finalize(v_trade_id, NULL);
+        UPDATE logic_backtest_runs
+        SET trades_created = trades_created + 1
+        WHERE id = p_run_id;
+        o_trade_id := v_trade_id;
+        o_new_balance := v_balance;
+        RETURN;
+    END IF;
+
     v_balance := logic_trade_finalize(v_trade_id, v_balance);
 
     SELECT sd.name, ac.name INTO v_side_name, v_action_name
@@ -646,6 +657,67 @@ BEGIN
 END;
 $$;
 
+-- Track бумаги в тесте (realized + unrealized на баре), аналог logic_security_track_value.
+CREATE OR REPLACE FUNCTION logic_backtest_security_track_value(
+    p_logic_id INTEGER,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_is_shadow BOOLEAN
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_realized NUMERIC := 0;
+    v_unrealized NUMERIC := 0;
+    v_price NUMERIC;
+    v_open RECORD;
+    v_rem NUMERIC;
+BEGIN
+    SELECT COALESCE(SUM(lt.financial_result), 0)
+    INTO v_realized
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    WHERE lt.logic_id = p_logic_id
+      AND lt.security_id = p_security_id
+      AND lt.is_test = TRUE
+      AND lt.is_shadow = p_is_shadow
+      AND s.name = 'Close'
+      AND lt.status IN ('filled', 'submitted')
+      AND lt.financial_result IS NOT NULL;
+
+    v_price := logic_backtest_price_at(p_security_id, p_timeframe_id, p_bar_dt);
+    IF v_price IS NULL OR v_price <= 0 THEN
+        RETURN COALESCE(v_realized, 0);
+    END IF;
+
+    FOR v_open IN
+        SELECT lt.id, lt.price, a.name AS action_name
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.security_id = p_security_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = p_is_shadow
+          AND s.name = 'Open'
+          AND lt.status IN ('filled', 'submitted')
+    LOOP
+        v_rem := logic_trade_open_remaining_qty(v_open.id);
+        IF v_rem <= 0 THEN
+            CONTINUE;
+        END IF;
+        IF v_open.action_name = 'Long' THEN
+            v_unrealized := v_unrealized + v_rem * (v_price - v_open.price);
+        ELSE
+            v_unrealized := v_unrealized + v_rem * (v_open.price - v_price);
+        END IF;
+    END LOOP;
+
+    RETURN COALESCE(v_realized, 0) + COALESCE(v_unrealized, 0);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION logic_backtest_security_gain_pct(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -759,7 +831,7 @@ BEGIN
                 END LOOP;
             END IF;
         ELSIF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'portfolio_resume' THEN
-            -- Resume check while paused
+            -- Resume check while paused (mirror live: baseline + shadow FR ≥ equity before close)
             SELECT COALESCE(r.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
                    r.portfolio_stop_resume_equity,
                    r.portfolio_stop_resume_baseline,
@@ -771,7 +843,10 @@ BEGIN
             IF COALESCE(v_state.portfolio_trading_paused, FALSE) THEN
                 SELECT COALESCE(SUM(lt.financial_result), 0) INTO v_track_after
                 FROM logic_trades lt
-                WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND lt.is_shadow = TRUE
+                WHERE lt.logic_id = p_logic_id
+                  AND lt.run_id = p_run_id
+                  AND lt.is_test = TRUE
+                  AND lt.is_shadow = TRUE
                   AND lt.status IN ('filled', 'submitted')
                   AND lt.financial_result IS NOT NULL;
 
@@ -789,7 +864,7 @@ BEGIN
                     WHERE id = p_run_id;
                 END IF;
             ELSE
-                -- Update peak from balance (test equity ≈ cash after closes)
+                -- Peak for DD%; resume target = cash equity before close (как в бою)
                 UPDATE logic_backtest_runs
                 SET portfolio_equity_peak = GREATEST(
                     COALESCE(portfolio_equity_peak, 0),
@@ -809,6 +884,8 @@ BEGIN
 
                 IF v_drawdown >= v_stop.value THEN
                     v_reason := format('stop_loss:portfolio_resume (%s%%)', round(v_drawdown, 2));
+                    -- Цель возобновления = equity до закрытия, не пик
+                    v_track_before := p_balance;
                     FOR v_sec IN
                         SELECT DISTINCT lt.security_id
                         FROM logic_trades lt
@@ -838,6 +915,26 @@ BEGIN
             LOOP
                 IF v_stop.scope_type = 'security_resume'
                    AND logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
+                    -- Mid-run resume: baseline + shadow track ≥ цель (как logic_check_security_resume)
+                    SELECT st.stop_resume_equity, st.stop_resume_baseline
+                    INTO v_state
+                    FROM logic_backtest_security_state st
+                    WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
+
+                    IF v_state.stop_resume_equity IS NOT NULL
+                       AND v_state.stop_resume_baseline IS NOT NULL THEN
+                        v_track_after := logic_backtest_security_track_value(
+                            p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, TRUE
+                        );
+                        IF COALESCE(v_state.stop_resume_baseline, 0) + COALESCE(v_track_after, 0)
+                           >= COALESCE(v_state.stop_resume_equity, 0) THEN
+                            UPDATE logic_backtest_security_state
+                            SET real_trading_paused = FALSE,
+                                stop_resume_equity = NULL,
+                                stop_resume_baseline = NULL
+                            WHERE run_id = p_run_id AND security_id = v_sec.security_id;
+                        END IF;
+                    END IF;
                     CONTINUE;
                 END IF;
 
@@ -849,6 +946,13 @@ BEGIN
                 END IF;
 
                 v_reason := format('stop_loss:%s (%s%%)', v_stop.scope_type, round(v_drawdown, 2));
+
+                IF v_stop.scope_type = 'security_resume' THEN
+                    v_track_before := logic_backtest_security_track_value(
+                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
+                    );
+                END IF;
+
                 SELECT *
                 INTO v_closed, p_balance
                 FROM logic_backtest_close_security(
@@ -857,11 +961,17 @@ BEGIN
                 );
 
                 IF v_stop.scope_type = 'security_resume' THEN
+                    v_track_after := logic_backtest_security_track_value(
+                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
+                    );
                     INSERT INTO logic_backtest_security_state (
                         run_id, security_id, real_trading_paused,
                         stop_resume_equity, stop_resume_baseline
                     )
-                    VALUES (p_run_id, v_sec.security_id, TRUE, p_balance, p_balance)
+                    VALUES (
+                        p_run_id, v_sec.security_id, TRUE,
+                        v_track_before, v_track_after
+                    )
                     ON CONFLICT (run_id, security_id) DO UPDATE SET
                         real_trading_paused = TRUE,
                         stop_resume_equity = EXCLUDED.stop_resume_equity,
