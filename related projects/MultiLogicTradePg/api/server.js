@@ -3386,6 +3386,34 @@ app.get('/api/logic-backtest/status', async (req, res) => {
   }
 });
 
+/** All in-progress backtests (UI recover after leaving /operations tab). */
+app.get('/api/logic-backtest/active', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT DISTINCT ON (r.logic_id)
+        r.id, r.logic_id,
+        r.date_from::text AS date_from,
+        r.date_to::text AS date_to,
+        r.status,
+        r.progress_pct::float8 AS progress_pct,
+        r.phase_message, r.phase_detail, r.current_bar_dt,
+        r.total_bars, r.processed_bars, r.trades_created,
+        r.test_balance::float8 AS test_balance,
+        r.financial_result::float8 AS financial_result,
+        r.cancel_requested, r.error_message, r.started_at, r.finished_at, r.created_at
+      FROM logic_backtest_runs r
+      WHERE r.status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+      ORDER BY r.logic_id, r.id DESC
+      `
+    );
+    res.json({ rows });
+  } catch (err) {
+    console.error('GET /api/logic-backtest/active', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/logic-backtest/cancel', async (req, res) => {
   const runId = Number(req.body?.run_id);
   if (!Number.isInteger(runId) || runId <= 0) {

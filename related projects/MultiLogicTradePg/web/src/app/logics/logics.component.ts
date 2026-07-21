@@ -8,6 +8,7 @@ import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import { SettingsService } from '../services/settings.service';
 import { TechLogService } from '../services/tech-log.service';
+import { BacktestUiStateService } from '../services/backtest-ui-state.service';
 import { LogicIndicatorSignalRow, LogicRow, LogicSecurityRow, LogicStopRow } from '../models/logic.model';
 import { IndicatorRow } from '../models/lookup.model';
 import { SecurityRow } from '../models/market.model';
@@ -133,15 +134,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Стабильные ссылки для шаблона (без filter на каждый CD). */
   private testTradesViewByLogic = new Map<number, LogicTradeRow[]>();
   private signalIndicatorIdsByLogic = new Map<number, number[]>();
-  backtestRuns = new Map<number, BacktestRunStatus>();
-  private backtestPollIds = new Set<number>();
+  /** Shared with BacktestUiStateService — survives leaving /operations. */
+  backtestRuns: Map<number, BacktestRunStatus>;
+  private backtestPollIds: Set<number>;
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
   processRows: ProcessStatusItem[] = [];
   processError: string | null = null;
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
-  testPnlByLogic = new Map<
+  testPnlByLogic: Map<
     number,
     {
       financial_result: number;
@@ -150,7 +152,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       date_from?: string | null;
       date_to?: string | null;
     }
-  >();
+  >;
   /** Онлайн-сводка боевого финреза (is_test=0). */
   combatPnlByLogic = new Map<
     number,
@@ -277,10 +279,33 @@ export class LogicsComponent implements OnInit, OnDestroy {
     private readonly securitiesService: SecuritiesService,
     private readonly settings: SettingsService,
     private readonly techLog: TechLogService,
-    private readonly appConfig: AppConfigService
-  ) {}
+    private readonly appConfig: AppConfigService,
+    private readonly backtestUi: BacktestUiStateService
+  ) {
+    this.backtestRuns = this.backtestUi.runs;
+    this.backtestPollIds = this.backtestUi.pollIds;
+    this.testPnlByLogic = this.backtestUi.testPnlByLogic;
+  }
 
   ngOnInit(): void {
+    this.backtestUi.attach();
+    for (const logicId of this.backtestUi.expandTestBlocks) {
+      this.expandedTestTradesBlocks.add(logicId);
+      this.expandedLogics.add(logicId);
+    }
+    this.backtestUi.changes$.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      for (const logicId of this.backtestUi.expandTestBlocks) {
+        this.expandedTestTradesBlocks.add(logicId);
+      }
+      // Background poll updated runs while we were on another route / tab.
+      for (const logicId of [...this.backtestPollIds]) {
+        if (!this.isBacktestRunning(logicId)) {
+          this.loadTestTradesForLogic(logicId, true);
+        }
+        this.rebuildTestTradesView(logicId);
+      }
+      this.refreshTestPnlSummary();
+    });
     this.loadIndicatorsCatalog();
     this.loadMoexExchangeId();
     this.securitiesService.getTimeframes().subscribe({
@@ -2319,7 +2344,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           { logicId: row.id, payload: resp }
         );
         if (resp.warmup_pretest?.started) {
-          this.backtestPollIds.add(row.id);
+          this.backtestUi.watch(row.id);
           this.expandedLogics.add(row.id);
           this.expandedTestTradesBlocks.add(row.id);
           this.refreshBacktestStatus(row.id);
@@ -2545,7 +2570,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
         next: () => {
-          this.backtestPollIds.add(logicId);
+          this.backtestUi.watch(logicId);
           this.expandedTestTradesBlocks.add(logicId);
           this.loadSignalsForLogic(logicId);
           this.refreshBacktestStatus(logicId);
@@ -2572,18 +2597,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.logicsService.getBacktestStatus(logicId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (row) => {
         if (row) {
-          this.backtestRuns.set(logicId, row);
+          this.backtestUi.setRun(logicId, row);
           const st = String(row.status ?? '');
           if (['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st)) {
-            this.backtestPollIds.add(logicId);
+            this.expandedTestTradesBlocks.add(logicId);
           } else {
-            this.backtestPollIds.delete(logicId);
             this.loadTestTradesForLogic(logicId, true);
           }
           this.rebuildTestTradesView(logicId);
         } else {
-          this.backtestRuns.delete(logicId);
-          this.backtestPollIds.delete(logicId);
+          this.backtestUi.setRun(logicId, null);
           this.rebuildTestTradesView(logicId);
         }
       },
@@ -2685,21 +2708,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private refreshTestPnlSummary(): void {
     this.logicsService.getLogicTradesPnlSummary(true).subscribe({
       next: (resp) => {
-        const next = new Map<
-          number,
-          {
-            financial_result: number;
-            commission: number;
-            trade_count: number;
-            date_from?: string | null;
-            date_to?: string | null;
-          }
-        >();
+        this.testPnlByLogic.clear();
         for (const r of resp.rows ?? []) {
           const logicId = Number(r.logic_id);
           if (!Number.isFinite(logicId) || logicId <= 0) continue;
           const pnl = Number(r.financial_result);
-          next.set(logicId, {
+          this.testPnlByLogic.set(logicId, {
             financial_result: Number.isFinite(pnl) ? pnl : 0,
             commission: Number(r.commission) || 0,
             trade_count: Number(r.trade_count) || 0,
@@ -2707,7 +2721,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
             date_to: r.date_to ?? null,
           });
         }
-        this.testPnlByLogic = next;
       },
       error: () => {
         // Старый API без /pnl-summary — только если нет нового endpoint
@@ -2743,16 +2756,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   /** Fallback без /pnl-summary: сумма уже загруженных test-сделок (не runs.financial_result). */
   private refreshTestPnlFromBacktestRuns(): void {
-    const next = new Map<
-      number,
-      {
-        financial_result: number;
-        commission: number;
-        trade_count: number;
-        date_from?: string | null;
-        date_to?: string | null;
-      }
-    >();
+    this.testPnlByLogic.clear();
     for (const row of this.logics) {
       const trades = this.logicTradesTest.get(Number(row.id)) ?? [];
       const live = trades.filter((t) => !t.is_shadow);
@@ -2769,7 +2773,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         0
       );
       const run = this.backtestRuns.get(Number(row.id));
-      next.set(Number(row.id), {
+      this.testPnlByLogic.set(Number(row.id), {
         financial_result,
         commission,
         trade_count: live.length,
@@ -2777,7 +2781,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
         date_to: run?.date_to ?? null,
       });
     }
-    this.testPnlByLogic = next;
   }
 
   private loadMoexExchangeId(): void {

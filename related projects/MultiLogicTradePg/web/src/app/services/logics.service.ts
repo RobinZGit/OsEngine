@@ -490,6 +490,13 @@ export class LogicsService {
     );
   }
 
+  /** In-progress backtests (recover UI after leaving the operations tab). */
+  getActiveBacktests(): Observable<{ rows: BacktestRunStatus[] }> {
+    return this.http.get<{ rows: BacktestRunStatus[] }>(
+      `${this.appConfig.apiUrl}/logic-backtest/active`
+    );
+  }
+
   cancelBacktest(runId: number): Observable<{ ok: boolean; run_id: number }> {
     return this.http.post<{ ok: boolean; run_id: number }>(
       `${this.appConfig.apiUrl}/logic-backtest/cancel`,

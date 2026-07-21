@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Indicator SQUARE (quadratic channel) + seed logic Square Fade
+**Последнее обновление:** 2026-07-21 — Backtest UI state survives Angular tab switches (yellow/progress/PnL)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | Backtest yellow/progress/test PnL survive Angular tab leave (root BacktestUiStateService + /active) |
 | 2026-07-21 | Indicator SQUARE (b+a·x+c·x² channel) + Square Fade seed (like LinReg Fade) |
 | 2026-07-21 | Trades export (Позиции/Тестирование): full dump + logic params/signals/stops/papers/NTP |
 | 2026-07-21 | Remove LINREGV + LinRegV Fade (seed/functions/dispatch); upgrade DELETE/DROP; installers |
@@ -598,3 +599,4 @@
 140. Remove unsuccessful LINREGV / LinRegV Fade and related functions from scripts.
 141. Export button on test+live trades: all open/close/shadow/etc. + logic params and full context for AI analysis.
 142. Quadratic indicator SQUARE (like LINREG but b+a·x+c·x²) + Square Fade logic like LinReg Fade.
+143. During test switched Angular tab — yellow and test finres gone; keep backtest UI state across tabs.
