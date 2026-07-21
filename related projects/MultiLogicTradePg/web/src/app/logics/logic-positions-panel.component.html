@@ -76,6 +76,14 @@
         <span class="signals-summary-actions backtest-run-controls" (click)="$event.stopPropagation()">
           <button
             type="button"
+            class="btn-export-trades"
+            title="Скачать JSON: все сделки (open/close/shadow/…) + параметры логики"
+            (click)="onExportTrades($event)"
+          >
+            Экспорт
+          </button>
+          <button
+            type="button"
             class="btn-run-backtest"
             [class.btn-stop]="isBacktestRunning"
             [disabled]="isCancelling"
@@ -95,7 +103,15 @@
           }
         </span>
       } @else {
-        <span class="signals-summary-actions backtest-run-controls">
+        <span class="signals-summary-actions backtest-run-controls" (click)="$event.stopPropagation()">
+          <button
+            type="button"
+            class="btn-export-trades"
+            title="Скачать JSON: все сделки (open/close/shadow/…) + параметры логики"
+            (click)="onExportTrades($event)"
+          >
+            Экспорт
+          </button>
           @if (hasOpenPositions()) {
             <button
               type="button"

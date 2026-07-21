@@ -511,6 +511,28 @@
   cursor: pointer;
 }
 
+.btn-export-trades {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #6b7280;
+  border-radius: 6px;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn-export-trades:hover {
+  background: #f3f4f6;
+  border-color: #4b5563;
+}
+
 .btn-run-backtest:disabled {
   opacity: 0.7;
   cursor: wait;

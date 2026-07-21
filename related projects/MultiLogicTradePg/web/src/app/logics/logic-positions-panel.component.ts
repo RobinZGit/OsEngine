@@ -145,6 +145,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   /** Родитель ставит паузу тяжёлого poll, пока открыт диалог периода. */
   @Output() periodDialogOpen = new EventEmitter<boolean>();
 
+  /** Полный JSON сделок + параметры логики для анализа. */
+  @Output() exportTrades = new EventEmitter<void>();
+
   /** Кэш списков — не filter/sort на каждый CD. */
   cachedOpenTrades: LogicTradeRow[] = [];
   cachedCloseTrades: LogicTradeRow[] = [];
@@ -601,7 +604,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   }
 
-
+  onExportTrades(event: Event): void {
+    event.stopPropagation();
+    this.exportTrades.emit();
+  }
 
   onOpenTokenDialog(event: Event): void {
 

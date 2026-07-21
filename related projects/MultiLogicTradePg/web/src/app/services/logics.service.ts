@@ -70,6 +70,36 @@ export interface LogicExportBundle {
   }>;
 }
 
+/** Full trades + logic context dump for AI/debug (test or live). */
+export interface LogicTradesExportBundle {
+  format: string;
+  version: number;
+  exported_at: string;
+  is_test: boolean;
+  logic: {
+    id: number;
+    name: string;
+    note: string | null;
+    is_enabled: boolean;
+    account: { account_code?: string; broker_code?: string } | null;
+    params: Array<{ param_key: string; param_value: string; value_type: string }>;
+    signals: Array<Record<string, unknown>>;
+    stops: Array<Record<string, unknown>>;
+    securities: Array<Record<string, unknown>>;
+  };
+  trading_params: Record<string, unknown>;
+  non_trading_periods: {
+    use_non_trading_periods: boolean;
+    intervals: Array<Record<string, unknown>>;
+  };
+  run_id: number | null;
+  run: Record<string, unknown> | null;
+  counts: Record<string, unknown>;
+  trades: LogicTradeRow[];
+  lots: LogicTradeLotRow[];
+  note?: string;
+}
+
 export interface LogicImportResult {
   imported: Array<{
     id: number;
@@ -370,6 +400,25 @@ export class LogicsService {
     return this.http.get<LogicTradeRow[]>(`${this.appConfig.apiUrl}/logic-trades`, {
       params,
     });
+  }
+
+  /** Full dump for analysis: open/close/shadow/all statuses + lots. */
+  exportLogicTrades(
+    logicId: number,
+    isTest: boolean,
+    runId?: number | null
+  ): Observable<LogicTradesExportBundle> {
+    const params: Record<string, string> = {
+      logic_id: String(logicId),
+      is_test: isTest ? '1' : '0',
+    };
+    if (runId != null && Number.isFinite(Number(runId)) && Number(runId) > 0) {
+      params['run_id'] = String(runId);
+    }
+    return this.http.get<LogicTradesExportBundle>(
+      `${this.appConfig.apiUrl}/logic-trades/export`,
+      { params }
+    );
   }
 
   getLogicTradesPnlSummary(isTest = true): Observable<{

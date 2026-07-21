@@ -102,6 +102,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Checkbox selection for export (right column). */
   selectedExportIds = new Set<number>();
   exportImportBusy = false;
+  /** Busy keys: `${logicId}:test` | `${logicId}:live` for trades JSON export. */
+  private tradesExportBusy = new Set<string>();
 
   editorOpen = false;
   editorMode: LogicEditorMode = 'add';
@@ -2086,6 +2088,44 @@ export class LogicsComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.exportImportBusy = false;
         alert(err?.error?.error || 'Не удалось экспортировать логики');
+      },
+    });
+  }
+
+  /** Download complete trades JSON (params/signals/stops + all trade flags) for AI analysis. */
+  exportLogicTrades(logicId: number, isTest: boolean): void {
+    const key = `${logicId}:${isTest ? 'test' : 'live'}`;
+    if (this.tradesExportBusy.has(key)) return;
+    this.tradesExportBusy.add(key);
+    const runId = isTest ? (this.backtestRuns.get(Number(logicId))?.id ?? null) : null;
+    this.logicsService.exportLogicTrades(logicId, isTest, runId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (bundle) => {
+        this.tradesExportBusy.delete(key);
+        const logicName = String(bundle?.logic?.name || `logic-${logicId}`)
+          .replace(/[^\w\-а-яА-ЯёЁ]+/g, '_')
+          .slice(0, 60);
+        const mode = isTest ? 'test' : 'live';
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+          type: 'application/json;charset=utf-8',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `multilogic-trades-${mode}-${logicName}-${stamp}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        const n = Number(bundle?.counts?.['total'] ?? bundle?.trades?.length ?? 0);
+        const shadow = Number(bundle?.counts?.['shadow'] ?? 0);
+        alert(
+          `Экспорт ${mode === 'test' ? 'теста' : 'боя'}: ${n} сделок` +
+            (shadow ? ` (из них shadow: ${shadow})` : '') +
+            `\nФайл: ${a.download}`
+        );
+      },
+      error: (err) => {
+        this.tradesExportBusy.delete(key);
+        alert(err?.error?.error || 'Не удалось экспортировать сделки');
       },
     });
   }

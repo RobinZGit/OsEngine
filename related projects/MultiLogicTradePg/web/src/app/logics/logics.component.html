@@ -1852,6 +1852,7 @@
                         [pinnedPaper]="cashFundPinnedPaper(row)"
                         (toggleBlock)="toggleTradesBlock(row.id)"
                         (closeAll)="closeAllPositionsAtMarket(row.id)"
+                        (exportTrades)="exportLogicTrades(row.id, false)"
                         (openTokenDialog)="openTbankTokenDialogFromAlert()"
                         (requestLots)="requestTradeLots($event)"
                       />
@@ -1871,6 +1872,7 @@
                         (startBacktest)="startBacktestRun(row.id, $event)"
                         (periodDialogOpen)="onPeriodDialogOpen($event)"
                         (cancelBacktest)="cancelBacktestRun(row.id)"
+                        (exportTrades)="exportLogicTrades(row.id, true)"
                         (requestLots)="requestTradeLots($event)"
                       />
                     </div>

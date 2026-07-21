@@ -2919,6 +2919,214 @@ app.get('/api/logic-trades', async (req, res) => {
   }
 });
 
+/**
+ * Full trade dump for analysis (open/close/shadow/rejected/etc. + lots).
+ * Query: logic_id, is_test=0|1, optional run_id (test: omit = latest run if any).
+ */
+app.get('/api/logic-trades/export', async (req, res) => {
+  const logicId = Number(req.query.logic_id);
+  if (!Number.isInteger(logicId) || logicId <= 0) {
+    res.status(400).json({ error: 'logic_id required' });
+    return;
+  }
+  const isTestRaw = req.query.is_test;
+  const isTest =
+    isTestRaw === '1' || isTestRaw === 'true'
+      ? true
+      : isTestRaw === '0' || isTestRaw === 'false'
+        ? false
+        : null;
+  if (isTest == null) {
+    res.status(400).json({ error: 'is_test required (0 or 1)' });
+    return;
+  }
+  let runId =
+    req.query.run_id != null &&
+    req.query.run_id !== '' &&
+    Number.isFinite(Number(req.query.run_id))
+      ? Number(req.query.run_id)
+      : null;
+  try {
+    const { rows: logicRows } = await pool.query(
+      `SELECT id, name, is_enabled, note FROM logics WHERE id = $1`,
+      [logicId]
+    );
+    if (logicRows.length === 0) {
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    const logic = logicRows[0];
+
+    // Same portable definition as logics/export: params, signals, stops, papers, account.
+    const logicBundle = await buildLogicBundle(pool, [logicId]);
+    const logicDef = logicBundle.logics?.[0] || {
+      name: logic.name,
+      note: logic.note,
+      params: [],
+      signals: [],
+      stops: [],
+      securities: [],
+      account: null,
+    };
+    const tradingParams = await getTradingParams(pool, logicId);
+    let nonTradingIntervals = [];
+    try {
+      await pool.query('SELECT logic_ensure_non_trading_periods($1)', [logicId]);
+      nonTradingIntervals = await fetchNonTradingIntervals(pool, logicId);
+    } catch (_ntpErr) {
+      nonTradingIntervals = [];
+    }
+
+    let runMeta = null;
+    if (isTest) {
+      if (runId == null || runId <= 0) {
+        const { rows: runRows } = await pool.query(
+          `SELECT id, date_from, date_to, status, financial_result, test_balance,
+                  to_char(started_at, 'YYYY-MM-DD HH24:MI:SS') AS started_at,
+                  to_char(finished_at, 'YYYY-MM-DD HH24:MI:SS') AS finished_at
+           FROM logic_backtest_runs
+           WHERE logic_id = $1
+           ORDER BY id DESC
+           LIMIT 1`,
+          [logicId]
+        );
+        if (runRows.length > 0) {
+          runId = Number(runRows[0].id);
+          runMeta = runRows[0];
+        }
+      } else {
+        const { rows: runRows } = await pool.query(
+          `SELECT id, date_from, date_to, status, financial_result, test_balance,
+                  to_char(started_at, 'YYYY-MM-DD HH24:MI:SS') AS started_at,
+                  to_char(finished_at, 'YYYY-MM-DD HH24:MI:SS') AS finished_at
+           FROM logic_backtest_runs
+           WHERE logic_id = $1 AND id = $2`,
+          [logicId, runId]
+        );
+        runMeta = runRows[0] || null;
+      }
+    }
+
+    const params = [logicId];
+    let where = 'WHERE lt.logic_id = $1 AND lt.is_test = $2';
+    params.push(isTest);
+    if (isTest && runId != null && runId > 0) {
+      params.push(runId);
+      where += ` AND lt.run_id = $${params.length}`;
+    }
+    // No status/shadow filter — full dump for analysis.
+    const limit = 100000;
+    params.push(limit);
+    const { rows: trades } = await pool.query(
+      `${LOGIC_TRADE_SELECT}
+       ${where}
+       ORDER BY lt.bar_dt ASC NULLS LAST, lt.executed_at ASC, lt.id ASC
+       LIMIT $${params.length}`,
+      params
+    );
+
+    const tradeIds = trades.map((t) => Number(t.id)).filter((id) => id > 0);
+    let lots = [];
+    if (tradeIds.length > 0) {
+      const { rows: lotRows } = await pool.query(
+        `
+        SELECT
+          l.id,
+          l.logic_id,
+          l.close_trade_id,
+          l.open_trade_id,
+          l.action_id,
+          l.cost_method,
+          l.quantity,
+          l.close_amount,
+          l.open_amount,
+          l.close_commission,
+          l.open_commission,
+          l.financial_result,
+          to_char(l.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+          ac.name AS action_name,
+          to_char(ot.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS open_executed_at,
+          ot.price AS open_price,
+          to_char(ct.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS close_executed_at,
+          ct.price AS close_price
+        FROM logic_trade_lots l
+        JOIN actions ac ON ac.id = l.action_id
+        JOIN logic_trades ct ON ct.id = l.close_trade_id
+        LEFT JOIN logic_trades ot ON ot.id = l.open_trade_id
+        WHERE l.logic_id = $1
+          AND (l.close_trade_id = ANY($2::bigint[]) OR l.open_trade_id = ANY($2::bigint[]))
+        ORDER BY l.id ASC
+        `,
+        [logicId, tradeIds]
+      );
+      lots = lotRows;
+    }
+
+    const counts = {
+      total: trades.length,
+      open: 0,
+      close: 0,
+      shadow: 0,
+      non_shadow: 0,
+      simulated: 0,
+      fictitious: 0,
+      by_status: {},
+      by_signal_kind: {},
+      with_remaining: 0,
+      lots: lots.length,
+    };
+    for (const t of trades) {
+      if (t.side_name === 'Open') counts.open += 1;
+      if (t.side_name === 'Close') counts.close += 1;
+      if (t.is_shadow) counts.shadow += 1;
+      else counts.non_shadow += 1;
+      if (t.is_simulated) counts.simulated += 1;
+      if (t.is_fictitious) counts.fictitious += 1;
+      const st = String(t.status || 'unknown');
+      counts.by_status[st] = (counts.by_status[st] || 0) + 1;
+      const sk = String(t.signal_kind || 'unknown');
+      counts.by_signal_kind[sk] = (counts.by_signal_kind[sk] || 0) + 1;
+      if (t.remaining_qty != null && Number(t.remaining_qty) > 0) {
+        counts.with_remaining += 1;
+      }
+    }
+
+    res.json({
+      format: 'multilogic-trades-export',
+      version: 2,
+      exported_at: new Date().toISOString(),
+      is_test: isTest,
+      // Full logic card for analysis (params, signals, stops, papers, account).
+      logic: {
+        id: Number(logicDef.id ?? logicId),
+        name: logicDef.name,
+        note: logicDef.note ?? null,
+        is_enabled: Boolean(logic.is_enabled),
+        account: logicDef.account ?? null,
+        params: logicDef.params ?? [],
+        signals: logicDef.signals ?? [],
+        stops: logicDef.stops ?? [],
+        securities: logicDef.securities ?? [],
+      },
+      trading_params: tradingParams,
+      non_trading_periods: {
+        use_non_trading_periods: tradingParams.use_non_trading_periods !== false,
+        intervals: nonTradingIntervals,
+      },
+      run_id: runId,
+      run: runMeta,
+      counts,
+      trades,
+      lots,
+      note:
+        'Complete dump for AI/debug: logic params/signals/stops/papers, trading params, non-trading periods, all trades (open/close/shadow/simulated/fictitious/all statuses) + lots.',
+    });
+  } catch (err) {
+    console.error('GET /api/logic-trades/export', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Онлайн-сводка PnL/комиссий по логикам (не хранится отдельным полем). */
 app.get('/api/logic-trades/pnl-summary', async (req, res) => {
   const isTestRaw = req.query.is_test;
