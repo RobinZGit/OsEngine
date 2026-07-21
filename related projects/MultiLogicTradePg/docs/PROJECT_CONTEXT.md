@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Indicator LINREGV (variable period) + logic LinRegV Fade (clone of LinReg Fade)
+**Последнее обновление:** 2026-07-21 — Test/copies use same global T-Bank token (no re-prompt per copy)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | Test Start + enable fake: global TBANK token for all logics/copies (no HTTP re-prompt) |
 | 2026-07-21 | Indicator LINREGV (period max→3, min max\|residual\|) + seed logic LinRegV Fade |
 | 2026-07-19 | Ship: papers ост./сум./цена test+live; fund never Close; Windows+Linux installers |
 | 2026-07-19 | Papers MTM: «в портф.» money = open_qty × mark; label финрез; TMON not sold |
@@ -586,3 +587,4 @@
 135. After test TMON still shows 0 with ост. +70 — show money at current/period price (в портф.), not realized 0.
 136. Papers list: next to ост. — short money remainder + current price; test and live.
 137. New indicator ≈ LINREG but vary period max→3, pick min max|distance to line|; logic like LinReg Fade with new indicator.
+138. Copied logics ask for T-Bank token again on test; defaults don’t — use same saved global token.

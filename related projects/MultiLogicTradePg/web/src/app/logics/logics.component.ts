@@ -2158,13 +2158,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
     event.stopPropagation();
     if (this.savingIds.has(row.id)) return;
 
+    // Фейк-счёт: котировки с глобального TBANK_API_TOKEN (один на все логики/копии).
     if (checked && row.account_type === 'fake') {
-      this.settings.getTbankTokenStatus(true).subscribe({
+      this.settings.getTbankTokenConfigured().subscribe({
         next: (status) => {
-          if (!status.has_token || !status.valid) {
+          if (!status.has_token) {
             this.pendingEnableLogic = row;
             this.tbankTokenDialogContext = 'logic';
-            this.tbankTokenDialogReason = status.has_token ? 'invalid' : 'missing';
+            this.tbankTokenDialogReason = 'missing';
             this.tbankTokenDialogOpen = true;
             return;
           }
@@ -2188,10 +2189,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.settings.getTbankTokenStatus(true).subscribe({
       next: (status) => {
         this.applyTbankTokenStatus(status);
-        if (row && status.valid) {
+        if (row && status.has_token) {
           this.applyEnabledChange(row, true);
         }
-        if (pendingBt && status.valid) {
+        if (pendingBt && status.has_token) {
           this.doStartBacktestRun(pendingBt.logicId, pendingBt.period);
         }
       },
@@ -2483,12 +2484,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   startBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
-    this.settings.getTbankTokenStatus(true).subscribe({
+    // Тест: тот же глобальный токен, что у seed-логик — без повторного HTTP-verify на каждую копию.
+    this.settings.getTbankTokenConfigured().subscribe({
       next: (status) => {
-        if (!status.has_token || !status.valid) {
+        if (!status.has_token) {
           this.pendingBacktest = { logicId, period };
           this.tbankTokenDialogContext = 'logic';
-          this.tbankTokenDialogReason = status.has_token ? 'invalid' : 'missing';
+          this.tbankTokenDialogReason = 'missing';
           this.tbankTokenDialogOpen = true;
           return;
         }
