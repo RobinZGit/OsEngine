@@ -84,6 +84,15 @@
           </button>
           <button
             type="button"
+            class="btn-report-backtest"
+            title="HTML-отчёт теста (Profit Factor, просадка, Sharpe…) как в OsEngine Journal"
+            [disabled]="!hasReportableTrades()"
+            (click)="onOpenReport($event)"
+          >
+            Отчёт
+          </button>
+          <button
+            type="button"
             class="btn-run-backtest"
             [class.btn-stop]="isBacktestRunning"
             [disabled]="isCancelling"

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Yellow backtest UI survives Angular tab switches (route reuse)
+**Последнее обновление:** 2026-07-21 — HTML backtest report (OsEngine-like stats) + release test-1
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -215,6 +215,7 @@
 104. **Cash fund in portfolio UI:** seed ETF TMON/LQDT/SBMM; on param save → `syncLogicCashFundSecurity` (`display_order=0`); pin in Позиции/Тестирование «Бумаги»; runner/backtest skip fund for signals.
 105. **cash_fund_threshold default 1M:** `logic_param_defs` / API / UI / park SQL fallbacks `1000000` (как `initial_balance`); upgrade UPDATE существующих `'100000'` → `'1000000'`; release `test-1` переиздан с новыми installers.
 106. **Yellow backtest survives tabs:** `OperationsRouteReuseStrategy` keeps `/operations` mounted; `BacktestUiStateService` + `/active` recover; panel yellow CSS; no force-reopen of «Тестирование» on every poll.
+107. **HTML отчёт теста:** кнопка «Отчёт» рядом с Экспорт/Стоп → окно HTML (Profit Factor, макс. просадка %, Sharpe, Recovery, All/Long/Short) по образцу OsEngine Journal → Статистика.
 
 ### Автотесты
 
@@ -325,6 +326,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | HTML test report (OsEngine Journal stats) + installers + republish test-1 |
 | 2026-07-21 | Yellow/progress survive tab leave (OperationsRouteReuseStrategy) + republish test-1 |
 | 2026-07-21 | cash_fund_threshold default 100k→1M (= test balance); installers + republish release test-1 |
 | 2026-07-21 | Backtest yellow/progress/test PnL survive Angular tab leave (root BacktestUiStateService + /active) |
@@ -606,3 +608,4 @@
 143. During test switched Angular tab — yellow and test finres gone; keep backtest UI state across tabs.
 144. «The parameter of the equity portfolio threshold for purchasing the Temon fund must be set by default not 100,000, but 1,000,000… Correct this in the installers and everywhere and re-postpone this release.»
 145. «In the testing tab, the yellow color fades away when I close it or go to other tabs… yellow color remains if the testing is not completed… re-upload the release.»
+146. «In the testing block, next to export and stop… report the results… HTML… separate window… parameters like OsEngine… profit factor, maximum loss… put in repository and release.»

@@ -39,6 +39,11 @@ import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import { buildEquityPoints, buildPortfolioStopMarkers } from './backtest-chart-overlays';
 import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
 import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
+import {
+  buildBacktestReportModel,
+  openBacktestReportWindow,
+  renderBacktestReportHtml,
+} from './backtest-report';
 
 
 
@@ -609,6 +614,36 @@ export class LogicPositionsPanelComponent implements OnChanges {
   onExportTrades(event: Event): void {
     event.stopPropagation();
     this.exportTrades.emit();
+  }
+
+  hasReportableTrades(): boolean {
+    return this.trades.some(
+      (t) =>
+        !t.is_shadow &&
+        t.side_name === 'Close' &&
+        (t.status === 'filled' || t.status === 'submitted') &&
+        t.financial_result != null &&
+        Number.isFinite(Number(t.financial_result))
+    );
+  }
+
+  onOpenReport(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!this.isTest) return;
+    if (!this.hasReportableTrades()) {
+      alert('Нет закрытых тестовых сделок для отчёта. Сначала завершите прогон.');
+      return;
+    }
+    const model = buildBacktestReportModel(this.logicRow, this.trades, {
+      backtestRun: this.backtestRun,
+      tradeLots: this.tradeLots,
+    });
+    const html = renderBacktestReportHtml(model);
+    const title = `Отчёт теста — ${model.logicName}`;
+    if (!openBacktestReportWindow(html, title)) {
+      alert('Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.');
+    }
   }
 
   onOpenTokenDialog(event: Event): void {

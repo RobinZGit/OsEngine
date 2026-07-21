@@ -539,6 +539,32 @@
   cursor: pointer;
 }
 
+.btn-report-backtest {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn-report-backtest:hover:not(:disabled) {
+  background: #ccfbf1;
+}
+
+.btn-report-backtest:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .btn-export-trades:hover {
   background: #f3f4f6;
   border-color: #4b5563;
