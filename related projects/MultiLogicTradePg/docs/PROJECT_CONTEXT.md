@@ -1,4 +1,4 @@
-# MultiLogicTradePg — контекст проекта
+﻿# MultiLogicTradePg — контекст проекта
 
 > Живой файл контекста для продолжения работы с разных устройств и в Cursor.  
 > **Обновлять перед каждым push в репозиторий** — см. `.cursor/rules/project-context.mdc`.
@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Seed default SL: portfolio 1% (was security_resume); upgrade UPDATE for old seed pattern
+**Последнее обновление:** 2026-07-21 — Fix delete logic: cascade/remove logic_trades (FK was RESTRICT)
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 

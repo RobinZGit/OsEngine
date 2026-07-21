@@ -1776,6 +1776,9 @@ app.delete('/api/logics/:id', async (req, res) => {
       res.status(404).json({ error: 'Logic not found' });
       return;
     }
+    // logic_trades.logic_id historically RESTRICT — remove trades/lots before logic.
+    await client.query('DELETE FROM logic_trade_lots WHERE logic_id = $1', [id]);
+    await client.query('DELETE FROM logic_trades WHERE logic_id = $1', [id]);
     await client.query('DELETE FROM logics WHERE id = $1', [id]);
     await client.query('COMMIT');
     res.json({ ok: true, id });

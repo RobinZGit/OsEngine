@@ -2896,7 +2896,7 @@ WHERE l.name = v.name
 -- Сделки по торговой логике (исполнение по сигналам индикаторов)
 CREATE TABLE IF NOT EXISTS logic_trades (
     id BIGSERIAL PRIMARY KEY,
-    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE RESTRICT,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
     security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE RESTRICT,
     timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE RESTRICT,
@@ -2925,12 +2925,23 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE RESTRICT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE RESTRICT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE RESTRICT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE RESTRICT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS side_id INTEGER REFERENCES sides(id) ON DELETE RESTRICT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS action_id INTEGER REFERENCES actions(id) ON DELETE RESTRICT;
+
+-- Upgrade: удаление логики должно убирать её сделки (раньше RESTRICT → ошибка FK).
+DO $$
+BEGIN
+    ALTER TABLE logic_trades DROP CONSTRAINT IF EXISTS logic_trades_logic_id_fkey;
+    ALTER TABLE logic_trades
+      ADD CONSTRAINT logic_trades_logic_id_fkey
+      FOREIGN KEY (logic_id) REFERENCES logics(id) ON DELETE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close'));
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter', 'cash_fund'));
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_formula TEXT;
