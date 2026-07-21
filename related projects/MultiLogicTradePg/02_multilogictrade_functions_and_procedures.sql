@@ -3823,180 +3823,10 @@ COMMENT ON FUNCTION calc_ind_adx_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEG
 COMMENT ON FUNCTION calc_ind_linreg_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
 'Линейная регрессия по close: MIDDLE/UPPER/LOWER/SLOPE (канал Dev·σ остатков)';
 
--- ========== LINREGV: LinReg с подбором периода (max→3, min max|residual|) ==========
--- period в параметре = максимум окна; на каждом баре перебираем len=period..3,
--- выбираем окно с минимальным max|y−ŷ| (при равенстве — более короткое).
-CREATE OR REPLACE FUNCTION calc_ind_linregv_array(
-    p_period INTEGER,
-    p_std_dev NUMERIC,
-    p_series VARCHAR,
-    p_security_id INTEGER,
-    p_timeframe_id INTEGER,
-    p_point_count INTEGER DEFAULT 100,
-    p_end_dt TIMESTAMP DEFAULT NULL
-)
-RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
-LANGUAGE plpgsql STABLE AS $$
-DECLARE
-    v_end TIMESTAMP;
-    v_bars INTEGER;
-    v_dts TIMESTAMP[];
-    v_closes NUMERIC[];
-    v_n INTEGER;
-    v_max_period INTEGER;
-    v_dev NUMERIC;
-    v_ser TEXT;
-    i INTEGER;
-    j INTEGER;
-    len INTEGER;
-    v_start INTEGER;
-    v_sum_x NUMERIC;
-    v_sum_y NUMERIC;
-    v_sum_xy NUMERIC;
-    v_sum_xx NUMERIC;
-    v_slope NUMERIC;
-    v_intercept NUMERIC;
-    v_mid NUMERIC;
-    v_var NUMERIC;
-    v_std NUMERIC;
-    v_pred NUMERIC;
-    v_nlen NUMERIC;
-    v_max_abs NUMERIC;
-    v_abs NUMERIC;
-    v_best_dev NUMERIC;
-    v_best_len INTEGER;
-    v_best_slope NUMERIC;
-    v_best_intercept NUMERIC;
-    v_best_mid NUMERIC;
-    v_best_std NUMERIC;
-BEGIN
-    v_ser := upper(btrim(COALESCE(p_series, 'VALUE')));
-    IF v_ser NOT IN ('VALUE', 'MIDDLE', 'UPPER', 'LOWER', 'SLOPE', 'PERIOD') THEN
-        RETURN;
-    END IF;
-    IF v_ser = 'VALUE' THEN v_ser := 'MIDDLE'; END IF;
-    v_max_period := GREATEST(COALESCE(p_period, 20), 3);
-    v_dev := GREATEST(COALESCE(p_std_dev, 2.0), 0.1);
+-- Upgrade: drop removed LINREGV functions if present
+DROP FUNCTION IF EXISTS calc_ind_linregv(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER);
+DROP FUNCTION IF EXISTS calc_ind_linregv_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP);
 
-    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
-    IF v_end IS NULL THEN RETURN; END IF;
-    v_bars := ind_warmup_bars(v_max_period, p_point_count);
-
-    SELECT array_agg(x.dt ORDER BY x.dt),
-           array_agg(x.close_price ORDER BY x.dt),
-           COUNT(*)::INTEGER
-    INTO v_dts, v_closes, v_n
-    FROM (
-        SELECT p.dt, p.close_price FROM prices p
-        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
-        ORDER BY p.dt DESC LIMIT v_bars
-    ) x;
-
-    IF v_n IS NULL OR v_n < 3 THEN RETURN; END IF;
-
-    v_start := GREATEST(3, v_n - p_point_count + 1);
-
-    FOR i IN 3 .. v_n LOOP
-        IF i < v_start THEN CONTINUE; END IF;
-
-        v_best_dev := NULL;
-        v_best_len := NULL;
-        v_best_slope := NULL;
-        v_best_intercept := NULL;
-        v_best_mid := NULL;
-        v_best_std := NULL;
-
-        FOR len IN REVERSE v_max_period .. 3 LOOP
-            IF i < len THEN CONTINUE; END IF;
-            v_nlen := len;
-            v_sum_x := 0;
-            v_sum_y := 0;
-            v_sum_xy := 0;
-            v_sum_xx := 0;
-            FOR j IN 0 .. (len - 1) LOOP
-                v_sum_x := v_sum_x + j;
-                v_sum_y := v_sum_y + v_closes[i - len + 1 + j];
-                v_sum_xy := v_sum_xy + j * v_closes[i - len + 1 + j];
-                v_sum_xx := v_sum_xx + j * j;
-            END LOOP;
-            v_slope := (v_nlen * v_sum_xy - v_sum_x * v_sum_y)
-                / NULLIF(v_nlen * v_sum_xx - v_sum_x * v_sum_x, 0);
-            IF v_slope IS NULL THEN CONTINUE; END IF;
-            v_intercept := (v_sum_y - v_slope * v_sum_x) / v_nlen;
-            v_mid := v_intercept + v_slope * (len - 1);
-
-            v_max_abs := 0;
-            v_var := 0;
-            FOR j IN 0 .. (len - 1) LOOP
-                v_pred := v_intercept + v_slope * j;
-                v_abs := abs(v_closes[i - len + 1 + j] - v_pred);
-                IF v_abs > v_max_abs THEN
-                    v_max_abs := v_abs;
-                END IF;
-                v_var := v_var + power(v_closes[i - len + 1 + j] - v_pred, 2);
-            END LOOP;
-            v_std := sqrt(v_var / v_nlen);
-
-            -- Минимальный max|residual|; при равенстве — более короткое окно (лучше ловит слом).
-            IF v_best_dev IS NULL
-                OR v_max_abs < v_best_dev
-                OR (v_max_abs = v_best_dev AND len < v_best_len)
-            THEN
-                v_best_dev := v_max_abs;
-                v_best_len := len;
-                v_best_slope := v_slope;
-                v_best_intercept := v_intercept;
-                v_best_mid := v_mid;
-                v_best_std := v_std;
-            END IF;
-        END LOOP;
-
-        IF v_best_len IS NULL THEN CONTINUE; END IF;
-
-        dt := v_dts[i];
-        value := CASE v_ser
-            WHEN 'MIDDLE' THEN v_best_mid
-            WHEN 'UPPER' THEN v_best_mid + v_dev * v_best_std
-            WHEN 'LOWER' THEN v_best_mid - v_dev * v_best_std
-            WHEN 'SLOPE' THEN v_best_slope
-            WHEN 'PERIOD' THEN v_best_len
-        END;
-        RETURN NEXT;
-    END LOOP;
-END;
-$$;
-
-COMMENT ON FUNCTION calc_ind_linregv_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'LinReg Variable Period: period=max; на баре выбираем len∈[3..max] с min max|y−ŷ|; серии как LINREG + PERIOD';
-
-CREATE OR REPLACE FUNCTION calc_ind_linregv(
-    p_period INTEGER,
-    p_std_dev NUMERIC,
-    p_series VARCHAR,
-    p_security_id INTEGER,
-    p_timeframe_id INTEGER,
-    p_dt TIMESTAMP,
-    p_indicator_id INTEGER DEFAULT NULL
-)
-RETURNS NUMERIC
-LANGUAGE plpgsql
-STABLE
-AS $$
-BEGIN
-    RETURN (
-        SELECT a.value
-        FROM calc_ind_linregv_array(
-            p_period, COALESCE(p_std_dev, 2.0), p_series,
-            p_security_id, p_timeframe_id, 1, p_dt
-        ) a
-        ORDER BY a.dt DESC
-        LIMIT 1
-    );
-END;
-$$;
-
-COMMENT ON FUNCTION calc_ind_linregv(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'Скаляр LINREGV на баре — через calc_ind_linregv_array';
 
 -- =====================================================================
 -- Скалярные calc_ind_* (тот же контракт, что у SMA/STOCH: script → calc_ind_*)
@@ -4328,10 +4158,6 @@ BEGIN
             RETURN QUERY SELECT * FROM calc_ind_linreg_array(
                 COALESCE(p_period, 20), COALESCE(p_std_dev, 2.0), p_series,
                 p_security_id, p_timeframe_id, p_point_count, p_end_dt);
-        WHEN 'LINREGV' THEN
-            RETURN QUERY SELECT * FROM calc_ind_linregv_array(
-                COALESCE(p_period, 20), COALESCE(p_std_dev, 2.0), p_series,
-                p_security_id, p_timeframe_id, p_point_count, p_end_dt);
         ELSE
             RETURN;
     END CASE;
@@ -4355,7 +4181,7 @@ BEGIN
     param_period := CASE upper(p_indicator_code)
         WHEN 'RSI' THEN 14 WHEN 'SMA' THEN 20 WHEN 'EMA' THEN 20 WHEN 'BB' THEN 20
         WHEN 'ATR' THEN 14 WHEN 'STOCH' THEN 14 WHEN 'SMAT3' THEN 20
-        WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20 WHEN 'LINREGV' THEN 20
+        WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20
         ELSE 14 END;
     BEGIN
         SELECT pv.value::INTEGER INTO param_period
