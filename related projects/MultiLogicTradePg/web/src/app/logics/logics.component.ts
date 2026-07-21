@@ -9,7 +9,7 @@ import { SecuritiesService } from '../services/securities.service';
 import { SettingsService } from '../services/settings.service';
 import { TechLogService } from '../services/tech-log.service';
 import { BacktestUiStateService } from '../services/backtest-ui-state.service';
-import { LogicIndicatorSignalRow, LogicRow, LogicSecurityRow, LogicStopRow } from '../models/logic.model';
+import { LogicIndicatorSignalRow, LogicRow, LogicSecurityRow, LogicStopRow, LogicParamsResponse } from '../models/logic.model';
 import { IndicatorRow } from '../models/lookup.model';
 import { SecurityRow } from '../models/market.model';
 import {
@@ -243,6 +243,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   paramsDrafts = new Map<
     number,
     {
+      name: string;
       timeframe: string;
       position_size_pct: string;
       max_open_positions: string;
@@ -441,21 +442,41 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
     if (this.expandedLogics.has(row.id)) {
-      this.expandedLogics.delete(row.id);
-      this.expandedParamsBlocks.delete(row.id);
-      this.paramsDirtyIds.delete(row.id);
-      this.expandedSignalsBlocks.delete(row.id);
-      this.expandedStopsBlocks.delete(row.id);
-      this.expandedSecuritiesBlocks.delete(row.id);
-      this.expandedTradesBlocks.delete(row.id);
-      this.expandedTestTradesBlocks.delete(row.id);
-      this.closeSignalPicker();
-      this.closeStopForm();
-      this.closeSecurityPicker();
+      this.collapseLogic(row.id);
       return;
     }
     this.expandedLogics.add(row.id);
     this.ensureParamsDraft(row.id);
+  }
+
+  /** Collapse expanded logic (same as clicking the row when open). */
+  collapseLogic(logicId: number, event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    this.expandedLogics.delete(logicId);
+    this.expandedParamsBlocks.delete(logicId);
+    this.paramsDirtyIds.delete(logicId);
+    this.expandedSignalsBlocks.delete(logicId);
+    this.expandedStopsBlocks.delete(logicId);
+    this.expandedSecuritiesBlocks.delete(logicId);
+    this.expandedTradesBlocks.delete(logicId);
+    this.expandedTestTradesBlocks.delete(logicId);
+    this.closeSignalPicker();
+    this.closeStopForm();
+    this.closeSecurityPicker();
+  }
+
+  /** Name shown in expanded header / table while editing draft. */
+  displayLogicName(row: LogicRow): string {
+    const draft = this.paramsDrafts.get(row.id);
+    const fromDraft = draft?.name?.trim();
+    return fromDraft || row.name || `Логика #${row.id}`;
+  }
+
+  onParamsNameChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).name = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
   }
 
   /** Черновик параметров — всегда объект из Map (не временный литерал). */
@@ -610,7 +631,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       next: (resp) => {
         this.applyTradingParamsToLogic(logicId, resp.trading);
         if (!this.paramsDirtyIds.has(logicId)) {
-          this.paramsDrafts.set(logicId, this.draftFromTrading(resp.trading));
+          const row = this.logics.find((l) => l.id === logicId);
+          const draft = this.draftFromTrading(resp.trading);
+          draft.name = row?.name ?? draft.name;
+          this.paramsDrafts.set(logicId, draft);
         }
         this.paramsLoading.delete(logicId);
       },
@@ -668,6 +692,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     use_non_trading_periods?: boolean;
     close_positions_eod?: boolean;
   }): {
+    name: string;
     timeframe: string;
     position_size_pct: string;
     max_open_positions: string;
@@ -694,6 +719,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       ? fundRaw
       : '';
     return {
+      name: '',
       timeframe: (trading.timeframe ?? 'M15').toUpperCase(),
       position_size_pct: this.formatPctParam(trading.position_size_pct),
       max_open_positions: this.formatIntParam(trading.max_open_positions, 5),
@@ -736,7 +762,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private draftFromLogicRow(row: LogicRow) {
-    return this.draftFromTrading({
+    const draft = this.draftFromTrading({
       timeframe: row.timeframe ?? 'M15',
       position_size_pct: row.position_size_pct,
       max_open_positions: row.max_open_positions,
@@ -754,6 +780,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       use_non_trading_periods: row.use_non_trading_periods,
       close_positions_eod: row.close_positions_eod,
     });
+    draft.name = row.name ?? '';
+    return draft;
   }
 
   isParamsSaving(logicId: number): boolean {
@@ -825,8 +853,21 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
     this.paramsSaveErrors.delete(row.id);
     this.savingParamsIds.add(row.id);
-    this.logicsService
-      .saveLogicParams(row.id, {
+
+    const name = String(draft.name ?? '').trim();
+    if (!name) {
+      this.savingParamsIds.delete(row.id);
+      this.paramsSaveErrors.set(row.id, 'Имя логики не может быть пустым');
+      return;
+    }
+    if (name.length > 100) {
+      this.savingParamsIds.delete(row.id);
+      this.paramsSaveErrors.set(row.id, 'Имя логики: не более 100 символов');
+      return;
+    }
+
+    const saveParams = () =>
+      this.logicsService.saveLogicParams(row.id, {
         timeframe: draft.timeframe,
         position_size_pct,
         max_open_positions,
@@ -843,41 +884,70 @@ export class LogicsComponent implements OnInit, OnDestroy {
         use_non_trading_periods: draft.use_non_trading_periods,
         close_positions_eod: draft.close_positions_eod,
         reset_balance: draft.reset_balance,
-      })
-      .subscribe({
-        next: (resp) => {
-          this.applyTradingParamsToLogic(row.id, resp.trading);
-          this.paramsDrafts.set(row.id, this.draftFromTrading(resp.trading));
-          this.paramsDirtyIds.delete(row.id);
-          this.savingParamsIds.delete(row.id);
-          this.paramsSaveErrors.delete(row.id);
-          const nt = this.nonTradingByLogic.get(row.id);
-          if (nt) {
-            this.nonTradingByLogic.set(row.id, {
-              ...nt,
-              use_non_trading_periods: resp.trading.use_non_trading_periods !== false,
-            });
-          }
-          // Денежный фонд добавлен/снят в logic_securities — обновить список «Ценные бумаги»
-          this.loadSecuritiesForLogic(row.id, true);
-          this.techLog.event(
-            this.techLog.logicThreadKey(row.id, 'params'),
-            'logic.params.saved',
-            'Параметры логики сохранены (UI)',
-            {
-              logicId: row.id,
-              payload: { trading: resp.trading, params: resp.params },
-            }
-          );
-        },
-        error: (err) => {
-          this.savingParamsIds.delete(row.id);
-          this.paramsSaveErrors.set(
-            row.id,
-            err?.error?.error ?? 'Не удалось сохранить параметры'
-          );
-        },
       });
+
+    const afterParamsSaved = (resp: LogicParamsResponse) => {
+      this.applyTradingParamsToLogic(row.id, resp.trading);
+      const nextDraft = this.draftFromTrading(resp.trading);
+      nextDraft.name = row.name;
+      this.paramsDrafts.set(row.id, nextDraft);
+      this.paramsDirtyIds.delete(row.id);
+      this.savingParamsIds.delete(row.id);
+      this.paramsSaveErrors.delete(row.id);
+      const nt = this.nonTradingByLogic.get(row.id);
+      if (nt) {
+        this.nonTradingByLogic.set(row.id, {
+          ...nt,
+          use_non_trading_periods: resp.trading.use_non_trading_periods !== false,
+        });
+      }
+      this.loadSecuritiesForLogic(row.id, true);
+      this.techLog.event(
+        this.techLog.logicThreadKey(row.id, 'params'),
+        'logic.params.saved',
+        'Параметры логики сохранены (UI)',
+        {
+          logicId: row.id,
+          payload: { trading: resp.trading, params: resp.params },
+        }
+      );
+    };
+
+    const onSaveError = (err: { error?: { error?: string } }) => {
+      this.savingParamsIds.delete(row.id);
+      this.paramsSaveErrors.set(
+        row.id,
+        err?.error?.error ?? 'Не удалось сохранить параметры'
+      );
+    };
+
+    if (name !== row.name) {
+      this.logicsService
+        .updateLogic(row.id, {
+          name,
+          account_id: row.account_id,
+          is_enabled: row.is_enabled,
+          note: row.note ?? null,
+        })
+        .subscribe({
+          next: (updated) => {
+            row.name = updated.name;
+            const local = this.logics.find((l) => l.id === row.id);
+            if (local) local.name = updated.name;
+            saveParams().subscribe({
+              next: afterParamsSaved,
+              error: onSaveError,
+            });
+          },
+          error: onSaveError,
+        });
+      return;
+    }
+
+    saveParams().subscribe({
+      next: afterParamsSaved,
+      error: onSaveError,
+    });
   }
 
   formatMoney(value: number | null | undefined): string {

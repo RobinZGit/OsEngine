@@ -235,7 +235,7 @@
               <td class="col-logic">
                 <span class="logic-name-cell">
                   <span class="logic-name-main">
-                    <span class="logic-name-text">{{ row.name }}</span>
+                    <span class="logic-name-text">{{ displayLogicName(row) }}</span>
                     @if (isBacktestRunning(row.id)) {
                       <span
                         class="logic-test-progress"
@@ -411,6 +411,24 @@
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 
+                    <div class="logic-detail-toolbar">
+                      <div class="logic-detail-toolbar-title">
+                        <span class="logic-detail-toolbar-label">Логика</span>
+                        <span class="logic-detail-toolbar-name" [title]="displayLogicName(row)">
+                          {{ displayLogicName(row) }}
+                        </span>
+                        <span class="logic-detail-toolbar-id">#{{ row.id }}</span>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-hide-logic"
+                        title="Свернуть детали логики"
+                        (click)="collapseLogic(row.id, $event)"
+                      >
+                        Скрыть
+                      </button>
+                    </div>
+
                     <details class="signals-block params-block" [open]="isParamsBlockExpanded(row.id)">
 
                       <summary class="signals-summary">
@@ -455,6 +473,28 @@
                           </thead>
 
                           <tbody>
+
+                            <tr>
+
+                              <td>Имя логики</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  class="params-input params-input-name"
+                                  maxlength="100"
+                                  [ngModel]="getParamsDraft(row.id).name"
+                                  (ngModelChange)="onParamsNameChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="Название логики"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">Отображается в таблице и в заголовке раскрытой логики. Сохраняется вместе с параметрами.</td>
+
+                            </tr>
 
                             <tr>
 

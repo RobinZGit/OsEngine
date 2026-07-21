@@ -613,6 +613,66 @@ tbody tr.logic-main-row:hover {
   gap: 0.65rem;
 }
 
+.logic-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.logic-detail-toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.logic-detail-toolbar-label {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.logic-detail-toolbar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.logic-detail-toolbar-id {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.btn-hide-logic {
+  flex-shrink: 0;
+  border: 1px solid #9ca3af;
+  background: #f9fafb;
+  color: #374151;
+}
+
+.btn-hide-logic:hover {
+  background: #f3f4f6;
+  border-color: #6b7280;
+}
+
+.params-table .params-input-name {
+  max-width: 22rem;
+}
+
 .signals-block {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
