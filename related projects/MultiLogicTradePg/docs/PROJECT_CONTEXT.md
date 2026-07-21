@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — backtest resume fix: security_resume + portfolio_resume (+ shadow cash)
+**Последнее обновление:** 2026-07-21 — TS fix: logics.service scope_type includes portfolio_resume
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -328,6 +328,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | Fix Angular TS2322: logics.service scope_type + portfolio_resume; installers + test-1 |
 | 2026-07-21 | Backtest: security_resume mid-run resume + portfolio_resume target fix + shadow no cash; installers + test-1 |
 | 2026-07-21 | portfolio_resume SL (peak DD → shadow → resume; no warmup); installers + test-1 |
 | 2026-07-21 | HTML test report (OsEngine Journal stats) + installers + republish test-1 |

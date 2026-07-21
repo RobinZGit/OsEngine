@@ -19,6 +19,10 @@ import {
   LogicTradingParamsResponse,
 } from '../models/logic.model';
 import { LogicTradeLotRow, LogicTradeRow } from '../shared/logic-trade';
+import type {
+  LogicStopScopeType,
+  LogicStopValueUnit,
+} from '../shared/logic-stop';
 import type { BacktestRunStatus } from '../logics/logic-positions-panel.component';
 import { LogicPayload } from '../models/lookup.model';
 
@@ -328,9 +332,9 @@ export class LogicsService {
   createLogicStop(body: {
     logic_id: number;
     rule_kind: 'stop_loss' | 'take_profit';
-    scope_type: 'security' | 'security_resume' | 'security_inversion' | 'portfolio';
+    scope_type: LogicStopScopeType;
     value: number;
-    value_unit: 'percent' | 'atr';
+    value_unit: LogicStopValueUnit;
   }): Observable<LogicStopRow> {
     return this.http.post<LogicStopRow>(
       `${this.appConfig.apiUrl}/logic-stops`,
@@ -341,9 +345,9 @@ export class LogicsService {
   updateLogicStop(
     id: number,
     body: {
-      scope_type?: 'security' | 'security_resume' | 'security_inversion' | 'portfolio';
+      scope_type?: LogicStopScopeType;
       value?: number;
-      value_unit?: 'percent' | 'atr';
+      value_unit?: LogicStopValueUnit;
       is_active?: boolean;
     }
   ): Observable<LogicStopRow> {
