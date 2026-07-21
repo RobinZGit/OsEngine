@@ -733,7 +733,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       warmup_pretest: trading.warmup_pretest !== false,
       cash_fund_code,
       cash_fund_threshold: this.formatBalanceDraft(
-        trading.cash_fund_threshold != null ? trading.cash_fund_threshold : 100000
+        trading.cash_fund_threshold != null ? trading.cash_fund_threshold : 1000000
       ),
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       close_positions_eod: trading.close_positions_eod === true,

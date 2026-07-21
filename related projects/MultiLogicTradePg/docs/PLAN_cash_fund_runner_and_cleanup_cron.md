@@ -8,7 +8,7 @@
 
 | Piece | Where |
 |-------|--------|
-| `cash_fund_code` (`''` \| TMON \| LQDT \| SBMM), `cash_fund_threshold` (default 100000) | `01`, `logic-params.js`, logics UI |
+| `cash_fund_code` (`''` \| TMON \| LQDT \| SBMM), `cash_fund_threshold` (default **1000000**) | `01`, `logic-params.js`, logics UI |
 | Manual cleanup + preference `APP_CLEANUP_DISK` | `cleanup_trading_disk_space()`, `GET/PUT /api/settings/cleanup`, `POST /api/maintenance/cleanup`, gear panel |
 | T-Bank order primitive | `tbank_post_order(account_id, figi, qty, price, direction)` in `02` |
 

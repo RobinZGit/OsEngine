@@ -1259,8 +1259,8 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'Перед включением боя: прогнать тест за rating_lookback_days и перенести состояния бумаг для security_resume/security_inversion', 11),
     ('cash_fund_code', 'Денежный фонд (парк кэша)', 'text', '',
      'Пусто = не покупать. TMON / LQDT / SBMM — runner паркует избыток кэша на реальном счёте (1 раз на закрытую свечу TF)', 12),
-    ('cash_fund_threshold', 'Порог свободных денег, ₽', 'money', '100000',
-     'Если current_balance выше порога и выбран фонд — парковать избыток (buy-only)', 13),
+    ('cash_fund_threshold', 'Порог портфеля (equity), ₽', 'money', '1000000',
+     'Если equity выше порога и выбран фонд — парковать избыток (buy-only). По умолчанию = начальный остаток теста (1 000 000)', 13),
     ('use_non_trading_periods', 'Учитывать неторговые периоды', 'boolean', 'true',
      'Не открывать сделки в интервалах из блока «Торговые периоды» (шаблон MOEX TQBR по умолчанию)', 14),
     ('close_positions_eod', 'Закрывать позиции в конце дня (кроме фондов)', 'boolean', 'false',
@@ -1279,6 +1279,13 @@ ON CONFLICT (param_key) DO UPDATE SET
     default_value = EXCLUDED.default_value,
     description = EXCLUDED.description,
     display_order = EXCLUDED.display_order;
+
+-- Upgrade: старый дефолт порога TMON 100000 → 1000000 (= initial_balance теста)
+UPDATE logic_params
+SET param_value = '1000000',
+    updated_at = CURRENT_TIMESTAMP
+WHERE param_key = 'cash_fund_threshold'
+  AND replace(replace(btrim(param_value), ' ', ''), ',', '.') IN ('100000', '100000.0', '100000.00');
 
 CREATE TABLE IF NOT EXISTS logic_params (
     id SERIAL PRIMARY KEY,

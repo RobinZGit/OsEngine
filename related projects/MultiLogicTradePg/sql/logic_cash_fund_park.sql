@@ -251,7 +251,7 @@ BEGIN
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'no_fund');
     END IF;
 
-    v_threshold := COALESCE(get_logic_param_numeric(p_logic_id, 'cash_fund_threshold', 100000), 100000);
+    v_threshold := COALESCE(get_logic_param_numeric(p_logic_id, 'cash_fund_threshold', 1000000), 1000000);
     IF v_threshold < 0 THEN
         v_threshold := 0;
     END IF;

@@ -36,7 +36,7 @@ const DEFAULTS = {
   [PARAM_KEYS.INVERSION]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.WARMUP_PRETEST]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CASH_FUND_CODE]: { value: '', type: 'text' },
-  [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '100000', type: 'money' },
+  [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '1000000', type: 'money' },
   [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
 };
@@ -123,7 +123,7 @@ function rowsToTradingParams(rows) {
     cash_fund_threshold:
       map[PARAM_KEYS.CASH_FUND_THRESHOLD] != null
         ? Number(map[PARAM_KEYS.CASH_FUND_THRESHOLD])
-        : 100000,
+        : 1000000,
     use_non_trading_periods: map[PARAM_KEYS.USE_NON_TRADING_PERIODS] !== false,
     close_positions_eod: map[PARAM_KEYS.CLOSE_POSITIONS_EOD] === true,
   };
