@@ -411,24 +411,6 @@
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 
-                    <div class="logic-detail-toolbar">
-                      <div class="logic-detail-toolbar-title">
-                        <span class="logic-detail-toolbar-label">Логика</span>
-                        <span class="logic-detail-toolbar-name" [title]="displayLogicName(row)">
-                          {{ displayLogicName(row) }}
-                        </span>
-                        <span class="logic-detail-toolbar-id">#{{ row.id }}</span>
-                      </div>
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-hide-logic"
-                        title="Свернуть детали логики"
-                        (click)="collapseLogic(row.id, $event)"
-                      >
-                        Скрыть
-                      </button>
-                    </div>
-
                     <details class="signals-block params-block" [open]="isParamsBlockExpanded(row.id)">
 
                       <summary class="signals-summary">
@@ -444,12 +426,28 @@
                             aria-hidden="true"
                           >▸</span>
 
-                          <span class="signals-title">Параметры логики</span>
+                          <span
+                            class="signals-title params-logic-title"
+                            [title]="'Параметры логики — ' + displayLogicName(row)"
+                          >
+                            Параметры логики — {{ displayLogicName(row) }}
+                          </span>
 
                           @if (isParamsLoading(row.id)) {
                             <span class="signals-loading">загрузка…</span>
                           }
 
+                        </span>
+
+                        <span class="signals-summary-actions" (click)="$event.stopPropagation()">
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-hide-logic"
+                            title="Свернуть детали логики"
+                            (click)="collapseLogic(row.id, $event)"
+                          >
+                            Скрыть
+                          </button>
                         </span>
 
                       </summary>
