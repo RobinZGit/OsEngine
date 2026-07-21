@@ -780,7 +780,8 @@ INSERT INTO indicators (code, name, description, category) VALUES
     ('HMA', 'Hull Moving Average', 'Скользящее среднее Халла', 'trend'),
     ('ZLEMA', 'Zero Lag EMA', 'EMA с нулевым запаздыванием', 'trend'),
     ('SMAT3', 'SMA Triple', 'Тройное SMA (тройная свёртка)', 'trend'),
-    ('LINREG', 'Linear Regression Channel', 'Канал линейной регрессии (mid ± Dev·σ остатков)', 'trend')
+    ('LINREG', 'Linear Regression Channel', 'Канал линейной регрессии (mid ± Dev·σ остатков)', 'trend'),
+    ('LINREGV', 'Linear Regression Variable Period', 'LinReg с подбором периода: max→3, min max|остаток|; канал mid ± Dev·σ', 'trend')
 ON CONFLICT (code) DO NOTHING;
 
 -- Шаблоны расчёта (функция + параметры; :series подставляется для каждой линии индикатора)
@@ -794,6 +795,7 @@ UPDATE indicators SET script = 'SELECT calc_ind_stoch(:k_period, :d_period, :smo
 UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'CCI';
 UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
 UPDATE indicators SET script = 'SELECT calc_ind_linreg(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREG';
+UPDATE indicators SET script = 'SELECT calc_ind_linregv(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREGV';
 
 -- Профиль шаблонов сигнала: какие двоичные смыслы «по течению / против» типичны для индикатора
 
@@ -812,7 +814,7 @@ UPDATE indicators SET formula = 'ema', is_custom = FALSE WHERE code = 'EMA';
 UPDATE indicators SET formula = 'pp * (1; -2; 1)', is_custom = TRUE WHERE code = 'PACC';
 UPDATE indicators SET formula = 'sma(period=20, series=VALUE) * sma(period=20, series=VALUE) * sma(period=20, series=VALUE)', is_custom = TRUE WHERE code = 'SMAT3';
 -- Как у STOCH/ATR/MACD: пустая formula → calc_indicator_series_array / calc_ind_*_array (не poly)
-UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code IN ('CCI', 'ADX', 'LINREG', 'ATR', 'STOCH', 'MACD', 'BB', 'RSI');
+UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code IN ('CCI', 'ADX', 'LINREG', 'LINREGV', 'ATR', 'STOCH', 'MACD', 'BB', 'RSI');
 
 -- Профили + шаблоны follow(trend) / fade(counter)
 -- trend_line: цена относительно линии
@@ -820,7 +822,7 @@ UPDATE indicators SET
     sig_profile = 'trend_line',
     sig_trend_def = 'pp > VALUE',
     sig_ct_def = 'pp < VALUE'
-WHERE code IN ('SMA', 'EMA', 'WMA', 'HMA', 'ZLEMA', 'SMAT3', 'ICHIMOKU', 'PSAR', 'SAR', 'LINREG');
+WHERE code IN ('SMA', 'EMA', 'WMA', 'HMA', 'ZLEMA', 'SMAT3', 'ICHIMOKU', 'PSAR', 'SAR', 'LINREG', 'LINREGV');
 
 -- oscillator 0..100: follow = бычья половина / кросс; fade = зона перепроданности
 UPDATE indicators SET
@@ -1031,6 +1033,11 @@ JOIN (VALUES
     ('LINREG', 'UPPER', 'Верхняя граница', 'float', FALSE, NULL, 'mid + Dev·σ', 2),
     ('LINREG', 'LOWER', 'Нижняя граница', 'float', FALSE, NULL, 'mid − Dev·σ', 3),
     ('LINREG', 'SLOPE', 'Наклон LinReg', 'float', FALSE, NULL, 'Наклон регрессии', 4),
+    ('LINREGV', 'MIDDLE', 'Линия LinRegV', 'float', FALSE, NULL, 'Середина канала (лучший период)', 1),
+    ('LINREGV', 'UPPER', 'Верхняя граница', 'float', FALSE, NULL, 'mid + Dev·σ', 2),
+    ('LINREGV', 'LOWER', 'Нижняя граница', 'float', FALSE, NULL, 'mid − Dev·σ', 3),
+    ('LINREGV', 'SLOPE', 'Наклон LinRegV', 'float', FALSE, NULL, 'Наклон на выбранном периоде', 4),
+    ('LINREGV', 'PERIOD', 'Выбранный период', 'float', FALSE, NULL, 'Длина окна max→3 с min max|residual|', 5),
     ('PACC', 'VALUE', 'Ускорение цены', 'float', FALSE, NULL, 'pp * (1;-2;1)', 1),
     ('SMAT3', 'VALUE', 'SMA³ свёртка', 'float', FALSE, NULL, 'sma(period=20,series=VALUE)*3', 1),
     ('SMA', 'VALUE', 'Значение MA', 'float', FALSE, NULL, 'SMA value', 1),
@@ -2295,10 +2302,88 @@ JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'LinReg Fade'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
+-- LinRegV Fade: как LinReg Fade, но индикатор LINREGV (подбор периода)
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT v.name, a.id, FALSE, v.note
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+CROSS JOIN (VALUES
+    (
+        'LinRegV Fade',
+        'Как LinReg Fade, но канал LINREGV: period=max, на баре выбирается окно 3..max с минимальным max|остаток|.'
+    )
+) AS v(name, note)
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name = 'LinRegV Fade'
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name = 'LinRegV Fade'
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
 )
-SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, display_order
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('LINREGV', 'open',  'long',  'counter', '@LINREGV(period=20,std_dev=2,series=LOWER) pp <= VALUE', 0),
+    ('LINREGV', 'close', 'long',  'trend',   '@LINREGV(period=20,std_dev=2,series=MIDDLE) pp >= VALUE', 1),
+    ('LINREGV', 'open',  'short', 'counter', '@LINREGV(period=20,std_dev=2,series=UPPER) pp >= VALUE', 2),
+    ('LINREGV', 'close', 'short', 'trend',   '@LINREGV(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'LinRegV Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name = 'LinRegV Fade'
+ON CONFLICT (logic_id, security_id) DO NOTHING;
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'security',        3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name = 'LinRegV Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
 FROM logics l
 CROSS JOIN (VALUES
     ('ADX', 'open',  'long',  'counter', '@ADX(period=14,series=ADX) VALUE < 25', 0),
