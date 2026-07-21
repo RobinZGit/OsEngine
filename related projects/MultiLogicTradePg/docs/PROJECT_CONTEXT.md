@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-21 — Test/copies use same global T-Bank token (no re-prompt per copy)
+**Последнее обновление:** 2026-07-21 — Force-rebuild Windows+Linux installers (token + LINREGV/LinRegV Fade) per freshness rule
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -323,6 +323,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-21 | Force-rebuild both installers (freshness rule) after token+LINREGV ships |
 | 2026-07-21 | Test Start + enable fake: global TBANK token for all logics/copies (no HTTP re-prompt) |
 | 2026-07-21 | Indicator LINREGV (period max→3, min max\|residual\|) + seed logic LinRegV Fade |
 | 2026-07-19 | Ship: papers ост./сум./цена test+live; fund never Close; Windows+Linux installers |
