@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v46 (идемпотентный запуск)
+-- Версия: v47 (идемпотентный запуск)
+-- v47: +8 контртренд OsEngine Custom (прокси на calc-индикаторы; без DELETE)
 -- v46: неторговые периоды MOEX; close_positions_eod; use_non_trading_periods
 -- v45: +5 тренд +10 контртренд OsEngine; seed без DELETE (INSERT IF NOT EXISTS / DO NOTHING)
 -- v44: logics.note — примечание; +5 контртрендовых OsEngine; подписи типа стратегии у seed
@@ -2769,6 +2770,259 @@ WHERE l.name IN (
 )
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
+-- =====================================================================
+-- v47: +8 контртрендовых OsEngine Custom Robots (ещё не в seed)
+-- Прокси на индикаторы с calc в PG (NRTR/RAVI/SuperTrend/FI/MI/Aroon/CMO/StdDev нет).
+-- FAKE, выключены, все акции, SL 1% portfolio / TP 3%.
+-- Только INSERT IF NOT EXISTS — копии пользователя и правки не затираются.
+-- =====================================================================
+
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT v.name, a.id, FALSE, v.note
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+CROSS JOIN (VALUES
+    (
+        'NRTR ROC Fade',
+        'Контртрендовая. OsEngine ContrTrendNrtrAndROC; прокси: SMA(24)≈NRTR, RSI≈ROC — long ниже SMA+RSI<30, short выше SMA+RSI>70.'
+    ),
+    (
+        'RAVI BB Fade',
+        'Контртрендовая. OsEngine ContrtrendRaviAndBollinger; прокси: ADX<25≈слабый RAVI + отскок BB к середине.'
+    ),
+    (
+        'Stoch Aroon Fade',
+        'Контртрендовая. OsEngine ContrtrendStochAndAroon; прокси: ADX≈Aroon strength + Stoch %K экстремум.'
+    ),
+    (
+        'MI SMA Reversal',
+        'Контртрендовая. OsEngine ContrtrendStrategyMiAndSma; прокси: ATR GROWTH5≈Mass Index bulge + направление SMA(20).'
+    ),
+    (
+        'SuperTrend CMO Fade',
+        'Контртрендовая. OsEngine ContrtrendSuperTrendAndCMO; прокси: EMA(10)≈SuperTrend, RSI≈CMO ±50.'
+    ),
+    (
+        'Force Index Fade',
+        'Контртрендовая. OsEngine CounterTrendFI; прокси: MACD HISTOGRAM (знак силы) + RSI.'
+    ),
+    (
+        'BB StdDev Fade',
+        'Контртрендовая. OsEngine CountertrendBollingerAndStdDev; прокси: BB + ATR GROWTH5>1 как фильтр StdDev.'
+    ),
+    (
+        'BB Volume Fade',
+        'Контртрендовая. OsEngine CountertrendBollingerAndVolumes; прокси: BB + ADX<30 как объёмный/режимный фильтр.'
+    )
+) AS v(name, note)
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('stop_loss_timeframe', 'M5', 'text'),
+    ('base_annual_rate_pct', '20', 'number'),
+    ('rating_lookback_days', '7', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name IN (
+    'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
+    'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name IN (
+    'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
+    'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+-- NRTR ROC Fade (ContrTrendNrtrAndROC)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('SMA', 'open',  'long',  'counter', '@SMA(period=24,series=VALUE) pp < VALUE', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 1),
+    ('SMA', 'close', 'long',  'trend',   '@SMA(period=24,series=VALUE) pp > VALUE', 2),
+    ('SMA', 'open',  'short', 'counter', '@SMA(period=24,series=VALUE) pp > VALUE', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 4),
+    ('SMA', 'close', 'short', 'trend',   '@SMA(period=24,series=VALUE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'NRTR ROC Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- RAVI BB Fade (ContrtrendRaviAndBollinger)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ADX', 'open',  'long',  'counter', '@ADX(period=14,series=ADX) VALUE < 25', 0),
+    ('BB',  'open',  'long',  'counter', '@BB(period=21,std_dev=1,series=LOWER) pp < VALUE', 1),
+    ('BB',  'close', 'long',  'trend',   '@BB(period=21,std_dev=1,series=MIDDLE) pp > VALUE', 2),
+    ('ADX', 'open',  'short', 'counter', '@ADX(period=14,series=ADX) VALUE < 25', 3),
+    ('BB',  'open',  'short', 'counter', '@BB(period=21,std_dev=1,series=UPPER) pp > VALUE', 4),
+    ('BB',  'close', 'short', 'trend',   '@BB(period=21,std_dev=1,series=MIDDLE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'RAVI BB Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- Stoch Aroon Fade (ContrtrendStochAndAroon)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ADX',   'open',  'long',  'counter', '@ADX(period=14,series=ADX) VALUE > 25', 0),
+    ('STOCH', 'open',  'long',  'counter', '@STOCH(k_period=9,d_period=5,smooth=3,series=K) VALUE < 30', 1),
+    ('ADX',   'close', 'long',  'trend',   '@ADX(period=14,series=ADX) VALUE < 20', 2),
+    ('ADX',   'open',  'short', 'counter', '@ADX(period=14,series=ADX) VALUE > 25', 3),
+    ('STOCH', 'open',  'short', 'counter', '@STOCH(k_period=9,d_period=5,smooth=3,series=K) VALUE > 80', 4),
+    ('ADX',   'close', 'short', 'trend',   '@ADX(period=14,series=ADX) VALUE < 20', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Stoch Aroon Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- MI SMA Reversal (ContrtrendStrategyMiAndSma)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('ATR', 'open',  'long',  'counter', '@ATR(period=14,series=GROWTH5) VALUE >= 2', 0),
+    ('SMA', 'open',  'long',  'counter', '@SMA(period=20,series=VALUE) pp < VALUE', 1),
+    ('SMA', 'close', 'long',  'trend',   '@SMA(period=20,series=VALUE) pp > VALUE', 2),
+    ('ATR', 'open',  'short', 'counter', '@ATR(period=14,series=GROWTH5) VALUE >= 2', 3),
+    ('SMA', 'open',  'short', 'counter', '@SMA(period=20,series=VALUE) pp > VALUE', 4),
+    ('SMA', 'close', 'short', 'trend',   '@SMA(period=20,series=VALUE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'MI SMA Reversal'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- SuperTrend CMO Fade (ContrtrendSuperTrendAndCMO)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('EMA', 'open',  'long',  'counter', '@EMA(period=10,series=VALUE) pp > VALUE', 0),
+    ('RSI', 'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 30', 1),
+    ('EMA', 'close', 'long',  'trend',   '@EMA(period=10,series=VALUE) pp < VALUE', 2),
+    ('EMA', 'open',  'short', 'counter', '@EMA(period=10,series=VALUE) pp < VALUE', 3),
+    ('RSI', 'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 70', 4),
+    ('EMA', 'close', 'short', 'trend',   '@EMA(period=10,series=VALUE) pp > VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'SuperTrend CMO Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- Force Index Fade (CounterTrendFI)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('MACD', 'open',  'long',  'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE < 0', 0),
+    ('RSI',  'open',  'long',  'counter', '@RSI(period=14,series=VALUE) VALUE < 40', 1),
+    ('RSI',  'close', 'long',  'trend',   '@RSI(period=14,series=VALUE) VALUE > 50', 2),
+    ('MACD', 'open',  'short', 'counter', '@MACD(fast_period=12,slow_period=26,signal_period=9,series=HISTOGRAM) VALUE > 0', 3),
+    ('RSI',  'open',  'short', 'counter', '@RSI(period=14,series=VALUE) VALUE > 60', 4),
+    ('RSI',  'close', 'short', 'trend',   '@RSI(period=14,series=VALUE) VALUE < 50', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Force Index Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- BB StdDev Fade (CountertrendBollingerAndStdDev)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('BB',  'open',  'long',  'counter', '@BB(period=21,std_dev=1,series=LOWER) pp <= VALUE', 0),
+    ('ATR', 'open',  'long',  'counter', '@ATR(period=14,series=GROWTH5) VALUE > 1', 1),
+    ('BB',  'close', 'long',  'trend',   '@BB(period=21,std_dev=1,series=MIDDLE) pp > VALUE', 2),
+    ('BB',  'open',  'short', 'counter', '@BB(period=21,std_dev=1,series=UPPER) pp >= VALUE', 3),
+    ('ATR', 'open',  'short', 'counter', '@ATR(period=14,series=GROWTH5) VALUE > 1', 4),
+    ('BB',  'close', 'short', 'trend',   '@BB(period=21,std_dev=1,series=MIDDLE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'BB StdDev Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- BB Volume Fade (CountertrendBollingerAndVolumes)
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('BB',  'open',  'long',  'counter', '@BB(period=21,std_dev=1,series=LOWER) pp < VALUE', 0),
+    ('ADX', 'open',  'long',  'counter', '@ADX(period=14,series=ADX) VALUE < 30', 1),
+    ('BB',  'close', 'long',  'trend',   '@BB(period=21,std_dev=1,series=MIDDLE) pp > VALUE', 2),
+    ('BB',  'open',  'short', 'counter', '@BB(period=21,std_dev=1,series=UPPER) pp > VALUE', 3),
+    ('ADX', 'open',  'short', 'counter', '@ADX(period=14,series=ADX) VALUE < 30', 4),
+    ('BB',  'close', 'short', 'trend',   '@BB(period=21,std_dev=1,series=MIDDLE) pp < VALUE', 5)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'BB Volume Fade'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_securities (logic_id, security_id, display_order)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'stock'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name IN (
+    'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
+    'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+)
+ON CONFLICT (logic_id, security_id) DO NOTHING;
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
+    ('take_profit', 'security',        3.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name IN (
+    'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
+    'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+)
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
+
 -- Upgrade (01 re-run): старый seed-дефолт SL «по бумаге с resume 1%» → portfolio 1%.
 -- INSERT выше не трогает логики, у которых stops уже есть (NOT EXISTS).
 -- Этот UPDATE меняет только точное совпадение со старым seed (value=1%, unit=percent, security_resume).
@@ -2858,7 +3112,15 @@ FROM (VALUES
     ('SMA Stretch Fade', 'Контртрендовая. Отрыв от SMA(20) + RSI — возврат к средней.'),
     ('Stoch RSI Combo', 'Контртрендовая (комбо). Stoch и RSI одновременно в экстремуме.'),
     ('PACC Reversal', 'Контртрендовая. Разворот ускорения PACC + RSI.'),
-    ('EMA RSI Fade', 'Контртрендовая. Цена у EMA + RSI — откат к EMA.')
+    ('EMA RSI Fade', 'Контртрендовая. Цена у EMA + RSI — откат к EMA.'),
+    ('NRTR ROC Fade', 'Контртрендовая. OsEngine ContrTrendNrtrAndROC; прокси SMA(24)≈NRTR, RSI≈ROC.'),
+    ('RAVI BB Fade', 'Контртрендовая. OsEngine ContrtrendRaviAndBollinger; прокси ADX<25 + BB.'),
+    ('Stoch Aroon Fade', 'Контртрендовая. OsEngine ContrtrendStochAndAroon; прокси ADX + Stoch %K.'),
+    ('MI SMA Reversal', 'Контртрендовая. OsEngine ContrtrendStrategyMiAndSma; прокси ATR GROWTH5 + SMA.'),
+    ('SuperTrend CMO Fade', 'Контртрендовая. OsEngine ContrtrendSuperTrendAndCMO; прокси EMA(10) + RSI.'),
+    ('Force Index Fade', 'Контртрендовая. OsEngine CounterTrendFI; прокси MACD HISTOGRAM + RSI.'),
+    ('BB StdDev Fade', 'Контртрендовая. OsEngine CountertrendBollingerAndStdDev; прокси BB + ATR GROWTH5.'),
+    ('BB Volume Fade', 'Контртрендовая. OsEngine CountertrendBollingerAndVolumes; прокси BB + ADX<30.')
 ) AS v(name, note)
 WHERE l.name = v.name
   AND (l.note IS NULL OR btrim(l.note) = '');
