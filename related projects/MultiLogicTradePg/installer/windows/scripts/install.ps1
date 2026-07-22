@@ -315,6 +315,29 @@ try {
         }
     }
 
+    function Test-TcpPortOpen {
+        param(
+            [string] $HostName,
+            [int] $Port,
+            [int] $TimeoutMs = 400
+        )
+        try {
+            $client = New-Object System.Net.Sockets.TcpClient
+            $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+            $ok = $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)
+            if (-not $ok) {
+                try { $client.Close() } catch { }
+                return $false
+            }
+            $client.EndConnect($iar)
+            $client.Close()
+            return $true
+        }
+        catch {
+            return $false
+        }
+    }
+
     function Invoke-PsqlScalarAtPort {
         param(
             [string] $Psql,
@@ -322,18 +345,44 @@ try {
             [string] $Database,
             [string] $Sql
         )
+        # Prefer IPv4: "localhost" often resolves to ::1 first; closed ports then
+        # emit NativeCommandError and abort the whole post-install under
+        # $ErrorActionPreference=Stop (npm/Angular never run).
+        if (-not (Test-TcpPortOpen -HostName "127.0.0.1" -Port $Port)) {
+            return $null
+        }
+
         $env:PGPASSWORD = $PostgresPassword
         $env:PGCLIENTENCODING = "UTF8"
         $previous = Get-Location
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         try {
             Set-Location $InstallDir
-            $output = & $Psql -h localhost -p $Port -U postgres -d $Database -t -A -v ON_ERROR_STOP=1 -c $Sql 2>$null
+            $raw = & $Psql -h 127.0.0.1 -p $Port -U postgres -d $Database -t -A -v ON_ERROR_STOP=1 -c $Sql 2>&1
             if ($LASTEXITCODE -ne 0) {
                 return $null
             }
-            return (($output | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1).Trim())
+            $line = @(
+                $raw |
+                    ForEach-Object {
+                        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                            $_.ToString()
+                        }
+                        else {
+                            "$_"
+                        }
+                    } |
+                    Where-Object { $_ -and $_.Trim() }
+            ) | Select-Object -First 1
+            if (-not $line) { return $null }
+            return $line.Trim()
+        }
+        catch {
+            return $null
         }
         finally {
+            $ErrorActionPreference = $prevEap
             Set-Location $previous
         }
     }
@@ -373,14 +422,25 @@ try {
         Write-Step "Searching PostgreSQL target for multilogictrade"
         $readyPort = $null
         foreach ($port in (Get-PostgresPortCandidates)) {
-            $serverOk = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT 1;"
+            try {
+                $serverOk = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT 1;"
+            }
+            catch {
+                Write-Host "    localhost:$port - probe skipped ($($_.Exception.Message))" -ForegroundColor DarkGray
+                continue
+            }
             if ($serverOk -ne "1") {
                 Write-Host "    localhost:$port - no postgres/111 connection" -ForegroundColor DarkGray
                 continue
             }
 
             if (-not $readyPort) { $readyPort = $port }
-            $dbExists = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+            try {
+                $dbExists = Invoke-PsqlScalarAtPort $Psql $port "postgres" "SELECT COUNT(*) FROM pg_database WHERE datname = 'multilogictrade';"
+            }
+            catch {
+                $dbExists = $null
+            }
             Write-Host "    localhost:$port - available, multilogictrade=$dbExists" -ForegroundColor DarkGray
             if ($dbExists -eq "1") {
                 $script:PostgresPort = $port

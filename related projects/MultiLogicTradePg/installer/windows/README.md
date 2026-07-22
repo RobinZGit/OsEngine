@@ -37,7 +37,9 @@ database, installs npm packages, and creates launch shortcuts.
 
 4. Always deploys the database from scratch.
    Setup first searches local PostgreSQL ports (`5432`, an existing `api\.env`
-   `PGPORT`, and nearby ports) using user `postgres` and password `111`. If it
+   `PGPORT`, and nearby ports `5433`–`5440`) using user `postgres` and password `111`.
+   Closed ports are skipped via a TCP probe + safe `psql` call (no abort on
+   connection refused / IPv6 `::1`). If it
    finds an existing `multilogictrade`, it resets that exact server. Otherwise it
    creates the database on the first reachable local PostgreSQL server. Active
    connections to `multilogictrade` are terminated,
