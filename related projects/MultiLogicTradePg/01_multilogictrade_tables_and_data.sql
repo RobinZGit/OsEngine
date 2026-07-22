@@ -2344,13 +2344,25 @@ JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'Square Fade'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
--- Upgrade: убрать неудачный LINREGV / LinRegV Fade (если ставили раньше)
-DELETE FROM logic_trade_lots WHERE logic_id IN (SELECT id FROM logics WHERE name = 'LinRegV Fade');
-DELETE FROM logic_trades WHERE logic_id IN (SELECT id FROM logics WHERE name = 'LinRegV Fade');
-DELETE FROM logics WHERE name = 'LinRegV Fade';
-DELETE FROM logic_indicator_signals
- WHERE indicator_id IN (SELECT id FROM indicators WHERE code = 'LINREGV');
-DELETE FROM indicators WHERE code = 'LINREGV';
+-- Upgrade: убрать неудачный LINREGV / LinRegV Fade (если ставили раньше).
+-- Tables logic_trades / logic_trade_lots are created later in this script — guard with to_regclass.
+DO $$
+BEGIN
+    IF to_regclass('public.logic_trade_lots') IS NOT NULL THEN
+        DELETE FROM logic_trade_lots
+        WHERE logic_id IN (SELECT id FROM logics WHERE name = 'LinRegV Fade');
+    END IF;
+    IF to_regclass('public.logic_trades') IS NOT NULL THEN
+        DELETE FROM logic_trades
+        WHERE logic_id IN (SELECT id FROM logics WHERE name = 'LinRegV Fade');
+    END IF;
+    DELETE FROM logics WHERE name = 'LinRegV Fade';
+    IF to_regclass('public.logic_indicator_signals') IS NOT NULL THEN
+        DELETE FROM logic_indicator_signals
+        WHERE indicator_id IN (SELECT id FROM indicators WHERE code = 'LINREGV');
+    END IF;
+    DELETE FROM indicators WHERE code = 'LINREGV';
+END $$;
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order

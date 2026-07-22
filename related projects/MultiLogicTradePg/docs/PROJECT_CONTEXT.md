@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-22 — fix 01: UPDATE cash_fund_threshold after CREATE logic_params
+**Последнее обновление:** 2026-07-22 — fix 01: LINREGV cleanup guards missing logic_trade_lots/trades
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -221,6 +221,7 @@
 110. **v47 counter-trend seed:** +8 логик из OsEngine Custom (NRTR ROC / RAVI BB / Stoch Aroon / MI SMA / SuperTrend CMO / Force Index / BB StdDev / BB Volume); прокси на calc-индикаторы; CountertrendBollinger skipped (= Bollinger Bounce).
 111. **Installer PG port probe:** closed ports (5433…) no longer throw under `$ErrorActionPreference=Stop`; TCP check + `127.0.0.1`; post-install reaches `npm ci` / Angular CLI.
 112. **01 order fix:** `UPDATE logic_params` (cash_fund_threshold 100k→1M) moved **after** `CREATE TABLE logic_params` — upgrade on DBs without that table no longer aborts before npm.
+113. **01 LINREGV cleanup:** `DELETE FROM logic_trade_lots/trades` wrapped in `to_regclass` guards (tables created later in `01`).
 
 ### Автотесты
 
@@ -331,6 +332,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-22 | Fix 01: LINREGV DELETE guarded if logic_trade_lots/trades missing; installers + test-1 |
 | 2026-07-22 | Fix 01: cash_fund_threshold UPDATE after CREATE logic_params; installers + test-1 |
 | 2026-07-22 | Installer: safe PG port probe (no abort on 5433 refused → npm/Angular installs); test-1 |
 | 2026-07-22 | v47: +8 OsEngine counter-trend seed (proxies on calc indicators); installers + test-1 |
@@ -625,3 +627,4 @@
 149. «OsEngine counter-trend robots appeared; if new vs Postgres seed — add them (ContrTrend*/Countertrend* list).»
 150. «Installer ExitCode 1: psql connection refused on 5433; Angular CLI missing — fix and put in repo.»
 151. «Same mistake again: upgrade fails UPDATE logic_params does not exist (line 1303) — fix and ship.»
+152. «Again: Angular CLI missing; 01 ERROR logic_trade_lots does not exist (LINREGV DELETE) — fix and ship.»
