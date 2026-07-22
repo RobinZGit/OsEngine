@@ -1295,13 +1295,6 @@ ON CONFLICT (param_key) DO UPDATE SET
     description = EXCLUDED.description,
     display_order = EXCLUDED.display_order;
 
--- Upgrade: старый дефолт порога TMON 100000 → 1000000 (= initial_balance теста)
-UPDATE logic_params
-SET param_value = '1000000',
-    updated_at = CURRENT_TIMESTAMP
-WHERE param_key = 'cash_fund_threshold'
-  AND replace(replace(btrim(param_value), ' ', ''), ',', '.') IN ('100000', '100000.0', '100000.00');
-
 CREATE TABLE IF NOT EXISTS logic_params (
     id SERIAL PRIMARY KEY,
     logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
@@ -1317,6 +1310,14 @@ ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS param_key VARCHAR(64) REFERENC
 ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS param_value TEXT NOT NULL DEFAULT '';
 ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS value_type VARCHAR(20) CHECK (value_type IN ('number', 'integer', 'money', 'boolean', 'text'));
 ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Upgrade: старый дефолт порога TMON 100000 → 1000000 (= initial_balance теста)
+-- Must run AFTER CREATE logic_params (fresh DBs / wipe recreate public schema).
+UPDATE logic_params
+SET param_value = '1000000',
+    updated_at = CURRENT_TIMESTAMP
+WHERE param_key = 'cash_fund_threshold'
+  AND replace(replace(btrim(param_value), ' ', ''), ',', '.') IN ('100000', '100000.0', '100000.00');
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 

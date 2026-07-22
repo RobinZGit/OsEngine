@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-22 — installer: safe PG port probe (5433 refused no longer aborts npm)
+**Последнее обновление:** 2026-07-22 — fix 01: UPDATE cash_fund_threshold after CREATE logic_params
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -220,6 +220,7 @@
 109. **Backtest resume SL:** mid-run resume для `security_resume` (track before/after как в бою); `portfolio_resume` цель = equity до close (не пик); shadow в тесте **не** двигает cash.
 110. **v47 counter-trend seed:** +8 логик из OsEngine Custom (NRTR ROC / RAVI BB / Stoch Aroon / MI SMA / SuperTrend CMO / Force Index / BB StdDev / BB Volume); прокси на calc-индикаторы; CountertrendBollinger skipped (= Bollinger Bounce).
 111. **Installer PG port probe:** closed ports (5433…) no longer throw under `$ErrorActionPreference=Stop`; TCP check + `127.0.0.1`; post-install reaches `npm ci` / Angular CLI.
+112. **01 order fix:** `UPDATE logic_params` (cash_fund_threshold 100k→1M) moved **after** `CREATE TABLE logic_params` — upgrade on DBs without that table no longer aborts before npm.
 
 ### Автотесты
 
@@ -330,6 +331,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-22 | Fix 01: cash_fund_threshold UPDATE after CREATE logic_params; installers + test-1 |
 | 2026-07-22 | Installer: safe PG port probe (no abort on 5433 refused → npm/Angular installs); test-1 |
 | 2026-07-22 | v47: +8 OsEngine counter-trend seed (proxies on calc indicators); installers + test-1 |
 | 2026-07-21 | Fix Angular TS2322: logics.service scope_type + portfolio_resume; installers + test-1 |
@@ -622,3 +624,4 @@
 148. «Testing security_resume: finres stopped — papers off and never on again; shadow opens should close. Fix resume; also audit portfolio_resume; build/install/upload release.»
 149. «OsEngine counter-trend robots appeared; if new vs Postgres seed — add them (ContrTrend*/Countertrend* list).»
 150. «Installer ExitCode 1: psql connection refused on 5433; Angular CLI missing — fix and put in repo.»
+151. «Same mistake again: upgrade fails UPDATE logic_params does not exist (line 1303) — fix and ship.»
