@@ -9,23 +9,62 @@
       <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
     </header>
 
-    <div class="panel-body">
+    <div class="panel-body" [class.context-mode]="isContextSection">
       <nav class="help-nav" aria-label="Разделы справки">
         @for (s of sections; track s.id) {
+          @if (s.id === 'project-context') {
+            <p class="nav-group-label">Контекст репозитория</p>
+          }
           <button
             type="button"
             class="help-nav-btn"
             [class.active]="s.id === activeId"
+            [class.context-nav]="s.kind === 'project-context'"
             (click)="select(s.id)"
           >
             {{ s.title }}
           </button>
         }
       </nav>
+
+      @if (isContextSection) {
+        <nav class="chapter-nav scroll-list-panel" aria-label="Главы контекста">
+          <p class="chapter-nav-label">Главы</p>
+          @if (contextLoading) {
+            <p class="chapter-status">Загрузка…</p>
+          } @else if (contextError) {
+            <p class="chapter-status error">{{ contextError }}</p>
+          } @else {
+            @for (ch of contextChapters; track ch.id) {
+              <button
+                type="button"
+                class="chapter-nav-btn"
+                [class.active]="ch.id === activeChapterId"
+                (click)="selectChapter(ch.id)"
+              >
+                {{ ch.title }}
+              </button>
+            }
+          }
+        </nav>
+      }
+
       <article class="help-article scroll-list-panel">
         @if (active; as sec) {
-          <h3>{{ sec.title }}</h3>
-          <pre class="help-body">{{ sec.body }}</pre>
+          @if (isContextSection) {
+            <h3>{{ sec.title }}</h3>
+            <p class="context-hint">
+              Живой файл из репозитория (<code>docs/</code>). Обновляется при каждом push —
+              здесь видно, на каком контексте строился проект.
+            </p>
+            @if (activeChapter; as ch) {
+              <h4 class="chapter-title">{{ ch.title }}</h4>
+              <pre class="help-body">{{ ch.body }}</pre>
+            }
+          } @else {
+            <h3>{{ sec.title }}</h3>
+            <pre class="help-body">{{ sec.body }}</pre>
+          }
         }
       </article>
     </div>

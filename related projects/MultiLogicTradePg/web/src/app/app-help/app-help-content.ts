@@ -4,6 +4,78 @@ export interface HelpSection {
   id: string;
   title: string;
   body: string;
+  /** Раздел загружает markdown из assets (живой контекст проекта). */
+  kind?: 'static' | 'project-context';
+}
+
+/** Файлы контекста в assets/project-context/ (копия docs/ через sync:context). */
+export const PROJECT_CONTEXT_DOCS: { id: string; title: string; asset: string }[] = [
+  {
+    id: 'project-context',
+    title: 'Контекст проекта',
+    asset: 'assets/project-context/PROJECT_CONTEXT.md',
+  },
+  {
+    id: 'local-setup',
+    title: 'Локальная установка (контекст)',
+    asset: 'assets/project-context/LOCAL_SETUP.md',
+  },
+];
+
+/** Разбить markdown на главы по заголовкам ## */
+export function splitMarkdownChapters(
+  markdown: string
+): { id: string; title: string; body: string }[] {
+  const text = (markdown || '').replace(/^\uFEFF/, '').trim();
+  if (!text) {
+    return [{ id: 'empty', title: 'Пусто', body: 'Файл контекста не найден. Запустите npm run sync:context.' }];
+  }
+
+  const lines = text.split(/\r?\n/);
+  const chapters: { id: string; title: string; body: string }[] = [];
+  let currentTitle = 'Введение';
+  let buf: string[] = [];
+
+  const flush = () => {
+    const body = buf.join('\n').trim();
+    if (!body && chapters.length === 0) {
+      return;
+    }
+    const slug = currentTitle
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48);
+    chapters.push({
+      id: slug || `ch-${chapters.length}`,
+      title: currentTitle,
+      body: body || '(пусто)',
+    });
+  };
+
+  for (const line of lines) {
+    const m = /^(#{1,2})\s+(.+?)\s*$/.exec(line);
+    if (m && (m[1] === '#' || m[1] === '##')) {
+      // H1 — название документа; H2 — глава
+      if (m[1] === '#' && chapters.length === 0 && buf.length === 0) {
+        currentTitle = m[2].trim();
+        continue;
+      }
+      if (m[1] === '##' || (m[1] === '#' && (buf.length > 0 || chapters.length > 0))) {
+        flush();
+        currentTitle = m[2].trim();
+        buf = [];
+        continue;
+      }
+    }
+    buf.push(line);
+  }
+  flush();
+
+  if (chapters.length === 0) {
+    return [{ id: 'full', title: 'Документ', body: text }];
+  }
+  return chapters;
 }
 
 export const APP_HELP_SECTIONS: HelpSection[] = [
@@ -16,8 +88,20 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 
 В шапке:
 • Логирование — пишет события в app_tech_log (trade runner, сигналы, ошибки).
-• Книга (эта справка) — описание экранов и понятий.
+• Книга (эта справка) — описание экранов и понятий; отдельная глава «Контекст проекта» — живой docs/PROJECT_CONTEXT.md (решения, история, запросы).
 • Шестерёнка — структура БД (таблицы / функции / процедуры / диаграмма FK). При работающем API читает живую PostgreSQL; если БД недоступна — из SQL-скриптов репозитория (schema-offline.json).`,
+  },
+  {
+    id: 'project-context',
+    title: 'Контекст проекта',
+    kind: 'project-context',
+    body: '',
+  },
+  {
+    id: 'local-setup',
+    title: 'Локальная установка (контекст)',
+    kind: 'project-context',
+    body: '',
   },
   {
     id: 'tabs',
@@ -91,6 +175,8 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 • Нет — поверх: файлы/npm обновляются; база НЕ удаляется, схема через 01/02 (цены, сделки, логики сохраняются); функции/процедуры пересоздаются.
 
 Post-install даёт группе Users права на запись .angular\\cache в Program Files.
-Протокол: INSTALL_PROTOCOL.txt (там же DbMode).`,
+Протокол: INSTALL_PROTOCOL.txt (там же DbMode).
+
+Подробный LOCAL_SETUP.md — в главе «Локальная установка (контекст)» слева в этой справке.`,
   },
 ];

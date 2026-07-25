@@ -692,4 +692,3 @@
 154. «When installing on top: logics on real account — initial remainder from real account only, never a million; if unavailable then 0/empty; export repo but do not release.»
 157. «Change security_resume stop-loss: add long/short side; rename (paper and side); split drawdown by paper×side; shadow only that side, other side stays real; add side columns; thank you.»
 158. «When you upload to the repository, do not forget to update the context of the context file.»
-159. «Put the context files in the description, which opens on the main top bar. In a separate chapter, take them out, so that you can turn around and see the context on which this whole project was going.»
