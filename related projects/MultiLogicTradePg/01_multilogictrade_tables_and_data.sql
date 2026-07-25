@@ -1640,7 +1640,10 @@ CREATE TABLE IF NOT EXISTS logic_stops (
     id SERIAL PRIMARY KEY,
     logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
     rule_kind VARCHAR(20) NOT NULL CHECK (rule_kind IN ('stop_loss', 'take_profit')),
-    scope_type VARCHAR(20) NOT NULL CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume')),
+    scope_type VARCHAR(40) NOT NULL CHECK (scope_type IN (
+        'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
+        'security_ltp_renew'
+    )),
     value NUMERIC(18, 6) NOT NULL CHECK (value > 0),
     value_unit VARCHAR(10) NOT NULL CHECK (value_unit IN ('percent', 'atr')),
     display_order INTEGER NOT NULL DEFAULT 0,
@@ -1650,7 +1653,7 @@ CREATE TABLE IF NOT EXISTS logic_stops (
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS rule_kind VARCHAR(20) CHECK (rule_kind IN ('stop_loss', 'take_profit'));
-ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20) CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'));
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS scope_type VARCHAR(40);
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value NUMERIC(18, 6) CHECK (value > 0);
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value_unit VARCHAR(10) CHECK (value_unit IN ('percent', 'atr'));
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
@@ -1669,20 +1672,38 @@ COMMENT ON TABLE logic_stops IS
 'Стоп-лосс и тейк-профит для logics: security (по бумаге) или portfolio (портфель логики)';
 COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
 COMMENT ON COLUMN logic_stops.scope_type IS
-'stop_loss: security | security_resume | security_inversion | portfolio | portfolio_resume; take_profit: security | portfolio';
+'stop_loss: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|security_ltp_renew';
+
+-- v44: security_ltp_renew
+ALTER TABLE logic_stops ALTER COLUMN scope_type TYPE VARCHAR(40);
+ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
+DO $
+BEGIN
+    ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
+        CHECK (scope_type IN (
+            'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
+            'security_ltp_renew'
+        ));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $;
 
 UPDATE logic_stops
 SET scope_type = 'security'
-WHERE rule_kind = 'take_profit' AND scope_type IN ('security_resume', 'security_inversion', 'portfolio_resume');
+WHERE rule_kind = 'take_profit'
+  AND scope_type IN ('security_resume', 'security_inversion', 'portfolio_resume');
 
-DO $$
+DO $
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_tp_scope_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_tp_scope_check
-        CHECK (rule_kind = 'stop_loss' OR scope_type IN ('security', 'portfolio'));
+        CHECK (
+            rule_kind = 'stop_loss'
+            OR scope_type IN ('security', 'portfolio', 'security_ltp_renew')
+        );
 EXCEPTION
     WHEN duplicate_object THEN NULL;
-END $$;
+END $;
 COMMENT ON COLUMN logic_stops.value_unit IS 'percent | atr';
 
 -- Неторговые интервалы логики (MSK): сделки в эти окна не открываются при use_non_trading_periods
@@ -1726,6 +1747,9 @@ CREATE TABLE IF NOT EXISTS logic_securities (
     stop_resume_equity NUMERIC(20, 6),
     stop_resume_baseline NUMERIC(20, 6),
     stop_resume_triggered_at TIMESTAMP,
+    linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE,
+    linear_tp_last_price NUMERIC(18, 6),
+    linear_tp_arm_bar_dt TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (logic_id, security_id)
 );
@@ -1739,6 +1763,9 @@ ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_inverted BOOL
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at TIMESTAMP;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_last_price NUMERIC(18, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_arm_bar_dt TIMESTAMP;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
@@ -1760,6 +1787,12 @@ COMMENT ON COLUMN logic_securities.stop_resume_equity IS
 'Целевая стоимость трека бумаги для возобновления реальной торговли';
 COMMENT ON COLUMN logic_securities.stop_resume_baseline IS
 'Стоимость трека сразу после срабатывания SL (база для теневого восстановления)';
+COMMENT ON COLUMN logic_securities.linear_tp_armed IS
+'TRUE — линейный TP (security_ltp_renew) взведён: ждём снижения цены для продажи';
+COMMENT ON COLUMN logic_securities.linear_tp_last_price IS
+'Цена закрытия бара при взведении / последняя цена пока TP взведён (для детекта падения)';
+COMMENT ON COLUMN logic_securities.linear_tp_arm_bar_dt IS
+'Бар, на котором взвели линейный TP';
 
 
 -- Демо (v40b): follow/breakout — SMA + подтверждение BB/STOCH на OPEN; CLOSE только по SMA
@@ -3366,6 +3399,9 @@ CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE,
     stop_resume_equity NUMERIC(20, 6),
     stop_resume_baseline NUMERIC(20, 6),
+    linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE,
+    linear_tp_last_price NUMERIC(18, 6),
+    linear_tp_arm_bar_dt TIMESTAMP,
     PRIMARY KEY (run_id, security_id)
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
@@ -3375,6 +3411,9 @@ ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_last_price NUMERIC(18, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_arm_bar_dt TIMESTAMP;
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
