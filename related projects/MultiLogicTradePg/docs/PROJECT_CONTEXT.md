@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — cash_fund park: value_type money not numeric (constraint fix); no release
+**Последнее обновление:** 2026-07-25 — fake: initial from params; real: initial+current from broker; no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -338,6 +338,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | Fake: initial from params; real: both from broker |
 | 2026-07-25 | Install-over: real initial/current from broker or 0; installers; no release |
 | 2026-07-25 | Real trading balance: broker cash for sizing/`current_balance`; no release |
 | 2026-07-22 | Fix 01: LINREGV DELETE guarded if logic_trade_lots/trades missing; installers + test-1 |
@@ -637,4 +638,5 @@
 151. «Same mistake again: upgrade fails UPDATE logic_params does not exist (line 1303) — fix and ship.»
 152. «Again: Angular CLI missing; 01 ERROR logic_trade_lots does not exist (LINREGV DELETE) — fix and ship.»
 153. «Real trading (LRTC): seems to trade from deposited million not real balance; orders deviate; current remainder added to million — fix real sizing; do not postpone/make release — continue, new release later when real trading is ready.»
+155. «Initial state: for test use params; for real take from real account.»
 154. «When installing on top: logics on real account — initial remainder from real account only, never a million; if unavailable then 0/empty; export repo but do not release.»

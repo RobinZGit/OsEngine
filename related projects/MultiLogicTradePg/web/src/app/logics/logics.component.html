@@ -642,15 +642,23 @@
 
                               <td>
 
-                                <input
-                                  type="text"
-                                  inputmode="decimal"
-                                  class="params-input"
-                                  [ngModel]="getParamsDraft(row.id).initial_balance"
-                                  (ngModelChange)="onParamsInitialBalanceChange(row.id, $event)"
-                                  (click)="$event.stopPropagation()"
-                                  [placeholder]="row.account_type === 'fake' ? '1000000' : 'необязательно'"
-                                />
+                                @if (row.account_type === 'fake') {
+
+                                  <input
+                                    type="text"
+                                    inputmode="decimal"
+                                    class="params-input"
+                                    [ngModel]="getParamsDraft(row.id).initial_balance"
+                                    (ngModelChange)="onParamsInitialBalanceChange(row.id, $event)"
+                                    (click)="$event.stopPropagation()"
+                                    placeholder="1000000"
+                                  />
+
+                                } @else {
+
+                                  <strong>{{ formatMoney(row.initial_balance) }}</strong>
+
+                                }
 
                               </td>
 
@@ -658,11 +666,11 @@
 
                                 @if (row.account_type === 'fake') {
 
-                                  Стартовый депозит бумажной торговли
+                                  Стартовый депозит теста — из параметров
 
                                 } @else {
 
-                                  Эталон депозита для расчёта лота (опционально)
+                                  Реальный счёт: остаток с брокера (не из параметров теста)
 
                                 }
 
@@ -722,7 +730,19 @@
 
                               <td><strong>{{ formatMoney(row.current_balance) }}</strong></td>
 
-                              <td class="params-hint">Обновляется runner после симулированных сделок</td>
+                              <td class="params-hint">
+
+                                @if (row.account_type === 'fake') {
+
+                                  Тест: обновляется runner после sim-сделок
+
+                                } @else {
+
+                                  Реальный счёт: свободный кэш с брокера
+
+                                }
+
+                              </td>
 
                             </tr>
 
@@ -817,17 +837,21 @@
 
                                 </label>
 
-                                <label class="params-reset" (click)="$event.stopPropagation()">
+                                @if (row.account_type === 'fake') {
 
-                                  <input
-                                    type="checkbox"
-                                    [ngModel]="getParamsDraft(row.id).reset_balance"
-                                    (ngModelChange)="onParamsResetBalanceChange(row.id, $event)"
-                                  />
+                                  <label class="params-reset" (click)="$event.stopPropagation()">
 
-                                  Сбросить текущий остаток к начальному при сохранении
+                                    <input
+                                      type="checkbox"
+                                      [ngModel]="getParamsDraft(row.id).reset_balance"
+                                      (ngModelChange)="onParamsResetBalanceChange(row.id, $event)"
+                                    />
 
-                                </label>
+                                    Сбросить текущий остаток к начальному при сохранении
+
+                                  </label>
+
+                                }
 
                                 @if (paramsSaveError(row.id)) {
                                   <p class="params-save-error">{{ paramsSaveError(row.id) }}</p>

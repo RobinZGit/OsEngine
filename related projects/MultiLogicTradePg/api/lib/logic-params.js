@@ -210,8 +210,22 @@ async function upsertParam(pool, logicId, paramKey, value, valueType) {
   );
 }
 
+async function isLogicOnRealAccount(pool, logicId) {
+  const { rows } = await pool.query(
+    `
+    SELECT lower(COALESCE(a.account_type, 'fake')) AS account_type
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = $1
+    `,
+    [logicId]
+  );
+  return Boolean(rows[0] && rows[0].account_type !== 'fake');
+}
+
 async function saveTradingParams(pool, logicId, payload) {
   await ensureDefaultParams(pool, logicId);
+  const onReal = await isLogicOnRealAccount(pool, logicId);
 
   if (payload.timeframe !== undefined) {
     const tf = String(payload.timeframe).trim().toUpperCase();
@@ -239,7 +253,9 @@ async function saveTradingParams(pool, logicId, payload) {
       'integer'
     );
   }
-  if (payload.initial_balance !== undefined) {
+  // Fake/test: начальный/сброс текущего — из параметров формы.
+  // Real: остатки только с брокера (ниже sync), форму не принимаем.
+  if (!onReal && payload.initial_balance !== undefined) {
     await upsertParam(
       pool,
       logicId,
@@ -373,6 +389,10 @@ async function saveTradingParams(pool, logicId, payload) {
       payload.close_positions_eod ? 'true' : 'false',
       'boolean'
     );
+  }
+
+  if (onReal) {
+    await syncRealAccountBalancesIfNeeded(pool, logicId);
   }
 
   return getTradingParams(pool, logicId);

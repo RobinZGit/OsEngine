@@ -446,7 +446,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION logic_apply_real_account_balances(
     p_logic_id INTEGER,
-    p_force_initial BOOLEAN DEFAULT FALSE
+    p_force_initial BOOLEAN DEFAULT TRUE
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql AS $$
@@ -455,7 +455,6 @@ DECLARE
     v_account_type VARCHAR;
     v_bal JSONB;
     v_amount NUMERIC := 0;
-    v_initial_raw TEXT;
     v_ok BOOLEAN := FALSE;
 BEGIN
     SELECT l.account_id, lower(COALESCE(a.account_type, 'fake'))
@@ -491,20 +490,17 @@ BEGIN
         v_amount := 0;
     END IF;
 
-    -- Real: только брокерский остаток или 0 — никогда «миллион» из теста/seed.
+    -- Real: и начальный, и текущий — только с брокера (или 0). Не из параметров теста.
+    -- p_force_initial: совместимость сигнатуры; для real оба поля всегда с брокера.
     PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_amount::TEXT, 'money');
-
-    v_initial_raw := get_logic_param_text(p_logic_id, 'initial_balance');
-    IF p_force_initial OR logic_is_paper_balance_text(v_initial_raw) THEN
-        PERFORM logic_upsert_param(p_logic_id, 'initial_balance', v_amount::TEXT, 'money');
-    END IF;
+    PERFORM logic_upsert_param(p_logic_id, 'initial_balance', v_amount::TEXT, 'money');
 
     RETURN v_amount;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_apply_real_account_balances(INTEGER, BOOLEAN) IS
-'Real: current(+initial) = T-Bank cash или 0; никогда paper 1M.';
+'Real: initial+current = T-Bank cash или 0. Fake: no-op (остатки из параметров).';
 
 CREATE OR REPLACE FUNCTION logic_sync_all_real_account_balances()
 RETURNS INTEGER
@@ -543,9 +539,9 @@ BEGIN
     JOIN accounts a ON a.id = l.account_id
     WHERE l.id = p_logic_id;
 
-    -- Реальный счёт: только кэш брокера (или 0), не paper current/initial.
+    -- Реальный счёт: начальный и текущий — с брокера (или 0), не из параметров теста.
     IF FOUND AND v_account_type <> 'fake' THEN
-        RETURN COALESCE(logic_apply_real_account_balances(p_logic_id, FALSE), 0);
+        RETURN COALESCE(logic_apply_real_account_balances(p_logic_id, TRUE), 0);
     END IF;
 
     v_current := get_logic_param_numeric(p_logic_id, 'current_balance', NULL);
@@ -562,7 +558,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_balance(INTEGER) IS
-'Fake: current_balance/initial_balance. Real: T-Bank cash → current (initial если paper/пусто).';
+'Fake: параметры initial/current. Real: оба с T-Bank (или 0).';
 
 CREATE OR REPLACE FUNCTION logic_trade_load_date_from(
     p_tf_sec INTEGER,

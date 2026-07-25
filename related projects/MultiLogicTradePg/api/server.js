@@ -1105,6 +1105,10 @@ app.get('/api/logics', async (_req, res) => {
     `);
     const result = [];
     for (const r of rows) {
+      // Real: подтянуть initial/current с брокера до отдачи в UI (тест — из параметров)
+      if (r.account_type && r.account_type !== 'fake') {
+        await syncRealAccountBalancesIfNeeded(pool, r.id);
+      }
       const params = await getTradingParams(pool, r.id);
       result.push({ ...r, ...params });
     }
