@@ -584,9 +584,28 @@ try {
         }
 
         Write-Step "Deploying database 01 -> 02"
-        Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", (Join-Path $InstallDir "01_multilogictrade_tables_and_data.sql"))
+        $sql01 = Join-Path $InstallDir "01_multilogictrade_tables_and_data.sql"
         $sql02 = Get-Sql02Path -HttpExtensionReady $HttpExtensionReady
-        Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql02)
+        $err01 = $null
+        try {
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql01)
+        }
+        catch {
+            $err01 = $_
+            Write-Warning "01 failed after drop_routines — still applying 02 to restore API routines."
+        }
+        try {
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql02)
+        }
+        catch {
+            if ($null -ne $err01) {
+                throw "01 failed: $($err01.Exception.Message); then 02 also failed: $($_.Exception.Message)"
+            }
+            throw
+        }
+        if ($null -ne $err01) {
+            throw "01 failed (02 restored routines): $($err01.Exception.Message)"
+        }
     }
 
     function Deploy-Database {

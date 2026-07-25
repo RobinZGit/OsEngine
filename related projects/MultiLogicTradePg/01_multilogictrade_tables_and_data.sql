@@ -1677,7 +1677,7 @@ COMMENT ON COLUMN logic_stops.scope_type IS
 -- v44: security_ltp_renew
 ALTER TABLE logic_stops ALTER COLUMN scope_type TYPE VARCHAR(40);
 ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
-DO $
+DO $mlt$
 BEGIN
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
         CHECK (scope_type IN (
@@ -1686,14 +1686,14 @@ BEGIN
         ));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
-END $;
+END $mlt$;
 
 UPDATE logic_stops
 SET scope_type = 'security'
 WHERE rule_kind = 'take_profit'
   AND scope_type IN ('security_resume', 'security_inversion', 'portfolio_resume');
 
-DO $
+DO $mlt$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_tp_scope_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_tp_scope_check
@@ -1703,7 +1703,8 @@ BEGIN
         );
 EXCEPTION
     WHEN duplicate_object THEN NULL;
-END $;
+END $mlt$;
+
 COMMENT ON COLUMN logic_stops.value_unit IS 'percent | atr';
 
 -- Неторговые интервалы логики (MSK): сделки в эти окна не открываются при use_non_trading_periods
