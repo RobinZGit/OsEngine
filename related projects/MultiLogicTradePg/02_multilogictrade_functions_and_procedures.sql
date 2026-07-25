@@ -4274,6 +4274,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7897,6 +7898,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -11898,6 +11927,8 @@ DECLARE
     v_resume_baseline NUMERIC;
     v_long_qty NUMERIC;
     v_short_qty NUMERIC;
+    v_equity NUMERIC;
+    v_tp_latched BOOLEAN;
 BEGIN
     FOR v_stop IN
         SELECT * FROM logic_stops ls
@@ -11909,16 +11940,14 @@ BEGIN
         END IF;
 
         IF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'portfolio' THEN
-            SELECT COALESCE(SUM(lt.financial_result), 0) INTO v_track_before
-            FROM logic_trades lt
-            WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND lt.is_shadow = FALSE
-              AND lt.status IN ('filled', 'submitted');
-
+            v_initial := COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0);
+            v_equity := COALESCE(
+                logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
+                p_balance
+            );
             v_drawdown := 0;
-            IF p_balance < COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) THEN
-                v_drawdown := (
-                    COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) - p_balance
-                ) / NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) * 100.0;
+            IF v_initial > 0 AND v_equity < v_initial THEN
+                v_drawdown := (v_initial - v_equity) / v_initial * 100.0;
             END IF;
 
             IF v_drawdown >= v_stop.value THEN
@@ -12094,13 +12123,31 @@ BEGIN
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio' THEN
+            -- Equity (cash+MTM), не свободный кэш: иначе TP спамит при «жирном» кэше
+            -- при падающем портфеле. Latch: после срабатывания ждём возврат ниже порога.
+            v_initial := COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0);
+            v_equity := COALESCE(
+                logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
+                p_balance
+            );
             v_gain := 0;
-            IF p_balance > COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) THEN
-                v_gain := (
-                    p_balance - COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0)
-                ) / NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) * 100.0;
+            IF v_initial > 0 AND v_equity > v_initial THEN
+                v_gain := (v_equity - v_initial) / v_initial * 100.0;
             END IF;
-            IF v_gain >= v_stop.value THEN
+
+            SELECT COALESCE(r.portfolio_tp_latched, FALSE)
+            INTO v_tp_latched
+            FROM logic_backtest_runs r
+            WHERE r.id = p_run_id;
+
+            IF v_tp_latched AND v_gain < v_stop.value THEN
+                UPDATE logic_backtest_runs
+                SET portfolio_tp_latched = FALSE
+                WHERE id = p_run_id;
+                v_tp_latched := FALSE;
+            END IF;
+
+            IF NOT COALESCE(v_tp_latched, FALSE) AND v_gain >= v_stop.value THEN
                 v_reason := format('take_profit:portfolio (%s%%)', round(v_gain, 2));
                 FOR v_sec IN
                     SELECT DISTINCT lt.security_id
@@ -12116,6 +12163,9 @@ BEGIN
                         p_tf_id, p_bar_dt, FALSE, v_reason, p_balance
                     );
                 END LOOP;
+                UPDATE logic_backtest_runs
+                SET portfolio_tp_latched = TRUE
+                WHERE id = p_run_id;
             END IF;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'security' THEN
             FOR v_sec IN
@@ -14227,6 +14277,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

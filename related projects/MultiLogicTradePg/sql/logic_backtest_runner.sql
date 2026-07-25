@@ -803,6 +803,8 @@ DECLARE
     v_resume_baseline NUMERIC;
     v_long_qty NUMERIC;
     v_short_qty NUMERIC;
+    v_equity NUMERIC;
+    v_tp_latched BOOLEAN;
 BEGIN
     FOR v_stop IN
         SELECT * FROM logic_stops ls
@@ -814,16 +816,14 @@ BEGIN
         END IF;
 
         IF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'portfolio' THEN
-            SELECT COALESCE(SUM(lt.financial_result), 0) INTO v_track_before
-            FROM logic_trades lt
-            WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND lt.is_shadow = FALSE
-              AND lt.status IN ('filled', 'submitted');
-
+            v_initial := COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0);
+            v_equity := COALESCE(
+                logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
+                p_balance
+            );
             v_drawdown := 0;
-            IF p_balance < COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) THEN
-                v_drawdown := (
-                    COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) - p_balance
-                ) / NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) * 100.0;
+            IF v_initial > 0 AND v_equity < v_initial THEN
+                v_drawdown := (v_initial - v_equity) / v_initial * 100.0;
             END IF;
 
             IF v_drawdown >= v_stop.value THEN
@@ -999,13 +999,31 @@ BEGIN
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio' THEN
+            -- Equity (cash+MTM), не свободный кэш: иначе TP спамит при «жирном» кэше
+            -- при падающем портфеле. Latch: после срабатывания ждём возврат ниже порога.
+            v_initial := COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0);
+            v_equity := COALESCE(
+                logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
+                p_balance
+            );
             v_gain := 0;
-            IF p_balance > COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) THEN
-                v_gain := (
-                    p_balance - COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0)
-                ) / NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0) * 100.0;
+            IF v_initial > 0 AND v_equity > v_initial THEN
+                v_gain := (v_equity - v_initial) / v_initial * 100.0;
             END IF;
-            IF v_gain >= v_stop.value THEN
+
+            SELECT COALESCE(r.portfolio_tp_latched, FALSE)
+            INTO v_tp_latched
+            FROM logic_backtest_runs r
+            WHERE r.id = p_run_id;
+
+            IF v_tp_latched AND v_gain < v_stop.value THEN
+                UPDATE logic_backtest_runs
+                SET portfolio_tp_latched = FALSE
+                WHERE id = p_run_id;
+                v_tp_latched := FALSE;
+            END IF;
+
+            IF NOT COALESCE(v_tp_latched, FALSE) AND v_gain >= v_stop.value THEN
                 v_reason := format('take_profit:portfolio (%s%%)', round(v_gain, 2));
                 FOR v_sec IN
                     SELECT DISTINCT lt.security_id
@@ -1021,6 +1039,9 @@ BEGIN
                         p_tf_id, p_bar_dt, FALSE, v_reason, p_balance
                     );
                 END LOOP;
+                UPDATE logic_backtest_runs
+                SET portfolio_tp_latched = TRUE
+                WHERE id = p_run_id;
             END IF;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'security' THEN
             FOR v_sec IN

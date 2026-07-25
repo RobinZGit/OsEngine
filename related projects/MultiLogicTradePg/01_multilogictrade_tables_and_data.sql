@@ -3365,6 +3365,7 @@ ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_trading_pause
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_equity_peak NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_stop_resume_baseline NUMERIC(20, 6);
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_tp_latched BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
