@@ -44,7 +44,10 @@ DO $$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
-        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'));
+        CHECK (scope_type IN (
+            'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
+            'portfolio_ltp_renew', 'security_ltp_renew'
+        ));
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN duplicate_object THEN NULL;
@@ -77,7 +80,10 @@ DO $$
 BEGIN
     ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
-        CHECK (scope_type IN ('security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume'));
+        CHECK (scope_type IN (
+            'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
+            'portfolio_ltp_renew', 'security_ltp_renew'
+        ));
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN duplicate_object THEN NULL;
@@ -1764,10 +1770,18 @@ CREATE TABLE IF NOT EXISTS logic_securities (
     display_order INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    real_trading_paused_long BOOLEAN NOT NULL DEFAULT FALSE,
+    real_trading_paused_short BOOLEAN NOT NULL DEFAULT FALSE,
     real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE,
     stop_resume_equity NUMERIC(20, 6),
     stop_resume_baseline NUMERIC(20, 6),
     stop_resume_triggered_at TIMESTAMP,
+    stop_resume_equity_long NUMERIC(20, 6),
+    stop_resume_baseline_long NUMERIC(20, 6),
+    stop_resume_triggered_at_long TIMESTAMP,
+    stop_resume_equity_short NUMERIC(20, 6),
+    stop_resume_baseline_short NUMERIC(20, 6),
+    stop_resume_triggered_at_short TIMESTAMP,
     linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE,
     linear_tp_last_price NUMERIC(18, 6),
     linear_tp_arm_bar_dt TIMESTAMP,
@@ -1780,14 +1794,37 @@ ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS security_id INTEGER REFERE
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused_long BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_paused_short BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at TIMESTAMP;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity_long NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline_long NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at_long TIMESTAMP;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity_short NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline_short NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at_short TIMESTAMP;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_last_price NUMERIC(18, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_arm_bar_dt TIMESTAMP;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- v48: migrate paper-level security_resume pause → both sides (once)
+UPDATE logic_securities
+SET
+    real_trading_paused_long = TRUE,
+    real_trading_paused_short = TRUE,
+    stop_resume_equity_long = COALESCE(stop_resume_equity_long, stop_resume_equity),
+    stop_resume_baseline_long = COALESCE(stop_resume_baseline_long, stop_resume_baseline),
+    stop_resume_triggered_at_long = COALESCE(stop_resume_triggered_at_long, stop_resume_triggered_at),
+    stop_resume_equity_short = COALESCE(stop_resume_equity_short, stop_resume_equity),
+    stop_resume_baseline_short = COALESCE(stop_resume_baseline_short, stop_resume_baseline),
+    stop_resume_triggered_at_short = COALESCE(stop_resume_triggered_at_short, stop_resume_triggered_at)
+WHERE COALESCE(real_trading_paused, FALSE)
+  AND NOT COALESCE(real_trading_paused_long, FALSE)
+  AND NOT COALESCE(real_trading_paused_short, FALSE);
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -1801,13 +1838,25 @@ COMMENT ON TABLE logic_securities IS
 'Портфель ценных бумаг торговой логики: одна строка — одна бумага в logics';
 COMMENT ON COLUMN logic_securities.display_order IS 'Порядок отображения в UI';
 COMMENT ON COLUMN logic_securities.real_trading_paused IS
-'TRUE — реальная торговля по бумаге приостановлена (теневой режим после security_resume SL)';
+'TRUE если пауза long и/или short (OR); теневой режим security_resume по сторонам — см. *_long/*_short';
+COMMENT ON COLUMN logic_securities.real_trading_paused_long IS
+'TRUE — реальная торговля Long по бумаге в тени после security_resume (Short может оставаться боевой)';
+COMMENT ON COLUMN logic_securities.real_trading_paused_short IS
+'TRUE — реальная торговля Short по бумаге в тени после security_resume (Long может оставаться боевой)';
 COMMENT ON COLUMN logic_securities.real_trading_inverted IS
 'TRUE — по этой бумаге включена локальная инверсия логики после security_inversion SL';
 COMMENT ON COLUMN logic_securities.stop_resume_equity IS
-'Целевая стоимость трека бумаги для возобновления реальной торговли';
+'Устарело: цель resume по бумаге целиком; актуальные — stop_resume_equity_long/short';
 COMMENT ON COLUMN logic_securities.stop_resume_baseline IS
-'Стоимость трека сразу после срабатывания SL (база для теневого восстановления)';
+'Устарело: база resume по бумаге; актуальные — stop_resume_baseline_long/short';
+COMMENT ON COLUMN logic_securities.stop_resume_equity_long IS
+'Цель возобновления реальной Long-торговли (track до SL по стороне)';
+COMMENT ON COLUMN logic_securities.stop_resume_baseline_long IS
+'Track Long сразу после SL (база для теневого восстановления)';
+COMMENT ON COLUMN logic_securities.stop_resume_equity_short IS
+'Цель возобновления реальной Short-торговли (track до SL по стороне)';
+COMMENT ON COLUMN logic_securities.stop_resume_baseline_short IS
+'Track Short сразу после SL (база для теневого восстановления)';
 COMMENT ON COLUMN logic_securities.linear_tp_armed IS
 'TRUE — линейный TP (security_ltp_renew) взведён: ждём снижения цены для продажи';
 COMMENT ON COLUMN logic_securities.linear_tp_last_price IS
@@ -3421,9 +3470,15 @@ CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     run_id BIGINT NOT NULL REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,
     security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
     real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    real_trading_paused_long BOOLEAN NOT NULL DEFAULT FALSE,
+    real_trading_paused_short BOOLEAN NOT NULL DEFAULT FALSE,
     real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE,
     stop_resume_equity NUMERIC(20, 6),
     stop_resume_baseline NUMERIC(20, 6),
+    stop_resume_equity_long NUMERIC(20, 6),
+    stop_resume_baseline_long NUMERIC(20, 6),
+    stop_resume_equity_short NUMERIC(20, 6),
+    stop_resume_baseline_short NUMERIC(20, 6),
     linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE,
     linear_tp_last_price NUMERIC(18, 6),
     linear_tp_arm_bar_dt TIMESTAMP,
@@ -3433,12 +3488,31 @@ CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS run_id BIGINT REFERENCES logic_backtest_runs(id) ON DELETE CASCADE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_paused_long BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_paused_short BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS real_trading_inverted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_equity_long NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline_long NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_equity_short NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline_short NUMERIC(20, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_last_price NUMERIC(18, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_arm_bar_dt TIMESTAMP;
+
+-- v48: migrate paper-level backtest pause → both sides (once)
+UPDATE logic_backtest_security_state
+SET
+    real_trading_paused_long = TRUE,
+    real_trading_paused_short = TRUE,
+    stop_resume_equity_long = COALESCE(stop_resume_equity_long, stop_resume_equity),
+    stop_resume_baseline_long = COALESCE(stop_resume_baseline_long, stop_resume_baseline),
+    stop_resume_equity_short = COALESCE(stop_resume_equity_short, stop_resume_equity),
+    stop_resume_baseline_short = COALESCE(stop_resume_baseline_short, stop_resume_baseline)
+WHERE COALESCE(real_trading_paused, FALSE)
+  AND NOT COALESCE(real_trading_paused_long, FALSE)
+  AND NOT COALESCE(real_trading_paused_short, FALSE);
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -3446,7 +3520,11 @@ ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_arm
 
 
 COMMENT ON TABLE logic_backtest_security_state IS
-'Пауза security_resume и локальная инверсия security_inversion внутри backtest (не меняет live logic_securities)';
+'Пауза security_resume по бумаге×стороне (long/short) и локальная инверсия security_inversion внутри backtest (не меняет live logic_securities)';
+COMMENT ON COLUMN logic_backtest_security_state.real_trading_paused_long IS
+'Теневой режим Long внутри backtest после security_resume';
+COMMENT ON COLUMN logic_backtest_security_state.real_trading_paused_short IS
+'Теневой режим Short внутри backtest после security_resume';
 
 
 -- Пакеты закрытия (FIFO / средняя): связь продажи с покупками

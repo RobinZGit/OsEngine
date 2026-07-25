@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — PROJECT_CONTEXT полный апдейт (portfolio_ltp_renew + lot base + backtest fixes); no release
+**Последнее обновление:** 2026-07-25 — v48 security_resume по бумаге×стороне (long/short); no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -28,7 +28,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v47**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v48**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -82,8 +82,8 @@
 - **AND:** сделка только если **все** активные сигналы одной группы `(position_event × position_side)` сработали; OR → отдельные logics;
 - **`logic_signal_rating_pending`** + **`logic_signal_rating_history`**: сработал → pending; на **следующей** свече ход → **% годовых** vs **`base_annual_rate_pct`** (дефолт 20) → `±1`; history с `logic_id`+`security_id`+`signal_id` для графика **на бумаге**;
 - **Бэктест Стоп:** `cancel` сразу ставит `status=cancelled`, результат теста **не удаляется**; UI не висит на «Останавливаю…»;
-- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit`);
-- **`logic_securities`** — портфель бумаг логики (`logic_id`, `security_id`, `display_order`, `is_active`);
+- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|**security_resume** (бумага×сторона)|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit`);
+- **`logic_securities`** — портфель бумаг логики + пауза resume по сторонам: `real_trading_paused_long/short`, `stop_resume_*_long/short` (v48); `real_trading_paused` = OR сторон;
 - **`logic_trades`** — сделки: `position_event`, `signal_kind`, `is_simulated`, **`is_fictitious`**, `commission`, **`financial_result`** (только Close), **`run_id`** (прогон теста → `logic_backtest_runs`; NULL у боя), `bar_dt`, `status`; side Open/Close через `sides`; уникальность бара: `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`;
 - **`logic_trade_lots`** — пакеты закрытия (FIFO / средняя): связь close↔open, суммы, комиссии, PnL по пакету;
 - **`logic_param_defs`** + **`logic_params`** — параметры торговли (EAV): **`timeframe`**, `position_size_pct`, `max_open_positions`, `initial_balance`, `current_balance`, **`commission_pct`**, **`cost_method`** (FIFO|AVERAGE), **`base_annual_rate_pct`**, **`cash_fund_code`** / **`cash_fund_threshold`** (порог **equity**, default **1000000** = `initial_balance` теста; не 100000) / **`last_cash_fund_bar_dt`** (`logic_park_excess_cash` / `logic_backtest_park_excess_cash`: BUY `min(кэш, equity−порог−уже_в_фонде)`), `last_trade_check_at`;
@@ -117,6 +117,14 @@
 ---
 
 ## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-25 (v48 security_resume по бумаге и стороне)
+
+- **`security_resume`:** просадка / закрытие / shadow / resume **отдельно для Long и Short** на бумаге; другая сторона остаётся боевой.
+- Колонки на `logic_securities` и `logic_backtest_security_state`: `real_trading_paused_long/short`, `stop_resume_equity_*`, `stop_resume_baseline_*`, `stop_resume_triggered_at_*`.
+- UI label: «По бумаге и стороне (возобновление при достижении суммы прерывания)»; warm-up переносит side-state; runners live+backtest.
+- Fix early `logic_stops_scope_type_check` (включает `portfolio_ltp_renew`); BOM stripped from `logic_stop_runner.sql`.
+- Applied on local DB; installers; **no GitHub release**.
 
 ### 2026-07-25 (линейный TP / лот / бэктест)
 - **portfolio_ltp_renew:** линейный тейк по **всему портфелю** с возобновлением (замена `security_ltp_renew`): track% = (equity−initial)/initial; взведение при base%×годы + TP%; трейл пика equity; закрытие всех на падении; pause/shadow/renew как portfolio_resume. UI: «Линейный тейк-профит по всему портфелю с возобновлением».
@@ -231,6 +239,7 @@
 107. **HTML отчёт теста:** кнопка «Отчёт» рядом с Экспорт/Стоп → окно HTML (Profit Factor, макс. просадка %, Sharpe, Recovery, All/Long/Short) по образцу OsEngine Journal → Статистика.
 108. **portfolio_resume SL:** просадка от **пика** equity → закрыть реал, `portfolio_trading_paused`, все сделки shadow; восстановление baseline+shadow_pnl ≥ цели → снова реал; **не** в `logicNeedsWarmup`.
 109. **Backtest resume SL:** mid-run resume для `security_resume` (track before/after как в бою); `portfolio_resume` цель = equity до close (не пик); shadow в тесте **не** двигает cash.
+117. **v48 security_resume paper×side:** drawdown/close/shadow/resume per Long|Short; other side stays live; columns `*_long/*_short` on `logic_securities` + backtest state; UI rename; warm-up transfer.
 110. **v47 counter-trend seed:** +8 логик из OsEngine Custom (NRTR ROC / RAVI BB / Stoch Aroon / MI SMA / SuperTrend CMO / Force Index / BB StdDev / BB Volume); прокси на calc-индикаторы; CountertrendBollinger skipped (= Bollinger Bounce).
 111. **Installer PG port probe:** closed ports (5433…) no longer throw under `$ErrorActionPreference=Stop`; TCP check + `127.0.0.1`; post-install reaches `npm ci` / Angular CLI.
 112. **01 order fix:** `UPDATE logic_params` (cash_fund_threshold 100k→1M) moved **after** `CREATE TABLE logic_params` — upgrade on DBs without that table no longer aborts before npm.
@@ -331,6 +340,7 @@
 - [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
 - [x] Real trading: size/`current_balance` from T-Bank cash, not paper million (2026-07-25, applied on local DB; no release).
 - [x] Install-over: real logics `initial`/`current` from broker or 0 (never 1M); installers + push without GitHub release (2026-07-25).
+- [x] v48 `security_resume` per paper×side (long/short); local DB + installers; no release (2026-07-25).
 - [ ] Validate real-account logic (attach to real, confirm qty vs free cash, no oversized rejects).
 - [ ] New GitHub release only after real trading is solid (Sergey: pause releases for now).
 
@@ -352,6 +362,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | v48 security_resume: paper×side (long/short) drawdown/shadow/resume; installers; no release |
 | 2026-07-25 | PROJECT_CONTEXT: полный апдейт сессии (обязательно с каждым push) |
 | 2026-07-25 | portfolio_ltp_renew: linear TP on whole portfolio + renew; migrate from security_ltp_renew; no release |
 | 2026-07-25 | Fix backtest portfolio TP (equity+latch); cash-based spam; no release |
@@ -671,3 +682,5 @@
 156. «Lot calc: choose whole portfolio or free money; real=real account; test=current; group + auto shoulder.»
 155. «Initial state: for test use params; for real take from real account.»
 154. «When installing on top: logics on real account — initial remainder from real account only, never a million; if unavailable then 0/empty; export repo but do not release.»
+157. «Change security_resume stop-loss: add long/short side; rename (paper and side); split drawdown by paper×side; shadow only that side, other side stays real; add side columns; thank you.»
+158. «When you upload to the repository, do not forget to update the context of the context file.»

@@ -1220,13 +1220,14 @@ BEGIN
         SELECT
             ls.security_id,
             COALESCE(ls.real_trading_paused, FALSE) AS real_trading_paused,
+            COALESCE(ls.real_trading_paused_long, FALSE) AS real_trading_paused_long,
+            COALESCE(ls.real_trading_paused_short, FALSE) AS real_trading_paused_short,
             COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
           -- Денежный фонд только для парковки кэша, не для сигналов
           AND NOT logic_is_cash_fund_security(ls.security_id)
     LOOP
-        v_is_shadow := v_sec.real_trading_paused OR COALESCE(v_logic.portfolio_trading_paused, FALSE);
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);
         v_is_futures := logic_security_is_futures(v_sec.security_id);
@@ -1238,6 +1239,19 @@ BEGIN
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_event, lis.position_side
         LOOP
+            -- Shadow только для просевшей стороны; другая сторона бумаги остаётся боевой.
+            v_is_shadow := COALESCE(v_logic.portfolio_trading_paused, FALSE)
+                OR CASE lower(btrim(COALESCE(v_grp.position_side, '')))
+                    WHEN 'long' THEN v_sec.real_trading_paused_long
+                        OR (v_sec.real_trading_paused
+                            AND NOT v_sec.real_trading_paused_long
+                            AND NOT v_sec.real_trading_paused_short)
+                    WHEN 'short' THEN v_sec.real_trading_paused_short
+                        OR (v_sec.real_trading_paused
+                            AND NOT v_sec.real_trading_paused_long
+                            AND NOT v_sec.real_trading_paused_short)
+                    ELSE v_sec.real_trading_paused
+                END;
             v_all_ok := TRUE;
             v_formulas := NULL;
             v_signal_kind := NULL;

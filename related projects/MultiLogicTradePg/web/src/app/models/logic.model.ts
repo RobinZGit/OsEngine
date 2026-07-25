@@ -178,8 +178,16 @@ export interface LogicSecurityRow {
   exchange_id: number | null;
   exchange_name: string | null;
   real_trading_paused?: boolean;
+  real_trading_paused_long?: boolean;
+  real_trading_paused_short?: boolean;
   real_trading_inverted?: boolean;
   stop_resume_equity?: number | null;
   stop_resume_baseline?: number | null;
   stop_resume_triggered_at?: string | null;
+  stop_resume_equity_long?: number | null;
+  stop_resume_baseline_long?: number | null;
+  stop_resume_triggered_at_long?: string | null;
+  stop_resume_equity_short?: number | null;
+  stop_resume_baseline_short?: number | null;
+  stop_resume_triggered_at_short?: string | null;
 }

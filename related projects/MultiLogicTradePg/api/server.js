@@ -113,10 +113,18 @@ async function transferWarmupSecurityState(pool, logicId, runId) {
     UPDATE logic_securities
     SET
       real_trading_paused = FALSE,
+      real_trading_paused_long = FALSE,
+      real_trading_paused_short = FALSE,
       real_trading_inverted = FALSE,
       stop_resume_equity = NULL,
       stop_resume_baseline = NULL,
-      stop_resume_triggered_at = NULL
+      stop_resume_triggered_at = NULL,
+      stop_resume_equity_long = NULL,
+      stop_resume_baseline_long = NULL,
+      stop_resume_triggered_at_long = NULL,
+      stop_resume_equity_short = NULL,
+      stop_resume_baseline_short = NULL,
+      stop_resume_triggered_at_short = NULL
     WHERE logic_id = $1
     `,
     [logicId]
@@ -125,12 +133,31 @@ async function transferWarmupSecurityState(pool, logicId, runId) {
     `
     UPDATE logic_securities ls
     SET
-      real_trading_paused = COALESCE(st.real_trading_paused, FALSE),
+      real_trading_paused_long = COALESCE(st.real_trading_paused_long, FALSE),
+      real_trading_paused_short = COALESCE(st.real_trading_paused_short, FALSE),
+      real_trading_paused = COALESCE(st.real_trading_paused_long, FALSE)
+        OR COALESCE(st.real_trading_paused_short, FALSE)
+        OR COALESCE(st.real_trading_paused, FALSE),
       real_trading_inverted = COALESCE(st.real_trading_inverted, FALSE),
-      stop_resume_equity = st.stop_resume_equity,
-      stop_resume_baseline = st.stop_resume_baseline,
+      stop_resume_equity_long = st.stop_resume_equity_long,
+      stop_resume_baseline_long = st.stop_resume_baseline_long,
+      stop_resume_triggered_at_long = CASE
+        WHEN COALESCE(st.real_trading_paused_long, FALSE) THEN CURRENT_TIMESTAMP
+        ELSE NULL
+      END,
+      stop_resume_equity_short = st.stop_resume_equity_short,
+      stop_resume_baseline_short = st.stop_resume_baseline_short,
+      stop_resume_triggered_at_short = CASE
+        WHEN COALESCE(st.real_trading_paused_short, FALSE) THEN CURRENT_TIMESTAMP
+        ELSE NULL
+      END,
+      stop_resume_equity = NULL,
+      stop_resume_baseline = NULL,
       stop_resume_triggered_at = CASE
-        WHEN COALESCE(st.real_trading_paused, FALSE) OR COALESCE(st.real_trading_inverted, FALSE)
+        WHEN COALESCE(st.real_trading_paused_long, FALSE)
+          OR COALESCE(st.real_trading_paused_short, FALSE)
+          OR COALESCE(st.real_trading_paused, FALSE)
+          OR COALESCE(st.real_trading_inverted, FALSE)
           THEN CURRENT_TIMESTAMP
         ELSE NULL
       END
@@ -2464,10 +2491,18 @@ const LOGIC_SECURITY_SELECT = `
     ls.is_active,
     ls.created_at,
     ls.real_trading_paused,
+    ls.real_trading_paused_long,
+    ls.real_trading_paused_short,
     ls.real_trading_inverted,
     ls.stop_resume_equity::float8 AS stop_resume_equity,
     ls.stop_resume_baseline::float8 AS stop_resume_baseline,
     ls.stop_resume_triggered_at,
+    ls.stop_resume_equity_long::float8 AS stop_resume_equity_long,
+    ls.stop_resume_baseline_long::float8 AS stop_resume_baseline_long,
+    ls.stop_resume_triggered_at_long,
+    ls.stop_resume_equity_short::float8 AS stop_resume_equity_short,
+    ls.stop_resume_baseline_short::float8 AS stop_resume_baseline_short,
+    ls.stop_resume_triggered_at_short,
     s.name AS security_name,
     s.lot_size,
     st.name AS security_type,

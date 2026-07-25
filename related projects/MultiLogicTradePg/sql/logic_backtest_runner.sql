@@ -372,10 +372,56 @@ CREATE OR REPLACE FUNCTION logic_backtest_sec_shadow(
 RETURNS BOOLEAN
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(
-        (SELECT real_trading_paused FROM logic_backtest_security_state
+        (SELECT
+            COALESCE(real_trading_paused, FALSE)
+            OR COALESCE(real_trading_paused_long, FALSE)
+            OR COALESCE(real_trading_paused_short, FALSE)
+         FROM logic_backtest_security_state
          WHERE run_id = p_run_id AND security_id = p_security_id),
         FALSE
     );
+$$;
+
+-- Shadow только для указанной стороны (long/short).
+CREATE OR REPLACE FUNCTION logic_backtest_sec_side_shadow(
+    p_run_id BIGINT,
+    p_security_id INTEGER,
+    p_position_side TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT CASE logic_normalize_position_side(p_position_side)
+        WHEN 'long' THEN COALESCE(
+            (SELECT
+                COALESCE(real_trading_paused_long, FALSE)
+                OR (
+                    COALESCE(real_trading_paused, FALSE)
+                    AND NOT COALESCE(real_trading_paused_long, FALSE)
+                    AND NOT COALESCE(real_trading_paused_short, FALSE)
+                )
+             FROM logic_backtest_security_state
+             WHERE run_id = p_run_id AND security_id = p_security_id),
+            FALSE
+        )
+        WHEN 'short' THEN COALESCE(
+            (SELECT
+                COALESCE(real_trading_paused_short, FALSE)
+                OR (
+                    COALESCE(real_trading_paused, FALSE)
+                    AND NOT COALESCE(real_trading_paused_long, FALSE)
+                    AND NOT COALESCE(real_trading_paused_short, FALSE)
+                )
+             FROM logic_backtest_security_state
+             WHERE run_id = p_run_id AND security_id = p_security_id),
+            FALSE
+        )
+        ELSE COALESCE(
+            (SELECT COALESCE(real_trading_paused, FALSE)
+             FROM logic_backtest_security_state
+             WHERE run_id = p_run_id AND security_id = p_security_id),
+            FALSE
+        )
+    END;
 $$;
 
 CREATE OR REPLACE FUNCTION logic_backtest_sec_inverted(
@@ -518,6 +564,9 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS logic_backtest_close_security(BIGINT, INTEGER, INTEGER, INTEGER, INTEGER, TIMESTAMP, BOOLEAN, TEXT, NUMERIC);
+DROP FUNCTION IF EXISTS logic_backtest_close_security(BIGINT, INTEGER, INTEGER, INTEGER, INTEGER, TIMESTAMP, BOOLEAN, TEXT, NUMERIC, TEXT);
+
 CREATE OR REPLACE FUNCTION logic_backtest_close_security(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -528,6 +577,7 @@ CREATE OR REPLACE FUNCTION logic_backtest_close_security(
     p_is_shadow BOOLEAN,
     p_trade_reason TEXT,
     p_balance NUMERIC,
+    p_position_side TEXT DEFAULT NULL,
     OUT o_closed INTEGER,
     OUT o_new_balance NUMERIC
 )
@@ -543,12 +593,22 @@ DECLARE
     v_trade_id BIGINT;
     v_closed INTEGER := 0;
     v_balance NUMERIC := p_balance;
+    v_side TEXT;
+    v_close_long BOOLEAN := TRUE;
+    v_close_short BOOLEAN := TRUE;
 BEGIN
     -- Денежный фонд остаётся купленным: SL/TP/сигналы не закрывают TMON/LQDT/SBMM.
     IF logic_is_cash_fund_security(p_security_id) THEN
         o_closed := 0;
         o_new_balance := v_balance;
         RETURN;
+    END IF;
+
+    v_side := logic_normalize_position_side(p_position_side);
+    IF v_side = 'long' THEN
+        v_close_short := FALSE;
+    ELSIF v_side = 'short' THEN
+        v_close_long := FALSE;
     END IF;
 
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
@@ -562,8 +622,10 @@ BEGIN
         RETURN;
     END IF;
 
-    v_long_qty := logic_long_position_qty(p_logic_id, p_security_id, p_is_shadow, TRUE);
-    v_short_qty := logic_short_position_qty(p_logic_id, p_security_id, p_is_shadow, TRUE);
+    v_long_qty := CASE WHEN v_close_long
+        THEN logic_long_position_qty(p_logic_id, p_security_id, p_is_shadow, TRUE) ELSE 0 END;
+    v_short_qty := CASE WHEN v_close_short
+        THEN logic_short_position_qty(p_logic_id, p_security_id, p_is_shadow, TRUE) ELSE 0 END;
 
     IF v_long_qty >= 1 THEN
         v_quantity := floor(v_long_qty)::INTEGER;
@@ -718,6 +780,149 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION logic_backtest_security_side_drawdown_pct(
+    p_logic_id INTEGER,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_is_shadow BOOLEAN,
+    p_position_side TEXT
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_side TEXT;
+    v_action TEXT;
+    v_price NUMERIC;
+    v_qty NUMERIC;
+    v_open RECORD;
+    v_rem NUMERIC;
+    v_loss NUMERIC := 0;
+    v_base NUMERIC := 0;
+BEGIN
+    v_side := logic_normalize_position_side(p_position_side);
+    IF v_side IS NULL THEN
+        RETURN 0;
+    END IF;
+    v_action := CASE WHEN v_side = 'long' THEN 'Long' ELSE 'Short' END;
+
+    v_price := logic_backtest_price_at(p_security_id, p_timeframe_id, p_bar_dt);
+    IF v_price IS NULL OR v_price <= 0 THEN
+        RETURN 0;
+    END IF;
+
+    IF v_side = 'long' THEN
+        v_qty := logic_long_position_qty(p_logic_id, p_security_id, p_is_shadow, TRUE);
+    ELSE
+        v_qty := logic_short_position_qty(p_logic_id, p_security_id, p_is_shadow, TRUE);
+    END IF;
+    IF COALESCE(v_qty, 0) <= 0 THEN
+        RETURN 0;
+    END IF;
+
+    FOR v_open IN
+        SELECT lt.id, lt.price
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.security_id = p_security_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = p_is_shadow
+          AND s.name = 'Open' AND a.name = v_action
+          AND lt.status IN ('filled', 'submitted')
+    LOOP
+        v_rem := logic_trade_open_remaining_qty(v_open.id);
+        IF v_rem <= 0 THEN
+            CONTINUE;
+        END IF;
+        v_base := v_base + v_rem * v_open.price;
+        IF v_side = 'long' AND v_open.price > v_price THEN
+            v_loss := v_loss + v_rem * (v_open.price - v_price);
+        ELSIF v_side = 'short' AND v_price > v_open.price THEN
+            v_loss := v_loss + v_rem * (v_price - v_open.price);
+        END IF;
+    END LOOP;
+
+    IF v_base <= 0 THEN
+        RETURN 0;
+    END IF;
+    RETURN GREATEST(v_loss / v_base * 100.0, 0);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION logic_backtest_security_side_track_value(
+    p_logic_id INTEGER,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_is_shadow BOOLEAN,
+    p_position_side TEXT
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_side TEXT;
+    v_action TEXT;
+    v_realized NUMERIC := 0;
+    v_unrealized NUMERIC := 0;
+    v_price NUMERIC;
+    v_open RECORD;
+    v_rem NUMERIC;
+BEGIN
+    v_side := logic_normalize_position_side(p_position_side);
+    IF v_side IS NULL THEN
+        RETURN 0;
+    END IF;
+    v_action := CASE WHEN v_side = 'long' THEN 'Long' ELSE 'Short' END;
+
+    SELECT COALESCE(SUM(lt.financial_result), 0)
+    INTO v_realized
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    WHERE lt.logic_id = p_logic_id
+      AND lt.security_id = p_security_id
+      AND lt.is_test = TRUE
+      AND lt.is_shadow = p_is_shadow
+      AND s.name = 'Close'
+      AND a.name = v_action
+      AND lt.status IN ('filled', 'submitted')
+      AND lt.financial_result IS NOT NULL;
+
+    v_price := logic_backtest_price_at(p_security_id, p_timeframe_id, p_bar_dt);
+    IF v_price IS NULL OR v_price <= 0 THEN
+        RETURN COALESCE(v_realized, 0);
+    END IF;
+
+    FOR v_open IN
+        SELECT lt.id, lt.price
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.security_id = p_security_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = p_is_shadow
+          AND s.name = 'Open'
+          AND a.name = v_action
+          AND lt.status IN ('filled', 'submitted')
+    LOOP
+        v_rem := logic_trade_open_remaining_qty(v_open.id);
+        IF v_rem <= 0 THEN
+            CONTINUE;
+        END IF;
+        IF v_side = 'long' THEN
+            v_unrealized := v_unrealized + v_rem * (v_price - v_open.price);
+        ELSE
+            v_unrealized := v_unrealized + v_rem * (v_open.price - v_price);
+        END IF;
+    END LOOP;
+
+    RETURN COALESCE(v_realized, 0) + COALESCE(v_unrealized, 0);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION logic_backtest_security_gain_pct(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -807,6 +1012,8 @@ DECLARE
     v_tp_latched BOOLEAN;
     v_has_pos BOOLEAN;
     v_port_paused BOOLEAN;
+    v_side_name TEXT;
+    v_side_paused BOOLEAN;
 BEGIN
     FOR v_stop IN
         SELECT * FROM logic_stops ls
@@ -922,37 +1129,141 @@ BEGIN
                     WHERE id = p_run_id;
                 END IF;
             END IF;
+        ELSIF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'security_resume' THEN
+            FOR v_sec IN
+                SELECT ls.security_id FROM logic_securities ls
+                WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+                  AND NOT logic_is_cash_fund_security(ls.security_id)
+            LOOP
+                FOREACH v_side_name IN ARRAY ARRAY['long', 'short']
+                LOOP
+                    SELECT
+                        CASE WHEN v_side_name = 'long'
+                            THEN COALESCE(st.real_trading_paused_long, FALSE)
+                                 OR (
+                                     COALESCE(st.real_trading_paused, FALSE)
+                                     AND NOT COALESCE(st.real_trading_paused_long, FALSE)
+                                     AND NOT COALESCE(st.real_trading_paused_short, FALSE)
+                                 )
+                            ELSE COALESCE(st.real_trading_paused_short, FALSE)
+                                 OR (
+                                     COALESCE(st.real_trading_paused, FALSE)
+                                     AND NOT COALESCE(st.real_trading_paused_long, FALSE)
+                                     AND NOT COALESCE(st.real_trading_paused_short, FALSE)
+                                 )
+                        END,
+                        CASE WHEN v_side_name = 'long'
+                            THEN COALESCE(st.stop_resume_equity_long, st.stop_resume_equity)
+                            ELSE COALESCE(st.stop_resume_equity_short, st.stop_resume_equity)
+                        END,
+                        CASE WHEN v_side_name = 'long'
+                            THEN COALESCE(st.stop_resume_baseline_long, st.stop_resume_baseline)
+                            ELSE COALESCE(st.stop_resume_baseline_short, st.stop_resume_baseline)
+                        END
+                    INTO v_side_paused, v_resume_equity, v_resume_baseline
+                    FROM logic_backtest_security_state st
+                    WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
+
+                    IF NOT FOUND THEN
+                        v_side_paused := FALSE;
+                        v_resume_equity := NULL;
+                        v_resume_baseline := NULL;
+                    END IF;
+
+                    IF v_side_paused THEN
+                        IF v_resume_equity IS NOT NULL AND v_resume_baseline IS NOT NULL THEN
+                            v_track_after := logic_backtest_security_side_track_value(
+                                p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, TRUE, v_side_name
+                            );
+                            IF COALESCE(v_resume_baseline, 0) + COALESCE(v_track_after, 0)
+                               >= COALESCE(v_resume_equity, 0) THEN
+                                IF v_side_name = 'long' THEN
+                                    UPDATE logic_backtest_security_state
+                                    SET real_trading_paused_long = FALSE,
+                                        stop_resume_equity_long = NULL,
+                                        stop_resume_baseline_long = NULL,
+                                        real_trading_paused = COALESCE(real_trading_paused_short, FALSE),
+                                        stop_resume_equity = NULL,
+                                        stop_resume_baseline = NULL
+                                    WHERE run_id = p_run_id AND security_id = v_sec.security_id;
+                                ELSE
+                                    UPDATE logic_backtest_security_state
+                                    SET real_trading_paused_short = FALSE,
+                                        stop_resume_equity_short = NULL,
+                                        stop_resume_baseline_short = NULL,
+                                        real_trading_paused = COALESCE(real_trading_paused_long, FALSE),
+                                        stop_resume_equity = NULL,
+                                        stop_resume_baseline = NULL
+                                    WHERE run_id = p_run_id AND security_id = v_sec.security_id;
+                                END IF;
+                            END IF;
+                        END IF;
+                        CONTINUE;
+                    END IF;
+
+                    v_drawdown := logic_backtest_security_side_drawdown_pct(
+                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE, v_side_name
+                    );
+                    IF v_drawdown < v_stop.value THEN
+                        CONTINUE;
+                    END IF;
+
+                    v_reason := format(
+                        'stop_loss:security_resume:%s (%s%%)',
+                        v_side_name, round(v_drawdown, 2)
+                    );
+                    v_track_before := logic_backtest_security_side_track_value(
+                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE, v_side_name
+                    );
+                    SELECT *
+                    INTO v_closed, p_balance
+                    FROM logic_backtest_close_security(
+                        p_run_id, p_logic_id, p_account_id, v_sec.security_id,
+                        p_tf_id, p_bar_dt, FALSE, v_reason, p_balance, v_side_name
+                    );
+                    v_track_after := logic_backtest_security_side_track_value(
+                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE, v_side_name
+                    );
+
+                    IF v_side_name = 'long' THEN
+                        INSERT INTO logic_backtest_security_state (
+                            run_id, security_id, real_trading_paused,
+                            real_trading_paused_long,
+                            stop_resume_equity_long, stop_resume_baseline_long
+                        )
+                        VALUES (
+                            p_run_id, v_sec.security_id, TRUE,
+                            TRUE, v_track_before, v_track_after
+                        )
+                        ON CONFLICT (run_id, security_id) DO UPDATE SET
+                            real_trading_paused = TRUE,
+                            real_trading_paused_long = TRUE,
+                            stop_resume_equity_long = EXCLUDED.stop_resume_equity_long,
+                            stop_resume_baseline_long = EXCLUDED.stop_resume_baseline_long;
+                    ELSE
+                        INSERT INTO logic_backtest_security_state (
+                            run_id, security_id, real_trading_paused,
+                            real_trading_paused_short,
+                            stop_resume_equity_short, stop_resume_baseline_short
+                        )
+                        VALUES (
+                            p_run_id, v_sec.security_id, TRUE,
+                            TRUE, v_track_before, v_track_after
+                        )
+                        ON CONFLICT (run_id, security_id) DO UPDATE SET
+                            real_trading_paused = TRUE,
+                            real_trading_paused_short = TRUE,
+                            stop_resume_equity_short = EXCLUDED.stop_resume_equity_short,
+                            stop_resume_baseline_short = EXCLUDED.stop_resume_baseline_short;
+                    END IF;
+                END LOOP;
+            END LOOP;
         ELSIF v_stop.rule_kind = 'stop_loss' THEN
             FOR v_sec IN
                 SELECT ls.security_id FROM logic_securities ls
                 WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
                   AND NOT logic_is_cash_fund_security(ls.security_id)
             LOOP
-                IF v_stop.scope_type = 'security_resume'
-                   AND logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
-                    -- Mid-run resume: baseline + shadow track ≥ цель (как logic_check_security_resume)
-                    SELECT st.stop_resume_equity, st.stop_resume_baseline
-                    INTO v_state
-                    FROM logic_backtest_security_state st
-                    WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
-
-                    IF v_state.stop_resume_equity IS NOT NULL
-                       AND v_state.stop_resume_baseline IS NOT NULL THEN
-                        v_track_after := logic_backtest_security_track_value(
-                            p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, TRUE
-                        );
-                        IF COALESCE(v_state.stop_resume_baseline, 0) + COALESCE(v_track_after, 0)
-                           >= COALESCE(v_state.stop_resume_equity, 0) THEN
-                            UPDATE logic_backtest_security_state
-                            SET real_trading_paused = FALSE,
-                                stop_resume_equity = NULL,
-                                stop_resume_baseline = NULL
-                            WHERE run_id = p_run_id AND security_id = v_sec.security_id;
-                        END IF;
-                    END IF;
-                    CONTINUE;
-                END IF;
-
                 v_drawdown := logic_backtest_security_drawdown_pct(
                     p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
                 );
@@ -962,12 +1273,6 @@ BEGIN
 
                 v_reason := format('stop_loss:%s (%s%%)', v_stop.scope_type, round(v_drawdown, 2));
 
-                IF v_stop.scope_type = 'security_resume' THEN
-                    v_track_before := logic_backtest_security_track_value(
-                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
-                    );
-                END IF;
-
                 SELECT *
                 INTO v_closed, p_balance
                 FROM logic_backtest_close_security(
@@ -975,23 +1280,7 @@ BEGIN
                     p_tf_id, p_bar_dt, FALSE, v_reason, p_balance
                 );
 
-                IF v_stop.scope_type = 'security_resume' THEN
-                    v_track_after := logic_backtest_security_track_value(
-                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
-                    );
-                    INSERT INTO logic_backtest_security_state (
-                        run_id, security_id, real_trading_paused,
-                        stop_resume_equity, stop_resume_baseline
-                    )
-                    VALUES (
-                        p_run_id, v_sec.security_id, TRUE,
-                        v_track_before, v_track_after
-                    )
-                    ON CONFLICT (run_id, security_id) DO UPDATE SET
-                        real_trading_paused = TRUE,
-                        stop_resume_equity = EXCLUDED.stop_resume_equity,
-                        stop_resume_baseline = EXCLUDED.stop_resume_baseline;
-                ELSIF v_stop.scope_type = 'security_inversion' THEN
+                IF v_stop.scope_type = 'security_inversion' THEN
                     INSERT INTO logic_backtest_security_state (
                         run_id, security_id, real_trading_inverted
                     )
@@ -1265,11 +1554,6 @@ BEGIN
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
           AND NOT logic_is_cash_fund_security(ls.security_id)
     LOOP
-        v_is_shadow := logic_backtest_sec_shadow(p_run_id, v_sec.security_id)
-            OR COALESCE(
-                (SELECT r.portfolio_trading_paused FROM logic_backtest_runs r WHERE r.id = p_run_id),
-                FALSE
-            );
         v_eff_inversion := (
             v_inversion <> COALESCE(
                 (SELECT st.real_trading_inverted
@@ -1288,6 +1572,13 @@ BEGIN
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_event, lis.position_side
         LOOP
+            v_is_shadow := logic_backtest_sec_side_shadow(
+                    p_run_id, v_sec.security_id, v_grp.position_side
+                )
+                OR COALESCE(
+                    (SELECT r.portfolio_trading_paused FROM logic_backtest_runs r WHERE r.id = p_run_id),
+                    FALSE
+                );
             v_all_ok := TRUE;
             v_formulas := NULL;
             v_signal_kind := NULL;
