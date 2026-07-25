@@ -67,6 +67,30 @@ sql02 = replaceBetween(
   'logic_security_lot_size + logic_calc_open_quantity'
 );
 
+// real-balance helpers + logic_ensure_balance из trade_runner → 02
+{
+  const ensStartMark = 'CREATE OR REPLACE FUNCTION logic_is_paper_balance_text(';
+  let ensStart = tradeTail.indexOf(ensStartMark);
+  if (ensStart === -1) {
+    ensStart = tradeTail.indexOf('CREATE OR REPLACE FUNCTION logic_ensure_balance(');
+  }
+  const ensEnd = tradeTail.indexOf('CREATE OR REPLACE FUNCTION logic_trade_load_date_from(');
+  if (ensStart === -1 || ensEnd === -1 || ensEnd <= ensStart) {
+    throw new Error('sync-02: real-balance helpers / logic_trade_load_date_from not found');
+  }
+  const ensBlock = tradeTail.slice(ensStart, ensEnd).trimEnd() + '\n\n';
+  // Якорь в 02 может быть старым (только ensure_balance) — ищем любой из маркеров.
+  let sqlStart = sql02.indexOf(ensStartMark);
+  if (sqlStart === -1) {
+    sqlStart = sql02.indexOf('CREATE OR REPLACE FUNCTION logic_ensure_balance(');
+  }
+  const sqlEnd = sql02.indexOf('CREATE OR REPLACE FUNCTION logic_trade_load_date_from(');
+  if (sqlStart === -1 || sqlEnd === -1 || sqlEnd <= sqlStart) {
+    throw new Error('sync-02: cannot place real-balance helpers in 02');
+  }
+  sql02 = sql02.slice(0, sqlStart) + ensBlock + sql02.slice(sqlEnd);
+}
+
 const closeAll = read('sql/logic_close_all_positions.sql').trimEnd() + '\n\n';
 sql02 = replaceBetween(
   sql02,

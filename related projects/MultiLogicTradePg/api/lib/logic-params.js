@@ -439,6 +439,36 @@ async function updateCurrentBalance(pool, logicId, balance) {
   await upsertParam(pool, logicId, PARAM_KEYS.CURRENT_BALANCE, balance, 'money');
 }
 
+/**
+ * Real-счёт: initial/current = кэш брокера или 0 (никогда paper 1M).
+ * Fake — no-op. Ошибки брокера глотаем: SQL сам пишет 0.
+ */
+async function syncRealAccountBalancesIfNeeded(poolOrClient, logicId) {
+  const id = Number(logicId);
+  if (!Number.isInteger(id) || id <= 0) return;
+  try {
+    const { rows } = await poolOrClient.query(
+      `
+      SELECT lower(COALESCE(a.account_type, 'fake')) AS account_type
+      FROM logics l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE l.id = $1
+      `,
+      [id]
+    );
+    if (!rows.length || rows[0].account_type === 'fake') return;
+    await poolOrClient.query(
+      `SELECT logic_apply_real_account_balances($1, TRUE)`,
+      [id]
+    );
+  } catch (err) {
+    console.warn(
+      `syncRealAccountBalancesIfNeeded logic=${id}:`,
+      err && err.message ? err.message : err
+    );
+  }
+}
+
 async function getLogicParamsDetailed(pool, logicId) {
   await ensureDefaultParams(pool, logicId);
   const { rows } = await pool.query(
@@ -472,5 +502,6 @@ module.exports = {
   saveTradingParams,
   syncLogicCashFundSecurity,
   updateCurrentBalance,
+  syncRealAccountBalancesIfNeeded,
   getLogicParamsDetailed,
 };

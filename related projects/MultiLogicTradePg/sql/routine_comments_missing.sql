@@ -123,7 +123,7 @@ COMMENT ON FUNCTION logic_count_open_positions IS
   'Число открытых боевых позиций логики.';
 
 COMMENT ON FUNCTION logic_ensure_balance IS
-  'Инициализация/проверка current_balance фейк-счёта.';
+  'Fake: current_balance/initial. Real: кэш с T-Bank → current_balance.';
 
 COMMENT ON FUNCTION logic_long_position_qty IS
   'Объём открытого лонга по бумаге.';

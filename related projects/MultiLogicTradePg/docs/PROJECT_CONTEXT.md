@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-22 — fix 01: LINREGV cleanup guards missing logic_trade_lots/trades
+**Последнее обновление:** 2026-07-25 — install-over: real logics balances from broker (or 0), never paper 1M; installers; **no GitHub release**
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -222,6 +222,8 @@
 111. **Installer PG port probe:** closed ports (5433…) no longer throw under `$ErrorActionPreference=Stop`; TCP check + `127.0.0.1`; post-install reaches `npm ci` / Angular CLI.
 112. **01 order fix:** `UPDATE logic_params` (cash_fund_threshold 100k→1M) moved **after** `CREATE TABLE logic_params` — upgrade on DBs without that table no longer aborts before npm.
 113. **01 LINREGV cleanup:** `DELETE FROM logic_trade_lots/trades` wrapped in `to_regclass` guards (tables created later in `01`).
+114. **Real account sizing:** `logic_ensure_balance` for `account_type<>fake` syncs **T-Bank free cash** (`totalAmountCurrencies` → `cash_amount`) into `current_balance` and uses it for `logic_calc_open_quantity`; no paper `initial_balance`/million fallback; after real fills re-sync from broker (no ±notional on paper); stocks no longer force 1 lot when qty&lt;lot; futures 1-lot only if balance known &gt;0. `fetch_tbank_portfolio_balance` returns `cash_amount`. **GitHub releases paused** until real trading is solid (`.cursor/rules/project-context.mdc`).
+115. **Install-over real balances:** `01` resets `initial_balance`/`current_balance` to `0` for all logics on real accounts; `02` runs `logic_sync_all_real_account_balances()` (broker cash or 0). Helpers `logic_apply_real_account_balances` / `logic_is_paper_balance_text`. API create/copy/PUT/import sync real balances. Never leave paper 1M on real.
 
 ### Автотесты
 
@@ -313,6 +315,10 @@
 - [x] Linux installer: `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` + `install.sh`; freshness rule for Windows+Linux; `build-all-installers.ps1` (2026-07-19).
 - [x] Non-trading UI: add/edit/delete intervals; warning when «Учитывать…» is off; TMON park skip logs + end-of-backtest park; both installers (2026-07-19).
 - [x] Ship: equity-based TMON park (`logic_backtest_portfolio_equity` + park formula); UI «Порог портфеля»; both installers + push (2026-07-19).
+- [x] Real trading: size/`current_balance` from T-Bank cash, not paper million (2026-07-25, applied on local DB; no release).
+- [x] Install-over: real logics `initial`/`current` from broker or 0 (never 1M); installers + push without GitHub release (2026-07-25).
+- [ ] Validate real-account logic (attach to real, confirm qty vs free cash, no oversized rejects).
+- [ ] New GitHub release only after real trading is solid (Sergey: pause releases for now).
 
 ---
 
@@ -332,6 +338,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | Install-over: real initial/current from broker or 0; installers; no release |
+| 2026-07-25 | Real trading balance: broker cash for sizing/`current_balance`; no release |
 | 2026-07-22 | Fix 01: LINREGV DELETE guarded if logic_trade_lots/trades missing; installers + test-1 |
 | 2026-07-22 | Fix 01: cash_fund_threshold UPDATE after CREATE logic_params; installers + test-1 |
 | 2026-07-22 | Installer: safe PG port probe (no abort on 5433 refused → npm/Angular installs); test-1 |
@@ -628,3 +636,5 @@
 150. «Installer ExitCode 1: psql connection refused on 5433; Angular CLI missing — fix and put in repo.»
 151. «Same mistake again: upgrade fails UPDATE logic_params does not exist (line 1303) — fix and ship.»
 152. «Again: Angular CLI missing; 01 ERROR logic_trade_lots does not exist (LINREGV DELETE) — fix and ship.»
+153. «Real trading (LRTC): seems to trade from deposited million not real balance; orders deviate; current remainder added to million — fix real sizing; do not postpone/make release — continue, new release later when real trading is ready.»
+154. «When installing on top: logics on real account — initial remainder from real account only, never a million; if unavailable then 0/empty; export repo but do not release.»

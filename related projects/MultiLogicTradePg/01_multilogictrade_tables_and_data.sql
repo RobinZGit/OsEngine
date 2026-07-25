@@ -1255,9 +1255,9 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',
      'Long/Short позиции по разным бумагам одновременно', 2),
     ('initial_balance', 'Начальный остаток', 'money', '',
-     'Стартовый депозит бумажной торговли / эталон для расчёта лота', 3),
+     'Fake: стартовый депозит теста (часто 1 000 000). Real: только остаток с брокера (или 0), никогда paper-миллион', 3),
     ('current_balance', 'Текущий остаток', 'money', '',
-     'Обновляется trade runner после симулированных сделок', 4),
+     'Fake: обновляется runner после sim-сделок. Real: свободный кэш T-Bank (или 0), не paper-миллион', 4),
     ('commission_pct', '% комиссии от сделки', 'number', '0.03',
      'Фейковый счёт: комиссия = цена × количество × % / 100 (на каждую сделку)', 5),
     ('cost_method', 'Метод расчёта PnL', 'text', 'FIFO',
@@ -1376,6 +1376,17 @@ SELECT l.id, d.param_key, d.default_value, d.value_type
 FROM logics l
 CROSS JOIN logic_param_defs d
 ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+-- Upgrade / install-over: на real — сбросить paper-остатки в 0 (в т.ч. «миллион» после теста).
+-- Затем 02 вызовет logic_sync_all_real_account_balances() → кэш брокера или 0.
+UPDATE logic_params lp
+SET param_value = '0',
+    updated_at = CURRENT_TIMESTAMP
+FROM logics l
+JOIN accounts a ON a.id = l.account_id
+WHERE lp.logic_id = l.id
+  AND lower(COALESCE(a.account_type, 'fake')) <> 'fake'
+  AND lp.param_key IN ('initial_balance', 'current_balance');
 
 -- Демо SMA: параметры в logic_params
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)

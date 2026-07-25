@@ -4,6 +4,8 @@
  * Excludes: trades, backtest runs, ratings history, runtime pause/invert state.
  */
 
+const { syncRealAccountBalancesIfNeeded } = require('./logic-params');
+
 const FORMAT = 'multilogictrade.logic-bundle';
 const VERSION = 1;
 
@@ -420,6 +422,9 @@ async function importLogicBundle(pool, bundle) {
         );
         papersAdded += 1;
       }
+
+      // Real: не оставлять 1M из JSON — остаток с брокера или 0
+      await syncRealAccountBalancesIfNeeded(client, logicId);
 
       imported.push({
         id: logicId,

@@ -35,6 +35,7 @@ const {
   saveTradingParams,
   ensureDefaultParams,
   getLogicParamsDetailed,
+  syncRealAccountBalancesIfNeeded,
 } = require('./lib/logic-params');
 const { buildLogicBundle, importLogicBundle } = require('./lib/logic-bundle');
 const { writeTechLogEvent } = require('./lib/tech-log');
@@ -1526,6 +1527,7 @@ app.post('/api/logics', async (req, res) => {
     );
     const row = rows[0];
     await ensureDefaultParams(pool, row.id);
+    await syncRealAccountBalancesIfNeeded(pool, row.id);
     const params = await getTradingParams(pool, row.id);
     res.status(201).json({ ...row, ...params });
   } catch (err) {
@@ -1677,6 +1679,8 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     );
 
     await client.query('COMMIT');
+    // Копия с real-счёта не должна унаследовать paper 1M — остаток с брокера или 0
+    await syncRealAccountBalancesIfNeeded(pool, copy.id);
     const { rows: fullRows } = await pool.query(
       `
       SELECT
@@ -1747,6 +1751,8 @@ app.put('/api/logics/:id', async (req, res) => {
       [parsed.name, parsed.account_id, parsed.is_enabled, parsed.note, id]
     );
     await client.query('COMMIT');
+    // Смена на real / уже real — initial/current только с брокера (или 0)
+    await syncRealAccountBalancesIfNeeded(pool, id);
     res.json(rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
