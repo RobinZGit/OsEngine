@@ -796,7 +796,11 @@ DECLARE
     v_track NUMERIC;
     v_track_pct NUMERIC;
     v_price NUMERIC;
-    v_ltp RECORD;
+    v_ltp_armed BOOLEAN;
+    v_ltp_last_price NUMERIC;
+    v_ltp_arm_bar TIMESTAMP;
+    v_resume_equity NUMERIC;
+    v_resume_baseline NUMERIC;
     v_long_qty NUMERIC;
     v_short_qty NUMERIC;
 BEGIN
@@ -1049,17 +1053,18 @@ BEGIN
                       AND NOT logic_is_cash_fund_security(ls.security_id)
                 LOOP
                     IF logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
+                        v_resume_equity := NULL;
+                        v_resume_baseline := NULL;
                         SELECT st.stop_resume_equity, st.stop_resume_baseline
-                        INTO v_state
+                        INTO v_resume_equity, v_resume_baseline
                         FROM logic_backtest_security_state st
                         WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
-                        IF v_state.stop_resume_equity IS NOT NULL
-                           AND v_state.stop_resume_baseline IS NOT NULL THEN
+                        IF v_resume_equity IS NOT NULL AND v_resume_baseline IS NOT NULL THEN
                             v_track_after := logic_backtest_security_track_value(
                                 p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, TRUE
                             );
-                            IF COALESCE(v_state.stop_resume_baseline, 0) + COALESCE(v_track_after, 0)
-                               >= COALESCE(v_state.stop_resume_equity, 0) THEN
+                            IF COALESCE(v_resume_baseline, 0) + COALESCE(v_track_after, 0)
+                               >= COALESCE(v_resume_equity, 0) THEN
                                 UPDATE logic_backtest_security_state
                                 SET real_trading_paused = FALSE,
                                     stop_resume_equity = NULL,
@@ -1070,13 +1075,17 @@ BEGIN
                         CONTINUE;
                     END IF;
 
-                    SELECT st.linear_tp_armed, st.linear_tp_last_price, st.linear_tp_arm_bar_dt
-                    INTO v_ltp
+                    -- Скаляры: RECORD без строки → «записи не присвоено значение»
+                    v_ltp_armed := FALSE;
+                    v_ltp_last_price := NULL;
+                    v_ltp_arm_bar := NULL;
+                    SELECT
+                        COALESCE(st.linear_tp_armed, FALSE),
+                        st.linear_tp_last_price,
+                        st.linear_tp_arm_bar_dt
+                    INTO v_ltp_armed, v_ltp_last_price, v_ltp_arm_bar
                     FROM logic_backtest_security_state st
                     WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
-                    IF NOT FOUND THEN
-                        v_ltp := NULL;
-                    END IF;
 
                     v_track := logic_backtest_security_track_value(
                         p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
@@ -1092,7 +1101,7 @@ BEGIN
                     v_short_qty := logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
 
                     IF v_track_pct < v_base_pct THEN
-                        IF COALESCE(v_ltp.linear_tp_armed, FALSE) THEN
+                        IF v_ltp_armed THEN
                             INSERT INTO logic_backtest_security_state (
                                 run_id, security_id, linear_tp_armed,
                                 linear_tp_last_price, linear_tp_arm_bar_dt
@@ -1106,7 +1115,7 @@ BEGIN
                         CONTINUE;
                     END IF;
 
-                    IF NOT COALESCE(v_ltp.linear_tp_armed, FALSE)
+                    IF NOT v_ltp_armed
                        AND v_track_pct >= v_arm_pct
                        AND (v_long_qty > 0 OR v_short_qty > 0)
                        AND v_price IS NOT NULL AND v_price > 0
@@ -1123,15 +1132,15 @@ BEGIN
                         CONTINUE;
                     END IF;
 
-                    IF NOT COALESCE(v_ltp.linear_tp_armed, FALSE) THEN
+                    IF NOT v_ltp_armed THEN
                         CONTINUE;
                     END IF;
 
-                    IF v_ltp.linear_tp_last_price IS NOT NULL
+                    IF v_ltp_last_price IS NOT NULL
                        AND v_price IS NOT NULL
-                       AND v_price < v_ltp.linear_tp_last_price
+                       AND v_price < v_ltp_last_price
                        AND (v_long_qty > 0 OR v_short_qty > 0)
-                       AND (v_ltp.linear_tp_arm_bar_dt IS NULL OR p_bar_dt > v_ltp.linear_tp_arm_bar_dt)
+                       AND (v_ltp_arm_bar IS NULL OR p_bar_dt > v_ltp_arm_bar)
                     THEN
                         v_track_before := v_track;
                         v_reason := format(
@@ -1165,7 +1174,7 @@ BEGIN
                             linear_tp_last_price = NULL,
                             linear_tp_arm_bar_dt = NULL;
                     ELSIF v_price IS NOT NULL
-                          AND v_price > COALESCE(v_ltp.linear_tp_last_price, 0) THEN
+                          AND v_price > COALESCE(v_ltp_last_price, 0) THEN
                         UPDATE logic_backtest_security_state
                         SET linear_tp_last_price = v_price
                         WHERE run_id = p_run_id AND security_id = v_sec.security_id;
