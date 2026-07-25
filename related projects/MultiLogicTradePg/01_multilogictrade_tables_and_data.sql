@@ -1188,6 +1188,9 @@ ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_equity_peak NUMERIC(20, 6)
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_baseline NUMERIC(20, 6);
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_at TIMESTAMP;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_peak_equity NUMERIC(20, 6);
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_arm_bar_dt TIMESTAMP;
 
 COMMENT ON COLUMN logics.portfolio_trading_paused IS
 'portfolio_resume SL: реал остановлен, сделки идут в shadow до восстановления equity';
@@ -1642,7 +1645,7 @@ CREATE TABLE IF NOT EXISTS logic_stops (
     rule_kind VARCHAR(20) NOT NULL CHECK (rule_kind IN ('stop_loss', 'take_profit')),
     scope_type VARCHAR(40) NOT NULL CHECK (scope_type IN (
         'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
-        'security_ltp_renew'
+        'portfolio_ltp_renew', 'security_ltp_renew'
     )),
     value NUMERIC(18, 6) NOT NULL CHECK (value > 0),
     value_unit VARCHAR(10) NOT NULL CHECK (value_unit IN ('percent', 'atr')),
@@ -1672,9 +1675,9 @@ COMMENT ON TABLE logic_stops IS
 'Стоп-лосс и тейк-профит для logics: security (по бумаге) или portfolio (портфель логики)';
 COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
 COMMENT ON COLUMN logic_stops.scope_type IS
-'stop_loss: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|security_ltp_renew';
+'stop_loss: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|portfolio_ltp_renew';
 
--- v44: security_ltp_renew
+-- v48: portfolio_ltp_renew (replaces security_ltp_renew)
 ALTER TABLE logic_stops ALTER COLUMN scope_type TYPE VARCHAR(40);
 ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
 DO $mlt$
@@ -1682,11 +1685,15 @@ BEGIN
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
         CHECK (scope_type IN (
             'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
-            'security_ltp_renew'
+            'portfolio_ltp_renew', 'security_ltp_renew'
         ));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $mlt$;
+
+UPDATE logic_stops
+SET scope_type = 'portfolio_ltp_renew'
+WHERE scope_type = 'security_ltp_renew';
 
 UPDATE logic_stops
 SET scope_type = 'security'
@@ -1699,8 +1706,21 @@ BEGIN
     ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_tp_scope_check
         CHECK (
             rule_kind = 'stop_loss'
-            OR scope_type IN ('security', 'portfolio', 'security_ltp_renew')
+            OR scope_type IN ('security', 'portfolio', 'portfolio_ltp_renew')
         );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $mlt$;
+
+-- Drop legacy name from scope check after migrate
+ALTER TABLE logic_stops DROP CONSTRAINT IF EXISTS logic_stops_scope_type_check;
+DO $mlt$
+BEGIN
+    ALTER TABLE logic_stops ADD CONSTRAINT logic_stops_scope_type_check
+        CHECK (scope_type IN (
+            'security', 'security_resume', 'security_inversion', 'portfolio', 'portfolio_resume',
+            'portfolio_ltp_renew'
+        ));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $mlt$;
@@ -3366,6 +3386,9 @@ ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_equity_peak N
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_stop_resume_equity NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_stop_resume_baseline NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_tp_latched BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_peak_equity NUMERIC(20, 6);
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_arm_bar_dt TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;

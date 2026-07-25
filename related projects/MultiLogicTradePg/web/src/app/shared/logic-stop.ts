@@ -5,6 +5,8 @@ export type LogicStopScopeType =
   | 'security_inversion'
   | 'portfolio'
   | 'portfolio_resume'
+  | 'portfolio_ltp_renew'
+  /** @deprecated migrated to portfolio_ltp_renew */
   | 'security_ltp_renew';
 export type LogicStopValueUnit = 'percent' | 'atr';
 
@@ -22,8 +24,9 @@ export function scopeTypeLabel(
         return 'По бумаге';
       case 'portfolio':
         return 'По всему портфелю логики';
+      case 'portfolio_ltp_renew':
       case 'security_ltp_renew':
-        return 'Линейный тейк-профит по бумаге с возобновлением';
+        return 'Линейный тейк-профит по всему портфелю с возобновлением';
       default:
         return scope;
     }
@@ -39,8 +42,9 @@ export function scopeTypeLabel(
       return 'По всему портфелю логики';
     case 'portfolio_resume':
       return 'По портфелю с обновлением (пауза → shadow → возобновление)';
+    case 'portfolio_ltp_renew':
     case 'security_ltp_renew':
-      return 'Линейный тейк-профит по бумаге с возобновлением';
+      return 'Линейный тейк-профит по всему портфелю с возобновлением';
   }
 }
 
@@ -61,7 +65,7 @@ export const LOGIC_STOP_SCOPES_STOP_LOSS: LogicStopScopeType[] = [
 export const LOGIC_STOP_SCOPES_TAKE_PROFIT: LogicStopScopeType[] = [
   'security',
   'portfolio',
-  'security_ltp_renew',
+  'portfolio_ltp_renew',
 ];
 
 export function stopScopesForRuleKind(

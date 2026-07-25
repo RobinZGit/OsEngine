@@ -48,11 +48,13 @@ const VALID_STOP_SCOPES = new Set([
   'security_inversion',
   'portfolio',
   'portfolio_resume',
+  'portfolio_ltp_renew',
   'security_ltp_renew',
 ]);
 const TAKE_PROFIT_SCOPES = new Set([
   'security',
   'portfolio',
+  'portfolio_ltp_renew',
   'security_ltp_renew',
 ]);
 
@@ -60,7 +62,9 @@ function isScopeValidForRuleKind(ruleKind, scopeType) {
   if (ruleKind === 'take_profit') return TAKE_PROFIT_SCOPES.has(scopeType);
   if (ruleKind === 'stop_loss') {
     return (
-      VALID_STOP_SCOPES.has(scopeType) && scopeType !== 'security_ltp_renew'
+      VALID_STOP_SCOPES.has(scopeType) &&
+      scopeType !== 'security_ltp_renew' &&
+      scopeType !== 'portfolio_ltp_renew'
     );
   }
   return false;
@@ -2326,7 +2330,7 @@ app.post('/api/logic-stops', async (req, res) => {
     res.status(400).json({
       error:
         ruleKind === 'take_profit'
-          ? 'scope_type for take_profit must be security, portfolio or security_ltp_renew'
+          ? 'scope_type for take_profit must be security, portfolio or portfolio_ltp_renew'
           : 'scope_type must be security, security_resume, security_inversion, portfolio or portfolio_resume',
     });
     return;
@@ -2396,7 +2400,7 @@ app.put('/api/logic-stops/:id', async (req, res) => {
         res.status(400).json({
           error:
             ruleKind === 'take_profit'
-              ? 'scope_type for take_profit must be security, portfolio or security_ltp_renew'
+              ? 'scope_type for take_profit must be security, portfolio or portfolio_ltp_renew'
               : 'scope_type must be security, security_resume, security_inversion, portfolio or portfolio_resume',
         });
         return;

@@ -385,16 +385,18 @@ async function importLogicBundle(pool, bundle) {
           [
             logicId,
             st.rule_kind === 'take_profit' ? 'take_profit' : 'stop_loss',
-            [
-              'security',
-              'security_resume',
-              'security_inversion',
-              'portfolio',
-              'portfolio_resume',
-              'security_ltp_renew',
-            ].includes(st.scope_type)
-              ? st.scope_type
-              : 'security',
+            st.scope_type === 'security_ltp_renew'
+              ? 'portfolio_ltp_renew'
+              : [
+                    'security',
+                    'security_resume',
+                    'security_inversion',
+                    'portfolio',
+                    'portfolio_resume',
+                    'portfolio_ltp_renew',
+                  ].includes(st.scope_type)
+                ? st.scope_type
+                : 'security',
             Number(st.value) || 0,
             st.value_unit === 'atr' ? 'atr' : 'percent',
             Number.isFinite(Number(st.display_order)) ? Number(st.display_order) : 0,

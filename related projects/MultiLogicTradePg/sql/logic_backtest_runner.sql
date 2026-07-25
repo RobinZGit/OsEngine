@@ -805,6 +805,8 @@ DECLARE
     v_short_qty NUMERIC;
     v_equity NUMERIC;
     v_tp_latched BOOLEAN;
+    v_has_pos BOOLEAN;
+    v_port_paused BOOLEAN;
 BEGIN
     FOR v_stop IN
         SELECT * FROM logic_stops ls
@@ -1062,145 +1064,131 @@ BEGIN
                     );
                 END IF;
             END LOOP;
-        ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'security_ltp_renew' THEN
-            -- Линейный TP: track% vs base_annual×years + TP%; arm → sell on drop → shadow renew
+        ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio_ltp_renew' THEN
+            -- Линейный TP по всему портфелю: track% = (equity−initial)/initial
+            -- arm → trail peak equity → close all on drop → portfolio pause/renew
             v_initial := get_logic_param_numeric(p_logic_id, 'initial_balance', NULL);
             IF v_initial IS NOT NULL AND v_initial > 0 THEN
-                v_base_pct := logic_linear_base_pct(p_logic_id, p_bar_dt, TRUE, p_run_id);
-                v_arm_pct := v_base_pct + v_stop.value;
-                FOR v_sec IN
-                    SELECT ls.security_id FROM logic_securities ls
-                    WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-                      AND NOT logic_is_cash_fund_security(ls.security_id)
-                LOOP
-                    IF logic_backtest_sec_shadow(p_run_id, v_sec.security_id) THEN
-                        v_resume_equity := NULL;
-                        v_resume_baseline := NULL;
-                        SELECT st.stop_resume_equity, st.stop_resume_baseline
-                        INTO v_resume_equity, v_resume_baseline
-                        FROM logic_backtest_security_state st
-                        WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
-                        IF v_resume_equity IS NOT NULL AND v_resume_baseline IS NOT NULL THEN
-                            v_track_after := logic_backtest_security_track_value(
-                                p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, TRUE
-                            );
-                            IF COALESCE(v_resume_baseline, 0) + COALESCE(v_track_after, 0)
-                               >= COALESCE(v_resume_equity, 0) THEN
-                                UPDATE logic_backtest_security_state
-                                SET real_trading_paused = FALSE,
-                                    stop_resume_equity = NULL,
-                                    stop_resume_baseline = NULL
-                                WHERE run_id = p_run_id AND security_id = v_sec.security_id;
-                            END IF;
-                        END IF;
-                        CONTINUE;
+                SELECT COALESCE(r.portfolio_trading_paused, FALSE)
+                INTO v_port_paused
+                FROM logic_backtest_runs r
+                WHERE r.id = p_run_id;
+
+                IF v_port_paused THEN
+                    SELECT COALESCE(SUM(lt.financial_result), 0) INTO v_track_after
+                    FROM logic_trades lt
+                    WHERE lt.logic_id = p_logic_id
+                      AND lt.run_id = p_run_id
+                      AND lt.is_test = TRUE
+                      AND lt.is_shadow = TRUE
+                      AND lt.status IN ('filled', 'submitted')
+                      AND lt.financial_result IS NOT NULL;
+
+                    SELECT r.portfolio_stop_resume_equity, r.portfolio_stop_resume_baseline
+                    INTO v_resume_equity, v_resume_baseline
+                    FROM logic_backtest_runs r WHERE r.id = p_run_id;
+
+                    IF v_resume_equity IS NOT NULL AND v_resume_baseline IS NOT NULL
+                       AND COALESCE(v_resume_baseline, 0) + COALESCE(v_track_after, 0)
+                          >= COALESCE(v_resume_equity, 0)
+                    THEN
+                        UPDATE logic_backtest_runs
+                        SET portfolio_trading_paused = FALSE,
+                            portfolio_stop_resume_equity = NULL,
+                            portfolio_stop_resume_baseline = NULL,
+                            portfolio_equity_peak = GREATEST(
+                                COALESCE(portfolio_equity_peak, 0),
+                                COALESCE(v_resume_equity, 0),
+                                p_balance
+                            )
+                        WHERE id = p_run_id;
                     END IF;
-
-                    -- Скаляры: RECORD без строки → «записи не присвоено значение»
-                    v_ltp_armed := FALSE;
-                    v_ltp_last_price := NULL;
-                    v_ltp_arm_bar := NULL;
-                    SELECT
-                        COALESCE(st.linear_tp_armed, FALSE),
-                        st.linear_tp_last_price,
-                        st.linear_tp_arm_bar_dt
-                    INTO v_ltp_armed, v_ltp_last_price, v_ltp_arm_bar
-                    FROM logic_backtest_security_state st
-                    WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
-
-                    v_track := logic_backtest_security_track_value(
-                        p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
+                ELSE
+                    v_equity := COALESCE(
+                        logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
+                        p_balance
                     );
-                    v_track_pct := COALESCE(v_track, 0) / v_initial * 100.0;
-                    SELECT p.close_price INTO v_price
-                    FROM prices p
-                    WHERE p.security_id = v_sec.security_id
-                      AND p.timeframe_id = p_tf_id
-                      AND p.dt = p_bar_dt
-                    LIMIT 1;
-                    v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
-                    v_short_qty := logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE, TRUE);
+                    v_track_pct := (v_equity - v_initial) / v_initial * 100.0;
+                    v_base_pct := logic_linear_base_pct(p_logic_id, p_bar_dt, TRUE, p_run_id);
+                    v_arm_pct := v_base_pct + v_stop.value;
+
+                    SELECT
+                        COALESCE(r.portfolio_linear_tp_armed, FALSE),
+                        r.portfolio_linear_tp_peak_equity,
+                        r.portfolio_linear_tp_arm_bar_dt
+                    INTO v_ltp_armed, v_ltp_last_price, v_ltp_arm_bar
+                    FROM logic_backtest_runs r
+                    WHERE r.id = p_run_id;
+
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM logic_securities ls
+                        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+                          AND NOT logic_is_cash_fund_security(ls.security_id)
+                          AND (
+                              logic_long_position_qty(p_logic_id, ls.security_id, FALSE, TRUE) > 0
+                              OR logic_short_position_qty(p_logic_id, ls.security_id, FALSE, TRUE) > 0
+                          )
+                    ) INTO v_has_pos;
 
                     IF v_track_pct < v_base_pct THEN
                         IF v_ltp_armed THEN
-                            INSERT INTO logic_backtest_security_state (
-                                run_id, security_id, linear_tp_armed,
-                                linear_tp_last_price, linear_tp_arm_bar_dt
-                            )
-                            VALUES (p_run_id, v_sec.security_id, FALSE, NULL, NULL)
-                            ON CONFLICT (run_id, security_id) DO UPDATE SET
-                                linear_tp_armed = FALSE,
-                                linear_tp_last_price = NULL,
-                                linear_tp_arm_bar_dt = NULL;
+                            UPDATE logic_backtest_runs
+                            SET portfolio_linear_tp_armed = FALSE,
+                                portfolio_linear_tp_peak_equity = NULL,
+                                portfolio_linear_tp_arm_bar_dt = NULL
+                            WHERE id = p_run_id;
                         END IF;
-                        CONTINUE;
+                    ELSIF NOT v_ltp_armed AND v_track_pct >= v_arm_pct AND v_has_pos THEN
+                        UPDATE logic_backtest_runs
+                        SET portfolio_linear_tp_armed = TRUE,
+                            portfolio_linear_tp_peak_equity = v_equity,
+                            portfolio_linear_tp_arm_bar_dt = p_bar_dt
+                        WHERE id = p_run_id;
+                    ELSIF v_ltp_armed THEN
+                        IF v_ltp_last_price IS NOT NULL
+                           AND v_equity < v_ltp_last_price
+                           AND v_has_pos
+                           AND (v_ltp_arm_bar IS NULL OR p_bar_dt > v_ltp_arm_bar)
+                        THEN
+                            v_track_before := v_equity;
+                            v_reason := format(
+                                'take_profit:portfolio_ltp_renew (%s%%)',
+                                round(v_track_pct, 2)
+                            );
+                            FOR v_sec IN
+                                SELECT DISTINCT lt.security_id
+                                FROM logic_trades lt
+                                WHERE lt.logic_id = p_logic_id AND lt.is_test = TRUE AND NOT lt.is_shadow
+                                  AND lt.status IN ('filled', 'submitted')
+                                  AND NOT logic_is_cash_fund_security(lt.security_id)
+                            LOOP
+                                SELECT *
+                                INTO v_closed, p_balance
+                                FROM logic_backtest_close_security(
+                                    p_run_id, p_logic_id, p_account_id, v_sec.security_id,
+                                    p_tf_id, p_bar_dt, FALSE, v_reason, p_balance
+                                );
+                            END LOOP;
+                            v_equity := COALESCE(
+                                logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
+                                p_balance
+                            );
+                            UPDATE logic_backtest_runs
+                            SET portfolio_trading_paused = TRUE,
+                                portfolio_stop_resume_equity = v_track_before,
+                                portfolio_stop_resume_baseline = v_equity,
+                                portfolio_linear_tp_armed = FALSE,
+                                portfolio_linear_tp_peak_equity = NULL,
+                                portfolio_linear_tp_arm_bar_dt = NULL
+                            WHERE id = p_run_id;
+                        ELSIF v_equity > COALESCE(v_ltp_last_price, 0) THEN
+                            UPDATE logic_backtest_runs
+                            SET portfolio_linear_tp_peak_equity = v_equity
+                            WHERE id = p_run_id;
+                        END IF;
                     END IF;
-
-                    IF NOT v_ltp_armed
-                       AND v_track_pct >= v_arm_pct
-                       AND (v_long_qty > 0 OR v_short_qty > 0)
-                       AND v_price IS NOT NULL AND v_price > 0
-                    THEN
-                        INSERT INTO logic_backtest_security_state (
-                            run_id, security_id, linear_tp_armed,
-                            linear_tp_last_price, linear_tp_arm_bar_dt
-                        )
-                        VALUES (p_run_id, v_sec.security_id, TRUE, v_price, p_bar_dt)
-                        ON CONFLICT (run_id, security_id) DO UPDATE SET
-                            linear_tp_armed = TRUE,
-                            linear_tp_last_price = EXCLUDED.linear_tp_last_price,
-                            linear_tp_arm_bar_dt = EXCLUDED.linear_tp_arm_bar_dt;
-                        CONTINUE;
-                    END IF;
-
-                    IF NOT v_ltp_armed THEN
-                        CONTINUE;
-                    END IF;
-
-                    IF v_ltp_last_price IS NOT NULL
-                       AND v_price IS NOT NULL
-                       AND v_price < v_ltp_last_price
-                       AND (v_long_qty > 0 OR v_short_qty > 0)
-                       AND (v_ltp_arm_bar IS NULL OR p_bar_dt > v_ltp_arm_bar)
-                    THEN
-                        v_track_before := v_track;
-                        v_reason := format(
-                            'take_profit:security_ltp_renew (%s%%)',
-                            round(v_track_pct, 2)
-                        );
-                        SELECT *
-                        INTO v_closed, p_balance
-                        FROM logic_backtest_close_security(
-                            p_run_id, p_logic_id, p_account_id, v_sec.security_id,
-                            p_tf_id, p_bar_dt, FALSE, v_reason, p_balance
-                        );
-                        v_track_after := logic_backtest_security_track_value(
-                            p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
-                        );
-                        INSERT INTO logic_backtest_security_state (
-                            run_id, security_id, real_trading_paused,
-                            stop_resume_equity, stop_resume_baseline,
-                            linear_tp_armed, linear_tp_last_price, linear_tp_arm_bar_dt
-                        )
-                        VALUES (
-                            p_run_id, v_sec.security_id, TRUE,
-                            v_track_before, v_track_after,
-                            FALSE, NULL, NULL
-                        )
-                        ON CONFLICT (run_id, security_id) DO UPDATE SET
-                            real_trading_paused = TRUE,
-                            stop_resume_equity = EXCLUDED.stop_resume_equity,
-                            stop_resume_baseline = EXCLUDED.stop_resume_baseline,
-                            linear_tp_armed = FALSE,
-                            linear_tp_last_price = NULL,
-                            linear_tp_arm_bar_dt = NULL;
-                    ELSIF v_price IS NOT NULL
-                          AND v_price > COALESCE(v_ltp_last_price, 0) THEN
-                        UPDATE logic_backtest_security_state
-                        SET linear_tp_last_price = v_price
-                        WHERE run_id = p_run_id AND security_id = v_sec.security_id;
-                    END IF;
-                END LOOP;
+                END IF;
             END IF;
         END IF;
     END LOOP;

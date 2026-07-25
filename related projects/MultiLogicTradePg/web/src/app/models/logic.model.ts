@@ -154,6 +154,7 @@ export interface LogicStopRow {
     | 'security_inversion'
     | 'portfolio'
     | 'portfolio_resume'
+    | 'portfolio_ltp_renew'
     | 'security_ltp_renew';
   value: number;
   value_unit: 'percent' | 'atr';
