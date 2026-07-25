@@ -246,12 +246,17 @@
                     }
                     @if (isBacktestRunning(row.id)) {
                       <span
-                        class="logic-test-progress"
+                        class="logic-test-progress-wrap"
                         [title]="backtestProgressTitle(row.id)"
                         [attr.aria-label]="'Тестирование ' + backtestProgressPct(row.id) + '%'"
                       >
-                        <span class="logic-test-progress-ring" aria-hidden="true">↻</span>
-                        <span class="logic-test-progress-pct">{{ backtestProgressPct(row.id) }}</span>
+                        <span class="logic-test-progress">
+                          <span class="logic-test-progress-ring" aria-hidden="true">↻</span>
+                          <span class="logic-test-progress-pct">{{ backtestProgressPct(row.id) }}</span>
+                        </span>
+                        @if (backtestCurrentBarLabel(row.id); as barDt) {
+                          <span class="logic-test-progress-date">{{ barDt }}</span>
+                        }
                       </span>
                     }
                   </span>
@@ -572,7 +577,8 @@
                                   (ngModelChange)="onParamsSizeBaseChange(row.id, $event)"
                                   (click)="$event.stopPropagation()"
                                 >
-                                  <option value="portfolio">Весь портфель</option>
+                                  <option value="portfolio">Весь портфель без ден. фонда</option>
+                                  <option value="portfolio_incl_fund">Весь портфель с ден. фондом</option>
                                   <option value="free_cash">Свободные деньги</option>
                                 </select>
 
@@ -580,11 +586,12 @@
 
                               <td class="params-hint">
 
-                                Портфель — по умолчанию; выбранный денежный фонд в базу не входит.
+                                По умолчанию — портфель без выбранного денежного фонда (его MTM вычитается).
+                                «С фондом» — % от всего equity. «Свободные» — только кэш.
                                 @if (row.account_type === 'fake') {
-                                  Тест: кэш+бумаги или только свободный кэш.
+                                  Тест: кэш+MTM бумаг.
                                 } @else {
-                                  Real: только брокер (total / кэш).
+                                  Real: total / кэш с брокера.
                                 }
 
                               </td>
@@ -865,7 +872,7 @@
                               </td>
 
                               <td class="params-hint">
-                                Пусто = не покупать. Если выбран — его сумма не входит в базу «весь портфель» при расчёте лота. Парковка: BUY при equity выше порога; фонд не продаём.
+                                Пусто = не покупать. При базе «без ден. фонда» его MTM вычитается из % лота; при «с фондом» — входит. Парковка: BUY при equity выше порога; фонд не продаём.
                               </td>
 
                             </tr>

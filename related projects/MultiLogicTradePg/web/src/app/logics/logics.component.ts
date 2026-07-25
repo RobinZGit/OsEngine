@@ -50,7 +50,7 @@ import {
   LogicTradeLotRow,
   LogicTradeRow,
 } from '../shared/logic-trade';
-import { formatDateRangeLabel } from '../shared/date-format';
+import { formatDateRangeLabel, formatHumanDate } from '../shared/date-format';
 import {
   BacktestRunStatus,
   LogicPositionsPanelComponent,
@@ -245,7 +245,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     {
       name: string;
       timeframe: string;
-      position_size_base: 'free_cash' | 'portfolio';
+      position_size_base: 'free_cash' | 'portfolio' | 'portfolio_incl_fund';
       position_size_pct: string;
       max_open_positions: string;
       max_order_amount: string;
@@ -520,8 +520,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
-  onParamsSizeBaseChange(logicId: number, value: 'free_cash' | 'portfolio'): void {
-    this.getParamsDraft(logicId).position_size_base = value;
+  private normalizePositionSizeBase(
+    value: string | null | undefined
+  ): 'free_cash' | 'portfolio' | 'portfolio_incl_fund' {
+    if (value === 'free_cash') return 'free_cash';
+    if (value === 'portfolio_incl_fund') return 'portfolio_incl_fund';
+    return 'portfolio';
+  }
+
+  onParamsSizeBaseChange(
+    logicId: number,
+    value: 'free_cash' | 'portfolio' | 'portfolio_incl_fund'
+  ): void {
+    this.getParamsDraft(logicId).position_size_base =
+      this.normalizePositionSizeBase(value);
     this.paramsDirtyIds.add(logicId);
     this.paramsSaveErrors.delete(logicId);
   }
@@ -701,7 +713,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     logicId: number,
     trading: {
       timeframe?: string;
-      position_size_base?: 'free_cash' | 'portfolio';
+      position_size_base?: 'free_cash' | 'portfolio' | 'portfolio_incl_fund';
       position_size_pct: number;
       max_open_positions: number;
       max_order_amount?: number | null;
@@ -728,7 +740,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   private draftFromTrading(trading: {
     timeframe?: string;
-    position_size_base?: 'free_cash' | 'portfolio';
+    position_size_base?: 'free_cash' | 'portfolio' | 'portfolio_incl_fund';
     position_size_pct: number;
     max_open_positions: number;
     max_order_amount?: number | null;
@@ -748,7 +760,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }): {
     name: string;
     timeframe: string;
-    position_size_base: 'free_cash' | 'portfolio';
+    position_size_base: 'free_cash' | 'portfolio' | 'portfolio_incl_fund';
     position_size_pct: string;
     max_open_positions: string;
     max_order_amount: string;
@@ -777,8 +789,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return {
       name: '',
       timeframe: (trading.timeframe ?? 'M15').toUpperCase(),
-      position_size_base:
-        trading.position_size_base === 'free_cash' ? 'free_cash' : 'portfolio',
+      position_size_base: this.normalizePositionSizeBase(trading.position_size_base),
       position_size_pct: this.formatPctParam(trading.position_size_pct),
       max_open_positions: this.formatIntParam(trading.max_open_positions, 5),
       max_order_amount: this.formatBalanceDraft(
@@ -854,8 +865,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   saveTradingParams(row: LogicRow, event: Event): void {
     event.stopPropagation();
     const draft = this.getParamsDraft(row.id);
-    const position_size_base =
-      draft.position_size_base === 'free_cash' ? 'free_cash' : 'portfolio';
+    const position_size_base = this.normalizePositionSizeBase(
+      draft.position_size_base
+    );
     const position_size_pct = this.parseDecimalInput(draft.position_size_pct);
     const max_open_positions = Math.round(this.parseDecimalInput(draft.max_open_positions));
     const maxOrderRaw = draft.max_order_amount.trim();
@@ -1676,9 +1688,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const pct = this.backtestProgressPct(logicId);
     const phase = run.phase_message || run.status || '';
     const detail = run.phase_detail ? ` — ${run.phase_detail}` : '';
+    const bar = formatHumanDate(run.current_bar_dt);
+    const barPart = bar ? ` · ${bar}` : '';
     const period = formatDateRangeLabel(run.date_from, run.date_to);
     const periodPart = period ? ` (${period})` : '';
-    return `Тест ${pct}%: ${phase}${detail}${periodPart}`;
+    return `Тест ${pct}%${barPart}: ${phase}${detail}${periodPart}`;
+  }
+
+  backtestCurrentBarLabel(logicId: number): string {
+    return formatHumanDate(this.backtestRuns.get(logicId)?.current_bar_dt) || '';
   }
 
   isTradesLoading(logicId: number): boolean {
@@ -2288,13 +2306,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
           .slice(0, 60);
         const mode = isTest ? 'test' : 'live';
         const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const run = isTest ? this.backtestRuns.get(Number(logicId)) : null;
+        const from = String(run?.date_from || '').slice(0, 10);
+        const to = String(run?.date_to || '').slice(0, 10);
+        const periodBit =
+          from && to ? `_${from}_${to}` : from ? `_${from}` : to ? `_${to}` : '';
         const blob = new Blob([JSON.stringify(bundle, null, 2)], {
           type: 'application/json;charset=utf-8',
         });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `multilogic-trades-${mode}-${logicName}-${stamp}.json`;
+        a.download = `multilogic-trades-${mode}-${logicName}${periodBit}-${stamp}.json`;
         a.click();
         URL.revokeObjectURL(url);
         const n = Number(bundle?.counts?.['total'] ?? bundle?.trades?.length ?? 0);

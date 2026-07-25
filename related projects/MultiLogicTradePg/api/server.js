@@ -3945,8 +3945,15 @@ function parseLogicTradingParams(body) {
     const base = String(body.position_size_base || '')
       .trim()
       .toLowerCase();
-    if (base !== 'free_cash' && base !== 'portfolio') {
-      return { error: 'База расчёта лота: свободные деньги или весь портфель' };
+    if (
+      base !== 'free_cash' &&
+      base !== 'portfolio' &&
+      base !== 'portfolio_incl_fund'
+    ) {
+      return {
+        error:
+          'База расчёта лота: свободные деньги, весь портфель без фонда или с фондом',
+      };
     }
     out.position_size_base = base;
     hasField = true;

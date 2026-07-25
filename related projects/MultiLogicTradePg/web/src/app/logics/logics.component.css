@@ -449,6 +449,22 @@ tbody tr.logic-main-row:hover {
   max-width: 100%;
 }
 
+.logic-test-progress-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.logic-test-progress-date {
+  font-size: 0.68rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #92400e;
+  white-space: nowrap;
+}
+
 .logic-test-progress {
   position: relative;
   display: inline-flex;

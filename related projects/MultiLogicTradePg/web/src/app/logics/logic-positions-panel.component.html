@@ -163,6 +163,9 @@
       <div class="backtest-progress-meta">
         <span>{{ backtestRun?.phase_message }}</span>
         <span>{{ backtestRun?.phase_detail }}</span>
+        @if (currentBarLabel) {
+          <span class="backtest-current-bar" title="Текущая дата прогона">{{ currentBarLabel }}</span>
+        }
         <span>{{ (backtestRun?.progress_pct ?? 0) | number:'1.0-1' }}%</span>
         @if (periodLabel) {
           <span class="positions-period-label">{{ periodLabel }}</span>

@@ -4,7 +4,7 @@
  */
 import { LogicRow } from '../models/logic.model';
 import { LogicTradeLotRow, LogicTradeRow } from '../shared/logic-trade';
-import { formatDateRangeLabel } from '../shared/date-format';
+import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
 import { buildEquityPoints } from './backtest-chart-overlays';
 
 /** Minimal run info for the report header (avoids circular import with the panel). */
@@ -58,6 +58,10 @@ export interface BacktestReportModel {
   logicName: string;
   logicId: number;
   periodLabel: string;
+  /** YYYY-MM-DD for download filename (may be empty). */
+  dateFrom: string;
+  /** YYYY-MM-DD for download filename (may be empty). */
+  dateTo: string;
   runStatus: string | null;
   progressPct: number | null;
   params: {
@@ -80,6 +84,34 @@ export interface BacktestReportModel {
   topWins: ClosedDeal[];
   topLosses: ClosedDeal[];
   dealCount: number;
+}
+
+/** Safe single path segment for Windows/macOS download names. */
+export function sanitizeReportFilenamePart(s: string, max = 80): string {
+  const cleaned = String(s ?? '')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return (cleaned || 'logic').slice(0, max);
+}
+
+/**
+ * Download name: logic + period + timeframe + PnL% + deal count.
+ * Example: MLT-report_MyLogic_2020-01-01_2025-12-31_M15_PnL+12.3pct_42deals.html
+ */
+export function buildBacktestReportDownloadName(model: BacktestReportModel): string {
+  const name = sanitizeReportFilenamePart(model.logicName, 50);
+  const from = model.dateFrom || 'nodate';
+  const to = model.dateTo || 'nodate';
+  const tf = sanitizeReportFilenamePart(model.params.timeframe || 'TF', 12);
+  const pnl = model.all?.netPnlPct;
+  const pnlBit = Number.isFinite(pnl)
+    ? `PnL${pnl! >= 0 ? '+' : ''}${pnl!.toFixed(1)}pct`
+    : 'PnL-na';
+  const deals = `${Number(model.dealCount) || 0}deals`;
+  return `MLT-report_${name}_${from}_${to}_${tf}_${pnlBit}_${deals}.html`;
 }
 
 function num(v: unknown, fallback = 0): number {
@@ -352,6 +384,8 @@ export function buildBacktestReportModel(
   const shortDeals = filterSide(deals, 'short');
 
   const sortedByPnl = [...allDeals].sort((a, b) => b.pnl - a.pnl);
+  const dateFrom = asDateOnly(opts.backtestRun?.date_from) || '';
+  const dateTo = asDateOnly(opts.backtestRun?.date_to) || '';
   const periodLabel =
     formatDateRangeLabel(
       opts.backtestRun?.date_from,
@@ -363,6 +397,8 @@ export function buildBacktestReportModel(
     logicName: logic.name || `Логика #${logic.id}`,
     logicId: logic.id,
     periodLabel,
+    dateFrom,
+    dateTo,
     runStatus: opts.backtestRun?.status ?? null,
     progressPct:
       opts.backtestRun?.progress_pct != null
@@ -571,13 +607,18 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
         model.progressPct != null ? ` · ${Math.round(model.progressPct)}%` : ''
       }</span>`
     : '';
+  const downloadName = buildBacktestReportDownloadName(model);
+  const periodTitle =
+    model.periodLabel && model.periodLabel !== '—'
+      ? ` — ${model.periodLabel}`
+      : '';
 
   return `<!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-download-name="${esc(downloadName)}">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Отчёт теста — ${esc(model.logicName)}</title>
+  <title>Отчёт теста — ${esc(model.logicName)}${esc(periodTitle)}</title>
   <style>
     :root {
       --ink: #0f172a;
@@ -602,6 +643,13 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       color: #f8fafc;
       padding: 1.75rem 2rem 1.5rem;
     }
+    .hero-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem 1rem;
+    }
     .hero h1 {
       margin: 0 0 0.35rem;
       font-size: 1.55rem;
@@ -609,6 +657,19 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       letter-spacing: -0.02em;
     }
     .hero .sub { color: #cbd5e1; font-size: 0.92rem; }
+    .btn-download {
+      flex: 0 0 auto;
+      border: 1px solid rgba(248,250,252,0.35);
+      background: rgba(255,255,255,0.12);
+      color: #f8fafc;
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .btn-download:hover { background: rgba(255,255,255,0.22); }
     .pill {
       display: inline-block;
       margin-left: 0.5rem;
@@ -696,14 +757,41 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       body { background: #fff; }
       .hero { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
       .cards { margin-top: 0.5rem; }
+      .no-print { display: none !important; }
     }
   </style>
+  <script>
+    function downloadBacktestReport() {
+      try {
+        var name = document.documentElement.getAttribute('data-download-name') || 'MLT-report.html';
+        var html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+        var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Не удалось скачать отчёт');
+      }
+    }
+  </script>
 </head>
 <body>
   <header class="hero">
-    <h1>Отчёт тестирования ${statusBit}</h1>
-    <div class="sub">${esc(model.logicName)} · #${model.logicId} · период ${esc(model.periodLabel)}</div>
-    <div class="sub">Сформирован ${esc(model.generatedAt)} · метрики как в OsEngine Journal → Статистика</div>
+    <div class="hero-top">
+      <div>
+        <h1>Отчёт тестирования ${statusBit}</h1>
+        <div class="sub">${esc(model.logicName)} · #${model.logicId} · период ${esc(model.periodLabel)}</div>
+        <div class="sub">Сформирован ${esc(model.generatedAt)} · метрики как в OsEngine Journal → Статистика</div>
+      </div>
+      <button type="button" class="btn-download no-print" onclick="downloadBacktestReport()" title="${esc(downloadName)}">
+        Скачать
+      </button>
+    </div>
   </header>
   <div class="wrap">
     <div class="cards">

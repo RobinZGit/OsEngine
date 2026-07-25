@@ -468,8 +468,10 @@ $$;
 COMMENT ON FUNCTION logic_selected_cash_fund_mtm(INTEGER, INTEGER) IS
 'Рыночная оценка выбранного cash_fund_code в логике; 0 если фонд не выбран';
 
--- База для % лота: free_cash | portfolio (default). Real — брокер; test — current / equity.
--- portfolio: без суммы выбранного денежного фонда (если cash_fund_code задан).
+-- База для % лота:
+--   free_cash            — свободный кэш
+--   portfolio (default)  — весь портфель без выбранного денежного фонда
+--   portfolio_incl_fund  — весь портфель включая денежный фонд
 CREATE OR REPLACE FUNCTION logic_position_sizing_base(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -481,6 +483,7 @@ DECLARE
     v_account_type VARCHAR;
     v_mode TEXT;
     v_fund_code TEXT;
+    v_excl_fund BOOLEAN;
     v_bal JSONB;
     v_cash NUMERIC;
     v_portfolio NUMERIC;
@@ -502,7 +505,7 @@ BEGIN
         get_logic_param_text(p_logic_id, 'position_size_base'),
         'portfolio'
     )));
-    IF v_mode NOT IN ('free_cash', 'portfolio') THEN
+    IF v_mode NOT IN ('free_cash', 'portfolio', 'portfolio_incl_fund') THEN
         v_mode := 'portfolio';
     END IF;
 
@@ -513,6 +516,7 @@ BEGIN
     IF v_fund_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
         v_fund_code := '';
     END IF;
+    v_excl_fund := (v_mode = 'portfolio' AND v_fund_code <> '');
 
     IF v_account_type <> 'fake' THEN
         BEGIN
@@ -520,10 +524,9 @@ BEGIN
             IF v_bal IS NULL OR (v_bal->>'error') IS NOT NULL THEN
                 RETURN 0;
             END IF;
-            IF v_mode = 'portfolio' THEN
+            IF v_mode IN ('portfolio', 'portfolio_incl_fund') THEN
                 v_portfolio := GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
-                -- Выбранный фонд не участвует в базе открытия позиций
-                IF v_fund_code <> '' THEN
+                IF v_excl_fund THEN
                     v_portfolio := GREATEST(
                         0,
                         v_portfolio - logic_selected_cash_fund_mtm(p_logic_id, p_timeframe_id)
@@ -541,9 +544,9 @@ BEGIN
         END;
     END IF;
 
-    -- Test (fake): свободные = current; портфель = current + MTM бумаг (без выбранного фонда)
+    -- Test (fake): свободные = current; портфель = current + MTM бумаг
     v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
-    IF v_mode <> 'portfolio' THEN
+    IF v_mode = 'free_cash' THEN
         RETURN GREATEST(0, v_cash);
     END IF;
 
@@ -553,7 +556,7 @@ BEGIN
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
           AND (
-              v_fund_code = ''
+              NOT v_excl_fund
               OR NOT EXISTS (
                   SELECT 1
                   FROM security_prefixes sp
@@ -579,7 +582,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
-'База % лота: free_cash|portfolio (default portfolio); фонд из cash_fund_code исключается из portfolio';
+'База % лота: free_cash|portfolio (default, без фонда)|portfolio_incl_fund (с фондом)';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,

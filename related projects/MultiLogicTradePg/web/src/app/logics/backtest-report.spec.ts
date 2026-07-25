@@ -1,6 +1,9 @@
 import {
+  buildBacktestReportDownloadName,
   collectClosedDeals,
   computeSideStats,
+  sanitizeReportFilenamePart,
+  type BacktestReportModel,
   type ClosedDeal,
 } from './backtest-report';
 import type { LogicTradeRow } from '../shared/logic-trade';
@@ -89,6 +92,21 @@ describe('backtest-report metrics', () => {
     expect(stats.profitFactor).toBeCloseTo(3, 5); // 150 / 50
     expect(stats.netPnl).toBe(100);
     expect(stats.winPct).toBeCloseTo(66.666, 2);
+  });
+
+  it('builds download filename with logic, period, tf, pnl, deals', () => {
+    expect(sanitizeReportFilenamePart('A/B:C*')).toBe('ABC');
+    const model = {
+      logicName: 'My Logic / v2',
+      dateFrom: '2020-01-01',
+      dateTo: '2025-12-31',
+      dealCount: 42,
+      params: { timeframe: 'M15' },
+      all: { netPnlPct: 12.34 },
+    } as BacktestReportModel;
+    expect(buildBacktestReportDownloadName(model)).toBe(
+      'MLT-report_My_Logic_v2_2020-01-01_2025-12-31_M15_PnL+12.3pct_42deals.html'
+    );
   });
 
   it('collectClosedDeals skips shadow and open sides', () => {

@@ -92,7 +92,9 @@ function rowsToTradingParams(rows) {
         map[PARAM_KEYS.POSITION_SIZE_BASE] != null
           ? String(map[PARAM_KEYS.POSITION_SIZE_BASE]).trim().toLowerCase()
           : 'portfolio';
-      return raw === 'free_cash' ? 'free_cash' : 'portfolio';
+      if (raw === 'free_cash') return 'free_cash';
+      if (raw === 'portfolio_incl_fund') return 'portfolio_incl_fund';
+      return 'portfolio';
     })(),
     position_size_pct:
       map[PARAM_KEYS.POSITION_SIZE_PCT] != null
@@ -292,8 +294,14 @@ async function saveTradingParams(pool, logicId, payload) {
     const base = String(payload.position_size_base || '')
       .trim()
       .toLowerCase();
-    if (base !== 'free_cash' && base !== 'portfolio') {
-      throw new Error('База расчёта лота: free_cash или portfolio');
+    if (
+      base !== 'free_cash' &&
+      base !== 'portfolio' &&
+      base !== 'portfolio_incl_fund'
+    ) {
+      throw new Error(
+        'База расчёта лота: free_cash, portfolio или portfolio_incl_fund'
+      );
     }
     await upsertParam(pool, logicId, PARAM_KEYS.POSITION_SIZE_BASE, base, 'text');
   }

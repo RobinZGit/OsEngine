@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — fix backtest v_ltp unassigned (security_ltp_renew); no release
+**Последнее обновление:** 2026-07-25 — lot base portfolio_incl_fund + backtest current_bar_dt in progress UI; no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -475,7 +475,10 @@
 
 ---
 
-## Запросы пользователя (текст)\n\n662. Linear Take Profit on paper with renewal — arm at base%+TP%, sell on price drop, shadow renew, disarm below base%.\n\n\n661. Why account select hangs; logic on/off signals empty for seconds; positions lag — small DB.\n
+## Запросы пользователя (текст)\n\n663. Lot base: three choices — free cash / portfolio without cash fund (default) / portfolio including cash fund; show current backtest date next to progress %.
+
+
+662. Linear Take Profit on paper with renewal — arm at base%+TP%, sell on price drop, shadow renew, disarm below base%.\n\n\n661. Why account select hangs; logic on/off signals empty for seconds; positions lag — small DB.\n
 
 ### 2026-07-12 (ранние)
 

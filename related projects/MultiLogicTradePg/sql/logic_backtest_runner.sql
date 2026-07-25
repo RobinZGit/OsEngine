@@ -1245,7 +1245,7 @@ BEGIN
         get_logic_param_text(p_logic_id, 'position_size_base'),
         'portfolio'
     )));
-    IF v_size_mode NOT IN ('free_cash', 'portfolio') THEN
+    IF v_size_mode NOT IN ('free_cash', 'portfolio', 'portfolio_incl_fund') THEN
         v_size_mode := 'portfolio';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
@@ -1344,7 +1344,17 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    IF v_size_mode = 'portfolio' THEN
+                    IF v_size_mode = 'free_cash' THEN
+                        v_sizing_base := p_balance;
+                    ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+                        v_sizing_base := GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                        );
+                    ELSE
+                        -- portfolio (default): весь портфель минус MTM денежного фонда
                         v_sizing_base := GREATEST(
                             0,
                             COALESCE(logic_backtest_portfolio_equity(
@@ -1354,8 +1364,6 @@ BEGIN
                                 p_logic_id, p_tf_id, p_bar_dt
                             )
                         );
-                    ELSE
-                        v_sizing_base := p_balance;
                     END IF;
                     v_quantity := logic_calc_open_quantity(
                         v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
@@ -1381,7 +1389,16 @@ BEGIN
                     IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    IF v_size_mode = 'portfolio' THEN
+                    IF v_size_mode = 'free_cash' THEN
+                        v_sizing_base := p_balance;
+                    ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+                        v_sizing_base := GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                        );
+                    ELSE
                         v_sizing_base := GREATEST(
                             0,
                             COALESCE(logic_backtest_portfolio_equity(
@@ -1391,8 +1408,6 @@ BEGIN
                                 p_logic_id, p_tf_id, p_bar_dt
                             )
                         );
-                    ELSE
-                        v_sizing_base := p_balance;
                     END IF;
                     v_quantity := logic_calc_open_quantity(
                         v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount

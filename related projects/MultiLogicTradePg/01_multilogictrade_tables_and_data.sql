@@ -1251,7 +1251,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('timeframe', 'Таймфрейм', 'text', 'M15',
      'Таймфрейм цен, индикаторов и цикла сделок (M15, H1, D1 …)', 0),
     ('position_size_base', 'База расчёта лота', 'text', 'portfolio',
-     'portfolio (по умолчанию) — % от всего портфеля без выбранного денежного фонда; free_cash — % от свободных денег', 1),
+     'portfolio (по умолчанию) — % от портфеля без ден. фонда; portfolio_incl_fund — весь портфель с фондом; free_cash — % от свободных денег', 1),
     ('position_size_pct', '% депозита на сделку', 'number', '10',
      'Доля выбранной базы (портфель или свободные) на одну покупку (1–100)', 2),
     ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',

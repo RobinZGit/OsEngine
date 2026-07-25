@@ -38,7 +38,11 @@ import {
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import { buildEquityPoints, buildPortfolioStopMarkers } from './backtest-chart-overlays';
 import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
-import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
+import {
+  asDateOnly,
+  formatDateRangeLabel,
+  formatHumanDate,
+} from '../shared/date-format';
 import {
   buildBacktestReportModel,
   openBacktestReportWindow,
@@ -64,6 +68,9 @@ export interface BacktestRunStatus {
   phase_message: string | null;
 
   phase_detail: string | null;
+
+  /** Current candle being processed (ISO / PG timestamp). */
+  current_bar_dt?: string | null;
 
   total_bars: number;
 
@@ -317,6 +324,13 @@ export class LogicPositionsPanelComponent implements OnChanges {
   get periodLabel(): string {
     if (!this.backtestRun) return '';
     return formatDateRangeLabel(this.backtestRun.date_from, this.backtestRun.date_to);
+  }
+
+  /** Date of the candle currently being processed (shown next to %). */
+  get currentBarLabel(): string {
+    const raw = this.backtestRun?.current_bar_dt;
+    if (!raw) return '';
+    return formatHumanDate(raw) || String(raw).slice(0, 10);
   }
 
 

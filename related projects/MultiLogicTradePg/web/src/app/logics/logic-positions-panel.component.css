@@ -484,6 +484,12 @@
   color: #4b5563;
 }
 
+.backtest-current-bar {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #1d4ed8;
+}
+
 .trade-test-badge {
   display: inline-block;
   margin-left: 0.35rem;
