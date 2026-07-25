@@ -1,10 +1,11 @@
 /**
  * Survives Angular route changes (/operations → other tabs).
  * Keeps backtest yellow/progress/pnl maps alive and polls active runs in the background.
+ * Single owner of GET /logic-backtest/status (LogicsComponent must not duplicate).
  */
 import { Injectable, OnDestroy } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, Subscription } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import type { BacktestRunStatus } from '../logics/logic-positions-panel.component';
 
@@ -38,6 +39,8 @@ export class BacktestUiStateService implements OnDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
   private recovering = false;
   private readonly bump$ = new BehaviorSubject<number>(0);
+  /** Cancel previous in-flight status per logicId (re-launch / slow API). */
+  private readonly statusSubs = new Map<number, Subscription>();
 
   /** UI can subscribe to re-check yellow/progress after background poll. */
   readonly changes$: Observable<number> = this.bump$.asObservable();
@@ -53,16 +56,23 @@ export class BacktestUiStateService implements OnDestroy {
 
   ngOnDestroy(): void {
     this.stopTimer();
+    this.cancelAllStatus();
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private readonly onVisibility = (): void => {
-    if (typeof document !== 'undefined' && !document.hidden) {
-      this.recoverActive();
-      this.refreshAllWatched();
+    if (typeof document === 'undefined') return;
+    if (document.hidden) {
+      // Free HTTP while tab hidden; resume on show.
+      this.stopTimer();
+      this.cancelAllStatus();
+      return;
     }
+    this.recoverActive();
+    this.ensureTimer();
+    this.refreshAllWatched();
   };
 
   /** Call from LogicsComponent.ngOnInit — idempotent. */
@@ -81,7 +91,10 @@ export class BacktestUiStateService implements OnDestroy {
   }
 
   unwatch(logicId: number): void {
-    this.pollIds.delete(Number(logicId));
+    const id = Number(logicId);
+    this.pollIds.delete(id);
+    this.statusSubs.get(id)?.unsubscribe();
+    this.statusSubs.delete(id);
     if (this.pollIds.size === 0) this.stopTimer();
   }
 
@@ -103,6 +116,8 @@ export class BacktestUiStateService implements OnDestroy {
       this.pollIds.delete(id);
       // Finished/cancelled — stop forcing «Тестирование» open on remount.
       this.expandTestBlocks.delete(id);
+      this.statusSubs.get(id)?.unsubscribe();
+      this.statusSubs.delete(id);
     }
     this.bump();
   }
@@ -121,6 +136,7 @@ export class BacktestUiStateService implements OnDestroy {
 
   recoverActive(): void {
     if (this.recovering) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
     this.recovering = true;
     this.http
       .get<{ rows: BacktestRunStatus[] }>(
@@ -148,6 +164,7 @@ export class BacktestUiStateService implements OnDestroy {
   private ensureTimer(): void {
     if (this.timer != null) return;
     if (this.pollIds.size === 0) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
     this.timer = setInterval(() => this.refreshAllWatched(), POLL_MS);
   }
 
@@ -158,7 +175,18 @@ export class BacktestUiStateService implements OnDestroy {
     }
   }
 
+  private cancelAllStatus(): void {
+    for (const sub of this.statusSubs.values()) {
+      sub.unsubscribe();
+    }
+    this.statusSubs.clear();
+  }
+
   private refreshAllWatched(): void {
+    if (typeof document !== 'undefined' && document.hidden) {
+      this.stopTimer();
+      return;
+    }
     if (this.pollIds.size === 0) {
       this.stopTimer();
       return;
@@ -169,12 +197,14 @@ export class BacktestUiStateService implements OnDestroy {
   }
 
   private refreshOne(logicId: number): void {
-    this.http
+    this.statusSubs.get(logicId)?.unsubscribe();
+    const sub = this.http
       .get<BacktestRunStatus>(`${this.appConfig.apiUrl}/logic-backtest/status`, {
         params: { logic_id: String(logicId) },
       })
       .subscribe({
         next: (row) => {
+          this.statusSubs.delete(logicId);
           if (!row) {
             this.runs.delete(logicId);
             this.pollIds.delete(logicId);
@@ -184,9 +214,11 @@ export class BacktestUiStateService implements OnDestroy {
           this.setRun(logicId, row);
         },
         error: () => {
+          this.statusSubs.delete(logicId);
           /* keep last known; next tick retries */
         },
       });
+    this.statusSubs.set(logicId, sub);
   }
 
   private bump(): void {

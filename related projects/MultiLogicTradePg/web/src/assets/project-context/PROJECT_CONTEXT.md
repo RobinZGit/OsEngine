@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — portfolio_ltp_renew: продажа при откате от пика ≥ TP% + latch; no release
+**Последнее обновление:** 2026-07-25 — Angular: меньше HTTP при бэктестах (один status-poll, без 50k trades/2с); no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -117,6 +117,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-25 (Angular: разгрузка при длинных/повторных тестах)
+
+- Один владелец status: `BacktestUiStateService` (без дубля из `LogicsComponent`).
+- In-flight cancel status по logicId; pause poll при `document.hidden`.
+- Пока running — не качать 50k test trades каждые 2 с; полный список после finish; PnL summary реже + in-flight guard.
+- Main `/logics` timer не крутится на скрытой вкладке. Installers; **no release**.
 
 ### 2026-07-25 (portfolio_ltp_renew: фиксация всплеска)
 
@@ -375,6 +382,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | Angular: single backtest status poll + skip 50k trades while running; no release |
 | 2026-07-25 | portfolio_ltp_renew: fade-from-peak ≥ TP% + re-arm latch; no release |
 | 2026-07-25 | Help book: PROJECT_CONTEXT + LOCAL_SETUP chapters in top-bar help; sync:context; no release |
 | 2026-07-25 | v48 security_resume: paper×side (long/short) drawdown/shadow/resume; installers; no release |
@@ -701,3 +709,4 @@
 158. «When you upload to the repository, do not forget to update the context of the context file.»
 159. «Put the context files in the description, which opens on the main top bar. In a separate chapter, take them out, so that you can turn around and see the context on which this whole project was going.»
 160. «Test + logic with take-profit with renewal: working often, portfolio sagging — see why, improve so it is fixed on the splash and does not fade.»
+161. «Tests with re-launches clog resources / hang longer; two tests running — optimize Angular to free resources.»

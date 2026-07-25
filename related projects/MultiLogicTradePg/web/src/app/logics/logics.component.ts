@@ -2,7 +2,7 @@ import { Component, ElementRef, OnDestroy, OnInit, ViewChild, ChangeDetectorRef 
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, exhaustMap, takeUntil, timer, forkJoin, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { catchError, debounceTime, filter, map } from 'rxjs/operators';
 import { LogicsService } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
@@ -140,6 +140,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Пока открыт диалог периода — не дёргать тяжёлый poll (дата на input лагает). */
   uiInteractionPause = false;
   private pollTick = 0;
+  private testPnlInFlight = false;
+  private combatPnlInFlight = false;
   processRows: ProcessStatusItem[] = [];
   processError: string | null = null;
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
@@ -297,15 +299,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedTestTradesBlocks.add(logicId);
       this.expandedLogics.add(logicId);
     }
-    this.backtestUi.changes$.pipe(takeUntil(this.destroy$)).subscribe(() => {
-      // Do not force-reopen «Тестирование» on every poll — only refresh UI.
+    // Status poll owns BacktestUiStateService; here only light UI after debounced bumps.
+    this.backtestUi.changes$.pipe(debounceTime(300), takeUntil(this.destroy$)).subscribe(() => {
       for (const logicId of [...this.backtestPollIds]) {
+        // Full 50k trades only when run finished (not every status tick while running).
         if (!this.isBacktestRunning(logicId)) {
           this.loadTestTradesForLogic(logicId, true);
+          this.refreshTestPnlSummary();
         }
         this.rebuildTestTradesView(logicId);
       }
-      this.refreshTestPnlSummary();
       this.cdr.markForCheck();
     });
     this.loadIndicatorsCatalog();
@@ -318,6 +321,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     timer(0, POLL_INTERVAL_MS)
       .pipe(
         takeUntil(this.destroy$),
+        // Не крутить /logics+trades пока вкладка скрыта (route reuse держит компонент живым).
+        filter(() => typeof document === 'undefined' || !document.hidden),
         // exhaustMap: не отменять и не накладывать GET /logics, пока предыдущий в полёте.
         exhaustMap(() => {
           // Редактор логики / диалог периода — не дергать список (иначе select «висит»).
@@ -337,11 +342,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       )
       .subscribe({
         next: (rows) => {
-          // Диалог «период теста» / редактор: только статус теста, без перерисовки списка.
+          // Диалог / редактор: статус теста крутит BacktestUiStateService — список не трогаем.
           if (rows == null || this.uiInteractionPause || this.editorOpen) {
-            for (const logicId of this.backtestPollIds) {
-              this.refreshBacktestStatus(logicId);
-            }
             return;
           }
           this.logics = rows.map((row) => {
@@ -1285,7 +1287,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedTestTradesBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
       this.loadTestTradesForLogic(logicId);
-      this.refreshBacktestStatus(logicId);
+      this.backtestUi.watch(logicId);
     }
   }
 
@@ -2527,7 +2529,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.backtestUi.watch(row.id);
           this.expandedLogics.add(row.id);
           this.expandedTestTradesBlocks.add(row.id);
-          this.refreshBacktestStatus(row.id);
           return;
         }
         if (checked) {
@@ -2750,10 +2751,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
       .subscribe({
         next: () => {
+          // Единственный владелец status-poll — BacktestUiStateService.watch().
           this.backtestUi.watch(logicId);
           this.expandedTestTradesBlocks.add(logicId);
           this.loadSignalsForLogic(logicId);
-          this.refreshBacktestStatus(logicId);
         },
         error: (err) => alert(err?.error?.error || 'Не удалось запустить тест'),
       });
@@ -2768,28 +2769,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       phase_detail: run.phase_detail || 'Запрос на остановку принят',
     });
     this.logicsService.cancelBacktest(run.id).subscribe({
-      next: () => this.refreshBacktestStatus(logicId),
+      next: () => this.backtestUi.watch(logicId),
       error: (err) => alert(err?.error?.error || 'Не удалось остановить тест'),
-    });
-  }
-
-  private refreshBacktestStatus(logicId: number): void {
-    this.logicsService.getBacktestStatus(logicId).pipe(takeUntil(this.destroy$)).subscribe({
-      next: (row) => {
-        if (row) {
-          this.backtestUi.setRun(logicId, row);
-          const st = String(row.status ?? '');
-          if (['pending', 'loading_prices', 'loading_indicators', 'running'].includes(st)) {
-            this.expandedTestTradesBlocks.add(logicId);
-          } else {
-            this.loadTestTradesForLogic(logicId, true);
-          }
-          this.rebuildTestTradesView(logicId);
-        } else {
-          this.backtestUi.setRun(logicId, null);
-          this.rebuildTestTradesView(logicId);
-        }
-      },
     });
   }
 
@@ -2840,35 +2821,35 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   private refreshAllTradesSummaries(): void {
     this.pollTick++;
-    // Тяжёлые списки сделок (особенно test≤5000) — не каждые 2 с по всем логикам.
+    // Тяжёлые списки — реже; status теста не дублируем (BacktestUiStateService).
     const heavyTick = this.pollTick % 3 === 0;
-
-    for (const logicId of this.backtestPollIds) {
-      this.refreshBacktestStatus(logicId);
-    }
 
     for (const row of this.logics) {
       const id = row.id;
       const liveOpen = this.expandedTradesBlocks.has(id);
       const testOpen = this.expandedTestTradesBlocks.has(id);
-      const testing = this.backtestPollIds.has(id);
+      const testing = this.isBacktestRunning(id);
 
       if (liveOpen || (this.expandedLogics.has(id) && heavyTick)) {
         this.loadTradesForLogic(id, true);
       }
-      // Тест-сделки: running / открытая панель — чаще; иначе только на heavyTick при развёрнутой логике.
-      if (testOpen || testing) {
-        if (testOpen || heavyTick) {
+      // Пока тест running — не качать 50k сделок каждые 2 с (прогресс из status).
+      // Полный список — после finish (changes$) или редко на heavyTick если панель открыта.
+      if (testing) {
+        if (testOpen && heavyTick) {
           this.loadTestTradesForLogic(id, true);
         }
-      } else if (this.expandedLogics.has(id) && heavyTick) {
+      } else if (testOpen || (this.expandedLogics.has(id) && heavyTick)) {
         this.loadTestTradesForLogic(id, true);
       }
     }
   }
 
   private refreshPnlSummaries(): void {
-    this.refreshTestPnlSummary();
+    // Test PnL column: реже во время активных прогонов (колонка не критична mid-run).
+    if (this.backtestPollIds.size === 0 || this.pollTick % 3 === 0) {
+      this.refreshTestPnlSummary();
+    }
     this.refreshCombatPnlSummary();
   }
 
@@ -2895,8 +2876,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private refreshTestPnlSummary(): void {
-    this.logicsService.getLogicTradesPnlSummary(true).subscribe({
+    if (this.testPnlInFlight) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    this.testPnlInFlight = true;
+    this.logicsService.getLogicTradesPnlSummary(true).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
+        this.testPnlInFlight = false;
         this.testPnlByLogic.clear();
         for (const r of resp.rows ?? []) {
           const logicId = Number(r.logic_id);
@@ -2912,6 +2897,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         }
       },
       error: () => {
+        this.testPnlInFlight = false;
         // Старый API без /pnl-summary — только если нет нового endpoint
         this.refreshTestPnlFromBacktestRuns();
       },
@@ -2919,8 +2905,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private refreshCombatPnlSummary(): void {
-    this.logicsService.getLogicTradesPnlSummary(false).subscribe({
+    if (this.combatPnlInFlight) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    this.combatPnlInFlight = true;
+    this.logicsService.getLogicTradesPnlSummary(false).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
+        this.combatPnlInFlight = false;
         const next = new Map<
           number,
           { financial_result: number; commission: number; trade_count: number }
@@ -2938,7 +2928,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.combatPnlByLogic = next;
       },
       error: () => {
-        /* опционально */
+        this.combatPnlInFlight = false;
       },
     });
   }
