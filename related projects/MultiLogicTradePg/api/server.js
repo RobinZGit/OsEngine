@@ -18,7 +18,12 @@ const { Pool } = require('pg');
 const {
   hashToken,
 } = require('./tbank');
-const { startBacktest, getBacktestStatus, cancelBacktest } = require('./logic-backtest');
+const {
+  startBacktest,
+  getBacktestStatus,
+  cancelBacktest,
+  resumeOrphanBacktests,
+} = require('./logic-backtest');
 const {
   startRatingPrecalc,
   getRatingPrecalcStatus,
@@ -4673,4 +4678,14 @@ app.listen(port, () => {
   console.log(`CORS origin: ${corsOrigin}`);
   startTradeRunner(pool);
   startMaintenanceScheduler(pool);
+  // Interrupted backtests (bat/API kill) stay status=running in DB — continue same run_id.
+  resumeOrphanBacktests(pool)
+    .then((r) => {
+      if (r.scheduled > 0) {
+        console.log(
+          `Backtest resume: scheduled ${r.scheduled} orphan run(s) of ${r.found} found`
+        );
+      }
+    })
+    .catch((err) => console.error('resumeOrphanBacktests', err));
 });

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — Push OsEngine + upstream MultiLogicTradePg (GitHub Pages); sell-all/buy bonds; finres sync; no release
+**Последнее обновление:** 2026-07-25 — Backtest resume after API/bat restart (same run_id from processed_bars); Pages ship earlier; no release
 
 > **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
 
@@ -117,6 +117,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-25 (Backtest: resume после рестарта API/формы)
+
+- После убийства API (bat FreePorts / перезапуск) прогоны со статусом `pending|loading_*|running` **не остаются зомби**: при `listen` вызывается `resumeOrphanBacktests`.
+- Тот же `run_id` продолжается с `processed_bars` (баланс, сделки, `logic_backtest_security_state` не стираются).
+- Свежий Start по кнопке — как раньше (wipe test trades логики).
 
 ### 2026-07-25 (выкладка: OsEngine + MultiLogicTradePg Pages)
 
@@ -419,6 +425,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | Backtest resume after API/bat restart: same run_id from processed_bars; no wipe |
 | 2026-07-25 | Ship: push OsEngine + MultiLogicTradePg Pages; sell-all/bonds; finres align; installers; no release |
 | 2026-07-25 | GitHub Pages stale since 07-15: CI sync:context + assetUrl; need push to MultiLogicTradePg |
 | 2026-07-25 | Real accounts: sell-all + buy TBRU bonds (greedy by yield); no release |
@@ -571,6 +578,8 @@
 ---
 
 ## Запросы пользователя (текст)
+
+672. After form/API restart, running tests must continue from the bar where they stopped.
 
 671. Post everything to the repo and publish on GitHub Pages (Pages still old).
 

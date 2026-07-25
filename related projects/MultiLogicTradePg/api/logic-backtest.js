@@ -19,6 +19,9 @@ const BACKTEST_PRICE_CONCURRENCY = Math.max(
 /** @type {Map<string, Promise<object>>} */
 const priceLoadFlights = new Map();
 
+/** In-process workers — prevents double-start of the same run_id. */
+const activeBacktestRuns = new Set();
+
 function priceLoadKey(secId, tfId, dateFrom, dateTo) {
   return `${Number(secId)}|${Number(tfId)}|${String(dateFrom)}|${String(dateTo)}`;
 }
@@ -724,7 +727,20 @@ async function syncActiveSecurities(
   return secRows.length;
 }
 
-async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.resume] — continue same run_id after API restart (no wipe)
+ */
+async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options = {}) {
+  const resume = Boolean(options.resume);
+  const runKey = Number(runId);
+  if (!Number.isFinite(runKey) || runKey <= 0) return;
+  if (activeBacktestRuns.has(runKey)) {
+    console.warn(`backtest run ${runKey} already active in this process — skip`);
+    return;
+  }
+  activeBacktestRuns.add(runKey);
+
   const knownSecIds = new Set();
   const stats = {
     pricesLoaded: 0,
@@ -736,6 +752,8 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     indErr: 0,
   };
   const reportProgress = createProgressReporter(pool, runId, 180);
+  /** Bar index to start from (0-based); resume uses persisted processed_bars. */
+  let startBarIndex = 0;
 
   try {
     if (!(await ensureTbankForBacktest(pool, runId, logicId))) {
@@ -779,9 +797,41 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     );
     let balance = Number(balRows[0]?.bal ?? 1000000);
 
-    await pool.query('DELETE FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE', [logicId]);
-    await pool.query('DELETE FROM logic_backtest_security_state WHERE run_id = $1', [runId]);
-    await pool.query('SELECT logic_backtest_reset_signal_ratings($1)', [logicId]);
+    if (resume) {
+      const { rows: runState } = await pool.query(
+        `
+        SELECT test_balance::float8 AS test_balance,
+               COALESCE(processed_bars, 0)::int AS processed_bars,
+               status, cancel_requested
+        FROM logic_backtest_runs
+        WHERE id = $1
+        `,
+        [runId]
+      );
+      if (runState.length === 0) {
+        return;
+      }
+      if (runState[0].cancel_requested) {
+        return;
+      }
+      if (
+        !['pending', 'loading_prices', 'loading_indicators', 'running'].includes(
+          runState[0].status
+        )
+      ) {
+        return;
+      }
+      if (runState[0].test_balance != null && Number.isFinite(Number(runState[0].test_balance))) {
+        balance = Number(runState[0].test_balance);
+      }
+      startBarIndex = Math.max(0, Number(runState[0].processed_bars) || 0);
+      const seeded = await fetchActiveSecurityIds(pool, logicId);
+      for (const row of seeded) knownSecIds.add(Number(row.security_id));
+    } else {
+      await pool.query('DELETE FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE', [logicId]);
+      await pool.query('DELETE FROM logic_backtest_security_state WHERE run_id = $1', [runId]);
+      await pool.query('SELECT logic_backtest_reset_signal_ratings($1)', [logicId]);
+    }
 
     const { rows: tfMetaRows } = await pool.query(
       `SELECT t.sec AS tf_sec, t.tf AS tf_name FROM timeframes t WHERE t.id = $1`,
@@ -798,21 +848,52 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       Math.ceil((Date.parse(loadDateTo) - Date.parse(loadDateFrom)) / 86400000) + 1;
     const pointCount = Math.max(500, Math.ceil(daysSpan * (86400 / tfSec)) + 200);
 
-    await backtestLog(pool, runId, logicId, 'backtest.start', `Старт ${dateFrom} — ${dateTo}`, {
-      date_from: dateFrom,
-      date_to: dateTo,
-      load_date_to: loadDateTo,
-      load_date_from: loadDateFrom,
-      price_concurrency: BACKTEST_PRICE_CONCURRENCY,
-    });
+    if (resume) {
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.resume',
+        `Возобновление после перезапуска API с бара ${startBarIndex} (${dateFrom} — ${dateTo})`,
+        {
+          date_from: dateFrom,
+          date_to: dateTo,
+          resume_from_bar: startBarIndex,
+          test_balance: balance,
+          price_concurrency: BACKTEST_PRICE_CONCURRENCY,
+        }
+      );
+      await updateRun(pool, runId, {
+        status: startBarIndex > 0 ? 'running' : 'loading_prices',
+        phase_message:
+          startBarIndex > 0
+            ? 'Возобновление прогона'
+            : 'Возобновление: подготовка данных',
+        phase_detail:
+          startBarIndex > 0
+            ? `С бара ${startBarIndex}, баланс ${balance}`
+            : `Чтение бумаг (×${BACKTEST_PRICE_CONCURRENCY})`,
+        test_balance: balance,
+        finished_at: null,
+        error_message: null,
+      });
+    } else {
+      await backtestLog(pool, runId, logicId, 'backtest.start', `Старт ${dateFrom} — ${dateTo}`, {
+        date_from: dateFrom,
+        date_to: dateTo,
+        load_date_to: loadDateTo,
+        load_date_from: loadDateFrom,
+        price_concurrency: BACKTEST_PRICE_CONCURRENCY,
+      });
 
-    await updateRun(pool, runId, {
-      status: 'loading_prices',
-      progress_pct: 0,
-      phase_message: 'Подготовка данных',
-      phase_detail: `Чтение бумаг (×${BACKTEST_PRICE_CONCURRENCY})`,
-      test_balance: balance,
-    });
+      await updateRun(pool, runId, {
+        status: 'loading_prices',
+        progress_pct: 0,
+        phase_message: 'Подготовка данных',
+        phase_detail: `Чтение бумаг (×${BACKTEST_PRICE_CONCURRENCY})`,
+        test_balance: balance,
+      });
+    }
 
     const secTotal = await syncActiveSecurities(
       pool,
@@ -1031,15 +1112,9 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
     );
     const bars = barRows.map((r) => r.bar_dt);
     const totalBars = bars.length;
-
-    await updateRun(pool, runId, {
-      total_bars: totalBars,
-      processed_bars: 0,
-      status: 'running',
-      progress_pct: 40,
-      phase_message: 'Прогон по свечам',
-      phase_detail: `0 / ${totalBars} баров`,
-    });
+    const resumeBi = resume
+      ? Math.min(Math.max(0, startBarIndex), totalBars)
+      : 0;
 
     if (totalBars === 0) {
       await updateRun(pool, runId, {
@@ -1052,7 +1127,54 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       return;
     }
 
-    for (let bi = 0; bi < bars.length; bi += 1) {
+    if (resume && resumeBi >= totalBars) {
+      const pnl = await sumTestPnl(pool, logicId, runId);
+      const { rows: tcFinal } = await pool.query(
+        `SELECT trades_created FROM logic_backtest_runs WHERE id = $1`,
+        [runId]
+      );
+      const tradesCreated = tcFinal[0]?.trades_created ?? 0;
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.complete',
+        `Возобновление: уже завершён (${totalBars} баров)`,
+        { resumed: true, trades_created: tradesCreated, financial_result: pnl },
+        null,
+        tfId
+      );
+      await updateRun(pool, runId, {
+        status: 'completed',
+        progress_pct: 100,
+        phase_message: tradesCreated > 0 ? 'Тестирование завершено' : 'Тест завершён — сделок нет',
+        phase_detail: `${totalBars} баров, ${knownSecIds.size} бумаг, сделок: ${tradesCreated}`,
+        processed_bars: totalBars,
+        test_balance: balance,
+        financial_result: pnl,
+        finished_at: new Date(),
+      });
+      return;
+    }
+
+    const startPct =
+      resume && resumeBi > 0
+        ? Math.round((40 + (resumeBi / totalBars) * 59.5) * 100) / 100
+        : 40;
+    await updateRun(pool, runId, {
+      total_bars: totalBars,
+      ...(resume && resumeBi > 0 ? {} : { processed_bars: 0 }),
+      status: 'running',
+      progress_pct: Math.min(99.5, startPct),
+      phase_message: resume && resumeBi > 0 ? 'Прогон по свечам (продолжение)' : 'Прогон по свечам',
+      phase_detail:
+        resume && resumeBi > 0
+          ? `${resumeBi} / ${totalBars} баров (продолжение)`
+          : `0 / ${totalBars} баров`,
+      finished_at: null,
+    });
+
+    for (let bi = resumeBi; bi < bars.length; bi += 1) {
       if (await isCancelRequested(pool, runId)) {
         await finishCancelled(pool, runId, logicId, balance, bi, totalBars);
         return;
@@ -1217,14 +1339,59 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       finished_at: new Date(),
     });
   } catch (err) {
-    await backtestLog(pool, runId, logicId, 'backtest.failed', err.message, { stack: err.stack });
+    const msg = err?.message || String(err);
+    await backtestLog(pool, runId, logicId, 'backtest.failed', msg, {
+      stack: err?.stack,
+      resumed: resume,
+    });
     await updateRun(pool, runId, {
       status: 'failed',
-      error_message: err.message,
+      error_message: resume ? `Возобновление: ${msg}` : msg,
       progress_pct: 100,
       finished_at: new Date(),
     });
+  } finally {
+    activeBacktestRuns.delete(runKey);
   }
+}
+
+/**
+ * After API/process restart: pick up DB rows still marked in-progress and continue
+ * the same run_id from processed_bars (no trade wipe).
+ */
+async function resumeOrphanBacktests(pool) {
+  const { rows } = await pool.query(
+    `
+    SELECT id, logic_id,
+      date_from::text AS date_from,
+      date_to::text AS date_to,
+      status,
+      COALESCE(processed_bars, 0)::int AS processed_bars
+    FROM logic_backtest_runs
+    WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+      AND cancel_requested = FALSE
+    ORDER BY id
+    `
+  );
+  let scheduled = 0;
+  for (const row of rows) {
+    const runId = Number(row.id);
+    const logicId = Number(row.logic_id);
+    if (!Number.isFinite(runId) || !Number.isFinite(logicId)) continue;
+    if (activeBacktestRuns.has(runId)) continue;
+    scheduled += 1;
+    console.log(
+      `backtest resume orphan run=${runId} logic=${logicId} status=${row.status} bars=${row.processed_bars}`
+    );
+    setImmediate(() => {
+      runBacktestAsync(pool, logicId, row.date_from, row.date_to, runId, {
+        resume: true,
+      }).catch((err) => {
+        console.error(`backtest resume run ${runId} failed`, err);
+      });
+    });
+  }
+  return { found: rows.length, scheduled };
 }
 
 /** Сумма финреза теста — как /logic-trades/pnl-summary (без shadow, только run). */
@@ -1391,6 +1558,7 @@ module.exports = {
   startBacktest,
   getBacktestStatus,
   cancelBacktest,
+  resumeOrphanBacktests,
 };
 
 function shiftDate(isoDate, days) {
