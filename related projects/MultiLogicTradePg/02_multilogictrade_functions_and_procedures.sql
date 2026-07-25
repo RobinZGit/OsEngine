@@ -4280,6 +4280,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -8275,6 +8276,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -13485,6 +13514,8 @@ CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
+    -- LATERAL … ORDER BY dt DESC LIMIT 1 uses idx_prices_unique_candle (backward).
+    -- Old DISTINCT ON (security_id) … JOIN prices caused huge temp sorts (~0.4s+/call).
     WITH pos AS (
         SELECT
             lt.security_id,
@@ -13526,16 +13557,20 @@ LANGUAGE sql STABLE AS $$
             ), 0), 0) > 0
     ),
     px AS (
-        SELECT DISTINCT ON (pos.security_id)
+        SELECT
             pos.long_qty,
             pos.short_qty,
             p.close_price
         FROM pos
-        JOIN prices p
-          ON p.security_id = pos.security_id
-         AND p.timeframe_id = p_timeframe_id
-         AND p.dt <= p_bar_dt
-        ORDER BY pos.security_id, p.dt DESC
+        CROSS JOIN LATERAL (
+            SELECT pr.close_price
+            FROM prices pr
+            WHERE pr.security_id = pos.security_id
+              AND pr.timeframe_id = p_timeframe_id
+              AND pr.dt <= p_bar_dt
+            ORDER BY pr.dt DESC
+            LIMIT 1
+        ) p
     )
     SELECT COALESCE(p_cash_balance, 0)
          + COALESCE(SUM(px.long_qty * px.close_price - px.short_qty * px.close_price), 0)
@@ -13544,7 +13579,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'Тест: equity = cash + long×price − short×price на bar_dt (set-based)';
+'Тест: equity = cash + long×price − short×price на bar_dt (LATERAL last price, index-friendly)';
 
 -- MTM выбранного денежного фонда в тесте (исключается из базы лота «весь портфель»).
 CREATE OR REPLACE FUNCTION logic_backtest_selected_cash_fund_mtm(
@@ -15111,6 +15146,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — Backtest resume after API/bat restart (same run_id from processed_bars); Pages ship earlier; no release
+**Последнее обновление:** 2026-07-25 — Backtest speed: LATERAL equity (~10× signals/park); Node less cancel/PnL chatter; resume earlier
 
 > **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
 
@@ -117,6 +117,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-25 (Backtest: критическая медленность)
+
+- Причина: `logic_backtest_portfolio_equity` через `DISTINCT ON` + join `prices` (~0.4s/вызов; park + каждый open в signals).
+- Фикс: LATERAL last price по индексу; Node: cancel 1×/бар, PnL SUM раз в 25 баров, sync бумаг раз в 100.
+- Замер: `process_signals` ~2.2s → ~0.27s на том же баре.
 
 ### 2026-07-25 (Backtest: resume после рестарта API/формы)
 

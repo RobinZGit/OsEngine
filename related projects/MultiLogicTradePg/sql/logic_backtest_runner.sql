@@ -1830,6 +1830,8 @@ CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
+    -- LATERAL … ORDER BY dt DESC LIMIT 1 uses idx_prices_unique_candle (backward).
+    -- Old DISTINCT ON (security_id) … JOIN prices caused huge temp sorts (~0.4s+/call).
     WITH pos AS (
         SELECT
             lt.security_id,
@@ -1871,16 +1873,20 @@ LANGUAGE sql STABLE AS $$
             ), 0), 0) > 0
     ),
     px AS (
-        SELECT DISTINCT ON (pos.security_id)
+        SELECT
             pos.long_qty,
             pos.short_qty,
             p.close_price
         FROM pos
-        JOIN prices p
-          ON p.security_id = pos.security_id
-         AND p.timeframe_id = p_timeframe_id
-         AND p.dt <= p_bar_dt
-        ORDER BY pos.security_id, p.dt DESC
+        CROSS JOIN LATERAL (
+            SELECT pr.close_price
+            FROM prices pr
+            WHERE pr.security_id = pos.security_id
+              AND pr.timeframe_id = p_timeframe_id
+              AND pr.dt <= p_bar_dt
+            ORDER BY pr.dt DESC
+            LIMIT 1
+        ) p
     )
     SELECT COALESCE(p_cash_balance, 0)
          + COALESCE(SUM(px.long_qty * px.close_price - px.short_qty * px.close_price), 0)
@@ -1889,7 +1895,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'Тест: equity = cash + long×price − short×price на bar_dt (set-based)';
+'Тест: equity = cash + long×price − short×price на bar_dt (LATERAL last price, index-friendly)';
 
 -- MTM выбранного денежного фонда в тесте (исключается из базы лота «весь портфель»).
 CREATE OR REPLACE FUNCTION logic_backtest_selected_cash_fund_mtm(

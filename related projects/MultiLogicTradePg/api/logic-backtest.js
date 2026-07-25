@@ -363,6 +363,41 @@ async function countPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo, securi
   return rows[0]?.cnt ?? 0;
 }
 
+/** Fast presence check — full COUNT on indicator_values is multi-second on large DBs. */
+async function hasIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo) {
+  const { rows } = await pool.query(
+    `
+    SELECT EXISTS (
+      SELECT 1
+      FROM indicator_values iv
+      JOIN logic_securities ls ON ls.security_id = iv.security_id
+      WHERE ls.logic_id = $1 AND ls.is_active = TRUE
+        AND iv.timeframe_id = $2 AND iv.dt::date BETWEEN $3 AND $4
+      LIMIT 1
+    ) AS ok
+    `,
+    [logicId, tfId, dateFrom, dateTo]
+  );
+  return Boolean(rows[0]?.ok);
+}
+
+async function hasPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo) {
+  const { rows } = await pool.query(
+    `
+    SELECT EXISTS (
+      SELECT 1
+      FROM prices p
+      JOIN logic_securities ls ON ls.security_id = p.security_id
+      WHERE ls.logic_id = $1 AND ls.is_active = TRUE
+        AND p.timeframe_id = $2 AND p.dt::date BETWEEN $3 AND $4
+      LIMIT 1
+    ) AS ok
+    `,
+    [logicId, tfId, dateFrom, dateTo]
+  );
+  return Boolean(rows[0]?.ok);
+}
+
 async function countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo) {
   const { rows } = await pool.query(
     `SELECT COUNT(*)::int AS cnt FROM indicator_values iv
@@ -895,48 +930,97 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       });
     }
 
-    const secTotal = await syncActiveSecurities(
-      pool,
-      runId,
-      logicId,
-      tfId,
-      loadDateFrom,
-      dateFrom,
-      loadDateTo,
-      endDt,
-      pointCount,
-      knownSecIds,
-      stats,
-      'Стартовый состав бумаг',
-      reportProgress
-    );
+    /** Mid-run resume: data already loaded — skip HTTP prep and multi-second COUNTs. */
+    const fastResume = resume && startBarIndex > 0;
+    let secTotal = knownSecIds.size;
 
-    if (await isCancelRequested(pool, runId)) {
-      await finishCancelled(pool, runId, logicId, balance, 0, 0);
-      return;
-    }
-
-    if (secTotal === 0) {
-      await updateRun(pool, runId, {
-        status: 'failed',
-        error_message: 'Нет активных бумаг в логике',
-        progress_pct: 100,
-        finished_at: new Date(),
-      });
-      return;
-    }
-
-    // Цены денежного фонда (TMON/…) — отдельно: фонд исключён из syncActiveSecurities сигналов.
-    try {
-      const { rows: fundCodeRows } = await pool.query(
-        `SELECT upper(btrim(COALESCE(get_logic_param_text($1, 'cash_fund_code'), ''))) AS code`,
-        [logicId]
+    if (fastResume) {
+      const seeded = await fetchActiveSecurityIds(pool, logicId);
+      knownSecIds.clear();
+      for (const row of seeded) knownSecIds.add(Number(row.security_id));
+      secTotal = knownSecIds.size;
+      if (secTotal === 0) {
+        await updateRun(pool, runId, {
+          status: 'failed',
+          error_message: 'Нет активных бумаг в логике',
+          progress_pct: 100,
+          finished_at: new Date(),
+        });
+        return;
+      }
+      if (!(await hasPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo))) {
+        await updateRun(pool, runId, {
+          status: 'failed',
+          progress_pct: 100,
+          phase_message: 'Нет свечей',
+          error_message: 'При возобновлении нет цен в периоде',
+          finished_at: new Date(),
+        });
+        return;
+      }
+      if (!(await hasIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo))) {
+        await updateRun(pool, runId, {
+          status: 'failed',
+          progress_pct: 100,
+          phase_message: 'Нет индикаторов',
+          error_message: 'При возобновлении нет индикаторов в периоде',
+          finished_at: new Date(),
+        });
+        return;
+      }
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.resume.fast',
+        `Быстрое возобновление: бумаг=${secTotal}, с бара ${startBarIndex}`,
+        { securities: secTotal, resume_from_bar: startBarIndex },
+        null,
+        tfId
       );
-      const fundCode = String(fundCodeRows[0]?.code ?? '');
-      if (fundCode && ['TMON', 'LQDT', 'SBMM'].includes(fundCode)) {
-        await pool.query(`SELECT logic_ensure_cash_fund_security($1, $2)`, [logicId, fundCode]);
-        const { rows: fundSecRows } = await pool.query(
-          `
+    } else {
+      secTotal = await syncActiveSecurities(
+        pool,
+        runId,
+        logicId,
+        tfId,
+        loadDateFrom,
+        dateFrom,
+        loadDateTo,
+        endDt,
+        pointCount,
+        knownSecIds,
+        stats,
+        'Стартовый состав бумаг',
+        reportProgress
+      );
+
+      if (await isCancelRequested(pool, runId)) {
+        await finishCancelled(pool, runId, logicId, balance, 0, 0);
+        return;
+      }
+
+      if (secTotal === 0) {
+        await updateRun(pool, runId, {
+          status: 'failed',
+          error_message: 'Нет активных бумаг в логике',
+          progress_pct: 100,
+          finished_at: new Date(),
+        });
+        return;
+      }
+
+      // Цены денежного фонда (TMON/…) — отдельно: фонд исключён из syncActiveSecurities сигналов.
+      try {
+        const { rows: fundCodeRows } = await pool.query(
+          `SELECT upper(btrim(COALESCE(get_logic_param_text($1, 'cash_fund_code'), ''))) AS code`,
+          [logicId]
+        );
+        const fundCode = String(fundCodeRows[0]?.code ?? '');
+        if (fundCode && ['TMON', 'LQDT', 'SBMM'].includes(fundCode)) {
+          await pool.query(`SELECT logic_ensure_cash_fund_security($1, $2)`, [logicId, fundCode]);
+          const { rows: fundSecRows } = await pool.query(
+            `
           SELECT s.id AS security_id
           FROM securities s
           JOIN security_prefixes sp ON sp.security_id = s.id
@@ -944,159 +1028,160 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
           ORDER BY sp.exchange_id
           LIMIT 1
           `,
-          [fundCode]
-        );
-        const fundSecId = fundSecRows[0]?.security_id;
-        if (fundSecId) {
-          knownSecIds.add(Number(fundSecId));
-          // 4 аргумента — 5-й pointCount ломал load_prices_http на части сборок.
-          const fundPrice = await ensureFundPricesReady(
-            pool,
-            fundSecId,
-            tfId,
-            loadDateFrom,
-            loadDateTo
+            [fundCode]
           );
-          if (fundPrice.status === 'error') {
-            throw fundPrice.error || new Error('cash fund load_prices_http failed');
+          const fundSecId = fundSecRows[0]?.security_id;
+          if (fundSecId) {
+            knownSecIds.add(Number(fundSecId));
+            // 4 аргумента — 5-й pointCount ломал load_prices_http на части сборок.
+            const fundPrice = await ensureFundPricesReady(
+              pool,
+              fundSecId,
+              tfId,
+              loadDateFrom,
+              loadDateTo
+            );
+            if (fundPrice.status === 'error') {
+              throw fundPrice.error || new Error('cash fund load_prices_http failed');
+            }
+            await backtestLog(
+              pool,
+              runId,
+              logicId,
+              fundPrice.waited ? 'backtest.cash_fund.prices_shared' : 'backtest.cash_fund.prices',
+              fundPrice.waited
+                ? `Цены фонда ${fundCode} из shared load`
+                : `Цены фонда ${fundCode} загружены`,
+              { fund: fundCode, security_id: fundSecId, waited: fundPrice.waited },
+              fundSecId,
+              tfId
+            );
           }
-          await backtestLog(
-            pool,
-            runId,
-            logicId,
-            fundPrice.waited ? 'backtest.cash_fund.prices_shared' : 'backtest.cash_fund.prices',
-            fundPrice.waited
-              ? `Цены фонда ${fundCode} из shared load`
-              : `Цены фонда ${fundCode} загружены`,
-            { fund: fundCode, security_id: fundSecId, waited: fundPrice.waited },
-            fundSecId,
-            tfId
-          );
         }
+      } catch (fundErr) {
+        console.warn('backtest cash fund price prep', fundErr?.message || fundErr);
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.cash_fund.prices_fail',
+          String(fundErr?.message || fundErr).slice(0, 400),
+          null,
+          null,
+          tfId
+        );
       }
-    } catch (fundErr) {
-      console.warn('backtest cash fund price prep', fundErr?.message || fundErr);
+
+      const indicatorIdsFresh = await fetchActiveIndicatorIds(pool, logicId);
+      if (indicatorIdsFresh.length === 0) {
+        await updateRun(pool, runId, {
+          status: 'failed',
+          error_message: 'Нет активных сигналов в логике',
+          progress_pct: 100,
+          finished_at: new Date(),
+        });
+        return;
+      }
+
       await backtestLog(
         pool,
         runId,
         logicId,
-        'backtest.cash_fund.prices_fail',
-        String(fundErr?.message || fundErr).slice(0, 400),
-        null,
+        'backtest.config',
+        `TF=${tfName} бумаг=${secTotal} сигналов=${indicatorIdsFresh.length}`,
+        {
+          tf_id: tfId,
+          tf_name: tfName,
+          load_date_from: loadDateFrom,
+          point_count: pointCount,
+          securities: secTotal,
+          indicators: indicatorIdsFresh.length,
+          initial_balance: balance,
+          prices_loaded: stats.pricesLoaded,
+          prices_cached: stats.pricesCached,
+        },
         null,
         tfId
       );
-    }
 
-    const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
-    if (indicatorIds.length === 0) {
-      await updateRun(pool, runId, {
-        status: 'failed',
-        error_message: 'Нет активных сигналов в логике',
-        progress_pct: 100,
-        finished_at: new Date(),
-      });
-      return;
-    }
-
-    await backtestLog(
-      pool,
-      runId,
-      logicId,
-      'backtest.config',
-      `TF=${tfName} бумаг=${secTotal} сигналов=${indicatorIds.length}`,
-      {
-        tf_id: tfId,
-        tf_name: tfName,
-        load_date_from: loadDateFrom,
-        point_count: pointCount,
-        securities: secTotal,
-        indicators: indicatorIds.length,
-        initial_balance: balance,
-        prices_loaded: stats.pricesLoaded,
-        prices_cached: stats.pricesCached,
-      },
-      null,
-      tfId
-    );
-
-    const pricesInPeriod = await countPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo);
-    await backtestLog(
-      pool,
-      runId,
-      logicId,
-      'backtest.prices.done',
-      `Цены: load=${stats.pricesLoaded} cache=${stats.pricesCached} shared=${stats.pricesShared} err=${stats.pricesErr} в периоде=${pricesInPeriod}`,
-      {
-        prices_loaded: stats.pricesLoaded,
-        prices_cached: stats.pricesCached,
-        prices_shared: stats.pricesShared,
-        prices_err: stats.pricesErr,
-        prices_in_period: pricesInPeriod,
-      },
-      null,
-      tfId
-    );
-
-    if (pricesInPeriod === 0) {
-      const priceLog = await fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo);
+      const pricesInPeriod = await countPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo);
       await backtestLog(
         pool,
         runId,
         logicId,
-        'backtest.failed',
-        'Нет свечей в периоде',
-        { prices_in_period: 0, price_load_log: priceLog },
+        'backtest.prices.done',
+        `Цены: load=${stats.pricesLoaded} cache=${stats.pricesCached} shared=${stats.pricesShared} err=${stats.pricesErr} в периоде=${pricesInPeriod}`,
+        {
+          prices_loaded: stats.pricesLoaded,
+          prices_cached: stats.pricesCached,
+          prices_shared: stats.pricesShared,
+          prices_err: stats.pricesErr,
+          prices_in_period: pricesInPeriod,
+        },
         null,
         tfId
       );
-      await updateRun(pool, runId, {
-        status: 'failed',
-        progress_pct: 100,
-        phase_message: 'Нет свечей',
-        error_message: `Не загружены цены (ошибок: ${stats.pricesErr}). Задайте токен T-Bank для M15.`,
-        finished_at: new Date(),
-      });
-      return;
+
+      if (pricesInPeriod === 0) {
+        const priceLog = await fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo);
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.failed',
+          'Нет свечей в периоде',
+          { prices_in_period: 0, price_load_log: priceLog },
+          null,
+          tfId
+        );
+        await updateRun(pool, runId, {
+          status: 'failed',
+          progress_pct: 100,
+          phase_message: 'Нет свечей',
+          error_message: `Не загружены цены (ошибок: ${stats.pricesErr}). Задайте токен T-Bank для M15.`,
+          finished_at: new Date(),
+        });
+        return;
+      }
+
+      const indInPeriod = await countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo);
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.indicators.done',
+        `Индикаторы: sync=${stats.indSynced} cache=${stats.indCached} err=${stats.indErr} в периоде=${indInPeriod}`,
+        {
+          indicator_values_in_period: indInPeriod,
+          sync_errors: stats.indErr,
+          ind_synced: stats.indSynced,
+          ind_cached: stats.indCached,
+        },
+        null,
+        tfId
+      );
+
+      if (indInPeriod === 0) {
+        await updateRun(pool, runId, {
+          status: 'failed',
+          progress_pct: 100,
+          phase_message: 'Нет индикаторов',
+          error_message: 'Индикаторы не рассчитаны. См. backtest.indicator.error.',
+          finished_at: new Date(),
+        });
+        return;
+      }
+
+      await reportProgress(
+        {
+          status: 'loading_indicators',
+          progress_pct: 39,
+          phase_message: 'Подготовка прогона',
+          phase_detail: `Бумаг ${secTotal}, сигналов ${indicatorIdsFresh.length}`,
+        },
+        { force: true }
+      );
     }
-
-    const indInPeriod = await countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo);
-    await backtestLog(
-      pool,
-      runId,
-      logicId,
-      'backtest.indicators.done',
-      `Индикаторы: sync=${stats.indSynced} cache=${stats.indCached} err=${stats.indErr} в периоде=${indInPeriod}`,
-      {
-        indicator_values_in_period: indInPeriod,
-        sync_errors: stats.indErr,
-        ind_synced: stats.indSynced,
-        ind_cached: stats.indCached,
-      },
-      null,
-      tfId
-    );
-
-    if (indInPeriod === 0) {
-      await updateRun(pool, runId, {
-        status: 'failed',
-        progress_pct: 100,
-        phase_message: 'Нет индикаторов',
-        error_message: 'Индикаторы не рассчитаны. См. backtest.indicator.error.',
-        finished_at: new Date(),
-      });
-      return;
-    }
-
-    await reportProgress(
-      {
-        status: 'loading_indicators',
-        progress_pct: 39,
-        phase_message: 'Подготовка прогона',
-        phase_detail: `Бумаг ${secTotal}, сигналов ${indicatorIds.length}`,
-      },
-      { force: true }
-    );
 
     const { rows: barRows } = await pool.query(
       `
@@ -1175,12 +1260,14 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
     });
 
     for (let bi = resumeBi; bi < bars.length; bi += 1) {
+      // Cancel: once per bar (was 3–4 SELECT/bar).
       if (await isCancelRequested(pool, runId)) {
         await finishCancelled(pool, runId, logicId, balance, bi, totalBars);
         return;
       }
 
-      if (bi > 0 && bi % 20 === 0) {
+      // Rare re-sync of paper list (was every 20 bars).
+      if (bi > 0 && bi % 100 === 0) {
         await syncActiveSecurities(
           pool,
           runId,
@@ -1211,27 +1298,22 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         `SELECT logic_backtest_rate_signals($1, $2, $3, $4)`,
         [runId, logicId, tfId, barDt]
       );
-      if (await isCancelRequested(pool, runId)) {
-        await finishCancelled(pool, runId, logicId, balance, bi, totalBars);
-        return;
-      }
 
       const { rows: riskRows } = await pool.query(
         `SELECT logic_backtest_process_risk($1, $2, $3, $4, $5, $6::numeric) AS balance`,
         [runId, logicId, logic.account_id, tfId, barDt, balance]
       );
       balance = Number(riskRows[0]?.balance ?? balance);
-      if (await isCancelRequested(pool, runId)) {
-        await finishCancelled(pool, runId, logicId, balance, bi, totalBars);
-        return;
-      }
 
       // EOD / NTP / парковка TMON — в Node (не SQL-робот), иначе фонд не покупается из UI.
-      const { rows: eodRows } = await pool.query(
-        `SELECT logic_is_eod_close_bar($1, $2::timestamp, $3::timestamp, $4::timestamp) AS eod`,
+      const { rows: gateRows } = await pool.query(
+        `
+        SELECT logic_is_eod_close_bar($1, $2::timestamp, $3::timestamp, $4::timestamp) AS eod,
+               logic_is_non_trading_dt($1, $2::timestamp) AS ntp
+        `,
         [logicId, barDt, prevBar, nextBar]
       );
-      if (eodRows[0]?.eod) {
+      if (gateRows[0]?.eod) {
         const { rows: eodBal } = await pool.query(
           `SELECT logic_backtest_close_all_except_funds($1, $2, $3, $4, $5, $6::numeric) AS balance`,
           [runId, logicId, logic.account_id, tfId, barDt, balance]
@@ -1239,20 +1321,12 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         balance = Number(eodBal[0]?.balance ?? balance);
       }
 
-      const { rows: ntpRows } = await pool.query(
-        `SELECT logic_is_non_trading_dt($1, $2::timestamp) AS ntp`,
-        [logicId, barDt]
-      );
-      if (!ntpRows[0]?.ntp) {
+      if (!gateRows[0]?.ntp) {
         const { rows: sigRows } = await pool.query(
           `SELECT logic_backtest_process_signals($1, $2, $3, $4, $5, $6::numeric) AS balance`,
           [runId, logicId, logic.account_id, tfId, barDt, balance]
         );
         balance = Number(sigRows[0]?.balance ?? balance);
-      }
-      if (await isCancelRequested(pool, runId)) {
-        await finishCancelled(pool, runId, logicId, balance, bi + 1, totalBars);
-        return;
       }
 
       const { rows: parkRows } = await pool.query(
@@ -1262,7 +1336,6 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       balance = Number(parkRows[0]?.balance ?? balance);
 
       const isLast = bi === bars.length - 1;
-      // Каждый бар двигает %, PnL пишем чаще чем раньше (каждый бар / throttle reporter)
       const pct =
         Math.round((40 + ((bi + 1) / totalBars) * 59.5) * 100) / 100;
       const patch = {
@@ -1273,7 +1346,8 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         processed_bars: bi + 1,
         test_balance: balance,
       };
-      if (isLast || bi % 2 === 0) {
+      // Full trade SUM is expensive as trades grow — every 25 bars is enough for UI.
+      if (isLast || bi % 25 === 0) {
         patch.financial_result = await sumTestPnl(pool, logicId, runId);
       }
       await reportProgress(patch, { force: isLast });
