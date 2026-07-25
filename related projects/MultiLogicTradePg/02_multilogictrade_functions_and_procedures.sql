@@ -4279,6 +4279,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7037,9 +7038,10 @@ $$;
 
 -- ============================================
 -- Linear Take Profit on whole portfolio with renewal (portfolio_ltp_renew)
--- Порог: (equity − initial) / initial (%) >= base_annual_rate×годы + TP%
--- Взведение → закрытие всех на падении equity с пика → portfolio pause/shadow → renew
--- Сброс взведения при track% < линейной базы (без TP%)
+-- Порог взведения: track% = (equity−initial)/initial >= base_annual_rate×годы + TP%
+-- Пик (всплеск) трейлится вверх; продажа только если откат от пика >= TP% (не любой тик вниз)
+-- После продажи — latch: снова взводить только когда track% ушёл ниже arm%
+-- Затем portfolio pause/shadow → renew; сброс armed при track% < base%
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_linear_elapsed_year_fraction(
@@ -7162,6 +7164,7 @@ DECLARE
     v_base_pct NUMERIC;
     v_arm_pct NUMERIC;
     v_equity NUMERIC;
+    v_fade_pct NUMERIC;
     v_actions INTEGER := 0;
     v_closed INTEGER;
     v_track_before NUMERIC;
@@ -7176,6 +7179,7 @@ BEGIN
     SELECT
         COALESCE(l.portfolio_trading_paused, FALSE) AS paused,
         COALESCE(l.portfolio_linear_tp_armed, FALSE) AS armed,
+        COALESCE(l.portfolio_linear_tp_latched, FALSE) AS latched,
         l.portfolio_linear_tp_peak_equity AS peak_equity,
         l.portfolio_linear_tp_arm_bar_dt AS arm_bar_dt
     INTO v_logic
@@ -7201,13 +7205,36 @@ BEGIN
     v_arm_pct := v_base_pct + p_tp_extra_pct;
     v_has_pos := logic_portfolio_has_open_positions(p_logic_id, FALSE);
 
-    -- Ниже линейной базы → снять взведение
+    -- Снять latch после отката ниже линии взведения (ждём следующий всплеск)
+    IF v_logic.latched AND v_track_pct < v_arm_pct THEN
+        UPDATE logics
+        SET portfolio_linear_tp_latched = FALSE
+        WHERE id = p_logic_id;
+        v_logic.latched := FALSE;
+        PERFORM logic_trade_log(
+            p_logic_id, 'take_profit.linear.unlatch',
+            format(
+                'Линейный TP: latch снят (track%%=%s < arm%%=%s) — можно снова взводить на всплеске',
+                round(v_track_pct, 4), round(v_arm_pct, 4)
+            ),
+            jsonb_build_object(
+                'track_pct', v_track_pct,
+                'arm_pct', v_arm_pct,
+                'equity', v_equity
+            ),
+            NULL, p_timeframe_id
+        );
+        v_actions := v_actions + 1;
+    END IF;
+
+    -- Ниже линейной базы → снять взведение (+ latch)
     IF v_track_pct < v_base_pct THEN
-        IF v_logic.armed THEN
+        IF v_logic.armed OR v_logic.latched THEN
             UPDATE logics
             SET portfolio_linear_tp_armed = FALSE,
                 portfolio_linear_tp_peak_equity = NULL,
-                portfolio_linear_tp_arm_bar_dt = NULL
+                portfolio_linear_tp_arm_bar_dt = NULL,
+                portfolio_linear_tp_latched = FALSE
             WHERE id = p_logic_id;
             PERFORM logic_trade_log(
                 p_logic_id, 'take_profit.linear.disarm',
@@ -7228,8 +7255,12 @@ BEGIN
         RETURN v_actions;
     END IF;
 
-    -- Взведение
-    IF NOT v_logic.armed AND v_track_pct >= v_arm_pct AND v_has_pos THEN
+    -- Взведение на всплеске (не сразу после предыдущей продажи — нужен unlatch)
+    IF NOT v_logic.armed
+       AND NOT v_logic.latched
+       AND v_track_pct >= v_arm_pct
+       AND v_has_pos
+    THEN
         UPDATE logics
         SET portfolio_linear_tp_armed = TRUE,
             portfolio_linear_tp_peak_equity = v_equity,
@@ -7238,7 +7269,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id, 'take_profit.linear.arm',
             format(
-                'Линейный TP портфеля взведён: track%%=%s >= base+tp%%=%s, equity=%s',
+                'Линейный TP портфеля взведён (всплеск): track%%=%s >= arm%%=%s, equity=%s',
                 round(v_track_pct, 4), round(v_arm_pct, 4), round(v_equity, 2)
             ),
             jsonb_build_object(
@@ -7256,9 +7287,14 @@ BEGIN
         RETURN v_actions;
     END IF;
 
-    -- Взведён: падение equity с пика → закрыть всё + portfolio pause/renew
+    -- Взведён: фиксируем всплеск — продаём только при откате от пика >= TP%
+    v_fade_pct := 0;
+    IF v_logic.peak_equity IS NOT NULL AND v_logic.peak_equity > 0 AND v_equity < v_logic.peak_equity THEN
+        v_fade_pct := (v_logic.peak_equity - v_equity) / v_logic.peak_equity * 100.0;
+    END IF;
+
     IF v_logic.peak_equity IS NOT NULL
-       AND v_equity < v_logic.peak_equity
+       AND v_fade_pct >= p_tp_extra_pct
        AND v_has_pos
        AND (v_logic.arm_bar_dt IS NULL OR p_bar_dt > v_logic.arm_bar_dt)
     THEN
@@ -7266,12 +7302,15 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id, 'take_profit.linear.trigger',
             format(
-                'Линейный TP портфеля: equity %s < peak %s, track%%=%s',
+                'Линейный TP портфеля: откат от пика %s%% >= %s%% (equity %s, peak %s), track%%=%s',
+                round(v_fade_pct, 4), round(p_tp_extra_pct, 4),
                 round(v_equity, 2), round(v_logic.peak_equity, 2), round(v_track_pct, 4)
             ),
             jsonb_build_object(
                 'equity', v_equity,
                 'peak_equity', v_logic.peak_equity,
+                'fade_pct', v_fade_pct,
+                'tp_extra_pct', p_tp_extra_pct,
                 'track_pct', v_track_pct,
                 'base_pct', v_base_pct,
                 'arm_pct', v_arm_pct
@@ -7301,12 +7340,13 @@ BEGIN
             portfolio_stop_resume_at = CURRENT_TIMESTAMP,
             portfolio_linear_tp_armed = FALSE,
             portfolio_linear_tp_peak_equity = NULL,
-            portfolio_linear_tp_arm_bar_dt = NULL
+            portfolio_linear_tp_arm_bar_dt = NULL,
+            portfolio_linear_tp_latched = TRUE
         WHERE id = p_logic_id;
         RETURN v_actions + 1;
     END IF;
 
-    -- Equity не упала — подтянуть пик
+    -- Новый всплеск — подтянуть пик
     IF v_equity > COALESCE(v_logic.peak_equity, 0) THEN
         UPDATE logics
         SET portfolio_linear_tp_peak_equity = v_equity
@@ -7318,7 +7358,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_process_linear_tp_portfolio(INTEGER, INTEGER, NUMERIC, TIMESTAMP) IS
-'Бой: линейный TP по всему портфелю — взведение / закрытие на падении equity / renew как portfolio_resume';
+'Бой: линейный TP портфеля — взведение на всплеске; продажа при откате от пика >= TP%; latch против чопа; renew как portfolio_resume';
 
 -- Совместимость: старый per-paper обработчик больше не используется
 CREATE OR REPLACE FUNCTION logic_process_linear_tp_security(
@@ -8235,6 +8275,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -12589,8 +12657,10 @@ DECLARE
     v_track_pct NUMERIC;
     v_price NUMERIC;
     v_ltp_armed BOOLEAN;
+    v_ltp_latched BOOLEAN;
     v_ltp_last_price NUMERIC;
     v_ltp_arm_bar TIMESTAMP;
+    v_fade_pct NUMERIC;
     v_resume_equity NUMERIC;
     v_resume_baseline NUMERIC;
     v_long_qty NUMERIC;
@@ -12941,8 +13011,7 @@ BEGIN
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio_ltp_renew' THEN
-            -- Линейный TP по всему портфелю: track% = (equity−initial)/initial
-            -- arm → trail peak equity → close all on drop → portfolio pause/renew
+            -- Линейный TP: arm на всплеске; продажа при откате от пика >= TP%; latch против чопа
             v_initial := get_logic_param_numeric(p_logic_id, 'initial_balance', NULL);
             IF v_initial IS NOT NULL AND v_initial > 0 THEN
                 SELECT COALESCE(r.portfolio_trading_paused, FALSE)
@@ -12990,9 +13059,10 @@ BEGIN
 
                     SELECT
                         COALESCE(r.portfolio_linear_tp_armed, FALSE),
+                        COALESCE(r.portfolio_linear_tp_latched, FALSE),
                         r.portfolio_linear_tp_peak_equity,
                         r.portfolio_linear_tp_arm_bar_dt
-                    INTO v_ltp_armed, v_ltp_last_price, v_ltp_arm_bar
+                    INTO v_ltp_armed, v_ltp_latched, v_ltp_last_price, v_ltp_arm_bar
                     FROM logic_backtest_runs r
                     WHERE r.id = p_run_id;
 
@@ -13007,30 +13077,51 @@ BEGIN
                           )
                     ) INTO v_has_pos;
 
+                    IF v_ltp_latched AND v_track_pct < v_arm_pct THEN
+                        UPDATE logic_backtest_runs
+                        SET portfolio_linear_tp_latched = FALSE
+                        WHERE id = p_run_id;
+                        v_ltp_latched := FALSE;
+                    END IF;
+
                     IF v_track_pct < v_base_pct THEN
-                        IF v_ltp_armed THEN
+                        IF v_ltp_armed OR v_ltp_latched THEN
                             UPDATE logic_backtest_runs
                             SET portfolio_linear_tp_armed = FALSE,
                                 portfolio_linear_tp_peak_equity = NULL,
-                                portfolio_linear_tp_arm_bar_dt = NULL
+                                portfolio_linear_tp_arm_bar_dt = NULL,
+                                portfolio_linear_tp_latched = FALSE
                             WHERE id = p_run_id;
                         END IF;
-                    ELSIF NOT v_ltp_armed AND v_track_pct >= v_arm_pct AND v_has_pos THEN
+                    ELSIF NOT v_ltp_armed
+                       AND NOT v_ltp_latched
+                       AND v_track_pct >= v_arm_pct
+                       AND v_has_pos
+                    THEN
                         UPDATE logic_backtest_runs
                         SET portfolio_linear_tp_armed = TRUE,
                             portfolio_linear_tp_peak_equity = v_equity,
                             portfolio_linear_tp_arm_bar_dt = p_bar_dt
                         WHERE id = p_run_id;
                     ELSIF v_ltp_armed THEN
+                        v_fade_pct := 0;
                         IF v_ltp_last_price IS NOT NULL
+                           AND v_ltp_last_price > 0
                            AND v_equity < v_ltp_last_price
+                        THEN
+                            v_fade_pct :=
+                                (v_ltp_last_price - v_equity) / v_ltp_last_price * 100.0;
+                        END IF;
+
+                        IF v_ltp_last_price IS NOT NULL
+                           AND v_fade_pct >= v_stop.value
                            AND v_has_pos
                            AND (v_ltp_arm_bar IS NULL OR p_bar_dt > v_ltp_arm_bar)
                         THEN
                             v_track_before := v_equity;
                             v_reason := format(
-                                'take_profit:portfolio_ltp_renew (%s%%)',
-                                round(v_track_pct, 2)
+                                'take_profit:portfolio_ltp_renew fade=%s%% (%s%%)',
+                                round(v_fade_pct, 2), round(v_track_pct, 2)
                             );
                             FOR v_sec IN
                                 SELECT DISTINCT lt.security_id
@@ -13056,7 +13147,8 @@ BEGIN
                                 portfolio_stop_resume_baseline = v_equity,
                                 portfolio_linear_tp_armed = FALSE,
                                 portfolio_linear_tp_peak_equity = NULL,
-                                portfolio_linear_tp_arm_bar_dt = NULL
+                                portfolio_linear_tp_arm_bar_dt = NULL,
+                                portfolio_linear_tp_latched = TRUE
                             WHERE id = p_run_id;
                         ELSIF v_equity > COALESCE(v_ltp_last_price, 0) THEN
                             UPDATE logic_backtest_runs
@@ -15019,6 +15111,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

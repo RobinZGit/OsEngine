@@ -1002,8 +1002,10 @@ DECLARE
     v_track_pct NUMERIC;
     v_price NUMERIC;
     v_ltp_armed BOOLEAN;
+    v_ltp_latched BOOLEAN;
     v_ltp_last_price NUMERIC;
     v_ltp_arm_bar TIMESTAMP;
+    v_fade_pct NUMERIC;
     v_resume_equity NUMERIC;
     v_resume_baseline NUMERIC;
     v_long_qty NUMERIC;
@@ -1354,8 +1356,7 @@ BEGIN
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio_ltp_renew' THEN
-            -- Линейный TP по всему портфелю: track% = (equity−initial)/initial
-            -- arm → trail peak equity → close all on drop → portfolio pause/renew
+            -- Линейный TP: arm на всплеске; продажа при откате от пика >= TP%; latch против чопа
             v_initial := get_logic_param_numeric(p_logic_id, 'initial_balance', NULL);
             IF v_initial IS NOT NULL AND v_initial > 0 THEN
                 SELECT COALESCE(r.portfolio_trading_paused, FALSE)
@@ -1403,9 +1404,10 @@ BEGIN
 
                     SELECT
                         COALESCE(r.portfolio_linear_tp_armed, FALSE),
+                        COALESCE(r.portfolio_linear_tp_latched, FALSE),
                         r.portfolio_linear_tp_peak_equity,
                         r.portfolio_linear_tp_arm_bar_dt
-                    INTO v_ltp_armed, v_ltp_last_price, v_ltp_arm_bar
+                    INTO v_ltp_armed, v_ltp_latched, v_ltp_last_price, v_ltp_arm_bar
                     FROM logic_backtest_runs r
                     WHERE r.id = p_run_id;
 
@@ -1420,30 +1422,51 @@ BEGIN
                           )
                     ) INTO v_has_pos;
 
+                    IF v_ltp_latched AND v_track_pct < v_arm_pct THEN
+                        UPDATE logic_backtest_runs
+                        SET portfolio_linear_tp_latched = FALSE
+                        WHERE id = p_run_id;
+                        v_ltp_latched := FALSE;
+                    END IF;
+
                     IF v_track_pct < v_base_pct THEN
-                        IF v_ltp_armed THEN
+                        IF v_ltp_armed OR v_ltp_latched THEN
                             UPDATE logic_backtest_runs
                             SET portfolio_linear_tp_armed = FALSE,
                                 portfolio_linear_tp_peak_equity = NULL,
-                                portfolio_linear_tp_arm_bar_dt = NULL
+                                portfolio_linear_tp_arm_bar_dt = NULL,
+                                portfolio_linear_tp_latched = FALSE
                             WHERE id = p_run_id;
                         END IF;
-                    ELSIF NOT v_ltp_armed AND v_track_pct >= v_arm_pct AND v_has_pos THEN
+                    ELSIF NOT v_ltp_armed
+                       AND NOT v_ltp_latched
+                       AND v_track_pct >= v_arm_pct
+                       AND v_has_pos
+                    THEN
                         UPDATE logic_backtest_runs
                         SET portfolio_linear_tp_armed = TRUE,
                             portfolio_linear_tp_peak_equity = v_equity,
                             portfolio_linear_tp_arm_bar_dt = p_bar_dt
                         WHERE id = p_run_id;
                     ELSIF v_ltp_armed THEN
+                        v_fade_pct := 0;
                         IF v_ltp_last_price IS NOT NULL
+                           AND v_ltp_last_price > 0
                            AND v_equity < v_ltp_last_price
+                        THEN
+                            v_fade_pct :=
+                                (v_ltp_last_price - v_equity) / v_ltp_last_price * 100.0;
+                        END IF;
+
+                        IF v_ltp_last_price IS NOT NULL
+                           AND v_fade_pct >= v_stop.value
                            AND v_has_pos
                            AND (v_ltp_arm_bar IS NULL OR p_bar_dt > v_ltp_arm_bar)
                         THEN
                             v_track_before := v_equity;
                             v_reason := format(
-                                'take_profit:portfolio_ltp_renew (%s%%)',
-                                round(v_track_pct, 2)
+                                'take_profit:portfolio_ltp_renew fade=%s%% (%s%%)',
+                                round(v_fade_pct, 2), round(v_track_pct, 2)
                             );
                             FOR v_sec IN
                                 SELECT DISTINCT lt.security_id
@@ -1469,7 +1492,8 @@ BEGIN
                                 portfolio_stop_resume_baseline = v_equity,
                                 portfolio_linear_tp_armed = FALSE,
                                 portfolio_linear_tp_peak_equity = NULL,
-                                portfolio_linear_tp_arm_bar_dt = NULL
+                                portfolio_linear_tp_arm_bar_dt = NULL,
+                                portfolio_linear_tp_latched = TRUE
                             WHERE id = p_run_id;
                         ELSIF v_equity > COALESCE(v_ltp_last_price, 0) THEN
                             UPDATE logic_backtest_runs

@@ -26,7 +26,7 @@ export function scopeTypeLabel(
         return 'По всему портфелю логики';
       case 'portfolio_ltp_renew':
       case 'security_ltp_renew':
-        return 'Линейный тейк-профит по всему портфелю с возобновлением';
+        return 'Линейный TP по портфелю с возобновлением (продажа при откате от пика ≥ %)';
       default:
         return scope;
     }
@@ -44,7 +44,7 @@ export function scopeTypeLabel(
       return 'По портфелю с обновлением (пауза → shadow → возобновление)';
     case 'portfolio_ltp_renew':
     case 'security_ltp_renew':
-      return 'Линейный тейк-профит по всему портфелю с возобновлением';
+      return 'Линейный TP по портфелю с возобновлением (продажа при откате от пика ≥ %)';
   }
 }
 

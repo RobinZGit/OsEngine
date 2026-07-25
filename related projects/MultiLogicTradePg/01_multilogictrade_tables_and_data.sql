@@ -1197,6 +1197,9 @@ ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_stop_resume_at TIMESTAMP;
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_peak_equity NUMERIC(20, 6);
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_arm_bar_dt TIMESTAMP;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_latched BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN logics.portfolio_linear_tp_latched IS
+'После срабатывания portfolio_ltp_renew: не взводить снова, пока track% не уйдёт ниже arm% (анти-чоп)';
 
 COMMENT ON COLUMN logics.portfolio_trading_paused IS
 'portfolio_resume SL: реал остановлен, сделки идут в shadow до восстановления equity';
@@ -3438,6 +3441,9 @@ ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_tp_latched BO
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_peak_equity NUMERIC(20, 6);
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_arm_bar_dt TIMESTAMP;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_linear_tp_latched BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN logic_backtest_runs.portfolio_linear_tp_latched IS
+'После LTP close: не взводить снова, пока track% < arm%';
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
