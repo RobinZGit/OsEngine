@@ -64,7 +64,7 @@
           <span class="positions-total-pct-hint">год.</span>
           <span class="positions-summary-sep" aria-hidden="true">·</span>
           <span class="positions-total-label" title="Сумма комиссий по сделкам">Комиссия:</span>
-          <span class="positions-total-commission">{{ formatMoney(totalCommission()) }}</span>
+          <span class="positions-total-commission">{{ formatMoney(displayCommission()) }}</span>
         </span>
 
         @if (loading) {

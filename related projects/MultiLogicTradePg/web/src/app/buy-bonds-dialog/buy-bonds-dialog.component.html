@@ -1,0 +1,110 @@
+@if (open) {
+  <div class="backdrop" (click)="close()"></div>
+  <dialog class="dialog dialog-wide" open>
+    <header class="dialog-header">
+      <h2>{{ title }}</h2>
+      <button type="button" class="icon-btn" (click)="close()" [disabled]="executing" aria-label="Закрыть">×</button>
+    </header>
+    <div class="dialog-body">
+      @if (loading) {
+        <p class="status">Загрузка…</p>
+      } @else {
+        <div class="form">
+          <label class="field">
+            <span class="label">Фонд облигаций</span>
+            <select class="params-input" [(ngModel)]="fundCode" [disabled]="planning || executing" (ngModelChange)="buildPlan()">
+              @for (f of funds; track f.code) {
+                <option [value]="f.code">{{ f.name }} ({{ f.holdings_count }} выпусков)</option>
+              }
+            </select>
+            <span class="hint">
+              Состав БПИФ «Т-Капитал Облигации»: покупка отдельных выпусков, не самого ETF.
+              Порядок — от более доходных (часто корпоративы) к менее (ОФЗ).
+            </span>
+          </label>
+
+          <label class="field">
+            <span class="label">Сумма покупки, ₽</span>
+            <input
+              type="text"
+              inputmode="decimal"
+              class="params-input"
+              [(ngModel)]="amountRub"
+              [disabled]="planning || executing"
+              placeholder="Свободный кэш"
+            />
+            <span class="hint">
+              По умолчанию — свободные деньги на счёте
+              @if (plan?.cash_amount != null) {
+                (сейчас {{ formatMoney(plan!.cash_amount) }} ₽)
+              }.
+            </span>
+          </label>
+
+          <div class="actions-row">
+            <button type="button" class="btn" (click)="buildPlan()" [disabled]="planning || executing">
+              {{ planning ? 'Расчёт…' : 'Пересчитать план' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              (click)="confirmBuy()"
+              [disabled]="planning || executing || !plan?.buys?.length"
+            >
+              {{ executing ? 'Выставляю…' : 'Купить по плану' }}
+            </button>
+          </div>
+
+          @if (error) {
+            <p class="form-error">{{ error }}</p>
+          }
+
+          @if (plan) {
+            <div class="plan-summary">
+              <div>План: <strong>{{ formatMoney(plan.amount_planned) }} ₽</strong>
+                · выпусков {{ plan.buy_count ?? 0 }}
+                @if (plan.fund_as_of) {
+                  · состав на {{ plan.fund_as_of }}
+                }
+              </div>
+              @if (plan.note) {
+                <div class="hint">{{ plan.note }}</div>
+              }
+            </div>
+            <div class="plan-table-wrap scroll-list-panel">
+              <table class="plan-table">
+                <thead>
+                  <tr>
+                    <th>ISIN</th>
+                    <th>Тип</th>
+                    <th>Доходн.%</th>
+                    <th>Лоты</th>
+                    <th>Сумма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of plan.buys || []; track row.sec) {
+                    <tr>
+                      <td title="{{ row.name || row.ticker }}">{{ row.sec }}</td>
+                      <td>{{ row.kind === 'ofz' ? 'ОФЗ' : 'корп.' }}</td>
+                      <td>{{ row.yield_pct }}</td>
+                      <td>{{ row.lots }}</td>
+                      <td>{{ formatMoney(row.amount_rub) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="5" class="empty">Нечего покупать на эту сумму</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (plan.resolve_failed?.length) {
+              <p class="hint warn">
+                Не найдены у брокера: {{ plan.resolve_failed.length }} ISIN (пропущены).
+              </p>
+            }
+          }
+        </div>
+      }
+    </div>
+  </dialog>
+}

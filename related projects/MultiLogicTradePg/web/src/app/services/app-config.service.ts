@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { assetUrl } from '../shared/asset-url';
 
 export interface AppConfig {
   apiUrl: string;
@@ -19,7 +20,7 @@ export class AppConfigService {
   async load(): Promise<void> {
     try {
       const loaded = await firstValueFrom(
-        this.http.get<AppConfig>('assets/app-config.json')
+        this.http.get<AppConfig>(assetUrl('assets/app-config.json'))
       );
       this.config = { ...DEFAULT_CONFIG, ...loaded };
     } catch {

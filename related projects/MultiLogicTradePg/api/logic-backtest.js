@@ -3,15 +3,141 @@
 const { writeTechLogEvent } = require('./lib/tech-log');
 
 /**
- * Параллельность load_prices / sync индикаторов.
- * По умолчанию 2 — меньше таймаутов T-Bank, чем при 4.
- * Env: BACKTEST_PRICE_CONCURRENCY (1..8).
+ * Параллельность подготовки бумаг внутри одного прогона.
+ * Env: BACKTEST_PRICE_CONCURRENCY (1..8). По умолчанию 1 — меньше SSL timeout T-Bank/MOEX.
+ *
+ * Между прогонами: load_prices — single-flight по ключу
+ * (security_id, timeframe_id, date_from, date_to). Первый грузит HTTP,
+ * остальные ждут тот же Promise и читают `prices` из БД; индикаторы каждый
+ * прогон считает сам (ensure/sync) по своим сигналам логики.
  */
-// 1 по умолчанию: параллельный HTTP (особенно фьючерсы T-Bank/MOEX) даёт SSL timeout
 const BACKTEST_PRICE_CONCURRENCY = Math.max(
   1,
   Math.min(8, Number(process.env.BACKTEST_PRICE_CONCURRENCY) || 1)
 );
+
+/** @type {Map<string, Promise<object>>} */
+const priceLoadFlights = new Map();
+
+function priceLoadKey(secId, tfId, dateFrom, dateTo) {
+  return `${Number(secId)}|${Number(tfId)}|${String(dateFrom)}|${String(dateTo)}`;
+}
+
+/**
+ * Single-flight загрузка цен в общую таблицу `prices`.
+ * @returns {Promise<{
+ *   status: 'cached'|'loaded'|'partial'|'empty'|'error',
+ *   waited: boolean,
+ *   pricesReloaded: boolean,
+ *   inPeriod: number,
+ *   error?: Error
+ * }>}
+ */
+async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, dateTo) {
+  const key = priceLoadKey(secId, tfId, loadDateFrom, dateTo);
+
+  if (await pricesCached(pool, secId, tfId, loadDateFrom, dateFrom, dateTo)) {
+    return {
+      status: 'cached',
+      waited: false,
+      pricesReloaded: false,
+      inPeriod: await countPricesForSecurity(pool, secId, tfId, dateFrom, dateTo),
+    };
+  }
+
+  let isLeader = false;
+  let flight = priceLoadFlights.get(key);
+  if (!flight) {
+    isLeader = true;
+    flight = (async () => {
+      try {
+        if (await pricesCached(pool, secId, tfId, loadDateFrom, dateFrom, dateTo)) {
+          return {
+            status: 'cached',
+            pricesReloaded: false,
+            inPeriod: await countPricesForSecurity(pool, secId, tfId, dateFrom, dateTo),
+          };
+        }
+        await pool.query('CALL load_prices($1, $2, $3, $4)', [
+          secId,
+          tfId,
+          loadDateFrom,
+          dateTo,
+        ]);
+        const okAfterLoad = await pricesCached(
+          pool,
+          secId,
+          tfId,
+          loadDateFrom,
+          dateFrom,
+          dateTo
+        );
+        const inPeriod = await countPricesForSecurity(pool, secId, tfId, dateFrom, dateTo);
+        if (okAfterLoad) {
+          return { status: 'loaded', pricesReloaded: true, inPeriod };
+        }
+        if (inPeriod > 0) {
+          return { status: 'partial', pricesReloaded: true, inPeriod };
+        }
+        return { status: 'empty', pricesReloaded: false, inPeriod: 0 };
+      } catch (error) {
+        return { status: 'error', pricesReloaded: false, inPeriod: 0, error };
+      } finally {
+        priceLoadFlights.delete(key);
+      }
+    })();
+    priceLoadFlights.set(key, flight);
+  }
+
+  const result = await flight;
+  return {
+    status: result.status,
+    waited: !isLeader,
+    pricesReloaded: Boolean(result.pricesReloaded),
+    inPeriod: Number(result.inPeriod) || 0,
+    error: result.error,
+  };
+}
+
+/**
+ * Single-flight для денежного фонда (load_prices_http, без проверки backtest_prices_cached).
+ */
+async function ensureFundPricesReady(pool, fundSecId, tfId, loadDateFrom, loadDateTo) {
+  const key = `fund|${priceLoadKey(fundSecId, tfId, loadDateFrom, loadDateTo)}`;
+  let isLeader = false;
+  let flight = priceLoadFlights.get(key);
+  if (!flight) {
+    isLeader = true;
+    flight = (async () => {
+      try {
+        await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date)`, [
+          fundSecId,
+          tfId,
+          loadDateFrom,
+          loadDateTo,
+        ]);
+        return { status: 'loaded', error: null };
+      } catch (error) {
+        return { status: 'error', error };
+      } finally {
+        priceLoadFlights.delete(key);
+      }
+    })();
+    priceLoadFlights.set(key, flight);
+  }
+  const result = await flight;
+  return { status: result.status, waited: !isLeader, error: result.error };
+}
+
+async function countPricesForSecurity(pool, secId, tfId, dateFrom, dateTo) {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS cnt FROM prices p
+     WHERE p.security_id = $1 AND p.timeframe_id = $2
+       AND p.dt::date BETWEEN $3 AND $4`,
+    [secId, tfId, dateFrom, dateTo]
+  );
+  return rows[0]?.cnt ?? 0;
+}
 
 /**
  * Ограниченный параллельный обход: не больше `concurrency` задач одновременно.
@@ -275,8 +401,9 @@ async function ensureTbankForBacktest(pool, runId, logicId) {
 }
 
 /**
- * Подготовка одной бумаги: кэш цен → load_prices только при необходимости;
- * индикаторы по текущим активным сигналам логики.
+ * Подготовка одной бумаги:
+ * (1) цены — shared single-flight по ключу → таблица `prices`;
+ * (2) индикаторы — каждый прогон считает сам по активным сигналам логики.
  * onPhase(kind, detail) — для плавного progress_pct (начало HTTP, после цен, по индикаторам).
  */
 async function ensureSecurityData(
@@ -300,10 +427,38 @@ async function ensureSecurityData(
     }
   };
 
-  const cached = await pricesCached(pool, secId, tfId, loadDateFrom, dateFrom, dateTo);
-  let pricesReloaded = false;
+  await phase('prices_http_start', `Цены: ${secName || secId}`, 0.12);
+  const priceResult = await ensurePricesReady(
+    pool,
+    secId,
+    tfId,
+    loadDateFrom,
+    dateFrom,
+    dateTo
+  );
+  const pricesReloaded = Boolean(priceResult.pricesReloaded);
 
-  if (cached) {
+  if (priceResult.status === 'error') {
+    stats.pricesErr += 1;
+    await backtestLog(
+      pool,
+      runId,
+      logicId,
+      'backtest.prices.error',
+      priceResult.error?.message || 'load_prices failed',
+      {
+        security_id: secId,
+        name: secName,
+        waited: priceResult.waited,
+        price_key: priceLoadKey(secId, tfId, loadDateFrom, dateTo),
+      },
+      secId,
+      tfId
+    );
+    return;
+  }
+
+  if (priceResult.status === 'cached') {
     stats.pricesCached += 1;
     await phase('prices_cache', `Кэш цен: ${secName || secId}`, 0.35);
     await backtestLog(
@@ -316,67 +471,59 @@ async function ensureSecurityData(
       secId,
       tfId
     );
-  } else {
-    await phase('prices_http_start', `HTTP цены: ${secName || secId}`, 0.12);
+  } else if (priceResult.waited) {
+    stats.pricesShared += 1;
+    await phase('prices_http_done', `Общие цены: ${secName || secId}`, 0.55);
     await backtestLog(
       pool,
       runId,
       logicId,
-      'backtest.prices.load',
-      `Загрузка цен: ${secName || secId} (${loadDateFrom} — ${dateTo})`,
-      { security_id: secId, name: secName, date_from: loadDateFrom, date_to: dateTo },
+      'backtest.prices.shared',
+      `Цены из shared load: ${secName || secId} (${priceResult.status}, ${priceResult.inPeriod} свечей)`,
+      {
+        security_id: secId,
+        name: secName,
+        status: priceResult.status,
+        prices_in_period: priceResult.inPeriod,
+        price_key: priceLoadKey(secId, tfId, loadDateFrom, dateTo),
+      },
       secId,
       tfId
     );
-    try {
-      await pool.query('CALL load_prices($1, $2, $3, $4)', [secId, tfId, loadDateFrom, dateTo]);
-      stats.pricesLoaded += 1;
-      pricesReloaded = true;
-      await phase('prices_http_done', `Цены загружены: ${secName || secId}`, 0.55);
-    } catch (e) {
-      stats.pricesErr += 1;
-      await backtestLog(
-        pool,
-        runId,
-        logicId,
-        'backtest.prices.error',
-        e.message,
-        { security_id: secId, name: secName },
-        secId,
-        tfId
-      );
-      return;
-    }
-    const okAfterLoad = await pricesCached(pool, secId, tfId, loadDateFrom, dateFrom, dateTo);
-    const inPeriod = await countPricesInPeriod(pool, logicId, tfId, dateFrom, dateTo, secId);
+  } else {
+    stats.pricesLoaded += 1;
+    await phase('prices_http_done', `Цены загружены: ${secName || secId}`, 0.55);
     await backtestLog(
       pool,
       runId,
       logicId,
-      okAfterLoad
+      priceResult.status === 'loaded'
         ? 'backtest.prices.loaded'
-        : inPeriod > 0
+        : priceResult.status === 'partial'
           ? 'backtest.prices.partial'
           : 'backtest.prices.insufficient',
-      okAfterLoad
-        ? `Цены загружены: ${secName || secId}, в периоде ${inPeriod} свечей`
-        : inPeriod > 0
-          ? `Частичные цены: ${secName || secId}, в периоде ${inPeriod} свечей — считаем индикаторы`
-          : `Недостаточно свечей после загрузки (${inPeriod} в периоде ${dateFrom} — ${dateTo})`,
-      { security_id: secId, prices_in_period: inPeriod, coverage_ok: okAfterLoad },
+      priceResult.status === 'loaded'
+        ? `Цены загружены: ${secName || secId}, в периоде ${priceResult.inPeriod} свечей`
+        : priceResult.status === 'partial'
+          ? `Частичные цены: ${secName || secId}, в периоде ${priceResult.inPeriod} свечей — считаем индикаторы`
+          : `Недостаточно свечей после загрузки (${priceResult.inPeriod} в периоде ${dateFrom} — ${dateTo})`,
+      {
+        security_id: secId,
+        prices_in_period: priceResult.inPeriod,
+        coverage_ok: priceResult.status === 'loaded',
+        price_key: priceLoadKey(secId, tfId, loadDateFrom, dateTo),
+      },
       secId,
       tfId
     );
-    if (!okAfterLoad && inPeriod <= 0) {
-      stats.pricesErr += 1;
-      return;
-    }
-    // Частичное покрытие (часто у фьючерсов после SSL) — всё равно считаем индикаторы
-    if (!okAfterLoad && inPeriod > 0) {
-      pricesReloaded = true;
-    }
   }
 
+  if (priceResult.status === 'empty') {
+    stats.pricesErr += 1;
+    return;
+  }
+
+  // (2) Индикаторы — всегда считаются этим прогоном по своим сигналам логики.
   const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
   const indTotal = Math.max(1, indicatorIds.length);
   let indDone = 0;
@@ -471,10 +618,11 @@ async function syncActiveSecurities(
       runId,
       logicId,
       'backtest.prices.parallel',
-      `Параллельная подготовка: ${rowsToPrepare.length} бумаг, concurrency=${BACKTEST_PRICE_CONCURRENCY}`,
+      `Подготовка: ${rowsToPrepare.length} бумаг, concurrency=${BACKTEST_PRICE_CONCURRENCY} (prices single-flight)`,
       {
         securities: rowsToPrepare.length,
         concurrency: BACKTEST_PRICE_CONCURRENCY,
+        price_single_flight: true,
         phase: phaseLabel,
       }
     );
@@ -581,6 +729,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
   const stats = {
     pricesLoaded: 0,
     pricesCached: 0,
+    pricesShared: 0,
     pricesErr: 0,
     indSynced: 0,
     indCached: 0,
@@ -720,19 +869,25 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
         if (fundSecId) {
           knownSecIds.add(Number(fundSecId));
           // 4 аргумента — 5-й pointCount ломал load_prices_http на части сборок.
-          await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date)`, [
+          const fundPrice = await ensureFundPricesReady(
+            pool,
             fundSecId,
             tfId,
             loadDateFrom,
-            loadDateTo,
-          ]);
+            loadDateTo
+          );
+          if (fundPrice.status === 'error') {
+            throw fundPrice.error || new Error('cash fund load_prices_http failed');
+          }
           await backtestLog(
             pool,
             runId,
             logicId,
-            'backtest.cash_fund.prices',
-            `Цены фонда ${fundCode} загружены`,
-            { fund: fundCode, security_id: fundSecId },
+            fundPrice.waited ? 'backtest.cash_fund.prices_shared' : 'backtest.cash_fund.prices',
+            fundPrice.waited
+              ? `Цены фонда ${fundCode} из shared load`
+              : `Цены фонда ${fundCode} загружены`,
+            { fund: fundCode, security_id: fundSecId, waited: fundPrice.waited },
             fundSecId,
             tfId
           );
@@ -790,10 +945,11 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       runId,
       logicId,
       'backtest.prices.done',
-      `Цены: load=${stats.pricesLoaded} cache=${stats.pricesCached} err=${stats.pricesErr} в периоде=${pricesInPeriod}`,
+      `Цены: load=${stats.pricesLoaded} cache=${stats.pricesCached} shared=${stats.pricesShared} err=${stats.pricesErr} в периоде=${pricesInPeriod}`,
       {
         prices_loaded: stats.pricesLoaded,
         prices_cached: stats.pricesCached,
+        prices_shared: stats.pricesShared,
         prices_err: stats.pricesErr,
         prices_in_period: pricesInPeriod,
       },
@@ -996,7 +1152,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
         test_balance: balance,
       };
       if (isLast || bi % 2 === 0) {
-        patch.financial_result = await sumTestPnl(pool, logicId);
+        patch.financial_result = await sumTestPnl(pool, logicId, runId);
       }
       await reportProgress(patch, { force: isLast });
 
@@ -1018,7 +1174,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
       }
     }
 
-    const pnl = await sumTestPnl(pool, logicId);
+    const pnl = await sumTestPnl(pool, logicId, runId);
     const { rows: diagRows } = await pool.query(
       `SELECT logic_backtest_diagnose($1, $2, $3, $4, $5) AS d`,
       [runId, logicId, tfId, dateFrom, dateTo]
@@ -1071,18 +1227,32 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId) {
   }
 }
 
-async function sumTestPnl(pool, logicId) {
+/** Сумма финреза теста — как /logic-trades/pnl-summary (без shadow, только run). */
+async function sumTestPnl(pool, logicId, runId = null) {
+  const params = [logicId];
+  let runFilter = '';
+  if (runId != null && Number(runId) > 0) {
+    params.push(Number(runId));
+    runFilter = ` AND lt.run_id = $${params.length}`;
+  }
   const { rows } = await pool.query(
-    `SELECT COALESCE(SUM(financial_result), 0)::float8 AS pnl
-     FROM logic_trades WHERE logic_id = $1 AND is_test = TRUE`,
-    [logicId]
+    `
+    SELECT COALESCE(SUM(lt.financial_result), 0)::float8 AS pnl
+    FROM logic_trades lt
+    WHERE lt.logic_id = $1
+      AND lt.is_test = TRUE
+      AND COALESCE(lt.is_shadow, FALSE) = FALSE
+      AND lt.status IN ('filled', 'submitted')
+      ${runFilter}
+    `,
+    params
   );
   return Number(rows[0]?.pnl ?? 0);
 }
 
 async function finishCancelled(pool, runId, logicId, balance, processed, total) {
   // Ничего не удаляем: сделки/рейтинги теста остаются как есть
-  const pnl = await sumTestPnl(pool, logicId);
+  const pnl = await sumTestPnl(pool, logicId, runId);
   const { rows } = await pool.query(
     `SELECT status, processed_bars, total_bars FROM logic_backtest_runs WHERE id = $1`,
     [runId]
@@ -1180,7 +1350,7 @@ async function cancelBacktest(pool, runId) {
 
   // Сразу status=cancelled — UI не висит на «Останавливаю…».
   // Фоновый воркер добьёт текущий SQL и выйдет; данные теста не трогаем.
-  const pnl = await sumTestPnl(pool, run.logic_id);
+  const pnl = await sumTestPnl(pool, run.logic_id, runId);
   const proc = Number(run.processed_bars ?? 0);
   const tot = Number(run.total_bars ?? 0);
   const { rowCount } = await pool.query(

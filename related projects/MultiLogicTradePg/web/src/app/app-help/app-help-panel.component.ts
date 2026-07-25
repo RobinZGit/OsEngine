@@ -7,6 +7,7 @@ import {
   PROJECT_CONTEXT_DOCS,
   splitMarkdownChapters,
 } from './app-help-content';
+import { assetUrl } from '../shared/asset-url';
 
 @Component({
   selector: 'app-help-panel',
@@ -89,7 +90,7 @@ export class AppHelpPanelComponent implements OnChanges {
 
     this.contextLoading = true;
     this.contextError = null;
-    this.http.get(doc.asset, { responseType: 'text' }).subscribe({
+    this.http.get(assetUrl(doc.asset), { responseType: 'text' }).subscribe({
       next: (md) => {
         const chapters = splitMarkdownChapters(md);
         this.chapterCache.set(doc.asset, chapters);

@@ -149,12 +149,41 @@
                       </span>
                     </td>
                     <td>{{ row.has_token ? 'да' : 'нет' }}</td>
-                    <td class="balance-cell" [class.balance-error]="row.balance_error">
-                      {{ row.balance_display ?? '—' }}
+                    <td
+                      class="balance-cell"
+                      [class.balance-error]="!!row.balance_error"
+                      [title]="row.balance_error || row.balance_display || ''"
+                    >
+                      @if (row.balance_error) {
+                        <span class="balance-error-text">ошибка</span>
+                        <span class="balance-error-detail">{{ shortBalanceError(row.balance_error) }}</span>
+                      } @else {
+                        {{ row.balance_display ?? '—' }}
+                      }
                     </td>
                     <td>{{ yesNo(row.is_efficient) }}</td>
                     <td>{{ yesNo(row.is_active) }}</td>
-                    <td class="col-actions">
+                    <td class="col-actions col-actions-wide">
+                      @if (row.account_type === 'real' && row.broker_code === 'T-BANK') {
+                        <button
+                          type="button"
+                          class="text-btn text-btn-danger"
+                          title="Продать все позиции на счёте по рынку (лимит по текущей цене)"
+                          [disabled]="accountActionBusyId === row.id"
+                          (click)="sellAllOnAccount(row)"
+                        >
+                          Продать всё
+                        </button>
+                        <button
+                          type="button"
+                          class="text-btn"
+                          title="Купить облигации по составу фонда Т-Капитал Облигации"
+                          [disabled]="accountActionBusyId === row.id"
+                          (click)="openBuyBonds(row)"
+                        >
+                          Купить облигации
+                        </button>
+                      }
                       <button type="button" class="icon-btn" title="Редактировать" aria-label="Редактировать" (click)="openEditAccount(row)">
                         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/></svg>
                       </button>
@@ -194,5 +223,11 @@
     [account]="accountEditTarget"
     (closed)="accountEditorOpen = false"
     (saved)="loadAll()"
+  />
+  <app-buy-bonds-dialog
+    [open]="buyBondsOpen"
+    [account]="buyBondsAccount"
+    (closed)="buyBondsOpen = false"
+    (done)="loadAll()"
   />
 </section>

@@ -9,11 +9,13 @@ import {
 } from '../models/lookup.model';
 import {
   AppConfigService,
+  apiErrorMessage,
   logicsLoadErrorMessage,
 } from '../services/app-config.service';
 import { BrokerEditorComponent } from '../broker-editor/broker-editor.component';
 import { ExchangeEditorComponent } from '../exchange-editor/exchange-editor.component';
 import { AccountEditorComponent } from '../account-editor/account-editor.component';
+import { BuyBondsDialogComponent } from '../buy-bonds-dialog/buy-bonds-dialog.component';
 
 type SectionKey = 'brokers' | 'exchanges' | 'accounts';
 
@@ -25,6 +27,7 @@ type SectionKey = 'brokers' | 'exchanges' | 'accounts';
     BrokerEditorComponent,
     ExchangeEditorComponent,
     AccountEditorComponent,
+    BuyBondsDialogComponent,
   ],
   templateUrl: './references.component.html',
   styleUrl: './references.component.css',
@@ -49,6 +52,10 @@ export class ReferencesComponent implements OnInit {
   accountEditorOpen = false;
   accountEditorMode: 'add' | 'edit' = 'add';
   accountEditTarget: AccountRow | null = null;
+
+  buyBondsOpen = false;
+  buyBondsAccount: AccountRow | null = null;
+  accountActionBusyId: number | null = null;
 
   constructor(
     private readonly refs: ReferencesService,
@@ -152,11 +159,57 @@ export class ReferencesComponent implements OnInit {
     });
   }
 
+  /** Только real T-Bank. */
+  sellAllOnAccount(row: AccountRow): void {
+    if (row.account_type !== 'real' || row.broker_code !== 'T-BANK') return;
+    if (
+      !confirm(
+        `Продать ВСЕ позиции на реальном счёте «${row.name}» (${row.account_code})?\n` +
+          'Акции, облигации, фонды и прочие бумаги — лимитными заявками по текущей цене. Валюту не трогаем.'
+      )
+    ) {
+      return;
+    }
+    this.accountActionBusyId = row.id;
+    this.refs.sellAllOnAccount(row.id).subscribe({
+      next: (r) => {
+        this.accountActionBusyId = null;
+        const sold = Number(r['sold_count'] ?? 0);
+        const errors = Number(r['error_count'] ?? 0);
+        alert(
+          errors
+            ? `Продажа: успешно ${sold}, ошибок ${errors}. Подробности в ответе API / логах.`
+            : `Выставлено заявок на продажу: ${sold}.`
+        );
+        this.loadAll();
+      },
+      error: (err) => {
+        this.accountActionBusyId = null;
+        alert(
+          apiErrorMessage(this.appConfig.apiUrl, err, 'Не удалось продать')
+        );
+      },
+    });
+  }
+
+  openBuyBonds(row: AccountRow): void {
+    if (row.account_type !== 'real' || row.broker_code !== 'T-BANK') return;
+    this.buyBondsAccount = row;
+    this.buyBondsOpen = true;
+  }
+
   accountTypeLabel(type: string): string {
     return type === 'fake' ? 'фейковый' : 'реальный';
   }
 
   yesNo(value: boolean): string {
     return value ? 'да' : 'нет';
+  }
+
+  /** Короткая подпись ошибки остатка (полный текст — в title). */
+  shortBalanceError(err: string | null | undefined): string {
+    const s = String(err || '').replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    return s.length > 48 ? `${s.slice(0, 46)}…` : s;
   }
 }

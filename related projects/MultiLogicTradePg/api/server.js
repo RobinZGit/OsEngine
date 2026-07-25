@@ -41,6 +41,14 @@ const {
 } = require('./lib/logic-params');
 const { buildLogicBundle, importLogicBundle } = require('./lib/logic-bundle');
 const { writeTechLogEvent } = require('./lib/tech-log');
+const {
+  assertRealTbankAccount,
+  sellAllPositions,
+  planBuyBonds,
+  executeBuyBonds,
+  listBondFunds,
+  getAccountCash,
+} = require('./lib/account-portfolio-actions');
 
 const VALID_STOP_SCOPES = new Set([
   'security',
@@ -1553,6 +1561,74 @@ app.delete('/api/accounts/:id', async (req, res) => {
     res.json({ ok: true, id });
   } catch (err) {
     handleDbError(res, err, 'DELETE /api/accounts/:id');
+  }
+});
+
+/** Фонды облигаций для покупки (сейчас TBRU — Т-Капитал Облигации). */
+app.get('/api/accounts/bond-funds', (_req, res) => {
+  res.json(listBondFunds());
+});
+
+/** Продать всё на реальном счёте T-Bank (акции, облигации, фонды…; валюту пропускаем). */
+app.post('/api/accounts/:id/sell-all', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) {
+    res.status(400).json({ error: 'Invalid account id' });
+    return;
+  }
+  try {
+    const result = await sellAllPositions(pool, id);
+    res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) console.error('POST /api/accounts/:id/sell-all', err);
+    res.status(status).json({ error: err.message || 'sell-all failed' });
+  }
+});
+
+/** Свободный кэш реального счёта (для дефолта суммы покупки облигаций). */
+app.get('/api/accounts/:id/cash', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) {
+    res.status(400).json({ error: 'Invalid account id' });
+    return;
+  }
+  try {
+    await assertRealTbankAccount(pool, id);
+    const cash = await getAccountCash(pool, id);
+    res.json({ ok: true, account_id: id, ...cash });
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) console.error('GET /api/accounts/:id/cash', err);
+    res.status(status).json({ error: err.message || 'cash failed' });
+  }
+});
+
+/**
+ * План / покупка облигаций по составу фонда (TBRU):
+ * body: { fund_code?, amount_rub?, execute?: boolean }
+ * Жадно от более доходных (часто корп.) к менее (ОФЗ).
+ */
+app.post('/api/accounts/:id/buy-bonds', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) {
+    res.status(400).json({ error: 'Invalid account id' });
+    return;
+  }
+  const execute = req.body?.execute === true || req.body?.execute === 'true';
+  const opts = {
+    fund_code: req.body?.fund_code || 'TBRU',
+    amount_rub: req.body?.amount_rub,
+  };
+  try {
+    const result = execute
+      ? await executeBuyBonds(pool, id, opts)
+      : await planBuyBonds(pool, id, opts);
+    res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) console.error('POST /api/accounts/:id/buy-bonds', err);
+    res.status(status).json({ error: err.message || 'buy-bonds failed' });
   }
 });
 
@@ -4481,12 +4557,16 @@ async function enrichAccountBalance(row) {
       [row.id]
     );
     const bal = rows[0]?.bal ?? {};
-    base.balance = bal.amount ?? null;
+    base.balance = bal.amount != null ? Number(bal.amount) : null;
+    base.cash_amount = bal.cash_amount != null ? Number(bal.cash_amount) : null;
     base.balance_currency = bal.currency ?? null;
-    base.balance_display = bal.display ?? '—';
-    base.balance_error = bal.error ?? null;
+    base.balance_error = bal.error ? String(bal.error) : null;
+    // При ошибке T-Bank SQL кладёт display='ошибка' — оставляем, текст в balance_error
+    base.balance_display = base.balance_error
+      ? bal.display || 'ошибка'
+      : bal.display ?? '—';
   } catch (err) {
-    base.balance_error = err.message;
+    base.balance_error = err.message || String(err);
     base.balance_display = 'ошибка';
   }
   return base;

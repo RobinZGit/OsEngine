@@ -732,13 +732,13 @@
 
                             <tr class="params-group-row params-band-b">
 
-                              <td colspan="3">Остатки и PnL</td>
+                              <td colspan="3">Остатки боя (не кэш исторического теста)</td>
 
                             </tr>
 
                             <tr class="params-band-b">
 
-                              <td>Начальный остаток</td>
+                              <td>Начальный остаток (старт)</td>
 
                               <td>
 
@@ -766,11 +766,12 @@
 
                                 @if (row.account_type === 'fake') {
 
-                                  Стартовый депозит теста — из параметров
+                                  Стартовый депозит: точка отсчёта для боя на фейке и для старта исторического теста.
+                                  Само поле во время прогона не «ездит» по сделкам теста.
 
                                 } @else {
 
-                                  Реальный счёт: остаток с брокера (не из параметров теста)
+                                  Реальный счёт: опорный остаток с брокера (не редактируется как параметр теста).
 
                                 }
 
@@ -826,7 +827,7 @@
 
                             <tr class="params-band-b">
 
-                              <td>Текущий остаток</td>
+                              <td>Текущий остаток (бой)</td>
 
                               <td><strong>{{ formatMoney(row.current_balance) }}</strong></td>
 
@@ -834,11 +835,14 @@
 
                                 @if (row.account_type === 'fake') {
 
-                                  Тест: обновляется runner после sim-сделок
+                                  Свободный кэш боевого runner на фейковом счёте (после live/sim-сделок).
+                                  Исторический бэктест это поле не пересчитывает — у теста свой test_balance на прогоне;
+                                  смотрите эквити и «Финрез теста» в блоке «Тестирование».
 
                                 } @else {
 
-                                  Реальный счёт: свободный кэш с брокера
+                                  Свободный кэш с брокера для боевых сделок.
+                                  Исторический бэктест это поле не меняет (кэш теста — отдельно, в прогоне).
 
                                 }
 
@@ -2043,6 +2047,8 @@
                         [logicRow]="row"
                         mode="test"
                         [trades]="tradesFor(row.id, true)"
+                        [summaryFinancialResult]="testFinancialResult(row.id)"
+                        [summaryCommission]="testCommission(row.id)"
                         [tradeLots]="logicTradeLots"
                         [lotsLoading]="tradeLotsLoading"
                         [blockExpanded]="isTestTradesBlockExpanded(row.id)"

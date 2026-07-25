@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import { DatabaseSchema, RoutineSource } from '../models/schema.model';
+import { assetUrl } from '../shared/asset-url';
 
 @Injectable({ providedIn: 'root' })
 export class SchemaService {
@@ -50,7 +51,7 @@ export class SchemaService {
       this.lastMode = 'offline';
       return of(this.offlineSchema);
     }
-    return this.http.get<DatabaseSchema>('assets/schema-offline.json').pipe(
+    return this.http.get<DatabaseSchema>(assetUrl('assets/schema-offline.json')).pipe(
       map((data) => {
         this.offlineSchema = data;
         this.lastMode = 'offline';

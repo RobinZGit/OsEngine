@@ -151,6 +151,41 @@
   margin-left: 0.15rem;
 }
 
+.col-actions-wide {
+  white-space: nowrap;
+  min-width: 14rem;
+}
+
+.text-btn {
+  display: inline-block;
+  margin-right: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.text-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.text-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.text-btn-danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.text-btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
 .icon-danger:hover {
   background: #fef2f2;
   color: #b91c1c;
@@ -215,6 +250,22 @@ tbody tr:hover {
 .balance-error {
   color: #b45309;
   font-weight: 500;
+}
+
+.balance-error-text {
+  font-weight: 700;
+  margin-right: 0.35rem;
+}
+
+.balance-error-detail {
+  display: inline-block;
+  max-width: 12rem;
+  font-weight: 400;
+  font-size: 0.78rem;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badge-fake {

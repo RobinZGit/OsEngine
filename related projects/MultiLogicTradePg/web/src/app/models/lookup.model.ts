@@ -24,9 +24,50 @@ export interface AccountRow {
   broker_name: string;
   /** Виртуальное поле — не в БД, заполняется API при with_balance=1 */
   balance?: number | null;
+  /** Свободный кэш (валюта) с GetPortfolio — для дефолта «Купить облигации» */
+  cash_amount?: number | null;
   balance_currency?: string | null;
   balance_display?: string | null;
   balance_error?: string | null;
+}
+
+export interface BondFundInfo {
+  code: string;
+  name: string;
+  source?: string;
+  asOf?: string;
+  holdings_count?: number;
+}
+
+export interface BuyBondsRow {
+  sec: string;
+  kind?: string;
+  yield_pct?: number;
+  unit_price?: number;
+  lots: number;
+  amount_rub?: number;
+  figi?: string | null;
+  ticker?: string;
+  name?: string | null;
+}
+
+export interface BuyBondsResult {
+  ok: boolean;
+  fund_code?: string;
+  fund_name?: string;
+  fund_as_of?: string;
+  cash_amount?: number;
+  amount_requested?: number;
+  amount_planned?: number;
+  buy_count?: number;
+  buys?: BuyBondsRow[];
+  resolve_failed?: { sec: string; error: string }[];
+  note?: string;
+  executed?: boolean;
+  placed_count?: number;
+  error_count?: number;
+  placed?: unknown[];
+  errors?: { sec: string; error: string }[];
 }
 
 export interface LogicPayload {

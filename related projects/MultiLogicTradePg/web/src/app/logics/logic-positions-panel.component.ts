@@ -115,6 +115,13 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   @Input() trades: LogicTradeRow[] = [];
 
+  /**
+   * Финрез/комиссия из той же сводки, что колонка «Финрез теста» (/pnl-summary).
+   * Если заданы — шапка панели совпадает с главной таблицей (даже пока сделки ещё грузятся).
+   */
+  @Input() summaryFinancialResult: number | null = null;
+  @Input() summaryCommission: number | null = null;
+
   /** Денежный фонд — первая бумага в блоке «Бумаги» (бой и тест). */
   @Input() pinnedPaper: BacktestPaperRow | null = null;
 
@@ -225,7 +232,13 @@ export class LogicPositionsPanelComponent implements OnChanges {
     if (changes['backtestRun'] && !this.isBacktestRunning) {
       this.cancelling = false;
     }
-    if (changes['trades'] || changes['logicRow'] || changes['backtestRun']) {
+    if (
+      changes['trades'] ||
+      changes['logicRow'] ||
+      changes['backtestRun'] ||
+      changes['summaryFinancialResult'] ||
+      changes['summaryCommission']
+    ) {
       this.rebuildTradeCaches();
     }
   }
@@ -348,9 +361,19 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
   displayFinancialResult(): number {
-    // Всегда сумма сделок панели — не financial_result прогона
-    // (иначе «в таблице есть», в развороте «пусто» / другой итог).
+    // Тест: та же цифра, что колонка «Финрез теста» (pnl-summary по run_id).
+    // Fallback — сумма загруженных сделок панели.
+    if (this.isTest && this.summaryFinancialResult != null && Number.isFinite(this.summaryFinancialResult)) {
+      return Number(this.summaryFinancialResult);
+    }
     return this.totalFinancialResult();
+  }
+
+  displayCommission(): number {
+    if (this.isTest && this.summaryCommission != null && Number.isFinite(this.summaryCommission)) {
+      return Number(this.summaryCommission);
+    }
+    return this.totalCommission();
   }
 
 

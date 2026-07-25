@@ -900,7 +900,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
     if (initial_balance != null && (!Number.isFinite(initial_balance) || initial_balance < 0)) {
-      this.paramsSaveErrors.set(row.id, 'Начальный остаток: число ≥ 0 или пусто');
+      this.paramsSaveErrors.set(row.id, 'Начальный остаток (старт): число ≥ 0 или пусто');
       return;
     }
     if (!Number.isFinite(commission_pct) || commission_pct < 0 || commission_pct > 100) {
@@ -1392,6 +1392,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const row = this.testPnlByLogic.get(logicId);
     if (!row) return null;
     return Number(row.financial_result);
+  }
+
+  testCommission(logicId: number): number | null {
+    const row = this.testPnlByLogic.get(logicId);
+    if (!row) return null;
+    return Number(row.commission) || 0;
   }
 
   testFinancialResultTitle(logicId: number): string {

@@ -6,9 +6,9 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — Angular: меньше HTTP при бэктестах (один status-poll, без 50k trades/2с); no release
+**Последнее обновление:** 2026-07-25 — Push OsEngine + upstream MultiLogicTradePg (GitHub Pages); sell-all/buy bonds; finres sync; no release
 
-> **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
+> **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
 
 ---
 
@@ -117,6 +117,41 @@
 ---
 
 ## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-25 (выкладка: OsEngine + MultiLogicTradePg Pages)
+
+- Push зеркала OsEngine и upstream **MultiLogicTradePg** (чтобы Pages пересобрался).
+- Account: sell-all + buy TBRU bonds (real only); UI labels остатков боя; prices single-flight; finres колонка = шапка Тестирования; Pages CI sync:context + assetUrl.
+- Installers пересобраны. **no GitHub release**.
+
+### 2026-07-25 (GitHub Pages: старый UI / нет иконок)
+
+- **Причина:** Pages = `RobinZGit/MultiLogicTradePg` (workflow); последний deploy **2026-07-15**. Свежий код шёл в mirror OsEngine → Pages не обновлялся.
+- **CI:** перед `ng build` — `npm run sync:context` + `generate:schema` (раньше `npx ng build` пропускал prebuild → контекст мог не попасть в артефакт).
+- **Offline на Pages:** `assetUrl()` учитывает `base-href=/MultiLogicTradePg/` для `PROJECT_CONTEXT.md` и `schema-offline.json` (книга/структура БД без API).
+- Нужен push в upstream MultiLogicTradePg, чтобы сайт обновился.
+
+### 2026-07-25 (Счета: продать всё / купить облигации — только real)
+
+- Справочники → Счета: кнопки **только** у `account_type=real` и брокера T-BANK.
+- **Продать всё:** `POST /api/accounts/:id/sell-all` → `account_sell_all_at_market` — все невалютные позиции портфеля (акции/облигации/фонды…), LIMIT по текущей цене.
+- **Купить облигации:** диалог — сумма (дефолт = свободный кэш), фонд **TBRU** («Т-Капитал Облигации»); жадная покупка по доходности (корп. раньше ОФЗ), состав из MultiLogicTradeA / porti.ru.
+- SQL: `sql/account_portfolio_actions.sql` (+ блок в `02`); Node: `api/lib/bond-tbru-*.js`, `account-portfolio-actions.js`.
+- На fake-счетах кнопок нет.
+
+### 2026-07-25 (UI: остатки боя ≠ кэш бэктеста)
+
+- Параметры логики: группа «Остатки боя…»; поля **«Начальный остаток (старт)»**, **«Текущий остаток (бой)»**.
+- Подсказки явно: `current_balance` обновляет только боевой/sim runner; исторический тест считает свой `test_balance` / эквити / финрез теста.
+- Запрос: не путать миллион в параметрах с пересчётом во время бэктеста.
+
+### 2026-07-25 (Backtest: shared prices single-flight)
+
+- **`api/logic-backtest.js`:** загрузка цен — single-flight по ключу `(security_id, timeframe_id, date_from, date_to)`.
+- Первый прогон вызывает `CALL load_prices`; параллельные прогоны с тем же ключом ждут Promise и читают `prices` из БД (лог `backtest.prices.shared`).
+- Денежный фонд (TMON/…) — тот же single-flight через `ensureFundPricesReady` / `load_prices_http`.
+- Индикаторы **не** шарятся одним job: каждый прогон сам делает `ensure_security_indicator_series` + `sync_…` по своим активным сигналам логики.
+- Торговая математика bar-loop не менялась. Installers — при push; **no release**.
 
 ### 2026-07-25 (Angular: разгрузка при длинных/повторных тестах)
 
@@ -361,6 +396,8 @@
 - [x] Real trading: size/`current_balance` from T-Bank cash, not paper million (2026-07-25, applied on local DB; no release).
 - [x] Install-over: real logics `initial`/`current` from broker or 0 (never 1M); installers + push without GitHub release (2026-07-25).
 - [x] v48 `security_resume` per paper×side (long/short); local DB + installers; no release (2026-07-25).
+- [x] Backtest: single-flight `load_prices` by key + per-run indicator SQL (`api/logic-backtest.js`, 2026-07-25).
+- [x] Real account actions: sell-all portfolio + buy TBRU bonds (UI + SQL/API, 2026-07-25).
 - [ ] Validate real-account logic (attach to real, confirm qty vs free cash, no oversized rejects).
 - [ ] New GitHub release only after real trading is solid (Sergey: pause releases for now).
 
@@ -382,6 +419,11 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | Ship: push OsEngine + MultiLogicTradePg Pages; sell-all/bonds; finres align; installers; no release |
+| 2026-07-25 | GitHub Pages stale since 07-15: CI sync:context + assetUrl; need push to MultiLogicTradePg |
+| 2026-07-25 | Real accounts: sell-all + buy TBRU bonds (greedy by yield); no release |
+| 2026-07-25 | UI labels/hints: current_balance = live, not backtest cash; no release |
+| 2026-07-25 | Backtest prices single-flight by key; indicators still per-run SQL; no release |
 | 2026-07-25 | Angular: single backtest status poll + skip 50k trades while running; no release |
 | 2026-07-25 | portfolio_ltp_renew: fade-from-peak ≥ TP% + re-arm latch; no release |
 | 2026-07-25 | Help book: PROJECT_CONTEXT + LOCAL_SETUP chapters in top-bar help; sync:context; no release |
@@ -529,6 +571,18 @@
 ---
 
 ## Запросы пользователя (текст)
+
+671. Post everything to the repo and publish on GitHub Pages (Pages still old).
+
+670. Main «Финрез теста» vs Testing bar finres mismatch / one empty — must be the same.
+
+669. GitHub Pages looks old / no top-bar icons; want context in help even without DB.
+
+668. Accounts: Sell all + Buy bonds (Tinkoff/TBRU, risky/yield first); buttons only on real accounts.
+
+667. Rename/clarify «Текущий остаток» label + tip so it is not confused with historical backtest balance.
+
+666. Prices loaded by one shared key; others wait and read cache; each run calculates its own indicators in SQL — implement (1)+(2) in logic-backtest.js without changing trade math.
 
 665. Rename linear TP from paper to whole portfolio with renewal (portfolio_ltp_renew); remove per-paper cut. Always update PROJECT_CONTEXT on push.
 

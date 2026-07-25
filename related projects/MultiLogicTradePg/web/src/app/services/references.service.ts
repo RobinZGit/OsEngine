@@ -6,8 +6,10 @@ import {
   AccountConnectionPreview,
   AccountPayload,
   AccountRow,
+  BondFundInfo,
   BrokerPayload,
   BrokerRow,
+  BuyBondsResult,
   ExchangePayload,
   ExchangeRow,
   IndicatorCreatePayload,
@@ -109,6 +111,40 @@ export class ReferencesService {
     return this.http.post<AccountConnectionPreview>(
       `${this.appConfig.apiUrl}/accounts/preview-connection`,
       body
+    );
+  }
+
+  /** Только real T-Bank: продать все невалютные позиции портфеля. */
+  sellAllOnAccount(accountId: number): Observable<Record<string, unknown>> {
+    return this.http.post<Record<string, unknown>>(
+      `${this.appConfig.apiUrl}/accounts/${accountId}/sell-all`,
+      {}
+    );
+  }
+
+  getBondFunds(): Observable<BondFundInfo[]> {
+    return this.http.get<BondFundInfo[]>(
+      `${this.appConfig.apiUrl}/accounts/bond-funds`
+    );
+  }
+
+  planBuyBonds(
+    accountId: number,
+    body: { fund_code?: string; amount_rub?: number }
+  ): Observable<BuyBondsResult> {
+    return this.http.post<BuyBondsResult>(
+      `${this.appConfig.apiUrl}/accounts/${accountId}/buy-bonds`,
+      { ...body, execute: false }
+    );
+  }
+
+  executeBuyBonds(
+    accountId: number,
+    body: { fund_code?: string; amount_rub?: number }
+  ): Observable<BuyBondsResult> {
+    return this.http.post<BuyBondsResult>(
+      `${this.appConfig.apiUrl}/accounts/${accountId}/buy-bonds`,
+      { ...body, execute: true }
     );
   }
 

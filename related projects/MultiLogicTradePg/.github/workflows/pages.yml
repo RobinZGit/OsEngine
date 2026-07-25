@@ -5,10 +5,13 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'docs/PROJECT_CONTEXT.md'
+      - 'docs/LOCAL_SETUP.md'
       - '00_create_database.sql'
       - '01_multilogictrade_tables_and_data.sql'
       - '02_multilogictrade_functions_and_procedures.sql'
       - 'scripts/generate-offline-schema.mjs'
+      - 'scripts/sync-project-context-to-assets.mjs'
       - 'scripts/verify-sql.mjs'
       - 'scripts/verify-indicators.mjs'
       - '.github/workflows/pages.yml'
@@ -59,12 +62,16 @@ jobs:
         working-directory: web
         run: npm run test:unit -- --browsers=ChromeHeadlessCI
 
-      - name: Generate offline schema from SQL scripts
-        run: node scripts/generate-offline-schema.mjs
+      - name: Sync PROJECT_CONTEXT into web assets + offline schema
+        working-directory: web
+        run: |
+          npm run sync:context
+          npm run generate:schema
 
       - name: Build Angular (GitHub Pages)
         working-directory: web
-        # prebuild (verify:sql + test:unit) уже выполнен выше; ng build без повторного полного verify (HTTP-блок)
+        # verify:sql + test:unit уже выше; sync:context + schema — шаг перед build
+        # (npx ng build не вызывает prebuild → без sync контекст на Pages пропадал)
         run: npx ng build --configuration production --base-href "/MultiLogicTradePg/"
 
       - name: SPA fallback
