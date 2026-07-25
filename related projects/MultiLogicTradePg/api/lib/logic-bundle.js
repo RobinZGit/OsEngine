@@ -424,7 +424,7 @@ async function importLogicBundle(pool, bundle) {
       }
 
       // Real: не оставлять 1M из JSON — остаток с брокера или 0
-      await syncRealAccountBalancesIfNeeded(client, logicId);
+      await syncRealAccountBalancesIfNeeded(client, logicId, { force: true });
 
       imported.push({
         id: logicId,

@@ -167,6 +167,43 @@ async function getTradingParams(pool, logicId) {
   return rowsToTradingParams(rows);
 }
 
+/**
+ * Параметры сразу для списка логик (один SELECT), без HTTP к брокеру.
+ * ensureDefaultParams — только для id, ещё не засеянных в этом процессе.
+ */
+async function getTradingParamsForLogics(pool, logicIds) {
+  const ids = [...new Set((logicIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  const out = new Map();
+  if (ids.length === 0) return out;
+
+  for (const id of ids) {
+    if (!ensuredDefaultParams.has(id)) {
+      await ensureDefaultParams(pool, id);
+    }
+  }
+
+  const { rows } = await pool.query(
+    `
+    SELECT logic_id, param_key, param_value, value_type
+    FROM logic_params
+    WHERE logic_id = ANY($1::int[])
+    ORDER BY logic_id, param_key
+    `,
+    [ids]
+  );
+
+  const byLogic = new Map();
+  for (const r of rows) {
+    const lid = Number(r.logic_id);
+    if (!byLogic.has(lid)) byLogic.set(lid, []);
+    byLogic.get(lid).push(r);
+  }
+  for (const id of ids) {
+    out.set(id, rowsToTradingParams(byLogic.get(id) || []));
+  }
+  return out;
+}
+
 async function ensureDefaultParams(pool, logicId) {
   if (ensuredDefaultParams.has(logicId)) {
     return;
@@ -426,7 +463,7 @@ async function saveTradingParams(pool, logicId, payload) {
   }
 
   if (onReal) {
-    await syncRealAccountBalancesIfNeeded(pool, logicId);
+    await syncRealAccountBalancesIfNeeded(pool, logicId, { force: true });
   }
 
   return getTradingParams(pool, logicId);
@@ -589,13 +626,25 @@ async function resetLogicTradingStateOnAccountChange(poolOrClient, logicId) {
   return { cleared_trades: del.rowCount || 0 };
 }
 
+/** Throttle T-Bank balance sync: min interval per logic (ms). */
+const REAL_BALANCE_SYNC_TTL_MS = 60_000;
+const realBalanceSyncAt = new Map();
+
 /**
  * Real-счёт: initial/current = кэш брокера или 0 (никогда paper 1M).
  * Fake — no-op. Ошибки брокера глотаем: SQL сам пишет 0.
+ * Не чаще раза в минуту на логику (poll списка не должен спамить T-Bank).
+ * @param {{ force?: boolean }} [opts]
  */
-async function syncRealAccountBalancesIfNeeded(poolOrClient, logicId) {
+async function syncRealAccountBalancesIfNeeded(poolOrClient, logicId, opts = {}) {
   const id = Number(logicId);
   if (!Number.isInteger(id) || id <= 0) return;
+  const force = Boolean(opts.force);
+  const now = Date.now();
+  if (!force) {
+    const prev = realBalanceSyncAt.get(id) || 0;
+    if (now - prev < REAL_BALANCE_SYNC_TTL_MS) return;
+  }
   try {
     const { rows } = await poolOrClient.query(
       `
@@ -607,11 +656,14 @@ async function syncRealAccountBalancesIfNeeded(poolOrClient, logicId) {
       [id]
     );
     if (!rows.length || rows[0].account_type === 'fake') return;
+    // Помечаем до HTTP, чтобы параллельные вызовы не дублировали запрос.
+    realBalanceSyncAt.set(id, now);
     await poolOrClient.query(
       `SELECT logic_apply_real_account_balances($1, TRUE)`,
       [id]
     );
   } catch (err) {
+    realBalanceSyncAt.delete(id);
     console.warn(
       `syncRealAccountBalancesIfNeeded logic=${id}:`,
       err && err.message ? err.message : err
@@ -648,6 +700,7 @@ module.exports = {
   parseParamValue,
   rowsToTradingParams,
   getTradingParams,
+  getTradingParamsForLogics,
   ensureDefaultParams,
   saveTradingParams,
   syncLogicCashFundSecurity,

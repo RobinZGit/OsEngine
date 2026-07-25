@@ -32,6 +32,7 @@ const {
 } = require('./lib/trade-runner-session');
 const {
   getTradingParams,
+  getTradingParamsForLogics,
   saveTradingParams,
   ensureDefaultParams,
   getLogicParamsDetailed,
@@ -1104,15 +1105,15 @@ app.get('/api/logics', async (_req, res) => {
       JOIN brokers b ON b.id = a.broker_id
       ORDER BY l.id
     `);
-    const result = [];
-    for (const r of rows) {
-      // Real: подтянуть initial/current с брокера до отдачи в UI (тест — из параметров)
-      if (r.account_type && r.account_type !== 'fake') {
-        await syncRealAccountBalancesIfNeeded(pool, r.id);
-      }
-      const params = await getTradingParams(pool, r.id);
-      result.push({ ...r, ...params });
-    }
+    // Без T-Bank на каждый poll: остатки из logic_params (бой/enable/смена счёта обновляют сами).
+    const paramsByLogic = await getTradingParamsForLogics(
+      pool,
+      rows.map((r) => r.id)
+    );
+    const result = rows.map((r) => ({
+      ...r,
+      ...(paramsByLogic.get(r.id) || {}),
+    }));
     res.json(result);
   } catch (err) {
     console.error('GET /api/logics', err);
@@ -1532,7 +1533,7 @@ app.post('/api/logics', async (req, res) => {
     );
     const row = rows[0];
     await ensureDefaultParams(pool, row.id);
-    await syncRealAccountBalancesIfNeeded(pool, row.id);
+    await syncRealAccountBalancesIfNeeded(pool, row.id, { force: true });
     const params = await getTradingParams(pool, row.id);
     res.status(201).json({ ...row, ...params });
   } catch (err) {
@@ -1685,7 +1686,7 @@ app.post('/api/logics/:id/copy', async (req, res) => {
 
     await client.query('COMMIT');
     // Копия с real-счёта не должна унаследовать paper 1M — остаток с брокера или 0
-    await syncRealAccountBalancesIfNeeded(pool, copy.id);
+    await syncRealAccountBalancesIfNeeded(pool, copy.id, { force: true });
     const { rows: fullRows } = await pool.query(
       `
       SELECT
@@ -1780,7 +1781,7 @@ app.put('/api/logics/:id', async (req, res) => {
     await client.query('COMMIT');
     if (!accountChanged) {
       // Смена на real / уже real — initial/current только с брокера (или 0)
-      await syncRealAccountBalancesIfNeeded(pool, id);
+      await syncRealAccountBalancesIfNeeded(pool, id, { force: true });
     }
 
     let rating_precalc = null;
@@ -1935,6 +1936,8 @@ app.patch('/api/logics/:id', async (req, res) => {
     });
     let rating_precalc = null;
     if (is_enabled) {
+      // Остатки с брокера — в фоне, не блокируем ответ UI (раньше блокировал poll списка).
+      syncRealAccountBalancesIfNeeded(pool, id, { force: true }).catch(() => {});
       // Фон: не ждём; бой уже включён
       rating_precalc = await startRatingPrecalc(pool, id);
     }

@@ -1,7 +1,7 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, switchMap, takeUntil, timer, forkJoin, of } from 'rxjs';
+import { Subject, exhaustMap, takeUntil, timer, forkJoin, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { LogicsService } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
@@ -318,12 +318,27 @@ export class LogicsComponent implements OnInit, OnDestroy {
     timer(0, POLL_INTERVAL_MS)
       .pipe(
         takeUntil(this.destroy$),
-        switchMap(() => this.logicsService.getLogics())
+        // exhaustMap: не отменять и не накладывать GET /logics, пока предыдущий в полёте.
+        exhaustMap(() => {
+          // Редактор логики / диалог периода — не дергать список (иначе select «висит»).
+          if (this.editorOpen || this.uiInteractionPause) {
+            return of(null);
+          }
+          return this.logicsService.getLogics().pipe(
+            catchError((err) => {
+              if (this.loading || this.logics.length === 0) {
+                this.error = logicsLoadErrorMessage(this.appConfig.apiUrl, err);
+              }
+              this.loading = false;
+              return of(null);
+            })
+          );
+        })
       )
       .subscribe({
         next: (rows) => {
-          // Диалог «период теста»: не гонять CD/trades — иначе date input «дубовый».
-          if (this.uiInteractionPause) {
+          // Диалог «период теста» / редактор: только статус теста, без перерисовки списка.
+          if (rows == null || this.uiInteractionPause || this.editorOpen) {
             for (const logicId of this.backtestPollIds) {
               this.refreshBacktestStatus(logicId);
             }
@@ -363,12 +378,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.refreshProcesses();
           this.maybeCheckTbankTokenForTrades();
           this.cdr.markForCheck();
-        },
-        error: (err) => {
-          if (this.loading || this.logics.length === 0) {
-            this.error = logicsLoadErrorMessage(this.appConfig.apiUrl, err);
-          }
-          this.loading = false;
         },
       });
   }
@@ -455,6 +464,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     this.expandedLogics.add(row.id);
     this.ensureParamsDraft(row.id);
+    // Прогреть сигналы сразу — не ждать открытия блока «Сигналы».
+    this.loadSignalsForLogic(row.id);
   }
 
   /** Collapse expanded logic (same as clicking the row when open). */

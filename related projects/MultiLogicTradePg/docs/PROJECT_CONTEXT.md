@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — account change clears combat trades/FINRES (confirm); no release
+**Последнее обновление:** 2026-07-25 — GET /logics no T-Bank on poll; exhaustMap+editor pause; no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -335,7 +335,7 @@
 
 ---
 
-## История сессий (кратко)
+## История сессий (кратко)\n\n| 2026-07-25 | GET /logics: remove T-Bank sync from poll; batch params; exhaustMap + pause editor |\n
 
 | Дата | Суть |
 |------|------|
@@ -475,7 +475,7 @@
 
 ---
 
-## Запросы пользователя (текст)
+## Запросы пользователя (текст)\n\n661. Why account select hangs; logic on/off signals empty for seconds; positions lag — small DB.\n
 
 ### 2026-07-12 (ранние)
 
