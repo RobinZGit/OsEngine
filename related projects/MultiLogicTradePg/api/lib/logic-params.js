@@ -494,6 +494,102 @@ async function updateCurrentBalance(pool, logicId, balance) {
 }
 
 /**
+ * После смены счёта логики: очистить боевую историю сделок/FINRES,
+ * сбросить pause/resume и остатки (как «выкл → вкл» на новом счёте).
+ * Тестовые сделки (is_test) не трогаем.
+ */
+async function resetLogicTradingStateOnAccountChange(poolOrClient, logicId) {
+  const id = Number(logicId);
+  if (!Number.isInteger(id) || id <= 0) return { cleared_trades: 0 };
+
+  await poolOrClient.query(
+    `
+    DELETE FROM logic_trade_lots
+    WHERE logic_id = $1
+      AND close_trade_id IN (
+        SELECT id FROM logic_trades
+        WHERE logic_id = $1 AND COALESCE(is_test, FALSE) = FALSE
+      )
+    `,
+    [id]
+  );
+
+  const del = await poolOrClient.query(
+    `
+    DELETE FROM logic_trades
+    WHERE logic_id = $1 AND COALESCE(is_test, FALSE) = FALSE
+    `,
+    [id]
+  );
+
+  await poolOrClient.query(
+    `
+    UPDATE logics
+    SET
+      portfolio_trading_paused = FALSE,
+      portfolio_equity_peak = NULL,
+      portfolio_stop_resume_equity = NULL,
+      portfolio_stop_resume_baseline = NULL,
+      portfolio_stop_resume_at = NULL
+    WHERE id = $1
+    `,
+    [id]
+  );
+
+  await poolOrClient.query(
+    `
+    UPDATE logic_securities
+    SET
+      real_trading_paused = FALSE,
+      real_trading_inverted = FALSE,
+      stop_resume_equity = NULL,
+      stop_resume_baseline = NULL,
+      stop_resume_triggered_at = NULL
+    WHERE logic_id = $1
+    `,
+    [id]
+  );
+
+  const { rows: accRows } = await poolOrClient.query(
+    `
+    SELECT lower(COALESCE(a.account_type, 'fake')) AS account_type
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = $1
+    `,
+    [id]
+  );
+  const accountType = accRows[0]?.account_type || 'fake';
+
+  if (accountType === 'fake') {
+    // Текущий остаток = начальный (FINRES/история обнулены).
+    await poolOrClient.query(
+      `
+      UPDATE logic_params cur
+      SET
+        param_value = init.param_value,
+        value_type = 'money',
+        updated_at = CURRENT_TIMESTAMP
+      FROM logic_params init
+      WHERE cur.logic_id = $1
+        AND cur.param_key = 'current_balance'
+        AND init.logic_id = $1
+        AND init.param_key = 'initial_balance'
+        AND btrim(COALESCE(init.param_value, '')) <> ''
+      `,
+      [id]
+    );
+  } else {
+    await poolOrClient.query(
+      `SELECT logic_apply_real_account_balances($1, TRUE)`,
+      [id]
+    );
+  }
+
+  return { cleared_trades: del.rowCount || 0 };
+}
+
+/**
  * Real-счёт: initial/current = кэш брокера или 0 (никогда paper 1M).
  * Fake — no-op. Ошибки брокера глотаем: SQL сам пишет 0.
  */
@@ -557,5 +653,6 @@ module.exports = {
   syncLogicCashFundSecurity,
   updateCurrentBalance,
   syncRealAccountBalancesIfNeeded,
+  resetLogicTradingStateOnAccountChange,
   getLogicParamsDetailed,
 };

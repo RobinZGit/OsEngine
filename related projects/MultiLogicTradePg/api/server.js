@@ -36,6 +36,7 @@ const {
   ensureDefaultParams,
   getLogicParamsDetailed,
   syncRealAccountBalancesIfNeeded,
+  resetLogicTradingStateOnAccountChange,
 } = require('./lib/logic-params');
 const { buildLogicBundle, importLogicBundle } = require('./lib/logic-bundle');
 const { writeTechLogEvent } = require('./lib/tech-log');
@@ -1737,7 +1738,7 @@ app.put('/api/logics/:id', async (req, res) => {
   try {
     await client.query('BEGIN');
     const existing = await client.query(
-      'SELECT id, name FROM logics WHERE id = $1',
+      'SELECT id, name, account_id, is_enabled FROM logics WHERE id = $1',
       [id]
     );
     if (existing.rows.length === 0) {
@@ -1745,6 +1746,8 @@ app.put('/api/logics/:id', async (req, res) => {
       res.status(404).json({ error: 'Logic not found' });
       return;
     }
+    const prevAccountId = Number(existing.rows[0].account_id);
+    const accountChanged = prevAccountId !== Number(parsed.account_id);
     const { rows } = await client.query(
       `
       UPDATE logics
@@ -1754,10 +1757,44 @@ app.put('/api/logics/:id', async (req, res) => {
       `,
       [parsed.name, parsed.account_id, parsed.is_enabled, parsed.note, id]
     );
+
+    let account_change = null;
+    if (accountChanged) {
+      // Боевая история/FINRES + pause state; остатки под новый счёт.
+      const cleared = await resetLogicTradingStateOnAccountChange(client, id);
+      account_change = {
+        from_account_id: prevAccountId,
+        to_account_id: Number(parsed.account_id),
+        cleared_trades: cleared.cleared_trades,
+      };
+      await writeTechLogEvent(client, {
+        threadKey: `logic:${id}:control`,
+        operation: 'logic.account_changed',
+        message: 'Счёт логики изменён: история сделок и FINRES очищены',
+        source: 'api',
+        logicId: id,
+        payload: account_change,
+      });
+    }
+
     await client.query('COMMIT');
-    // Смена на real / уже real — initial/current только с брокера (или 0)
-    await syncRealAccountBalancesIfNeeded(pool, id);
-    res.json(rows[0]);
+    if (!accountChanged) {
+      // Смена на real / уже real — initial/current только с брокера (или 0)
+      await syncRealAccountBalancesIfNeeded(pool, id);
+    }
+
+    let rating_precalc = null;
+    // Как «выкл → вкл»: при активной логике после смены счёта — предрасчёт рейтинга.
+    if (accountChanged && rows[0].is_enabled) {
+      rating_precalc = await startRatingPrecalc(pool, id);
+    }
+
+    res.json({
+      ...rows[0],
+      account_changed: accountChanged,
+      account_change,
+      rating_precalc,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('PUT /api/logics/:id', err);

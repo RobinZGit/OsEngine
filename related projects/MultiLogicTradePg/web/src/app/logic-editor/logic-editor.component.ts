@@ -95,6 +95,30 @@ export class LogicEditorComponent implements OnChanges {
       return;
     }
 
+    // Смена счёта → очистка боевой истории/FINRES. Без подтверждения счёт не меняем.
+    if (
+      this.mode === 'edit' &&
+      this.logic != null &&
+      Number(this.accountId) !== Number(this.logic.account_id)
+    ) {
+      const ok = confirm(
+        'Вы меняете счёт логики.\n\n' +
+          'Будут очищены история боевых сделок и FINRES; остатки пересчитаются для нового счёта ' +
+          '(как после выключения и включения логики).\n\n' +
+          'Продолжить?'
+      );
+      if (!ok) {
+        // Откат выбора счёта в форме — не сохраняем.
+        this.accountId = this.logic.account_id;
+        const acc = this.accounts.find((a) => a.id === this.accountId);
+        if (acc) {
+          this.brokerId = acc.broker_id;
+          this.applyAccountFilter();
+        }
+        return;
+      }
+    }
+
     const payload = {
       name: trimmed,
       account_id: this.accountId,

@@ -2139,6 +2139,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   onEditorSaved(): void {
+    const editedId = this.editorLogic?.id;
+    if (editedId != null) {
+      // После смены счёта API чистит боевые сделки — сбросить кэш панели.
+      this.logicTrades.delete(editedId);
+      this.expandedTradeRows.clear();
+      if (this.expandedTradesBlocks.has(editedId)) {
+        this.loadTradesForLogic(editedId, true);
+      }
+    }
     this.loadLogicsOnce();
   }
 
