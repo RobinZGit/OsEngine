@@ -97,10 +97,12 @@
                 </tbody>
               </table>
             </div>
-            @if (plan.resolve_failed?.length) {
-              <p class="hint warn">
-                Не найдены у брокера: {{ plan.resolve_failed.length }} ISIN (пропущены).
-              </p>
+            @if (plan.resolve_failed; as failed) {
+              @if (failed.length) {
+                <p class="hint warn">
+                  Не найдены у брокера: {{ failed.length }} ISIN (пропущены).
+                </p>
+              }
             }
           }
         </div>
