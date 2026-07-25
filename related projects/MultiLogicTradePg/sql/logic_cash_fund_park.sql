@@ -418,7 +418,7 @@ BEGIN
             PERFORM logic_trade_finalize(v_trade_id, v_balance);
             v_balance := v_balance - (v_qty * v_price);
             PERFORM logic_upsert_param(
-                p_logic_id, 'current_balance', v_balance::TEXT, 'numeric'
+                p_logic_id, 'current_balance', v_balance::TEXT, 'money'
             );
         END IF;
 

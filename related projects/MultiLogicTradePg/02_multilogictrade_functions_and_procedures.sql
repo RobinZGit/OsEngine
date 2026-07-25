@@ -4267,6 +4267,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7099,6 +7100,32 @@ $$;
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
 'Цикл стоп-лоссов: security / security_resume / security_inversion / portfolio / portfolio_resume; TF из stop_loss_timeframe';
 -- @end logic_stop_runner
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -13190,7 +13217,7 @@ BEGIN
             PERFORM logic_trade_finalize(v_trade_id, v_balance);
             v_balance := v_balance - (v_qty * v_price);
             PERFORM logic_upsert_param(
-                p_logic_id, 'current_balance', v_balance::TEXT, 'numeric'
+                p_logic_id, 'current_balance', v_balance::TEXT, 'money'
             );
         END IF;
 
@@ -13291,6 +13318,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 
