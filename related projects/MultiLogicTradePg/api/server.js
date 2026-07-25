@@ -3892,6 +3892,17 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.position_size_base !== undefined) {
+    const base = String(body.position_size_base || '')
+      .trim()
+      .toLowerCase();
+    if (base !== 'free_cash' && base !== 'portfolio') {
+      return { error: 'База расчёта лота: свободные деньги или весь портфель' };
+    }
+    out.position_size_base = base;
+    hasField = true;
+  }
+
   if (body?.position_size_pct !== undefined) {
     const v = Number(body.position_size_pct);
     if (!Number.isFinite(v) || v <= 0 || v > 100) {
@@ -3907,6 +3918,19 @@ function parseLogicTradingParams(body) {
       return { error: 'Макс. позиций: целое число > 0' };
     }
     out.max_open_positions = v;
+    hasField = true;
+  }
+
+  if (body?.max_order_amount !== undefined) {
+    if (body.max_order_amount === null || body.max_order_amount === '') {
+      out.max_order_amount = null;
+    } else {
+      const v = Number(body.max_order_amount);
+      if (!Number.isFinite(v) || v < 0) {
+        return { error: 'Макс. сумма на сделку: число ≥ 0 или пусто' };
+      }
+      out.max_order_amount = v;
+    }
     hasField = true;
   }
 

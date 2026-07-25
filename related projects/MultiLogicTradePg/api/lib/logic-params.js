@@ -3,8 +3,10 @@
 /** Ключи торговых параметров логики (строки в logic_params). */
 const PARAM_KEYS = {
   TIMEFRAME: 'timeframe',
+  POSITION_SIZE_BASE: 'position_size_base',
   POSITION_SIZE_PCT: 'position_size_pct',
   MAX_OPEN_POSITIONS: 'max_open_positions',
+  MAX_ORDER_AMOUNT: 'max_order_amount',
   INITIAL_BALANCE: 'initial_balance',
   CURRENT_BALANCE: 'current_balance',
   COMMISSION_PCT: 'commission_pct',
@@ -24,8 +26,10 @@ const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
 
 const DEFAULTS = {
   [PARAM_KEYS.TIMEFRAME]: { value: 'M15', type: 'text' },
+  [PARAM_KEYS.POSITION_SIZE_BASE]: { value: 'free_cash', type: 'text' },
   [PARAM_KEYS.POSITION_SIZE_PCT]: { value: '10', type: 'number' },
   [PARAM_KEYS.MAX_OPEN_POSITIONS]: { value: '5', type: 'integer' },
+  [PARAM_KEYS.MAX_ORDER_AMOUNT]: { value: '', type: 'money' },
   [PARAM_KEYS.INITIAL_BALANCE]: { value: '', type: 'money' },
   [PARAM_KEYS.CURRENT_BALANCE]: { value: '', type: 'money' },
   [PARAM_KEYS.COMMISSION_PCT]: { value: '0.03', type: 'number' },
@@ -44,7 +48,11 @@ const DEFAULTS = {
 function parseParamValue(paramKey, raw, valueType) {
   const text = raw == null ? '' : String(raw).trim();
   if (text === '') {
-    if (paramKey === PARAM_KEYS.INITIAL_BALANCE || paramKey === PARAM_KEYS.CURRENT_BALANCE) {
+    if (
+      paramKey === PARAM_KEYS.INITIAL_BALANCE ||
+      paramKey === PARAM_KEYS.CURRENT_BALANCE ||
+      paramKey === PARAM_KEYS.MAX_ORDER_AMOUNT
+    ) {
       return null;
     }
     return null;
@@ -79,6 +87,13 @@ function rowsToTradingParams(rows) {
       map[PARAM_KEYS.TIMEFRAME] != null && String(map[PARAM_KEYS.TIMEFRAME]).trim() !== ''
         ? String(map[PARAM_KEYS.TIMEFRAME]).trim().toUpperCase()
         : 'M15',
+    position_size_base: (() => {
+      const raw =
+        map[PARAM_KEYS.POSITION_SIZE_BASE] != null
+          ? String(map[PARAM_KEYS.POSITION_SIZE_BASE]).trim().toLowerCase()
+          : 'free_cash';
+      return raw === 'portfolio' ? 'portfolio' : 'free_cash';
+    })(),
     position_size_pct:
       map[PARAM_KEYS.POSITION_SIZE_PCT] != null
         ? Number(map[PARAM_KEYS.POSITION_SIZE_PCT])
@@ -87,6 +102,7 @@ function rowsToTradingParams(rows) {
       map[PARAM_KEYS.MAX_OPEN_POSITIONS] != null
         ? Number(map[PARAM_KEYS.MAX_OPEN_POSITIONS])
         : 5,
+    max_order_amount: map[PARAM_KEYS.MAX_ORDER_AMOUNT],
     initial_balance: map[PARAM_KEYS.INITIAL_BALANCE],
     current_balance: map[PARAM_KEYS.CURRENT_BALANCE],
     commission_pct:
@@ -235,6 +251,15 @@ async function saveTradingParams(pool, logicId, payload) {
     await upsertParam(pool, logicId, PARAM_KEYS.TIMEFRAME, tf, 'text');
   }
 
+  if (payload.position_size_base !== undefined) {
+    const base = String(payload.position_size_base || '')
+      .trim()
+      .toLowerCase();
+    if (base !== 'free_cash' && base !== 'portfolio') {
+      throw new Error('База расчёта лота: free_cash или portfolio');
+    }
+    await upsertParam(pool, logicId, PARAM_KEYS.POSITION_SIZE_BASE, base, 'text');
+  }
   if (payload.position_size_pct !== undefined) {
     await upsertParam(
       pool,
@@ -251,6 +276,15 @@ async function saveTradingParams(pool, logicId, payload) {
       PARAM_KEYS.MAX_OPEN_POSITIONS,
       payload.max_open_positions,
       'integer'
+    );
+  }
+  if (payload.max_order_amount !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.MAX_ORDER_AMOUNT,
+      payload.max_order_amount,
+      'money'
     );
   }
   // Fake/test: начальный/сброс текущего — из параметров формы.

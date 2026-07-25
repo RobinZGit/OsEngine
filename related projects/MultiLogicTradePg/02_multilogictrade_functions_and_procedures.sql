@@ -4269,6 +4269,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7595,11 +7596,40 @@ $$;
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
     p_price NUMERIC,
-    p_lot_size INTEGER DEFAULT 1
+    p_lot_size INTEGER DEFAULT 1,
+    p_max_order_amount NUMERIC DEFAULT NULL
 )
 RETURNS INTEGER
 LANGUAGE plpgsql IMMUTABLE AS $$
@@ -7620,6 +7650,9 @@ BEGIN
     END IF;
     v_lot := GREATEST(1, COALESCE(p_lot_size, 1));
     v_amount := p_balance * (p_position_size_pct / 100.0);
+    IF p_max_order_amount IS NOT NULL AND p_max_order_amount > 0 THEN
+        v_amount := LEAST(v_amount, p_max_order_amount);
+    END IF;
     v_raw := floor(v_amount / p_price)::INTEGER;
     -- Округление вниз до целого числа лотов
     v_qty := (v_raw / v_lot) * v_lot;
@@ -7630,8 +7663,100 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER) IS
-'Лот открытия: % депозита / цена, округление вниз до lot_size бумаги';
+COMMENT ON FUNCTION logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
+'Лот: % базы / цена (опц. потолок суммы), вниз до lot_size';
+
+-- База для % лота: free_cash | portfolio. Real — только брокер; test — current / equity.
+CREATE OR REPLACE FUNCTION logic_position_sizing_base(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_account_id INTEGER;
+    v_account_type VARCHAR;
+    v_mode TEXT;
+    v_bal JSONB;
+    v_cash NUMERIC;
+    v_portfolio NUMERIC;
+    v_sec RECORD;
+    v_price NUMERIC;
+    v_long_qty NUMERIC;
+BEGIN
+    SELECT l.account_id, lower(COALESCE(a.account_type, 'fake'))
+    INTO v_account_id, v_account_type
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id;
+
+    IF NOT FOUND THEN
+        RETURN 0;
+    END IF;
+
+    v_mode := lower(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'position_size_base'),
+        'free_cash'
+    )));
+    IF v_mode NOT IN ('free_cash', 'portfolio') THEN
+        v_mode := 'free_cash';
+    END IF;
+
+    IF v_account_type <> 'fake' THEN
+        BEGIN
+            v_bal := fetch_tbank_account_balance(v_account_id);
+            IF v_bal IS NULL OR (v_bal->>'error') IS NOT NULL THEN
+                RETURN 0;
+            END IF;
+            IF v_mode = 'portfolio' THEN
+                RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+            END IF;
+            IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
+                RETURN GREATEST(0, COALESCE((v_bal->>'cash_amount')::NUMERIC, 0));
+            END IF;
+            RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+        EXCEPTION
+            WHEN OTHERS THEN
+                RETURN 0;
+        END;
+    END IF;
+
+    -- Test (fake): свободные = current; портфель = current + MTM бумаг логики
+    v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
+    IF v_mode <> 'portfolio' THEN
+        RETURN GREATEST(0, v_cash);
+    END IF;
+
+    v_portfolio := v_cash;
+    FOR v_sec IN
+        SELECT ls.security_id
+        FROM logic_securities ls
+        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1
+              FROM security_prefixes sp
+              WHERE sp.security_id = ls.security_id
+                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          )
+    LOOP
+        v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
+        IF v_long_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+        v_price := logic_ensure_security_market_price(
+            p_logic_id, v_sec.security_id, p_timeframe_id
+        );
+        IF v_price IS NOT NULL AND v_price > 0 THEN
+            v_portfolio := v_portfolio + v_long_qty * v_price;
+        END IF;
+    END LOOP;
+
+    RETURN GREATEST(0, v_portfolio);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
+'База % лота: free_cash или portfolio; real=брокер, fake=current/equity';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
@@ -9584,6 +9709,8 @@ DECLARE
     v_tf_sec INTEGER;
     v_position_size_pct NUMERIC;
     v_max_positions INTEGER;
+    v_max_order_amount NUMERIC;
+    v_sizing_base NUMERIC;
     v_balance NUMERIC;
     v_open_positions INTEGER;
     v_created INTEGER := 0;
@@ -9687,8 +9814,10 @@ BEGIN
 
     v_position_size_pct := get_logic_param_numeric(p_logic_id, 'position_size_pct', 10);
     v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 5)::INTEGER);
+    v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_balance := logic_ensure_balance(p_logic_id);
+    v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
     v_open_positions := logic_count_open_positions(p_logic_id);
 
     IF NOT EXISTS (
@@ -9718,6 +9847,7 @@ BEGIN
     ) THEN
         PERFORM logic_close_positions_eod_except_funds(p_logic_id);
         v_balance := logic_ensure_balance(p_logic_id);
+        v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
         v_open_positions := logic_count_open_positions(p_logic_id);
     END IF;
 
@@ -9901,13 +10031,14 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
+                    v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
                     v_quantity := logic_calc_open_quantity(
-                        v_balance, v_position_size_pct, v_pp, v_lot_size
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
                     );
                     IF v_quantity < v_lot_size THEN
                         -- Фьючерсы: % депозита / цена контракта часто даёт 0 → 1 лот
-                        -- (только при известном остатке; акции — без force 1 лот)
-                        IF v_is_futures AND v_balance IS NOT NULL AND v_balance > 0 THEN
+                        -- (только при известной базе; акции — без force 1 лот)
+                        IF v_is_futures AND v_sizing_base IS NOT NULL AND v_sizing_base > 0 THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -9929,11 +10060,12 @@ BEGIN
                 IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                     CONTINUE;
                 END IF;
+                v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
                 v_quantity := logic_calc_open_quantity(
-                    v_balance, v_position_size_pct, v_pp, v_lot_size
+                    v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
                 );
                 IF v_quantity < v_lot_size THEN
-                    IF v_is_futures AND v_balance IS NOT NULL AND v_balance > 0 THEN
+                    IF v_is_futures AND v_sizing_base IS NOT NULL AND v_sizing_base > 0 THEN
                         v_quantity := v_lot_size;
                     ELSE
                         CONTINUE;
@@ -11524,6 +11656,9 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_position_size_pct NUMERIC;
     v_max_positions INTEGER;
+    v_max_order_amount NUMERIC;
+    v_sizing_base NUMERIC;
+    v_size_mode TEXT;
     v_open_positions INTEGER;
     v_side_open_id INTEGER;
     v_side_close_id INTEGER;
@@ -11560,6 +11695,14 @@ BEGIN
 
     v_position_size_pct := get_logic_param_numeric(p_logic_id, 'position_size_pct', 10);
     v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 5)::INTEGER);
+    v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
+    v_size_mode := lower(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'position_size_base'),
+        'free_cash'
+    )));
+    IF v_size_mode NOT IN ('free_cash', 'portfolio') THEN
+        v_size_mode := 'free_cash';
+    END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
 
@@ -11656,12 +11799,19 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
+                    IF v_size_mode = 'portfolio' THEN
+                        v_sizing_base := logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        );
+                    ELSE
+                        v_sizing_base := p_balance;
+                    END IF;
                     v_quantity := logic_calc_open_quantity(
-                        p_balance, v_position_size_pct, v_pp, v_lot_size
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
                     );
                     IF v_quantity < v_lot_size THEN
                         -- Фьючерсы: нотионал контракта >> % депозита → 1 лот при сигнале
-                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
+                        IF v_is_futures OR COALESCE(v_sizing_base, 0) >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -11680,11 +11830,18 @@ BEGIN
                     IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
+                    IF v_size_mode = 'portfolio' THEN
+                        v_sizing_base := logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        );
+                    ELSE
+                        v_sizing_base := p_balance;
+                    END IF;
                     v_quantity := logic_calc_open_quantity(
-                        p_balance, v_position_size_pct, v_pp, v_lot_size
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
+                        IF v_is_futures OR COALESCE(v_sizing_base, 0) >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -13341,6 +13498,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

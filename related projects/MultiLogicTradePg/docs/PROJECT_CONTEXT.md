@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — fake: initial from params; real: initial+current from broker; no release
+**Последнее обновление:** 2026-07-25 — lot sizing: free_cash vs portfolio + auto leverage; no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -223,6 +223,7 @@
 112. **01 order fix:** `UPDATE logic_params` (cash_fund_threshold 100k→1M) moved **after** `CREATE TABLE logic_params` — upgrade on DBs without that table no longer aborts before npm.
 113. **01 LINREGV cleanup:** `DELETE FROM logic_trade_lots/trades` wrapped in `to_regclass` guards (tables created later in `01`).
 114. **Real account sizing:** `logic_ensure_balance` for `account_type<>fake` syncs **T-Bank free cash** (`totalAmountCurrencies` → `cash_amount`) into `current_balance` and uses it for `logic_calc_open_quantity`; no paper `initial_balance`/million fallback; after real fills re-sync from broker (no ±notional on paper); stocks no longer force 1 lot when qty&lt;lot; futures 1-lot only if balance known &gt;0. `fetch_tbank_portfolio_balance` returns `cash_amount`. **GitHub releases paused** until real trading is solid (`.cursor/rules/project-context.mdc`).
+116. **Lot sizing base:** param position_size_base (free_cash|portfolio), max_order_amount; real=broker only; test=current or equity; UI group «Расчёт лота» + плечо=max×%/100.
 115. **Install-over real balances:** `01` resets `initial_balance`/`current_balance` to `0` for all logics on real accounts; `02` runs `logic_sync_all_real_account_balances()` (broker cash or 0). Helpers `logic_apply_real_account_balances` / `logic_is_paper_balance_text`. API create/copy/PUT/import sync real balances. Never leave paper 1M on real.
 
 ### Автотесты
@@ -638,5 +639,6 @@
 151. «Same mistake again: upgrade fails UPDATE logic_params does not exist (line 1303) — fix and ship.»
 152. «Again: Angular CLI missing; 01 ERROR logic_trade_lots does not exist (LINREGV DELETE) — fix and ship.»
 153. «Real trading (LRTC): seems to trade from deposited million not real balance; orders deviate; current remainder added to million — fix real sizing; do not postpone/make release — continue, new release later when real trading is ready.»
+156. «Lot calc: choose whole portfolio or free money; real=real account; test=current; group + auto shoulder.»
 155. «Initial state: for test use params; for real take from real account.»
 154. «When installing on top: logics on real account — initial remainder from real account only, never a million; if unavailable then 0/empty; export repo but do not release.»

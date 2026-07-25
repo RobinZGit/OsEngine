@@ -245,8 +245,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     {
       name: string;
       timeframe: string;
+      position_size_base: 'free_cash' | 'portfolio';
       position_size_pct: string;
       max_open_positions: string;
+      max_order_amount: string;
       initial_balance: string;
       commission_pct: string;
       cost_method: 'FIFO' | 'AVERAGE';
@@ -337,8 +339,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
               return local
                 ? {
                     ...row,
+                    position_size_base: local.position_size_base,
                     position_size_pct: local.position_size_pct,
                     max_open_positions: local.max_open_positions,
+                    max_order_amount: local.max_order_amount,
                     initial_balance: local.initial_balance,
                     base_annual_rate_pct: local.base_annual_rate_pct,
                     // current_balance — только для отображения, берём с сервера
@@ -505,10 +509,41 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsSizeBaseChange(logicId: number, value: 'free_cash' | 'portfolio'): void {
+    this.getParamsDraft(logicId).position_size_base = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   onParamsPctChange(logicId: number, value: string): void {
     this.getParamsDraft(logicId).position_size_pct = value;
     this.paramsDirtyIds.add(logicId);
     this.paramsSaveErrors.delete(logicId);
+  }
+
+  onParamsMaxOrderAmountChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).max_order_amount = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
+  /** Плечо (ед.) = макс. позиций × (% депозита / 100). 1 = весь портфель при полном наборе. */
+  lotLeverageUnits(logicId: number): number | null {
+    const d = this.paramsDrafts.get(logicId);
+    if (!d) return null;
+    const pct = this.parseDecimalInput(d.position_size_pct);
+    const max = Math.round(this.parseDecimalInput(d.max_open_positions));
+    if (!Number.isFinite(pct) || pct <= 0 || !Number.isInteger(max) || max <= 0) {
+      return null;
+    }
+    return (pct / 100) * max;
+  }
+
+  formatLotLeverage(logicId: number): string {
+    const v = this.lotLeverageUnits(logicId);
+    if (v == null) return '—';
+    const rounded = Math.round(v * 100) / 100;
+    return `${rounded}×`;
   }
 
   onParamsBaseAnnualRateChange(logicId: number, value: string): void {
@@ -655,8 +690,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     logicId: number,
     trading: {
       timeframe?: string;
+      position_size_base?: 'free_cash' | 'portfolio';
       position_size_pct: number;
       max_open_positions: number;
+      max_order_amount?: number | null;
       initial_balance: number | null;
       current_balance: number | null;
       commission_pct?: number;
@@ -680,8 +717,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   private draftFromTrading(trading: {
     timeframe?: string;
+    position_size_base?: 'free_cash' | 'portfolio';
     position_size_pct: number;
     max_open_positions: number;
+    max_order_amount?: number | null;
     initial_balance: number | null;
     current_balance: number | null;
     commission_pct?: number;
@@ -698,8 +737,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }): {
     name: string;
     timeframe: string;
+    position_size_base: 'free_cash' | 'portfolio';
     position_size_pct: string;
     max_open_positions: string;
+    max_order_amount: string;
     initial_balance: string;
     commission_pct: string;
     cost_method: 'FIFO' | 'AVERAGE';
@@ -725,8 +766,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return {
       name: '',
       timeframe: (trading.timeframe ?? 'M15').toUpperCase(),
+      position_size_base:
+        trading.position_size_base === 'portfolio' ? 'portfolio' : 'free_cash',
       position_size_pct: this.formatPctParam(trading.position_size_pct),
       max_open_positions: this.formatIntParam(trading.max_open_positions, 5),
+      max_order_amount: this.formatBalanceDraft(
+        trading.max_order_amount != null ? trading.max_order_amount : null
+      ),
       initial_balance: this.formatBalanceDraft(trading.initial_balance),
       commission_pct: this.formatPctParam(trading.commission_pct ?? 0.03),
       cost_method: method,
@@ -768,8 +814,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private draftFromLogicRow(row: LogicRow) {
     const draft = this.draftFromTrading({
       timeframe: row.timeframe ?? 'M15',
+      position_size_base: row.position_size_base,
       position_size_pct: row.position_size_pct,
       max_open_positions: row.max_open_positions,
+      max_order_amount: row.max_order_amount,
       initial_balance: row.initial_balance,
       current_balance: row.current_balance,
       commission_pct: row.commission_pct,
@@ -795,8 +843,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
   saveTradingParams(row: LogicRow, event: Event): void {
     event.stopPropagation();
     const draft = this.getParamsDraft(row.id);
+    const position_size_base =
+      draft.position_size_base === 'portfolio' ? 'portfolio' : 'free_cash';
     const position_size_pct = this.parseDecimalInput(draft.position_size_pct);
     const max_open_positions = Math.round(this.parseDecimalInput(draft.max_open_positions));
+    const maxOrderRaw = draft.max_order_amount.trim();
+    const max_order_amount =
+      maxOrderRaw === '' ? null : this.parseDecimalInput(maxOrderRaw.replace(',', '.'));
     const initialRaw = draft.initial_balance.trim();
     const initial_balance =
       initialRaw === '' ? null : this.parseDecimalInput(initialRaw.replace(',', '.'));
@@ -815,6 +868,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     if (!Number.isInteger(max_open_positions) || max_open_positions <= 0) {
       this.paramsSaveErrors.set(row.id, 'Макс. позиций: целое число больше 0');
+      return;
+    }
+    if (max_order_amount != null && (!Number.isFinite(max_order_amount) || max_order_amount < 0)) {
+      this.paramsSaveErrors.set(row.id, 'Макс. сумма на сделку: число ≥ 0 или пусто');
       return;
     }
     if (initial_balance != null && (!Number.isFinite(initial_balance) || initial_balance < 0)) {
@@ -873,8 +930,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const saveParams = () =>
       this.logicsService.saveLogicParams(row.id, {
         timeframe: draft.timeframe,
+        position_size_base,
         position_size_pct,
         max_open_positions,
+        max_order_amount,
         initial_balance,
         commission_pct,
         cost_method: draft.cost_method,

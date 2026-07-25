@@ -1319,6 +1319,15 @@ tbody tr.logic-main-row:hover {
   display: block;
 }
 
+.params-table .params-group-row td {
+  padding-top: 0.85rem;
+  padding-bottom: 0.35rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #111827;
+  border-top: 1px solid #e5e7eb;
+}
+
 .params-table .params-input {
   width: 100%;
   max-width: 10rem;

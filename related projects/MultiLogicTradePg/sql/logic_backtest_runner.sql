@@ -1048,6 +1048,9 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_position_size_pct NUMERIC;
     v_max_positions INTEGER;
+    v_max_order_amount NUMERIC;
+    v_sizing_base NUMERIC;
+    v_size_mode TEXT;
     v_open_positions INTEGER;
     v_side_open_id INTEGER;
     v_side_close_id INTEGER;
@@ -1084,6 +1087,14 @@ BEGIN
 
     v_position_size_pct := get_logic_param_numeric(p_logic_id, 'position_size_pct', 10);
     v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 5)::INTEGER);
+    v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
+    v_size_mode := lower(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'position_size_base'),
+        'free_cash'
+    )));
+    IF v_size_mode NOT IN ('free_cash', 'portfolio') THEN
+        v_size_mode := 'free_cash';
+    END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
 
@@ -1180,12 +1191,19 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
+                    IF v_size_mode = 'portfolio' THEN
+                        v_sizing_base := logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        );
+                    ELSE
+                        v_sizing_base := p_balance;
+                    END IF;
                     v_quantity := logic_calc_open_quantity(
-                        p_balance, v_position_size_pct, v_pp, v_lot_size
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
                     );
                     IF v_quantity < v_lot_size THEN
                         -- Фьючерсы: нотионал контракта >> % депозита → 1 лот при сигнале
-                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
+                        IF v_is_futures OR COALESCE(v_sizing_base, 0) >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -1204,11 +1222,18 @@ BEGIN
                     IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
+                    IF v_size_mode = 'portfolio' THEN
+                        v_sizing_base := logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        );
+                    ELSE
+                        v_sizing_base := p_balance;
+                    END IF;
                     v_quantity := logic_calc_open_quantity(
-                        p_balance, v_position_size_pct, v_pp, v_lot_size
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF v_is_futures OR p_balance >= v_pp * v_lot_size THEN
+                        IF v_is_futures OR COALESCE(v_sizing_base, 0) >= v_pp * v_lot_size THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;

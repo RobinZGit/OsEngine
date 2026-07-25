@@ -6,8 +6,12 @@ export interface LogicRow {
   is_enabled: boolean;
   note?: string | null;
   timeframe?: string;
+  /** free_cash | portfolio — база % для расчёта лота */
+  position_size_base?: 'free_cash' | 'portfolio';
   position_size_pct: number;
   max_open_positions: number;
+  /** Потолок номинала одной покупки, ₽; null/undefined = без лимита */
+  max_order_amount?: number | null;
   initial_balance: number | null;
   current_balance: number | null;
   commission_pct?: number;
@@ -39,8 +43,10 @@ export interface LogicRow {
 
 export interface LogicTradingParamsPayload {
   timeframe?: string;
+  position_size_base?: 'free_cash' | 'portfolio';
   position_size_pct?: number;
   max_open_positions?: number;
+  max_order_amount?: number | null;
   initial_balance?: number | null;
   reset_balance?: boolean;
   commission_pct?: number;
@@ -58,8 +64,10 @@ export interface LogicTradingParamsPayload {
 
 export interface LogicTradingParamsResponse {
   timeframe: string;
+  position_size_base: 'free_cash' | 'portfolio';
   position_size_pct: number;
   max_open_positions: number;
+  max_order_amount: number | null;
   initial_balance: number | null;
   current_balance: number | null;
   commission_pct: number;

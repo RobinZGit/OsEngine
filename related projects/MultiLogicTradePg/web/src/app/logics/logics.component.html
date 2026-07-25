@@ -548,6 +548,46 @@
 
                             </tr>
 
+                            <tr class="params-group-row">
+
+                              <td colspan="3">Расчёт лота</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>База %</td>
+
+                              <td>
+
+                                <select
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).position_size_base"
+                                  (ngModelChange)="onParamsSizeBaseChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  <option value="free_cash">Свободные деньги</option>
+                                  <option value="portfolio">Весь портфель</option>
+                                </select>
+
+                              </td>
+
+                              <td class="params-hint">
+
+                                @if (row.account_type === 'fake') {
+
+                                  Тест: свободный кэш или кэш+бумаги (без начального «миллиона» как базы)
+
+                                } @else {
+
+                                  Real: только брокер (кэш или total portfolio), не параметры теста
+
+                                }
+
+                              </td>
+
+                            </tr>
+
                             <tr>
 
                               <td>% депозита на сделку</td>
@@ -565,7 +605,66 @@
 
                               </td>
 
-                              <td class="params-hint">Доля текущего остатка на одну покупку (1–100)</td>
+                              <td class="params-hint">
+
+                                Доля выбранной базы на одну покупку (1–100)
+
+                              </td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Макс. открытых позиций</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="numeric"
+                                  class="params-input params-input-short"
+                                  [ngModel]="getParamsDraft(row.id).max_open_positions"
+                                  (ngModelChange)="onParamsMaxPositionsChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">Число одновременных сделок (для плеча и лимита)</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Макс. сумма на сделку</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).max_order_amount"
+                                  (ngModelChange)="onParamsMaxOrderAmountChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="без лимита"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">Потолок номинала одной покупки, ₽ (пусто = нет)</td>
+
+                            </tr>
+
+                            <tr>
+
+                              <td>Плечо (расчёт)</td>
+
+                              <td><strong>{{ formatLotLeverage(row.id) }}</strong></td>
+
+                              <td class="params-hint">
+                                макс. позиций × (% / 100); 1× = весь портфель при полном наборе слотов
+                              </td>
 
                             </tr>
 
@@ -612,27 +711,6 @@
                               <td class="params-hint">
                                 При включении боя: предрасчёт боевых рейтингов по свечам за N дней (фон, 1–90)
                               </td>
-
-                            </tr>
-
-                            <tr>
-
-                              <td>Макс. открытых позиций</td>
-
-                              <td>
-
-                                <input
-                                  type="text"
-                                  inputmode="numeric"
-                                  class="params-input params-input-short"
-                                  [ngModel]="getParamsDraft(row.id).max_open_positions"
-                                  (ngModelChange)="onParamsMaxPositionsChange(row.id, $event)"
-                                  (click)="$event.stopPropagation()"
-                                />
-
-                              </td>
-
-                              <td class="params-hint">Long-позиции по разным бумагам одновременно</td>
 
                             </tr>
 
