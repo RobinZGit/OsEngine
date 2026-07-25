@@ -480,7 +480,13 @@
 
                           <tbody>
 
-                            <tr>
+                            <tr class="params-group-row params-band-a">
+
+                              <td colspan="3">Основные</td>
+
+                            </tr>
+
+                            <tr class="params-band-a">
 
                               <td>Имя логики</td>
 
@@ -502,7 +508,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-a">
 
                               <td>Таймфрейм</td>
 
@@ -525,7 +531,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-a">
 
                               <td>Таймфрейм стоп-лосса</td>
 
@@ -548,13 +554,13 @@
 
                             </tr>
 
-                            <tr class="params-group-row">
+                            <tr class="params-group-row params-band-b">
 
                               <td colspan="3">Расчёт лота</td>
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>База %</td>
 
@@ -566,29 +572,26 @@
                                   (ngModelChange)="onParamsSizeBaseChange(row.id, $event)"
                                   (click)="$event.stopPropagation()"
                                 >
-                                  <option value="free_cash">Свободные деньги</option>
                                   <option value="portfolio">Весь портфель</option>
+                                  <option value="free_cash">Свободные деньги</option>
                                 </select>
 
                               </td>
 
                               <td class="params-hint">
 
+                                Портфель — по умолчанию; выбранный денежный фонд в базу не входит.
                                 @if (row.account_type === 'fake') {
-
-                                  Тест: свободный кэш или кэш+бумаги (без начального «миллиона» как базы)
-
+                                  Тест: кэш+бумаги или только свободный кэш.
                                 } @else {
-
-                                  Real: только брокер (кэш или total portfolio), не параметры теста
-
+                                  Real: только брокер (total / кэш).
                                 }
 
                               </td>
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>% депозита на сделку</td>
 
@@ -613,7 +616,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>Макс. открытых позиций</td>
 
@@ -634,7 +637,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>Макс. сумма на сделку</td>
 
@@ -656,7 +659,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>Плечо (расчёт)</td>
 
@@ -668,7 +671,13 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-group-row params-band-a">
+
+                              <td colspan="3">Рейтинг сигнала</td>
+
+                            </tr>
+
+                            <tr class="params-band-a">
 
                               <td>Базовая ставка (% годовых)</td>
 
@@ -691,7 +700,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-a">
 
                               <td>Дней предрасчёта рейтинга</td>
 
@@ -714,7 +723,13 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-group-row params-band-b">
+
+                              <td colspan="3">Остатки и PnL</td>
+
+                            </tr>
+
+                            <tr class="params-band-b">
 
                               <td>Начальный остаток</td>
 
@@ -756,7 +771,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>% комиссии от сделки</td>
 
@@ -779,7 +794,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>Метод расчёта PnL</td>
 
@@ -802,7 +817,7 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-b">
 
                               <td>Текущий остаток</td>
 
@@ -824,7 +839,13 @@
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-group-row params-band-a">
+
+                              <td colspan="3">Денежный фонд</td>
+
+                            </tr>
+
+                            <tr class="params-band-a">
 
                               <td>Денежный фонд</td>
 
@@ -844,12 +865,12 @@
                               </td>
 
                               <td class="params-hint">
-                                Пусто = не покупать. TMON / LQDT / SBMM — на каждой закрытой свече TF: если equity портфеля выше порога → BUY на min(свободный кэш, избыток − уже в фонде); фонд не продаём (тест и бой; fake — sim)
+                                Пусто = не покупать. Если выбран — его сумма не входит в базу «весь портфель» при расчёте лота. Парковка: BUY при equity выше порога; фонд не продаём.
                               </td>
 
                             </tr>
 
-                            <tr>
+                            <tr class="params-band-a">
 
                               <td>Порог портфеля (equity), ₽</td>
 
@@ -875,7 +896,13 @@
 
                             </tr>
 
-                            <tr class="params-actions-row">
+                            <tr class="params-group-row params-band-b">
+
+                              <td colspan="3">Режимы</td>
+
+                            </tr>
+
+                            <tr class="params-actions-row params-band-b">
 
                               <td colspan="3">
 

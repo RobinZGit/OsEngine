@@ -1250,8 +1250,8 @@ ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS display_order INTEGER NOT 
 INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order) VALUES
     ('timeframe', 'Таймфрейм', 'text', 'M15',
      'Таймфрейм цен, индикаторов и цикла сделок (M15, H1, D1 …)', 0),
-    ('position_size_base', 'База расчёта лота', 'text', 'free_cash',
-     'free_cash — % от свободных денег; portfolio — % от всего портфеля (real: брокер; test: кэш+бумаги)', 1),
+    ('position_size_base', 'База расчёта лота', 'text', 'portfolio',
+     'portfolio (по умолчанию) — % от всего портфеля без выбранного денежного фонда; free_cash — % от свободных денег', 1),
     ('position_size_pct', '% депозита на сделку', 'number', '10',
      'Доля выбранной базы (портфель или свободные) на одну покупку (1–100)', 2),
     ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',

@@ -1090,10 +1090,10 @@ BEGIN
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_size_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),
-        'free_cash'
+        'portfolio'
     )));
     IF v_size_mode NOT IN ('free_cash', 'portfolio') THEN
-        v_size_mode := 'free_cash';
+        v_size_mode := 'portfolio';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
@@ -1192,8 +1192,14 @@ BEGIN
                         CONTINUE;
                     END IF;
                     IF v_size_mode = 'portfolio' THEN
-                        v_sizing_base := logic_backtest_portfolio_equity(
-                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        v_sizing_base := GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                            - logic_backtest_selected_cash_fund_mtm(
+                                p_logic_id, p_tf_id, p_bar_dt
+                            )
                         );
                     ELSE
                         v_sizing_base := p_balance;
@@ -1223,8 +1229,14 @@ BEGIN
                         CONTINUE;
                     END IF;
                     IF v_size_mode = 'portfolio' THEN
-                        v_sizing_base := logic_backtest_portfolio_equity(
-                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        v_sizing_base := GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                            - logic_backtest_selected_cash_fund_mtm(
+                                p_logic_id, p_tf_id, p_bar_dt
+                            )
                         );
                     ELSE
                         v_sizing_base := p_balance;
@@ -1386,6 +1398,68 @@ $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'Тест: equity = cash + long×price − short×price на bar_dt (set-based)';
+
+-- MTM выбранного денежного фонда в тесте (исключается из базы лота «весь портфель»).
+CREATE OR REPLACE FUNCTION logic_backtest_selected_cash_fund_mtm(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_code TEXT;
+    v_mtm NUMERIC;
+BEGIN
+    v_code := upper(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'cash_fund_code'),
+        ''
+    )));
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN 0;
+    END IF;
+
+    SELECT COALESCE(SUM(q.long_qty * px.close_price), 0)
+    INTO v_mtm
+    FROM (
+        SELECT
+            lt.security_id,
+            GREATEST(COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0), 0) AS long_qty
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        JOIN security_prefixes sp ON sp.security_id = lt.security_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = FALSE
+          AND lt.status IN ('filled', 'submitted')
+          AND upper(sp.prefix) = v_code
+        GROUP BY lt.security_id
+    ) q
+    JOIN LATERAL (
+        SELECT p.close_price
+        FROM prices p
+        WHERE p.security_id = q.security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt <= p_bar_dt
+          AND p.close_price > 0
+        ORDER BY p.dt DESC
+        LIMIT 1
+    ) px ON TRUE
+    WHERE q.long_qty > 0;
+
+    RETURN GREATEST(0, COALESCE(v_mtm, 0));
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_selected_cash_fund_mtm(INTEGER, INTEGER, TIMESTAMP) IS
+'Тест: MTM выбранного cash_fund_code на bar_dt';
 
 -- Парковка: BUY фонда на min(свободный кэш, equity−порог−уже_в_фонде); без продажи фонда.
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(

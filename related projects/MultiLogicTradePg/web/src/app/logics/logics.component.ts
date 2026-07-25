@@ -767,7 +767,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       name: '',
       timeframe: (trading.timeframe ?? 'M15').toUpperCase(),
       position_size_base:
-        trading.position_size_base === 'portfolio' ? 'portfolio' : 'free_cash',
+        trading.position_size_base === 'free_cash' ? 'free_cash' : 'portfolio',
       position_size_pct: this.formatPctParam(trading.position_size_pct),
       max_open_positions: this.formatIntParam(trading.max_open_positions, 5),
       max_order_amount: this.formatBalanceDraft(
@@ -844,7 +844,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     event.stopPropagation();
     const draft = this.getParamsDraft(row.id);
     const position_size_base =
-      draft.position_size_base === 'portfolio' ? 'portfolio' : 'free_cash';
+      draft.position_size_base === 'free_cash' ? 'free_cash' : 'portfolio';
     const position_size_pct = this.parseDecimalInput(draft.position_size_pct);
     const max_open_positions = Math.round(this.parseDecimalInput(draft.max_open_positions));
     const maxOrderRaw = draft.max_order_amount.trim();

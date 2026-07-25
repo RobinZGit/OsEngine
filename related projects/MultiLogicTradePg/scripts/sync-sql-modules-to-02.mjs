@@ -69,6 +69,7 @@ sql02 = replaceBetween(
 
 // real-balance helpers + logic_ensure_balance из trade_runner → 02
 {
+  // lot-block (выше) уже тянет logic_selected_cash_fund_mtm + logic_position_sizing_base
   const ensStartMark = 'CREATE OR REPLACE FUNCTION logic_is_paper_balance_text(';
   let ensStart = tradeTail.indexOf(ensStartMark);
   if (ensStart === -1) {

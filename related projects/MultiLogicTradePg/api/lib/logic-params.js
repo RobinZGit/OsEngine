@@ -26,7 +26,7 @@ const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
 
 const DEFAULTS = {
   [PARAM_KEYS.TIMEFRAME]: { value: 'M15', type: 'text' },
-  [PARAM_KEYS.POSITION_SIZE_BASE]: { value: 'free_cash', type: 'text' },
+  [PARAM_KEYS.POSITION_SIZE_BASE]: { value: 'portfolio', type: 'text' },
   [PARAM_KEYS.POSITION_SIZE_PCT]: { value: '10', type: 'number' },
   [PARAM_KEYS.MAX_OPEN_POSITIONS]: { value: '5', type: 'integer' },
   [PARAM_KEYS.MAX_ORDER_AMOUNT]: { value: '', type: 'money' },
@@ -91,8 +91,8 @@ function rowsToTradingParams(rows) {
       const raw =
         map[PARAM_KEYS.POSITION_SIZE_BASE] != null
           ? String(map[PARAM_KEYS.POSITION_SIZE_BASE]).trim().toLowerCase()
-          : 'free_cash';
-      return raw === 'portfolio' ? 'portfolio' : 'free_cash';
+          : 'portfolio';
+      return raw === 'free_cash' ? 'free_cash' : 'portfolio';
     })(),
     position_size_pct:
       map[PARAM_KEYS.POSITION_SIZE_PCT] != null

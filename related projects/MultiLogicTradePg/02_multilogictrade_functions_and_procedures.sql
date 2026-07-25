@@ -4270,6 +4270,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7624,6 +7625,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -7666,7 +7695,57 @@ $$;
 COMMENT ON FUNCTION logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
 'Лот: % базы / цена (опц. потолок суммы), вниз до lot_size';
 
--- База для % лота: free_cash | portfolio. Real — только брокер; test — current / equity.
+-- MTM выбранного денежного фонда логики (для исключения из базы «весь портфель»).
+CREATE OR REPLACE FUNCTION logic_selected_cash_fund_mtm(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_code TEXT;
+    v_sec RECORD;
+    v_price NUMERIC;
+    v_qty NUMERIC;
+    v_mtm NUMERIC := 0;
+BEGIN
+    v_code := upper(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'cash_fund_code'),
+        ''
+    )));
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN 0;
+    END IF;
+
+    FOR v_sec IN
+        SELECT ls.security_id
+        FROM logic_securities ls
+        JOIN security_prefixes sp ON sp.security_id = ls.security_id
+        WHERE ls.logic_id = p_logic_id
+          AND ls.is_active = TRUE
+          AND upper(sp.prefix) = v_code
+    LOOP
+        v_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
+        IF v_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+        v_price := logic_ensure_security_market_price(
+            p_logic_id, v_sec.security_id, p_timeframe_id
+        );
+        IF v_price IS NOT NULL AND v_price > 0 THEN
+            v_mtm := v_mtm + v_qty * v_price;
+        END IF;
+    END LOOP;
+
+    RETURN GREATEST(0, v_mtm);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_selected_cash_fund_mtm(INTEGER, INTEGER) IS
+'Рыночная оценка выбранного cash_fund_code в логике; 0 если фонд не выбран';
+
+-- База для % лота: free_cash | portfolio (default). Real — брокер; test — current / equity.
+-- portfolio: без суммы выбранного денежного фонда (если cash_fund_code задан).
 CREATE OR REPLACE FUNCTION logic_position_sizing_base(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -7677,6 +7756,7 @@ DECLARE
     v_account_id INTEGER;
     v_account_type VARCHAR;
     v_mode TEXT;
+    v_fund_code TEXT;
     v_bal JSONB;
     v_cash NUMERIC;
     v_portfolio NUMERIC;
@@ -7696,10 +7776,18 @@ BEGIN
 
     v_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),
-        'free_cash'
+        'portfolio'
     )));
     IF v_mode NOT IN ('free_cash', 'portfolio') THEN
-        v_mode := 'free_cash';
+        v_mode := 'portfolio';
+    END IF;
+
+    v_fund_code := upper(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'cash_fund_code'),
+        ''
+    )));
+    IF v_fund_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        v_fund_code := '';
     END IF;
 
     IF v_account_type <> 'fake' THEN
@@ -7709,7 +7797,15 @@ BEGIN
                 RETURN 0;
             END IF;
             IF v_mode = 'portfolio' THEN
-                RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+                v_portfolio := GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+                -- Выбранный фонд не участвует в базе открытия позиций
+                IF v_fund_code <> '' THEN
+                    v_portfolio := GREATEST(
+                        0,
+                        v_portfolio - logic_selected_cash_fund_mtm(p_logic_id, p_timeframe_id)
+                    );
+                END IF;
+                RETURN v_portfolio;
             END IF;
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 RETURN GREATEST(0, COALESCE((v_bal->>'cash_amount')::NUMERIC, 0));
@@ -7721,7 +7817,7 @@ BEGIN
         END;
     END IF;
 
-    -- Test (fake): свободные = current; портфель = current + MTM бумаг логики
+    -- Test (fake): свободные = current; портфель = current + MTM бумаг (без выбранного фонда)
     v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
     IF v_mode <> 'portfolio' THEN
         RETURN GREATEST(0, v_cash);
@@ -7732,11 +7828,14 @@ BEGIN
         SELECT ls.security_id
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-          AND NOT EXISTS (
-              SELECT 1
-              FROM security_prefixes sp
-              WHERE sp.security_id = ls.security_id
-                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          AND (
+              v_fund_code = ''
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM security_prefixes sp
+                  WHERE sp.security_id = ls.security_id
+                    AND upper(sp.prefix) = v_fund_code
+              )
           )
     LOOP
         v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
@@ -7756,7 +7855,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
-'База % лота: free_cash или portfolio; real=брокер, fake=current/equity';
+'База % лота: free_cash|portfolio (default portfolio); фонд из cash_fund_code исключается из portfolio';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
@@ -11698,10 +11797,10 @@ BEGIN
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_size_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),
-        'free_cash'
+        'portfolio'
     )));
     IF v_size_mode NOT IN ('free_cash', 'portfolio') THEN
-        v_size_mode := 'free_cash';
+        v_size_mode := 'portfolio';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
@@ -11800,8 +11899,14 @@ BEGIN
                         CONTINUE;
                     END IF;
                     IF v_size_mode = 'portfolio' THEN
-                        v_sizing_base := logic_backtest_portfolio_equity(
-                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        v_sizing_base := GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                            - logic_backtest_selected_cash_fund_mtm(
+                                p_logic_id, p_tf_id, p_bar_dt
+                            )
                         );
                     ELSE
                         v_sizing_base := p_balance;
@@ -11831,8 +11936,14 @@ BEGIN
                         CONTINUE;
                     END IF;
                     IF v_size_mode = 'portfolio' THEN
-                        v_sizing_base := logic_backtest_portfolio_equity(
-                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        v_sizing_base := GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                            - logic_backtest_selected_cash_fund_mtm(
+                                p_logic_id, p_tf_id, p_bar_dt
+                            )
                         );
                     ELSE
                         v_sizing_base := p_balance;
@@ -11994,6 +12105,68 @@ $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'Тест: equity = cash + long×price − short×price на bar_dt (set-based)';
+
+-- MTM выбранного денежного фонда в тесте (исключается из базы лота «весь портфель»).
+CREATE OR REPLACE FUNCTION logic_backtest_selected_cash_fund_mtm(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_code TEXT;
+    v_mtm NUMERIC;
+BEGIN
+    v_code := upper(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'cash_fund_code'),
+        ''
+    )));
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN 0;
+    END IF;
+
+    SELECT COALESCE(SUM(q.long_qty * px.close_price), 0)
+    INTO v_mtm
+    FROM (
+        SELECT
+            lt.security_id,
+            GREATEST(COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0), 0) AS long_qty
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        JOIN security_prefixes sp ON sp.security_id = lt.security_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = FALSE
+          AND lt.status IN ('filled', 'submitted')
+          AND upper(sp.prefix) = v_code
+        GROUP BY lt.security_id
+    ) q
+    JOIN LATERAL (
+        SELECT p.close_price
+        FROM prices p
+        WHERE p.security_id = q.security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt <= p_bar_dt
+          AND p.close_price > 0
+        ORDER BY p.dt DESC
+        LIMIT 1
+    ) px ON TRUE
+    WHERE q.long_qty > 0;
+
+    RETURN GREATEST(0, COALESCE(v_mtm, 0));
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_selected_cash_fund_mtm(INTEGER, INTEGER, TIMESTAMP) IS
+'Тест: MTM выбранного cash_fund_code на bar_dt';
 
 -- Парковка: BUY фонда на min(свободный кэш, equity−порог−уже_в_фонде); без продажи фонда.
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
@@ -13498,6 +13671,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

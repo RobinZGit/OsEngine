@@ -419,7 +419,57 @@ $$;
 COMMENT ON FUNCTION logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
 'Лот: % базы / цена (опц. потолок суммы), вниз до lot_size';
 
--- База для % лота: free_cash | portfolio. Real — только брокер; test — current / equity.
+-- MTM выбранного денежного фонда логики (для исключения из базы «весь портфель»).
+CREATE OR REPLACE FUNCTION logic_selected_cash_fund_mtm(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_code TEXT;
+    v_sec RECORD;
+    v_price NUMERIC;
+    v_qty NUMERIC;
+    v_mtm NUMERIC := 0;
+BEGIN
+    v_code := upper(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'cash_fund_code'),
+        ''
+    )));
+    IF v_code = '' OR v_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        RETURN 0;
+    END IF;
+
+    FOR v_sec IN
+        SELECT ls.security_id
+        FROM logic_securities ls
+        JOIN security_prefixes sp ON sp.security_id = ls.security_id
+        WHERE ls.logic_id = p_logic_id
+          AND ls.is_active = TRUE
+          AND upper(sp.prefix) = v_code
+    LOOP
+        v_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
+        IF v_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+        v_price := logic_ensure_security_market_price(
+            p_logic_id, v_sec.security_id, p_timeframe_id
+        );
+        IF v_price IS NOT NULL AND v_price > 0 THEN
+            v_mtm := v_mtm + v_qty * v_price;
+        END IF;
+    END LOOP;
+
+    RETURN GREATEST(0, v_mtm);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_selected_cash_fund_mtm(INTEGER, INTEGER) IS
+'Рыночная оценка выбранного cash_fund_code в логике; 0 если фонд не выбран';
+
+-- База для % лота: free_cash | portfolio (default). Real — брокер; test — current / equity.
+-- portfolio: без суммы выбранного денежного фонда (если cash_fund_code задан).
 CREATE OR REPLACE FUNCTION logic_position_sizing_base(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -430,6 +480,7 @@ DECLARE
     v_account_id INTEGER;
     v_account_type VARCHAR;
     v_mode TEXT;
+    v_fund_code TEXT;
     v_bal JSONB;
     v_cash NUMERIC;
     v_portfolio NUMERIC;
@@ -449,10 +500,18 @@ BEGIN
 
     v_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),
-        'free_cash'
+        'portfolio'
     )));
     IF v_mode NOT IN ('free_cash', 'portfolio') THEN
-        v_mode := 'free_cash';
+        v_mode := 'portfolio';
+    END IF;
+
+    v_fund_code := upper(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'cash_fund_code'),
+        ''
+    )));
+    IF v_fund_code NOT IN ('TMON', 'LQDT', 'SBMM') THEN
+        v_fund_code := '';
     END IF;
 
     IF v_account_type <> 'fake' THEN
@@ -462,7 +521,15 @@ BEGIN
                 RETURN 0;
             END IF;
             IF v_mode = 'portfolio' THEN
-                RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+                v_portfolio := GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+                -- Выбранный фонд не участвует в базе открытия позиций
+                IF v_fund_code <> '' THEN
+                    v_portfolio := GREATEST(
+                        0,
+                        v_portfolio - logic_selected_cash_fund_mtm(p_logic_id, p_timeframe_id)
+                    );
+                END IF;
+                RETURN v_portfolio;
             END IF;
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 RETURN GREATEST(0, COALESCE((v_bal->>'cash_amount')::NUMERIC, 0));
@@ -474,7 +541,7 @@ BEGIN
         END;
     END IF;
 
-    -- Test (fake): свободные = current; портфель = current + MTM бумаг логики
+    -- Test (fake): свободные = current; портфель = current + MTM бумаг (без выбранного фонда)
     v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
     IF v_mode <> 'portfolio' THEN
         RETURN GREATEST(0, v_cash);
@@ -485,11 +552,14 @@ BEGIN
         SELECT ls.security_id
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-          AND NOT EXISTS (
-              SELECT 1
-              FROM security_prefixes sp
-              WHERE sp.security_id = ls.security_id
-                AND upper(sp.prefix) IN ('TMON', 'LQDT', 'SBMM')
+          AND (
+              v_fund_code = ''
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM security_prefixes sp
+                  WHERE sp.security_id = ls.security_id
+                    AND upper(sp.prefix) = v_fund_code
+              )
           )
     LOOP
         v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
@@ -509,7 +579,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
-'База % лота: free_cash или portfolio; real=брокер, fake=current/equity';
+'База % лота: free_cash|portfolio (default portfolio); фонд из cash_fund_code исключается из portfolio';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
