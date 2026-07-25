@@ -348,10 +348,16 @@
 
 ---
 
-## История сессий (кратко)\n\n| 2026-07-25 | GET /logics: remove T-Bank sync from poll; batch params; exhaustMap + pause editor |\n
+## История сессий (кратко)
 
 | Дата | Суть |
 |------|------|
+| 2026-07-25 | PROJECT_CONTEXT: полный апдейт сессии (обязательно с каждым push) |
+| 2026-07-25 | portfolio_ltp_renew: linear TP on whole portfolio + renew; migrate from security_ltp_renew; no release |
+| 2026-07-25 | Fix backtest portfolio TP (equity+latch); cash-based spam; no release |
+| 2026-07-25 | Lot base: portfolio / portfolio_incl_fund / free_cash; current_bar_dt next to %; no release |
+| 2026-07-25 | Fix backtest v_ltp unassigned; report download filename; no release |
+| 2026-07-25 | GET /logics: remove T-Bank sync from poll; batch params; exhaustMap + pause editor |
 | 2026-07-25 | Fake: initial from params; real: both from broker |
 | 2026-07-25 | Install-over: real initial/current from broker or 0; installers; no release |
 | 2026-07-25 | Real trading balance: broker cash for sizing/`current_balance`; no release |
