@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — portfolio_ltp_renew (linear TP on whole portfolio); no release
+**Последнее обновление:** 2026-07-25 — PROJECT_CONTEXT полный апдейт (portfolio_ltp_renew + lot base + backtest fixes); no release
 
 > **Важно для агентов:** push в отдельный `RobinZGit/MultiLogicTradePg` из Cloud Agent на OsEngine **недоступен** (`cursor[bot]` write scoped to OsEngine; публичный репо без выбора в GitHub App = read-only). Рабочая копия с installer живёт в **OsEngine** → `related projects/MultiLogicTradePg`. Синхронизацию в upstream MultiLogicTradePg делать вручную или новым агентом, запущенным на том репозитории.
 
@@ -82,7 +82,7 @@
 - **AND:** сделка только если **все** активные сигналы одной группы `(position_event × position_side)` сработали; OR → отдельные logics;
 - **`logic_signal_rating_pending`** + **`logic_signal_rating_history`**: сработал → pending; на **следующей** свече ход → **% годовых** vs **`base_annual_rate_pct`** (дефолт 20) → `±1`; history с `logic_id`+`security_id`+`signal_id` для графика **на бумаге**;
 - **Бэктест Стоп:** `cancel` сразу ставит `status=cancelled`, результат теста **не удаляется**; UI не висит на «Останавливаю…»;
-- **`logic_stops`** — стоп-лосс и тейк-профит по логике (`rule_kind` stop_loss|take_profit, `scope_type` security|portfolio|security_resume, `value`, `value_unit` percent|atr);
+- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit`);
 - **`logic_securities`** — портфель бумаг логики (`logic_id`, `security_id`, `display_order`, `is_active`);
 - **`logic_trades`** — сделки: `position_event`, `signal_kind`, `is_simulated`, **`is_fictitious`**, `commission`, **`financial_result`** (только Close), **`run_id`** (прогон теста → `logic_backtest_runs`; NULL у боя), `bar_dt`, `status`; side Open/Close через `sides`; уникальность бара: `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`;
 - **`logic_trade_lots`** — пакеты закрытия (FIFO / средняя): связь close↔open, суммы, комиссии, PnL по пакету;
@@ -115,6 +115,19 @@
 - после правок — `npm run verify:sql`; правило: `.cursor/rules/database-scripts.mdc`.
 
 ---
+
+## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-25 (линейный TP / лот / бэктест)
+- **portfolio_ltp_renew:** линейный тейк по **всему портфелю** с возобновлением (замена `security_ltp_renew`): track% = (equity−initial)/initial; взведение при base%×годы + TP%; трейл пика equity; закрытие всех на падении; pause/shadow/renew как portfolio_resume. UI: «Линейный тейк-профит по всему портфелю с возобновлением».
+- **База % лота:** `free_cash` | `portfolio` (default, без ден. фонда) | `portfolio_incl_fund`.
+- **Прогресс теста:** рядом с % — дата текущей свечи (`current_bar_dt`).
+- **HTML-отчёт:** кнопка «Скачать»; имя файла = логика + период + TF + PnL% + сделки.
+- **Fix бэктест portfolio TP:** был кэш vs initial (спам); теперь equity + latch.
+- **Fix бэктест v_ltp:** crash на отсутствующей строке state.
+- **Install-over:** починка DO$ в 01; при падении 01 после drop routines — всё равно 02.
+- **Правило:** перед каждым push обновлять этот `PROJECT_CONTEXT.md` (шапка, сделано, история, запросы).
+- GitHub release **не** публиковать, пока боевая торговля не стабильна.
 
 ## Что сделано (актуально на 2026-07-14)
 
@@ -475,10 +488,17 @@
 
 ---
 
-## Запросы пользователя (текст)\n\n663. Lot base: three choices — free cash / portfolio without cash fund (default) / portfolio including cash fund; show current backtest date next to progress %.
+## Запросы пользователя (текст)
 
+665. Rename linear TP from paper to whole portfolio with renewal (portfolio_ltp_renew); remove per-paper cut. Always update PROJECT_CONTEXT on push.
 
-662. Linear Take Profit on paper with renewal — arm at base%+TP%, sell on price drop, shadow renew, disarm below base%.\n\n\n661. Why account select hangs; logic on/off signals empty for seconds; positions lag — small DB.\n
+664. Copied logic spam take_profit:portfolio while equity falls — was cash-based TP + wrong scope vs linear TP on source.
+
+663. Lot base: three choices — free cash / portfolio without cash fund (default) / portfolio including cash fund; show current backtest date next to progress %.
+
+662. Linear Take Profit on paper with renewal — arm at base%+TP%, sell on price drop, shadow renew, disarm below base% (later moved to portfolio).
+
+661. Why account select hangs; logic on/off signals empty for seconds; positions lag — small DB.
 
 ### 2026-07-12 (ранние)
 
