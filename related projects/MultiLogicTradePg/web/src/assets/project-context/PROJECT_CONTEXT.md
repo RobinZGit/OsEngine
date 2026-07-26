@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — account «Продать всё» → book-close логик без второй заявки
+**Последнее обновление:** 2026-07-26 — GitHub release **real-trade-1** (акцент: боевая торговля)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (GitHub release real-trade-1)
+
+- Релиз **`real-trade-1`**: акцент — **боевая торговля заработала** (T‑Bank real: заявки, комиссии/FinRes, shadow без PostOrder, sell-all → book-close, market/limit, free_cash).
+- Assets: `MultiLogicTradePgSetup.exe`, `MultiLogicTradePg-linux.tar.gz` (сборка на `ea2f9be`+).
+- Черновик `test-1` оставлен как есть; пауза релизов снята по запросу Sergey.
 
 ### 2026-07-26 (Account sell-all → book-close логик)
 
@@ -464,7 +470,7 @@
 - [x] Backtest: single-flight `load_prices` by key + per-run indicator SQL (`api/logic-backtest.js`, 2026-07-25).
 - [x] Real account actions: sell-all portfolio + buy TBRU bonds (UI + SQL/API, 2026-07-25).
 - [ ] Validate real-account logic (attach to real, confirm qty vs free cash, no oversized rejects).
-- [ ] New GitHub release only after real trading is solid (Sergey: pause releases for now).
+- [x] GitHub release **real-trade-1** — боевая торговля (2026-07-26).
 
 ---
 
@@ -484,6 +490,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | GitHub release real-trade-1 (real trading focus) + installers |
 | 2026-07-26 | Account sell-all syncs logic books (no 2nd PostOrder); repair 2133; push |
 | 2026-07-26 | Shadow live: no T-Bank PostOrder; FLOT #602132 untag; reject reason UI; safer cleanup; push |
 | 2026-07-26 | Pages → OsEngine (/OsEngine/); archive RobinZGit/MultiLogicTradePg (read-only); single copy in OsEngine |
@@ -643,6 +650,8 @@
 ---
 
 ## Запросы пользователя (текст)
+
+684. Make a GitHub release of this build; name it around «real trade» — emphasize that real trading has started to work.
 
 683. Sold everything via account button but logic trades stayed open — sync closes; maybe sell then close-all; prefer a better approach.
 
