@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — equity chart = champion only (exclude OPT paper), match FinRes
+**Последнее обновление:** 2026-07-26 — switch same bar: after Close free exposure + refresh % base (always, no param)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (свитч на баре: Close → Open с учётом кэша)
+
+- Порядок сигналов: `close` затем `open` (ORDER BY position_event).
+- **Всегда** (без параметра): после успешного Close в том же цикле — пересчёт `v_spent_notional` и обновление `v_cycle_budget` / `v_max_exposure` (кэш появился или ушёл), чтобы следующий Open не уходил в долг и видел комнату.
+- После Open базу по-прежнему не трогаем (freeze от short-кэша). Live + backtest.
 
 ### 2026-07-26 (эквити vs FinRes на OPT-тесте)
 
@@ -617,6 +623,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Switch: after Close refresh exposure+% base (no param); installers; push |
 | 2026-07-26 | Equity chart exclude OPT paper (match FinRes); installers; push |
 | 2026-07-26 | Backtest/OPT speed: open_lane once/arm, exposure+run_id, index; installers; push |
 | 2026-07-26 | Cap open notional = base×pct×max_positions (long+short); push |
@@ -805,4 +812,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **709** — equity vs FinRes after reinstall; **708** — backtest hang/speed.
+Последние (см. USER_INSTRUCTIONS): **710** — switch close→open with cash (no param); **709** — equity vs FinRes.

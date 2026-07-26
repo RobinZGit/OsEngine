@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+710. Let's make such an improvement and add a new parameter to the logic for this, a checkmark, it will be turned on by default. When opening a position, also take into account the proceeds after closing… In general, we will do without a parameter… it will always be taken into account.
+
 709. Look now, I reinstalled everything, restarted the test, and again some kind of difference between equity and real transactions.
 
 708. Look at the local testing now. Maybe a long hanging. Why is it hanging? Well, maybe it doesn't hang. But if there are any locks, look. Maybe something can be done to make it go faster.

@@ -4456,6 +4456,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9620,6 +9621,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -13657,8 +13686,9 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_balance := logic_ensure_balance(p_logic_id);
     v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
-    -- Зафиксировать базу на цикл: short на реале увеличивает free_cash у брокера —
-    -- без фиксации каждый следующий Open снова берёт 10% от уже раздутого кэша (маржа).
+    -- Зафиксировать базу на цикл: short Open раздувает free_cash у брокера —
+    -- без фиксации каждый следующий Open берёт % от уже раздутого кэша (маржа).
+    -- После Close базу обновляем (свитч: кэш +/- для следующего Open).
     v_cycle_budget := COALESCE(v_sizing_base, 0);
     -- Потолок риска из тех же 2 параметров: 10 поз × 10% = 100% базы; 20×10% = 200%.
     -- Long и short считаются в одном номинале (шорт не может «набрать» сверх этого).
@@ -14092,6 +14122,19 @@ BEGIN
                 END IF;
             ELSE
                 PERFORM logic_trade_finalize(v_trade_id, NULL);
+            END IF;
+
+            -- Switch same bar: after Close free exposure + refresh % base (cash in/out).
+            -- Never refresh after Open — short proceeds must not inflate the cycle base.
+            IF NOT v_is_shadow
+               AND NOT v_is_open_event
+               AND v_status <> 'rejected' THEN
+                v_spent_notional := logic_open_notional_exposure(p_logic_id, FALSE, '');
+                v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+                v_cycle_budget := COALESCE(v_sizing_base, 0);
+                v_max_exposure := v_cycle_budget
+                    * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+                    * v_max_positions;
             END IF;
 
             PERFORM logic_trade_log(
@@ -16431,6 +16474,34 @@ BEGIN
                 v_spent_notional := v_spent_notional + (v_quantity * v_pp);
             ELSIF v_trade_id IS NOT NULL AND NOT v_is_open_event AND NOT v_is_shadow THEN
                 v_open_positions := GREATEST(0, v_open_positions - 1);
+                -- Switch same bar: free exposure + refresh % base from post-close cash/equity.
+                -- Open still does not refresh the base (short must not inflate mid-bar).
+                v_spent_notional := logic_open_notional_exposure(
+                    p_logic_id, TRUE, '', p_run_id
+                );
+                IF v_size_mode = 'free_cash' THEN
+                    v_cycle_budget := GREATEST(0, COALESCE(p_balance, 0));
+                ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+                    v_cycle_budget := GREATEST(
+                        0,
+                        COALESCE(logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        ), 0)
+                    );
+                ELSE
+                    v_cycle_budget := GREATEST(
+                        0,
+                        COALESCE(logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        ), 0)
+                        - logic_backtest_selected_cash_fund_mtm(
+                            p_logic_id, p_tf_id, p_bar_dt
+                        )
+                    );
+                END IF;
+                v_max_exposure := v_cycle_budget
+                    * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+                    * v_max_positions;
             END IF;
         END LOOP;
     END LOOP;
@@ -18181,6 +18252,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

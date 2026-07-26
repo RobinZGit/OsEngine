@@ -1889,6 +1889,34 @@ BEGIN
                 v_spent_notional := v_spent_notional + (v_quantity * v_pp);
             ELSIF v_trade_id IS NOT NULL AND NOT v_is_open_event AND NOT v_is_shadow THEN
                 v_open_positions := GREATEST(0, v_open_positions - 1);
+                -- Switch same bar: free exposure + refresh % base from post-close cash/equity.
+                -- Open still does not refresh the base (short must not inflate mid-bar).
+                v_spent_notional := logic_open_notional_exposure(
+                    p_logic_id, TRUE, '', p_run_id
+                );
+                IF v_size_mode = 'free_cash' THEN
+                    v_cycle_budget := GREATEST(0, COALESCE(p_balance, 0));
+                ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+                    v_cycle_budget := GREATEST(
+                        0,
+                        COALESCE(logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        ), 0)
+                    );
+                ELSE
+                    v_cycle_budget := GREATEST(
+                        0,
+                        COALESCE(logic_backtest_portfolio_equity(
+                            p_logic_id, p_tf_id, p_bar_dt, p_balance
+                        ), 0)
+                        - logic_backtest_selected_cash_fund_mtm(
+                            p_logic_id, p_tf_id, p_bar_dt
+                        )
+                    );
+                END IF;
+                v_max_exposure := v_cycle_budget
+                    * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+                    * v_max_positions;
             END IF;
         END LOOP;
     END LOOP;
