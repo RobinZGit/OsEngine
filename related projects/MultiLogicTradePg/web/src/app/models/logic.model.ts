@@ -35,6 +35,8 @@ export interface LogicRow {
   close_positions_eod?: boolean;
   /** Тип исполнения боевых заявок: market (по умолчанию) | limit. */
   order_execution?: 'market' | 'limit';
+  /** Окно promote OPT: число закрытых свечей TF (по умолчанию 20). */
+  opt_eval_candles?: number;
   account_code: string;
   account_name: string;
   account_type: 'real' | 'fake';
@@ -63,6 +65,7 @@ export interface LogicTradingParamsPayload {
   use_non_trading_periods?: boolean;
   close_positions_eod?: boolean;
   order_execution?: 'market' | 'limit';
+  opt_eval_candles?: number;
 }
 
 export interface LogicTradingParamsResponse {
@@ -85,6 +88,7 @@ export interface LogicTradingParamsResponse {
   use_non_trading_periods: boolean;
   close_positions_eod: boolean;
   order_execution: 'market' | 'limit';
+  opt_eval_candles: number;
 }
 
 export interface LogicNonTradingIntervalRow {

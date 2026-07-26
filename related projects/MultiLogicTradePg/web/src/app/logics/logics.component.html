@@ -1035,6 +1035,28 @@
 
                             </tr>
 
+                            <tr class="params-band-b">
+
+                              <td>Свечей окна OPT</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  class="params-input params-input-short"
+                                  [ngModel]="getParamsDraft(row.id).opt_eval_candles"
+                                  (ngModelChange)="onParamsOptEvalCandlesChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                Через сколько закрытых свечей TF сравнить FinRes чемпиона и OPT-веток и подставить лучшие базы в формулы. По умолчанию 20. Без OPT в формулах не используется.
+                              </td>
+
+                            </tr>
+
                             <tr class="params-actions-row params-band-b">
 
                               <td colspan="3">

@@ -125,6 +125,13 @@ BEGIN
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
+    UPDATE logic_params
+    SET param_value = '20',
+        value_type = 'integer',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE param_key = 'opt_eval_candles'
+      AND param_value IS DISTINCT FROM '20';
+
     INSERT INTO logic_indicator_signals (
         logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
     )

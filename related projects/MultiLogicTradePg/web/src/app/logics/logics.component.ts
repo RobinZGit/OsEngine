@@ -282,6 +282,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       use_non_trading_periods: boolean;
       close_positions_eod: boolean;
       order_execution: 'market' | 'limit';
+      opt_eval_candles: string;
       reset_balance: boolean;
     }
   >();
@@ -787,6 +788,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsOptEvalCandlesChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).opt_eval_candles = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   private formatPctParam(value: number | string | null | undefined): string {
     if (value == null || value === '') return '10';
     const n =
@@ -875,6 +882,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       use_non_trading_periods?: boolean;
       close_positions_eod?: boolean;
       order_execution?: 'market' | 'limit';
+      opt_eval_candles?: number;
     }
   ): void {
     const idx = this.logics.findIndex((l) => l.id === logicId);
@@ -903,6 +911,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     use_non_trading_periods?: boolean;
     close_positions_eod?: boolean;
     order_execution?: 'market' | 'limit';
+    opt_eval_candles?: number;
   }): {
     name: string;
     timeframe: string;
@@ -923,6 +932,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     use_non_trading_periods: boolean;
     close_positions_eod: boolean;
     order_execution: 'market' | 'limit';
+    opt_eval_candles: string;
     reset_balance: boolean;
   } {
     const method: 'FIFO' | 'AVERAGE' =
@@ -957,6 +967,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       close_positions_eod: trading.close_positions_eod === true,
       order_execution: trading.order_execution === 'limit' ? 'limit' : 'market',
+      opt_eval_candles: this.formatIntParam(trading.opt_eval_candles ?? 20, 20),
       reset_balance: false,
     };
   }
@@ -1002,6 +1013,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       use_non_trading_periods: row.use_non_trading_periods,
       close_positions_eod: row.close_positions_eod,
       order_execution: row.order_execution,
+      opt_eval_candles: row.opt_eval_candles,
     });
     draft.name = row.name ?? '';
     return draft;
@@ -1029,6 +1041,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const base_annual_rate_pct = this.parseDecimalInput(draft.base_annual_rate_pct);
     const rating_lookback_days = Math.round(
       this.parseDecimalInput(draft.rating_lookback_days)
+    );
+    const opt_eval_candles = Math.round(
+      this.parseDecimalInput(draft.opt_eval_candles)
     );
 
     if (!Number.isFinite(position_size_pct) || position_size_pct <= 0 || position_size_pct > 100) {
@@ -1068,6 +1083,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days > 90
     ) {
       this.paramsSaveErrors.set(row.id, 'Дней предрасчёта рейтинга: целое от 1 до 90');
+      return;
+    }
+    if (
+      !Number.isInteger(opt_eval_candles) ||
+      opt_eval_candles < 1 ||
+      opt_eval_candles > 500
+    ) {
+      this.paramsSaveErrors.set(row.id, 'Свечей окна OPT: целое от 1 до 500');
       return;
     }
 
@@ -1119,6 +1142,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         use_non_trading_periods: draft.use_non_trading_periods,
         close_positions_eod: draft.close_positions_eod,
         order_execution: draft.order_execution,
+        opt_eval_candles,
         reset_balance: draft.reset_balance,
       });
 

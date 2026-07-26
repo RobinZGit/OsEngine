@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — switch same bar: after Close free exposure + refresh % base (always, no param)
+**Последнее обновление:** 2026-07-26 — UI «Свечей окна OPT» (opt_eval_candles=20); reset all logics to 20
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (форма: Свечей окна OPT = 20)
+
+- Поле в «Параметры логики»: `opt_eval_candles`, дефолт **20**.
+- UPDATE всех логик: значение 20 (раньше у Optimized иногда было 5).
+- Seed/ensure больше не ставят 5.
 
 ### 2026-07-26 (свитч на баре: Close → Open с учётом кэша)
 
@@ -623,6 +629,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | UI opt_eval_candles=20 + reset all logics; installers; push |
 | 2026-07-26 | Switch: after Close refresh exposure+% base (no param); installers; push |
 | 2026-07-26 | Equity chart exclude OPT paper (match FinRes); installers; push |
 | 2026-07-26 | Backtest/OPT speed: open_lane once/arm, exposure+run_id, index; installers; push |
@@ -812,4 +819,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **710** — switch close→open with cash (no param); **709** — equity vs FinRes.
+Последние (см. USER_INSTRUCTIONS): **711** — opt_eval_candles UI=20 + parallel OPT streams Q; **710** — switch cash.

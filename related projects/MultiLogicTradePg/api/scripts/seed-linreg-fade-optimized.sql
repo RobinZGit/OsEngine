@@ -58,12 +58,12 @@ ON CONFLICT (logic_id, security_id) DO UPDATE SET
     is_active = EXCLUDED.is_active,
     display_order = EXCLUDED.display_order;
 
--- Faster promote while testing (override anytime in UI)
+-- Promote window: default 20 (editable in UI «Свечей окна OPT»)
 UPDATE logic_params lp
-SET param_value = '5', value_type = 'integer'
+SET param_value = '20', value_type = 'integer'
 FROM logics l
 WHERE l.id = lp.logic_id
-  AND l.name = 'LinReg Fade Optimized'
+  AND l.name IN ('LinReg Fade Optimized', 'LinReg Fade Optimized copy')
   AND lp.param_key = 'opt_eval_candles';
 
 -- Same SL/TP as LinReg Fade (seed had signals/papers but forgot stops)

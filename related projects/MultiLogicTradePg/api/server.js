@@ -4400,6 +4400,15 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.opt_eval_candles !== undefined) {
+    const v = Math.round(Number(body.opt_eval_candles));
+    if (!Number.isInteger(v) || v < 1 || v > 500) {
+      return { error: 'Свечей окна OPT: целое от 1 до 500' };
+    }
+    out.opt_eval_candles = v;
+    hasField = true;
+  }
+
   if (!hasField) {
     return { error: 'Укажите параметры торговли' };
   }

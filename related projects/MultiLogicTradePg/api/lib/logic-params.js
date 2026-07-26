@@ -21,6 +21,7 @@ const PARAM_KEYS = {
   USE_NON_TRADING_PERIODS: 'use_non_trading_periods',
   CLOSE_POSITIONS_EOD: 'close_positions_eod',
   ORDER_EXECUTION: 'order_execution',
+  OPT_EVAL_CANDLES: 'opt_eval_candles',
 };
 
 const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
@@ -45,6 +46,7 @@ const DEFAULTS = {
   [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.ORDER_EXECUTION]: { value: 'market', type: 'text' },
+  [PARAM_KEYS.OPT_EVAL_CANDLES]: { value: '20', type: 'integer' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -152,6 +154,11 @@ function rowsToTradingParams(rows) {
           ? String(map[PARAM_KEYS.ORDER_EXECUTION]).trim().toLowerCase()
           : 'market';
       return raw === 'limit' || raw === 'l' ? 'limit' : 'market';
+    })(),
+    opt_eval_candles: (() => {
+      const n = map[PARAM_KEYS.OPT_EVAL_CANDLES];
+      const v = n != null ? Number(n) : 20;
+      return Number.isInteger(v) && v >= 1 ? v : 20;
     })(),
   };
 }
@@ -485,6 +492,14 @@ async function saveTradingParams(pool, logicId, payload) {
       .toLowerCase();
     const exec = raw === 'limit' || raw === 'l' ? 'limit' : 'market';
     await upsertParam(pool, logicId, PARAM_KEYS.ORDER_EXECUTION, exec, 'text');
+  }
+
+  if (payload.opt_eval_candles !== undefined) {
+    const v = Math.round(Number(payload.opt_eval_candles));
+    if (!Number.isInteger(v) || v < 1 || v > 500) {
+      throw new Error('Свечей окна OPT: целое от 1 до 500');
+    }
+    await upsertParam(pool, logicId, PARAM_KEYS.OPT_EVAL_CANDLES, v, 'integer');
   }
 
   if (onReal) {
