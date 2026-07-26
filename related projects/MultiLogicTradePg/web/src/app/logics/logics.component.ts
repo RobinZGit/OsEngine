@@ -598,8 +598,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     this.expandedLogics.add(row.id);
     this.ensureParamsDraft(row.id);
-    // Прогреть сигналы сразу — не ждать открытия блока «Сигналы».
+    // Прогреть сигналы/стопы сразу — не ждать открытия блоков.
     this.loadSignalsForLogic(row.id);
+    this.loadStopsForLogic(row.id);
   }
 
   /** Collapse expanded logic (same as clicking the row when open). */
@@ -2025,8 +2026,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     event.stopPropagation();
     this.stopForm = { logicId, ruleKind };
     this.stopFormDraft = {
-      // Стоп-лосс по умолчанию — по бумаге с возобновлением; тейк — по бумаге
-      scope_type: ruleKind === 'stop_loss' ? 'security_resume' : 'security',
+      // SL: по бумаге×стороне с возобновлением; TP: линейный по портфелю с renew
+      scope_type:
+        ruleKind === 'stop_loss' ? 'security_resume' : 'portfolio_ltp_renew',
       value: '',
       value_unit: 'percent',
     };
@@ -2789,8 +2791,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  private loadStopsForLogic(logicId: number): void {
-    if (this.stopsLoading.has(logicId)) return;
+  private loadStopsForLogic(logicId: number, force = false): void {
+    if (!force && this.stopsLoading.has(logicId)) return;
+    // Уже есть кэш — не мигать «загрузка…» / пустой таблицей; фоновый refresh.
+    const hasCache = this.logicStops.has(logicId);
+    if (!force && hasCache) {
+      this.logicsService.getLogicStops(logicId).subscribe({
+        next: (rows) => this.logicStops.set(logicId, rows),
+        error: () => undefined,
+      });
+      return;
+    }
     this.stopsLoading.add(logicId);
     this.logicsService.getLogicStops(logicId).subscribe({
       next: (rows) => {
@@ -2805,16 +2816,28 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   private loadSignalsForLogic(logicId: number, force = false): void {
     if (!force && this.signalsLoading.has(logicId)) return;
+    const hasCache = this.logicSignals.has(logicId);
+    const applyRows = (rows: LogicIndicatorSignalRow[]) => {
+      this.logicSignals.set(logicId, rows);
+      for (const r of rows) {
+        if (!this.isFormulaDraftDirty(r.id, r.formula)) {
+          this.formulaDrafts.set(r.id, r.formula);
+        }
+      }
+      this.rebuildSignalIndicatorIds(logicId);
+    };
+    // Кэш есть — не показывать «загрузка…» при повторном открытии блока.
+    if (!force && hasCache) {
+      this.logicsService.getLogicIndicatorSignals(logicId).subscribe({
+        next: applyRows,
+        error: () => undefined,
+      });
+      return;
+    }
     this.signalsLoading.add(logicId);
     this.logicsService.getLogicIndicatorSignals(logicId).subscribe({
       next: (rows) => {
-        this.logicSignals.set(logicId, rows);
-        for (const r of rows) {
-          if (!this.isFormulaDraftDirty(r.id, r.formula)) {
-            this.formulaDrafts.set(r.id, r.formula);
-          }
-        }
-        this.rebuildSignalIndicatorIds(logicId);
+        applyRows(rows);
         this.signalsLoading.delete(logicId);
       },
       error: () => {

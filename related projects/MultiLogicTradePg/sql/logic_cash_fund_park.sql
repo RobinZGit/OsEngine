@@ -401,16 +401,16 @@ BEGIN
             logic_id, account_id, security_id, timeframe_id,
             side_id, action_id, position_event, signal_kind, signal_formula,
             quantity, price, bar_dt, executed_at, is_simulated, is_fictitious,
-            is_shadow, is_test, trade_reason, status
+            is_shadow, is_test, trade_reason, status, opt_lane
         )
         VALUES (
             p_logic_id, v_logic.account_id, v_security_id, v_tf_id,
             v_side_open_id, v_action_long_id, 'open', 'cash_fund',
             format('cash_fund.park %s', v_code),
             v_qty, v_price, v_closed_bar_dt, v_closed_bar_dt, TRUE, FALSE,
-            FALSE, FALSE, format('cash_fund.park:%s', v_code), 'filled'
+            FALSE, FALSE, format('cash_fund.park:%s', v_code), 'filled', ''
         )
-        ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)
+        ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow, opt_lane)
         DO NOTHING
         RETURNING id INTO v_trade_id;
 

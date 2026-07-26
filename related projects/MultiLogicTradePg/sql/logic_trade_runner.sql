@@ -171,6 +171,41 @@ $$;
 COMMENT ON FUNCTION logic_bar_data_at(INTEGER, INTEGER, INTEGER, TEXT, TIMESTAMP) IS
 'Индикатор и close на конкретной закрытой свече (exact dt, затем fallback в пределах одного бара)';
 
+CREATE OR REPLACE FUNCTION signal_split_params_top_level(p_params TEXT)
+RETURNS TEXT[]
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v_out TEXT[] := ARRAY[]::TEXT[];
+    v_cur TEXT := '';
+    v_depth INTEGER := 0;
+    v_ch TEXT;
+    v_i INTEGER;
+    v_s TEXT;
+BEGIN
+    v_s := COALESCE(p_params, '');
+    FOR v_i IN 1..length(v_s) LOOP
+        v_ch := substr(v_s, v_i, 1);
+        IF v_ch = '(' THEN
+            v_depth := v_depth + 1;
+        ELSIF v_ch = ')' THEN
+            v_depth := GREATEST(0, v_depth - 1);
+        END IF;
+        IF v_ch = ',' AND v_depth = 0 THEN
+            IF btrim(v_cur) <> '' THEN
+                v_out := v_out || btrim(v_cur);
+            END IF;
+            v_cur := '';
+        ELSE
+            v_cur := v_cur || v_ch;
+        END IF;
+    END LOOP;
+    IF btrim(v_cur) <> '' THEN
+        v_out := v_out || btrim(v_cur);
+    END IF;
+    RETURN v_out;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION parse_signal_series(p_params TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql IMMUTABLE AS $$
@@ -182,12 +217,14 @@ BEGIN
     IF p_params IS NULL OR btrim(p_params) = '' THEN
         RETURN 'VALUE';
     END IF;
-    FOREACH v_part IN ARRAY string_to_array(p_params, ',')
+    FOREACH v_part IN ARRAY signal_split_params_top_level(p_params)
     LOOP
-        v_part := btrim(v_part);
+        IF v_part ~* '^OPT\s*\(' THEN
+            CONTINUE;
+        END IF;
         IF position('=' IN v_part) > 0 THEN
             v_key := lower(btrim(split_part(v_part, '=', 1)));
-            v_val := btrim(split_part(v_part, '=', 2));
+            v_val := btrim(substr(v_part, position('=' IN v_part) + 1));
             IF v_key = 'series' AND v_val <> '' THEN
                 RETURN upper(v_val);
             END IF;
@@ -204,17 +241,39 @@ DECLARE
     v_part TEXT;
     v_key TEXT;
     v_val TEXT;
+    v_canon_key TEXT;
+    v_canon_want TEXT;
 BEGIN
     IF p_params IS NULL OR btrim(p_params) = '' OR p_key IS NULL THEN
         RETURN NULL;
     END IF;
-    FOREACH v_part IN ARRAY string_to_array(p_params, ',')
+    v_canon_want := CASE lower(btrim(p_key))
+        WHEN 'std' THEN 'std_dev'
+        WHEN 'fast' THEN 'fast_period'
+        WHEN 'slow' THEN 'slow_period'
+        WHEN 'signal' THEN 'signal_period'
+        WHEN 'k' THEN 'k_period'
+        WHEN 'd' THEN 'd_period'
+        ELSE lower(btrim(p_key))
+    END;
+    FOREACH v_part IN ARRAY signal_split_params_top_level(p_params)
     LOOP
-        v_part := btrim(v_part);
+        IF v_part ~* '^OPT\s*\(' THEN
+            CONTINUE;
+        END IF;
         IF position('=' IN v_part) > 0 THEN
             v_key := lower(btrim(split_part(v_part, '=', 1)));
-            v_val := btrim(split_part(v_part, '=', 2));
-            IF v_key = lower(btrim(p_key)) AND v_val <> '' THEN
+            v_canon_key := CASE v_key
+                WHEN 'std' THEN 'std_dev'
+                WHEN 'fast' THEN 'fast_period'
+                WHEN 'slow' THEN 'slow_period'
+                WHEN 'signal' THEN 'signal_period'
+                WHEN 'k' THEN 'k_period'
+                WHEN 'd' THEN 'd_period'
+                ELSE v_key
+            END;
+            v_val := btrim(substr(v_part, position('=' IN v_part) + 1));
+            IF v_canon_key = v_canon_want AND v_val <> '' AND v_val !~* '^OPT\s*\(' THEN
                 BEGIN
                     RETURN replace(v_val, ',', '.')::NUMERIC;
                 EXCEPTION WHEN OTHERS THEN
@@ -357,23 +416,58 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE
-    v_m TEXT[];
+    v_text TEXT;
+    v_at INTEGER;
+    v_open INTEGER;
+    v_depth INTEGER := 0;
+    v_i INTEGER;
+    v_code TEXT;
+    v_close INTEGER;
 BEGIN
     valid := FALSE;
     indicator_code := NULL;
     params := NULL;
     condition := NULL;
 
-    v_m := regexp_match(btrim(COALESCE(p_formula, '')), '^@([A-Za-z0-9_]+)\(([^)]*)\)\s+(.+)$', 'i');
-    IF v_m IS NULL THEN
+    v_text := btrim(COALESCE(p_formula, ''));
+    v_at := position('@' IN v_text);
+    IF v_at <= 0 THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    v_open := position('(' IN substr(v_text, v_at));
+    IF v_open <= 0 THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    v_open := v_at + v_open - 1;
+    v_code := upper(btrim(substr(v_text, v_at + 1, v_open - v_at - 1)));
+    IF v_code = '' OR v_code !~ '^[A-Z0-9_]+$' THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    v_close := NULL;
+    FOR v_i IN v_open..length(v_text) LOOP
+        IF substr(v_text, v_i, 1) = '(' THEN
+            v_depth := v_depth + 1;
+        ELSIF substr(v_text, v_i, 1) = ')' THEN
+            v_depth := v_depth - 1;
+            IF v_depth = 0 THEN
+                v_close := v_i;
+                EXIT;
+            END IF;
+        END IF;
+    END LOOP;
+    IF v_close IS NULL THEN
         RETURN NEXT;
         RETURN;
     END IF;
 
     valid := TRUE;
-    indicator_code := upper(v_m[1]);
-    params := btrim(v_m[2]);
-    condition := btrim(v_m[3]);
+    indicator_code := v_code;
+    params := btrim(substr(v_text, v_open + 1, v_close - v_open - 1));
+    condition := btrim(substr(v_text, v_close + 1));
     RETURN NEXT;
 END;
 $$;
@@ -926,6 +1020,13 @@ BEGIN
             FROM logic_securities ls
             WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
         LOOP
+            -- Параметры из формул — один раз на бумагу (не на каждый indicator_id)
+            BEGIN
+                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
             FOR v_sig IN
                 SELECT DISTINCT lis.indicator_id
                 FROM logic_indicator_signals lis
@@ -938,7 +1039,6 @@ BEGIN
                 END IF;
                 BEGIN
                     CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
-                    CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
                     CALL sync_security_indicator_series_for_indicator(
                         v_sec.security_id,
                         v_sig.indicator_id,
@@ -1019,6 +1119,13 @@ BEGIN
             END;
         END IF;
 
+        BEGIN
+            CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
+
         FOR v_sig IN
             SELECT DISTINCT lis.indicator_id
             FROM logic_indicator_signals lis
@@ -1031,7 +1138,6 @@ BEGIN
             END IF;
             BEGIN
                 CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
-                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
                 CALL sync_security_indicator_series_for_indicator(
                     v_sec.security_id,
                     v_sig.indicator_id,
@@ -1117,6 +1223,9 @@ DECLARE
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
+    v_cycle_budget NUMERIC;       -- база % на весь цикл (не растёт от short-кэша)
+    v_spent_notional NUMERIC := 0; -- уже выделенный номинал Open в этом прогоне
+    v_room NUMERIC;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -1183,6 +1292,10 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_balance := logic_ensure_balance(p_logic_id);
     v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+    -- Зафиксировать базу на цикл: short на реале увеличивает free_cash у брокера —
+    -- без фиксации каждый следующий Open снова берёт 10% от уже раздутого кэша (маржа).
+    v_cycle_budget := COALESCE(v_sizing_base, 0);
+    v_spent_notional := 0;
     v_open_positions := logic_count_open_positions(p_logic_id);
 
     IF NOT EXISTS (
@@ -1213,6 +1326,8 @@ BEGIN
         PERFORM logic_close_positions_eod_except_funds(p_logic_id);
         v_balance := logic_ensure_balance(p_logic_id);
         v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+        v_cycle_budget := COALESCE(v_sizing_base, 0);
+        v_spent_notional := 0;
         v_open_positions := logic_count_open_positions(p_logic_id);
     END IF;
 
@@ -1410,14 +1525,18 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+                    v_room := GREATEST(0, v_cycle_budget - v_spent_notional);
+                    IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
+                        v_room := LEAST(v_room, v_max_order_amount);
+                    END IF;
                     v_quantity := logic_calc_open_quantity(
-                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
+                        v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
                     IF v_quantity < v_lot_size THEN
                         -- Фьючерсы: % депозита / цена контракта часто даёт 0 → 1 лот
                         -- (только при известной базе; акции — без force 1 лот)
-                        IF v_is_futures AND v_sizing_base IS NOT NULL AND v_sizing_base > 0 THEN
+                        IF v_is_futures AND v_cycle_budget IS NOT NULL AND v_cycle_budget > 0
+                           AND v_lot_size * v_pp <= v_room THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
@@ -1439,12 +1558,16 @@ BEGIN
                 IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                     CONTINUE;
                 END IF;
-                v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+                v_room := GREATEST(0, v_cycle_budget - v_spent_notional);
+                IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
+                    v_room := LEAST(v_room, v_max_order_amount);
+                END IF;
                 v_quantity := logic_calc_open_quantity(
-                    v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
+                    v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                 );
                 IF v_quantity < v_lot_size THEN
-                    IF v_is_futures AND v_sizing_base IS NOT NULL AND v_sizing_base > 0 THEN
+                    IF v_is_futures AND v_cycle_budget IS NOT NULL AND v_cycle_budget > 0
+                       AND v_lot_size * v_pp <= v_room THEN
                         v_quantity := v_lot_size;
                     ELSE
                         CONTINUE;
@@ -1532,15 +1655,15 @@ BEGIN
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, position_event, signal_kind, signal_formula,
                 quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
-                broker_order_id, status, note
+                opt_lane, broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
                 v_side_id, v_action_id, v_grp.position_event, v_signal_kind, v_formulas,
                 v_quantity, v_pp, COALESCE(v_commission, 0), v_ind_dt, v_is_simulated, FALSE, v_is_shadow, FALSE,
-                v_broker_order_id, v_status, v_note
+                '', v_broker_order_id, v_status, v_note
             )
-            ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow) DO NOTHING
+            ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow, opt_lane) DO NOTHING
             RETURNING id INTO v_trade_id;
 
             IF v_trade_id IS NULL THEN
@@ -1548,6 +1671,15 @@ BEGIN
             END IF;
 
             v_created := v_created + 1;
+
+            -- Бюджет цикла: учитываем номинал боевого Open (в т.ч. short — иначе маржа нарастает)
+            IF NOT v_is_shadow
+               AND v_is_open_event
+               AND v_status <> 'rejected'
+               AND v_quantity IS NOT NULL
+               AND v_pp IS NOT NULL THEN
+                v_spent_notional := v_spent_notional + (v_quantity * v_pp);
+            END IF;
 
             IF NOT v_is_shadow AND v_logic.account_type = 'fake' AND v_balance IS NOT NULL AND v_status <> 'rejected' THEN
                 v_balance := logic_trade_finalize(v_trade_id, v_balance);
@@ -1603,6 +1735,24 @@ BEGIN
         END LOOP;
     END LOOP;
 
+    -- OPT challenger books (paper) + promote window
+    BEGIN
+        v_created := v_created + process_logic_opt_trades(p_logic_id, v_tf_id, v_closed_bar_dt);
+        PERFORM logic_opt_maybe_promote(p_logic_id, v_tf_id, v_closed_bar_dt);
+    EXCEPTION
+        WHEN undefined_function THEN
+            NULL;
+        WHEN OTHERS THEN
+            PERFORM logic_trade_log(
+                p_logic_id,
+                'opt.error',
+                format('OPT runner: %s', SQLERRM),
+                jsonb_build_object('sqlstate', SQLSTATE),
+                NULL,
+                v_tf_id
+            );
+    END;
+
     PERFORM logic_upsert_param(
         p_logic_id,
         'last_trade_check_at',
@@ -1633,7 +1783,8 @@ $$;
 
 COMMENT ON FUNCTION process_logic_trades(INTEGER) IS
 'AND по группам (position_event × position_side): сделка только если все активные сигналы группы сработали; '
-'рейтинг сигнала на логике обновляется через pending на следующей свече TF';
+'рейтинг сигнала на логике обновляется через pending на следующей свече TF; '
+'при OPT() — бумажные ветки opt_lane и promote каждые opt_eval_candles';
 
 CREATE OR REPLACE FUNCTION run_trade_cycle()
 RETURNS JSONB

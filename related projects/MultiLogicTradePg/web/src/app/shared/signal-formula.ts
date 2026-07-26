@@ -64,12 +64,10 @@ export function buildLogicSignalFormula(
   return `@${indicator.code}(${params}) ${condition}`;
 }
 
-const REF_PATTERN =
-  /^@([A-Z0-9_]+)\(([^)]*)\)\s+([\s\S]+)$/i;
-
 /**
  * Предварительный разбор формулы сигнала логики.
  * Формат: @RSI(period=14,series=VALUE) VALUE > 50
+ * Параметры могут содержать вложенные скобки: OPT(std_dev,10).
  */
 export function parseSignalFormula(raw: string): ParsedSignalFormula {
   const text = (raw ?? '').trim();
@@ -85,8 +83,8 @@ export function parseSignalFormula(raw: string): ParsedSignalFormula {
     };
   }
 
-  const m = text.match(REF_PATTERN);
-  if (!m) {
+  const head = text.match(/^@([A-Za-z0-9_]+)\s*\(/);
+  if (!head || head.index !== 0) {
     return {
       raw: text,
       indicatorCode: null,
@@ -97,9 +95,33 @@ export function parseSignalFormula(raw: string): ParsedSignalFormula {
     };
   }
 
-  const indicatorCode = m[1].toUpperCase();
-  const params = m[2].trim();
-  const condition = m[3].trim();
+  const indicatorCode = head[1].toUpperCase();
+  const openIdx = head[0].length - 1; // '('
+  let depth = 0;
+  let closeIdx = -1;
+  for (let i = openIdx; i < text.length; i++) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
+  }
+  if (closeIdx < 0) {
+    return {
+      raw: text,
+      indicatorCode,
+      params: null,
+      condition: '',
+      valid: false,
+      errors: ['Незакрытые скобки в @CODE(...)'],
+    };
+  }
+
+  const params = text.slice(openIdx + 1, closeIdx).trim();
+  const condition = text.slice(closeIdx + 1).trim();
 
   if (!params) {
     errors.push('Пустые параметры в @CODE(...)');

@@ -566,6 +566,21 @@ export class LogicsService {
     );
   }
 
+  /** Снимок / promote параметров формул и OPT для отчёта. */
+  getOptParamHistory(
+    logicId: number,
+    runId?: number | null
+  ): Observable<{ rows: unknown[] }> {
+    const params: Record<string, string> = {};
+    if (runId != null && Number.isFinite(runId) && runId > 0) {
+      params['run_id'] = String(runId);
+    }
+    return this.http.get<{ rows: unknown[] }>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/opt-param-history`,
+      { params }
+    );
+  }
+
   startSignalRatingPrecalc(logicId: number): Observable<SignalRatingPrecalcStatus> {
     return this.http.post<SignalRatingPrecalcStatus>(
       `${this.appConfig.apiUrl}/logics/${logicId}/signal-rating-precalc`,

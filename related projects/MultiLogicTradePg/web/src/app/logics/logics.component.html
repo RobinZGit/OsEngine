@@ -1499,9 +1499,19 @@
 
                       <p class="signals-help">
 
-                        Формат: <code>&#64;RSI(period=14,series=VALUE) VALUE &gt; 50</code> — условие из
+                        Формат: <code>&#64;RSI(period=14,series=VALUE) VALUE &gt; 50</code>.
 
-                        <code>sig_trend_def</code> / <code>sig_ct_def</code> справочника индикаторов.
+                        Оптимизация на лету: <code>OPT(param,pct%)</code> рядом с базой —
+
+                        один параметр:
+
+                        <code>&#64;LINREG(period=20,std_dev=2,series=LOWER,OPT(std_dev,10)) pp &lt;= VALUE</code>;
+
+                        два параметра:
+
+                        <code>&#64;LINREG(period=20,std_dev=2,series=LOWER,OPT(period,10),OPT(std_dev,10)) pp &lt;= VALUE</code>.
+
+                        Подробности — справка «?» → «Формулы сигналов и OPT()».
 
                       </p>
 
@@ -1728,9 +1738,9 @@
                         </table>
 
                         <p class="signals-help">
-                          Тип: <strong>По бумаге</strong> — на одну бумагу в сделке;
-                          <strong>По всему портфелю логики</strong> — на весь портфель торговли.
-                          Единица: <strong>%</strong> или <strong>ATR</strong> (параметр ATR — позже).
+                          По умолчанию: стоп-лосс — <strong>по бумаге и стороне с возобновлением</strong>;
+                          тейк — <strong>линейный TP по портфелю с возобновлением (5%)</strong>.
+                          Единица: <strong>%</strong> или <strong>ATR</strong>.
                         </p>
 
                       </div>

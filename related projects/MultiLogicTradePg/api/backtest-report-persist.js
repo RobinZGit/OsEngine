@@ -125,6 +125,7 @@ async function persistBacktestReport(pool, runId, opts = {}) {
       to_char(lt.bar_dt, 'YYYY-MM-DD HH24:MI:SS') AS bar_dt,
       to_char(lt.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at,
       lt.is_shadow, lt.is_test, lt.run_id, lt.status,
+      COALESCE(lt.opt_lane, '') AS opt_lane,
       lt.commission::float8 AS commission,
       lt.financial_result::float8 AS financial_result,
       s.name AS security_name,
@@ -141,6 +142,7 @@ async function persistBacktestReport(pool, runId, opts = {}) {
     WHERE lt.logic_id = $1
       AND lt.is_test = TRUE
       AND lt.run_id = $2
+      AND COALESCE(lt.opt_lane, '') = ''
     ORDER BY lt.bar_dt ASC NULLS LAST, lt.executed_at ASC, lt.id ASC
     LIMIT 50000
     `,
@@ -171,9 +173,23 @@ async function persistBacktestReport(pool, runId, opts = {}) {
     }
   }
 
+  let paramHistory = [];
+  try {
+    const { rows: histRows } = await pool.query(
+      `SELECT logic_opt_param_history_for_report($1, $2) AS h`,
+      [run.logic_id, runId]
+    );
+    const raw = histRows[0]?.h;
+    if (Array.isArray(raw)) paramHistory = raw;
+    else if (raw && typeof raw === 'object') paramHistory = [raw];
+  } catch (err) {
+    console.warn('opt param history for report', err?.message || err);
+  }
+
   const model = buildBacktestReportModel(logic, trades, {
     backtestRun: run,
     tradeLots,
+    paramHistory,
   });
   const html = renderBacktestReportHtml(model);
   const downloadName = buildBacktestReportDownloadName(model);
@@ -186,6 +202,7 @@ async function persistBacktestReport(pool, runId, opts = {}) {
     long: model.long,
     short: model.short,
     params: model.params,
+    paramHistory,
     isSnapshot,
     processed_bars: run.processed_bars,
     total_bars: run.total_bars,

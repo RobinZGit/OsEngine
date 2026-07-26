@@ -118,6 +118,9 @@ BEGIN
           AND ac.name = v_close.action_name
           AND lt.status IN ('filled', 'submitted')
           AND lt.executed_at <= v_close.executed_at
+          AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
+          AND COALESCE(lt.is_test, FALSE) = COALESCE(v_close.is_test, FALSE)
+          AND COALESCE(lt.opt_lane, '') = COALESCE(v_close.opt_lane, '')
           AND logic_trade_open_remaining_qty(lt.id) > 0;
 
         IF v_total_open_qty <= 0 THEN
@@ -137,6 +140,9 @@ BEGIN
               AND ac.name = v_close.action_name
               AND lt.status IN ('filled', 'submitted')
               AND lt.executed_at <= v_close.executed_at
+              AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
+              AND COALESCE(lt.is_test, FALSE) = COALESCE(v_close.is_test, FALSE)
+              AND COALESCE(lt.opt_lane, '') = COALESCE(v_close.opt_lane, '')
             ORDER BY lt.executed_at ASC, lt.id ASC
         LOOP
             EXIT WHEN v_remaining <= 0;
@@ -185,6 +191,9 @@ BEGIN
               AND ac.name = v_close.action_name
               AND lt.status IN ('filled', 'submitted')
               AND lt.executed_at <= v_close.executed_at
+              AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
+              AND COALESCE(lt.is_test, FALSE) = COALESCE(v_close.is_test, FALSE)
+              AND COALESCE(lt.opt_lane, '') = COALESCE(v_close.opt_lane, '')
             ORDER BY lt.executed_at ASC, lt.id ASC
         LOOP
             EXIT WHEN v_remaining <= 0;

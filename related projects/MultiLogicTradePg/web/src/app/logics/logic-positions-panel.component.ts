@@ -7,7 +7,10 @@ import {
   OnChanges,
   Output,
   SimpleChanges,
+  inject,
 } from '@angular/core';
+import { LogicsService } from '../services/logics.service';
+import { ParamHistoryEvent } from './backtest-report';
 
 import { CommonModule } from '@angular/common';
 
@@ -108,6 +111,7 @@ export interface BacktestRunStatus {
 })
 
 export class LogicPositionsPanelComponent implements OnChanges {
+  private readonly logicsService = inject(LogicsService);
 
   @Input({ required: true }) logicRow!: LogicRow;
 
@@ -668,15 +672,25 @@ export class LogicPositionsPanelComponent implements OnChanges {
       alert('Нет закрытых тестовых сделок для отчёта. Сначала завершите прогон.');
       return;
     }
-    const model = buildBacktestReportModel(this.logicRow, this.trades, {
-      backtestRun: this.backtestRun,
-      tradeLots: this.tradeLots,
+    const runId = this.backtestRun?.id ?? null;
+    const openWith = (paramHistory: ParamHistoryEvent[]) => {
+      const model = buildBacktestReportModel(this.logicRow, this.trades, {
+        backtestRun: this.backtestRun,
+        tradeLots: this.tradeLots,
+        paramHistory,
+      });
+      const html = renderBacktestReportHtml(model);
+      const title = `Отчёт теста — ${model.logicName}`;
+      if (!openBacktestReportWindow(html, title)) {
+        alert(
+          'Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.'
+        );
+      }
+    };
+    this.logicsService.getOptParamHistory(this.logicRow.id, runId).subscribe({
+      next: (res) => openWith((res.rows || []) as ParamHistoryEvent[]),
+      error: () => openWith([]),
     });
-    const html = renderBacktestReportHtml(model);
-    const title = `Отчёт теста — ${model.logicName}`;
-    if (!openBacktestReportWindow(html, title)) {
-      alert('Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.');
-    }
   }
 
   onOpenTokenDialog(event: Event): void {

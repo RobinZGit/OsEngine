@@ -42,12 +42,18 @@
           </label>
 
           <div class="actions-row">
-            <button type="button" class="btn" (click)="buildPlan()" [disabled]="planning || executing">
+            <button
+              type="button"
+              class="btn btn-recalc"
+              (click)="buildPlan()"
+              [disabled]="planning || executing"
+              title="Сначала пересчитайте план, затем покупайте"
+            >
               {{ planning ? 'Расчёт…' : 'Пересчитать план' }}
             </button>
             <button
               type="button"
-              class="btn btn-primary"
+              class="btn btn-buy-pale"
               (click)="confirmBuy()"
               [disabled]="planning || executing || !plan?.buys?.length"
             >

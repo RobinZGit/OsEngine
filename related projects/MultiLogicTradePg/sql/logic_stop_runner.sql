@@ -25,11 +25,23 @@ $$;
 COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
 'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
 
+-- Одна сигнатура с default'ами. Старые перегрузки (без opt_lane) дают
+-- «функция … не уникальна» при вызове с 2–3 аргументами.
+DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER, BOOLEAN);
+DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER, BOOLEAN, BOOLEAN);
+DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER, BOOLEAN, BOOLEAN, TEXT);
+DROP FUNCTION IF EXISTS logic_short_position_qty(INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS logic_short_position_qty(INTEGER, INTEGER, BOOLEAN);
+DROP FUNCTION IF EXISTS logic_short_position_qty(INTEGER, INTEGER, BOOLEAN, BOOLEAN);
+DROP FUNCTION IF EXISTS logic_short_position_qty(INTEGER, INTEGER, BOOLEAN, BOOLEAN, TEXT);
+
 CREATE OR REPLACE FUNCTION logic_long_position_qty(
     p_logic_id INTEGER,
     p_security_id INTEGER,
     p_is_shadow BOOLEAN DEFAULT FALSE,
-    p_is_test BOOLEAN DEFAULT FALSE
+    p_is_test BOOLEAN DEFAULT FALSE,
+    p_opt_lane TEXT DEFAULT ''
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
@@ -47,6 +59,7 @@ LANGUAGE sql STABLE AS $$
       AND lt.security_id = p_security_id
       AND lt.is_shadow = p_is_shadow
       AND lt.is_test = p_is_test
+      AND COALESCE(lt.opt_lane, '') = COALESCE(p_opt_lane, '')
       AND lt.status IN ('filled', 'submitted');
 $$;
 
@@ -54,7 +67,8 @@ CREATE OR REPLACE FUNCTION logic_short_position_qty(
     p_logic_id INTEGER,
     p_security_id INTEGER,
     p_is_shadow BOOLEAN DEFAULT FALSE,
-    p_is_test BOOLEAN DEFAULT FALSE
+    p_is_test BOOLEAN DEFAULT FALSE,
+    p_opt_lane TEXT DEFAULT ''
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
@@ -72,6 +86,7 @@ LANGUAGE sql STABLE AS $$
       AND lt.security_id = p_security_id
       AND lt.is_shadow = p_is_shadow
       AND lt.is_test = p_is_test
+      AND COALESCE(lt.opt_lane, '') = COALESCE(p_opt_lane, '')
       AND lt.status IN ('filled', 'submitted');
 $$;
 
@@ -86,6 +101,7 @@ LANGUAGE sql STABLE AS $$
         WHERE lt.logic_id = p_logic_id
           AND NOT lt.is_shadow
           AND NOT lt.is_test
+          AND COALESCE(lt.opt_lane, '') = ''
           AND lt.status IN ('filled', 'submitted')
         GROUP BY lt.security_id
         HAVING COALESCE(SUM(

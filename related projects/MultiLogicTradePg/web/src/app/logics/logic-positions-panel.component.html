@@ -259,6 +259,9 @@
                     @if (tr.is_test) {
                       <span class="trade-test-badge">тест</span>
                     }
+                    @if (tr.opt_lane) {
+                      <span class="trade-opt-badge" [title]="'OPT: ' + tr.opt_lane">опт {{ tr.opt_lane }}</span>
+                    }
                   </td>
                   <td [title]="tradeOperationHint(tr)">{{ tradeOperationLabel(tr) }}</td>
                   <td>{{ tr.quantity }}</td>
@@ -367,6 +370,9 @@
                     }
                     @if (tr.is_test) {
                       <span class="trade-test-badge">тест</span>
+                    }
+                    @if (tr.opt_lane) {
+                      <span class="trade-opt-badge" [title]="'OPT: ' + tr.opt_lane">опт {{ tr.opt_lane }}</span>
                     }
                   </td>
                   <td [title]="tradeOperationHint(tr)">{{ tradeOperationLabel(tr) }}</td>

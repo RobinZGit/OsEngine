@@ -53,6 +53,26 @@ export interface SideStats {
   payOffRatio: number;
 }
 
+/** One OPT / formula-param history row for the report. */
+export interface ParamHistoryEvent {
+  id?: number | null;
+  bar_dt?: string | null;
+  created_at?: string | null;
+  event_kind: 'snapshot' | 'promote' | string;
+  lane?: string | null;
+  params?: Record<string, number | string> | null;
+  params_prev?: Record<string, number | string> | null;
+  opt_specs?: Record<string, { base?: number; pct?: number }> | null;
+  formulas?: Array<{
+    signal_id?: number;
+    position_event?: string;
+    position_side?: string;
+    formula?: string;
+  }> | null;
+  champion_finres?: number | null;
+  winner_finres?: number | null;
+}
+
 export interface BacktestReportModel {
   generatedAt: string;
   logicName: string;
@@ -77,6 +97,8 @@ export interface BacktestReportModel {
     accountType: string;
     accountName: string;
   };
+  /** Снимок и/или promote баз OPT / параметров формул. */
+  paramHistory: ParamHistoryEvent[];
   all: SideStats;
   long: SideStats;
   short: SideStats;
@@ -174,6 +196,7 @@ export function collectClosedDeals(
   const closes = trades.filter(
     (t) =>
       !t.is_shadow &&
+      !t.opt_lane &&
       t.side_name === 'Close' &&
       (t.status === 'filled' || t.status === 'submitted') &&
       t.financial_result != null &&
@@ -368,12 +391,123 @@ function equitySparklineSvg(
 </svg>`;
 }
 
+function formatParamMap(
+  params: Record<string, number | string> | null | undefined
+): string {
+  if (!params || typeof params !== 'object') return '—';
+  const keys = Object.keys(params).sort();
+  if (keys.length === 0) return '—';
+  return keys.map((k) => `${k}=${params[k]}`).join(', ');
+}
+
+function formatOptSpecs(
+  specs: Record<string, { base?: number; pct?: number }> | null | undefined
+): string {
+  if (!specs || typeof specs !== 'object') return '';
+  const keys = Object.keys(specs).sort();
+  if (keys.length === 0) return '';
+  return keys
+    .map((k) => {
+      const s = specs[k] || {};
+      const pct = s.pct != null ? `±${s.pct}%` : '';
+      const base = s.base != null ? String(s.base) : '?';
+      return `${k}=${base}${pct ? ` (${pct})` : ''}`;
+    })
+    .join(', ');
+}
+
+function formatParamChange(ev: ParamHistoryEvent): string {
+  if (ev.event_kind === 'promote' && ev.params_prev && ev.params) {
+    const keys = new Set([
+      ...Object.keys(ev.params_prev),
+      ...Object.keys(ev.params),
+    ]);
+    const parts: string[] = [];
+    for (const k of [...keys].sort()) {
+      const a = ev.params_prev[k];
+      const b = ev.params[k];
+      if (a != null && b != null && String(a) !== String(b)) {
+        parts.push(`${k}: ${a} → ${b}`);
+      } else if (b != null) {
+        parts.push(`${k}=${b}`);
+      }
+    }
+    return parts.length ? parts.join(', ') : formatParamMap(ev.params);
+  }
+  const optLine = formatOptSpecs(ev.opt_specs);
+  const baseLine = formatParamMap(ev.params);
+  if (optLine && baseLine && optLine !== baseLine) {
+    return `${baseLine}; OPT: ${optLine}`;
+  }
+  return optLine || baseLine;
+}
+
+function paramHistorySectionHtml(history: ParamHistoryEvent[]): string {
+  const rows = (history || []).map((ev) => {
+    const when = ev.bar_dt || ev.created_at || '—';
+    const kind =
+      ev.event_kind === 'promote'
+        ? 'Promote'
+        : ev.event_kind === 'snapshot'
+          ? 'Снимок'
+          : String(ev.event_kind || '—');
+    const fin =
+      ev.event_kind === 'promote' &&
+      (ev.winner_finres != null || ev.champion_finres != null)
+        ? `${fmtNum(num(ev.winner_finres), 2)} > ${fmtNum(num(ev.champion_finres), 2)}`
+        : '—';
+    const formulas = Array.isArray(ev.formulas)
+      ? ev.formulas
+          .map((f) => (f?.formula ? esc(String(f.formula)) : ''))
+          .filter(Boolean)
+          .slice(0, 4)
+          .join('<br/>')
+      : '';
+    return `<tr>
+      <td class="num">${esc(String(when).slice(0, 19).replace('T', ' '))}</td>
+      <td>${esc(kind)}</td>
+      <td>${esc(ev.lane || '—')}</td>
+      <td>${esc(formatParamChange(ev))}</td>
+      <td class="num">${esc(fin)}</td>
+    </tr>${
+      formulas
+        ? `<tr class="formula-row"><td colspan="5" class="muted formulas">${formulas}</td></tr>`
+        : ''
+    }`;
+  });
+
+  if (!rows.length) {
+    return `<section>
+      <h2>Параметры сигналов / OPT</h2>
+      <p class="muted">Нет данных по параметрам формул.</p>
+    </section>`;
+  }
+
+  const note = history.some((h) => h.event_kind === 'promote')
+    ? 'История смен баз OPT (promote) и снимки.'
+    : 'Оптимизации не было — показан снимок текущих параметров формул.';
+
+  return `<section>
+      <h2>Параметры сигналов / OPT</h2>
+      <p class="muted" style="margin:0 0 0.6rem">${esc(note)}</p>
+      <table class="deals param-hist">
+        <thead>
+          <tr>
+            <th>Время</th><th>Событие</th><th>Ветка</th><th>Параметры</th><th>FinRes</th>
+          </tr>
+        </thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </section>`;
+}
+
 export function buildBacktestReportModel(
   logic: LogicRow,
   trades: LogicTradeRow[],
   opts: {
     backtestRun?: BacktestReportRunInfo | null;
     tradeLots?: Map<number, LogicTradeLotRow[]>;
+    paramHistory?: ParamHistoryEvent[] | null;
   } = {}
 ): BacktestReportModel {
   const initial = num(logic.initial_balance, 1_000_000);
@@ -417,6 +551,7 @@ export function buildBacktestReportModel(
       accountType: logic.account_type,
       accountName: logic.account_name || logic.account_code || '—',
     },
+    paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
     all: computeSideStats(allDeals, initial, rate, true),
     long: computeSideStats(longDeals, initial, rate, false),
     short: computeSideStats(shortDeals, initial, rate, false),
@@ -747,6 +882,8 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     table.deals { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     table.deals th, table.deals td { padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--line); }
     table.deals th { text-align: left; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
+    table.param-hist td.formulas { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; word-break: break-all; }
+    .muted { color: var(--muted); }
     .foot {
       margin-top: 1.25rem;
       font-size: 0.78rem;
@@ -820,6 +957,8 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
         <div><dt>Счёт</dt><dd>${esc(model.params.accountName)} (${esc(model.params.accountType)})</dd></div>
       </dl>
     </section>
+
+    ${paramHistorySectionHtml(model.paramHistory)}
 
     <section>
       <h2>Эквити (кумулятивный П\\У)</h2>

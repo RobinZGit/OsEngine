@@ -472,6 +472,89 @@ BEGIN
 END;
 $$;
 
+-- Один бар: mid/upper/lower/slope за один проход (без array на point_count свечей).
+CREATE OR REPLACE FUNCTION calc_ind_linreg_levels_at(
+    p_period INTEGER,
+    p_std_dev NUMERIC,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP
+)
+RETURNS TABLE (middle NUMERIC, upper NUMERIC, lower NUMERIC, slope NUMERIC)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    v_period INTEGER;
+    v_dev NUMERIC;
+    v_end TIMESTAMP;
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    j INTEGER;
+    n NUMERIC;
+    v_sum_x NUMERIC := 0;
+    v_sum_y NUMERIC := 0;
+    v_sum_xy NUMERIC := 0;
+    v_sum_xx NUMERIC := 0;
+    v_slope NUMERIC;
+    v_intercept NUMERIC;
+    v_mid NUMERIC;
+    v_var NUMERIC := 0;
+    v_std NUMERIC;
+    v_pred NUMERIC;
+BEGIN
+    v_period := GREATEST(COALESCE(p_period, 20), 3);
+    v_dev := GREATEST(COALESCE(p_std_dev, 2.0), 0.1);
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_dt);
+    IF v_end IS NULL THEN
+        RETURN;
+    END IF;
+
+    SELECT array_agg(x.close_price ORDER BY x.dt), COUNT(*)::INTEGER
+    INTO v_closes, v_n
+    FROM (
+        SELECT p.dt, p.close_price
+        FROM prices p
+        WHERE p.security_id = p_security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt <= v_end
+        ORDER BY p.dt DESC
+        LIMIT v_period
+    ) x;
+
+    IF v_n IS NULL OR v_n < v_period THEN
+        RETURN;
+    END IF;
+
+    -- array_agg ORDER BY dt ASC in subquery? We used ORDER BY dt DESC LIMIT then
+    -- array_agg ORDER BY x.dt → chronological oldest→newest. Good.
+    n := v_period;
+    FOR j IN 0 .. (v_period - 1) LOOP
+        v_sum_x := v_sum_x + j;
+        v_sum_y := v_sum_y + v_closes[j + 1];
+        v_sum_xy := v_sum_xy + j * v_closes[j + 1];
+        v_sum_xx := v_sum_xx + j * j;
+    END LOOP;
+    v_slope := (n * v_sum_xy - v_sum_x * v_sum_y) / NULLIF(n * v_sum_xx - v_sum_x * v_sum_x, 0);
+    v_intercept := (v_sum_y - v_slope * v_sum_x) / n;
+    v_mid := v_intercept + v_slope * (v_period - 1);
+    FOR j IN 0 .. (v_period - 1) LOOP
+        v_pred := v_intercept + v_slope * j;
+        v_var := v_var + power(v_closes[j + 1] - v_pred, 2);
+    END LOOP;
+    v_std := sqrt(v_var / n);
+
+    middle := v_mid;
+    upper := v_mid + v_dev * v_std;
+    lower := v_mid - v_dev * v_std;
+    slope := v_slope;
+    RETURN NEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION calc_ind_linreg_levels_at(INTEGER, NUMERIC, INTEGER, INTEGER, TIMESTAMP) IS
+'LINREG канал на одном баре: middle/upper/lower/slope за один проход (для OPT и скаляра)';
+
 CREATE OR REPLACE FUNCTION calc_ind_linreg(
     p_period INTEGER,
     p_std_dev NUMERIC,
@@ -485,16 +568,28 @@ RETURNS NUMERIC
 LANGUAGE plpgsql
 STABLE
 AS $$
+DECLARE
+    v_ser TEXT := upper(btrim(COALESCE(p_series, 'MIDDLE')));
+    v_lv RECORD;
 BEGIN
-    RETURN (
-        SELECT a.value
-        FROM calc_ind_linreg_array(
-            p_period, COALESCE(p_std_dev, 2.0), p_series,
-            p_security_id, p_timeframe_id, 1, p_dt
-        ) a
-        ORDER BY a.dt DESC
-        LIMIT 1
+    IF v_ser = 'VALUE' THEN
+        v_ser := 'MIDDLE';
+    END IF;
+    SELECT * INTO v_lv
+    FROM calc_ind_linreg_levels_at(
+        p_period, COALESCE(p_std_dev, 2.0),
+        p_security_id, p_timeframe_id, p_dt
     );
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+    RETURN CASE v_ser
+        WHEN 'MIDDLE' THEN v_lv.middle
+        WHEN 'UPPER' THEN v_lv.upper
+        WHEN 'LOWER' THEN v_lv.lower
+        WHEN 'SLOPE' THEN v_lv.slope
+        ELSE v_lv.middle
+    END;
 END;
 $$;
 

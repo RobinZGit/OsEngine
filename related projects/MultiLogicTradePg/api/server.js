@@ -41,6 +41,7 @@ const {
   clearUiHeartbeatDb,
   isUiSessionActive,
 } = require('./lib/trade-runner-session');
+const { validateOptFormulaSave } = require('./lib/signal-opt');
 const {
   getTradingParams,
   getTradingParamsForLogics,
@@ -2121,6 +2122,33 @@ app.get('/api/logics/:id/signal-rating-precalc', async (req, res) => {
   }
   res.json(getRatingPrecalcStatus(id));
 });
+
+/** История баз OPT / параметров формул для отчёта теста. */
+app.get('/api/logics/:id/opt-param-history', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  const runRaw = req.query.run_id;
+  const runId =
+    runRaw != null && String(runRaw).trim() !== ''
+      ? Number(runRaw)
+      : null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT logic_opt_param_history_for_report($1, $2) AS h`,
+      [id, Number.isInteger(runId) && runId > 0 ? runId : null]
+    );
+    const raw = rows[0]?.h;
+    const history = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    res.json({ rows: history });
+  } catch (err) {
+    console.error('GET /api/logics/:id/opt-param-history', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.patch('/api/logics/:id/trading-params', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -2327,6 +2355,14 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
     return;
   }
   try {
+    const optCheck = await validateOptFormulaSave(pool, logicId, formula, null);
+    if (!optCheck.ok) {
+      res.status(400).json({
+        error: optCheck.error,
+        opt_existing: optCheck.existing || [],
+      });
+      return;
+    }
     const { rows: orderRows } = await pool.query(
       `SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order
        FROM logic_indicator_signals WHERE logic_id = $1`,
@@ -2370,6 +2406,27 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
     return;
   }
   try {
+    const { rows: curRows } = await pool.query(
+      `SELECT logic_id FROM logic_indicator_signals WHERE id = $1`,
+      [id]
+    );
+    if (curRows.length === 0) {
+      res.status(404).json({ error: 'Signal not found' });
+      return;
+    }
+    const optCheck = await validateOptFormulaSave(
+      pool,
+      curRows[0].logic_id,
+      formula,
+      id
+    );
+    if (!optCheck.ok) {
+      res.status(400).json({
+        error: optCheck.error,
+        opt_existing: optCheck.existing || [],
+      });
+      return;
+    }
     const { rows } = await pool.query(
       `
       UPDATE logic_indicator_signals
@@ -2380,10 +2437,6 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
     `,
       [id, formula, isActive === undefined ? null : isActive]
     );
-    if (rows.length === 0) {
-      res.status(404).json({ error: 'Signal not found' });
-      return;
-    }
     const row = rows[0];
     const { rows: meta } = await pool.query(
       `SELECT code AS indicator_code, name AS indicator_name FROM indicators WHERE id = $1`,
@@ -3056,6 +3109,7 @@ const LOGIC_TRADE_SELECT = `
     lt.commission,
     lt.financial_result,
     lt.note,
+    COALESCE(lt.opt_lane, '') AS opt_lane,
     lt.created_at,
     CASE
       WHEN sd.name = 'Open' AND lt.status IN ('filled', 'submitted')
@@ -3374,6 +3428,7 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
         LEFT JOIN latest_run lr ON lr.logic_id = lt.logic_id
         WHERE lt.is_test = TRUE
           AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
           AND lt.status IN ('filled', 'submitted')
           AND (
             (lt.run_id IS NOT NULL AND lr.run_id IS NOT NULL AND lt.run_id = lr.run_id)
@@ -3417,6 +3472,7 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
       FROM logic_trades lt
       WHERE lt.is_test = FALSE
         AND COALESCE(lt.is_shadow, FALSE) = FALSE
+        AND COALESCE(lt.opt_lane, '') = ''
         AND lt.status IN ('filled', 'submitted')
       GROUP BY lt.logic_id
       HAVING COUNT(*) > 0

@@ -1,6 +1,8 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v51 (идемпотентный запуск)
+-- Версия: v53 (идемпотентный запуск)
+-- v53: logic_backtest_runs.last_opt_eval_bar_dt — курсор OPT в тесте (не трогает live param)
+-- v52: logic_opt_param_history — снимок/promote параметров OPT для отчёта теста
 -- v51: position_size_base default = free_cash (свободные деньги)
 -- v50: order_execution — тип заявок market|limit (по умолчанию market)
 -- v49: logic_backtest_reports — сохранённые HTML-отчёты тестов (async, не в hot loop)
@@ -1301,6 +1303,10 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'В конце торговой сессии (или на последней свече дня) закрыть все позиции, кроме денежного фонда TMON/LQDT/SBMM', 17),
     ('order_execution', 'Тип исполнения заявок', 'text', 'market',
      'market — рыночная заявка (сразу в сессию); limit — лимитная по цене сигнала (может висеть в стакане). По умолчанию market', 18),
+    ('opt_eval_candles', 'Свечей окна OPT', 'integer', '20',
+     'Через сколько закрытых свечей TF сравнить FinRes чемпиона и OPT-веток (±%) и подставить лучшие значения параметров в формулы', 19),
+    ('last_opt_eval_bar_dt', 'Последняя оценка OPT', 'text', '',
+     'Служебный: open time свечи TF последней смены OPT-параметров', 95),
     ('last_cash_fund_bar_dt', 'Последняя парковка кэша', 'text', '',
      'Служебный: open time закрытой свечи TF последней попытки парковки в фонд', 96),
     ('last_stop_bar_dt', 'Последняя свеча стоп-лосса', 'text', '',
@@ -1923,15 +1929,15 @@ CROSS JOIN LATERAL (
 WHERE l.name = 'SMA Price Cross Demo'
 ON CONFLICT (logic_id, security_id) DO NOTHING;
 
--- Стоп-лосс 1% по всему портфелю логики (portfolio) и тейк-профит 3% по бумаге
+-- Стоп-лосс 1% security_resume; тейк 5% portfolio_ltp_renew (линейный TP с renew)
 -- Демо-стопы: insert only if empty
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',    'portfolio', 1.0, 'percent', 0),
-    ('take_profit',  'security', 3.0, 'percent', 1)
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name = 'SMA Price Cross Demo'
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
@@ -1939,7 +1945,7 @@ WHERE l.name = 'SMA Price Cross Demo'
 -- =====================================================================
 -- v41: классические стратегии (по мотивам OsEngine Robots / Custom)
 -- Демо «SMA Price Cross Demo» выше не трогаем.
--- Все на FAKE-EFF-001, выключены, все акции, SL 1% portfolio / TP 3%.
+-- Все на FAKE-EFF-001, выключены, все акции, SL 1% security_resume / TP 5% portfolio_ltp_renew.
 -- =====================================================================
 
 INSERT INTO logics (name, account_id, is_enabled)
@@ -2190,8 +2196,8 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
-    ('take_profit', 'security',        3.0, 'percent', 1)
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
     'RSI Mean Reversion', 'Bollinger Bounce', 'Bollinger Breakout', 'MACD Zero Line',
@@ -2355,8 +2361,8 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
-    ('take_profit', 'security',        3.0, 'percent', 1)
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик'
@@ -2365,7 +2371,7 @@ WHERE l.name IN (
 
 -- =====================================================================
 -- v44: ещё 5 контртрендовых стратегий (OsEngine-style)
--- FAKE, выключены, все акции, SL 1% portfolio / TP 3%.
+-- FAKE, выключены, все акции, SL 1% security_resume / TP 5% portfolio_ltp_renew.
 -- =====================================================================
 
 INSERT INTO logics (name, account_id, is_enabled, note)
@@ -2461,6 +2467,79 @@ CROSS JOIN (VALUES
 JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'LinReg Fade'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- LinReg Fade Optimized: same fade, std_dev wrapped in OPT(...,10%)
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT
+    'LinReg Fade Optimized',
+    a.id,
+    FALSE,
+    'Как LinReg Fade, но std_dev оптимизируется на лету: OPT(std_dev,10) — чемпион + ветки ±10%, окно opt_eval_candles.'
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+WHERE b.code = 'T-BANK' AND a.account_code = 'FAKE-EFF-001'
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name = 'LinReg Fade Optimized'
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('opt_eval_candles', '20', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name = 'LinReg Fade Optimized'
+ON CONFLICT (logic_id, param_key) DO UPDATE SET
+    param_value = EXCLUDED.param_value,
+    value_type = EXCLUDED.value_type;
+
+-- Upgrade: empty initial_balance on Optimized / copies → backtest cash=0 → zero opens
+UPDATE logic_params lp
+SET param_value = '1000000',
+    value_type = 'money',
+    updated_at = CURRENT_TIMESTAMP
+FROM logics l
+WHERE l.id = lp.logic_id
+  AND l.name ILIKE 'LinReg Fade Optimized%'
+  AND lp.param_key IN ('initial_balance', 'current_balance')
+  AND btrim(COALESCE(lp.param_value, '')) = '';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('LINREG', 'open',  'long',  'counter', '@LINREG(period=20,std_dev=2,series=LOWER,OPT(std_dev,10)) pp <= VALUE', 0),
+    ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10)) pp >= VALUE', 1),
+    ('LINREG', 'open',  'short', 'counter', '@LINREG(period=20,std_dev=2,series=UPPER,OPT(std_dev,10)) pp >= VALUE', 2),
+    ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10)) pp <= VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'LinReg Fade Optimized'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+SELECT dst.id, ls.security_id, ls.display_order, ls.is_active
+FROM logics src
+JOIN logic_securities ls ON ls.logic_id = src.id
+JOIN logics dst ON dst.name = 'LinReg Fade Optimized'
+WHERE src.name = 'LinReg Fade'
+ON CONFLICT (logic_id, security_id) DO UPDATE SET
+    is_active = EXCLUDED.is_active,
+    display_order = EXCLUDED.display_order;
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2568,17 +2647,18 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
-    ('take_profit', 'security',        3.0, 'percent', 1)
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
+    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized',
+    'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- =====================================================================
 -- v45: +5 трендовых и +10 контртрендовых (OsEngine-style), ещё не в seed
--- FAKE, выключены, все акции, SL 1% portfolio / TP 3%.
+-- FAKE, выключены, все акции, SL 1% security_resume / TP 5% portfolio_ltp_renew.
 -- Только INSERT IF NOT EXISTS — копии пользователя и правки не затираются.
 -- =====================================================================
 
@@ -2906,8 +2986,8 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
-    ('take_profit', 'security',        3.0, 'percent', 1)
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
     'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
@@ -2919,7 +2999,7 @@ WHERE l.name IN (
 -- =====================================================================
 -- v47: +8 контртрендовых OsEngine Custom Robots (ещё не в seed)
 -- Прокси на индикаторы с calc в PG (NRTR/RAVI/SuperTrend/FI/MI/Aroon/CMO/StdDev нет).
--- FAKE, выключены, все акции, SL 1% portfolio / TP 3%.
+-- FAKE, выключены, все акции, SL 1% security_resume / TP 5% portfolio_ltp_renew.
 -- Только INSERT IF NOT EXISTS — копии пользователя и правки не затираются.
 -- =====================================================================
 
@@ -3160,8 +3240,8 @@ INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, dis
 SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
 FROM logics l
 CROSS JOIN (VALUES
-    ('stop_loss',   'portfolio', 1.0, 'percent', 0),
-    ('take_profit', 'security',        3.0, 'percent', 1)
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
     'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
@@ -3169,16 +3249,34 @@ WHERE l.name IN (
 )
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
--- Upgrade (01 re-run): старый seed-дефолт SL «по бумаге с resume 1%» → portfolio 1%.
--- INSERT выше не трогает логики, у которых stops уже есть (NOT EXISTS).
--- Этот UPDATE меняет только точное совпадение со старым seed (value=1%, unit=percent, security_resume).
--- Ручные правки (другой %, scope security/inversion, portfolio уже) не затираются.
+-- Upgrade (01 re-run): дефолты стопов для всех логик
+-- SL → security_resume (бумага×сторона, возобновление при сумме прерывания)
+-- TP → portfolio_ltp_renew (линейный TP по портфелю с renew); 3% → 5%
 UPDATE logic_stops
-SET scope_type = 'portfolio'
+SET scope_type = 'security_resume'
 WHERE rule_kind = 'stop_loss'
-  AND scope_type = 'security_resume'
+  AND scope_type IS DISTINCT FROM 'security_resume';
+
+UPDATE logic_stops
+SET scope_type = 'portfolio_ltp_renew'
+WHERE rule_kind = 'take_profit'
+  AND scope_type IS DISTINCT FROM 'portfolio_ltp_renew';
+
+UPDATE logic_stops
+SET value = 5.0
+WHERE rule_kind = 'take_profit'
   AND value_unit = 'percent'
-  AND value = 1.0;
+  AND value = 3.0;
+
+-- Логики без стопов — вставить пару дефолтов
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- Примечания ко всем seed-логикам (тип стратегии + источник)
 UPDATE logics l
@@ -3300,6 +3398,7 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     financial_result NUMERIC(20, 6),
     note TEXT,
     trade_reason TEXT,
+    opt_lane TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
@@ -3347,6 +3446,7 @@ ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(18, 6) NOT 
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS note TEXT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS trade_reason TEXT;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS opt_lane TEXT NOT NULL DEFAULT '';
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
@@ -3384,9 +3484,11 @@ DROP INDEX IF EXISTS logic_trades_logic_id_security_id_signal_kind_bar_dt_key;
 -- v40: одна сделка на open/close × сторону (action) на баре — сигналы объединяются AND
 DROP INDEX IF EXISTS idx_logic_trades_signal_bar_book;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_logic_trades_signal_bar_book
-    ON logic_trades (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow);
+    ON logic_trades (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow, opt_lane);
 
 CREATE INDEX IF NOT EXISTS idx_logic_trades_test ON logic_trades(logic_id) WHERE is_test;
+CREATE INDEX IF NOT EXISTS idx_logic_trades_opt_lane ON logic_trades(logic_id, opt_lane)
+    WHERE opt_lane <> '';
 
 COMMENT ON TABLE logic_trades IS
 'Сделки logics: исполнение по logic_indicator_signals; is_simulated — фейковый счёт; is_fictitious — резерв';
@@ -3396,6 +3498,8 @@ COMMENT ON COLUMN logic_trades.is_shadow IS
 'Теневая сделка: не влияет на реальный депозит; режим возобновления после стоп-лосса по бумаге';
 COMMENT ON COLUMN logic_trades.is_test IS
 'TRUE — сделка исторического тестирования (отдельная книга, не смешивается с боевыми и live-теневыми)';
+COMMENT ON COLUMN logic_trades.opt_lane IS
+'Ветка OPT: пусто = чемпион; иначе напр. std_dev:up или period:down|std_dev:up. Не смешивать с is_shadow/is_test';
 COMMENT ON COLUMN logic_trades.trade_reason IS
 'Причина сделки: сигнал индикатора, stop_loss/take_profit (тип), market:close_all и т.п.';
 COMMENT ON COLUMN logic_trades.bar_dt IS 'Свеча, на которой сработал сигнал';
@@ -3459,6 +3563,9 @@ COMMENT ON COLUMN logic_backtest_runs.portfolio_linear_tp_latched IS
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS last_opt_eval_bar_dt TIMESTAMP;
+COMMENT ON COLUMN logic_backtest_runs.last_opt_eval_bar_dt IS
+'Курсор окна OPT в прогоне теста (отдельно от live last_opt_eval_bar_dt в logic_params)';
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -3534,6 +3641,44 @@ CREATE INDEX IF NOT EXISTS idx_logic_backtest_reports_updated
 
 COMMENT ON TABLE logic_backtest_reports IS
 'Сохранённые отчёты тестов (HTML+summary). Пишется API вне bar-loop (finish / редкий snapshot).';
+
+-- v52: история баз OPT (снимок при старте теста / promote в бою)
+CREATE TABLE IF NOT EXISTS logic_opt_param_history (
+    id BIGSERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    run_id BIGINT REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,
+    bar_dt TIMESTAMP,
+    event_kind TEXT NOT NULL CHECK (event_kind IN ('snapshot', 'promote')),
+    lane TEXT NOT NULL DEFAULT '',
+    params JSONB NOT NULL DEFAULT '{}'::jsonb,
+    params_prev JSONB,
+    opt_specs JSONB NOT NULL DEFAULT '{}'::jsonb,
+    formulas JSONB NOT NULL DEFAULT '[]'::jsonb,
+    champion_finres NUMERIC(20, 6),
+    winner_finres NUMERIC(20, 6),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS run_id BIGINT REFERENCES logic_backtest_runs(id) ON DELETE CASCADE;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS bar_dt TIMESTAMP;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS event_kind TEXT;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS lane TEXT NOT NULL DEFAULT '';
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS params JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS params_prev JSONB;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS opt_specs JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS formulas JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS champion_finres NUMERIC(20, 6);
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS winner_finres NUMERIC(20, 6);
+ALTER TABLE logic_opt_param_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_logic_opt_param_history_logic_created
+    ON logic_opt_param_history(logic_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_logic_opt_param_history_run
+    ON logic_opt_param_history(run_id, created_at ASC)
+    WHERE run_id IS NOT NULL;
+
+COMMENT ON TABLE logic_opt_param_history IS
+'Снимки и promote баз OPT/формул: для отчёта теста (история или один снимок).';
 
 CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     run_id BIGINT NOT NULL REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,

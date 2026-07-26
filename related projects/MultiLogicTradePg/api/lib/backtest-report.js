@@ -99,6 +99,7 @@ function collectClosedDeals(trades, tradeLots) {
   const closes = trades.filter(
     (t) =>
       !t.is_shadow &&
+      !t.opt_lane &&
       t.side_name === 'Close' &&
       (t.status === 'filled' || t.status === 'submitted') &&
       t.financial_result != null &&
@@ -281,6 +282,113 @@ function equitySparklineSvg(deals) {
 </svg>`;
 }
 
+function formatParamMap(params) {
+  if (!params || typeof params !== 'object') return '—';
+  const keys = Object.keys(params).sort();
+  if (!keys.length) return '—';
+  return keys.map((k) => `${k}=${params[k]}`).join(', ');
+}
+
+function formatOptSpecs(specs) {
+  if (!specs || typeof specs !== 'object') return '';
+  const keys = Object.keys(specs).sort();
+  if (!keys.length) return '';
+  return keys
+    .map((k) => {
+      const s = specs[k] || {};
+      const pct = s.pct != null ? `±${s.pct}%` : '';
+      const base = s.base != null ? String(s.base) : '?';
+      return `${k}=${base}${pct ? ` (${pct})` : ''}`;
+    })
+    .join(', ');
+}
+
+function formatParamChange(ev) {
+  if (ev.event_kind === 'promote' && ev.params_prev && ev.params) {
+    const keys = new Set([
+      ...Object.keys(ev.params_prev),
+      ...Object.keys(ev.params),
+    ]);
+    const parts = [];
+    for (const k of [...keys].sort()) {
+      const a = ev.params_prev[k];
+      const b = ev.params[k];
+      if (a != null && b != null && String(a) !== String(b)) {
+        parts.push(`${k}: ${a} → ${b}`);
+      } else if (b != null) {
+        parts.push(`${k}=${b}`);
+      }
+    }
+    return parts.length ? parts.join(', ') : formatParamMap(ev.params);
+  }
+  const optLine = formatOptSpecs(ev.opt_specs);
+  const baseLine = formatParamMap(ev.params);
+  if (optLine && baseLine && optLine !== baseLine) {
+    return `${baseLine}; OPT: ${optLine}`;
+  }
+  return optLine || baseLine;
+}
+
+function paramHistorySectionHtml(history) {
+  const list = Array.isArray(history) ? history : [];
+  const rows = list.map((ev) => {
+    const when = ev.bar_dt || ev.created_at || '—';
+    const kind =
+      ev.event_kind === 'promote'
+        ? 'Promote'
+        : ev.event_kind === 'snapshot'
+          ? 'Снимок'
+          : String(ev.event_kind || '—');
+    const fin =
+      ev.event_kind === 'promote' &&
+      (ev.winner_finres != null || ev.champion_finres != null)
+        ? `${fmtNum(num(ev.winner_finres), 2)} > ${fmtNum(num(ev.champion_finres), 2)}`
+        : '—';
+    const formulas = Array.isArray(ev.formulas)
+      ? ev.formulas
+          .map((f) => (f?.formula ? esc(String(f.formula)) : ''))
+          .filter(Boolean)
+          .slice(0, 4)
+          .join('<br/>')
+      : '';
+    return `<tr>
+      <td class="num">${esc(String(when).slice(0, 19).replace('T', ' '))}</td>
+      <td>${esc(kind)}</td>
+      <td>${esc(ev.lane || '—')}</td>
+      <td>${esc(formatParamChange(ev))}</td>
+      <td class="num">${esc(fin)}</td>
+    </tr>${
+      formulas
+        ? `<tr class="formula-row"><td colspan="5" class="muted formulas">${formulas}</td></tr>`
+        : ''
+    }`;
+  });
+
+  if (!rows.length) {
+    return `<section>
+      <h2>Параметры сигналов / OPT</h2>
+      <p class="muted">Нет данных по параметрам формул.</p>
+    </section>`;
+  }
+
+  const note = list.some((h) => h.event_kind === 'promote')
+    ? 'История смен баз OPT (promote) и снимки.'
+    : 'Оптимизации не было — показан снимок текущих параметров формул.';
+
+  return `<section>
+      <h2>Параметры сигналов / OPT</h2>
+      <p class="muted" style="margin:0 0 0.6rem">${esc(note)}</p>
+      <table class="deals param-hist">
+        <thead>
+          <tr>
+            <th>Время</th><th>Событие</th><th>Ветка</th><th>Параметры</th><th>FinRes</th>
+          </tr>
+        </thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </section>`;
+}
+
 function buildBacktestReportModel(logic, trades, opts = {}) {
   const initial = num(logic.initial_balance, 1_000_000);
   const rate = num(logic.base_annual_rate_pct, 7);
@@ -322,6 +430,7 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
       accountType: logic.account_type || '—',
       accountName: logic.account_name || logic.account_code || '—',
     },
+    paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
     all: computeSideStats(allDeals, initial, rate, true),
     long: computeSideStats(longDeals, initial, rate, false),
     short: computeSideStats(shortDeals, initial, rate, false),
@@ -497,6 +606,8 @@ function renderBacktestReportHtml(model) {
     table.deals { width:100%; border-collapse:collapse; font-size:.82rem; }
     table.deals th, table.deals td { padding:.35rem .45rem; border-bottom:1px solid var(--line); }
     table.deals th { text-align:left; color:var(--muted); font-size:.72rem; text-transform:uppercase; }
+    table.param-hist td.formulas { font-family:ui-monospace,Consolas,monospace; font-size:.72rem; word-break:break-all; }
+    .muted { color:var(--muted); }
     .foot { margin-top:1.25rem; font-size:.78rem; color:var(--muted); text-align:center; }
   </style>
 </head>
@@ -532,6 +643,7 @@ function renderBacktestReportHtml(model) {
         <div><dt>Счёт</dt><dd>${esc(model.params.accountName)} (${esc(model.params.accountType)})</dd></div>
       </dl>
     </section>
+    ${paramHistorySectionHtml(model.paramHistory)}
     <section>
       <h2>Эквити (кумулятивный П\\У)</h2>
       <div class="chart">${model.equitySvg}</div>

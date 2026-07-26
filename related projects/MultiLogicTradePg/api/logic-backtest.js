@@ -5,7 +5,9 @@ const { schedulePersistBacktestReport } = require('./backtest-report-persist');
 
 /**
  * Параллельность подготовки бумаг внутри одного прогона.
- * Env: BACKTEST_PRICE_CONCURRENCY (1..8). По умолчанию 1 — меньше SSL timeout T-Bank/MOEX.
+ * Env: BACKTEST_PRICE_CONCURRENCY (1..8). По умолчанию 3 — кэш цен + sync
+ * индикаторов идут параллельно; HTTP load_prices всё ещё single-flight по ключу.
+ * При SSL timeout T-Bank/MOEX снизьте до 1.
  *
  * Между прогонами: load_prices — single-flight по ключу
  * (security_id, timeframe_id, date_from, date_to). Первый грузит HTTP,
@@ -14,7 +16,7 @@ const { schedulePersistBacktestReport } = require('./backtest-report-persist');
  */
 const BACKTEST_PRICE_CONCURRENCY = Math.max(
   1,
-  Math.min(8, Number(process.env.BACKTEST_PRICE_CONCURRENCY) || 1)
+  Math.min(8, Number(process.env.BACKTEST_PRICE_CONCURRENCY) || 3)
 );
 
 /** @type {Map<string, Promise<object>>} */
@@ -913,17 +915,25 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       return;
     }
 
+    // Empty/0 initial_balance must not become cash=0 (no opens). Default 1_000_000.
     const { rows: balRows } = await pool.query(
-      `SELECT COALESCE(get_logic_param_numeric($1, 'initial_balance', 0), 1000000)::float8 AS bal`,
+      `SELECT COALESCE(
+         NULLIF(get_logic_param_numeric($1, 'initial_balance', NULL), 0),
+         1000000
+       )::float8 AS bal`,
       [logicId]
     );
     let balance = Number(balRows[0]?.bal ?? 1000000);
+    if (!Number.isFinite(balance) || balance <= 0) {
+      balance = 1000000;
+    }
 
     if (resume) {
       const { rows: runState } = await pool.query(
         `
         SELECT test_balance::float8 AS test_balance,
                COALESCE(processed_bars, 0)::int AS processed_bars,
+               COALESCE(trades_created, 0)::int AS trades_created,
                status, cancel_requested
         FROM logic_backtest_runs
         WHERE id = $1
@@ -943,8 +953,14 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       ) {
         return;
       }
-      if (runState[0].test_balance != null && Number.isFinite(Number(runState[0].test_balance))) {
-        balance = Number(runState[0].test_balance);
+      const resumedBal = Number(runState[0].test_balance);
+      const resumedTrades = Number(runState[0].trades_created) || 0;
+      // Do not resume a dead cash=0 run (empty initial_balance bug) if no trades yet.
+      if (
+        Number.isFinite(resumedBal) &&
+        (resumedBal > 0 || resumedTrades > 0)
+      ) {
+        balance = resumedBal;
       }
       startBarIndex = Math.max(0, Number(runState[0].processed_bars) || 0);
       const seeded = await fetchActiveSecurityIds(pool, logicId);
@@ -1347,8 +1363,8 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
     });
 
     for (let bi = resumeBi; bi < bars.length; bi += 1) {
-      // Cancel: once per bar (was 3–4 SELECT/bar).
-      if (await isCancelRequested(pool, runId)) {
+      // Cancel: every 5 bars (was every bar — extra RTT).
+      if (bi % 5 === 0 && (await isCancelRequested(pool, runId))) {
         await finishCancelled(pool, runId, logicId, balance, bi, totalBars);
         return;
       }
@@ -1380,47 +1396,12 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       const prevBar = bi > 0 ? bars[bi - 1] : null;
       const nextBar = bi + 1 < bars.length ? bars[bi + 1] : null;
 
-      // Независимый рейтинг каждого сигнала (не зависит от AND/сделок)
-      await pool.query(
-        `SELECT logic_backtest_rate_signals($1, $2, $3, $4)`,
-        [runId, logicId, tfId, barDt]
+      // One SQL round-trip: rate → risk → EOD → signals → park.
+      const { rows: barRowsOut } = await pool.query(
+        `SELECT logic_backtest_process_bar($1, $2, $3, $4, $5::timestamp, $6::timestamp, $7::timestamp, $8::numeric) AS balance`,
+        [runId, logicId, logic.account_id, tfId, barDt, prevBar, nextBar, balance]
       );
-
-      const { rows: riskRows } = await pool.query(
-        `SELECT logic_backtest_process_risk($1, $2, $3, $4, $5, $6::numeric) AS balance`,
-        [runId, logicId, logic.account_id, tfId, barDt, balance]
-      );
-      balance = Number(riskRows[0]?.balance ?? balance);
-
-      // EOD / NTP / парковка TMON — в Node (не SQL-робот), иначе фонд не покупается из UI.
-      const { rows: gateRows } = await pool.query(
-        `
-        SELECT logic_is_eod_close_bar($1, $2::timestamp, $3::timestamp, $4::timestamp) AS eod,
-               logic_is_non_trading_dt($1, $2::timestamp) AS ntp
-        `,
-        [logicId, barDt, prevBar, nextBar]
-      );
-      if (gateRows[0]?.eod) {
-        const { rows: eodBal } = await pool.query(
-          `SELECT logic_backtest_close_all_except_funds($1, $2, $3, $4, $5, $6::numeric) AS balance`,
-          [runId, logicId, logic.account_id, tfId, barDt, balance]
-        );
-        balance = Number(eodBal[0]?.balance ?? balance);
-      }
-
-      if (!gateRows[0]?.ntp) {
-        const { rows: sigRows } = await pool.query(
-          `SELECT logic_backtest_process_signals($1, $2, $3, $4, $5, $6::numeric) AS balance`,
-          [runId, logicId, logic.account_id, tfId, barDt, balance]
-        );
-        balance = Number(sigRows[0]?.balance ?? balance);
-      }
-
-      const { rows: parkRows } = await pool.query(
-        `SELECT logic_backtest_park_excess_cash($1, $2, $3, $4, $5, $6::numeric) AS balance`,
-        [runId, logicId, logic.account_id, tfId, barDt, balance]
-      );
-      balance = Number(parkRows[0]?.balance ?? balance);
+      balance = Number(barRowsOut[0]?.balance ?? balance);
 
       const isLast = bi === bars.length - 1;
       const pct =
@@ -1517,6 +1498,12 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       finished_at: new Date(),
     });
   } finally {
+    // Promote в тесте переписывает формулы — вернуть стартовый снимок OPT.
+    try {
+      await pool.query(`SELECT logic_opt_restore_formulas_from_run($1)`, [runId]);
+    } catch (err) {
+      console.warn('logic_opt_restore_formulas_from_run', err?.message || err);
+    }
     activeBacktestRuns.delete(runKey);
   }
 }
@@ -1575,6 +1562,7 @@ async function sumTestPnl(pool, logicId, runId = null) {
     WHERE lt.logic_id = $1
       AND lt.is_test = TRUE
       AND COALESCE(lt.is_shadow, FALSE) = FALSE
+      AND COALESCE(lt.opt_lane, '') = ''
       AND lt.status IN ('filled', 'submitted')
       ${runFilter}
     `,
@@ -1634,6 +1622,15 @@ async function startBacktest(pool, logicId, dateFrom, dateTo) {
     [logicId, dateFrom, dateTo]
   );
   const runId = rows[0].id;
+  // Снимок параметров формул/OPT на старте (отчёт + restore после promote в тесте).
+  try {
+    await pool.query(`SELECT logic_opt_snapshot_params($1, $2, NULL)`, [
+      logicId,
+      runId,
+    ]);
+  } catch (err) {
+    console.warn('logic_opt_snapshot_params', err?.message || err);
+  }
   setImmediate(() => {
     runBacktestAsync(pool, logicId, dateFrom, dateTo, runId).catch((err) => {
       console.error('backtest run failed', err);

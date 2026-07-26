@@ -180,10 +180,25 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    IF v_min_date > p_date_from + v_edge_slack THEN
+    IF v_tf_sec >= 86400 THEN
+        v_min_bars := GREATEST(5, (v_span_days * 2) / 5);
+    ELSE
+        v_min_bars := GREATEST(
+            p_min_warmup,
+            GREATEST(20, (v_span_days * 8 * 3600 / v_tf_sec / 4)::INTEGER)
+        );
+    END IF;
+
+    -- Конец периода обязан быть свежим — иначе догружаем.
+    IF v_max_date < v_date_to - v_edge_slack THEN
         RETURN FALSE;
     END IF;
-    IF v_max_date < v_date_to - v_edge_slack THEN
+
+    -- Старт истории: строгий край только если баров мало.
+    -- У M15 брокер часто отдаёт окно короче date_from (напр. с 27.04 при from=01.04) —
+    -- повторный HTTP не удлиняет историю и каждый прогон «висит» на load_prices.
+    IF v_min_date > p_date_from + v_edge_slack
+       AND v_in_period < v_min_bars THEN
         RETURN FALSE;
     END IF;
 
@@ -197,21 +212,12 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    IF v_tf_sec >= 86400 THEN
-        v_min_bars := GREATEST(5, (v_span_days * 2) / 5);
-    ELSE
-        v_min_bars := GREATEST(
-            p_min_warmup,
-            GREATEST(20, (v_span_days * 8 * 3600 / v_tf_sec / 4)::INTEGER)
-        );
-    END IF;
-
     RETURN v_in_period >= v_min_bars;
 END;
 $$;
 
 COMMENT ON FUNCTION backtest_prices_cached(INTEGER, INTEGER, DATE, DATE, DATE, INTEGER) IS
-'True если свечи покрывают период теста до LEAST(date_to, сегодня); иначе load_prices. Будущий date_to не форсит HTTP.';
+'True если свечей достаточно до LEAST(date_to, сегодня). Поздний старт истории при достаточном числе баров — кэш (без вечного HTTP).';
 
 CREATE OR REPLACE FUNCTION backtest_indicators_cached(
     p_security_id INTEGER,
@@ -541,6 +547,7 @@ LANGUAGE sql STABLE AS $$
         WHERE lt.logic_id = p_logic_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = p_is_shadow
+          AND COALESCE(lt.opt_lane, '') = ''
           AND lt.status IN ('filled', 'submitted')
         GROUP BY lt.security_id
         HAVING COALESCE(SUM(
@@ -600,15 +607,16 @@ BEGIN
         logic_id, account_id, security_id, timeframe_id,
         side_id, action_id, position_event, signal_kind, signal_formula,
         quantity, price, bar_dt, executed_at, is_simulated, is_fictitious,
-        is_shadow, is_test, run_id, trade_reason, status
+        is_shadow, is_test, run_id, trade_reason, status, opt_lane
     )
     VALUES (
         p_logic_id, p_account_id, p_security_id, p_timeframe_id,
         p_side_id, p_action_id, v_position_event, p_signal_kind, p_formula,
         p_quantity, p_price, p_bar_dt, p_bar_dt, TRUE, FALSE,
-        p_is_shadow, TRUE, p_run_id, p_trade_reason, 'filled'
+        p_is_shadow, TRUE, p_run_id, p_trade_reason, 'filled', ''
     )
-    ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow) DO NOTHING
+    ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow, opt_lane)
+    DO NOTHING
     RETURNING id INTO v_trade_id;
 
     IF v_trade_id IS NULL THEN
@@ -787,6 +795,7 @@ BEGIN
           AND lt.security_id = p_security_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = p_is_shadow
+          AND COALESCE(lt.opt_lane, '') = ''
           AND s.name = 'Open'
           AND lt.status IN ('filled', 'submitted')
     LOOP
@@ -852,6 +861,7 @@ BEGIN
           AND lt.security_id = p_security_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = p_is_shadow
+          AND COALESCE(lt.opt_lane, '') = ''
           AND s.name = 'Open'
           AND lt.status IN ('filled', 'submitted')
     LOOP
@@ -919,6 +929,7 @@ BEGIN
           AND lt.security_id = p_security_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = p_is_shadow
+          AND COALESCE(lt.opt_lane, '') = ''
           AND s.name = 'Open' AND a.name = v_action
           AND lt.status IN ('filled', 'submitted')
     LOOP
@@ -994,6 +1005,7 @@ BEGIN
           AND lt.security_id = p_security_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = p_is_shadow
+          AND COALESCE(lt.opt_lane, '') = ''
           AND s.name = 'Open'
           AND a.name = v_action
           AND lt.status IN ('filled', 'submitted')
@@ -1043,6 +1055,7 @@ BEGIN
           AND lt.security_id = p_security_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = p_is_shadow
+          AND COALESCE(lt.opt_lane, '') = ''
           AND s.name = 'Open'
           AND lt.status IN ('filled', 'submitted')
     LOOP
@@ -1644,6 +1657,7 @@ DECLARE
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
+    v_use_opt BOOLEAN;
 BEGIN
     SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
@@ -1661,6 +1675,7 @@ BEGIN
         v_size_mode := 'free_cash';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
+    v_use_opt := logic_opt_logic_has_opt(p_logic_id);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
 
     FOR v_sec IN
@@ -1708,10 +1723,19 @@ BEGIN
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
             LOOP
-                SELECT * INTO v_eval
-                FROM logic_signal_evaluate_at(
-                    v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, v_eff_inversion
-                );
+                -- OPT: evaluate_at_opt по базам формулы (после promote без полного sync серий)
+                IF v_use_opt THEN
+                    SELECT * INTO v_eval
+                    FROM logic_signal_evaluate_at_opt(
+                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt,
+                        v_eff_inversion, NULL
+                    );
+                ELSE
+                    SELECT * INTO v_eval
+                    FROM logic_signal_evaluate_at(
+                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, v_eff_inversion
+                    );
+                END IF;
 
                 IF v_eval.close_price IS NULL THEN
                     v_all_ok := FALSE;
@@ -1945,6 +1969,7 @@ LANGUAGE sql STABLE AS $$
         WHERE lt.logic_id = p_logic_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
           AND lt.status IN ('filled', 'submitted')
         GROUP BY lt.security_id
         HAVING GREATEST(COALESCE(SUM(
@@ -1985,7 +2010,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'Тест: equity = cash + long×price − short×price на bar_dt (LATERAL last price, index-friendly)';
+'Тест: equity чемпиона (без opt_lane) = cash + long×price − short×price';
 
 -- MTM выбранного денежного фонда в тесте (исключается из базы лота «весь портфель»).
 CREATE OR REPLACE FUNCTION logic_backtest_selected_cash_fund_mtm(
@@ -2026,6 +2051,7 @@ BEGIN
         WHERE lt.logic_id = p_logic_id
           AND lt.is_test = TRUE
           AND lt.is_shadow = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
           AND lt.status IN ('filled', 'submitted')
           AND upper(sp.prefix) = v_code
         GROUP BY lt.security_id
@@ -2047,7 +2073,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_selected_cash_fund_mtm(INTEGER, INTEGER, TIMESTAMP) IS
-'Тест: MTM выбранного cash_fund_code на bar_dt';
+'Тест: MTM выбранного cash_fund_code на bar_dt (только чемпион, без opt_lane)';
 
 -- Парковка: BUY фонда на min(свободный кэш, equity−порог−уже_в_фонде); без продажи фонда.
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
@@ -2236,6 +2262,58 @@ $$;
 COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
+-- Один бар теста (Node + SQL path): меньше round-trip, чем 5 отдельных CALL.
+CREATE OR REPLACE FUNCTION logic_backtest_process_bar(
+    p_run_id BIGINT,
+    p_logic_id INTEGER,
+    p_account_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_prev_bar TIMESTAMP,
+    p_next_bar TIMESTAMP,
+    p_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_balance NUMERIC := COALESCE(p_balance, 0);
+BEGIN
+    PERFORM logic_backtest_rate_signals(p_run_id, p_logic_id, p_tf_id, p_bar_dt);
+    v_balance := logic_backtest_process_risk(
+        p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
+    );
+
+    IF logic_is_eod_close_bar(p_logic_id, p_bar_dt, p_prev_bar, p_next_bar) THEN
+        v_balance := logic_backtest_close_all_except_funds(
+            p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
+        );
+    END IF;
+
+    IF NOT logic_is_non_trading_dt(p_logic_id, p_bar_dt) THEN
+        v_balance := logic_backtest_process_signals(
+            p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
+        );
+        -- OPT paper + редкий promote (без tech-log; история только при смене баз)
+        IF logic_opt_logic_has_opt(p_logic_id) THEN
+            PERFORM process_logic_opt_trades(
+                p_logic_id, p_tf_id, p_bar_dt, TRUE, p_run_id, v_balance
+            );
+            PERFORM logic_opt_maybe_promote(
+                p_logic_id, p_tf_id, p_bar_dt, TRUE, p_run_id
+            );
+        END IF;
+    END IF;
+
+    v_balance := logic_backtest_park_excess_cash(
+        p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
+    );
+    RETURN v_balance;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_process_bar(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP, NUMERIC) IS
+'Тест: rate → risk → EOD → signals → OPT(paper/promote) → park.';
+
 -- Прогон по свечам (единый мозг теста): rate → risk → EOD → signals → park.
 -- PROCEDURE + COMMIT каждые N баров: иначе одна длинная tx держит локи и UI не видит прогресс.
 DROP ROUTINE IF EXISTS logic_backtest_run_bars(BIGINT);
@@ -2301,8 +2379,8 @@ BEGIN
     END IF;
 
     v_balance := COALESCE(
-        v_run.test_balance,
-        get_logic_param_numeric(v_run.logic_id, 'initial_balance', 0),
+        NULLIF(v_run.test_balance, 0),
+        NULLIF(get_logic_param_numeric(v_run.logic_id, 'initial_balance', NULL), 0),
         1000000
     );
 
@@ -2340,7 +2418,11 @@ BEGIN
     FOR v_i IN 1..v_total LOOP
         IF logic_backtest_cancel_requested(p_run_id) THEN
             SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-            FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+            FROM logic_trades
+            WHERE logic_id = v_run.logic_id
+              AND is_test = TRUE
+              AND COALESCE(opt_lane, '') = '';
+            PERFORM logic_opt_restore_formulas_from_run(p_run_id);
             PERFORM logic_backtest_log(
                 p_run_id, v_run.logic_id, 'backtest.cancelled',
                 format('Отменено на %s/%s', v_i, v_total), NULL
@@ -2358,25 +2440,9 @@ BEGIN
         v_prev_bar := CASE WHEN v_i > 1 THEN v_bars[v_i - 1] ELSE NULL END;
         v_next_bar := CASE WHEN v_i < v_total THEN v_bars[v_i + 1] ELSE NULL END;
 
-        PERFORM logic_backtest_rate_signals(p_run_id, v_run.logic_id, v_tf_id, v_bar_dt);
-        v_balance := logic_backtest_process_risk(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-        );
-
-        IF logic_is_eod_close_bar(v_run.logic_id, v_bar_dt, v_prev_bar, v_next_bar) THEN
-            v_balance := logic_backtest_close_all_except_funds(
-                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-            );
-        END IF;
-
-        IF NOT logic_is_non_trading_dt(v_run.logic_id, v_bar_dt) THEN
-            v_balance := logic_backtest_process_signals(
-                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
-            );
-        END IF;
-
-        v_balance := logic_backtest_park_excess_cash(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bar_dt, v_balance
+        v_balance := logic_backtest_process_bar(
+            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id,
+            v_bar_dt, v_prev_bar, v_next_bar, v_balance
         );
 
         IF v_i % v_commit_every = 0 OR v_i = v_total THEN
@@ -2398,14 +2464,22 @@ BEGIN
     END IF;
 
     SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
-    FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+    FROM logic_trades
+    WHERE logic_id = v_run.logic_id
+      AND is_test = TRUE
+      AND COALESCE(opt_lane, '') = '';
 
     SELECT COUNT(*)::INTEGER INTO v_trades_created
-    FROM logic_trades WHERE logic_id = v_run.logic_id AND is_test = TRUE;
+    FROM logic_trades
+    WHERE logic_id = v_run.logic_id
+      AND is_test = TRUE
+      AND COALESCE(opt_lane, '') = '';
 
     v_diag := logic_backtest_diagnose(
         p_run_id, v_run.logic_id, v_tf_id, v_run.date_from, v_run.date_to
     );
+
+    PERFORM logic_opt_restore_formulas_from_run(p_run_id);
 
     PERFORM logic_backtest_log(
         p_run_id, v_run.logic_id, 'backtest.complete',
@@ -2490,7 +2564,10 @@ BEGIN
     END IF;
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
 
-    v_balance := COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 1000000);
+    v_balance := COALESCE(
+        NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', NULL), 0),
+        1000000
+    );
     v_days_span := GREATEST(1, (v_date_to - v_load_from) + 1);
     v_point_count := GREATEST(500, CEIL(v_days_span * (86400.0 / GREATEST(v_tf_sec, 60)))::INTEGER + 200);
 

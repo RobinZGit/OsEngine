@@ -32,6 +32,8 @@ export interface LogicTradeRow {
   financial_result: number | null;
   remaining_qty?: number | null;
   note: string | null;
+  /** OPT challenger lane; empty = champion. */
+  opt_lane?: string | null;
   created_at?: string;
   security_name: string;
   security_prefix: string | null;

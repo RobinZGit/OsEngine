@@ -93,12 +93,14 @@ sql02 = replaceBetween(
 }
 
 const closeAll = read('sql/logic_close_all_positions.sql').trimEnd() + '\n\n';
+const optRunner = read('sql/logic_opt.sql').trimEnd() + '\n\n';
 sql02 = replaceBetween(
   sql02,
   '-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)',
   'CREATE OR REPLACE FUNCTION process_logic_trades(p_logic_id INTEGER)',
-  `-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)\n${closeAll}`,
-  'logic_close_all_positions'
+  `-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)\n${closeAll}` +
+    `-- @include sql/logic_opt.sql\n${optRunner}`,
+  'logic_close_all_positions + logic_opt'
 );
 
 // helpers (prices_have_closed_bar) + refresh + process + run_trade_cycle

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — GitHub release **real-trade-1** (акцент: боевая торговля)
+**Последнее обновление:** 2026-07-26 — OPT paper + promote внутри бэктеста; история параметров в отчёте
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,49 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (OPT в бэктесте)
+
+- В `logic_backtest_process_bar`: после champion signals — `process_logic_opt_trades(..., is_test, run_id)` + `logic_opt_maybe_promote(..., is_test, run_id)`.
+- Курсор окна: `logic_backtest_runs.last_opt_eval_bar_dt` (v53) — live `last_opt_eval_bar_dt` не трогаем.
+- Champion после promote: `logic_signal_evaluate_at_opt` по базам формулы (без полного sync серий).
+- При смене баз — запись в `logic_opt_param_history` с `run_id`; после прогона — `logic_opt_restore_formulas_from_run`.
+- Equity / PnL / отчёт — только чемпион (`opt_lane=''`); paper OPT не двигает cash.
+
+### 2026-07-26 (Отчёт: история параметров OPT)
+
+- Таблица `logic_opt_param_history`; снимок при старте теста; promote в `logic_opt_maybe_promote`.
+- Секция «Параметры сигналов / OPT» в отчёте (live «Отчёт» + архив); если promote не было — один снимок баз/формул.
+- API `GET /api/logics/:id/opt-param-history`; sync `01`/`02`/`logic_opt.sql` + `backtest-report`.
+
+### 2026-07-26 (Backtest failed: ON CONFLICT / opt_lane)
+
+- Runs 181–182 failed instantly: unique index includes `opt_lane`, but `logic_backtest_insert_trade` (and cash-fund park) still used old ON CONFLICT without it → yellow chip vanished.
+- Fix: INSERT/ON CONFLICT with `opt_lane=''` for champion/test.
+
+### 2026-07-26 (Backtest: 0 opens + bar speed)
+
+- **Проблема:** прогон 180 — 0 сделок, `test_balance=0`. У Optimized / copy `initial_balance` пустой → `get_logic_param_numeric(..., 0)` = 0 → sizing от free_cash не открывает.
+- **Фикс:** default/NULLIF → 1_000_000 в Node + SQL; UPDATE params Optimized%; seed/01 upgrade.
+- **Скорость баров:** `logic_backtest_process_bar` (rate→risk→EOD→signals→park) — 1 RTT вместо ~5; cancel check каждые 5 баров.
+- Файлы: `sql/logic_backtest_runner.sql`, `api/logic-backtest.js`, seed, `01` (+ sync `02`).
+
+### 2026-07-26 (Backtest load speed)
+
+- **Проблема:** prep «Загрузка цен» по 15+ мин на 34 бумаги M15 — часть бумаг (VTBR, RUAL, TATN…) имеет историю только с ~27.04; `backtest_prices_cached` требовал старт у `date_from` → каждый прогон снова `load_prices` HTTP, хотя баров уже тысячи и брокер раньше не отдаёт.
+- **Фикс:** поздний старт при достаточном `v_min_bars` = кэш; конец периода по-прежнему строгий. Default `BACKTEST_PRICE_CONCURRENCY` 1→3.
+- Файлы: `sql/logic_backtest_runner.sql`, `api/logic-backtest.js` (+ sync `02`).
+
+### 2026-07-26 (OPT live runner — testable)
+
+- План: `docs/PLAN_opt_formula.md` (не в релиз `real-trade-1`).
+- Синтаксис: `@LINREG(...,std_dev=2,...,OPT(std_dev,10))`; ветки 2ⁿ + чемпион; max **3** OPT-ключа глобально (API save reject).
+- Схема: `logic_trades.opt_lane`, unique bar book + `opt_lane`; params `opt_eval_candles`, `last_opt_eval_bar_dt`.
+- Seed: **LinReg Fade Optimized** (FAKE) — бумаги с LinReg Fade, `opt_eval_candles=5` для теста.
+- UI: бейдж «опт …»; PnL summary без opt_lane.
+- **Runner:** `sql/logic_opt.sql` — `process_logic_opt_trades` (paper `opt_lane`, calc через `exec_indicator_script`), `logic_opt_maybe_promote` каждые N свечей; вызов из `process_logic_trades`.
+- FIFO lots / count open — изоляция по `opt_lane` (+ shadow/test).
+- Nested parse `@CODE(...OPT(...))` в SQL.
 
 ### 2026-07-26 (GitHub release real-trade-1)
 
@@ -490,6 +533,13 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | OPT live+backtest + param history report; installers; push |
+| 2026-07-26 | OPT inside backtest (paper lanes + promote + history); restore formulas after run |
+| 2026-07-26 | Report: OPT/formula param history (snapshot + promote); applied locally |
+| 2026-07-26 | Backtest fail: ON CONFLICT missing opt_lane; insert_trade + cash park fixed |
+| 2026-07-26 | Backtest: empty initial_balance→0 opens; process_bar 1 RTT; applied locally |
+| 2026-07-26 | Backtest load: accept late M15 history as cache; concurrency 3; applied locally |
+| 2026-07-26 | OPT live runner: multi-lane paper + promote; LinReg Fade Optimized enabled locally for test |
 | 2026-07-26 | GitHub release real-trade-1 (real trading focus) + installers |
 | 2026-07-26 | Account sell-all syncs logic books (no 2nd PostOrder); repair 2133; push |
 | 2026-07-26 | Shadow live: no T-Bank PostOrder; FLOT #602132 untag; reject reason UI; safer cleanup; push |
@@ -650,6 +700,20 @@
 ---
 
 ## Запросы пользователя (текст)
+
+691. Yes, do OPT in the test too so testing is not slowed much; on param change just rewrite/history for the report.
+
+690. In the transactions report, add history of parameter changes if optimized (or once if no optimization).
+
+689. Restarted start; test yellow briefly then disappeared — maybe crashed with error.
+
+688. Test moved to transactions but none opened yet — find problems and speed up.
+
+687. Look at the test again — accelerated but still on load; speed up what is slowing it down.
+
+686. Go on — need OPT so I can test it on the new logic.
+
+685. OPT(param, pct%): 2^n opt lanes + real; isolate from test/shadow; cap 3 params global; opt_eval_candles; LinRegFadeOptimized; tests.
 
 684. Make a GitHub release of this build; name it around «real trade» — emphasize that real trading has started to work.
 
