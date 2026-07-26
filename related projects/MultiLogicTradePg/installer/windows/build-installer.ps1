@@ -65,6 +65,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $exe = Join-Path $ScriptDir "dist\MultiLogicTradePgSetup.exe"
+if (-not (Test-Path -LiteralPath $exe)) {
+    throw "Expected installer was not created: $exe"
+}
+# Same bytes as .exe, last extension letter replaced with '_' so hosts that block .exe still accept download.
+$exSafe = Join-Path $ScriptDir "dist\MultiLogicTradePgSetup.ex_"
+Copy-Item -LiteralPath $exe -Destination $exSafe -Force
+
 Write-Host ""
 Write-Host "Installer built:" -ForegroundColor Green
 Write-Host "  $exe"
+Write-Host "  $exSafe  (same file; rename to .exe after download)"

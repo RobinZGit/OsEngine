@@ -4,7 +4,10 @@ Ready-to-run single installer:
 
 ```text
 installer/windows/dist/MultiLogicTradePgSetup.exe
+installer/windows/dist/MultiLogicTradePgSetup.ex_   (same bytes; for hosts that block .exe)
 ```
+
+After downloading `.ex_`, rename it to `.exe` before running.
 
 This folder also contains the Inno Setup sources for MultiLogicTradePg.
 The project builds one `MultiLogicTradePgSetup.exe` that copies the project to

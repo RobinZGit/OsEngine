@@ -15,6 +15,7 @@ Committed installer artifacts must always match the current repository state.
 | Platform | Path |
 |----------|------|
 | Windows | `installer/windows/dist/MultiLogicTradePgSetup.exe` |
+| Windows (download-safe twin) | `installer/windows/dist/MultiLogicTradePgSetup.ex_` (same file; last letter `_`) |
 | Linux (incl. MacBook running Linux) | `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` |
 
 **Default for agents:** if the change touches SQL, API, Angular/`web`, scripts, docs shipped in the installers, or installer sources — **rebuild and commit both artifacts in the same push**. Do not ship source-only and leave either installer stale. If unsure whether a file is packaged — treat it as packaged and rebuild both.
@@ -36,6 +37,7 @@ and commit the updated:
 
 ```text
 installer/windows/dist/MultiLogicTradePgSetup.exe
+installer/windows/dist/MultiLogicTradePgSetup.ex_
 installer/linux/dist/MultiLogicTradePg-linux.tar.gz
 ```
 

@@ -36,4 +36,5 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Both installers ready (Version $($ver.Version), Build $($ver.Build)):" -ForegroundColor Green
 Write-Host "  $(Join-Path $ProjectRoot 'installer\windows\dist\MultiLogicTradePgSetup.exe')"
+Write-Host "  $(Join-Path $ProjectRoot 'installer\windows\dist\MultiLogicTradePgSetup.ex_')"
 Write-Host "  $(Join-Path $ProjectRoot 'installer\linux\dist\MultiLogicTradePg-linux.tar.gz')"

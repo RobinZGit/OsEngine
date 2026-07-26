@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+704. Along with the installer, which is an .exe file with an .exe extension, do exactly the same next to the same folder, but with a different extension, for example, .exe. That is, instead of the last letter, put the lower underline. It is necessary to be downloaded without problems to the remote server.
+
 703. Now Pavel is testing for the second time. Testing new logic. Look, what is it because of? It can be because of your updates? Or is there some kind of mistake that needs to be corrected? (backtest fail: logic_trades_signal_kind_check / OPT signal_kind=opt).
 
 702. Anyway, this new logic did not appear, although it seems that the assembly number appeared in the installer. (protocol Build 59, ExitCode 1, install.ps1 ParserError on DbMode=$DbMode:).

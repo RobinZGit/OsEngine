@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — allow logic_trades.signal_kind=opt (OPT promote reset in backtest)
+**Последнее обновление:** 2026-07-26 — Setup.ex_ twin next to Setup.exe for server downloads
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Setup.ex_ рядом с Setup.exe)
+
+- При сборке копируется `MultiLogicTradePgSetup.ex_` (те же байты; последняя буква расширения `_`) — для выгрузки/скачивания с серверов, где `.exe` режется.
+- После скачивания переименовать в `.exe`. В git оба файла; `build-installer.ps1` всегда обновляет пару.
 
 ### 2026-07-26 (бэктест Optimized: signal_kind_check)
 
@@ -588,6 +593,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Ship MultiLogicTradePgSetup.ex_ twin for blocked-.exe downloads; push |
 | 2026-07-26 | Allow signal_kind=opt for OPT promote closes; installers; push |
 | 2026-07-26 | Fix install.ps1 parse errors blocking upgrade seed; rebuild; push |
 | 2026-07-26 | Show version+build on Inno wizard form; rebuild; push |

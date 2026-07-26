@@ -6,9 +6,10 @@ node_modules/
 api/node_modules/
 web/node_modules/
 web/dist/
-# Built installer output (keep the single Setup.exe in git)
+# Built installer output (keep Setup.exe and download-safe .ex_ twin in git)
 installer/windows/dist/*
 !installer/windows/dist/MultiLogicTradePgSetup.exe
+!installer/windows/dist/MultiLogicTradePgSetup.ex_
 
 # Секреты API (пароль PostgreSQL)
 api/.env
