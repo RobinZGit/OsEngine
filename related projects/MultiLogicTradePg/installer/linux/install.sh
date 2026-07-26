@@ -364,8 +364,29 @@ deploy_schema() {
     step "Dropping public functions/procedures (data tables kept)"
     psql_q multilogictrade -f "$PREFIX/sql/drop_public_routines.sql"
   fi
-  step "Deploying database 01 -> 02"
+  step "Deploying database 01 -> ensure_seed -> 02"
+  if [[ ! -f "$PREFIX/01_multilogictrade_tables_and_data.sql" ]]; then
+    echo "Missing $PREFIX/01_multilogictrade_tables_and_data.sql" >&2
+    exit 1
+  fi
+  if [[ ! -f "$PREFIX/sql/ensure_seed_logics.sql" ]]; then
+    echo "Missing $PREFIX/sql/ensure_seed_logics.sql (required for install-on-top seed logics)." >&2
+    exit 1
+  fi
+  if ! grep -q "v54: install-on-top ensure" "$PREFIX/01_multilogictrade_tables_and_data.sql"; then
+    echo "Installed 01 is outdated (no v54 seed ensure). Use the latest package from the OsEngine repo." >&2
+    exit 1
+  fi
   psql_q multilogictrade -f "$PREFIX/01_multilogictrade_tables_and_data.sql"
+  step "Ensuring default seed logics (LinReg Fade Optimized, …)"
+  psql_q multilogictrade -f "$PREFIX/sql/ensure_seed_logics.sql"
+  local opt_count
+  opt_count="$(psql_scalar multilogictrade "SELECT COUNT(*) FROM logics WHERE name = 'LinReg Fade Optimized';")"
+  if [[ "$opt_count" != "1" ]]; then
+    echo "Seed check failed: LinReg Fade Optimized count=$opt_count (expected 1)." >&2
+    exit 1
+  fi
+  ok "Seed OK: LinReg Fade Optimized present."
   local sql02
   if [[ "$http_ok" == "1" ]]; then
     sql02="$PREFIX/02_multilogictrade_functions_and_procedures.sql"

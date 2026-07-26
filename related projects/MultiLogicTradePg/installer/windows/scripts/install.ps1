@@ -444,7 +444,7 @@ try {
             Write-Host "    localhost:$port - available, multilogictrade=$dbExists" -ForegroundColor DarkGray
             if ($dbExists -eq "1") {
                 $script:PostgresPort = $port
-                Write-Host "    Existing multilogictrade found on localhost:$port. This database will be reset." -ForegroundColor Green
+                Write-Host "    Existing multilogictrade found on localhost:$port (DbMode=$DbMode: wipe resets; upgrade/create keep data)." -ForegroundColor Green
                 return
             }
         }
@@ -583,28 +583,42 @@ try {
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $dropSql)
         }
 
-        Write-Step "Deploying database 01 -> 02"
+        Write-Step "Deploying database 01 -> ensure_seed -> 02"
         $sql01 = Join-Path $InstallDir "01_multilogictrade_tables_and_data.sql"
+        $sqlEnsure = Join-Path $InstallDir "sql\ensure_seed_logics.sql"
         $sql02 = Get-Sql02Path -HttpExtensionReady $HttpExtensionReady
+        if (-not (Test-Path $sql01)) { throw "Missing $sql01" }
+        if (-not (Test-Path $sqlEnsure)) { throw "Missing $sqlEnsure (required for install-on-top seed logics)." }
+        $v54 = Select-String -LiteralPath $sql01 -Pattern "v54:\s*install-on-top ensure" -Quiet
+        if (-not $v54) {
+            throw "Installed 01 is outdated (no v54 seed ensure). Use the latest MultiLogicTradePgSetup.exe from the OsEngine repo."
+        }
         $err01 = $null
         try {
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql01)
+            Write-Step "Ensuring default seed logics (LinReg Fade Optimized, …)"
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sqlEnsure)
+            $optCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics WHERE name = 'LinReg Fade Optimized';"
+            if ($optCount -ne "1") {
+                throw "Seed check failed: LinReg Fade Optimized count=$optCount (expected 1)."
+            }
+            Write-Host "    Seed OK: LinReg Fade Optimized present." -ForegroundColor Green
         }
         catch {
             $err01 = $_
-            Write-Warning "01 failed after drop_routines — still applying 02 to restore API routines."
+            Write-Warning "01/ensure_seed failed after drop_routines — still applying 02 to restore API routines."
         }
         try {
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql02)
         }
         catch {
             if ($null -ne $err01) {
-                throw "01 failed: $($err01.Exception.Message); then 02 also failed: $($_.Exception.Message)"
+                throw "01/ensure failed: $($err01.Exception.Message); then 02 also failed: $($_.Exception.Message)"
             }
             throw
         }
         if ($null -ne $err01) {
-            throw "01 failed (02 restored routines): $($err01.Exception.Message)"
+            throw "01/ensure failed (02 restored routines): $($err01.Exception.Message)"
         }
     }
 

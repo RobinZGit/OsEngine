@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — v54: install-on-top ensure всех seed-логик (LinReg Fade Optimized)
+**Последнее обновление:** 2026-07-26 — v54b: ensure_seed_logics.sql + installer fail if Optimized missing
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -119,10 +119,11 @@
 
 ## Что сделано (актуально на 2026-07-26)
 
-### 2026-07-26 (v54: seed-логики при install-on-top)
+### 2026-07-26 (v54 / v54b: seed-логики при install-on-top)
 
-- **Проблема:** на установке поверх «LinReg Fade Optimized» (и др. новые seed) могли не появиться: хрупкий счёт FAKE-EFF-001; бумаги Optimized копировались до назначения у LinReg Fade; при обрыве `01` ensure не добивал каталог.
-- **Фикс:** UNIQUE(name) на upgrade; account fallback (любой fake T-BANK); Optimized в списке бумаг после LinReg Fade; финальный ensure-блок всех default seed (INSERT IF NOT EXISTS + params/securities/stops/сигналы Optimized).
+- **Проблема:** на установке поверх «LinReg Fade Optimized» не появлялась; протокол 15:57 — `logics=46→46`, в Program Files был **старый 01 без v54**.
+- **Фикс v54:** UNIQUE(name); account fallback; ensure-блок в `01`; бумаги Optimized после LinReg Fade.
+- **Фикс v54b:** отдельный `sql/ensure_seed_logics.sql` после `01`; installer **падает**, если в `01` нет маркера v54 или нет `LinReg Fade Optimized`; Linux тот же путь; сообщение «will be reset» уточнено (wipe vs upgrade).
 
 ### 2026-07-26 (Купить облигации: несколько фондов + зеркала)
 
@@ -564,6 +565,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | v54b: ensure_seed_logics.sql + installer seed check; installers; push |
 | 2026-07-26 | v54 seed ensure on install-on-top (LinReg Fade Optimized + all defaults); installers; push |
 | 2026-07-26 | Buy-bonds: TBRU+SBGB+OBLG; MOEX ISS holdings + mirrors; installers; push |
 | 2026-07-26 | Test annual % «—»: period from pnl-summary/trades when run gone; installers; push |
@@ -742,4 +744,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **698** — install-on-top: seed-логики (LinReg Fade Optimized) если нет.
+Последние (см. USER_INSTRUCTIONS): **699** — install-on-top всё ещё без Optimized (старый 01); ensure_seed + fail check.

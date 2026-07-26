@@ -2,6 +2,7 @@
 -- MultiLogicTrade — шаг 1: таблицы и справочники
 -- Версия: v54 (идемпотентный запуск)
 -- v54: install-on-top ensure всех seed-логик (в т.ч. LinReg Fade Optimized); бумаги Optimized после назначения LinReg Fade
+--      + sql/ensure_seed_logics.sql (post-01, installer проверяет наличие LinReg Fade Optimized)
 -- v53: logic_backtest_runs.last_opt_eval_bar_dt — курсор OPT в тесте (не трогает live param)
 -- v52: logic_opt_param_history — снимок/promote параметров OPT для отчёта теста
 -- v51: position_size_base default = free_cash (свободные деньги)
