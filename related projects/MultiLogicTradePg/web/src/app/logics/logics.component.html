@@ -74,17 +74,21 @@
 
 
 
-  @if (hasActiveProcesses()) {
-    <section class="process-strip" aria-label="Активные процессы">
-      <div class="process-strip-head">
-        <strong>Процессы</strong>
-        <span>PostgreSQL / тесты / расчёты Angular</span>
-      </div>
+  <!-- Fixed height: chips scroll horizontally — table/logics never jump when processes appear. -->
+  <section class="process-strip" aria-label="Активные процессы">
+    <div class="process-strip-head" title="PostgreSQL / тесты / расчёты Angular">
+      <strong>Процессы</strong>
+    </div>
+    <div class="process-strip-chips">
       @if (processError) {
         <span class="process-chip process-error" [title]="processError">ошибка: {{ processError }}</span>
       }
       @for (p of activeProcesses(); track p.type + ':' + p.label + ':' + p.status) {
-        <span class="process-chip" [class.process-chip-warn]="p.type === 'postgres'" [title]="processTitle(p)">
+        <span
+          class="process-chip"
+          [class.process-chip-warn]="p.type === 'postgres'"
+          [title]="processTitle(p)"
+        >
           <span class="process-dot"></span>
           <span class="process-label">{{ p.label }}</span>
           <span class="process-status">{{ p.status }}</span>
@@ -92,9 +96,13 @@
             <span class="process-progress">{{ p.progress_pct | number:'1.0-0' }}%</span>
           }
         </span>
+      } @empty {
+        @if (!processError) {
+          <span class="process-empty">нет активных</span>
+        }
       }
-    </section>
-  }
+    </div>
+  </section>
 
   @if (loading && logics.length === 0) {
 

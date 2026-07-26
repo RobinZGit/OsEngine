@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-25 — Backtest speed: LATERAL equity (~10× signals/park); Node less cancel/PnL chatter; resume earlier
+**Последнее обновление:** 2026-07-26 — Process strip fixed height (no logics jump); backtest speed earlier
 
 > **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
 
@@ -117,6 +117,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-25)
+
+### 2026-07-26 (UI: полоса процессов без дёрганья таблицы)
+
+- Полоса «Процессы» всегда одной высоты; чипы в один ряд со скроллом по X (без wrap).
+- Пустое состояние «нет активных» — таблица логик не прыгает при появлении/исчезновении Postgres/тестов.
 
 ### 2026-07-25 (Backtest: критическая медленность)
 
@@ -431,6 +436,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Process strip fixed height + horizontal chip scroll; no logics jump; push |
 | 2026-07-25 | Backtest resume after API/bat restart: same run_id from processed_bars; no wipe |
 | 2026-07-25 | Ship: push OsEngine + MultiLogicTradePg Pages; sell-all/bonds; finres align; installers; no release |
 | 2026-07-25 | GitHub Pages stale since 07-15: CI sync:context + assetUrl; need push to MultiLogicTradePg |
@@ -584,6 +590,8 @@
 ---
 
 ## Запросы пользователя (текст)
+
+673. Top process bar changes height → screen twitches / logics jump — fixed size, keep visible, push.
 
 672. After form/API restart, running tests must continue from the bar where they stopped.
 
