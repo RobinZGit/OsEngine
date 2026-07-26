@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+695. Install on top: ng serve NG5002 Incomplete block "" — @ in buy-bonds template; fix and push.
+
 694. Restarted start — amount, fund choice and Calculate still not available for editing; fix.
 
 693. Why is there no button in buy-obligations? Amount must always be editable; Calculate brighter first, then Buy brighter after calc; try to buy and put failures in the report; Obligation Fund available to anyone; push to repo.

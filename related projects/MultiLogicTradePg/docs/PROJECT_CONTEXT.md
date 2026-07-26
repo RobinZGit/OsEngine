@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — buy-bonds: форма сразу интерактивна (без блокировки «Загрузка…»)
+**Последнее обновление:** 2026-07-26 — fix NG5002: `@` в шаблоне buy-bonds ломал ng serve
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -125,6 +125,7 @@
 - Сумма всегда редактируема; без авто-расчёта при открытии.
 - «Рассчитать» — яркая первая; «Купить» бледная до расчёта, затем зелёная. Ошибки заявок — в отчёте в диалоге.
 - **Fix:** форма больше не прячется за «Загрузка…» (если `/bond-funds` висел — поля были недоступны). TBRU сразу в select; native `<dialog>` заменён на `div` с z-index 1200+.
+- **Fix NG5002:** в шаблоне литерал `@` цены ломал Angular control flow → «по {{ price }}».
 
 ### 2026-07-26 (Недоступные типы SL/TP + инструкции в Help)
 
@@ -546,6 +547,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Fix NG5002 @ in buy-bonds HTML (install-on-top ng serve); push |
 | 2026-07-26 | Buy-bonds UX: amount editable, calc→buy brightness, all accounts; push |
 | 2026-07-26 | Disable choosable SL/TP types; USER_INSTRUCTIONS.md + Help; push |
 | 2026-07-26 | OPT live+backtest + param history report; installers; push |
@@ -720,4 +722,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **694** — buy-bonds поля снова недоступны после restart (fix loading gate).
+Последние (см. USER_INSTRUCTIONS): **695** — NG5002 `@` в buy-bonds при установке поверх.

@@ -151,7 +151,7 @@
                 @for (p of plan.placed!; track (p.figi || p.sec) + '-' + p.lots) {
                   <li>
                     <strong>{{ p.ticker || p.sec }}</strong>
-                    · {{ p.lots }} лот. @ {{ formatMoney(p.price) }}
+                    · {{ p.lots }} лот. по {{ formatMoney(p.price) }}
                   </li>
                 }
               </ul>
