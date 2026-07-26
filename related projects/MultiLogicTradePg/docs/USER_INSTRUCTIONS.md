@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+700. The same thing is not established in the logic of VINREC FADE OPTIMIZED. Look, maybe you still need to add the assembly number somewhere in the installers, increase it every time when unloading and export it to the protocol for installation. Although, I think, maybe you will understand anyway whether I have a new version or not. (protocol 16:42: upgrade, logics 46→46, old reset message).
+
 699. Still, when installing on top, it did not install (protocol: upgrade, logics 46→46, old 01 without v54).
 
 698. Installation on top, on a new repository, the logic of linregoptimized, the last one, has not been transferred. You need to make it and all other logics by default installed on top, if they are not. It was. Check. If you fix it, then upload it immediately to the repository.

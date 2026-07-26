@@ -511,6 +511,14 @@ write_protocol() {
     echo "PG:       $PGHOST:$PGPORT"
     echo "Log:      $LOG_PATH"
     echo
+    if [[ -f "$PREFIX/VERSION.txt" ]]; then
+      echo "----- VERSION.txt -----"
+      cat "$PREFIX/VERSION.txt"
+      echo "----- end VERSION.txt -----"
+    else
+      echo "VERSION.txt: MISSING (old or incomplete package)"
+    fi
+    echo
     echo "---- install log ----"
     cat "$LOG_PATH"
   } >"$protocol"
@@ -520,6 +528,13 @@ write_protocol() {
 
 # ---- main ----
 step "MultiLogicTradePg Linux installer"
+if [[ -f "$PACKAGE_ROOT/VERSION.txt" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    ok "$line"
+  done <"$PACKAGE_ROOT/VERSION.txt"
+else
+  warn "VERSION.txt missing — package may be outdated"
+fi
 ok "Package: $PACKAGE_ROOT"
 ok "Prefix:  $PREFIX"
 ok "DbMode:  $DB_MODE"

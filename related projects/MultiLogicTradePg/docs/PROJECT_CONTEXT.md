@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — v54b: ensure_seed_logics.sql + installer fail if Optimized missing
+**Последнее обновление:** 2026-07-26 — installer Build number in VERSION.txt / INSTALL_PROTOCOL (+ v54b seed)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (номер сборки установщика)
+
+- **Проблема:** протокол 16:42 снова `logics=46→46`, «will be reset», без `ensure_seed` — в Program Files остались **v53** и `install.ps1` от 25.07; пользователь ставил **старый Setup.exe**, а не свежий из repo.
+- **Фикс:** `installer/BUILD_NUMBER` + `Sync-InstallerVersion.ps1` (bump при каждой сборке); `VERSION.txt` в корень пакета; Inno `AppVersion`/`AppVerName` из build; протокол Windows/Linux печатает `VERSION.txt` в начале.
+- Как проверить новую установку: в `INSTALL_PROTOCOL.txt` есть блок `----- VERSION.txt -----` с `Build: N` и шаг `Deploying database 01 -> ensure_seed -> 02` + `Seed OK: LinReg Fade Optimized`.
 
 ### 2026-07-26 (v54 / v54b: seed-логики при install-on-top)
 
@@ -565,6 +571,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Installer build number (VERSION.txt in protocol); rebuild; push |
 | 2026-07-26 | v54b: ensure_seed_logics.sql + installer seed check; installers; push |
 | 2026-07-26 | v54 seed ensure on install-on-top (LinReg Fade Optimized + all defaults); installers; push |
 | 2026-07-26 | Buy-bonds: TBRU+SBGB+OBLG; MOEX ISS holdings + mirrors; installers; push |

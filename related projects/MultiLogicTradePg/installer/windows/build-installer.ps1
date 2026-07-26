@@ -16,6 +16,13 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $IssPath = Join-Path $ScriptDir "MultiLogicTradePg.iss"
+$VersionInc = Join-Path $ScriptDir "version.inc.iss"
+$SyncScript = Join-Path $ScriptDir "..\Sync-InstallerVersion.ps1"
+
+if (-not (Test-Path $VersionInc)) {
+    Write-Host "==> VERSION missing - sync without bump" -ForegroundColor Yellow
+    & $SyncScript -NoBump | Out-Null
+}
 
 function Get-IsccPath {
     $cmd = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue

@@ -809,6 +809,13 @@ try {
     }
 
     Write-Host "MultiLogicTradePg installer post-install" -ForegroundColor Green
+    $versionFile = Join-Path $InstallDir "VERSION.txt"
+    if (Test-Path -LiteralPath $versionFile) {
+        Get-Content -LiteralPath $versionFile | ForEach-Object { Write-Host $_ }
+    }
+    else {
+        Write-Warning "VERSION.txt missing under InstallDir — this Setup.exe is outdated or incomplete."
+    }
     Write-Host "InstallDir: $InstallDir"
     Write-Host "DbMode:     $DbMode"
     Write-Host "Log:        $LogPath"

@@ -1,0 +1,5 @@
+﻿Product: MultiLogicTradePg
+Version: 1.0.59
+Build: 59
+Built: 2026-07-26 16:50:09
+Git: 316e0f2

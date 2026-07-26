@@ -14,6 +14,12 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $Root
 
+Write-Host "==> Bump installer build number" -ForegroundColor Cyan
+$ver = & (Join-Path $Root "Sync-InstallerVersion.ps1")
+if (-not $ver) {
+    throw "Sync-InstallerVersion.ps1 failed."
+}
+
 Write-Host "==> Windows installer" -ForegroundColor Cyan
 & (Join-Path $Root "windows\build-installer.ps1") -InstallInnoSetup:$InstallInnoSetup
 if ($LASTEXITCODE -ne 0) {
@@ -28,6 +34,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "Both installers ready:" -ForegroundColor Green
+Write-Host "Both installers ready (Version $($ver.Version), Build $($ver.Build)):" -ForegroundColor Green
 Write-Host "  $(Join-Path $ProjectRoot 'installer\windows\dist\MultiLogicTradePgSetup.exe')"
 Write-Host "  $(Join-Path $ProjectRoot 'installer\linux\dist\MultiLogicTradePg-linux.tar.gz')"

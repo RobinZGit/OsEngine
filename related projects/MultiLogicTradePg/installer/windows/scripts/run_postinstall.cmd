@@ -30,6 +30,14 @@ if "%DB_MODE%"=="" set "DB_MODE=wipe"
 >> "%PROTOCOL%" echo DbMode: %DB_MODE%
 >> "%PROTOCOL%" echo Wrapper: %~f0
 >> "%PROTOCOL%" echo PowerShell: %POWERSHELL%
+if exist "%INSTALL_DIR%\VERSION.txt" (
+  >> "%PROTOCOL%" echo.
+  >> "%PROTOCOL%" echo ----- VERSION.txt -----
+  type "%INSTALL_DIR%\VERSION.txt" >> "%PROTOCOL%"
+  >> "%PROTOCOL%" echo ----- end VERSION.txt -----
+) else (
+  >> "%PROTOCOL%" echo VERSION.txt: MISSING (old or incomplete Setup.exe)
+)
 >> "%PROTOCOL%" echo.
 >> "%PROTOCOL%" echo ================ POST-INSTALL OUTPUT ================
 

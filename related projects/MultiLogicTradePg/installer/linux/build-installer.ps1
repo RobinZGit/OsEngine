@@ -42,7 +42,8 @@ function Copy-ProjectTree {
         "01_multilogictrade_tables_and_data.sql",
         "02_multilogictrade_functions_and_procedures.sql",
         "03_multilogictrade_examples.sql",
-        "README.md"
+        "README.md",
+        "VERSION.txt"
     )
     foreach ($name in $rootFiles) {
         $src = Join-Path $SourceRoot $name
