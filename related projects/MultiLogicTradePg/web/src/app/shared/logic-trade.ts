@@ -13,7 +13,7 @@ export interface LogicTradeRow {
   timeframe_id: number;
   side_id: number;
   action_id: number;
-  signal_kind: 'trend' | 'counter';
+  signal_kind: 'trend' | 'counter' | 'cash_fund' | 'opt';
   signal_formula: string;
   quantity: number;
   price: number;

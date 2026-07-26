@@ -3574,7 +3574,7 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
     position_event VARCHAR(10) NOT NULL DEFAULT 'open'
         CHECK (position_event IN ('open', 'close')),
-    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter', 'cash_fund')),
+    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter', 'cash_fund', 'opt')),
     signal_formula TEXT NOT NULL,
     quantity NUMERIC(20, 6) NOT NULL DEFAULT 1 CHECK (quantity > 0),
     price NUMERIC(18, 6) NOT NULL CHECK (price > 0),
@@ -3614,14 +3614,14 @@ EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close'));
-ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter', 'cash_fund'));
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter', 'cash_fund', 'opt'));
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS signal_formula TEXT;
--- Upgrade: парковка денежного фонда пишет signal_kind=cash_fund
+-- Upgrade: cash_fund (парк) + opt (OPT promote reset closes)
 ALTER TABLE logic_trades DROP CONSTRAINT IF EXISTS logic_trades_signal_kind_check;
 DO $$
 BEGIN
     ALTER TABLE logic_trades ADD CONSTRAINT logic_trades_signal_kind_check
-        CHECK (signal_kind IN ('trend', 'counter', 'cash_fund'));
+        CHECK (signal_kind IN ('trend', 'counter', 'cash_fund', 'opt'));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
@@ -4319,7 +4319,7 @@ COMMENT ON COLUMN logic_trades.timeframe_id IS 'FK → timeframes — TF сиг�
 COMMENT ON COLUMN logic_trades.side_id IS 'FK → sides: Open | Close';
 COMMENT ON COLUMN logic_trades.action_id IS 'FK → actions: Long | Short';
 COMMENT ON COLUMN logic_trades.position_event IS 'open | close — действие сигнала (копия с logic_indicator_signals)';
-COMMENT ON COLUMN logic_trades.signal_kind IS 'trend | counter | cash_fund — сигнал или парковка денежного фонда';
+COMMENT ON COLUMN logic_trades.signal_kind IS 'trend | counter | cash_fund | opt — сигнал, парк кэша или закрытие OPT promote';
 COMMENT ON COLUMN logic_trades.signal_formula IS 'Копия формулы logic_indicator_signals на момент сделки';
 COMMENT ON COLUMN logic_trades.quantity IS 'Объём в лотах/штуках';
 COMMENT ON COLUMN logic_trades.price IS 'Цена исполнения';

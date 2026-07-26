@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+703. Now Pavel is testing for the second time. Testing new logic. Look, what is it because of? It can be because of your updates? Or is there some kind of mistake that needs to be corrected? (backtest fail: logic_trades_signal_kind_check / OPT signal_kind=opt).
+
 702. Anyway, this new logic did not appear, although it seems that the assembly number appeared in the installer. (protocol Build 59, ExitCode 1, install.ps1 ParserError on DbMode=$DbMode:).
 
 701. Add the assembly number to the form of the installer, when it is installed, so that it is immediately visible. There is now version 1.0.0 and the assembly number after the version of some. and immediately put it in the repository.
