@@ -1276,7 +1276,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('position_size_pct', '% депозита на сделку', 'number', '10',
      'Доля выбранной базы (портфель или свободные) на одну покупку (1–100)', 2),
     ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',
-     'Число одновременных позиций; плечо ≈ (макс × % / 100)', 3),
+     'Число одновременных позиций. Потолок номинала long+short = база × (%/100) × это число (10×10%=100% базы; 20×10%=200%)', 3),
     ('max_order_amount', 'Макс. сумма на сделку, ₽', 'money', '',
      'Потолок номинала одной покупки (пусто = без лимита), после расчёта %', 4),
     ('initial_balance', 'Начальный остаток', 'money', '',
@@ -1325,6 +1325,10 @@ ON CONFLICT (param_key) DO UPDATE SET
     default_value = EXCLUDED.default_value,
     description = EXCLUDED.description,
     display_order = EXCLUDED.display_order;
+
+-- Плечо задаётся только как % × max_open_positions (отдельный param не используем).
+DELETE FROM logic_params WHERE param_key = 'margin_leverage';
+DELETE FROM logic_param_defs WHERE param_key = 'margin_leverage';
 
 CREATE TABLE IF NOT EXISTS logic_params (
     id SERIAL PRIMARY KEY,

@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+707. And this should, of course, consist of percents: no more than 10 x 10 = 100% of the deposit can be shorted; if 20 positions of 10%, then no more than 200%. Follows from % and max open positions; for shorts same as longs.
+
+706. I agree that there should be a margin if we trade in the short, but it is almost twice as much as the balance… Why open the second one? … in the case of a short, we should not get out of our balance… take into account with this shoulder first.
+
 705. Scheduled cleanup error procedure set_app_cleanup_last_at(timestamp with time zone) does not exist
 
 704. Along with the installer, which is an .exe file with an .exe extension, do exactly the same next to the same folder, but with a different extension, for example, .exe. That is, instead of the last letter, put the lower underline. It is necessary to be downloaded without problems to the remote server.

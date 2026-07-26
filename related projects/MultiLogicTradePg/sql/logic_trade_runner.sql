@@ -710,6 +710,33 @@ $$;
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
 'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
+-- Номинал уже открытых long+short (чемпион / бой или test; opt_lane отделяет paper OPT).
+CREATE OR REPLACE FUNCTION logic_open_notional_exposure(
+    p_logic_id INTEGER,
+    p_is_test BOOLEAN DEFAULT FALSE,
+    p_opt_lane TEXT DEFAULT ''
+)
+RETURNS NUMERIC
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(0, COALESCE(SUM(
+        logic_trade_open_remaining_qty(lt.id) * lt.price
+    ), 0))
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    WHERE lt.logic_id = p_logic_id
+      AND NOT lt.is_shadow
+      AND lt.is_test = p_is_test
+      AND COALESCE(lt.opt_lane, '') = COALESCE(p_opt_lane, '')
+      AND lt.status IN ('filled', 'submitted')
+      AND s.name = 'Open'
+      AND a.name IN ('Long', 'Short')
+      AND logic_trade_open_remaining_qty(lt.id) > 0;
+$$;
+
+COMMENT ON FUNCTION logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT) IS
+'Суммарный номинал открытых long+short (цена входа). Потолок: база × (%/100) × max_open_positions — одинаково для long и short';
+
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
     p_param_key TEXT,
@@ -1224,8 +1251,10 @@ DECLARE
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
     v_cycle_budget NUMERIC;       -- база % на весь цикл (не растёт от short-кэша)
-    v_spent_notional NUMERIC := 0; -- уже выделенный номинал Open в этом прогоне
+    v_max_exposure NUMERIC;       -- база × (%/100) × max_open_positions
+    v_spent_notional NUMERIC := 0; -- уже занятый номинал Open (старые + этот прогон)
     v_room NUMERIC;
+    v_order_notional NUMERIC;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -1295,7 +1324,12 @@ BEGIN
     -- Зафиксировать базу на цикл: short на реале увеличивает free_cash у брокера —
     -- без фиксации каждый следующий Open снова берёт 10% от уже раздутого кэша (маржа).
     v_cycle_budget := COALESCE(v_sizing_base, 0);
-    v_spent_notional := 0;
+    -- Потолок риска из тех же 2 параметров: 10 поз × 10% = 100% базы; 20×10% = 200%.
+    -- Long и short считаются в одном номинале (шорт не может «набрать» сверх этого).
+    v_max_exposure := v_cycle_budget
+        * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+        * v_max_positions;
+    v_spent_notional := logic_open_notional_exposure(p_logic_id, FALSE, '');
     v_open_positions := logic_count_open_positions(p_logic_id);
 
     IF NOT EXISTS (
@@ -1327,7 +1361,10 @@ BEGIN
         v_balance := logic_ensure_balance(p_logic_id);
         v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
         v_cycle_budget := COALESCE(v_sizing_base, 0);
-        v_spent_notional := 0;
+        v_max_exposure := v_cycle_budget
+            * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+            * v_max_positions;
+        v_spent_notional := logic_open_notional_exposure(p_logic_id, FALSE, '');
         v_open_positions := logic_count_open_positions(p_logic_id);
     END IF;
 
@@ -1525,7 +1562,8 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    v_room := GREATEST(0, v_cycle_budget - v_spent_notional);
+                    -- Остаток под потолком %×макс.позиций (не весь баланс целиком).
+                    v_room := GREATEST(0, v_max_exposure - v_spent_notional);
                     IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
                         v_room := LEAST(v_room, v_max_order_amount);
                     END IF;
@@ -1541,6 +1579,10 @@ BEGIN
                         ELSE
                             CONTINUE;
                         END IF;
+                    END IF;
+                    v_order_notional := v_quantity * v_pp;
+                    IF v_order_notional > v_room + 0.000001 THEN
+                        CONTINUE;
                     END IF;
                     v_side_id := v_side_open_id;
                     v_action_id := v_action_long_id;
@@ -1558,7 +1600,8 @@ BEGIN
                 IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                     CONTINUE;
                 END IF;
-                v_room := GREATEST(0, v_cycle_budget - v_spent_notional);
+                -- Short: тот же потолок, что и long (10×10% = 100% базы и т.д.).
+                v_room := GREATEST(0, v_max_exposure - v_spent_notional);
                 IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
                     v_room := LEAST(v_room, v_max_order_amount);
                 END IF;
@@ -1572,6 +1615,10 @@ BEGIN
                     ELSE
                         CONTINUE;
                     END IF;
+                END IF;
+                v_order_notional := v_quantity * v_pp;
+                IF v_order_notional > v_room + 0.000001 THEN
+                    CONTINUE;
                 END IF;
                 v_side_id := v_side_open_id;
                 v_action_id := v_action_short_id;

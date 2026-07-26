@@ -1658,6 +1658,11 @@ DECLARE
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
     v_use_opt BOOLEAN;
+    v_cycle_budget NUMERIC;
+    v_max_exposure NUMERIC;
+    v_spent_notional NUMERIC := 0;
+    v_room NUMERIC;
+    v_order_notional NUMERIC;
 BEGIN
     SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
@@ -1677,6 +1682,31 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_use_opt := logic_opt_logic_has_opt(p_logic_id);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
+    -- База на весь бар (как в live): short не должен раздувать free_cash mid-bar.
+    IF v_size_mode = 'free_cash' THEN
+        v_cycle_budget := GREATEST(0, COALESCE(p_balance, 0));
+    ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+        v_cycle_budget := GREATEST(
+            0,
+            COALESCE(logic_backtest_portfolio_equity(
+                p_logic_id, p_tf_id, p_bar_dt, p_balance
+            ), 0)
+        );
+    ELSE
+        v_cycle_budget := GREATEST(
+            0,
+            COALESCE(logic_backtest_portfolio_equity(
+                p_logic_id, p_tf_id, p_bar_dt, p_balance
+            ), 0)
+            - logic_backtest_selected_cash_fund_mtm(
+                p_logic_id, p_tf_id, p_bar_dt
+            )
+        );
+    END IF;
+    v_max_exposure := v_cycle_budget
+        * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+        * v_max_positions;
+    v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '');
 
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
@@ -1782,37 +1812,25 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    IF v_size_mode = 'free_cash' THEN
-                        v_sizing_base := p_balance;
-                    ELSIF v_size_mode = 'portfolio_incl_fund' THEN
-                        v_sizing_base := GREATEST(
-                            0,
-                            COALESCE(logic_backtest_portfolio_equity(
-                                p_logic_id, p_tf_id, p_bar_dt, p_balance
-                            ), 0)
-                        );
-                    ELSE
-                        -- portfolio (default): весь портфель минус MTM денежного фонда
-                        v_sizing_base := GREATEST(
-                            0,
-                            COALESCE(logic_backtest_portfolio_equity(
-                                p_logic_id, p_tf_id, p_bar_dt, p_balance
-                            ), 0)
-                            - logic_backtest_selected_cash_fund_mtm(
-                                p_logic_id, p_tf_id, p_bar_dt
-                            )
-                        );
+                    v_sizing_base := v_cycle_budget;
+                    v_room := GREATEST(0, v_max_exposure - v_spent_notional);
+                    IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
+                        v_room := LEAST(v_room, v_max_order_amount);
                     END IF;
                     v_quantity := logic_calc_open_quantity(
-                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
                     IF v_quantity < v_lot_size THEN
                         -- Фьючерсы: нотионал контракта >> % депозита → 1 лот при сигнале
-                        IF v_is_futures OR COALESCE(v_sizing_base, 0) >= v_pp * v_lot_size THEN
+                        IF v_is_futures AND v_lot_size * v_pp <= v_room THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
                         END IF;
+                    END IF;
+                    v_order_notional := v_quantity * v_pp;
+                    IF v_order_notional > v_room + 0.000001 THEN
+                        CONTINUE;
                     END IF;
                     v_side_id := v_side_open_id;
                     v_action_id := v_action_long_id;
@@ -1827,35 +1845,24 @@ BEGIN
                     IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    IF v_size_mode = 'free_cash' THEN
-                        v_sizing_base := p_balance;
-                    ELSIF v_size_mode = 'portfolio_incl_fund' THEN
-                        v_sizing_base := GREATEST(
-                            0,
-                            COALESCE(logic_backtest_portfolio_equity(
-                                p_logic_id, p_tf_id, p_bar_dt, p_balance
-                            ), 0)
-                        );
-                    ELSE
-                        v_sizing_base := GREATEST(
-                            0,
-                            COALESCE(logic_backtest_portfolio_equity(
-                                p_logic_id, p_tf_id, p_bar_dt, p_balance
-                            ), 0)
-                            - logic_backtest_selected_cash_fund_mtm(
-                                p_logic_id, p_tf_id, p_bar_dt
-                            )
-                        );
+                    v_sizing_base := v_cycle_budget;
+                    v_room := GREATEST(0, v_max_exposure - v_spent_notional);
+                    IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
+                        v_room := LEAST(v_room, v_max_order_amount);
                     END IF;
                     v_quantity := logic_calc_open_quantity(
-                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
+                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF v_is_futures OR COALESCE(v_sizing_base, 0) >= v_pp * v_lot_size THEN
+                        IF v_is_futures AND v_lot_size * v_pp <= v_room THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
                         END IF;
+                    END IF;
+                    v_order_notional := v_quantity * v_pp;
+                    IF v_order_notional > v_room + 0.000001 THEN
+                        CONTINUE;
                     END IF;
                     v_side_id := v_side_open_id;
                     v_action_id := v_action_short_id;
@@ -1879,6 +1886,7 @@ BEGIN
             IF v_trade_id IS NOT NULL AND v_is_open_event AND NOT v_is_shadow
                AND v_side_id = v_side_open_id THEN
                 v_open_positions := v_open_positions + 1;
+                v_spent_notional := v_spent_notional + (v_quantity * v_pp);
             ELSIF v_trade_id IS NOT NULL AND NOT v_is_open_event AND NOT v_is_shadow THEN
                 v_open_positions := GREATEST(0, v_open_positions - 1);
             END IF;

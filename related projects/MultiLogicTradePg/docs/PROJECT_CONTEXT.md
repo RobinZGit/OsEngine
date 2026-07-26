@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup
+**Последнее обновление:** 2026-07-26 — open exposure cap = base × (%/100) × max_open_positions (long+short)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (потолок номинала Open = % × макс. позиций)
+
+- **Правило:** суммарный номинал открытых long+short ≤ `база × (position_size_pct/100) × max_open_positions` (10×10%=100% базы; 20×10%=200%).
+- Уже открытые позиции входят в spent; short считается так же, как long (база цикла не растёт от short-кэша).
+- Live + backtest; UI hint у «Макс. открытых позиций».
 
 ### 2026-07-26 (Scheduled cleanup: set_app_cleanup_last_at)
 
@@ -599,6 +605,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Cap open notional = base×pct×max_positions (long+short); push |
 | 2026-07-26 | Fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup; push |
 | 2026-07-26 | Ship MultiLogicTradePgSetup.ex_ twin for blocked-.exe downloads; push |
 | 2026-07-26 | Allow signal_kind=opt for OPT promote closes; installers; push |
