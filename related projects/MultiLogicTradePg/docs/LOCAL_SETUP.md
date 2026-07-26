@@ -35,7 +35,7 @@
 
 ### Полное развёртывание скриптов
 
-Корень проекта: `C:\Users\Сергей\VsCodeProjects\MultiLogicTradePg`
+Корень проекта: `C:\Users\Сергей\VsCodeProjects\OsEngine\related projects\MultiLogicTradePg`
 
 | Шаг | База в Query Tool | Файл |
 |-----|-------------------|------|
@@ -80,7 +80,7 @@
 Из папки проекта:
 
 ```powershell
-cd C:\Users\Сергей\VsCodeProjects\MultiLogicTradePg
+cd "C:\Users\Сергей\VsCodeProjects\OsEngine\related projects\MultiLogicTradePg"
 .\scripts\run_multilogictrade.ps1
 ```
 
