@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+716. For some reason, there is no paper, there is no opening, there is no closing, why?
+
 715. I made one more logic by default LinrecFade Twice Optimized Twice Optimized And there will be optimization and by Sigma, well, by deviation And by the number of candles
 
 714. For some reason, the equity portfolio of testing does not correspond to the financial result. Maybe it's because of the rights that you just made? It is necessary to try to correct, so that the equity is always relevant, and so as not to lose the result that eliminated the previous one.

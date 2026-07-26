@@ -481,6 +481,34 @@ export class LogicsService {
     });
   }
 
+  /**
+   * Mid-run Testing panel: champion opens + recent closes (no OPT paper dump).
+   */
+  getLogicTradesTestPanel(
+    logicId: number,
+    runId?: number | null,
+    closeLimit = 2500
+  ): Observable<{
+    logic_id: number;
+    run_id: number | null;
+    close_limit: number;
+    rows: LogicTradeRow[];
+  }> {
+    const params: Record<string, string> = {
+      logic_id: String(logicId),
+      close_limit: String(closeLimit),
+    };
+    if (runId != null && Number.isFinite(Number(runId)) && Number(runId) > 0) {
+      params['run_id'] = String(runId);
+    }
+    return this.http.get<{
+      logic_id: number;
+      run_id: number | null;
+      close_limit: number;
+      rows: LogicTradeRow[];
+    }>(`${this.appConfig.apiUrl}/logic-trades/test-panel`, { params });
+  }
+
   /** Lightweight champion equity (Close PnL only) — safe to poll mid-backtest. */
   getLogicTradesEquityCurve(
     logicId: number,

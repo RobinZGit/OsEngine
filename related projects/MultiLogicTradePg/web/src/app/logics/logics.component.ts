@@ -340,12 +340,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
     // Status poll owns BacktestUiStateService; here only light UI after debounced bumps.
     this.backtestUi.changes$.pipe(debounceTime(300), takeUntil(this.destroy$)).subscribe(() => {
       for (const logicId of [...this.backtestPollIds]) {
-        // Full 50k trades only when run finished (not every status tick while running).
-        if (!this.isBacktestRunning(logicId)) {
+        const testing = this.isBacktestRunning(logicId);
+        const testOpen = this.expandedTestTradesBlocks.has(logicId);
+        if (!testing) {
           this.loadTestTradesForLogic(logicId, true);
           this.refreshTestPnlSummary();
+        } else if (testOpen) {
+          this.loadTestTradesPanelForLogic(logicId);
         }
-        if (this.expandedTestTradesBlocks.has(logicId)) {
+        if (testOpen) {
           this.loadTestEquityForLogic(logicId);
         }
         this.rebuildTestTradesView(logicId);
@@ -1474,9 +1477,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     } else {
       this.expandedTestTradesBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
-      // Mid-run full dump freezes the tab (tens of MB JSON); wait until finish.
-      // Equity stays live via lightweight /equity-curve.
-      if (!this.isBacktestRunning(logicId)) {
+      // Mid-run: light panel feed (opens + recent closes); full 50k dump after finish.
+      if (this.isBacktestRunning(logicId)) {
+        this.loadTestTradesPanelForLogic(logicId);
+      } else {
         this.loadTestTradesForLogic(logicId);
       }
       this.loadTestEquityForLogic(logicId);
@@ -3074,12 +3078,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
       if (liveOpen || (this.expandedLogics.has(id) && heavyTick)) {
         this.loadTradesForLogic(id, true);
       }
-      // Пока тест running — никогда не качать полный список (до 50k / десятки МБ):
-      // парсинг JSON на главном потоке вешает вкладку («загрузка…» у параметров и т.п.).
-      // Прогресс/FinRes — из status + pnl-summary; сделки — после finish (changes$).
-      // Эквити mid-run — лёгкий /equity-curve (только Close champion), не полный dump.
+      // Mid-run: equity-curve + test-panel (opens + recent champion closes).
+      // Full 50k dump only after finish (OPT paper would freeze the tab).
       if (testOpen) {
         this.loadTestEquityForLogic(id);
+        // Panel feed: every heavy tick mid-run (not every 2s) to keep tab responsive.
+        if (testing && heavyTick) {
+          this.loadTestTradesPanelForLogic(id);
+        }
       } else if (!testing) {
         this.testEquityByLogic.delete(id);
       }
@@ -3087,6 +3093,36 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.loadTestTradesForLogic(id, true);
       }
     }
+  }
+
+  /** Lightweight champion opens + recent closes while backtest is running. */
+  private loadTestTradesPanelForLogic(logicId: number): void {
+    const id = Number(logicId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (this.testTradesInFlight.has(id)) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    this.testTradesInFlight.add(id);
+    const runId = this.backtestRuns.get(id)?.id ?? null;
+    this.logicsService
+      .getLogicTradesTestPanel(id, runId, 2500)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (resp) => {
+          this.testTradesInFlight.delete(id);
+          const rows = resp.rows ?? [];
+          const prev = this.logicTradesTest.get(id);
+          if (prev && this.sameTradeListFingerprint(prev, rows)) {
+            this.rebuildTestTradesView(id);
+            return;
+          }
+          this.logicTradesTest.set(id, rows);
+          this.rebuildTestTradesView(id);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.testTradesInFlight.delete(id);
+        },
+      });
   }
 
   private loadTestEquityForLogic(logicId: number): void {

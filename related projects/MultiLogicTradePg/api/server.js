@@ -3577,6 +3577,96 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
   }
 });
 
+/**
+ * Mid-run Testing panel: all champion opens + recent champion closes.
+ * Avoids shipping OPT paper / full 50k dump (UI freeze) while still filling
+ * «Сделки» / «Бумаги» during a running backtest.
+ */
+app.get('/api/logic-trades/test-panel', async (req, res) => {
+  const logicId = Number(req.query.logic_id);
+  if (!Number.isInteger(logicId) || logicId <= 0) {
+    res.status(400).json({ error: 'logic_id required' });
+    return;
+  }
+  const runIdRaw = req.query.run_id;
+  const runId =
+    runIdRaw != null && runIdRaw !== '' && Number.isFinite(Number(runIdRaw))
+      ? Number(runIdRaw)
+      : null;
+  const closeLimitRaw = Number(req.query.close_limit);
+  const closeLimit = Math.min(
+    Math.max(
+      Number.isFinite(closeLimitRaw) && closeLimitRaw > 0 ? closeLimitRaw : 2500,
+      1
+    ),
+    8000
+  );
+  try {
+    const params = [logicId];
+    let runFilter = '';
+    if (runId != null && runId > 0) {
+      params.push(runId);
+      runFilter = ` AND lt.run_id = $${params.length}`;
+    } else {
+      runFilter = `
+        AND (
+          lt.run_id = (
+            SELECT r.id FROM logic_backtest_runs r
+            WHERE r.logic_id = $1
+            ORDER BY r.id DESC
+            LIMIT 1
+          )
+          OR (
+            lt.run_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM logic_trades x
+              WHERE x.logic_id = $1 AND x.is_test = TRUE AND x.run_id IS NOT NULL
+            )
+          )
+        )`;
+    }
+    params.push(closeLimit);
+    const closeLimitParam = `$${params.length}`;
+
+    const { rows } = await pool.query(
+      `
+      WITH base AS (
+        ${LOGIC_TRADE_SELECT}
+        WHERE lt.logic_id = $1
+          AND lt.is_test = TRUE
+          AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.status IN ('filled', 'submitted')
+          ${runFilter}
+      ),
+      opens AS (
+        SELECT * FROM base WHERE side_name = 'Open'
+      ),
+      closes AS (
+        SELECT * FROM base
+        WHERE side_name = 'Close'
+        ORDER BY bar_dt DESC, id DESC
+        LIMIT ${closeLimitParam}
+      )
+      SELECT * FROM opens
+      UNION ALL
+      SELECT * FROM closes
+      ORDER BY executed_at DESC, id DESC
+      `,
+      params
+    );
+    res.json({
+      logic_id: logicId,
+      run_id: runId,
+      close_limit: closeLimit,
+      rows,
+    });
+  } catch (err) {
+    console.error('GET /api/logic-trades/test-panel', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Онлайн-сводка PnL/комиссий по логикам (не хранится отдельным полем). */
 app.get('/api/logic-trades/pnl-summary', async (req, res) => {
   const isTestRaw = req.query.is_test;

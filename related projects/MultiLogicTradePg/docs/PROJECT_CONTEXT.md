@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — seed LinReg Fade Twice Optimized (OPT std_dev + period)
+**Последнее обновление:** 2026-07-26 — mid-run test-panel trades (opens + recent closes)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (mid-run: пустые бумаги/открытия/закрытия)
+
+- **Причина:** после фикса «не вешать вкладку» mid-run не грузился full trade dump; эквити шла из `/equity-curve`, а списки сделок/бумаг — из пустого `trades[]`.
+- **Фикс:** `GET /api/logic-trades/test-panel` — все champion Open + до 2500 последних Close (без OPT paper); poll при открытом «Тестирование» во время running. Полный dump — после finish.
 
 ### 2026-07-26 (seed LinReg Fade Twice Optimized)
 
@@ -652,6 +657,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Mid-run test-panel: opens + recent closes while backtest running |
 | 2026-07-26 | Seed LinReg Fade Twice Optimized (OPT std_dev + period) |
 | 2026-07-26 | Live /equity-curve mid-backtest so portfolio equity matches FinRes without 50k dump |
 | 2026-07-26 | Fix Pages CI: DELETE margin_leverage after CREATE logic_params; push |
