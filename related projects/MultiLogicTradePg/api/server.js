@@ -3422,6 +3422,161 @@ app.get('/api/logic-trades/export', async (req, res) => {
   }
 });
 
+/**
+ * Lightweight champion equity curve for the Testing panel while a run is active.
+ * Same filters as /pnl-summary + Close-only (matches UI buildEquityPoints).
+ * Avoids shipping full 50k trade JSON mid-run.
+ */
+app.get('/api/logic-trades/equity-curve', async (req, res) => {
+  const logicId = Number(req.query.logic_id);
+  if (!Number.isInteger(logicId) || logicId <= 0) {
+    res.status(400).json({ error: 'logic_id required' });
+    return;
+  }
+  const isTestRaw = req.query.is_test;
+  const isTest =
+    isTestRaw === '0' || isTestRaw === 'false' ? false : true;
+  try {
+    const { rows } = await pool.query(
+      isTest
+        ? `
+        WITH latest_run AS (
+          SELECT
+            r.id AS run_id,
+            r.date_from::text AS date_from,
+            r.date_to::text AS date_to
+          FROM logic_backtest_runs r
+          WHERE r.logic_id = $1
+          ORDER BY r.id DESC
+          LIMIT 1
+        ),
+        closes AS (
+          SELECT
+            lt.id,
+            COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
+            lt.financial_result::float8 AS financial_result,
+            a.name AS action_name
+          FROM logic_trades lt
+          CROSS JOIN latest_run lr
+          JOIN actions a ON a.id = lt.action_id
+          JOIN sides s ON s.id = lt.side_id
+          WHERE lt.logic_id = $1
+            AND lt.is_test = TRUE
+            AND s.name = 'Close'
+            AND COALESCE(lt.is_shadow, FALSE) = FALSE
+            AND COALESCE(lt.opt_lane, '') = ''
+            AND lt.status IN ('filled', 'submitted')
+            AND lt.financial_result IS NOT NULL
+            AND (
+              (lt.run_id IS NOT NULL AND lt.run_id = lr.run_id)
+              OR (
+                lt.run_id IS NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM logic_trades x
+                  WHERE x.logic_id = lt.logic_id
+                    AND x.is_test = TRUE
+                    AND x.run_id IS NOT NULL
+                )
+              )
+            )
+        )
+        SELECT
+          lr.date_from,
+          lr.date_to,
+          c.dt,
+          c.financial_result,
+          c.action_name
+        FROM latest_run lr
+        LEFT JOIN closes c ON TRUE
+        ORDER BY c.dt NULLS LAST, c.id NULLS LAST
+        `
+        : `
+        SELECT
+          NULL::text AS date_from,
+          NULL::text AS date_to,
+          COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
+          lt.financial_result::float8 AS financial_result,
+          a.name AS action_name
+        FROM logic_trades lt
+        JOIN actions a ON a.id = lt.action_id
+        JOIN sides s ON s.id = lt.side_id
+        WHERE lt.logic_id = $1
+          AND lt.is_test = FALSE
+          AND s.name = 'Close'
+          AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.status IN ('filled', 'submitted')
+          AND lt.financial_result IS NOT NULL
+        ORDER BY COALESCE(lt.bar_dt, lt.executed_at), lt.id
+        `,
+      [logicId]
+    );
+
+    const closes = rows
+      .filter((r) => r.dt != null && r.financial_result != null)
+      .map((r) => ({
+        dt: String(r.dt),
+        financial_result: Number(r.financial_result),
+        action_name: r.action_name != null ? String(r.action_name) : null,
+      }));
+
+    const dateFrom =
+      rows[0]?.date_from != null ? String(rows[0].date_from) : null;
+    const dateTo = rows[0]?.date_to != null ? String(rows[0].date_to) : null;
+
+    const buildSeries = (sideFilter) => {
+      const filtered =
+        sideFilter == null
+          ? closes
+          : closes.filter((c) => {
+              const a = (c.action_name || '').toLowerCase();
+              if (sideFilter === 'long') return a === 'long';
+              if (sideFilter === 'short') return a === 'short';
+              return true;
+            });
+      if (filtered.length === 0) return [];
+      const zeroDt =
+        dateFrom && (!filtered[0].dt || String(dateFrom) <= filtered[0].dt)
+          ? dateFrom
+          : filtered[0].dt;
+      let cum = 0;
+      const points = [{ dt: zeroDt, value: 0 }];
+      for (const c of filtered) {
+        cum += c.financial_result;
+        if (
+          points.length === 1 &&
+          points[0].dt === c.dt &&
+          points[0].value === 0
+        ) {
+          points[0] = { dt: c.dt, value: cum };
+        } else {
+          points.push({ dt: c.dt, value: cum });
+        }
+      }
+      return points;
+    };
+
+    res.json({
+      logic_id: logicId,
+      is_test: isTest,
+      date_from: dateFrom,
+      date_to: dateTo,
+      total: buildSeries(null),
+      long: buildSeries('long'),
+      short: buildSeries('short'),
+      close_count: closes.length,
+      financial_result:
+        closes.length > 0
+          ? closes.reduce((s, c) => s + c.financial_result, 0)
+          : 0,
+    });
+  } catch (err) {
+    console.error('GET /api/logic-trades/equity-curve', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Онлайн-сводка PnL/комиссий по логикам (не хранится отдельным полем). */
 app.get('/api/logic-trades/pnl-summary', async (req, res) => {
   const isTestRaw = req.query.is_test;

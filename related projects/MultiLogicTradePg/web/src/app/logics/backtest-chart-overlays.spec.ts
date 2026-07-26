@@ -454,4 +454,22 @@ describe('backtest-chart-overlays', () => {
     ]);
     expect(pts[pts.length - 1].value).toBe(100);
   });
+
+  it('buildEquityPoints skips cancelled closes (matches pnl-summary status filter)', () => {
+    const pts = buildEquityPoints([
+      trade({
+        side_name: 'Close',
+        bar_dt: '2026-04-10 11:00:00',
+        financial_result: 100,
+      }),
+      trade({
+        id: 2,
+        side_name: 'Close',
+        bar_dt: '2026-04-10 12:00:00',
+        financial_result: 999,
+        status: 'cancelled',
+      }),
+    ]);
+    expect(pts[pts.length - 1].value).toBe(100);
+  });
 });

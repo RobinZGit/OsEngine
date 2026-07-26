@@ -136,6 +136,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
   logicSecurities = new Map<number, LogicSecurityRow[]>();
   logicTrades = new Map<number, LogicTradeRow[]>();
   logicTradesTest = new Map<number, LogicTradeRow[]>();
+  /**
+   * Live champion equity from /equity-curve while test panel is open
+   * (full trade dump is skipped mid-run).
+   */
+  testEquityByLogic = new Map<
+    number,
+    {
+      total: Array<{ dt: string; value: number }>;
+      long: Array<{ dt: string; value: number }>;
+      short: Array<{ dt: string; value: number }>;
+    }
+  >();
+  private testEquityInFlight = new Set<number>();
   /** Стабильные ссылки для шаблона (без filter на каждый CD). */
   private testTradesViewByLogic = new Map<number, LogicTradeRow[]>();
   private signalIndicatorIdsByLogic = new Map<number, number[]>();
@@ -331,6 +344,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
         if (!this.isBacktestRunning(logicId)) {
           this.loadTestTradesForLogic(logicId, true);
           this.refreshTestPnlSummary();
+        }
+        if (this.expandedTestTradesBlocks.has(logicId)) {
+          this.loadTestEquityForLogic(logicId);
         }
         this.rebuildTestTradesView(logicId);
       }
@@ -1459,9 +1475,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedTestTradesBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
       // Mid-run full dump freezes the tab (tens of MB JSON); wait until finish.
+      // Equity stays live via lightweight /equity-curve.
       if (!this.isBacktestRunning(logicId)) {
         this.loadTestTradesForLogic(logicId);
       }
+      this.loadTestEquityForLogic(logicId);
       this.backtestUi.watch(logicId);
     }
   }
@@ -3059,10 +3077,53 @@ export class LogicsComponent implements OnInit, OnDestroy {
       // Пока тест running — никогда не качать полный список (до 50k / десятки МБ):
       // парсинг JSON на главном потоке вешает вкладку («загрузка…» у параметров и т.п.).
       // Прогресс/FinRes — из status + pnl-summary; сделки — после finish (changes$).
+      // Эквити mid-run — лёгкий /equity-curve (только Close champion), не полный dump.
+      if (testOpen) {
+        this.loadTestEquityForLogic(id);
+      } else if (!testing) {
+        this.testEquityByLogic.delete(id);
+      }
       if (!testing && (testOpen || (this.expandedLogics.has(id) && heavyTick))) {
         this.loadTestTradesForLogic(id, true);
       }
     }
+  }
+
+  private loadTestEquityForLogic(logicId: number): void {
+    const id = Number(logicId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (this.testEquityInFlight.has(id)) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    this.testEquityInFlight.add(id);
+    this.logicsService
+      .getLogicTradesEquityCurve(id, true)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (resp) => {
+          this.testEquityInFlight.delete(id);
+          this.testEquityByLogic.set(id, {
+            total: resp.total ?? [],
+            long: resp.long ?? [],
+            short: resp.short ?? [],
+          });
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.testEquityInFlight.delete(id);
+        },
+      });
+  }
+
+  testEquityTotal(logicId: number): Array<{ dt: string; value: number }> | null {
+    return this.testEquityByLogic.get(Number(logicId))?.total ?? null;
+  }
+
+  testEquityLong(logicId: number): Array<{ dt: string; value: number }> | null {
+    return this.testEquityByLogic.get(Number(logicId))?.long ?? null;
+  }
+
+  testEquityShort(logicId: number): Array<{ dt: string; value: number }> | null {
+    return this.testEquityByLogic.get(Number(logicId))?.short ?? null;
   }
 
   private refreshPnlSummaries(): void {

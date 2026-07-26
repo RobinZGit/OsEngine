@@ -126,6 +126,14 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Input() summaryFinancialResult: number | null = null;
   @Input() summaryCommission: number | null = null;
 
+  /**
+   * Live equity from /logic-trades/equity-curve (champion closes only).
+   * Used while a backtest is running (full trade dump is skipped to keep the tab responsive).
+   */
+  @Input() summaryEquityTotal: ChartEquityPoint[] | null = null;
+  @Input() summaryEquityLong: ChartEquityPoint[] | null = null;
+  @Input() summaryEquityShort: ChartEquityPoint[] | null = null;
+
   /** Денежный фонд — первая бумага в блоке «Бумаги» (бой и тест). */
   @Input() pinnedPaper: BacktestPaperRow | null = null;
 
@@ -246,7 +254,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
       changes['testPeriodFrom'] ||
       changes['testPeriodTo'] ||
       changes['summaryFinancialResult'] ||
-      changes['summaryCommission']
+      changes['summaryCommission'] ||
+      changes['summaryEquityTotal'] ||
+      changes['summaryEquityLong'] ||
+      changes['summaryEquityShort']
     ) {
       this.rebuildTradeCaches();
     }
@@ -280,11 +291,21 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.cachedTotalPnl = pnl;
     this.cachedTotalCommission = commission;
     const periodStart = this.isTest
-      ? (this.backtestRun?.date_from ?? null)
+      ? (this.backtestRun?.date_from ?? this.testPeriodFrom ?? null)
       : this.papersDateFrom();
-    this.cachedPortfolioEquity = buildEquityPoints(this.trades, periodStart);
-    this.cachedPortfolioEquityLong = buildEquityPoints(this.trades, periodStart, 'long');
-    this.cachedPortfolioEquityShort = buildEquityPoints(this.trades, periodStart, 'short');
+    const liveTotal = this.summaryEquityTotal;
+    const liveLong = this.summaryEquityLong;
+    const liveShort = this.summaryEquityShort;
+    // Prefer live equity-curve while mid-run (trades may be stale/empty by design).
+    if (liveTotal != null && liveTotal.length > 0) {
+      this.cachedPortfolioEquity = liveTotal;
+      this.cachedPortfolioEquityLong = liveLong?.length ? liveLong : [];
+      this.cachedPortfolioEquityShort = liveShort?.length ? liveShort : [];
+    } else {
+      this.cachedPortfolioEquity = buildEquityPoints(this.trades, periodStart);
+      this.cachedPortfolioEquityLong = buildEquityPoints(this.trades, periodStart, 'long');
+      this.cachedPortfolioEquityShort = buildEquityPoints(this.trades, periodStart, 'short');
+    }
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
   }
 

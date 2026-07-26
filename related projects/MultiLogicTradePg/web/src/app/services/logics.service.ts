@@ -481,6 +481,36 @@ export class LogicsService {
     });
   }
 
+  /** Lightweight champion equity (Close PnL only) — safe to poll mid-backtest. */
+  getLogicTradesEquityCurve(
+    logicId: number,
+    isTest = true
+  ): Observable<{
+    logic_id: number;
+    is_test: boolean;
+    date_from: string | null;
+    date_to: string | null;
+    total: Array<{ dt: string; value: number }>;
+    long: Array<{ dt: string; value: number }>;
+    short: Array<{ dt: string; value: number }>;
+    close_count: number;
+    financial_result: number;
+  }> {
+    return this.http.get<{
+      logic_id: number;
+      is_test: boolean;
+      date_from: string | null;
+      date_to: string | null;
+      total: Array<{ dt: string; value: number }>;
+      long: Array<{ dt: string; value: number }>;
+      short: Array<{ dt: string; value: number }>;
+      close_count: number;
+      financial_result: number;
+    }>(`${this.appConfig.apiUrl}/logic-trades/equity-curve`, {
+      params: { logic_id: String(logicId), is_test: isTest ? '1' : '0' },
+    });
+  }
+
   getLogicTradeLots(tradeId: number): Observable<LogicTradeLotRow[]> {
     return this.http.get<LogicTradeLotRow[]>(
       `${this.appConfig.apiUrl}/logic-trade-lots`,

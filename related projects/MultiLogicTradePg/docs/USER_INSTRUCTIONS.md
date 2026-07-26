@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+714. For some reason, the equity portfolio of testing does not correspond to the financial result. Maybe it's because of the rights that you just made? It is necessary to try to correct, so that the equity is always relevant, and so as not to lose the result that eliminated the previous one.
+
 713. Look at the GitPages assembly. It seems to me that something is falling there, I get a response in the mail that it has fallen. Deploy MultiLogic ThreadPG to GitHub Pages. Run failed.
 
 712. Now the form is hanging. I'm trying to expand the parameters of the logic. It says to wait. At the same time, testing is underway. See why the form is hanging.

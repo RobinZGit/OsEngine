@@ -377,6 +377,8 @@ export function buildEquityPoints(
     if (t.side_name !== 'Close' || t.is_shadow) return false;
     // Champion book only — OPT paper lanes (opt_lane≠'') must not pull equity vs FinRes.
     if ((t.opt_lane ?? '') !== '') return false;
+    // Same status filter as /logic-trades/pnl-summary.
+    if (t.status != null && t.status !== 'filled' && t.status !== 'submitted') return false;
     if (t.financial_result == null || !Number.isFinite(Number(t.financial_result))) return false;
     if (sideFilter === 'long' && t.action_name !== 'Long') return false;
     if (sideFilter === 'short' && t.action_name !== 'Short') return false;

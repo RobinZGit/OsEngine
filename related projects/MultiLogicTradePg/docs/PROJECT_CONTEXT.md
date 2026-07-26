@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — fix Pages CI: DELETE margin_leverage after CREATE logic_params
+**Последнее обновление:** 2026-07-26 — live equity-curve mid-backtest (FinRes sync, no 50k dump)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (эквити mid-run ≠ FinRes)
+
+- **Симптом:** во время теста FinRes растёт (напр. +251k), «Эквити портфеля» почти плоская / другой масштаб.
+- **Причина:** после фикса «не вешать вкладку» полный dump сделок mid-run не грузится; FinRes — из `/pnl-summary`, график — из устаревшего `trades[]`.
+- **Фикс:** `GET /api/logic-trades/equity-curve` (только Close champion, те же фильтры что pnl-summary); poll при открытом блоке «Тестирование»; панель предпочитает live curve. Champion-only (`opt_lane=''`) сохранён. Full 50k dump по-прежнему только после finish.
 
 ### 2026-07-26 (GitHub Pages CI: verify-sql падал)
 
@@ -640,6 +646,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Live /equity-curve mid-backtest so portfolio equity matches FinRes without 50k dump |
 | 2026-07-26 | Fix Pages CI: DELETE margin_leverage after CREATE logic_params; push |
 | 2026-07-26 | Skip loading 50k test trades while backtest running (UI hang); push |
 | 2026-07-26 | UI opt_eval_candles=20 + reset all logics; installers; push |
@@ -832,4 +839,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **712** — params form hang during backtest; **711** — opt_eval_candles UI=20.
+Последние (см. USER_INSTRUCTIONS): **714** — equity mid-run ≠ FinRes; **713** — Pages CI; **712** — params hang during backtest.
