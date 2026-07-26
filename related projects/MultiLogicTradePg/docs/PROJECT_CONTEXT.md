@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — Setup.ex_ twin next to Setup.exe for server downloads
+**Последнее обновление:** 2026-07-26 — fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Scheduled cleanup: set_app_cleanup_last_at)
+
+- **Ошибка:** `procedure set_app_cleanup_last_at(timestamp with time zone) does not exist`.
+- **Причина:** процедура была `(TIMESTAMP)`; `CALL …(CURRENT_TIMESTAMP)` передаёт `timestamptz`.
+- **Фикс:** сигнатура `TIMESTAMPTZ` + DROP старой; в `sql/app_cleanup_settings.sql` и `02`.
 
 ### 2026-07-26 (Setup.ex_ рядом с Setup.exe)
 
@@ -593,6 +599,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup; push |
 | 2026-07-26 | Ship MultiLogicTradePgSetup.ex_ twin for blocked-.exe downloads; push |
 | 2026-07-26 | Allow signal_kind=opt for OPT promote closes; installers; push |
 | 2026-07-26 | Fix install.ps1 parse errors blocking upgrade seed; rebuild; push |

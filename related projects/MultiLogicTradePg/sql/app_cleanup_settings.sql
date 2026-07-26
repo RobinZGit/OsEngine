@@ -59,7 +59,11 @@ $$;
 COMMENT ON FUNCTION app_cleanup_last_at() IS
 'Время последней автоочистки диска (parameter_values APP_CLEANUP_LAST_AT)';
 
-CREATE OR REPLACE PROCEDURE set_app_cleanup_last_at(p_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+-- CURRENT_TIMESTAMP is timestamptz; CALL with it must match this signature (not TIMESTAMP).
+DROP PROCEDURE IF EXISTS set_app_cleanup_last_at(TIMESTAMP);
+DROP PROCEDURE IF EXISTS set_app_cleanup_last_at(TIMESTAMPTZ);
+
+CREATE OR REPLACE PROCEDURE set_app_cleanup_last_at(p_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)
 LANGUAGE plpgsql AS $$
 DECLARE
     v_set_id INTEGER;
@@ -81,7 +85,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON PROCEDURE set_app_cleanup_last_at(TIMESTAMP) IS
+COMMENT ON PROCEDURE set_app_cleanup_last_at(TIMESTAMPTZ) IS
 'Записать время последней автоочистки диска';
 
 CREATE OR REPLACE FUNCTION run_cleanup_if_enabled()
