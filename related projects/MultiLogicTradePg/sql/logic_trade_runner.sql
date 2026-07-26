@@ -1469,7 +1469,8 @@ BEGIN
             v_note := NULL;
             v_commission := 0;
 
-            IF v_logic.account_type <> 'fake' THEN
+            -- Shadow (pause/resume track): paper only — never PostOrder to broker.
+            IF v_logic.account_type <> 'fake' AND NOT v_is_shadow THEN
                 v_is_simulated := FALSE;
                 BEGIN
                     SELECT sp.tbank_figi INTO v_figi

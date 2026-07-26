@@ -511,6 +511,22 @@
   color: #6b7280;
 }
 
+.positions-panel-outer .trade-status-cell {
+  max-width: 16rem;
+  min-width: 7rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+  vertical-align: top;
+  font-size: 0.78rem;
+}
+
+.positions-panel-outer .trade-rejected .trade-status-cell {
+  color: #991b1b;
+  font-weight: 600;
+}
+
 .btn-run-backtest {
   display: inline-flex;
   align-items: center;

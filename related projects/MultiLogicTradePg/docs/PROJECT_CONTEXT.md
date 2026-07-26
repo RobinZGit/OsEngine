@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — Pages → OsEngine; MultiLogicTradePg repo archived
+**Последнее обновление:** 2026-07-26 — shadow на real без PostOrder; UI причина отклонения; safer cleanup
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,15 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Shadow real без брокера + UI отклонений + safer cleanup)
+
+- **Баг:** после `security_resume` (FLOT long paused) сигнал Open шёл с `is_shadow=true`, но `process_logic_trades` всё равно делал `tbank_post_order` → реальная покупка с бейджем «теневая» (#602132).
+- **Фикс:** PostOrder только если `account_type <> fake` **и** `NOT v_is_shadow` (как в stop-runner). Shadow на real — paper fill без заявки.
+- **Данные:** #602132 → `is_shadow=false` (был реальный orderId); снят pause long по FLOT, чтобы позиция управлялась в боевом треке.
+- **Тест:** shadow **не** смешиваются с боевым cash/equity/open-count/`pnl-summary` (только отдельный resume-track); в списке видны с бейджем.
+- **Статус сделок:** `Отклонена (причина)` из `note`; строка растёт по высоте.
+- **Disk cleanup:** advisory lock + timeouts; UI/API про риск `APP_CLEANUP_DISK`.
 
 ### 2026-07-26 (Pages → OsEngine; MultiLogicTradePg archived)
 
@@ -468,6 +477,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Shadow live: no T-Bank PostOrder; FLOT #602132 untag; reject reason UI; safer cleanup; push |
 | 2026-07-26 | Pages → OsEngine (/OsEngine/); archive RobinZGit/MultiLogicTradePg (read-only); single copy in OsEngine |
 | 2026-07-26 | Real: order_execution market/limit; free_cash default; broker commission FinRes; stop→T-Bank; installers; push |
 | 2026-07-26 | Backtest reports archive in Postgres + «Отчёты тестов» UI (prev/next); async persist; installers; push |
@@ -625,6 +635,12 @@
 ---
 
 ## Запросы пользователя (текст)
+
+682. FLOT (Sovcomflot) real on account/logic but listed as shadow — fix if bug; then push. Also check test: do shadow mix with real accounting?
+
+681. PUSH
+
+680. Real trades «deviated» (rejected): why; show reason in Status brackets; row grows in height.
 
 678. Move Pages to OsEngine; do not delete MultiLogicTradePg repo — archive it.
 

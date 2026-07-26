@@ -25,7 +25,7 @@ import {
 
   tradeOperationLabel,
 
-  tradeStatusLabel,
+  tradeStatusDisplay,
 
 } from '../shared/logic-trade';
 
@@ -203,7 +203,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   tradeOperationHint = tradeOperationHint;
 
-  tradeStatusLabel = tradeStatusLabel;
+  tradeStatusDisplay = tradeStatusDisplay;
 
   costMethodLabel = costMethodLabel;
 

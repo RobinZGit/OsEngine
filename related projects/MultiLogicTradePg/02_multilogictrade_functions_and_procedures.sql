@@ -1080,78 +1080,112 @@ DECLARE
     v_rating_test_deleted INTEGER := 0;
     v_backtest_runs_deleted INTEGER := 0;
     v_indicator_values_deleted INTEGER := 0;
+    v_got_lock BOOLEAN := FALSE;
+    v_lock_key BIGINT := hashtext('multilogictrade_disk_cleanup');
 BEGIN
-    v_cutoff_active := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_keep_days_active, 90), 1) || ' days')::INTERVAL;
-    v_cutoff_other := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_keep_days_other, 14), 1) || ' days')::INTERVAL;
-    v_cutoff_tech := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_tech_log_keep_days, 7), 1) || ' days')::INTERVAL;
+    PERFORM set_config('lock_timeout', '5s', TRUE);
+    PERFORM set_config('statement_timeout', '120s', TRUE);
 
-    DELETE FROM prices p
-    WHERE p.dt < CASE
-        WHEN EXISTS (
-            SELECT 1
-            FROM security_indicator_series sis
-            WHERE sis.security_id = p.security_id
-              AND sis.is_active
-        )
-        OR EXISTS (
-            SELECT 1
-            FROM logic_securities ls
-            JOIN logics l ON l.id = ls.logic_id
-            WHERE ls.security_id = p.security_id
-              AND l.is_enabled
-        )
-        THEN v_cutoff_active
-        ELSE v_cutoff_other
-    END;
-    GET DIAGNOSTICS v_prices_deleted = ROW_COUNT;
-
-    DELETE FROM logic_trades
-    WHERE is_test;
-    GET DIAGNOSTICS v_test_trades_deleted = ROW_COUNT;
-
-    DELETE FROM logic_signal_rating_history
-    WHERE is_test;
-    GET DIAGNOSTICS v_rating_test_deleted = ROW_COUNT;
-
-    DELETE FROM logic_backtest_runs
-    WHERE status IN ('completed', 'cancelled', 'failed');
-    GET DIAGNOSTICS v_backtest_runs_deleted = ROW_COUNT;
-
-    DELETE FROM indicator_values iv
-    WHERE iv.dt < v_cutoff_active
-      AND NOT EXISTS (
-          SELECT 1
-          FROM security_indicator_series sis
-          JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
-          WHERE sis.security_id = iv.security_id
-            AND sis.indicator_id = iv.indicator_id
-            AND sis.is_active
-            AND upper(btrim(sis.series_code)) = upper(btrim(ivt.code))
-      );
-    GET DIAGNOSTICS v_indicator_values_deleted = ROW_COUNT;
-
-    IF to_regclass('public.app_tech_log') IS NOT NULL THEN
-        DELETE FROM app_tech_log
-        WHERE created_at < v_cutoff_tech;
-        GET DIAGNOSTICS v_tech_deleted = ROW_COUNT;
+    v_got_lock := pg_try_advisory_lock(v_lock_key);
+    IF NOT v_got_lock THEN
+        RETURN jsonb_build_object(
+            'skipped', TRUE,
+            'reason', 'cleanup_lock_busy',
+            'message', 'Очистка уже выполняется или lock занят — повторите позже'
+        );
     END IF;
 
-    RETURN jsonb_build_object(
-        'prices_deleted', v_prices_deleted,
-        'test_trades_deleted', v_test_trades_deleted,
-        'rating_test_history_deleted', v_rating_test_deleted,
-        'backtest_runs_deleted', v_backtest_runs_deleted,
-        'indicator_values_deleted', v_indicator_values_deleted,
-        'tech_log_deleted', v_tech_deleted,
-        'keep_days_active', GREATEST(COALESCE(p_keep_days_active, 90), 1),
-        'keep_days_other', GREATEST(COALESCE(p_keep_days_other, 14), 1),
-        'tech_log_keep_days', GREATEST(COALESCE(p_tech_log_keep_days, 7), 1)
-    );
+    BEGIN
+        v_cutoff_active := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_keep_days_active, 90), 1) || ' days')::INTERVAL;
+        v_cutoff_other := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_keep_days_other, 14), 1) || ' days')::INTERVAL;
+        v_cutoff_tech := CURRENT_TIMESTAMP - (GREATEST(COALESCE(p_tech_log_keep_days, 7), 1) || ' days')::INTERVAL;
+
+        CREATE TEMP TABLE IF NOT EXISTS _cleanup_active_securities (
+            security_id INTEGER PRIMARY KEY
+        ) ON COMMIT DROP;
+        TRUNCATE _cleanup_active_securities;
+
+        INSERT INTO _cleanup_active_securities (security_id)
+        SELECT DISTINCT security_id
+        FROM (
+            SELECT sis.security_id
+            FROM security_indicator_series sis
+            WHERE sis.is_active
+            UNION
+            SELECT ls.security_id
+            FROM logic_securities ls
+            JOIN logics l ON l.id = ls.logic_id
+            WHERE l.is_enabled
+        ) u
+        ON CONFLICT DO NOTHING;
+
+        ANALYZE _cleanup_active_securities;
+
+        DELETE FROM prices p
+        WHERE p.dt < CASE
+            WHEN EXISTS (
+                SELECT 1 FROM _cleanup_active_securities a WHERE a.security_id = p.security_id
+            )
+            THEN v_cutoff_active
+            ELSE v_cutoff_other
+        END;
+        GET DIAGNOSTICS v_prices_deleted = ROW_COUNT;
+
+        DELETE FROM logic_trades
+        WHERE is_test;
+        GET DIAGNOSTICS v_test_trades_deleted = ROW_COUNT;
+
+        DELETE FROM logic_signal_rating_history
+        WHERE is_test;
+        GET DIAGNOSTICS v_rating_test_deleted = ROW_COUNT;
+
+        DELETE FROM logic_backtest_runs
+        WHERE status IN ('completed', 'cancelled', 'failed');
+        GET DIAGNOSTICS v_backtest_runs_deleted = ROW_COUNT;
+
+        DELETE FROM indicator_values iv
+        WHERE iv.dt < v_cutoff_active
+          AND NOT EXISTS (
+              SELECT 1
+              FROM security_indicator_series sis
+              JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
+              WHERE sis.security_id = iv.security_id
+                AND sis.indicator_id = iv.indicator_id
+                AND sis.is_active
+                AND upper(btrim(sis.series_code)) = upper(btrim(ivt.code))
+          );
+        GET DIAGNOSTICS v_indicator_values_deleted = ROW_COUNT;
+
+        IF to_regclass('public.app_tech_log') IS NOT NULL THEN
+            DELETE FROM app_tech_log
+            WHERE created_at < v_cutoff_tech;
+            GET DIAGNOSTICS v_tech_deleted = ROW_COUNT;
+        END IF;
+
+        PERFORM pg_advisory_unlock(v_lock_key);
+
+        RETURN jsonb_build_object(
+            'ok', TRUE,
+            'prices_deleted', v_prices_deleted,
+            'test_trades_deleted', v_test_trades_deleted,
+            'rating_test_history_deleted', v_rating_test_deleted,
+            'backtest_runs_deleted', v_backtest_runs_deleted,
+            'indicator_values_deleted', v_indicator_values_deleted,
+            'tech_log_deleted', v_tech_deleted,
+            'keep_days_active', GREATEST(COALESCE(p_keep_days_active, 90), 1),
+            'keep_days_other', GREATEST(COALESCE(p_keep_days_other, 14), 1),
+            'tech_log_keep_days', GREATEST(COALESCE(p_tech_log_keep_days, 7), 1)
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            PERFORM pg_advisory_unlock(v_lock_key);
+            RAISE;
+    END;
 END;
 $$;
 
 COMMENT ON FUNCTION cleanup_trading_disk_space(INTEGER, INTEGER, INTEGER) IS
-'Удаляет лишние цены/тесты/логи для экономии диска; сохраняет недавние цены для активных индикаторов и enabled-логик.';
+'Удаляет лишние цены/тесты/логи; advisory lock multilogictrade_disk_cleanup; lock/statement timeout; temp list активных бумаг.';
 
 -- ============================================
 -- Индикаторы: подстановка плейсхолдеров и функции calc_ind_*
@@ -4248,6 +4282,7 @@ $$;
 COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER) IS
 'Проставляет param_* серий бумаги из formula сигналов логики перед sync.';
 -- @end calc_ind_extra
+
 
 
 
@@ -8978,6 +9013,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -11566,7 +11629,8 @@ BEGIN
             v_note := NULL;
             v_commission := 0;
 
-            IF v_logic.account_type <> 'fake' THEN
+            -- Shadow (pause/resume track): paper only — never PostOrder to broker.
+            IF v_logic.account_type <> 'fake' AND NOT v_is_shadow THEN
                 v_is_simulated := FALSE;
                 BEGIN
                     SELECT sp.tbank_figi INTO v_figi
@@ -15658,6 +15722,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

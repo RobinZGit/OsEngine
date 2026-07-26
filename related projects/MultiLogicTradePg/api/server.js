@@ -397,9 +397,27 @@ app.post('/api/maintenance/cleanup', async (_req, res) => {
     const { rows } = await pool.query(
       'SELECT cleanup_trading_disk_space() AS result'
     );
-    res.json({ ok: true, result: rows[0]?.result ?? {} });
+    const result = rows[0]?.result ?? {};
+    if (result && result.skipped) {
+      return res.status(409).json({
+        ok: false,
+        skipped: true,
+        error: result.message || result.reason || 'cleanup_lock_busy',
+        result,
+      });
+    }
+    res.json({ ok: true, result });
   } catch (err) {
     console.error('POST /api/maintenance/cleanup', err);
+    const msg = String(err.message || '');
+    // Типичные ошибки при пересечении с боем: lock_timeout / statement_timeout
+    if (/lock timeout|canceling statement due to|statement timeout/i.test(msg)) {
+      return res.status(409).json({
+        error:
+          'Очистка прервана из‑за блокировок Postgres (бой/загрузка цен). Повторите, когда торговля спокойнее, или выключите галочку.',
+        detail: msg,
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });

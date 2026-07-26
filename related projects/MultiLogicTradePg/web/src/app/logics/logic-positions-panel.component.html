@@ -266,7 +266,9 @@
                   <td>{{ tr.price }}</td>
                   <td>{{ formatMoney(tr.commission) }}</td>
                   <td class="trade-reason-cell" [title]="tr.trade_reason || ''">{{ tr.trade_reason || '—' }}</td>
-                  <td>{{ tradeStatusLabel(tr.status) }}</td>
+                  <td class="trade-status-cell" [title]="tr.note || tradeStatusDisplay(tr.status, tr.note)">
+                    {{ tradeStatusDisplay(tr.status, tr.note) }}
+                  </td>
                 </tr>
                 @if (openTradeHasPartialCloses(tr) && isTradeRowExpanded(tr.id)) {
                   <tr class="trade-lots-detail-row">
@@ -381,7 +383,9 @@
                     </span>
                   </td>
                   <td class="trade-reason-cell" [title]="tr.trade_reason || ''">{{ tr.trade_reason || '—' }}</td>
-                  <td>{{ tradeStatusLabel(tr.status) }}</td>
+                  <td class="trade-status-cell" [title]="tr.note || tradeStatusDisplay(tr.status, tr.note)">
+                    {{ tradeStatusDisplay(tr.status, tr.note) }}
+                  </td>
                 </tr>
                 @if (isTradeRowExpanded(tr.id)) {
                   <tr class="trade-lots-detail-row">

@@ -113,6 +113,62 @@ export function tradeStatusLabel(status: LogicTradeStatus): string {
   }
 }
 
+/** Human-readable broker/API reject reason from logic_trades.note. */
+export function tradeRejectReason(note: string | null | undefined): string | null {
+  if (note == null) return null;
+  const raw = String(note).trim();
+  if (!raw) return null;
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}$/);
+  if (jsonMatch) {
+    try {
+      const obj = JSON.parse(jsonMatch[0]) as { message?: unknown; description?: unknown };
+      const msg = obj.message != null ? String(obj.message).trim() : '';
+      if (msg) return localizeBrokerRejectMessage(msg);
+    } catch {
+      /* keep falling through */
+    }
+  }
+
+  const httpMatch = raw.match(/HTTP\s+(\d+)/i);
+  if (httpMatch) {
+    const code = httpMatch[1];
+    if (code === '429') return 'слишком много запросов к брокеру (HTTP 429)';
+    if (code === '401' || code === '403') return `нет доступа к API брокера (HTTP ${code})`;
+    if (code === '500' || code === '502' || code === '503') {
+      return `временная ошибка брокера (HTTP ${code})`;
+    }
+    if (/:\s*<NULL>\s*$/i.test(raw) || /:\s*$/.test(raw)) {
+      return `ошибка брокера (HTTP ${code})`;
+    }
+  }
+
+  return raw.length > 180 ? `${raw.slice(0, 177)}…` : raw;
+}
+
+function localizeBrokerRejectMessage(message: string): string {
+  const key = message.trim().toLowerCase();
+  const map: Record<string, string> = {
+    'not enough assets for a margin trade':
+      'недостаточно активов для маржинальной сделки',
+    'not enough balance': 'недостаточно средств',
+    'instrument is not available for trading': 'инструмент недоступен для торговли',
+    'order rejected by exchange': 'биржа отклонила заявку',
+  };
+  return map[key] ?? message.trim();
+}
+
+/** Status label; for rejected/cancelled appends (reason) from note when present. */
+export function tradeStatusDisplay(
+  status: LogicTradeStatus,
+  note?: string | null
+): string {
+  const label = tradeStatusLabel(status);
+  if (status !== 'rejected' && status !== 'cancelled') return label;
+  const reason = tradeRejectReason(note);
+  return reason ? `${label} (${reason})` : label;
+}
+
 export function yesNoLabel(value: boolean): string {
   return value ? 'да' : 'нет';
 }
