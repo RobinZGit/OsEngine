@@ -142,6 +142,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Input() blockExpanded = false;
 
   @Input() backtestRun: BacktestRunStatus | null = null;
+  /** Период последнего теста из pnl-summary (когда backtestRun уже нет после reload). */
+  @Input() testPeriodFrom: string | null = null;
+  @Input() testPeriodTo: string | null = null;
 
   @Input() tbankTokenAlert: { message: string } | null = null;
 
@@ -240,6 +243,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
       changes['trades'] ||
       changes['logicRow'] ||
       changes['backtestRun'] ||
+      changes['testPeriodFrom'] ||
+      changes['testPeriodTo'] ||
       changes['summaryFinancialResult'] ||
       changes['summaryCommission']
     ) {
@@ -385,31 +390,44 @@ export class LogicPositionsPanelComponent implements OnChanges {
   /** Число календарных дней для аннуализации (включительно). */
   periodDaysForReturn(): number | null {
     if (this.isTest) {
-      const from = this.backtestRun?.date_from;
-      const to = this.backtestRun?.date_to;
-      if (!from || !to) return null;
-      const ms = Date.parse(to) - Date.parse(from);
-      if (!Number.isFinite(ms) || ms < 0) return null;
-      return Math.max(1, Math.round(ms / 86400000) + 1);
+      // 1) текущий/последний прогон в UI  2) даты из pnl-summary  3) по тестовым сделкам
+      const from =
+        asDateOnly(this.backtestRun?.date_from) ??
+        asDateOnly(this.testPeriodFrom) ??
+        this.tradesDateBound('from');
+      const to =
+        asDateOnly(this.backtestRun?.date_to) ??
+        asDateOnly(this.testPeriodTo) ??
+        this.tradesDateBound('to');
+      return this.inclusiveCalendarDays(from, to);
     }
     // Live: от первой сделки до сегодня
-    const keys = this.trades
-      .map((t) => String(t.bar_dt || t.executed_at || '').slice(0, 10))
-      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
-      .sort();
-    if (keys.length === 0) return null;
-    const fromMs = Date.parse(keys[0]);
+    const from = this.tradesDateBound('from');
+    if (!from) return null;
     const today = new Date();
-    const toKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const toMs = Date.parse(toKey);
-    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) return null;
+    const to = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
+    return this.inclusiveCalendarDays(from, to);
+  }
+
+  private inclusiveCalendarDays(
+    from: string | null,
+    to: string | null
+  ): number | null {
+    if (!from || !to) return null;
+    const fromMs = Date.parse(`${from}T00:00:00Z`);
+    const toMs = Date.parse(`${to}T00:00:00Z`);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+      return null;
+    }
     return Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
   }
 
   /** Фин. результат в % от начального остатка (Позиции и Тестирование). */
   returnPct(): number | null {
-    const initial = Number(this.logicRow.initial_balance);
-    if (!Number.isFinite(initial) || initial <= 0) return null;
+    const raw = Number(this.logicRow.initial_balance);
+    // Как в бэктесте: пустой/0 initial → 1_000_000, иначе «год.» = «—»
+    const initial =
+      Number.isFinite(raw) && raw > 0 ? raw : 1_000_000;
     return (this.displayFinancialResult() / initial) * 100;
   }
 

@@ -1793,6 +1793,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.backtestRuns.get(logicId) ?? null;
   }
 
+  /** Даты периода теста из pnl-summary (для «год.%» когда прогон уже не в UI). */
+  testPeriodFrom(logicId: number): string | null {
+    const v = this.testPnlByLogic.get(Number(logicId))?.date_from;
+    return v != null && String(v).trim() !== '' ? String(v) : null;
+  }
+
+  testPeriodTo(logicId: number): string | null {
+    const v = this.testPnlByLogic.get(Number(logicId))?.date_to;
+    return v != null && String(v).trim() !== '' ? String(v) : null;
+  }
+
   timeframeIdForLogic(row: LogicRow): number | null {
     const draft = this.paramsDrafts.get(row.id);
     const tfName = (draft?.timeframe || row.timeframe || 'M15').trim();

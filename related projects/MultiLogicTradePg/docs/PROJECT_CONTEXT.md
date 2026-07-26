@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — fix NG5002: `@` в шаблоне buy-bonds ломал ng serve
+**Последнее обновление:** 2026-07-26 — тест: «год.» (%) после reload из pnl-summary / сделок
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Тест: «год.» = «—»)
+
+- **Причина:** `annualPct()` брал дни только из `backtestRun.date_from/to`; после завершения/reload `recoverActive` не восстанавливает completed run → период null → «—», хотя FinRes из pnl-summary уже есть.
+- **Фикс:** fallback дат: `backtestRun` → `testPeriodFrom/To` из pnl-summary → min/max `bar_dt` сделок; `returnPct` при пустом `initial_balance` → 1_000_000 (как бэктест).
 
 ### 2026-07-26 (Купить облигации — UX)
 
@@ -547,6 +552,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Test annual % «—»: period from pnl-summary/trades when run gone; installers; push |
 | 2026-07-26 | Fix NG5002 @ in buy-bonds HTML (install-on-top ng serve); push |
 | 2026-07-26 | Buy-bonds UX: amount editable, calc→buy brightness, all accounts; push |
 | 2026-07-26 | Disable choosable SL/TP types; USER_INSTRUCTIONS.md + Help; push |
@@ -722,4 +728,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **695** — NG5002 `@` в buy-bonds при установке поверх.
+Последние (см. USER_INSTRUCTIONS): **696** — тест «год.» = «—» (период из pnl-summary).

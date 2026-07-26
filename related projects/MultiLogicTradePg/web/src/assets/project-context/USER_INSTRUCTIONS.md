@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+696. And look at why the annual interest was not calculated in the test, there is a mark.
+
 695. Install on top: ng serve NG5002 Incomplete block "" — @ in buy-bonds template; fix and push.
 
 694. Restarted start — amount, fund choice and Calculate still not available for editing; fix.

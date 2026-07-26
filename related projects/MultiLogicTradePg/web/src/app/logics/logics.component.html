@@ -2191,6 +2191,8 @@
                         [lotsLoading]="tradeLotsLoading"
                         [blockExpanded]="isTestTradesBlockExpanded(row.id)"
                         [backtestRun]="backtestFor(row.id)"
+                        [testPeriodFrom]="testPeriodFrom(row.id)"
+                        [testPeriodTo]="testPeriodTo(row.id)"
                         [timeframeId]="timeframeIdForLogic(row)"
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [pinnedPaper]="cashFundPinnedPaper(row)"
