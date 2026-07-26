@@ -475,15 +475,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
   isOpenPositionTrade(trade: LogicTradeRow): boolean {
-
     if (trade.side_name !== 'Open') return false;
-
+    if (trade.status !== 'filled' && trade.status !== 'submitted') return false;
     const rem = trade.remaining_qty;
-
     if (rem == null) return true;
-
     return Number(rem) > 0;
-
   }
 
 

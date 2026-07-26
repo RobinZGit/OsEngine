@@ -3058,7 +3058,8 @@ const LOGIC_TRADE_SELECT = `
     lt.note,
     lt.created_at,
     CASE
-      WHEN sd.name = 'Open' THEN logic_trade_open_remaining_qty(lt.id)
+      WHEN sd.name = 'Open' AND lt.status IN ('filled', 'submitted')
+        THEN logic_trade_open_remaining_qty(lt.id)
       ELSE NULL
     END AS remaining_qty,
     s.name AS security_name,

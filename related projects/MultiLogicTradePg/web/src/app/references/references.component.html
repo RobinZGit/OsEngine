@@ -168,7 +168,7 @@
                         <button
                           type="button"
                           class="text-btn text-btn-danger"
-                          title="Продать все позиции на счёте по рынку (лимит по текущей цене)"
+                          title="Продать все позиции на счёте по рынку и закрыть открытые сделки логик в книге (без повторной заявки)"
                           [disabled]="accountActionBusyId === row.id"
                           (click)="sellAllOnAccount(row)"
                         >

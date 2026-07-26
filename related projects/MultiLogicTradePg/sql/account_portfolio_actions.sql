@@ -177,22 +177,89 @@ BEGIN
         END;
     END LOOP;
 
-    RETURN jsonb_build_object(
-        'ok', jsonb_array_length(v_errors) = 0,
-        'account_id', p_account_id,
-        'sold_count', jsonb_array_length(v_sold),
-        'error_count', jsonb_array_length(v_errors),
-        'skipped_count', jsonb_array_length(v_skipped),
-        'sold', v_sold,
-        'errors', v_errors,
-        'skipped', v_skipped,
-        'cash_amount_before', v_pack->'cash_amount'
+    -- Книга логик: закрыть открытые позиции без второй заявки брокеру.
+    RETURN account_sell_all_at_market_with_books(
+        p_account_id, v_sold, v_errors, v_skipped, v_pack->'cash_amount'
     );
 END;
 $$;
 
 COMMENT ON FUNCTION account_sell_all_at_market(INTEGER) IS
-'Реальный T-Bank: рыночная продажа/закрытие всех невалютных позиций портфеля (ORDER_TYPE_MARKET, мгновенно в сессию)';
+'Реальный T-Bank: market sell-all портфеля, затем book-close открытых позиций всех логик счёта (без повторного PostOrder)';
+
+-- Book-close after broker is already flat (or repair orphan opens).
+CREATE OR REPLACE FUNCTION account_book_close_logic_positions(
+    p_account_id INTEGER,
+    p_sold JSONB DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic RECORD;
+    v_one JSONB;
+    v_results JSONB := '[]'::JSONB;
+    v_closed INTEGER := 0;
+BEGIN
+    FOR v_logic IN
+        SELECT l.id, l.name
+        FROM logics l
+        WHERE l.account_id = p_account_id
+        ORDER BY l.id
+    LOOP
+        v_one := logic_close_all_positions_at_market(
+            v_logic.id,
+            FALSE,           -- including cash funds if any open in books
+            FALSE,           -- no broker orders
+            'account:sell_all',
+            p_sold
+        );
+        v_closed := v_closed + COALESCE((v_one->>'closed')::INTEGER, 0);
+        v_results := v_results || jsonb_build_array(jsonb_build_object(
+            'logic_id', v_logic.id,
+            'logic_name', v_logic.name,
+            'result', v_one
+        ));
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'account_id', p_account_id,
+        'logics_closed_total', v_closed,
+        'logics', v_results
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION account_book_close_logic_positions(INTEGER, JSONB) IS
+'Синхронизация книги: закрыть открытые (filled/submitted) позиции всех логик счёта без PostOrder; цены из p_sold при наличии';
+
+CREATE OR REPLACE FUNCTION account_sell_all_at_market_with_books(
+    p_account_id INTEGER,
+    p_sold JSONB,
+    p_errors JSONB,
+    p_skipped JSONB,
+    p_cash_before JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_books JSONB;
+BEGIN
+    v_books := account_book_close_logic_positions(p_account_id, p_sold);
+    RETURN jsonb_build_object(
+        'ok', jsonb_array_length(COALESCE(p_errors, '[]'::JSONB)) = 0,
+        'account_id', p_account_id,
+        'sold_count', jsonb_array_length(COALESCE(p_sold, '[]'::JSONB)),
+        'error_count', jsonb_array_length(COALESCE(p_errors, '[]'::JSONB)),
+        'skipped_count', jsonb_array_length(COALESCE(p_skipped, '[]'::JSONB)),
+        'sold', COALESCE(p_sold, '[]'::JSONB),
+        'errors', COALESCE(p_errors, '[]'::JSONB),
+        'skipped', COALESCE(p_skipped, '[]'::JSONB),
+        'cash_amount_before', p_cash_before,
+        'logic_books', v_books
+    );
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION tbank_resolve_bond_by_isin(
     p_account_id INTEGER,

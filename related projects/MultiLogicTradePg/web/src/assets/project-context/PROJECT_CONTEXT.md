@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — shadow на real без PostOrder; UI причина отклонения; safer cleanup
+**Последнее обновление:** 2026-07-26 — account «Продать всё» → book-close логик без второй заявки
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Account sell-all → book-close логик)
+
+- **Проблема:** «Продать всё» на счёте закрывало портфель у брокера, но `logic_trades` оставались Open (FLOT/IRAO и др.).
+- **Правильнее, чем sell + close-all с PostOrder:** после market sell-all — `account_book_close_logic_positions` → `logic_close_all_positions_at_market(..., p_post_broker=FALSE)` — закрытия в книге с `trade_reason=account:sell_all`, цены/orderId из `sold[]` если есть; **без** повторной заявки.
+- UI: отклонённые Open не в списке открытых; `remaining_qty` только для filled/submitted.
+- Repair: account 58 / logic 2133 — 2 book-close.
 
 ### 2026-07-26 (Shadow real без брокера + UI отклонений + safer cleanup)
 
@@ -477,6 +484,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Account sell-all syncs logic books (no 2nd PostOrder); repair 2133; push |
 | 2026-07-26 | Shadow live: no T-Bank PostOrder; FLOT #602132 untag; reject reason UI; safer cleanup; push |
 | 2026-07-26 | Pages → OsEngine (/OsEngine/); archive RobinZGit/MultiLogicTradePg (read-only); single copy in OsEngine |
 | 2026-07-26 | Real: order_execution market/limit; free_cash default; broker commission FinRes; stop→T-Bank; installers; push |
@@ -635,6 +643,8 @@
 ---
 
 ## Запросы пользователя (текст)
+
+683. Sold everything via account button but logic trades stayed open — sync closes; maybe sell then close-all; prefer a better approach.
 
 682. FLOT (Sovcomflot) real on account/logic but listed as shadow — fix if bug; then push. Also check test: do shadow mix with real accounting?
 

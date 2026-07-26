@@ -320,5 +320,22 @@ const calcExtra = read('sql/calc_ind_extra.sql').trimEnd() + '\n';
   }
 }
 
+{
+  const accMark = '-- @include sql/account_portfolio_actions.sql';
+  const accEnd = '\n-- Главная load_prices → HTTP (переопределение заглушек части A)';
+  const accIdx = sql02.indexOf(accMark);
+  const accEndIdx = sql02.indexOf(accEnd, accIdx === -1 ? 0 : accIdx);
+  if (accIdx !== -1 && accEndIdx !== -1) {
+    const accBlock =
+      accMark +
+      '\n' +
+      read('sql/account_portfolio_actions.sql').trimEnd() +
+      '\n';
+    sql02 = sql02.slice(0, accIdx) + accBlock + sql02.slice(accEndIdx);
+  } else {
+    console.warn('sync-02: account_portfolio_actions markers not found — skipped');
+  }
+}
+
 fs.writeFileSync(path.join(root, '02_multilogictrade_functions_and_procedures.sql'), sql02, 'utf8');
 console.log('sync-02: OK — 02_multilogictrade_functions_and_procedures.sql updated');

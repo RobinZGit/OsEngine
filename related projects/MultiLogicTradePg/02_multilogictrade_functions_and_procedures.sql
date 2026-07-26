@@ -4341,6 +4341,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9041,6 +9042,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -10019,12 +10048,27 @@ $$;
 COMMENT ON FUNCTION logic_ensure_security_market_price(INTEGER, INTEGER, INTEGER) IS
 'Последняя цена для закрытия: из БД или load_prices (T-Bank/MOEX), затем fallback по любому TF';
 
--- Снять старую одноаргументную сигнатуру (иначе в PG останутся два overload).
+-- Lookup fill from account_sell_all sold[] by figi (price / order / commission).
+CREATE OR REPLACE FUNCTION logic_sold_fill_for_figi(p_sold JSONB, p_figi TEXT)
+RETURNS JSONB
+LANGUAGE sql STABLE AS $$
+    SELECT elem
+    FROM jsonb_array_elements(COALESCE(p_sold, '[]'::JSONB)) AS elem
+    WHERE NULLIF(btrim(COALESCE(elem->>'figi', '')), '') = NULLIF(btrim(COALESCE(p_figi, '')), '')
+    ORDER BY 1
+    LIMIT 1;
+$$;
+
+-- Снять старые сигнатуры (иначе в PG останутся overload без books-only).
 DROP FUNCTION IF EXISTS logic_close_all_positions_at_market(INTEGER);
+DROP FUNCTION IF EXISTS logic_close_all_positions_at_market(INTEGER, BOOLEAN);
 
 CREATE OR REPLACE FUNCTION logic_close_all_positions_at_market(
     p_logic_id INTEGER,
-    p_except_cash_funds BOOLEAN DEFAULT FALSE
+    p_except_cash_funds BOOLEAN DEFAULT FALSE,
+    p_post_broker BOOLEAN DEFAULT TRUE,
+    p_trade_reason TEXT DEFAULT NULL,
+    p_sold JSONB DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
@@ -10044,10 +10088,7 @@ DECLARE
     v_skipped INTEGER := 0;
     v_errors JSONB := '[]'::jsonb;
     v_bar_dt TIMESTAMP;
-    v_formula TEXT := CASE
-        WHEN p_except_cash_funds THEN 'eod.close'
-        ELSE 'market:close_all'
-    END;
+    v_reason TEXT;
     v_quantity INTEGER;
     v_notional NUMERIC;
     v_is_simulated BOOLEAN;
@@ -10061,7 +10102,13 @@ DECLARE
     v_action_id INTEGER;
     v_close_idx INTEGER := 0;
     v_fill_price NUMERIC;
+    v_sold_row JSONB;
 BEGIN
+    v_reason := COALESCE(
+        NULLIF(btrim(p_trade_reason), ''),
+        CASE WHEN p_except_cash_funds THEN 'eod.close' ELSE 'market:close_all' END
+    );
+
     SELECT l.id, l.account_id, a.account_type
     INTO v_logic
     FROM logics l
@@ -10136,6 +10183,13 @@ BEGIN
             CONTINUE;
         END IF;
 
+        SELECT sp.tbank_figi INTO v_figi
+        FROM security_prefixes sp
+        WHERE sp.security_id = v_sec.security_id
+          AND sp.tbank_figi IS NOT NULL
+        ORDER BY sp.exchange_id
+        LIMIT 1;
+
         IF v_long_qty > 0 THEN
             v_close_idx := v_close_idx + 1;
             v_bar_dt := clock_timestamp() + (v_close_idx * interval '1 millisecond');
@@ -10151,16 +10205,10 @@ BEGIN
             v_status := 'filled';
             v_note := NULL;
             v_commission := 0;
+            v_order := NULL;
 
-            IF NOT v_is_simulated THEN
+            IF NOT v_is_simulated AND p_post_broker THEN
                 BEGIN
-                    SELECT sp.tbank_figi INTO v_figi
-                    FROM security_prefixes sp
-                    WHERE sp.security_id = v_sec.security_id
-                      AND sp.tbank_figi IS NOT NULL
-                    ORDER BY sp.exchange_id
-                    LIMIT 1;
-
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
                         v_note := 'Нет tbank_figi для бумаги';
@@ -10203,19 +10251,40 @@ BEGIN
                         v_status := 'rejected';
                         v_note := SQLERRM;
                 END;
+            ELSIF NOT v_is_simulated AND NOT p_post_broker THEN
+                -- Счёт уже flat (account sell-all): только книга логики, без второй заявки.
+                v_sold_row := logic_sold_fill_for_figi(p_sold, v_figi);
+                IF v_sold_row IS NOT NULL THEN
+                    v_order := v_sold_row->'order';
+                    IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
+                        v_price := (v_sold_row->>'price')::NUMERIC;
+                    END IF;
+                    v_fill_price := tbank_order_unit_price(v_order);
+                    IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                        v_price := v_fill_price;
+                    END IF;
+                    v_commission := COALESCE(tbank_order_commission(v_order), 0);
+                    v_broker_order_id := COALESCE(
+                        v_order->>'orderId',
+                        v_order->>'order_id',
+                        v_order->'orderState'->>'orderId'
+                    );
+                END IF;
+                v_status := 'filled';
+                v_note := 'books_only: broker already flat';
             END IF;
 
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
-                side_id, action_id, signal_kind, signal_formula,
+                side_id, action_id, position_event, signal_kind, signal_formula,
                 quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
-                broker_order_id, status, note
+                trade_reason, broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
-                v_side_close_id, v_action_id, 'counter', v_formula,
+                v_side_close_id, v_action_id, 'close', 'counter', v_reason,
                 v_quantity, v_price, COALESCE(v_commission, 0), v_bar_dt, v_is_simulated, FALSE, FALSE, FALSE,
-                v_broker_order_id, v_status, v_note
+                v_reason, v_broker_order_id, v_status, v_note
             )
             RETURNING id INTO v_trade_id;
 
@@ -10239,7 +10308,9 @@ BEGIN
                         'action', 'Long',
                         'quantity', v_quantity,
                         'price', v_price,
-                        'status', v_status
+                        'status', v_status,
+                        'post_broker', p_post_broker,
+                        'trade_reason', v_reason
                     ),
                     v_sec.security_id,
                     v_tf_id
@@ -10271,16 +10342,10 @@ BEGIN
             v_status := 'filled';
             v_note := NULL;
             v_commission := 0;
+            v_order := NULL;
 
-            IF NOT v_is_simulated THEN
+            IF NOT v_is_simulated AND p_post_broker THEN
                 BEGIN
-                    SELECT sp.tbank_figi INTO v_figi
-                    FROM security_prefixes sp
-                    WHERE sp.security_id = v_sec.security_id
-                      AND sp.tbank_figi IS NOT NULL
-                    ORDER BY sp.exchange_id
-                    LIMIT 1;
-
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
                         v_note := 'Нет tbank_figi для бумаги';
@@ -10323,19 +10388,39 @@ BEGIN
                         v_status := 'rejected';
                         v_note := SQLERRM;
                 END;
+            ELSIF NOT v_is_simulated AND NOT p_post_broker THEN
+                v_sold_row := logic_sold_fill_for_figi(p_sold, v_figi);
+                IF v_sold_row IS NOT NULL THEN
+                    v_order := v_sold_row->'order';
+                    IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
+                        v_price := (v_sold_row->>'price')::NUMERIC;
+                    END IF;
+                    v_fill_price := tbank_order_unit_price(v_order);
+                    IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                        v_price := v_fill_price;
+                    END IF;
+                    v_commission := COALESCE(tbank_order_commission(v_order), 0);
+                    v_broker_order_id := COALESCE(
+                        v_order->>'orderId',
+                        v_order->>'order_id',
+                        v_order->'orderState'->>'orderId'
+                    );
+                END IF;
+                v_status := 'filled';
+                v_note := 'books_only: broker already flat';
             END IF;
 
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
-                side_id, action_id, signal_kind, signal_formula,
+                side_id, action_id, position_event, signal_kind, signal_formula,
                 quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
-                broker_order_id, status, note
+                trade_reason, broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
-                v_side_close_id, v_action_id, 'counter', v_formula,
+                v_side_close_id, v_action_id, 'close', 'counter', v_reason,
                 v_quantity, v_price, COALESCE(v_commission, 0), v_bar_dt, v_is_simulated, FALSE, FALSE, FALSE,
-                v_broker_order_id, v_status, v_note
+                v_reason, v_broker_order_id, v_status, v_note
             )
             RETURNING id INTO v_trade_id;
 
@@ -10359,7 +10444,9 @@ BEGIN
                         'action', 'Short',
                         'quantity', v_quantity,
                         'price', v_price,
-                        'status', v_status
+                        'status', v_status,
+                        'post_broker', p_post_broker,
+                        'trade_reason', v_reason
                     ),
                     v_sec.security_id,
                     v_tf_id
@@ -10381,13 +10468,15 @@ BEGIN
         'ok', TRUE,
         'closed', v_closed,
         'skipped', v_skipped,
-        'errors', v_errors
+        'errors', v_errors,
+        'post_broker', p_post_broker,
+        'trade_reason', v_reason
     );
 END;
 $$;
 
-COMMENT ON FUNCTION logic_close_all_positions_at_market(INTEGER, BOOLEAN) IS
-'Ручное закрытие long/short по рынку; p_except_cash_funds=TRUE — не трогать TMON/LQDT/SBMM';
+COMMENT ON FUNCTION logic_close_all_positions_at_market(INTEGER, BOOLEAN, BOOLEAN, TEXT, JSONB) IS
+'Закрытие long/short: p_post_broker=FALSE — только книга (после account sell-all), без второй заявки брокеру';
 
 -- Рейтинг сигнала на логике: боевой (rating) и тестовый (rating_test) раздельно.
 -- Не путать с рейтингом индикатора в справочнике indicators.
@@ -15764,6 +15853,7 @@ COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 
 
 
+
 -- instrumentId для GetCandles: ShareBy по тикеру (исправляет устаревший tbank_figi)
 CREATE OR REPLACE FUNCTION resolve_tbank_instrument_id(
     p_security_id INTEGER,
@@ -18010,6 +18100,7 @@ BEGIN
         v_lots := COALESCE(parse_tbank_quotation(v_pos->'quantityLots'), 0);
         IF v_lots = 0 THEN
             v_qty := COALESCE(parse_tbank_quotation(v_pos->'quantity'), 0);
+            -- без lot size считаем quantity уже в лотах, если целое
             IF v_qty = trunc(v_qty) THEN
                 v_lots := v_qty;
             END IF;
@@ -18062,22 +18153,89 @@ BEGIN
         END;
     END LOOP;
 
-    RETURN jsonb_build_object(
-        'ok', jsonb_array_length(v_errors) = 0,
-        'account_id', p_account_id,
-        'sold_count', jsonb_array_length(v_sold),
-        'error_count', jsonb_array_length(v_errors),
-        'skipped_count', jsonb_array_length(v_skipped),
-        'sold', v_sold,
-        'errors', v_errors,
-        'skipped', v_skipped,
-        'cash_amount_before', v_pack->'cash_amount'
+    -- Книга логик: закрыть открытые позиции без второй заявки брокеру.
+    RETURN account_sell_all_at_market_with_books(
+        p_account_id, v_sold, v_errors, v_skipped, v_pack->'cash_amount'
     );
 END;
 $$;
 
 COMMENT ON FUNCTION account_sell_all_at_market(INTEGER) IS
-'Реальный T-Bank: рыночная продажа/закрытие всех невалютных позиций портфеля (ORDER_TYPE_MARKET, мгновенно в сессию)';
+'Реальный T-Bank: market sell-all портфеля, затем book-close открытых позиций всех логик счёта (без повторного PostOrder)';
+
+-- Book-close after broker is already flat (or repair orphan opens).
+CREATE OR REPLACE FUNCTION account_book_close_logic_positions(
+    p_account_id INTEGER,
+    p_sold JSONB DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic RECORD;
+    v_one JSONB;
+    v_results JSONB := '[]'::JSONB;
+    v_closed INTEGER := 0;
+BEGIN
+    FOR v_logic IN
+        SELECT l.id, l.name
+        FROM logics l
+        WHERE l.account_id = p_account_id
+        ORDER BY l.id
+    LOOP
+        v_one := logic_close_all_positions_at_market(
+            v_logic.id,
+            FALSE,           -- including cash funds if any open in books
+            FALSE,           -- no broker orders
+            'account:sell_all',
+            p_sold
+        );
+        v_closed := v_closed + COALESCE((v_one->>'closed')::INTEGER, 0);
+        v_results := v_results || jsonb_build_array(jsonb_build_object(
+            'logic_id', v_logic.id,
+            'logic_name', v_logic.name,
+            'result', v_one
+        ));
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'account_id', p_account_id,
+        'logics_closed_total', v_closed,
+        'logics', v_results
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION account_book_close_logic_positions(INTEGER, JSONB) IS
+'Синхронизация книги: закрыть открытые (filled/submitted) позиции всех логик счёта без PostOrder; цены из p_sold при наличии';
+
+CREATE OR REPLACE FUNCTION account_sell_all_at_market_with_books(
+    p_account_id INTEGER,
+    p_sold JSONB,
+    p_errors JSONB,
+    p_skipped JSONB,
+    p_cash_before JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_books JSONB;
+BEGIN
+    v_books := account_book_close_logic_positions(p_account_id, p_sold);
+    RETURN jsonb_build_object(
+        'ok', jsonb_array_length(COALESCE(p_errors, '[]'::JSONB)) = 0,
+        'account_id', p_account_id,
+        'sold_count', jsonb_array_length(COALESCE(p_sold, '[]'::JSONB)),
+        'error_count', jsonb_array_length(COALESCE(p_errors, '[]'::JSONB)),
+        'skipped_count', jsonb_array_length(COALESCE(p_skipped, '[]'::JSONB)),
+        'sold', COALESCE(p_sold, '[]'::JSONB),
+        'errors', COALESCE(p_errors, '[]'::JSONB),
+        'skipped', COALESCE(p_skipped, '[]'::JSONB),
+        'cash_amount_before', p_cash_before,
+        'logic_books', v_books
+    );
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION tbank_resolve_bond_by_isin(
     p_account_id INTEGER,
@@ -18110,6 +18268,7 @@ BEGIN
         http_header('Accept', 'application/json')
     ];
 
+    -- BondBy by ISIN
     SELECT * INTO v_response FROM http((
         'POST',
         rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
@@ -18177,6 +18336,7 @@ BEGIN
         v_price := v_units + v_nano / 1000000000.0;
     END IF;
 
+    -- Облигации T-Bank: last price обычно в % номинала (≈90–110) → ₽ при номинале 1000.
     IF v_price IS NOT NULL AND v_price > 0 AND v_price < 200 THEN
         v_price := v_price / 100.0 * 1000.0;
     ELSIF v_price IS NULL OR v_price <= 0 THEN
