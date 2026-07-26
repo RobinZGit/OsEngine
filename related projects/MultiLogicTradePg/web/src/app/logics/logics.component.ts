@@ -1458,7 +1458,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     } else {
       this.expandedTestTradesBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
-      this.loadTestTradesForLogic(logicId);
+      // Mid-run full dump freezes the tab (tens of MB JSON); wait until finish.
+      if (!this.isBacktestRunning(logicId)) {
+        this.loadTestTradesForLogic(logicId);
+      }
       this.backtestUi.watch(logicId);
     }
   }
@@ -3053,13 +3056,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       if (liveOpen || (this.expandedLogics.has(id) && heavyTick)) {
         this.loadTradesForLogic(id, true);
       }
-      // Пока тест running — не качать 50k сделок каждые 2 с (прогресс из status).
-      // Полный список — после finish (changes$) или редко на heavyTick если панель открыта.
-      if (testing) {
-        if (testOpen && heavyTick) {
-          this.loadTestTradesForLogic(id, true);
-        }
-      } else if (testOpen || (this.expandedLogics.has(id) && heavyTick)) {
+      // Пока тест running — никогда не качать полный список (до 50k / десятки МБ):
+      // парсинг JSON на главном потоке вешает вкладку («загрузка…» у параметров и т.п.).
+      // Прогресс/FinRes — из status + pnl-summary; сделки — после finish (changes$).
+      if (!testing && (testOpen || (this.expandedLogics.has(id) && heavyTick))) {
         this.loadTestTradesForLogic(id, true);
       }
     }

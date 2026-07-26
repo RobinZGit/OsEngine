@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+712. Now the form is hanging. I'm trying to expand the parameters of the logic. It says to wait. At the same time, testing is underway. See why the form is hanging.
+
 711. You need to add a field to the form by default, write 20 there, not 5 and in all other logics, make it 20 by default this is the first and the second, just tell me, don't change anything can't you make a separate stream for each calculation of the value of the optimization parameter?
 
 710. Let's make such an improvement and add a new parameter to the logic for this, a checkmark, it will be turned on by default. When opening a position, also take into account the proceeds after closing… In general, we will do without a parameter… it will always be taken into account.

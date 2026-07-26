@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — UI «Свечей окна OPT» (opt_eval_candles=20); reset all logics to 20
+**Последнее обновление:** 2026-07-26 — UI: не грузить 50k test trades while backtest running (params hang fix)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (форма «висит» при раскрытии параметров во время теста)
+
+- **Причина:** poll качал полный список тестовых сделок (до 50k / ~40 МБ) пока `running` — парсинг вешал вкладку («загрузка…» у параметров).
+- **Фикс:** не загружать full test trades dump во время running; сделки — после finish; прогресс/FinRes из status/pnl-summary.
 
 ### 2026-07-26 (форма: Свечей окна OPT = 20)
 
@@ -629,6 +634,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Skip loading 50k test trades while backtest running (UI hang); push |
 | 2026-07-26 | UI opt_eval_candles=20 + reset all logics; installers; push |
 | 2026-07-26 | Switch: after Close refresh exposure+% base (no param); installers; push |
 | 2026-07-26 | Equity chart exclude OPT paper (match FinRes); installers; push |
@@ -819,4 +825,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **711** — opt_eval_candles UI=20 + parallel OPT streams Q; **710** — switch cash.
+Последние (см. USER_INSTRUCTIONS): **712** — params form hang during backtest; **711** — opt_eval_candles UI=20.
