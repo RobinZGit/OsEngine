@@ -4,11 +4,12 @@
 > **Обновлять перед каждым push в репозиторий** — см. `.cursor/rules/project-context.mdc`.
 > Включать **запросы пользователя текстом** (секция «Запросы пользователя»).
 
-**Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
-**Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-26 — Real orders: market/limit param, broker commission FinRes, free_cash default
+**Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
+**GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
+**Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
+**Последнее обновление:** 2026-07-26 — Pages → OsEngine; MultiLogicTradePg repo archived
 
-> **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
+> **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
 
@@ -117,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Pages → OsEngine; MultiLogicTradePg archived)
+
+- GitHub Pages деплоится из **OsEngine** (`.github/workflows/pages.yml`), сайт: https://robinzgit.github.io/OsEngine/
+- Angular `baseHref` / CI `--base-href` → `/OsEngine/`
+- Репозиторий `RobinZGit/MultiLogicTradePg` **архивирован** (не удалён); старый workflow Pages помечен DEPRECATED
+- Единственная рабочая копия: `related projects/MultiLogicTradePg` в OsEngine
 
 ### 2026-07-26 (Бой: order_execution, free_cash default, комиссия с T-Bank)
 
@@ -422,7 +430,7 @@
 - [x] Live+test equity/papers parity; portfolio SL/TP on equity; remember test period; pnl-summary align; installer (2026-07-18).
 - [x] Cash-fund params + header DB/gear + cleanup settings panel/SQL/API; installer (2026-07-18).
 - [ ] Smoke-test полной установки Setup.exe на чистой Windows VM (Node/Postgres/DB/npm/UI).
-- [ ] Синхронизировать mirror OsEngine → upstream `RobinZGit/MultiLogicTradePg` (когда есть write-доступ к тому репо).
+- [x] Pages на OsEngine; `RobinZGit/MultiLogicTradePg` archived (2026-07-26).
 - [x] Trade runner: auto-buy cash fund (TMON/LQDT/SBMM) when free cash > threshold — `logic_park_excess_cash` (2026-07-18).
 - [x] pg_cron / Node daily schedule for cleanup when `APP_CLEANUP_DISK` is on (2026-07-18).
 - [x] Futures testing/live: MOEX M15 via M1 resample; asset aliases; 1-lot opens; T-Bank token restore on bad verify (2026-07-18).
@@ -460,6 +468,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Pages → OsEngine (/OsEngine/); archive RobinZGit/MultiLogicTradePg (read-only); single copy in OsEngine |
 | 2026-07-26 | Real: order_execution market/limit; free_cash default; broker commission FinRes; stop→T-Bank; installers; push |
 | 2026-07-26 | Backtest reports archive in Postgres + «Отчёты тестов» UI (prev/next); async persist; installers; push |
 | 2026-07-26 | Process strip fixed height + horizontal chip scroll; no logics jump; push |
@@ -616,6 +625,8 @@
 ---
 
 ## Запросы пользователя (текст)
+
+678. Move Pages to OsEngine; do not delete MultiLogicTradePg repo — archive it.
 
 677. PUSH!
 

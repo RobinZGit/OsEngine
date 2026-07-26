@@ -56,7 +56,7 @@
           },
           "configurations": {
             "production": {
-              "baseHref": "/MultiLogicTradePg/",
+              "baseHref": "/OsEngine/",
               "fileReplacements": [
                 {
                   "replace": "src/environments/environment.ts",

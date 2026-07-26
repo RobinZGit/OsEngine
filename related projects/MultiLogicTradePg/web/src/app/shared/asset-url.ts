@@ -1,5 +1,5 @@
 /**
- * URL для файлов из assets/ с учётом base-href (GitHub Pages: /MultiLogicTradePg/).
+ * URL для файлов из assets/ с учётом base-href (GitHub Pages: /OsEngine/).
  * HttpClient с путём `assets/...` иначе бьёт в корень домена и 404.
  */
 export function assetUrl(path: string): string {

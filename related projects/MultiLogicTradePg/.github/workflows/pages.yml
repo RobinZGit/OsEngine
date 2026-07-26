@@ -1,95 +1,23 @@
-name: Deploy web to GitHub Pages
+# DEPRECATED — GitHub Pages moved to OsEngine.
+# Live site: https://robinzgit.github.io/OsEngine/
+# Workflow: RobinZGit/OsEngine → .github/workflows/pages.yml
+# This file is kept only for history in the archived MultiLogicTradePg repo.
+
+name: Deploy web to GitHub Pages (DEPRECATED — use OsEngine)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'web/**'
-      - 'docs/PROJECT_CONTEXT.md'
-      - 'docs/LOCAL_SETUP.md'
-      - '00_create_database.sql'
-      - '01_multilogictrade_tables_and_data.sql'
-      - '02_multilogictrade_functions_and_procedures.sql'
-      - 'scripts/generate-offline-schema.mjs'
-      - 'scripts/sync-project-context-to-assets.mjs'
-      - 'scripts/verify-sql.mjs'
-      - 'scripts/verify-indicators.mjs'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  build:
+  notice:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Setup PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client postgresql
-
-      - name: Verify SQL scripts (01 + 02 core + indicators)
-        env:
-          PGPASSWORD: postgres
-          PGUSER: postgres
-          PGHOST: localhost
+      - name: Pages moved to OsEngine
         run: |
-          sudo service postgresql start
-          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-          node scripts/verify-sql.mjs --core-only
-          node scripts/verify-indicators.mjs
-
-      - name: Install dependencies
-        working-directory: web
-        run: npm ci
-
-      - name: Unit tests (Angular)
-        working-directory: web
-        run: npm run test:unit -- --browsers=ChromeHeadlessCI
-
-      - name: Sync PROJECT_CONTEXT into web assets + offline schema
-        working-directory: web
-        run: |
-          npm run sync:context
-          npm run generate:schema
-
-      - name: Build Angular (GitHub Pages)
-        working-directory: web
-        # verify:sql + test:unit уже выше; sync:context + schema — шаг перед build
-        # (npx ng build не вызывает prebuild → без sync контекст на Pages пропадал)
-        run: npx ng build --configuration production --base-href "/MultiLogicTradePg/"
-
-      - name: SPA fallback
-        working-directory: web
-        run: cp dist/web/browser/index.html dist/web/browser/404.html
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: web/dist/web/browser
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          echo "GitHub Pages for MultiLogicTradePg now deploys from RobinZGit/OsEngine."
+          echo "URL: https://robinzgit.github.io/OsEngine/"
+          echo "This repository is archived; do not deploy from here."
+          exit 1
