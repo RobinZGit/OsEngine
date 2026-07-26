@@ -52,7 +52,7 @@ export function valueUnitLabel(unit: LogicStopValueUnit): string {
   return unit === 'percent' ? '%' : 'ATR';
 }
 
-/** Типы scope для стоп-лосса. */
+/** Типы scope для стоп-лосса (все видимы в списке; часть недоступна для выбора). */
 export const LOGIC_STOP_SCOPES_STOP_LOSS: LogicStopScopeType[] = [
   'security',
   'security_resume',
@@ -61,12 +61,32 @@ export const LOGIC_STOP_SCOPES_STOP_LOSS: LogicStopScopeType[] = [
   'portfolio_resume',
 ];
 
-/** Типы scope для тейк-профита. */
+/** Типы scope для тейк-профита (все видимы; портфельные — недоступны для выбора). */
 export const LOGIC_STOP_SCOPES_TAKE_PROFIT: LogicStopScopeType[] = [
   'security',
   'portfolio',
   'portfolio_ltp_renew',
 ];
+
+/**
+ * Scope, которые показываем в UI, но нельзя выбрать при создании/смене типа.
+ * Уже сохранённые правила с этими типами остаются в таблице.
+ *
+ * SL: инверсия при повторной просадке; портфель с обновлением.
+ * TP: любые типы по всему портфелю логики.
+ */
+export function isStopScopeChoosable(
+  scope: LogicStopScopeType,
+  ruleKind: LogicStopRuleKind
+): boolean {
+  if (ruleKind === 'stop_loss') {
+    return scope !== 'security_inversion' && scope !== 'portfolio_resume';
+  }
+  if (ruleKind === 'take_profit') {
+    return scope === 'security';
+  }
+  return false;
+}
 
 export function stopScopesForRuleKind(
   ruleKind: LogicStopRuleKind

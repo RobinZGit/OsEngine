@@ -90,6 +90,18 @@ function isScopeValidForRuleKind(ruleKind, scopeType) {
   return false;
 }
 
+/** UI: видимы, но нельзя выбрать при создании / смене типа. */
+function isScopeChoosableForRuleKind(ruleKind, scopeType) {
+  if (!isScopeValidForRuleKind(ruleKind, scopeType)) return false;
+  if (ruleKind === 'stop_loss') {
+    return scopeType !== 'security_inversion' && scopeType !== 'portfolio_resume';
+  }
+  if (ruleKind === 'take_profit') {
+    return scopeType === 'security';
+  }
+  return false;
+}
+
 const warmupWatchers = new Set();
 
 function localIsoDate(d = new Date()) {
@@ -2520,6 +2532,15 @@ app.post('/api/logic-stops', async (req, res) => {
     });
     return;
   }
+  if (!isScopeChoosableForRuleKind(ruleKind, scopeType)) {
+    res.status(400).json({
+      error:
+        ruleKind === 'take_profit'
+          ? 'take_profit by portfolio is not choosable (only security)'
+          : 'this stop-loss scope is not choosable (security_inversion / portfolio_resume)',
+    });
+    return;
+  }
   if (valueUnit !== 'percent' && valueUnit !== 'atr') {
     res.status(400).json({ error: 'value_unit must be percent or atr' });
     return;
@@ -2587,6 +2608,15 @@ app.put('/api/logic-stops/:id', async (req, res) => {
             ruleKind === 'take_profit'
               ? 'scope_type for take_profit must be security, portfolio or portfolio_ltp_renew'
               : 'scope_type must be security, security_resume, security_inversion, portfolio or portfolio_resume',
+        });
+        return;
+      }
+      if (!isScopeChoosableForRuleKind(ruleKind, scopeType)) {
+        res.status(400).json({
+          error:
+            ruleKind === 'take_profit'
+              ? 'take_profit by portfolio is not choosable (only security)'
+              : 'this stop-loss scope is not choosable (security_inversion / portfolio_resume)',
         });
         return;
       }

@@ -16,6 +16,11 @@ export const PROJECT_CONTEXT_DOCS: { id: string; title: string; asset: string }[
     asset: 'assets/project-context/PROJECT_CONTEXT.md',
   },
   {
+    id: 'user-instructions',
+    title: 'Инструкции пользователя',
+    asset: 'assets/project-context/USER_INSTRUCTIONS.md',
+  },
+  {
     id: 'local-setup',
     title: 'Локальная установка (контекст)',
     asset: 'assets/project-context/LOCAL_SETUP.md',
@@ -88,12 +93,18 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 
 В шапке:
 • Логирование — пишет события в app_tech_log (trade runner, сигналы, ошибки).
-• Книга (эта справка) — описание экранов и понятий; отдельная глава «Контекст проекта» — живой docs/PROJECT_CONTEXT.md (решения, история, запросы).
+• Книга (эта справка) — описание экранов и понятий; «Контекст проекта» — docs/PROJECT_CONTEXT.md; «Инструкции пользователя» — только формулировки запросов Sergey (docs/USER_INSTRUCTIONS.md).
 • Шестерёнка — структура БД (таблицы / функции / процедуры / диаграмма FK). При работающем API читает живую PostgreSQL; если БД недоступна — из SQL-скриптов репозитория (schema-offline.json).`,
   },
   {
     id: 'project-context',
     title: 'Контекст проекта',
+    kind: 'project-context',
+    body: '',
+  },
+  {
+    id: 'user-instructions',
+    title: 'Инструкции пользователя',
     kind: 'project-context',
     body: '',
   },
@@ -121,7 +132,7 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 • Параметры — таймфрейм, % позиции, лимит позиций, балансы, комиссия, FIFO/AVERAGE, базовая ставка рейтинга, lookback, инверсия, прогрев (warmup_pretest), денежный фонд (cash_fund_code / cash_fund_threshold: на каждой закрытой свече TF, если equity > порога — BUY TMON/LQDT/SBMM на min(кэш, избыток−уже_в_фонде); фонд не продаём; тест и бой; fake — sim), сброс баланса.
 В тесте колонка «Бар» — время свечи сигнала, не момент прогона теста.
 • Сигналы — open/close × long/short; AND внутри группы (все условия группы должны сработать). Формула вида @SMA(period=20) VALUE > pp. Рейтинг боя — сумма по бумагам. Оптимизация параметров на лету — OPT() (см. главу «Формулы сигналов и OPT()»).
-• Стоп-лосс / тейк-профит — по умолчанию: SL security_resume (бумага×сторона, возобновление при сумме прерывания), TP portfolio_ltp_renew 5% (линейный тейк по портфелю с renew). Также: security, security_inversion, portfolio, portfolio_resume.
+• Стоп-лосс / тейк-профит — в списке типов видны все варианты; недоступны для выбора (серые): SL «инверсия при повторной просадке», SL «портфель с обновлением», любые TP по всему портфелю логики. Доступны: SL security / security_resume / portfolio; TP только по бумаге. Уже сохранённые недоступные типы остаются в таблице.
 • Ценные бумаги — портфель логики; лотность учитывается при открытии.
 • Позиции — боевые сделки; Тестирование — бэктест с эквити и рейтингами на бумаге; кнопки Экспорт / Отчёт (HTML: Profit Factor, просадка, Sharpe…) / Запуск·Стоп.
 

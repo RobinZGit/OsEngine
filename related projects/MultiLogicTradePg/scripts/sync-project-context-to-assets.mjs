@@ -13,6 +13,7 @@ const assetsDir = path.join(root, 'web', 'src', 'assets', 'project-context');
 const files = [
   'docs/PROJECT_CONTEXT.md',
   'docs/LOCAL_SETUP.md',
+  'docs/USER_INSTRUCTIONS.md',
 ];
 
 fs.mkdirSync(assetsDir, { recursive: true });

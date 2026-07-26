@@ -40,6 +40,7 @@ import {
   LogicStopRuleKind,
   LogicStopScopeType,
   LogicStopValueUnit,
+  isStopScopeChoosable,
   ruleKindLabel,
   scopeTypeLabel,
   stopScopesForRuleKind,
@@ -239,6 +240,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   readonly stopUnits = LOGIC_STOP_UNITS;
   stopScopesFor = stopScopesForRuleKind;
+  isStopScopeChoosable = isStopScopeChoosable;
 
   tbankTokenDialogOpen = false;
   tbankTokenDialogContext: 'prices' | 'logic' | 'trades' = 'logic';
@@ -2026,9 +2028,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     event.stopPropagation();
     this.stopForm = { logicId, ruleKind };
     this.stopFormDraft = {
-      // SL: по бумаге×стороне с возобновлением; TP: линейный по портфелю с renew
-      scope_type:
-        ruleKind === 'stop_loss' ? 'security_resume' : 'portfolio_ltp_renew',
+      // SL: по бумаге×стороне с возобновлением; TP: только по бумаге (портфельные TP недоступны)
+      scope_type: ruleKind === 'stop_loss' ? 'security_resume' : 'security',
       value: '',
       value_unit: 'percent',
     };
@@ -2057,6 +2058,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
     const { logicId, ruleKind } = this.stopForm;
+    if (!isStopScopeChoosable(this.stopFormDraft.scope_type, ruleKind)) {
+      alert('Этот тип правила сейчас недоступен для выбора');
+      return;
+    }
     this.logicsService
       .createLogicStop({
         logic_id: logicId,
@@ -2086,6 +2091,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
   ): void {
     if (this.savingStopIds.has(stop.id)) return;
+    if (
+      patch.scope_type != null &&
+      !isStopScopeChoosable(patch.scope_type, stop.rule_kind)
+    ) {
+      return;
+    }
     this.savingStopIds.add(stop.id);
     this.logicsService.updateLogicStop(stop.id, patch).subscribe({
       next: (updated) => {

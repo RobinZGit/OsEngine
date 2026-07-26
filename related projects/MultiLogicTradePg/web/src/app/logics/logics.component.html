@@ -1582,7 +1582,12 @@
                                 <span>Тип</span>
                                 <select [(ngModel)]="stopFormDraft.scope_type">
                                   @for (sc of stopScopesFor(stopForm.ruleKind); track sc) {
-                                    <option [ngValue]="sc">{{ scopeTypeLabel(sc, stopForm.ruleKind) }}</option>
+                                    <option
+                                      [ngValue]="sc"
+                                      [disabled]="!isStopScopeChoosable(sc, stopForm.ruleKind)"
+                                    >
+                                      {{ scopeTypeLabel(sc, stopForm.ruleKind) }}
+                                    </option>
                                   }
                                 </select>
                               </label>
@@ -1671,7 +1676,12 @@
                                     (ngModelChange)="saveStopRow(stop, { scope_type: $event })"
                                   >
                                     @for (sc of stopScopesFor(stop.rule_kind); track sc) {
-                                      <option [ngValue]="sc">{{ scopeTypeLabel(sc, stop.rule_kind) }}</option>
+                                      <option
+                                        [ngValue]="sc"
+                                        [disabled]="!isStopScopeChoosable(sc, stop.rule_kind)"
+                                      >
+                                        {{ scopeTypeLabel(sc, stop.rule_kind) }}
+                                      </option>
                                     }
                                   </select>
 
