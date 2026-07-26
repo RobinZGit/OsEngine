@@ -21,8 +21,10 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion} (build {#MyAppBuild})
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoProductVersion={#MyAppVersion}
+VersionInfoProductName={#MyAppName}
+UninstallDisplayName={#MyAppName} {#MyAppVersion} (build {#MyAppBuild})
 DefaultDirName={autopf}\MultiLogicTradePg
 DefaultGroupName=MultiLogic Trade
 DisableProgramGroupPage=yes
@@ -40,6 +42,12 @@ UninstallDisplayIcon={sys}\cmd.exe
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+; Bottom strip on every wizard page (always visible).
+[Messages]
+BeveledLabel=Version {#MyAppVersion}  |  Build {#MyAppBuild}
+russian.BeveledLabel=Версия {#MyAppVersion}  |  Сборка {#MyAppBuild}
+english.BeveledLabel=Version {#MyAppVersion}  |  Build {#MyAppBuild}
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
@@ -81,6 +89,35 @@ begin
     Result := 'create'
   else
     Result := GDbMode;
+end;
+
+procedure InitializeWizard();
+begin
+  { Bottom strip on every wizard page. }
+  if ActiveLanguage = 'russian' then
+    WizardForm.BeveledLabel.Caption := 'Версия {#MyAppVersion}  |  Сборка {#MyAppBuild}'
+  else
+    WizardForm.BeveledLabel.Caption := 'Version {#MyAppVersion}  |  Build {#MyAppBuild}';
+
+  { Welcome page: version and build first so they are obvious. }
+  if ActiveLanguage = 'russian' then
+  begin
+    WizardForm.WelcomeLabel1.Caption := 'Установка MultiLogicTradePg';
+    WizardForm.WelcomeLabel2.Caption :=
+      'Версия: {#MyAppVersion}'#13#10 +
+      'Сборка: {#MyAppBuild}'#13#10#13#10 +
+      'Мастер установит MultiLogicTradePg на ваш компьютер.'#13#10#13#10 +
+      'Нажмите «Далее» для продолжения.';
+  end
+  else
+  begin
+    WizardForm.WelcomeLabel1.Caption := 'MultiLogicTradePg Setup';
+    WizardForm.WelcomeLabel2.Caption :=
+      'Version: {#MyAppVersion}'#13#10 +
+      'Build: {#MyAppBuild}'#13#10#13#10 +
+      'This will install MultiLogicTradePg on your computer.'#13#10#13#10 +
+      'Click Next to continue.';
+  end;
 end;
 
 procedure PreparePostInstall();
@@ -128,11 +165,12 @@ begin
     or RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', UninstallString) then
   begin
     Answer := MsgBox(
-      'MultiLogicTradePg уже установлен.'#13#10#13#10 +
-      'Да — удалить старую установку и поставить заново (БД пересоздаётся, данные стираются).'#13#10 +
-      'Нет — установить поверх: файлы и npm обновятся; база НЕ удаляется,'#13#10 +
+      'MultiLogicTradePg уже установлен.'#13#10 +
+      'Новый пакет: версия {#MyAppVersion}, сборка {#MyAppBuild}'#13#10#13#10 +
+      'Да - удалить старую установку и поставить заново (БД пересоздаётся, данные стираются).'#13#10 +
+      'Нет - установить поверх: файлы и npm обновятся; база НЕ удаляется,'#13#10 +
       'схема обновится скриптами 01/02 (цены, сделки, логики сохраняются).'#13#10 +
-      'Отмена — остановить установку.'#13#10#13#10 +
+      'Отмена - остановить установку.'#13#10#13#10 +
       'Перед установкой закройте MultiLogic Trade (окна API/Angular), если они открыты.',
       mbConfirmation,
       MB_YESNOCANCEL

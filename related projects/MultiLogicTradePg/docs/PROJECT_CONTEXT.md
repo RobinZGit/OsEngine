@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — installer Build number in VERSION.txt / INSTALL_PROTOCOL (+ v54b seed)
+**Последнее обновление:** 2026-07-26 — version+build on Inno wizard UI (Welcome + BeveledLabel)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (номер сборки на форме установщика)
+
+- На мастере Inno: Welcome — «Версия / Сборка»; полоска `BeveledLabel` на всех страницах; диалог «уже установлен» тоже показывает версию/сборку; `UninstallDisplayName` с build.
+- Ранее: `VERSION.txt` + протокол + bump `BUILD_NUMBER` при сборке.
 
 ### 2026-07-26 (номер сборки установщика)
 
@@ -571,6 +576,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Show version+build on Inno wizard form; rebuild; push |
 | 2026-07-26 | Installer build number (VERSION.txt in protocol); rebuild; push |
 | 2026-07-26 | v54b: ensure_seed_logics.sql + installer seed check; installers; push |
 | 2026-07-26 | v54 seed ensure on install-on-top (LinReg Fade Optimized + all defaults); installers; push |
