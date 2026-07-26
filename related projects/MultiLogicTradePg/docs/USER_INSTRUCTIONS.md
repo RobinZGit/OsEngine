@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+702. Anyway, this new logic did not appear, although it seems that the assembly number appeared in the installer. (protocol Build 59, ExitCode 1, install.ps1 ParserError on DbMode=$DbMode:).
+
 701. Add the assembly number to the form of the installer, when it is installed, so that it is immediately visible. There is now version 1.0.0 and the assembly number after the version of some. and immediately put it in the repository.
 
 700. The same thing is not established in the logic of VINREC FADE OPTIMIZED. Look, maybe you still need to add the assembly number somewhere in the installers, increase it every time when unloading and export it to the protocol for installation. Although, I think, maybe you will understand anyway whether I have a new version or not. (protocol 16:42: upgrade, logics 46→46, old reset message).

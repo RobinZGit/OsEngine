@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — version+build on Inno wizard UI (Welcome + BeveledLabel)
+**Последнее обновление:** 2026-07-26 — fix install.ps1 ParserError (DbMode=$DbMode: / throw parens) blocking seed
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (install.ps1 ParserError — seed не запускался)
+
+- **Протокол 17:00 Build 59, ExitCode 1:** `Variable reference is not valid` на `DbMode=$DbMode:` и каскад ошибок на `throw "...(02 restored..."`.
+- Post-install **не выполнялся** → ensure_seed / LinReg Fade Optimized не ставились.
+- **Фикс:** безопасные строки (`-f` / без `$var:` и без `(02` в expandable string); ASCII-only предупреждения.
 
 ### 2026-07-26 (номер сборки на форме установщика)
 
@@ -576,6 +582,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Fix install.ps1 parse errors blocking upgrade seed; rebuild; push |
 | 2026-07-26 | Show version+build on Inno wizard form; rebuild; push |
 | 2026-07-26 | Installer build number (VERSION.txt in protocol); rebuild; push |
 | 2026-07-26 | v54b: ensure_seed_logics.sql + installer seed check; installers; push |
