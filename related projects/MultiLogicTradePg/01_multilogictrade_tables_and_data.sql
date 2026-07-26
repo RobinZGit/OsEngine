@@ -1326,10 +1326,6 @@ ON CONFLICT (param_key) DO UPDATE SET
     description = EXCLUDED.description,
     display_order = EXCLUDED.display_order;
 
--- Плечо задаётся только как % × max_open_positions (отдельный param не используем).
-DELETE FROM logic_params WHERE param_key = 'margin_leverage';
-DELETE FROM logic_param_defs WHERE param_key = 'margin_leverage';
-
 CREATE TABLE IF NOT EXISTS logic_params (
     id SERIAL PRIMARY KEY,
     logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
@@ -1345,6 +1341,11 @@ ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS param_key VARCHAR(64) REFERENC
 ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS param_value TEXT NOT NULL DEFAULT '';
 ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS value_type VARCHAR(20) CHECK (value_type IN ('number', 'integer', 'money', 'boolean', 'text'));
 ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Плечо задаётся только как % × max_open_positions (отдельный param не используем).
+-- Must run AFTER CREATE logic_params (fresh verify DB / wipe).
+DELETE FROM logic_params WHERE param_key = 'margin_leverage';
+DELETE FROM logic_param_defs WHERE param_key = 'margin_leverage';
 
 -- Upgrade: старый дефолт порога TMON 100000 → 1000000 (= initial_balance теста)
 -- Must run AFTER CREATE logic_params (fresh DBs / wipe recreate public schema).

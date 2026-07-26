@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — UI: не грузить 50k test trades while backtest running (params hang fix)
+**Последнее обновление:** 2026-07-26 — fix Pages CI: DELETE margin_leverage after CREATE logic_params
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (GitHub Pages CI: verify-sql падал)
+
+- **Ошибка:** `relation "logic_params" does not exist` (01:1330) на чистой `multilogictrade_verify`.
+- **Причина:** `DELETE FROM logic_params … margin_leverage` стоял **до** `CREATE TABLE logic_params` (с коммита exposure cap).
+- **Фикс:** DELETE перенесён после CREATE/ALTER.
 
 ### 2026-07-26 (форма «висит» при раскрытии параметров во время теста)
 
@@ -634,6 +640,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Fix Pages CI: DELETE margin_leverage after CREATE logic_params; push |
 | 2026-07-26 | Skip loading 50k test trades while backtest running (UI hang); push |
 | 2026-07-26 | UI opt_eval_candles=20 + reset all logics; installers; push |
 | 2026-07-26 | Switch: after Close refresh exposure+% base (no param); installers; push |
