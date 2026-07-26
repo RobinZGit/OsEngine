@@ -12,12 +12,21 @@ import { ReferencesService } from '../services/references.service';
 import { AppConfigService, apiErrorMessage } from '../services/app-config.service';
 import { AccountRow, BondFundInfo, BuyBondsResult } from '../models/lookup.model';
 
+/** Локальный fallback — форма доступна сразу, без ожидания API. */
+const DEFAULT_FUNDS: BondFundInfo[] = [
+  {
+    code: 'TBRU',
+    name: 'Т-Капитал Облигации',
+    holdings_count: undefined,
+  },
+];
+
 @Component({
   selector: 'app-buy-bonds-dialog',
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './buy-bonds-dialog.component.html',
-  styleUrls: ['../shared/dialog-form.css', './buy-bonds-dialog.component.css'],
+  styleUrls: ['./buy-bonds-dialog.component.css'],
 })
 export class BuyBondsDialogComponent implements OnChanges {
   @Input() open = false;
@@ -26,10 +35,10 @@ export class BuyBondsDialogComponent implements OnChanges {
   @Output() closed = new EventEmitter<void>();
   @Output() done = new EventEmitter<void>();
 
-  funds: BondFundInfo[] = [];
+  funds: BondFundInfo[] = [...DEFAULT_FUNDS];
   fundCode = 'TBRU';
   amountRub = '';
-  loading = false;
+  fundsLoading = false;
   planning = false;
   executing = false;
   error: string | null = null;
@@ -43,7 +52,10 @@ export class BuyBondsDialogComponent implements OnChanges {
   ) {}
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['open']?.currentValue === true && this.account) {
+    const opened = changes['open']?.currentValue === true;
+    const accountArrived =
+      !!changes['account']?.currentValue && this.open === true;
+    if ((opened || accountArrived) && this.account) {
       this.reset();
       this.bootstrap();
     }
@@ -66,7 +78,6 @@ export class BuyBondsDialogComponent implements OnChanges {
   }
 
   onAmountOrFundChange(): void {
-    // Сумма всегда редактируема; после правки нужен новый расчёт.
     this.planReady = false;
   }
 
@@ -171,32 +182,39 @@ export class BuyBondsDialogComponent implements OnChanges {
     this.planReady = false;
     this.planning = false;
     this.executing = false;
+    this.fundsLoading = false;
+    this.funds = [...DEFAULT_FUNDS];
   }
 
   private bootstrap(): void {
     if (!this.account) return;
-    this.loading = true;
+
+    const cash =
+      this.account.cash_amount ??
+      (this.account.balance != null ? this.account.balance : null);
+    if (cash != null && Number.isFinite(Number(cash)) && Number(cash) > 0) {
+      this.amountRub = String(Math.floor(Number(cash)));
+    }
+
+    // Форма уже интерактивна; фонды подтягиваем в фоне.
+    this.fundsLoading = true;
     this.refs.getBondFunds().subscribe({
       next: (funds) => {
-        this.funds = funds;
-        if (funds.length && !funds.some((f) => f.code === this.fundCode)) {
-          this.fundCode = funds[0].code;
+        if (funds?.length) {
+          this.funds = funds;
+          if (!funds.some((f) => f.code === this.fundCode)) {
+            this.fundCode = funds[0].code;
+          }
         }
-        const cash =
-          this.account?.cash_amount ??
-          (this.account?.balance != null ? this.account.balance : null);
-        if (cash != null && Number.isFinite(Number(cash)) && Number(cash) > 0) {
-          this.amountRub = String(Math.floor(Number(cash)));
-        }
-        this.loading = false;
-        // Не считаем автоматически — сначала сумма, затем «Рассчитать».
+        this.fundsLoading = false;
       },
       error: (err) => {
-        this.loading = false;
+        this.fundsLoading = false;
+        // Фонд TBRU уже в списке — не блокируем UI.
         this.error = apiErrorMessage(
           this.appConfig.apiUrl,
           err,
-          'Не удалось загрузить фонды'
+          'Список фондов с API не загрузился — используем TBRU'
         );
       },
     });

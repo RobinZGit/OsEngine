@@ -1,155 +1,164 @@
 @if (open) {
-  <div class="backdrop" (click)="close()"></div>
-  <dialog class="dialog dialog-wide" open>
-    <header class="dialog-header">
+  <div class="bb-backdrop" (click)="close()"></div>
+  <div
+    class="bb-dialog"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="title"
+    (click)="$event.stopPropagation()"
+  >
+    <header class="bb-header">
       <h2>{{ title }}</h2>
-      <button type="button" class="icon-btn" (click)="close()" [disabled]="executing" aria-label="Закрыть">×</button>
+      <button type="button" class="bb-close" (click)="close()" [disabled]="executing" aria-label="Закрыть">×</button>
     </header>
-    <div class="dialog-body">
-      @if (loading) {
-        <p class="status">Загрузка…</p>
-      } @else {
-        <div class="form">
-          <label class="field">
-            <span class="label">Фонд облигаций</span>
-            <select
-              class="params-input"
-              [(ngModel)]="fundCode"
-              [disabled]="executing"
-              (ngModelChange)="onAmountOrFundChange()"
-            >
-              @for (f of funds; track f.code) {
-                <option [value]="f.code">{{ f.name }} ({{ f.holdings_count }} выпусков)</option>
-              }
-            </select>
-            <span class="hint">
+
+    <div class="bb-body">
+      <div class="bb-form">
+        <label class="bb-field">
+          <span class="bb-label">Фонд облигаций</span>
+          <select
+            class="bb-input"
+            [(ngModel)]="fundCode"
+            (ngModelChange)="onAmountOrFundChange()"
+          >
+            @for (f of funds; track f.code) {
+              <option [value]="f.code">
+                {{ f.name }}@if (f.holdings_count != null) { ({{ f.holdings_count }} выпусков) }
+              </option>
+            }
+          </select>
+          @if (fundsLoading) {
+            <span class="bb-hint">Обновление списка фондов…</span>
+          } @else {
+            <span class="bb-hint">
               Состав БПИФ «Т-Капитал Облигации»: покупка отдельных выпусков, не самого ETF.
-              Порядок — от более доходных (часто корпоративы) к менее (ОФЗ).
-              Доступно на любом счёте в справочнике; заявки у брокера — при токене T-Bank.
+              Порядок — от более доходных к менее (ОФЗ).
             </span>
-          </label>
+          }
+        </label>
 
-          <label class="field">
-            <span class="label">Сумма покупки, ₽</span>
-            <input
-              type="text"
-              inputmode="decimal"
-              class="params-input"
-              [(ngModel)]="amountRub"
-              [disabled]="executing"
-              (ngModelChange)="onAmountOrFundChange()"
-              placeholder="Введите сумму, затем нажмите «Рассчитать»"
-            />
-            <span class="hint">
-              Поле всегда можно править. Сначала «Рассчитать», потом «Купить».
-              @if (plan?.cash_amount != null) {
-                Свободный кэш счёта: {{ formatMoney(plan!.cash_amount) }} ₽.
+        <label class="bb-field">
+          <span class="bb-label">Сумма покупки, ₽</span>
+          <input
+            type="text"
+            inputmode="decimal"
+            class="bb-input"
+            name="amountRub"
+            [(ngModel)]="amountRub"
+            (ngModelChange)="onAmountOrFundChange()"
+            placeholder="Введите сумму, затем «Рассчитать»"
+            autocomplete="off"
+          />
+          <span class="bb-hint">
+            Поле всегда можно править. Сначала «Рассчитать», потом «Купить».
+            @if (plan?.cash_amount != null) {
+              Свободный кэш счёта: {{ formatMoney(plan!.cash_amount) }} ₽.
+            }
+          </span>
+        </label>
+
+        <div class="bb-actions">
+          <button
+            type="button"
+            class="bb-btn bb-btn-calc"
+            (click)="buildPlan()"
+            [disabled]="planning || executing || !account"
+          >
+            {{ planning ? 'Расчёт…' : 'Рассчитать' }}
+          </button>
+          <button
+            type="button"
+            class="bb-btn"
+            [class.bb-btn-buy-pale]="!planReady"
+            [class.bb-btn-buy-ready]="planReady"
+            (click)="confirmBuy()"
+            [disabled]="planning || executing || !planReady"
+          >
+            {{ executing ? 'Выставляю…' : 'Купить по плану' }}
+          </button>
+        </div>
+
+        @if (error) {
+          <p class="bb-error">{{ error }}</p>
+        }
+
+        @if (plan) {
+          <div class="bb-plan-summary">
+            <div>
+              План: <strong>{{ formatMoney(plan.amount_planned) }} ₽</strong>
+              · выпусков {{ plan.buy_count ?? 0 }}
+              @if (plan.fund_as_of) {
+                · состав на {{ plan.fund_as_of }}
               }
-            </span>
-          </label>
-
-          <div class="actions-row">
-            <button
-              type="button"
-              class="btn btn-calc"
-              (click)="buildPlan()"
-              [disabled]="planning || executing"
-              title="Сначала рассчитайте план по сумме"
-            >
-              {{ planning ? 'Расчёт…' : 'Рассчитать' }}
-            </button>
-            <button
-              type="button"
-              class="btn"
-              [class.btn-buy-pale]="!planReady"
-              [class.btn-buy-ready]="planReady"
-              (click)="confirmBuy()"
-              [disabled]="planning || executing || !planReady"
-              title="{{ planReady ? 'Купить по рассчитанному плану' : 'Сначала нажмите «Рассчитать»' }}"
-            >
-              {{ executing ? 'Выставляю…' : 'Купить по плану' }}
-            </button>
+            </div>
+            @if (plan.note) {
+              <div class="bb-hint">{{ plan.note }}</div>
+            }
           </div>
 
-          @if (error) {
-            <p class="form-error">{{ error }}</p>
+          <div class="bb-table-wrap">
+            <table class="bb-table">
+              <thead>
+                <tr>
+                  <th>ISIN</th>
+                  <th>Тип</th>
+                  <th>Доходн.%</th>
+                  <th>Лоты</th>
+                  <th>Сумма</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of plan.buys || []; track row.sec) {
+                  <tr>
+                    <td [title]="row.name || row.ticker || ''">{{ row.sec }}</td>
+                    <td>{{ row.kind === 'ofz' ? 'ОФЗ' : 'корп.' }}</td>
+                    <td>{{ row.yield_pct }}</td>
+                    <td>{{ row.lots }}</td>
+                    <td>{{ formatMoney(row.amount_rub) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="5" class="bb-empty">Нечего покупать на эту сумму</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          @if (plan.resolve_failed?.length) {
+            <p class="bb-hint bb-warn">
+              Не найдены у брокера: {{ plan.resolve_failed!.length }} ISIN (пропущены).
+            </p>
           }
 
-          @if (plan) {
-            <div class="plan-summary">
-              <div>План: <strong>{{ formatMoney(plan.amount_planned) }} ₽</strong>
-                · выпусков {{ plan.buy_count ?? 0 }}
-                @if (plan.fund_as_of) {
-                  · состав на {{ plan.fund_as_of }}
+          @if (plan.errors?.length) {
+            <div class="bb-report">
+              <div class="bb-report-title">Отчёт: ошибки заявок</div>
+              <ul>
+                @for (e of plan.errors!; track e.sec + (e.error || '')) {
+                  <li>
+                    <strong>{{ e.ticker || e.sec }}</strong>
+                    @if (e.lots) { · {{ e.lots }} лот. }
+                    — {{ e.error }}
+                  </li>
                 }
-              </div>
-              @if (plan.note) {
-                <div class="hint">{{ plan.note }}</div>
-              }
+              </ul>
             </div>
-            <div class="plan-table-wrap scroll-list-panel">
-              <table class="plan-table">
-                <thead>
-                  <tr>
-                    <th>ISIN</th>
-                    <th>Тип</th>
-                    <th>Доходн.%</th>
-                    <th>Лоты</th>
-                    <th>Сумма</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of plan.buys || []; track row.sec) {
-                    <tr>
-                      <td title="{{ row.name || row.ticker }}">{{ row.sec }}</td>
-                      <td>{{ row.kind === 'ofz' ? 'ОФЗ' : 'корп.' }}</td>
-                      <td>{{ row.yield_pct }}</td>
-                      <td>{{ row.lots }}</td>
-                      <td>{{ formatMoney(row.amount_rub) }}</td>
-                    </tr>
-                  } @empty {
-                    <tr><td colspan="5" class="empty">Нечего покупать на эту сумму</td></tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            @if (plan.resolve_failed; as failed) {
-              @if (failed.length) {
-                <p class="hint warn">
-                  Не найдены у брокера: {{ failed.length }} ISIN (пропущены).
-                </p>
-              }
-            }
-            @if (plan.errors?.length) {
-              <div class="report-block">
-                <div class="report-title">Отчёт: ошибки заявок</div>
-                <ul class="report-list">
-                  @for (e of plan.errors; track e.sec + (e.error || '')) {
-                    <li>
-                      <strong>{{ e.ticker || e.sec }}</strong>
-                      @if (e.lots) { · {{ e.lots }} лот. }
-                      — {{ e.error }}
-                    </li>
-                  }
-                </ul>
-              </div>
-            }
-            @if (plan.placed?.length) {
-              <div class="report-block report-ok">
-                <div class="report-title">Отчёт: выставлено</div>
-                <ul class="report-list">
-                  @for (p of plan.placed; track p.figi + '-' + p.lots) {
-                    <li>
-                      <strong>{{ p.ticker || p.sec }}</strong>
-                      · {{ p.lots }} лот. @ {{ formatMoney(p.price) }}
-                    </li>
-                  }
-                </ul>
-              </div>
-            }
           }
-        </div>
-      }
+
+          @if (plan.placed?.length) {
+            <div class="bb-report bb-report-ok">
+              <div class="bb-report-title">Отчёт: выставлено</div>
+              <ul>
+                @for (p of plan.placed!; track (p.figi || p.sec) + '-' + p.lots) {
+                  <li>
+                    <strong>{{ p.ticker || p.sec }}</strong>
+                    · {{ p.lots }} лот. @ {{ formatMoney(p.price) }}
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        }
+      </div>
     </div>
-  </dialog>
+  </div>
 }
