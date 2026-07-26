@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — buy-bonds: фонды TBRU + SBGB + OBLG, состав с MOEX ISS
+**Последнее обновление:** 2026-07-26 — v54: install-on-top ensure всех seed-логик (LinReg Fade Optimized)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -29,7 +29,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v51**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v54**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (v54: seed-логики при install-on-top)
+
+- **Проблема:** на установке поверх «LinReg Fade Optimized» (и др. новые seed) могли не появиться: хрупкий счёт FAKE-EFF-001; бумаги Optimized копировались до назначения у LinReg Fade; при обрыве `01` ensure не добивал каталог.
+- **Фикс:** UNIQUE(name) на upgrade; account fallback (любой fake T-BANK); Optimized в списке бумаг после LinReg Fade; финальный ensure-блок всех default seed (INSERT IF NOT EXISTS + params/securities/stops/сигналы Optimized).
 
 ### 2026-07-26 (Купить облигации: несколько фондов + зеркала)
 
@@ -559,6 +564,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | v54 seed ensure on install-on-top (LinReg Fade Optimized + all defaults); installers; push |
 | 2026-07-26 | Buy-bonds: TBRU+SBGB+OBLG; MOEX ISS holdings + mirrors; installers; push |
 | 2026-07-26 | Test annual % «—»: period from pnl-summary/trades when run gone; installers; push |
 | 2026-07-26 | Fix NG5002 @ in buy-bonds HTML (install-on-top ng serve); push |
@@ -736,4 +742,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **697** — buy-bonds несколько фондов + зеркала источников.
+Последние (см. USER_INSTRUCTIONS): **698** — install-on-top: seed-логики (LinReg Fade Optimized) если нет.

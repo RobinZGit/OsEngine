@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+698. Installation on top, on a new repository, the logic of linregoptimized, the last one, has not been transferred. You need to make it and all other logics by default installed on top, if they are not. It was. Check. If you fix it, then upload it immediately to the repository.
+
 697. Add the choice of buying bonds to a couple of funds similar to Tinkoff, because the link may be inaccessible, so that you can read the list from some other sources. And immediately upload to the repository.
 
 696. And look at why the annual interest was not calculated in the test, there is a mark.
