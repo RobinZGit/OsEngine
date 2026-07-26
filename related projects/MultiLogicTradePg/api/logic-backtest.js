@@ -1,6 +1,7 @@
 'use strict';
 
 const { writeTechLogEvent } = require('./lib/tech-log');
+const { schedulePersistBacktestReport } = require('./backtest-report-persist');
 
 /**
  * Параллельность подготовки бумаг внутри одного прогона.
@@ -231,6 +232,16 @@ async function updateRun(pool, runId, patch) {
     `UPDATE logic_backtest_runs SET ${fields.join(', ')} WHERE id = $1`,
     values
   );
+
+  // Archive report outside the hot path whenever a run reaches a terminal status.
+  const terminal = patch.status;
+  if (
+    terminal === 'completed' ||
+    terminal === 'cancelled' ||
+    terminal === 'failed'
+  ) {
+    schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
+  }
 }
 
 /**
@@ -1368,6 +1379,11 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
           tfId
         );
       }
+
+      // Rare archive snapshot — never awaited; skipped if previous persist still running.
+      if (bi > 0 && bi % 500 === 0) {
+        schedulePersistBacktestReport(pool, runId, { isSnapshot: true });
+      }
     }
 
     const pnl = await sumTestPnl(pool, logicId, runId);
@@ -1529,6 +1545,7 @@ async function finishCancelled(pool, runId, logicId, balance, processed, total) 
       proc,
     ]
   );
+  schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
 }
 
 async function startBacktest(pool, logicId, dateFrom, dateTo) {
@@ -1623,6 +1640,10 @@ async function cancelBacktest(pool, runId) {
     );
   } catch (_e) {
     /* ignore */
+  }
+
+  if (rowCount > 0) {
+    schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
   }
 
   return rowCount > 0;

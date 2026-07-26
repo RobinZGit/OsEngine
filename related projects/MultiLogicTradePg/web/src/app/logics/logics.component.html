@@ -102,7 +102,91 @@
         }
       }
     </div>
+    <button
+      type="button"
+      class="btn-test-reports"
+      title="Журнал отчётов тестов (PostgreSQL)"
+      (click)="openTestReports($event)"
+    >
+      Отчёты тестов
+    </button>
   </section>
+
+  @if (reportsOpen) {
+    <div class="reports-modal-backdrop" (click)="closeTestReports()" role="presentation"></div>
+    <div
+      class="reports-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Отчёты тестов"
+      (click)="$event.stopPropagation()"
+    >
+      <header class="reports-modal-head">
+        <div class="reports-modal-title">
+          <strong>Отчёты тестов</strong>
+          <span class="reports-modal-sub">архив PostgreSQL · ← → навигация</span>
+        </div>
+        <div class="reports-nav">
+          <button
+            type="button"
+            class="btn-report-nav"
+            [disabled]="reportPrevId == null || reportNavBusy"
+            title="Более старый (←)"
+            (click)="reportGoOlder()"
+          >
+            ← Назад
+          </button>
+          <button
+            type="button"
+            class="btn-report-nav"
+            [disabled]="reportNextId == null || reportNavBusy"
+            title="Более новый (→)"
+            (click)="reportGoNewer()"
+          >
+            Вперёд →
+          </button>
+          <button type="button" class="btn-report-close" (click)="closeTestReports()">Закрыть</button>
+        </div>
+      </header>
+      @if (currentReportMeta) {
+        <p class="reports-current-meta">
+          #{{ currentReportMeta.run_id }} · {{ currentReportMeta.logic_name }}
+          · {{ currentReportMeta.date_from || '—' }}…{{ currentReportMeta.date_to || '—' }}
+          · {{ currentReportMeta.run_status || '—' }}
+          @if (currentReportMeta.is_snapshot) {
+            <span class="reports-snap">снимок</span>
+          }
+        </p>
+      }
+      <div class="reports-modal-body">
+        <aside class="reports-list scroll-list-panel" aria-label="Список отчётов">
+          @if (reportsLoading && reportList.length === 0) {
+            <p class="reports-hint">Загрузка…</p>
+          }
+          @for (r of reportList; track r.id) {
+            <button
+              type="button"
+              class="reports-list-item"
+              [class.active]="r.id === currentReportId"
+              (click)="selectReportFromList(r.id)"
+            >
+              {{ formatReportListLabel(r) }}
+            </button>
+          }
+        </aside>
+        <div class="reports-frame-wrap">
+          @if (reportsError) {
+            <p class="reports-hint reports-error">{{ reportsError }}</p>
+          }
+          @if (reportHtmlSafe) {
+            <iframe class="reports-frame" [srcdoc]="reportHtmlSafe" title="Отчёт теста"></iframe>
+          } @else if (!reportsLoading && !reportsError) {
+            <p class="reports-hint">Выберите отчёт слева</p>
+          }
+        </div>
+      </div>
+    </div>
+  }
 
   @if (loading && logics.length === 0) {
 

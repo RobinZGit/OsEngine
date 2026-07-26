@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-26 — Process strip fixed height (no logics jump); backtest speed earlier
+**Последнее обновление:** 2026-07-26 — Archived backtest reports in PostgreSQL + UI «Отчёты тестов»
 
 > **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
 
@@ -28,7 +28,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v48**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v49**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -116,7 +116,15 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-25)
+## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Архив отчётов тестов — PostgreSQL, не browser cache)
+
+- **Почему Postgres, не localStorage:** мультидевайс, переживает очистку браузера, рядом с `logic_backtest_runs` / сделками.
+- Таблица **`logic_backtest_reports`** (v49): HTML + summary JSON на каждый `run_id` (UPSERT).
+- Сохранение **вне bar-loop**: `schedulePersistBacktestReport` (fire-and-forget, mutex на run_id) при `completed|cancelled|failed`; редкий snapshot каждые 500 баров.
+- API: `GET /api/logic-backtest/reports`, `GET …/reports/:id` (prev/next), `POST …/reports/rebuild`.
+- UI: кнопка **«Отчёты тестов»** у полосы процессов; модалка со списком, HTML iframe, ←/→ и стрелки клавиатуры.
 
 ### 2026-07-26 (UI: полоса процессов без дёрганья таблицы)
 
@@ -436,6 +444,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Backtest reports archive in Postgres + «Отчёты тестов» UI (prev/next); async persist; installers; push |
 | 2026-07-26 | Process strip fixed height + horizontal chip scroll; no logics jump; push |
 | 2026-07-25 | Backtest resume after API/bat restart: same run_id from processed_bars; no wipe |
 | 2026-07-25 | Ship: push OsEngine + MultiLogicTradePg Pages; sell-all/bonds; finres align; installers; no release |
@@ -787,3 +796,4 @@
 159. «Put the context files in the description, which opens on the main top bar. In a separate chapter, take them out, so that you can turn around and see the context on which this whole project was going.»
 160. «Test + logic with take-profit with renewal: working often, portfolio sagging — see why, improve so it is fixed on the splash and does not fade.»
 161. «Tests with re-launches clog resources / hang longer; two tests running — optimize Angular to free resources.»
+162. «each testing should save your report… browser cache or Postgres… on the main page… top plushes… log button… forward-backward… saving should not interfere with testing… periodicity… separate process… immediately upload to the repository.»

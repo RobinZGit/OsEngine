@@ -25,6 +25,12 @@ const {
   resumeOrphanBacktests,
 } = require('./logic-backtest');
 const {
+  listBacktestReports,
+  getBacktestReport,
+  getBacktestReportNeighbors,
+  persistBacktestReport,
+} = require('./backtest-report-persist');
+const {
   startRatingPrecalc,
   getRatingPrecalcStatus,
 } = require('./logic-rating-precalc');
@@ -3615,6 +3621,76 @@ app.post('/api/logic-backtest/cancel', async (req, res) => {
     res.json({ ok: true, run_id: runId });
   } catch (err) {
     console.error('POST /api/logic-backtest/cancel', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Archived backtest HTML reports (PostgreSQL). */
+app.get('/api/logic-backtest/reports', async (req, res) => {
+  try {
+    const logicId =
+      req.query.logic_id != null && req.query.logic_id !== ''
+        ? Number(req.query.logic_id)
+        : null;
+    const rows = await listBacktestReports(pool, {
+      limit: req.query.limit,
+      offset: req.query.offset,
+      logicId,
+    });
+    res.json({ rows });
+  } catch (err) {
+    console.error('GET /api/logic-backtest/reports', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/logic-backtest/reports/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'id required' });
+    return;
+  }
+  try {
+    const includeHtml =
+      req.query.html === '1' ||
+      req.query.html === 'true' ||
+      req.query.html === undefined;
+    const neighbors = await getBacktestReportNeighbors(pool, id);
+    if (!neighbors?.current) {
+      res.status(404).json({ error: 'Report not found' });
+      return;
+    }
+    const row = { ...neighbors.current };
+    if (!includeHtml) {
+      delete row.html_body;
+    }
+    res.json({
+      row,
+      prev_id: neighbors.prev_id,
+      next_id: neighbors.next_id,
+    });
+  } catch (err) {
+    console.error('GET /api/logic-backtest/reports/:id', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Rebuild archive for an existing run (manual / backfill). */
+app.post('/api/logic-backtest/reports/rebuild', async (req, res) => {
+  const runId = Number(req.body?.run_id);
+  if (!Number.isInteger(runId) || runId <= 0) {
+    res.status(400).json({ error: 'run_id required' });
+    return;
+  }
+  try {
+    const row = await persistBacktestReport(pool, runId, { isSnapshot: false });
+    if (!row) {
+      res.status(404).json({ error: 'Run not found' });
+      return;
+    }
+    res.json({ ok: true, id: row.id, run_id: row.run_id });
+  } catch (err) {
+    console.error('POST /api/logic-backtest/reports/rebuild', err);
     res.status(500).json({ error: err.message });
   }
 });

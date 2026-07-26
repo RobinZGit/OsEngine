@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v47 (идемпотентный запуск)
+-- Версия: v49 (идемпотентный запуск)
+-- v49: logic_backtest_reports — сохранённые HTML-отчёты тестов (async, не в hot loop)
 -- v47: +8 контртренд OsEngine Custom (прокси на calc-индикаторы; без DELETE)
 -- v46: неторговые периоды MOEX; close_positions_eod; use_non_trading_periods
 -- v45: +5 тренд +10 контртренд OsEngine; seed без DELETE (INSERT IF NOT EXISTS / DO NOTHING)
@@ -3471,6 +3472,57 @@ CREATE INDEX IF NOT EXISTS idx_logic_trades_run_id
 
 COMMENT ON TABLE logic_backtest_runs IS
 'Историческое тестирование: прогресс, период, итог (сделки is_test=TRUE)';
+
+-- v49: archived backtest HTML reports (one row per run_id; rewritten on snapshot/finish)
+CREATE TABLE IF NOT EXISTS logic_backtest_reports (
+    id BIGSERIAL PRIMARY KEY,
+    run_id BIGINT NOT NULL UNIQUE REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    logic_name TEXT NOT NULL DEFAULT '',
+    date_from DATE,
+    date_to DATE,
+    timeframe TEXT,
+    run_status VARCHAR(30),
+    is_snapshot BOOLEAN NOT NULL DEFAULT FALSE,
+    deal_count INTEGER NOT NULL DEFAULT 0,
+    net_pnl NUMERIC(20, 6),
+    net_pnl_pct NUMERIC(12, 4),
+    profit_factor NUMERIC(12, 4),
+    max_drawdown_pct NUMERIC(12, 4),
+    download_name TEXT,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    html_body TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS run_id BIGINT REFERENCES logic_backtest_runs(id) ON DELETE CASCADE;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS logic_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS date_from DATE;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS date_to DATE;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS timeframe TEXT;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS run_status VARCHAR(30);
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS is_snapshot BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS deal_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS net_pnl NUMERIC(20, 6);
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS net_pnl_pct NUMERIC(12, 4);
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS profit_factor NUMERIC(12, 4);
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS max_drawdown_pct NUMERIC(12, 4);
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS download_name TEXT;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS summary JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS html_body TEXT NOT NULL DEFAULT '';
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE logic_backtest_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_logic_backtest_reports_run
+    ON logic_backtest_reports(run_id);
+CREATE INDEX IF NOT EXISTS idx_logic_backtest_reports_logic_updated
+    ON logic_backtest_reports(logic_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_logic_backtest_reports_updated
+    ON logic_backtest_reports(updated_at DESC);
+
+COMMENT ON TABLE logic_backtest_reports IS
+'Сохранённые отчёты тестов (HTML+summary). Пишется API вне bar-loop (finish / редкий snapshot).';
 
 CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     run_id BIGINT NOT NULL REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,

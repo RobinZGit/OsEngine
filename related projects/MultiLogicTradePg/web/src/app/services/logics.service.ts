@@ -51,6 +51,36 @@ export interface ProcessStatusItem {
   started_at?: string | null;
 }
 
+/** Archived backtest report row (list, no HTML). */
+export interface BacktestReportListItem {
+  id: number;
+  run_id: number;
+  logic_id: number;
+  logic_name: string;
+  date_from: string | null;
+  date_to: string | null;
+  timeframe: string | null;
+  run_status: string | null;
+  is_snapshot: boolean;
+  deal_count: number;
+  net_pnl: number | null;
+  net_pnl_pct: number | null;
+  profit_factor: number | null;
+  max_drawdown_pct: number | null;
+  download_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BacktestReportDetailResponse {
+  row: BacktestReportListItem & {
+    summary?: unknown;
+    html_body?: string;
+  };
+  prev_id: number | null;
+  next_id: number | null;
+}
+
 /** Portable export of logics (no backtests / trades). */
 export interface LogicExportBundle {
   format: string;
@@ -505,6 +535,34 @@ export class LogicsService {
     return this.http.post<{ ok: boolean; run_id: number }>(
       `${this.appConfig.apiUrl}/logic-backtest/cancel`,
       { run_id: runId }
+    );
+  }
+
+  listBacktestReports(opts?: {
+    limit?: number;
+    offset?: number;
+    logic_id?: number;
+  }): Observable<{ rows: BacktestReportListItem[] }> {
+    const params: Record<string, string> = {};
+    if (opts?.limit != null) params['limit'] = String(opts.limit);
+    if (opts?.offset != null) params['offset'] = String(opts.offset);
+    if (opts?.logic_id != null) params['logic_id'] = String(opts.logic_id);
+    return this.http.get<{ rows: BacktestReportListItem[] }>(
+      `${this.appConfig.apiUrl}/logic-backtest/reports`,
+      { params }
+    );
+  }
+
+  getBacktestReport(
+    id: number,
+    includeHtml = true
+  ): Observable<BacktestReportDetailResponse> {
+    const params: Record<string, string> = {
+      html: includeHtml ? '1' : '0',
+    };
+    return this.http.get<BacktestReportDetailResponse>(
+      `${this.appConfig.apiUrl}/logic-backtest/reports/${id}`,
+      { params }
     );
   }
 

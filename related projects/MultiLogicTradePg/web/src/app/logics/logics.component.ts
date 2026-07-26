@@ -1,9 +1,13 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { Subject, exhaustMap, takeUntil, timer, forkJoin, of } from 'rxjs';
 import { catchError, debounceTime, filter, map } from 'rxjs/operators';
-import { LogicsService } from '../services/logics.service';
+import {
+  BacktestReportListItem,
+  LogicsService,
+} from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import { SettingsService } from '../services/settings.service';
@@ -144,6 +148,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private combatPnlInFlight = false;
   processRows: ProcessStatusItem[] = [];
   processError: string | null = null;
+
+  /** Archived backtest reports viewer (PostgreSQL). */
+  reportsOpen = false;
+  reportsLoading = false;
+  reportsError: string | null = null;
+  reportList: BacktestReportListItem[] = [];
+  currentReportId: number | null = null;
+  currentReportMeta: BacktestReportListItem | null = null;
+  reportHtmlSafe: SafeHtml | null = null;
+  reportPrevId: number | null = null;
+  reportNextId: number | null = null;
+  reportNavBusy = false;
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
   testPnlByLogic: Map<
     number,
@@ -286,6 +302,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     private readonly techLog: TechLogService,
     private readonly appConfig: AppConfigService,
     private readonly backtestUi: BacktestUiStateService,
+    private readonly sanitizer: DomSanitizer,
     private readonly cdr: ChangeDetectorRef
   ) {
     this.backtestRuns = this.backtestUi.runs;
@@ -451,6 +468,116 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return [p.label, p.status, p.detail, p.wait, p.age]
       .filter(Boolean)
       .join(' · ');
+  }
+
+  openTestReports(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    this.reportsOpen = true;
+    this.reportsLoading = true;
+    this.reportsError = null;
+    this.reportList = [];
+    this.currentReportId = null;
+    this.currentReportMeta = null;
+    this.reportHtmlSafe = null;
+    this.reportPrevId = null;
+    this.reportNextId = null;
+    this.logicsService
+      .listBacktestReports({ limit: 100 })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.reportList = res.rows ?? [];
+          this.reportsLoading = false;
+          if (this.reportList.length === 0) {
+            this.reportsError = 'Пока нет сохранённых отчётов. Завершите тест — отчёт появится здесь.';
+            this.cdr.markForCheck();
+            return;
+          }
+          this.loadReportById(this.reportList[0].id);
+        },
+        error: (err) => {
+          this.reportsLoading = false;
+          this.reportsError =
+            err?.error?.error ?? err?.message ?? 'Не удалось загрузить список отчётов';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  closeTestReports(): void {
+    this.reportsOpen = false;
+    this.reportHtmlSafe = null;
+    this.reportNavBusy = false;
+  }
+
+  loadReportById(id: number): void {
+    if (!id || this.reportNavBusy) return;
+    this.reportNavBusy = true;
+    this.reportsError = null;
+    this.logicsService
+      .getBacktestReport(id, true)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.currentReportId = res.row.id;
+          this.currentReportMeta = res.row;
+          this.reportPrevId = res.prev_id;
+          this.reportNextId = res.next_id;
+          const html = res.row.html_body || '<p>Пустой отчёт</p>';
+          this.reportHtmlSafe = this.sanitizer.bypassSecurityTrustHtml(html);
+          this.reportNavBusy = false;
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.reportNavBusy = false;
+          this.reportsError =
+            err?.error?.error ?? err?.message ?? 'Не удалось открыть отчёт';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  reportGoOlder(): void {
+    if (this.reportPrevId != null) this.loadReportById(this.reportPrevId);
+  }
+
+  reportGoNewer(): void {
+    if (this.reportNextId != null) this.loadReportById(this.reportNextId);
+  }
+
+  selectReportFromList(id: number): void {
+    if (id === this.currentReportId) return;
+    this.loadReportById(id);
+  }
+
+  formatReportListLabel(r: BacktestReportListItem): string {
+    const pnl =
+      r.net_pnl_pct != null && Number.isFinite(Number(r.net_pnl_pct))
+        ? `${Number(r.net_pnl_pct) >= 0 ? '+' : ''}${Number(r.net_pnl_pct).toFixed(1)}%`
+        : '—';
+    const period =
+      r.date_from && r.date_to ? `${r.date_from}…${r.date_to}` : 'без периода';
+    return `${r.logic_name} · ${period} · ${pnl}`;
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onReportsKeydown(ev: KeyboardEvent): void {
+    if (!this.reportsOpen) return;
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      this.closeTestReports();
+      return;
+    }
+    if (ev.key === 'ArrowLeft') {
+      ev.preventDefault();
+      this.reportGoOlder();
+      return;
+    }
+    if (ev.key === 'ArrowRight') {
+      ev.preventDefault();
+      this.reportGoNewer();
+    }
   }
 
   toggleLogicExpand(row: LogicRow, event: Event): void {
