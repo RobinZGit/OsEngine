@@ -51,6 +51,16 @@ export interface BuyBondsRow {
   name?: string | null;
 }
 
+export interface BuyBondsPlaceRow {
+  sec: string;
+  ticker?: string;
+  figi?: string;
+  lots?: number;
+  price?: number;
+  order?: unknown;
+  error?: string;
+}
+
 export interface BuyBondsResult {
   ok: boolean;
   fund_code?: string;
@@ -66,8 +76,8 @@ export interface BuyBondsResult {
   executed?: boolean;
   placed_count?: number;
   error_count?: number;
-  placed?: unknown[];
-  errors?: { sec: string; error: string }[];
+  placed?: BuyBondsPlaceRow[];
+  errors?: BuyBondsPlaceRow[];
 }
 
 export interface LogicPayload {

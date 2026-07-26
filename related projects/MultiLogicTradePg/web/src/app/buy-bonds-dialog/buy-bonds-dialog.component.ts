@@ -34,6 +34,8 @@ export class BuyBondsDialogComponent implements OnChanges {
   executing = false;
   error: string | null = null;
   plan: BuyBondsResult | null = null;
+  /** После успешного «Рассчитать» — «Купить» становится яркой. */
+  planReady = false;
 
   constructor(
     private readonly refs: ReferencesService,
@@ -63,12 +65,20 @@ export class BuyBondsDialogComponent implements OnChanges {
     }).format(Number(v));
   }
 
+  onAmountOrFundChange(): void {
+    // Сумма всегда редактируема; после правки нужен новый расчёт.
+    this.planReady = false;
+  }
+
   buildPlan(): void {
-    if (!this.account) return;
+    if (!this.account || this.planning || this.executing) return;
     this.planning = true;
     this.error = null;
-    this.plan = null;
-    const amount = this.amountRub.trim() === '' ? undefined : Number(this.amountRub.replace(',', '.'));
+    this.planReady = false;
+    const amount =
+      this.amountRub.trim() === ''
+        ? undefined
+        : Number(this.amountRub.replace(',', '.'));
     this.refs
       .planBuyBonds(this.account.id, {
         fund_code: this.fundCode,
@@ -78,34 +88,43 @@ export class BuyBondsDialogComponent implements OnChanges {
         next: (plan) => {
           this.plan = plan;
           this.planning = false;
+          this.planReady = true;
           if (plan.cash_amount != null && this.amountRub.trim() === '') {
             this.amountRub = String(Math.floor(Number(plan.cash_amount)));
           }
         },
         error: (err) => {
           this.planning = false;
+          this.planReady = false;
           this.error = apiErrorMessage(
             this.appConfig.apiUrl,
             err,
-            'Не удалось построить план'
+            'Не удалось рассчитать план'
           );
         },
       });
   }
 
   confirmBuy(): void {
-    if (!this.account || !this.plan?.buys?.length) return;
+    if (!this.account || this.executing || !this.planReady) return;
+    const planned = this.plan?.amount_planned ?? 0;
+    const count = this.plan?.buy_count ?? 0;
     if (
       !confirm(
-        `Купить облигации на ~${this.formatMoney(this.plan.amount_planned)} ₽ ` +
-          `(${this.plan.buy_count} выпусков) на счёте «${this.account.name}»?`
+        count > 0
+          ? `Купить облигации на ~${this.formatMoney(planned)} ₽ ` +
+              `(${count} выпусков) на счёте «${this.account.name}»?`
+          : `План пуст или без лотов. Всё равно попытаться выставить заявки на счёте «${this.account.name}»?`
       )
     ) {
       return;
     }
     this.executing = true;
     this.error = null;
-    const amount = this.amountRub.trim() === '' ? undefined : Number(this.amountRub.replace(',', '.'));
+    const amount =
+      this.amountRub.trim() === ''
+        ? undefined
+        : Number(this.amountRub.replace(',', '.'));
     this.refs
       .executeBuyBonds(this.account.id, {
         fund_code: this.fundCode,
@@ -115,14 +134,22 @@ export class BuyBondsDialogComponent implements OnChanges {
         next: (result) => {
           this.executing = false;
           this.plan = result;
-          if (result.error_count && result.error_count > 0) {
-            this.error = `Часть заявок не прошла: ${result.error_count}. Успешно: ${result.placed_count ?? 0}.`;
-          } else {
+          this.planReady = true;
+          const placed = result.placed_count ?? 0;
+          const failed = result.error_count ?? 0;
+          if (failed > 0 || (result.errors?.length ?? 0) > 0) {
+            this.error =
+              `Готово с ошибками: успешно ${placed}, не удалось ${failed}. ` +
+              `Подробности — в отчёте ниже.`;
+          } else if (placed > 0) {
             alert(
-              `Заявки выставлены: ${result.placed_count ?? 0} выпусков на ~${this.formatMoney(result.amount_planned)} ₽`
+              `Заявки выставлены: ${placed} выпусков на ~${this.formatMoney(result.amount_planned)} ₽`
             );
             this.done.emit();
             this.closed.emit();
+          } else {
+            this.error =
+              'Заявок не выставлено (нечего купить или брокер отклонил). См. отчёт ниже.';
           }
         },
         error: (err) => {
@@ -141,6 +168,7 @@ export class BuyBondsDialogComponent implements OnChanges {
     this.amountRub = '';
     this.error = null;
     this.plan = null;
+    this.planReady = false;
     this.planning = false;
     this.executing = false;
   }
@@ -157,11 +185,11 @@ export class BuyBondsDialogComponent implements OnChanges {
         const cash =
           this.account?.cash_amount ??
           (this.account?.balance != null ? this.account.balance : null);
-        if (cash != null && Number.isFinite(Number(cash))) {
+        if (cash != null && Number.isFinite(Number(cash)) && Number(cash) > 0) {
           this.amountRub = String(Math.floor(Number(cash)));
         }
         this.loading = false;
-        this.buildPlan();
+        // Не считаем автоматически — сначала сумма, затем «Рассчитать».
       },
       error: (err) => {
         this.loading = false;

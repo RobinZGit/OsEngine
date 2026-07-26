@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — SL/TP типы недоступны для выбора; `USER_INSTRUCTIONS.md` + Help
+**Последнее обновление:** 2026-07-26 — Купить облигации: сумма всегда, яркий «Рассчитать»→«Купить», кнопка на всех счетах
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Купить облигации — UX)
+
+- Кнопка «Купить облигации» на **всех** счетах (не только real T-Bank); заявки по-прежнему через токен T-Bank.
+- Сумма всегда редактируема (не блокируется на время расчёта); без авто-расчёта при открытии.
+- «Рассчитать» — яркая первая; «Купить» бледная до расчёта, затем зелёная. Ошибки заявок — в отчёте в диалоге.
+- Сумму не режем до кэша на сервере — пробуем, отклонения в отчёт.
 
 ### 2026-07-26 (Недоступные типы SL/TP + инструкции в Help)
 
@@ -539,6 +546,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Buy-bonds UX: amount editable, calc→buy brightness, all accounts; push |
 | 2026-07-26 | Disable choosable SL/TP types; USER_INSTRUCTIONS.md + Help; push |
 | 2026-07-26 | OPT live+backtest + param history report; installers; push |
 | 2026-07-26 | OPT inside backtest (paper lanes + promote + history); restore formulas after run |
@@ -712,4 +720,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **692** — недоступные типы SL/TP в UI + отдельный файл инструкций в Help.
+Последние (см. USER_INSTRUCTIONS): **693** — UX «Купить облигации» (сумма, Рассчитать→Купить, все счета).

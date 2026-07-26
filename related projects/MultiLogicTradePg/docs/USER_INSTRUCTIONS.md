@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+693. Why is there no button in buy-obligations? Amount must always be editable; Calculate brighter first, then Buy brighter after calc; try to buy and put failures in the report; Obligation Fund available to anyone; push to repo.
+
 692. Make such types inaccessible to the choice for stop-losses (visible but not choosable): paper inversion of non-repetitive drawdown; portfolio with update. Take-profit inaccessible for the whole logic portfolio. Also: separate file with only my instructions + Help section; push to repo.
 
 691. Yes, do OPT in the test too so testing is not slowed much; on param change just rewrite/history for the report.

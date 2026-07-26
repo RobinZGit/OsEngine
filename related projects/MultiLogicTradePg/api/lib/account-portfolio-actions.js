@@ -134,7 +134,7 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     err.status = 400;
     throw err;
   }
-  amount = Math.min(amount, cashInfo.cash_amount > 0 ? cashInfo.cash_amount : amount);
+  // Не режем сумму до кэша: пользователь может править поле; брокер отклонит лишнее — в отчёт.
 
   const resolved = await resolveHoldings(pool, accountId, fund.holdings, 3);
   const okHoldings = resolved.filter((h) => h.figi && !h.error);

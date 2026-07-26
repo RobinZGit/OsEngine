@@ -186,6 +186,18 @@
   background: #fef2f2;
 }
 
+.text-btn-bonds {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.text-btn-bonds:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
 .icon-danger:hover {
   background: #fef2f2;
   color: #b91c1c;

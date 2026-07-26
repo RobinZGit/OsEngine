@@ -193,7 +193,6 @@ export class ReferencesComponent implements OnInit {
   }
 
   openBuyBonds(row: AccountRow): void {
-    if (row.account_type !== 'real' || row.broker_code !== 'T-BANK') return;
     this.buyBondsAccount = row;
     this.buyBondsOpen = true;
   }

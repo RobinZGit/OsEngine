@@ -12,7 +12,12 @@
         <div class="form">
           <label class="field">
             <span class="label">Фонд облигаций</span>
-            <select class="params-input" [(ngModel)]="fundCode" [disabled]="planning || executing" (ngModelChange)="buildPlan()">
+            <select
+              class="params-input"
+              [(ngModel)]="fundCode"
+              [disabled]="executing"
+              (ngModelChange)="onAmountOrFundChange()"
+            >
               @for (f of funds; track f.code) {
                 <option [value]="f.code">{{ f.name }} ({{ f.holdings_count }} выпусков)</option>
               }
@@ -20,6 +25,7 @@
             <span class="hint">
               Состав БПИФ «Т-Капитал Облигации»: покупка отдельных выпусков, не самого ETF.
               Порядок — от более доходных (часто корпоративы) к менее (ОФЗ).
+              Доступно на любом счёте в справочнике; заявки у брокера — при токене T-Bank.
             </span>
           </label>
 
@@ -30,32 +36,36 @@
               inputmode="decimal"
               class="params-input"
               [(ngModel)]="amountRub"
-              [disabled]="planning || executing"
-              placeholder="Свободный кэш"
+              [disabled]="executing"
+              (ngModelChange)="onAmountOrFundChange()"
+              placeholder="Введите сумму, затем нажмите «Рассчитать»"
             />
             <span class="hint">
-              По умолчанию — свободные деньги на счёте
+              Поле всегда можно править. Сначала «Рассчитать», потом «Купить».
               @if (plan?.cash_amount != null) {
-                (сейчас {{ formatMoney(plan!.cash_amount) }} ₽)
-              }.
+                Свободный кэш счёта: {{ formatMoney(plan!.cash_amount) }} ₽.
+              }
             </span>
           </label>
 
           <div class="actions-row">
             <button
               type="button"
-              class="btn btn-recalc"
+              class="btn btn-calc"
               (click)="buildPlan()"
               [disabled]="planning || executing"
-              title="Сначала пересчитайте план, затем покупайте"
+              title="Сначала рассчитайте план по сумме"
             >
-              {{ planning ? 'Расчёт…' : 'Пересчитать план' }}
+              {{ planning ? 'Расчёт…' : 'Рассчитать' }}
             </button>
             <button
               type="button"
-              class="btn btn-buy-pale"
+              class="btn"
+              [class.btn-buy-pale]="!planReady"
+              [class.btn-buy-ready]="planReady"
               (click)="confirmBuy()"
-              [disabled]="planning || executing || !plan?.buys?.length"
+              [disabled]="planning || executing || !planReady"
+              title="{{ planReady ? 'Купить по рассчитанному плану' : 'Сначала нажмите «Рассчитать»' }}"
             >
               {{ executing ? 'Выставляю…' : 'Купить по плану' }}
             </button>
@@ -109,6 +119,33 @@
                   Не найдены у брокера: {{ failed.length }} ISIN (пропущены).
                 </p>
               }
+            }
+            @if (plan.errors?.length) {
+              <div class="report-block">
+                <div class="report-title">Отчёт: ошибки заявок</div>
+                <ul class="report-list">
+                  @for (e of plan.errors; track e.sec + (e.error || '')) {
+                    <li>
+                      <strong>{{ e.ticker || e.sec }}</strong>
+                      @if (e.lots) { · {{ e.lots }} лот. }
+                      — {{ e.error }}
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+            @if (plan.placed?.length) {
+              <div class="report-block report-ok">
+                <div class="report-title">Отчёт: выставлено</div>
+                <ul class="report-list">
+                  @for (p of plan.placed; track p.figi + '-' + p.lots) {
+                    <li>
+                      <strong>{{ p.ticker || p.sec }}</strong>
+                      · {{ p.lots }} лот. @ {{ formatMoney(p.price) }}
+                    </li>
+                  }
+                </ul>
+              </div>
             }
           }
         </div>
