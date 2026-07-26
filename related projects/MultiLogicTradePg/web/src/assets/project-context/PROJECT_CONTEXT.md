@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — v54b: ensure_seed_logics.sql + installer fail if Optimized missing
+**Последнее обновление:** 2026-07-26 — backtest/OPT speed: open_lane once per arm, faster exposure + run_id, index test_run_lane
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,52 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (ускорение бэктеста OPT)
+
+- Локальный тест «висел» без locks: `logic_backtest_process_bar` + OPT на 34 бумагах (~0.5 бар/с).
+- **Фикс:** в `process_logic_opt_trades` счётчик `v_open_lane` — один раз на OPT-ветку (было на каждую бумагу); `logic_open_notional_exposure` — set-based + опциональный `p_run_id`; индекс `idx_logic_trades_test_run_lane`.
+- Важно: накатывать только полный `02` (не отдельные `sql/*.sql` с DROP) — иначе пропадают функции (`logic_trade_open_remaining_qty` и др.).
+
+### 2026-07-26 (потолок номинала Open = % × макс. позиций)
+
+- **Правило:** суммарный номинал открытых long+short ≤ `база × (position_size_pct/100) × max_open_positions` (10×10%=100% базы; 20×10%=200%).
+- Уже открытые позиции входят в spent; short считается так же, как long (база цикла не растёт от short-кэша).
+- Live + backtest; UI hint у «Макс. открытых позиций».
+
+### 2026-07-26 (Scheduled cleanup: set_app_cleanup_last_at)
+
+- **Ошибка:** `procedure set_app_cleanup_last_at(timestamp with time zone) does not exist`.
+- **Причина:** процедура была `(TIMESTAMP)`; `CALL …(CURRENT_TIMESTAMP)` передаёт `timestamptz`.
+- **Фикс:** сигнатура `TIMESTAMPTZ` + DROP старой; в `sql/app_cleanup_settings.sql` и `02`.
+
+### 2026-07-26 (Setup.ex_ рядом с Setup.exe)
+
+- При сборке копируется `MultiLogicTradePgSetup.ex_` (те же байты; последняя буква расширения `_`) — для выгрузки/скачивания с серверов, где `.exe` режется.
+- После скачивания переименовать в `.exe`. В git оба файла; `build-installer.ps1` всегда обновляет пару.
+
+### 2026-07-26 (бэктест Optimized: signal_kind_check)
+
+- **Симптом:** тест `LinReg Fade Optimized` / copy падает: `logic_trades_signal_kind_check` (runs 184–185).
+- **Причина:** OPT promote reset пишет `signal_kind='opt'`, а CHECK допускал только `trend|counter|cash_fund`. Не из‑за номера сборки установщика.
+- **Фикс:** CHECK + комментарий в `01` (+ тип в `logic-trade.ts`).
+
+### 2026-07-26 (install.ps1 ParserError — seed не запускался)
+
+- **Протокол 17:00 Build 59, ExitCode 1:** `Variable reference is not valid` на `DbMode=$DbMode:` и каскад ошибок на `throw "...(02 restored..."`.
+- Post-install **не выполнялся** → ensure_seed / LinReg Fade Optimized не ставились.
+- **Фикс:** безопасные строки (`-f` / без `$var:` и без `(02` в expandable string); ASCII-only предупреждения.
+
+### 2026-07-26 (номер сборки на форме установщика)
+
+- На мастере Inno: Welcome — «Версия / Сборка»; полоска `BeveledLabel` на всех страницах; диалог «уже установлен» тоже показывает версию/сборку; `UninstallDisplayName` с build.
+- Ранее: `VERSION.txt` + протокол + bump `BUILD_NUMBER` при сборке.
+
+### 2026-07-26 (номер сборки установщика)
+
+- **Проблема:** протокол 16:42 снова `logics=46→46`, «will be reset», без `ensure_seed` — в Program Files остались **v53** и `install.ps1` от 25.07; пользователь ставил **старый Setup.exe**, а не свежий из repo.
+- **Фикс:** `installer/BUILD_NUMBER` + `Sync-InstallerVersion.ps1` (bump при каждой сборке); `VERSION.txt` в корень пакета; Inno `AppVersion`/`AppVerName` из build; протокол Windows/Linux печатает `VERSION.txt` в начале.
+- Как проверить новую установку: в `INSTALL_PROTOCOL.txt` есть блок `----- VERSION.txt -----` с `Build: N` и шаг `Deploying database 01 -> ensure_seed -> 02` + `Seed OK: LinReg Fade Optimized`.
 
 ### 2026-07-26 (v54 / v54b: seed-логики при install-on-top)
 
@@ -565,6 +611,14 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Backtest/OPT speed: open_lane once/arm, exposure+run_id, index; installers; push |
+| 2026-07-26 | Cap open notional = base×pct×max_positions (long+short); push |
+| 2026-07-26 | Fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup; push |
+| 2026-07-26 | Ship MultiLogicTradePgSetup.ex_ twin for blocked-.exe downloads; push |
+| 2026-07-26 | Allow signal_kind=opt for OPT promote closes; installers; push |
+| 2026-07-26 | Fix install.ps1 parse errors blocking upgrade seed; rebuild; push |
+| 2026-07-26 | Show version+build on Inno wizard form; rebuild; push |
+| 2026-07-26 | Installer build number (VERSION.txt in protocol); rebuild; push |
 | 2026-07-26 | v54b: ensure_seed_logics.sql + installer seed check; installers; push |
 | 2026-07-26 | v54 seed ensure on install-on-top (LinReg Fade Optimized + all defaults); installers; push |
 | 2026-07-26 | Buy-bonds: TBRU+SBGB+OBLG; MOEX ISS holdings + mirrors; installers; push |
@@ -744,4 +798,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **699** — install-on-top всё ещё без Optimized (старый 01); ensure_seed + fail check.
+Последние (см. USER_INSTRUCTIONS): **708** — local backtest hang/speed/locks; **707** — short exposure = % × max positions.

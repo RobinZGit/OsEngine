@@ -1113,6 +1113,31 @@ BEGIN
 
     FOR v_arm IN SELECT * FROM logic_opt_build_arms(p_logic_id)
     LOOP
+        -- Один раз на ветку: число бумаг с открытой позицией (раньше — на каждую бумагу).
+        SELECT COUNT(*)::INTEGER INTO v_open_lane
+        FROM (
+            SELECT lt.security_id
+            FROM logic_trades lt
+            JOIN sides s ON s.id = lt.side_id
+            JOIN actions a ON a.id = lt.action_id
+            WHERE lt.logic_id = p_logic_id
+              AND COALESCE(lt.opt_lane, '') = v_arm.lane
+              AND NOT lt.is_shadow
+              AND lt.is_test = v_is_test
+              AND (NOT v_is_test OR p_run_id IS NULL OR lt.run_id = p_run_id)
+              AND lt.status IN ('filled', 'submitted')
+            GROUP BY lt.security_id
+            HAVING COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
+                    WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0) > 0
+        ) q;
+
         FOR v_sec IN
             SELECT
                 ls.security_id,
@@ -1124,30 +1149,6 @@ BEGIN
             v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
             v_lot_size := logic_security_lot_size(v_sec.security_id);
             v_is_futures := logic_security_is_futures(v_sec.security_id);
-
-            SELECT COUNT(*)::INTEGER INTO v_open_lane
-            FROM (
-                SELECT lt.security_id
-                FROM logic_trades lt
-                JOIN sides s ON s.id = lt.side_id
-                JOIN actions a ON a.id = lt.action_id
-                WHERE lt.logic_id = p_logic_id
-                  AND COALESCE(lt.opt_lane, '') = v_arm.lane
-                  AND NOT lt.is_shadow
-                  AND lt.is_test = v_is_test
-                  AND (NOT v_is_test OR p_run_id IS NULL OR lt.run_id = p_run_id)
-                  AND lt.status IN ('filled', 'submitted')
-                GROUP BY lt.security_id
-                HAVING COALESCE(SUM(
-                    CASE
-                        WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
-                        WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
-                        WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
-                        WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
-                        ELSE 0
-                    END
-                ), 0) > 0
-            ) q;
 
             FOR v_grp IN
                 SELECT lis.position_event, lis.position_side

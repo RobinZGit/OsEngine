@@ -4455,6 +4455,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9591,6 +9592,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -9799,31 +9828,44 @@ COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
 'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
 -- Номинал уже открытых long+short (чемпион / бой или test; opt_lane отделяет paper OPT).
+-- Drop 3-arg overload so callers use the 4-arg form (p_run_id DEFAULT NULL).
+DROP FUNCTION IF EXISTS logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT);
+
 CREATE OR REPLACE FUNCTION logic_open_notional_exposure(
     p_logic_id INTEGER,
     p_is_test BOOLEAN DEFAULT FALSE,
-    p_opt_lane TEXT DEFAULT ''
+    p_opt_lane TEXT DEFAULT '',
+    p_run_id BIGINT DEFAULT NULL
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(0, COALESCE(SUM(
-        logic_trade_open_remaining_qty(lt.id) * lt.price
-    ), 0))
+    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
     FROM logic_trades lt
     JOIN sides s ON s.id = lt.side_id
     JOIN actions a ON a.id = lt.action_id
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                WHERE l.open_trade_id = lt.id
+            ), 0),
+            0
+        ) AS qty
+    ) rem
     WHERE lt.logic_id = p_logic_id
       AND NOT lt.is_shadow
       AND lt.is_test = p_is_test
       AND COALESCE(lt.opt_lane, '') = COALESCE(p_opt_lane, '')
+      AND (p_run_id IS NULL OR lt.run_id = p_run_id)
       AND lt.status IN ('filled', 'submitted')
       AND s.name = 'Open'
       AND a.name IN ('Long', 'Short')
-      AND logic_trade_open_remaining_qty(lt.id) > 0;
+      AND rem.qty > 0;
 $$;
 
-COMMENT ON FUNCTION logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT) IS
-'Суммарный номинал открытых long+short (цена входа). Потолок: база × (%/100) × max_open_positions — одинаково для long и short';
+COMMENT ON FUNCTION logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT, BIGINT) IS
+'Суммарный номинал открытых long+short (цена входа). Потолок: база × (%/100) × max_open_positions — одинаково для long и short. p_run_id — только для is_test.';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
@@ -12142,6 +12184,31 @@ BEGIN
 
     FOR v_arm IN SELECT * FROM logic_opt_build_arms(p_logic_id)
     LOOP
+        -- Один раз на ветку: число бумаг с открытой позицией (раньше — на каждую бумагу).
+        SELECT COUNT(*)::INTEGER INTO v_open_lane
+        FROM (
+            SELECT lt.security_id
+            FROM logic_trades lt
+            JOIN sides s ON s.id = lt.side_id
+            JOIN actions a ON a.id = lt.action_id
+            WHERE lt.logic_id = p_logic_id
+              AND COALESCE(lt.opt_lane, '') = v_arm.lane
+              AND NOT lt.is_shadow
+              AND lt.is_test = v_is_test
+              AND (NOT v_is_test OR p_run_id IS NULL OR lt.run_id = p_run_id)
+              AND lt.status IN ('filled', 'submitted')
+            GROUP BY lt.security_id
+            HAVING COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
+                    WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0) > 0
+        ) q;
+
         FOR v_sec IN
             SELECT
                 ls.security_id,
@@ -12153,30 +12220,6 @@ BEGIN
             v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
             v_lot_size := logic_security_lot_size(v_sec.security_id);
             v_is_futures := logic_security_is_futures(v_sec.security_id);
-
-            SELECT COUNT(*)::INTEGER INTO v_open_lane
-            FROM (
-                SELECT lt.security_id
-                FROM logic_trades lt
-                JOIN sides s ON s.id = lt.side_id
-                JOIN actions a ON a.id = lt.action_id
-                WHERE lt.logic_id = p_logic_id
-                  AND COALESCE(lt.opt_lane, '') = v_arm.lane
-                  AND NOT lt.is_shadow
-                  AND lt.is_test = v_is_test
-                  AND (NOT v_is_test OR p_run_id IS NULL OR lt.run_id = p_run_id)
-                  AND lt.status IN ('filled', 'submitted')
-                GROUP BY lt.security_id
-                HAVING COALESCE(SUM(
-                    CASE
-                        WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
-                        WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
-                        WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
-                        WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
-                        ELSE 0
-                    END
-                ), 0) > 0
-            ) q;
 
             FOR v_grp IN
                 SELECT lis.position_event, lis.position_side
@@ -16205,7 +16248,7 @@ BEGIN
     v_max_exposure := v_cycle_budget
         * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
         * v_max_positions;
-    v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '');
+    v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '', p_run_id);
 
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls
@@ -18138,6 +18181,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

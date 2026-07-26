@@ -3786,6 +3786,11 @@ CREATE INDEX IF NOT EXISTS idx_logic_trades_run_id
     ON logic_trades(run_id)
     WHERE run_id IS NOT NULL;
 
+-- Backtest/OPT: filter by logic + run + lane without seq scan as trades grow
+CREATE INDEX IF NOT EXISTS idx_logic_trades_test_run_lane
+    ON logic_trades(logic_id, run_id, opt_lane)
+    WHERE is_test AND NOT is_shadow;
+
 COMMENT ON TABLE logic_backtest_runs IS
 'Историческое тестирование: прогресс, период, итог (сделки is_test=TRUE)';
 

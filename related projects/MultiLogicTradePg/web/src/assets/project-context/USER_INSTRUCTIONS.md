@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+708. Look at the local testing now. Maybe a long hanging. Why is it hanging? Well, maybe it doesn't hang. But if there are any locks, look. Maybe something can be done to make it go faster.
+
 707. And this should, of course, consist of percents: no more than 10 x 10 = 100% of the deposit can be shorted; if 20 positions of 10%, then no more than 200%. Follows from % and max open positions; for shorts same as longs.
 
 706. I agree that there should be a margin if we trade in the short, but it is almost twice as much as the balance… Why open the second one? … in the case of a short, we should not get out of our balance… take into account with this shoulder first.

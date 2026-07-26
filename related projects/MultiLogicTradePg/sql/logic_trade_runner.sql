@@ -711,31 +711,44 @@ COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
 'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
 -- Номинал уже открытых long+short (чемпион / бой или test; opt_lane отделяет paper OPT).
+-- Drop 3-arg overload so callers use the 4-arg form (p_run_id DEFAULT NULL).
+DROP FUNCTION IF EXISTS logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT);
+
 CREATE OR REPLACE FUNCTION logic_open_notional_exposure(
     p_logic_id INTEGER,
     p_is_test BOOLEAN DEFAULT FALSE,
-    p_opt_lane TEXT DEFAULT ''
+    p_opt_lane TEXT DEFAULT '',
+    p_run_id BIGINT DEFAULT NULL
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
-    SELECT GREATEST(0, COALESCE(SUM(
-        logic_trade_open_remaining_qty(lt.id) * lt.price
-    ), 0))
+    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
     FROM logic_trades lt
     JOIN sides s ON s.id = lt.side_id
     JOIN actions a ON a.id = lt.action_id
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                WHERE l.open_trade_id = lt.id
+            ), 0),
+            0
+        ) AS qty
+    ) rem
     WHERE lt.logic_id = p_logic_id
       AND NOT lt.is_shadow
       AND lt.is_test = p_is_test
       AND COALESCE(lt.opt_lane, '') = COALESCE(p_opt_lane, '')
+      AND (p_run_id IS NULL OR lt.run_id = p_run_id)
       AND lt.status IN ('filled', 'submitted')
       AND s.name = 'Open'
       AND a.name IN ('Long', 'Short')
-      AND logic_trade_open_remaining_qty(lt.id) > 0;
+      AND rem.qty > 0;
 $$;
 
-COMMENT ON FUNCTION logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT) IS
-'Суммарный номинал открытых long+short (цена входа). Потолок: база × (%/100) × max_open_positions — одинаково для long и short';
+COMMENT ON FUNCTION logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT, BIGINT) IS
+'Суммарный номинал открытых long+short (цена входа). Потолок: база × (%/100) × max_open_positions — одинаково для long и short. p_run_id — только для is_test.';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,

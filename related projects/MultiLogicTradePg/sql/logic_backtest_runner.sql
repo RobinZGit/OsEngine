@@ -1706,7 +1706,7 @@ BEGIN
     v_max_exposure := v_cycle_budget
         * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
         * v_max_positions;
-    v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '');
+    v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '', p_run_id);
 
     FOR v_sec IN
         SELECT ls.security_id FROM logic_securities ls

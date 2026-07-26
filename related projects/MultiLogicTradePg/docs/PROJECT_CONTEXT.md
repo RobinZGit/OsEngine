@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — open exposure cap = base × (%/100) × max_open_positions (long+short)
+**Последнее обновление:** 2026-07-26 — backtest/OPT speed: open_lane once per arm, faster exposure + run_id, index test_run_lane
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (ускорение бэктеста OPT)
+
+- Локальный тест «висел» без locks: `logic_backtest_process_bar` + OPT на 34 бумагах (~0.5 бар/с).
+- **Фикс:** в `process_logic_opt_trades` счётчик `v_open_lane` — один раз на OPT-ветку (было на каждую бумагу); `logic_open_notional_exposure` — set-based + опциональный `p_run_id`; индекс `idx_logic_trades_test_run_lane`.
+- Важно: накатывать только полный `02` (не отдельные `sql/*.sql` с DROP) — иначе пропадают функции (`logic_trade_open_remaining_qty` и др.).
 
 ### 2026-07-26 (потолок номинала Open = % × макс. позиций)
 
@@ -605,6 +611,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Backtest/OPT speed: open_lane once/arm, exposure+run_id, index; installers; push |
 | 2026-07-26 | Cap open notional = base×pct×max_positions (long+short); push |
 | 2026-07-26 | Fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup; push |
 | 2026-07-26 | Ship MultiLogicTradePgSetup.ex_ twin for blocked-.exe downloads; push |
@@ -791,4 +798,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **699** — install-on-top всё ещё без Optimized (старый 01); ensure_seed + fail check.
+Последние (см. USER_INSTRUCTIONS): **708** — local backtest hang/speed/locks; **707** — short exposure = % × max positions.
