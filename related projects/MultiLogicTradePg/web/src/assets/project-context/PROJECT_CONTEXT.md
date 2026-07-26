@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — backtest/OPT speed: open_lane once per arm, faster exposure + run_id, index test_run_lane
+**Последнее обновление:** 2026-07-26 — equity chart = champion only (exclude OPT paper), match FinRes
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (эквити vs FinRes на OPT-тесте)
+
+- **Симптом:** FinRes плюс, кривая «Эквити портфеля» глубоко в минусе.
+- **Причина:** `/pnl-summary` и FinRes — только чемпион (`opt_lane=''`); график суммировал и OPT paper (`std_dev:up/down`) с большим минусом.
+- **Фикс:** `buildEquityPoints` + локальный суммарный PnL в панели — без `opt_lane≠''` (как FinRes).
 
 ### 2026-07-26 (ускорение бэктеста OPT)
 
@@ -611,6 +617,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Equity chart exclude OPT paper (match FinRes); installers; push |
 | 2026-07-26 | Backtest/OPT speed: open_lane once/arm, exposure+run_id, index; installers; push |
 | 2026-07-26 | Cap open notional = base×pct×max_positions (long+short); push |
 | 2026-07-26 | Fix set_app_cleanup_last_at(timestamptz) for scheduled cleanup; push |
@@ -798,4 +805,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **708** — local backtest hang/speed/locks; **707** — short exposure = % × max positions.
+Последние (см. USER_INSTRUCTIONS): **709** — equity vs FinRes after reinstall; **708** — backtest hang/speed.

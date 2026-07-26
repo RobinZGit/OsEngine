@@ -264,8 +264,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
     let pnl = 0;
     let commission = 0;
     for (const t of this.trades) {
-      // Как /logic-trades/pnl-summary: без shadow, только filled/submitted.
+      // Как /logic-trades/pnl-summary: без shadow, без OPT paper, только filled/submitted.
       if (t.is_shadow) continue;
+      if ((t.opt_lane ?? '') !== '') continue;
       if (t.status !== 'filled' && t.status !== 'submitted') continue;
       if (t.financial_result != null && Number.isFinite(Number(t.financial_result))) {
         pnl += Number(t.financial_result);

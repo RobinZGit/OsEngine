@@ -435,4 +435,23 @@ describe('backtest-chart-overlays', () => {
     ]);
     expect(pts[pts.length - 1].value).toBe(20);
   });
+
+  it('buildEquityPoints skips OPT paper lanes (matches FinRes champion)', () => {
+    const pts = buildEquityPoints([
+      trade({
+        side_name: 'Close',
+        bar_dt: '2026-04-10 11:00:00',
+        financial_result: 100,
+        opt_lane: '',
+      }),
+      trade({
+        id: 2,
+        side_name: 'Close',
+        bar_dt: '2026-04-10 12:00:00',
+        financial_result: -500,
+        opt_lane: 'std_dev:down',
+      }),
+    ]);
+    expect(pts[pts.length - 1].value).toBe(100);
+  });
 });
