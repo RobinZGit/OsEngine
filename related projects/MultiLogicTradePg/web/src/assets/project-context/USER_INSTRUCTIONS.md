@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+697. Add the choice of buying bonds to a couple of funds similar to Tinkoff, because the link may be inaccessible, so that you can read the list from some other sources. And immediately upload to the repository.
+
 696. And look at why the annual interest was not calculated in the test, there is a mark.
 
 695. Install on top: ng serve NG5002 Incomplete block "" — @ in buy-bonds template; fix and push.

@@ -35,7 +35,10 @@ export interface BondFundInfo {
   code: string;
   name: string;
   source?: string;
+  /** Зеркала состава (porti / MOEX ISS / cbonds / rusetfs). */
+  sources?: string[];
   asOf?: string;
+  moex_index?: string | null;
   holdings_count?: number;
 }
 
@@ -66,6 +69,9 @@ export interface BuyBondsResult {
   fund_code?: string;
   fund_name?: string;
   fund_as_of?: string;
+  fund_sources?: string[];
+  fund_source_used?: string | null;
+  holdings_live?: boolean;
   cash_amount?: number;
   amount_requested?: number;
   amount_planned?: number;

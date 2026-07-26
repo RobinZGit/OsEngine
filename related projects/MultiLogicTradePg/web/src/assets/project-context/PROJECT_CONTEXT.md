@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — тест: «год.» (%) после reload из pnl-summary / сделок
+**Последнее обновление:** 2026-07-26 — buy-bonds: фонды TBRU + SBGB + OBLG, состав с MOEX ISS
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Купить облигации: несколько фондов + зеркала)
+
+- В select: **TBRU**, **SBGB** (Первая / RGBITR), **OBLG** (ex VTBB / RUCBTRNS).
+- Состав SBGB/OBLG при расчёте обновляется с **MOEX ISS** analytics; если недоступно — статический снимок в `bond-tbru-data.js`.
+- У каждого фонда список зеркал (porti / cbonds / rusetfs / MOEX) — если одна ссылка недоступна, есть другие.
+- UI fallback каталог без API; план показывает источник состава.
 
 ### 2026-07-26 (Тест: «год.» = «—»)
 
@@ -552,6 +559,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Buy-bonds: TBRU+SBGB+OBLG; MOEX ISS holdings + mirrors; installers; push |
 | 2026-07-26 | Test annual % «—»: period from pnl-summary/trades when run gone; installers; push |
 | 2026-07-26 | Fix NG5002 @ in buy-bonds HTML (install-on-top ng serve); push |
 | 2026-07-26 | Buy-bonds UX: amount editable, calc→buy brightness, all accounts; push |
@@ -728,4 +736,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **696** — тест «год.» = «—» (период из pnl-summary).
+Последние (см. USER_INSTRUCTIONS): **697** — buy-bonds несколько фондов + зеркала источников.

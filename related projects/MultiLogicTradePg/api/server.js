@@ -1606,7 +1606,7 @@ app.delete('/api/accounts/:id', async (req, res) => {
   }
 });
 
-/** Фонды облигаций для покупки (сейчас TBRU — Т-Капитал Облигации). */
+/** Фонды облигаций для покупки: TBRU, SBGB (RGBITR), OBLG/VTBB (RUCBTRNS). */
 app.get('/api/accounts/bond-funds', (_req, res) => {
   res.json(listBondFunds());
 });
@@ -1647,7 +1647,7 @@ app.get('/api/accounts/:id/cash', async (req, res) => {
 });
 
 /**
- * План / покупка облигаций по составу фонда (TBRU):
+ * План / покупка облигаций по составу фонда (TBRU / SBGB / OBLG):
  * body: { fund_code?, amount_rub?, execute?: boolean }
  * Жадно от более доходных (часто корп.) к менее (ОФЗ).
  */

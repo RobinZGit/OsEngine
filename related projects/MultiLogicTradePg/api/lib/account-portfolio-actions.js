@@ -1,6 +1,7 @@
 'use strict';
 
-const { listBondFunds, getBondFund } = require('./bond-tbru-data');
+const { listBondFunds } = require('./bond-tbru-data');
+const { resolveBondFund } = require('./bond-fund-fetch');
 const { computeGreedyBuyLots, bondUnitPriceRub } = require('./bond-tbru-alloc');
 
 async function assertRealTbankAccount(pool, accountId) {
@@ -117,7 +118,7 @@ async function resolveHoldings(pool, accountId, holdings, concurrency = 3) {
 async function planBuyBonds(pool, accountId, opts = {}) {
   const acc = await assertRealTbankAccount(pool, accountId);
   const fundCode = String(opts.fund_code || 'TBRU').toUpperCase();
-  const fund = getBondFund(fundCode);
+  const fund = await resolveBondFund(fundCode);
   if (!fund) {
     const err = new Error(`Неизвестный фонд облигаций: ${fundCode}`);
     err.status = 400;
@@ -177,6 +178,9 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     fund_code: fund.code,
     fund_name: fund.name,
     fund_as_of: fund.asOf,
+    fund_sources: fund.sources || [],
+    fund_source_used: fund.source_used || null,
+    holdings_live: !!fund.holdings_live,
     cash_amount: cashInfo.cash_amount,
     amount_requested: amount,
     amount_planned: spent,

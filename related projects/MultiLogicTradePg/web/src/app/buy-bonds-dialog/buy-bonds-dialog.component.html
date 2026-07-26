@@ -30,10 +30,7 @@
           @if (fundsLoading) {
             <span class="bb-hint">Обновление списка фондов…</span>
           } @else {
-            <span class="bb-hint">
-              Состав БПИФ «Т-Капитал Облигации»: покупка отдельных выпусков, не самого ETF.
-              Порядок — от более доходных к менее (ОФЗ).
-            </span>
+            <span class="bb-hint">{{ fundHint() }}</span>
           }
         </label>
 
@@ -90,7 +87,15 @@
               @if (plan.fund_as_of) {
                 · состав на {{ plan.fund_as_of }}
               }
+              @if (plan.holdings_live) {
+                · с MOEX ISS
+              } @else {
+                · снимок в приложении
+              }
             </div>
+            @if (plan.fund_source_used) {
+              <div class="bb-hint">Источник состава: {{ plan.fund_source_used }}</div>
+            }
             @if (plan.note) {
               <div class="bb-hint">{{ plan.note }}</div>
             }

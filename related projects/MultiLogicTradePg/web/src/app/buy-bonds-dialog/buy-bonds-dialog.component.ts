@@ -16,8 +16,29 @@ import { AccountRow, BondFundInfo, BuyBondsResult } from '../models/lookup.model
 const DEFAULT_FUNDS: BondFundInfo[] = [
   {
     code: 'TBRU',
-    name: 'Т-Капитал Облигации',
-    holdings_count: undefined,
+    name: 'Т-Капитал Облигации (TBRU)',
+    sources: [
+      'https://porti.ru/etf/holders/MOEX:TBRU',
+      'https://rusetfs.com/etf/RU000A1039N1',
+    ],
+  },
+  {
+    code: 'SBGB',
+    name: 'Первая — Гос. облигации (SBGB)',
+    sources: [
+      'https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/RGBITR.json',
+      'https://porti.ru/etf/holders/MOEX:SBGB',
+      'https://cbonds.ru/etf/208991/',
+    ],
+  },
+  {
+    code: 'OBLG',
+    name: 'ВИМ — Российские облигации (OBLG, ex VTBB)',
+    sources: [
+      'https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/RUCBTRNS.json',
+      'https://porti.ru/etf/holders/MOEX:OBLG',
+      'https://rusetfs.com/etf/RU000A1002S8',
+    ],
   },
 ];
 
@@ -64,6 +85,32 @@ export class BuyBondsDialogComponent implements OnChanges {
   get title(): string {
     const name = this.account?.name || this.account?.account_code || '';
     return name ? `Купить облигации — ${name}` : 'Купить облигации';
+  }
+
+  get selectedFund(): BondFundInfo | null {
+    return this.funds.find((f) => f.code === this.fundCode) ?? null;
+  }
+
+  /** Подсказка по выбранному фонду и зеркалам состава. */
+  fundHint(): string {
+    const f = this.selectedFund;
+    if (!f) {
+      return 'Покупка отдельных выпусков по составу БПИФ, не паёв ETF. Порядок — от более доходных к менее.';
+    }
+    const mirrors = (f.sources?.length ? f.sources : f.source ? [f.source] : [])
+      .slice(0, 3)
+      .join(' · ');
+    const live =
+      this.plan?.fund_code === f.code && this.plan.holdings_live
+        ? ' Состав обновлён с MOEX ISS.'
+        : f.moex_index
+          ? ' При расчёте состав пробуем взять с MOEX ISS (индекс), иначе — снимок в приложении.'
+          : ' Состав — снимок в приложении (несколько зеркал ниже).';
+    return (
+      `${f.name}: покупка отдельных выпусков, не паёв ETF.` +
+      live +
+      (mirrors ? ` Источники: ${mirrors}` : '')
+    );
   }
 
   close(): void {
@@ -210,11 +257,11 @@ export class BuyBondsDialogComponent implements OnChanges {
       },
       error: (err) => {
         this.fundsLoading = false;
-        // Фонд TBRU уже в списке — не блокируем UI.
+        // Локальные TBRU / SBGB / OBLG уже в списке — не блокируем UI.
         this.error = apiErrorMessage(
           this.appConfig.apiUrl,
           err,
-          'Список фондов с API не загрузился — используем TBRU'
+          'Список фондов с API не загрузился — используем локальный каталог (TBRU, SBGB, OBLG)'
         );
       },
     });
