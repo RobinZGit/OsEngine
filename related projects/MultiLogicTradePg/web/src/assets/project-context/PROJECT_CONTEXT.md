@@ -6,7 +6,7 @@
 
 **Репозиторий (upstream):** https://github.com/RobinZGit/MultiLogicTradePg  
 **Зеркало в OsEngine (куда пишет Cloud Agent):** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
-**Последнее обновление:** 2026-07-26 — Archived backtest reports in PostgreSQL + UI «Отчёты тестов»
+**Последнее обновление:** 2026-07-26 — Real orders: market/limit param, broker commission FinRes, free_cash default
 
 > **Важно для агентов:** Cloud Agent на OsEngine часто **не может** push в `RobinZGit/MultiLogicTradePg` (scoped to OsEngine). С машины Sergey (`RobinZGit` token) — можно и **нужно** пушить в MultiLogicTradePg для GitHub Pages. Рабочая копия: OsEngine → `related projects/MultiLogicTradePg`.
 
@@ -28,7 +28,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v49**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v51**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -117,6 +117,22 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (Бой: order_execution, free_cash default, комиссия с T-Bank)
+
+- **`order_execution`** (`market`|`limit`, default **market**): UI «Тип исполнения заявок»; `tbank_post_order(..., p_order_execution)`; runner/close/stop/cash-fund читают `logic_order_execution`.
+- Accounts **«Продать всё»**: всегда `ORDER_TYPE_MARKET` (не зависит от параметра логики).
+- **`position_size_base` default = `free_cash`** (v51): install `01`, API/UI fallback, SQL sizing/backtest; миграция старого `portfolio` → `free_cash`.
+- **Боевой FinRes:** комиссия real с T-Bank (`executedCommission` / GetOrderState), **не** из `commission_pct` (только fake/тест). Хелперы `tbank_order_commission`, `tbank_order_unit_price`, `logic_sync_real_trade_broker_fees`.
+- Стоп-закрытия на real: PostOrder + комиссия брокера (раньше писались paper `filled` без заявки).
+- Apply-скрипты: `api/scripts/apply-tbank-*.sql`, `apply-position-size-base-free-cash.sql`.
+
+### 2026-07-26 (Бэктест: params из формулы сигнала → series → sync)
+
+- Node `logic-backtest.js` и SQL `logic_backtest_ensure_security_data`: перед кэшем индикаторов — `ensure` → `logic_apply_indicator_params_from_signals` → sync только если params изменились или нет кэша / перегрузили цены.
+- Apply принимает алиасы `std`/`std_dev`, `fast`/`fast_period`, …
+- UI defaults: LINREG/BB/SQUARE → `period=20,std_dev=2,series=MIDDLE`.
+- OPT / редакторы параметров — не делались.
 
 ### 2026-07-26 (Архив отчётов тестов — PostgreSQL, не browser cache)
 
@@ -444,6 +460,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Real: order_execution market/limit; free_cash default; broker commission FinRes; stop→T-Bank; installers; push |
 | 2026-07-26 | Backtest reports archive in Postgres + «Отчёты тестов» UI (prev/next); async persist; installers; push |
 | 2026-07-26 | Process strip fixed height + horizontal chip scroll; no logics jump; push |
 | 2026-07-25 | Backtest resume after API/bat restart: same run_id from processed_bars; no wipe |
@@ -599,6 +616,14 @@
 ---
 
 ## Запросы пользователя (текст)
+
+677. PUSH!
+
+676. Check live FinRes vs T‑Bank (−30 vs +10): use broker commissions, not commission_pct %.
+
+675. Lot % base default = free money for everyone — install script and DB.
+
+674. Logic param execution type limit/market, default market; accounts sell-all always market.
 
 673. Top process bar changes height → screen twitches / logics jump — fixed size, keep visible, push.
 

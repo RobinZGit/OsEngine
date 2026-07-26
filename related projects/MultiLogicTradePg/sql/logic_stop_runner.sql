@@ -657,6 +657,14 @@ DECLARE
     v_side TEXT;
     v_close_long BOOLEAN := TRUE;
     v_close_short BOOLEAN := TRUE;
+    v_figi TEXT;
+    v_order JSONB;
+    v_broker_order_id TEXT;
+    v_status TEXT;
+    v_note TEXT;
+    v_commission NUMERIC;
+    v_direction TEXT;
+    v_fill_price NUMERIC;
 BEGIN
     -- Денежный фонд остаётся купленным: портфельный/бумажный SL не продаёт TMON/LQDT/SBMM.
     IF logic_is_cash_fund_security(p_security_id) THEN
@@ -705,31 +713,92 @@ BEGIN
         v_bar_dt := clock_timestamp() + (v_close_idx * interval '1 millisecond');
         v_quantity := floor(v_long_qty)::INTEGER;
         IF v_quantity >= 1 THEN
+            v_broker_order_id := NULL;
+            v_status := 'filled';
+            v_note := NULL;
+            v_commission := 0;
+            v_direction := 'SELL';
+
+            IF NOT p_is_shadow AND NOT v_is_simulated THEN
+                BEGIN
+                    SELECT sp.tbank_figi INTO v_figi
+                    FROM security_prefixes sp
+                    WHERE sp.security_id = p_security_id
+                      AND sp.tbank_figi IS NOT NULL
+                    ORDER BY sp.exchange_id
+                    LIMIT 1;
+
+                    IF v_figi IS NULL THEN
+                        v_status := 'rejected';
+                        v_note := 'Нет tbank_figi для бумаги';
+                    ELSE
+                        v_order := tbank_post_order(
+                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
+                            logic_order_execution(p_logic_id)
+                        );
+                        v_broker_order_id := COALESCE(
+                            v_order->>'orderId',
+                            v_order->>'order_id',
+                            v_order->'orderState'->>'orderId'
+                        );
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        v_commission := tbank_order_commission(v_order);
+                        IF v_commission <= 0 AND v_broker_order_id IS NOT NULL THEN
+                            BEGIN
+                                v_order := tbank_get_order_state(
+                                    v_logic.account_id, v_broker_order_id
+                                );
+                                v_commission := tbank_order_commission(v_order);
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    NULL;
+                            END;
+                        END IF;
+                        v_fill_price := tbank_order_unit_price(v_order);
+                        IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                            v_price := v_fill_price;
+                        END IF;
+                        IF v_status = 'rejected' THEN
+                            v_note := left(COALESCE(v_order::TEXT, ''), 500);
+                        END IF;
+                    END IF;
+                EXCEPTION
+                    WHEN undefined_function THEN
+                        v_status := 'rejected';
+                        v_note := 'tbank_post_order недоступен';
+                    WHEN OTHERS THEN
+                        v_status := 'rejected';
+                        v_note := SQLERRM;
+                END;
+            END IF;
+
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, signal_kind, signal_formula,
-                quantity, price, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
-                trade_reason, status
+                quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
+                trade_reason, broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, p_security_id, v_tf_id,
                 v_side_close_id, v_action_long_id, 'counter', v_formula,
-                v_quantity, v_price, v_bar_dt, v_is_simulated, FALSE, p_is_shadow, FALSE,
-                v_formula, 'filled'
+                v_quantity, v_price, COALESCE(v_commission, 0), v_bar_dt, v_is_simulated, FALSE, p_is_shadow, FALSE,
+                v_formula, v_broker_order_id, v_status, v_note
             )
             RETURNING id INTO v_trade_id;
 
-            IF NOT p_is_shadow AND v_is_simulated AND v_balance IS NOT NULL THEN
-                v_balance := logic_trade_finalize(v_trade_id, v_balance);
-                v_notional := v_quantity * v_price;
-                v_balance := v_balance + v_notional;
-                PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
-            ELSIF NOT p_is_shadow THEN
-                PERFORM logic_trade_finalize(v_trade_id, v_balance);
-            ELSE
-                PERFORM logic_trade_finalize(v_trade_id, NULL);
+            IF v_status <> 'rejected' THEN
+                IF NOT p_is_shadow AND v_is_simulated AND v_balance IS NOT NULL THEN
+                    v_balance := logic_trade_finalize(v_trade_id, v_balance);
+                    v_notional := v_quantity * v_price;
+                    v_balance := v_balance + v_notional;
+                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                ELSIF NOT p_is_shadow THEN
+                    PERFORM logic_trade_finalize(v_trade_id, v_balance);
+                ELSE
+                    PERFORM logic_trade_finalize(v_trade_id, NULL);
+                END IF;
+                v_closed := v_closed + 1;
             END IF;
-            v_closed := v_closed + 1;
         END IF;
     END IF;
 
@@ -738,31 +807,92 @@ BEGIN
         v_bar_dt := clock_timestamp() + (v_close_idx * interval '1 millisecond');
         v_quantity := floor(v_short_qty)::INTEGER;
         IF v_quantity >= 1 THEN
+            v_broker_order_id := NULL;
+            v_status := 'filled';
+            v_note := NULL;
+            v_commission := 0;
+            v_direction := 'BUY';
+
+            IF NOT p_is_shadow AND NOT v_is_simulated THEN
+                BEGIN
+                    SELECT sp.tbank_figi INTO v_figi
+                    FROM security_prefixes sp
+                    WHERE sp.security_id = p_security_id
+                      AND sp.tbank_figi IS NOT NULL
+                    ORDER BY sp.exchange_id
+                    LIMIT 1;
+
+                    IF v_figi IS NULL THEN
+                        v_status := 'rejected';
+                        v_note := 'Нет tbank_figi для бумаги';
+                    ELSE
+                        v_order := tbank_post_order(
+                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
+                            logic_order_execution(p_logic_id)
+                        );
+                        v_broker_order_id := COALESCE(
+                            v_order->>'orderId',
+                            v_order->>'order_id',
+                            v_order->'orderState'->>'orderId'
+                        );
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        v_commission := tbank_order_commission(v_order);
+                        IF v_commission <= 0 AND v_broker_order_id IS NOT NULL THEN
+                            BEGIN
+                                v_order := tbank_get_order_state(
+                                    v_logic.account_id, v_broker_order_id
+                                );
+                                v_commission := tbank_order_commission(v_order);
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    NULL;
+                            END;
+                        END IF;
+                        v_fill_price := tbank_order_unit_price(v_order);
+                        IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                            v_price := v_fill_price;
+                        END IF;
+                        IF v_status = 'rejected' THEN
+                            v_note := left(COALESCE(v_order::TEXT, ''), 500);
+                        END IF;
+                    END IF;
+                EXCEPTION
+                    WHEN undefined_function THEN
+                        v_status := 'rejected';
+                        v_note := 'tbank_post_order недоступен';
+                    WHEN OTHERS THEN
+                        v_status := 'rejected';
+                        v_note := SQLERRM;
+                END;
+            END IF;
+
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, signal_kind, signal_formula,
-                quantity, price, bar_dt, is_simulated, is_fictitious, is_shadow,
-                trade_reason, status
+                quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
+                trade_reason, broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, p_security_id, v_tf_id,
                 v_side_close_id, v_action_short_id, 'counter', v_formula,
-                v_quantity, v_price, v_bar_dt, v_is_simulated, FALSE, p_is_shadow,
-                v_formula, 'filled'
+                v_quantity, v_price, COALESCE(v_commission, 0), v_bar_dt, v_is_simulated, FALSE, p_is_shadow, FALSE,
+                v_formula, v_broker_order_id, v_status, v_note
             )
             RETURNING id INTO v_trade_id;
 
-            IF NOT p_is_shadow AND v_is_simulated AND v_balance IS NOT NULL THEN
-                v_balance := logic_trade_finalize(v_trade_id, v_balance);
-                v_notional := v_quantity * v_price;
-                v_balance := v_balance - v_notional;
-                PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
-            ELSIF NOT p_is_shadow THEN
-                PERFORM logic_trade_finalize(v_trade_id, v_balance);
-            ELSE
-                PERFORM logic_trade_finalize(v_trade_id, NULL);
+            IF v_status <> 'rejected' THEN
+                IF NOT p_is_shadow AND v_is_simulated AND v_balance IS NOT NULL THEN
+                    v_balance := logic_trade_finalize(v_trade_id, v_balance);
+                    v_notional := v_quantity * v_price;
+                    v_balance := v_balance - v_notional;
+                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                ELSIF NOT p_is_shadow THEN
+                    PERFORM logic_trade_finalize(v_trade_id, v_balance);
+                ELSE
+                    PERFORM logic_trade_finalize(v_trade_id, NULL);
+                END IF;
+                v_closed := v_closed + 1;
             END IF;
-            v_closed := v_closed + 1;
         END IF;
     END IF;
 

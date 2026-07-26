@@ -279,12 +279,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold: string;
       use_non_trading_periods: boolean;
       close_positions_eod: boolean;
+      order_execution: 'market' | 'limit';
       reset_balance: boolean;
     }
   >();
   paramsSaveErrors = new Map<number, string>();
   paramsLoading = new Set<number>();
   timeframesCatalog: { id: number; tf: string; full_name: string }[] = [];
+  readonly orderExecutionOptions: { value: 'market' | 'limit'; label: string }[] = [
+    { value: 'market', label: 'По рынку' },
+    { value: 'limit', label: 'Лимитная' },
+  ];
   readonly cashFundOptions: { value: string; label: string }[] = [
     { value: '', label: 'Не покупать' },
     { value: 'TMON', label: 'TMON — Т-Капитал денежный рынок' },
@@ -652,9 +657,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private normalizePositionSizeBase(
     value: string | null | undefined
   ): 'free_cash' | 'portfolio' | 'portfolio_incl_fund' {
-    if (value === 'free_cash') return 'free_cash';
+    if (value === 'portfolio') return 'portfolio';
     if (value === 'portfolio_incl_fund') return 'portfolio_incl_fund';
-    return 'portfolio';
+    return 'free_cash';
   }
 
   onParamsSizeBaseChange(
@@ -772,6 +777,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsOrderExecutionChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).order_execution =
+      value === 'limit' ? 'limit' : 'market';
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   private formatPctParam(value: number | string | null | undefined): string {
     if (value == null || value === '') return '10';
     const n =
@@ -859,6 +871,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold?: number;
       use_non_trading_periods?: boolean;
       close_positions_eod?: boolean;
+      order_execution?: 'market' | 'limit';
     }
   ): void {
     const idx = this.logics.findIndex((l) => l.id === logicId);
@@ -886,6 +899,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     cash_fund_threshold?: number;
     use_non_trading_periods?: boolean;
     close_positions_eod?: boolean;
+    order_execution?: 'market' | 'limit';
   }): {
     name: string;
     timeframe: string;
@@ -905,6 +919,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     cash_fund_threshold: string;
     use_non_trading_periods: boolean;
     close_positions_eod: boolean;
+    order_execution: 'market' | 'limit';
     reset_balance: boolean;
   } {
     const method: 'FIFO' | 'AVERAGE' =
@@ -938,6 +953,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       ),
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       close_positions_eod: trading.close_positions_eod === true,
+      order_execution: trading.order_execution === 'limit' ? 'limit' : 'market',
       reset_balance: false,
     };
   }
@@ -982,6 +998,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold: row.cash_fund_threshold,
       use_non_trading_periods: row.use_non_trading_periods,
       close_positions_eod: row.close_positions_eod,
+      order_execution: row.order_execution,
     });
     draft.name = row.name ?? '';
     return draft;
@@ -1098,6 +1115,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         cash_fund_threshold,
         use_non_trading_periods: draft.use_non_trading_periods,
         close_positions_eod: draft.close_positions_eod,
+        order_execution: draft.order_execution,
         reset_balance: draft.reset_balance,
       });
 

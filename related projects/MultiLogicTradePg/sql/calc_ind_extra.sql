@@ -796,12 +796,30 @@ BEGIN
             CONTINUE;
         END IF;
         v_period := parse_signal_param_num(v_parsed.params, 'period');
-        v_std := parse_signal_param_num(v_parsed.params, 'std_dev');
-        v_fast := parse_signal_param_num(v_parsed.params, 'fast_period');
-        v_slow := parse_signal_param_num(v_parsed.params, 'slow_period');
-        v_signal := parse_signal_param_num(v_parsed.params, 'signal_period');
-        v_k := parse_signal_param_num(v_parsed.params, 'k_period');
-        v_d := parse_signal_param_num(v_parsed.params, 'd_period');
+        v_std := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'std_dev'),
+            parse_signal_param_num(v_parsed.params, 'std')
+        );
+        v_fast := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'fast_period'),
+            parse_signal_param_num(v_parsed.params, 'fast')
+        );
+        v_slow := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'slow_period'),
+            parse_signal_param_num(v_parsed.params, 'slow')
+        );
+        v_signal := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'signal_period'),
+            parse_signal_param_num(v_parsed.params, 'signal')
+        );
+        v_k := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'k_period'),
+            parse_signal_param_num(v_parsed.params, 'k')
+        );
+        v_d := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'd_period'),
+            parse_signal_param_num(v_parsed.params, 'd')
+        );
         v_smooth := parse_signal_param_num(v_parsed.params, 'smooth');
 
         UPDATE security_indicator_series sis

@@ -4284,6 +4284,17 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.order_execution !== undefined) {
+    const raw = String(body.order_execution ?? '')
+      .trim()
+      .toLowerCase();
+    if (raw !== 'market' && raw !== 'limit' && raw !== 'l' && raw !== '') {
+      return { error: 'Тип исполнения: market или limit' };
+    }
+    out.order_execution = raw === 'limit' || raw === 'l' ? 'limit' : 'market';
+    hasField = true;
+  }
+
   if (!hasField) {
     return { error: 'Укажите параметры торговли' };
   }

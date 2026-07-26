@@ -31,7 +31,9 @@ export function defaultIndicatorParams(code: string): string {
     case 'STOCH':
       return 'k=14,d=3,smooth=3,series=K';
     case 'BB':
-      return 'period=20,std=2,series=MIDDLE';
+    case 'LINREG':
+    case 'SQUARE':
+      return 'period=20,std_dev=2,series=MIDDLE';
     case 'ATR':
       return 'period=14,series=VALUE';
     case 'PACC':

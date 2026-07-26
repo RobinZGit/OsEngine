@@ -460,15 +460,17 @@ BEGIN
     v_note := NULL;
     v_broker_order_id := NULL;
     BEGIN
-        v_order := tbank_post_order(v_logic.account_id, v_figi, v_qty, v_price, 'BUY');
+        v_order := tbank_post_order(
+            v_logic.account_id, v_figi, v_qty, v_price, 'BUY',
+            logic_order_execution(p_logic_id)
+        );
         v_broker_order_id := COALESCE(
             v_order->>'orderId',
             v_order->>'order_id',
             v_order->'orderState'->>'orderId'
         );
-        IF v_broker_order_id IS NOT NULL THEN
-            v_status := 'submitted';
-        ELSE
+        v_status := tbank_trade_status_from_post_order(v_order);
+        IF v_status = 'rejected' THEN
             v_note := left(COALESCE(v_order::TEXT, 'empty order response'), 500);
         END IF;
     EXCEPTION
@@ -480,7 +482,7 @@ BEGIN
 
     PERFORM logic_trade_log(
         p_logic_id,
-        CASE WHEN v_status = 'submitted' THEN 'cash_fund.order_ok' ELSE 'cash_fund.order_fail' END,
+        CASE WHEN v_status IN ('submitted', 'filled') THEN 'cash_fund.order_ok' ELSE 'cash_fund.order_fail' END,
         format(
             'Парковка %s: qty=%s price=%s status=%s',
             v_code, v_qty, v_price, v_status

@@ -1,6 +1,8 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v49 (идемпотентный запуск)
+-- Версия: v51 (идемпотентный запуск)
+-- v51: position_size_base default = free_cash (свободные деньги)
+-- v50: order_execution — тип заявок market|limit (по умолчанию market)
 -- v49: logic_backtest_reports — сохранённые HTML-отчёты тестов (async, не в hot loop)
 -- v47: +8 контртренд OsEngine Custom (прокси на calc-индикаторы; без DELETE)
 -- v46: неторговые периоды MOEX; close_positions_eod; use_non_trading_periods
@@ -1263,8 +1265,8 @@ ALTER TABLE logic_param_defs ADD COLUMN IF NOT EXISTS display_order INTEGER NOT 
 INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order) VALUES
     ('timeframe', 'Таймфрейм', 'text', 'M15',
      'Таймфрейм цен, индикаторов и цикла сделок (M15, H1, D1 …)', 0),
-    ('position_size_base', 'База расчёта лота', 'text', 'portfolio',
-     'portfolio (по умолчанию) — % от портфеля без ден. фонда; portfolio_incl_fund — весь портфель с фондом; free_cash — % от свободных денег', 1),
+    ('position_size_base', 'База расчёта лота', 'text', 'free_cash',
+     'free_cash (по умолчанию) — % от свободных денег; portfolio — % от портфеля без ден. фонда; portfolio_incl_fund — весь портфель с фондом', 1),
     ('position_size_pct', '% депозита на сделку', 'number', '10',
      'Доля выбранной базы (портфель или свободные) на одну покупку (1–100)', 2),
     ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',
@@ -1276,7 +1278,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('current_balance', 'Текущий остаток', 'money', '',
      'Тест (fake): свободный кэш. Real: свободный кэш T-Bank (или 0). Не база лота при режиме portfolio', 6),
     ('commission_pct', '% комиссии от сделки', 'number', '0.03',
-     'Фейковый счёт: комиссия = цена × количество × % / 100 (на каждую сделку)', 7),
+     'Только фейковый счёт/тест: комиссия = цена × количество × % / 100. Real: комиссия с T-Bank (executedCommission), этот % не используется', 7),
     ('cost_method', 'Метод расчёта PnL', 'text', 'FIFO',
      'FIFO — по очереди покупок; AVERAGE — по средней цене остатка', 8),
     ('stop_loss_timeframe', 'Таймфрейм стоп-лосса', 'text', 'M5',
@@ -1297,6 +1299,8 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'Не открывать сделки в интервалах из блока «Торговые периоды» (шаблон MOEX TQBR по умолчанию)', 16),
     ('close_positions_eod', 'Закрывать позиции в конце дня (кроме фондов)', 'boolean', 'false',
      'В конце торговой сессии (или на последней свече дня) закрыть все позиции, кроме денежного фонда TMON/LQDT/SBMM', 17),
+    ('order_execution', 'Тип исполнения заявок', 'text', 'market',
+     'market — рыночная заявка (сразу в сессию); limit — лимитная по цене сигнала (может висеть в стакане). По умолчанию market', 18),
     ('last_cash_fund_bar_dt', 'Последняя парковка кэша', 'text', '',
      'Служебный: open time закрытой свечи TF последней попытки парковки в фонд', 96),
     ('last_stop_bar_dt', 'Последняя свеча стоп-лосса', 'text', '',
@@ -1335,6 +1339,13 @@ SET param_value = '1000000',
     updated_at = CURRENT_TIMESTAMP
 WHERE param_key = 'cash_fund_threshold'
   AND replace(replace(btrim(param_value), ' ', ''), ',', '.') IN ('100000', '100000.0', '100000.00');
+
+-- Upgrade v51: старый дефолт portfolio → free_cash (явный portfolio_incl_fund не трогаем)
+UPDATE logic_params
+SET param_value = 'free_cash',
+    updated_at = CURRENT_TIMESTAMP
+WHERE param_key = 'position_size_base'
+  AND lower(btrim(COALESCE(param_value, ''))) IN ('', 'portfolio');
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -3388,7 +3399,7 @@ COMMENT ON COLUMN logic_trades.is_test IS
 COMMENT ON COLUMN logic_trades.trade_reason IS
 'Причина сделки: сигнал индикатора, stop_loss/take_profit (тип), market:close_all и т.п.';
 COMMENT ON COLUMN logic_trades.bar_dt IS 'Свеча, на которой сработал сигнал';
-COMMENT ON COLUMN logic_trades.commission IS 'Комиссия по сделке (фейк: % от депозита; реал: с биржи)';
+COMMENT ON COLUMN logic_trades.commission IS 'Комиссия по сделке (фейк/тест: commission_pct % от номинала; real: T-Bank executedCommission/initialCommission)';
 COMMENT ON COLUMN logic_trades.financial_result IS 'Итог PnL закрывающей сделки (сумма пакетов); NULL для открытия';
 COMMENT ON COLUMN logic_trades.run_id IS
 'FK → logic_backtest_runs: прогон теста, породивший сделку; NULL для боевых и legacy';

@@ -341,6 +341,30 @@ async function indicatorsCached(pool, secId, tfId, indicatorId, dateFrom, dateTo
   return Boolean(rows[0]?.cached);
 }
 
+/** Snapshot series param_* so we can detect formula-driven changes after apply. */
+async function snapshotIndicatorSeriesParams(pool, secId, indicatorId) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      param_period,
+      param_std_dev::text AS param_std_dev,
+      param_fast_period,
+      param_slow_period,
+      param_signal_period,
+      param_k_period,
+      param_d_period,
+      param_smooth
+    FROM security_indicator_series
+    WHERE security_id = $1
+      AND indicator_id = $2
+      AND is_active = TRUE
+    ORDER BY id
+    `,
+    [secId, indicatorId]
+  );
+  return JSON.stringify(rows);
+}
+
 async function fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo) {
   const { rows } = await pool.query(
     `SELECT pll.source, pll.records_loaded, pll.error_message, pll.date_from, pll.date_to
@@ -572,15 +596,68 @@ async function ensureSecurityData(
     return;
   }
 
-  // (2) Индикаторы — всегда считаются этим прогоном по своим сигналам логики.
+  // (2) Indicators: apply @CODE(...period/std_dev...) from logic signals onto
+  // security_indicator_series, then sync. Skip cache only if params unchanged.
   const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
   const indTotal = Math.max(1, indicatorIds.length);
   let indDone = 0;
   await phase('indicators_start', `Индикаторы: ${secName || secId}`, 0.6);
 
+  /** @type {Map<number, string>} */
+  const paramsBefore = new Map();
   for (const indicatorId of indicatorIds) {
+    try {
+      await pool.query('CALL ensure_security_indicator_series($1, $2)', [secId, indicatorId]);
+      paramsBefore.set(
+        indicatorId,
+        await snapshotIndicatorSeriesParams(pool, secId, indicatorId)
+      );
+    } catch (e) {
+      stats.indErr += 1;
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.indicator.error',
+        e.message,
+        { security_id: secId, indicator_id: indicatorId, name: secName, phase: 'ensure' },
+        secId,
+        tfId
+      );
+    }
+  }
+
+  try {
+    await pool.query('CALL logic_apply_indicator_params_from_signals($1, $2)', [
+      logicId,
+      secId,
+    ]);
+  } catch (e) {
+    stats.indErr += 1;
+    await backtestLog(
+      pool,
+      runId,
+      logicId,
+      'backtest.indicator.error',
+      e.message,
+      { security_id: secId, name: secName, phase: 'apply_params' },
+      secId,
+      tfId
+    );
+  }
+
+  for (const indicatorId of indicatorIds) {
+    let paramsChanged = true;
+    try {
+      const after = await snapshotIndicatorSeriesParams(pool, secId, indicatorId);
+      paramsChanged = (paramsBefore.get(indicatorId) ?? '') !== after;
+    } catch (_e) {
+      paramsChanged = true;
+    }
+
     if (
       !pricesReloaded &&
+      !paramsChanged &&
       (await indicatorsCached(pool, secId, tfId, indicatorId, dateFrom, dateTo))
     ) {
       stats.indCached += 1;
@@ -593,7 +670,6 @@ async function ensureSecurityData(
       continue;
     }
     try {
-      await pool.query('CALL ensure_security_indicator_series($1, $2)', [secId, indicatorId]);
       await pool.query(
         'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
         [secId, indicatorId, tfId, endDt, pointCount, false]

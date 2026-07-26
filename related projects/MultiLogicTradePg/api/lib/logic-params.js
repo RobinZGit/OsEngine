@@ -20,13 +20,14 @@ const PARAM_KEYS = {
   CASH_FUND_THRESHOLD: 'cash_fund_threshold',
   USE_NON_TRADING_PERIODS: 'use_non_trading_periods',
   CLOSE_POSITIONS_EOD: 'close_positions_eod',
+  ORDER_EXECUTION: 'order_execution',
 };
 
 const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
 
 const DEFAULTS = {
   [PARAM_KEYS.TIMEFRAME]: { value: 'M15', type: 'text' },
-  [PARAM_KEYS.POSITION_SIZE_BASE]: { value: 'portfolio', type: 'text' },
+  [PARAM_KEYS.POSITION_SIZE_BASE]: { value: 'free_cash', type: 'text' },
   [PARAM_KEYS.POSITION_SIZE_PCT]: { value: '10', type: 'number' },
   [PARAM_KEYS.MAX_OPEN_POSITIONS]: { value: '5', type: 'integer' },
   [PARAM_KEYS.MAX_ORDER_AMOUNT]: { value: '', type: 'money' },
@@ -43,6 +44,7 @@ const DEFAULTS = {
   [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '1000000', type: 'money' },
   [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
+  [PARAM_KEYS.ORDER_EXECUTION]: { value: 'market', type: 'text' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -91,10 +93,10 @@ function rowsToTradingParams(rows) {
       const raw =
         map[PARAM_KEYS.POSITION_SIZE_BASE] != null
           ? String(map[PARAM_KEYS.POSITION_SIZE_BASE]).trim().toLowerCase()
-          : 'portfolio';
-      if (raw === 'free_cash') return 'free_cash';
+          : 'free_cash';
+      if (raw === 'portfolio') return 'portfolio';
       if (raw === 'portfolio_incl_fund') return 'portfolio_incl_fund';
-      return 'portfolio';
+      return 'free_cash';
     })(),
     position_size_pct:
       map[PARAM_KEYS.POSITION_SIZE_PCT] != null
@@ -144,6 +146,13 @@ function rowsToTradingParams(rows) {
         : 1000000,
     use_non_trading_periods: map[PARAM_KEYS.USE_NON_TRADING_PERIODS] !== false,
     close_positions_eod: map[PARAM_KEYS.CLOSE_POSITIONS_EOD] === true,
+    order_execution: (() => {
+      const raw =
+        map[PARAM_KEYS.ORDER_EXECUTION] != null
+          ? String(map[PARAM_KEYS.ORDER_EXECUTION]).trim().toLowerCase()
+          : 'market';
+      return raw === 'limit' || raw === 'l' ? 'limit' : 'market';
+    })(),
   };
 }
 
@@ -468,6 +477,14 @@ async function saveTradingParams(pool, logicId, payload) {
       payload.close_positions_eod ? 'true' : 'false',
       'boolean'
     );
+  }
+
+  if (payload.order_execution !== undefined) {
+    const raw = String(payload.order_execution ?? '')
+      .trim()
+      .toLowerCase();
+    const exec = raw === 'limit' || raw === 'l' ? 'limit' : 'market';
+    await upsertParam(pool, logicId, PARAM_KEYS.ORDER_EXECUTION, exec, 'text');
   }
 
   if (onReal) {

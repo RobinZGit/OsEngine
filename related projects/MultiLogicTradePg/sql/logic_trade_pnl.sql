@@ -277,7 +277,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_trade_finalize(BIGINT, NUMERIC) IS
-'Комиссия на сделке; пакеты и PnL при закрытии; возвращает баланс после комиссии';
+'Комиссия: fake=% от номинала; real=уже записанная с брокера (не commission_pct). Пакеты/PnL при Close.';
 
 CREATE OR REPLACE FUNCTION logic_trade_rebuild_pnl(p_logic_id INTEGER DEFAULT NULL)
 RETURNS INTEGER
@@ -584,17 +584,16 @@ BEGIN
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
-                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction
+                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
+                            logic_order_execution(p_logic_id)
                         );
                         v_broker_order_id := COALESCE(
                             v_order->>'orderId',
                             v_order->>'order_id',
                             v_order->'orderState'->>'orderId'
                         );
-                        IF v_broker_order_id IS NOT NULL THEN
-                            v_status := 'submitted';
-                        ELSE
-                            v_status := 'rejected';
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        IF v_status = 'rejected' THEN
                             v_note := v_order::TEXT;
                         END IF;
                     END IF;
@@ -688,17 +687,16 @@ BEGIN
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
-                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction
+                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
+                            logic_order_execution(p_logic_id)
                         );
                         v_broker_order_id := COALESCE(
                             v_order->>'orderId',
                             v_order->>'order_id',
                             v_order->'orderState'->>'orderId'
                         );
-                        IF v_broker_order_id IS NOT NULL THEN
-                            v_status := 'submitted';
-                        ELSE
-                            v_status := 'rejected';
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        IF v_status = 'rejected' THEN
                             v_note := v_order::TEXT;
                         END IF;
                     END IF;

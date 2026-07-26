@@ -33,6 +33,8 @@ export interface LogicRow {
   use_non_trading_periods?: boolean;
   /** Закрывать позиции в конце дня (кроме денежных фондов). */
   close_positions_eod?: boolean;
+  /** Тип исполнения боевых заявок: market (по умолчанию) | limit. */
+  order_execution?: 'market' | 'limit';
   account_code: string;
   account_name: string;
   account_type: 'real' | 'fake';
@@ -60,6 +62,7 @@ export interface LogicTradingParamsPayload {
   cash_fund_threshold?: number;
   use_non_trading_periods?: boolean;
   close_positions_eod?: boolean;
+  order_execution?: 'market' | 'limit';
 }
 
 export interface LogicTradingParamsResponse {
@@ -81,6 +84,7 @@ export interface LogicTradingParamsResponse {
   cash_fund_threshold: number;
   use_non_trading_periods: boolean;
   close_positions_eod: boolean;
+  order_execution: 'market' | 'limit';
 }
 
 export interface LogicNonTradingIntervalRow {

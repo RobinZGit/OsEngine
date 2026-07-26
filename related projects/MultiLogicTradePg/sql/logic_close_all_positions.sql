@@ -153,9 +153,11 @@ DECLARE
     v_note TEXT;
     v_figi TEXT;
     v_order JSONB;
+    v_commission NUMERIC;
     v_direction TEXT;
     v_action_id INTEGER;
     v_close_idx INTEGER := 0;
+    v_fill_price NUMERIC;
 BEGIN
     SELECT l.id, l.account_id, a.account_type
     INTO v_logic
@@ -245,6 +247,7 @@ BEGIN
             v_broker_order_id := NULL;
             v_status := 'filled';
             v_note := NULL;
+            v_commission := 0;
 
             IF NOT v_is_simulated THEN
                 BEGIN
@@ -260,17 +263,32 @@ BEGIN
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
-                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction
+                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
+                            logic_order_execution(p_logic_id)
                         );
                         v_broker_order_id := COALESCE(
                             v_order->>'orderId',
                             v_order->>'order_id',
                             v_order->'orderState'->>'orderId'
                         );
-                        IF v_broker_order_id IS NOT NULL THEN
-                            v_status := 'submitted';
-                        ELSE
-                            v_status := 'rejected';
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        v_commission := tbank_order_commission(v_order);
+                        IF v_commission <= 0 AND v_broker_order_id IS NOT NULL THEN
+                            BEGIN
+                                v_order := tbank_get_order_state(
+                                    v_logic.account_id, v_broker_order_id
+                                );
+                                v_commission := tbank_order_commission(v_order);
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    NULL;
+                            END;
+                        END IF;
+                        v_fill_price := tbank_order_unit_price(v_order);
+                        IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                            v_price := v_fill_price;
+                        END IF;
+                        IF v_status = 'rejected' THEN
                             v_note := v_order::TEXT;
                         END IF;
                     END IF;
@@ -287,13 +305,13 @@ BEGIN
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, signal_kind, signal_formula,
-                quantity, price, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
+                quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
                 broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
                 v_side_close_id, v_action_id, 'counter', v_formula,
-                v_quantity, v_price, v_bar_dt, v_is_simulated, FALSE, FALSE, FALSE,
+                v_quantity, v_price, COALESCE(v_commission, 0), v_bar_dt, v_is_simulated, FALSE, FALSE, FALSE,
                 v_broker_order_id, v_status, v_note
             )
             RETURNING id INTO v_trade_id;
@@ -349,6 +367,7 @@ BEGIN
             v_broker_order_id := NULL;
             v_status := 'filled';
             v_note := NULL;
+            v_commission := 0;
 
             IF NOT v_is_simulated THEN
                 BEGIN
@@ -364,17 +383,32 @@ BEGIN
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
-                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction
+                            v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
+                            logic_order_execution(p_logic_id)
                         );
                         v_broker_order_id := COALESCE(
                             v_order->>'orderId',
                             v_order->>'order_id',
                             v_order->'orderState'->>'orderId'
                         );
-                        IF v_broker_order_id IS NOT NULL THEN
-                            v_status := 'submitted';
-                        ELSE
-                            v_status := 'rejected';
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        v_commission := tbank_order_commission(v_order);
+                        IF v_commission <= 0 AND v_broker_order_id IS NOT NULL THEN
+                            BEGIN
+                                v_order := tbank_get_order_state(
+                                    v_logic.account_id, v_broker_order_id
+                                );
+                                v_commission := tbank_order_commission(v_order);
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    NULL;
+                            END;
+                        END IF;
+                        v_fill_price := tbank_order_unit_price(v_order);
+                        IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                            v_price := v_fill_price;
+                        END IF;
+                        IF v_status = 'rejected' THEN
                             v_note := v_order::TEXT;
                         END IF;
                     END IF;
@@ -391,13 +425,13 @@ BEGIN
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, signal_kind, signal_formula,
-                quantity, price, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
+                quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
                 broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
                 v_side_close_id, v_action_id, 'counter', v_formula,
-                v_quantity, v_price, v_bar_dt, v_is_simulated, FALSE, FALSE, FALSE,
+                v_quantity, v_price, COALESCE(v_commission, 0), v_bar_dt, v_is_simulated, FALSE, FALSE, FALSE,
                 v_broker_order_id, v_status, v_note
             )
             RETURNING id INTO v_trade_id;

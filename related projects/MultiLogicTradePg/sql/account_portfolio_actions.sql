@@ -154,7 +154,8 @@ BEGIN
         );
 
         BEGIN
-            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir);
+            -- Всегда рынок: кнопка «Продать всё» не зависит от order_execution логик.
+            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir, 'market');
             v_sold := v_sold || jsonb_build_array(jsonb_build_object(
                 'figi', v_figi,
                 'ticker', v_ticker,
@@ -191,7 +192,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION account_sell_all_at_market(INTEGER) IS
-'Реальный T-Bank: лимитная продажа (закрытие) всех невалютных позиций портфеля по текущей цене';
+'Реальный T-Bank: рыночная продажа/закрытие всех невалютных позиций портфеля (ORDER_TYPE_MARKET, мгновенно в сессию)';
 
 CREATE OR REPLACE FUNCTION tbank_resolve_bond_by_isin(
     p_account_id INTEGER,

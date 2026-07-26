@@ -669,17 +669,18 @@
                                   (ngModelChange)="onParamsSizeBaseChange(row.id, $event)"
                                   (click)="$event.stopPropagation()"
                                 >
+                                  <option value="free_cash">Свободные деньги</option>
                                   <option value="portfolio">Весь портфель без ден. фонда</option>
                                   <option value="portfolio_incl_fund">Весь портфель с ден. фондом</option>
-                                  <option value="free_cash">Свободные деньги</option>
                                 </select>
 
                               </td>
 
                               <td class="params-hint">
 
-                                По умолчанию — портфель без выбранного денежного фонда (его MTM вычитается).
-                                «С фондом» — % от всего equity. «Свободные» — только кэш.
+                                По умолчанию — свободные деньги (кэш).
+                                «Портфель без фонда» — % от equity без MTM денежного фонда.
+                                «С фондом» — % от всего equity.
                                 @if (row.account_type === 'fake') {
                                   Тест: кэш+MTM бумаг.
                                 } @else {
@@ -889,7 +890,7 @@
                               </td>
 
                               <td class="params-hint">
-                                Фейковый счёт: комиссия = цена × количество × % / 100 на каждую сделку
+                                Только фейк/тест. Real: комиссия с T-Bank (executedCommission), этот % не используется.
                               </td>
 
                             </tr>
@@ -1002,6 +1003,31 @@
                             <tr class="params-group-row params-band-b">
 
                               <td colspan="3">Режимы</td>
+
+                            </tr>
+
+                            <tr class="params-band-b">
+
+                              <td>Тип исполнения заявок</td>
+
+                              <td>
+
+                                <select
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).order_execution"
+                                  (ngModelChange)="onParamsOrderExecutionChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  @for (opt of orderExecutionOptions; track opt.value) {
+                                    <option [value]="opt.value">{{ opt.label }}</option>
+                                  }
+                                </select>
+
+                              </td>
+
+                              <td class="params-hint">
+                                По рынку — сразу в сессию; лимитная — по цене сигнала (может висеть в стакане). По умолчанию — рынок.
+                              </td>
 
                             </tr>
 

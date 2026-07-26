@@ -288,20 +288,110 @@ BEGIN
         );
     END IF;
 
+    -- Apply @CODE(...period/std_dev...) from signals onto series BEFORE cache skip,
+    -- otherwise indicator_values stay on old defaults (e.g. std_dev=2).
+    CREATE TEMP TABLE IF NOT EXISTS _bt_ind_fp (
+        indicator_id INTEGER PRIMARY KEY,
+        params_fp TEXT NOT NULL
+    ) ON COMMIT DROP;
+    DELETE FROM _bt_ind_fp;
+
     FOR v_ind IN
         SELECT DISTINCT lis.indicator_id
         FROM logic_indicator_signals lis
         WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
     LOOP
-        IF NOT v_need_prices AND backtest_indicators_cached(
-            p_security_id, p_tf_id, v_ind.indicator_id, p_date_from, p_date_to
-        ) THEN
-            p_ind_cached := p_ind_cached + 1;
-            CONTINUE;
-        END IF;
         BEGIN
             CALL ensure_security_indicator_series(p_security_id, v_ind.indicator_id);
-            CALL logic_apply_indicator_params_from_signals(p_logic_id, p_security_id);
+            INSERT INTO _bt_ind_fp (indicator_id, params_fp)
+            SELECT
+                v_ind.indicator_id,
+                COALESCE(string_agg(
+                    concat_ws('|',
+                        param_period::text,
+                        param_std_dev::text,
+                        param_fast_period::text,
+                        param_slow_period::text,
+                        param_signal_period::text,
+                        param_k_period::text,
+                        param_d_period::text,
+                        param_smooth::text
+                    ),
+                    ';' ORDER BY id
+                ), '')
+            FROM security_indicator_series
+            WHERE security_id = p_security_id
+              AND indicator_id = v_ind.indicator_id
+              AND is_active = TRUE
+            ON CONFLICT (indicator_id) DO UPDATE SET params_fp = EXCLUDED.params_fp;
+        EXCEPTION WHEN OTHERS THEN
+            p_ind_errors := p_ind_errors + 1;
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+                jsonb_build_object(
+                    'security_id', p_security_id,
+                    'indicator_id', v_ind.indicator_id,
+                    'phase', 'ensure'
+                ),
+                p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
+
+    BEGIN
+        CALL logic_apply_indicator_params_from_signals(p_logic_id, p_security_id);
+    EXCEPTION WHEN OTHERS THEN
+        p_ind_errors := p_ind_errors + 1;
+        PERFORM logic_backtest_log(
+            p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+            jsonb_build_object('security_id', p_security_id, 'phase', 'apply_params'),
+            p_security_id, p_tf_id
+        );
+    END;
+
+    FOR v_ind IN
+        SELECT DISTINCT lis.indicator_id
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+    LOOP
+        DECLARE
+            v_fp_before TEXT;
+            v_fp_after TEXT;
+            v_params_changed BOOLEAN;
+        BEGIN
+            SELECT params_fp INTO v_fp_before
+            FROM _bt_ind_fp
+            WHERE indicator_id = v_ind.indicator_id;
+
+            SELECT COALESCE(string_agg(
+                concat_ws('|',
+                    param_period::text,
+                    param_std_dev::text,
+                    param_fast_period::text,
+                    param_slow_period::text,
+                    param_signal_period::text,
+                    param_k_period::text,
+                    param_d_period::text,
+                    param_smooth::text
+                ),
+                ';' ORDER BY id
+            ), '') INTO v_fp_after
+            FROM security_indicator_series
+            WHERE security_id = p_security_id
+              AND indicator_id = v_ind.indicator_id
+              AND is_active = TRUE;
+
+            v_params_changed := COALESCE(v_fp_before, '') IS DISTINCT FROM COALESCE(v_fp_after, '');
+
+            IF NOT v_need_prices
+               AND NOT v_params_changed
+               AND backtest_indicators_cached(
+                   p_security_id, p_tf_id, v_ind.indicator_id, p_date_from, p_date_to
+               ) THEN
+                p_ind_cached := p_ind_cached + 1;
+                CONTINUE;
+            END IF;
+
             CALL sync_security_indicator_series_for_indicator(
                 p_security_id, v_ind.indicator_id, p_tf_id, p_end_dt, p_point_count, FALSE
             );
@@ -319,7 +409,7 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_backtest_ensure_security_data IS
-'Backtest: load_prices только если нет кэша; sync индикаторов по активным сигналам логики';
+'Backtest: load_prices if needed; apply signal formula params; sync indicators (skip cache only if params unchanged).';
 
 CREATE OR REPLACE FUNCTION logic_backtest_update_run(
     p_run_id BIGINT,
@@ -1565,10 +1655,10 @@ BEGIN
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_size_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),
-        'portfolio'
+        'free_cash'
     )));
     IF v_size_mode NOT IN ('free_cash', 'portfolio', 'portfolio_incl_fund') THEN
-        v_size_mode := 'portfolio';
+        v_size_mode := 'free_cash';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);

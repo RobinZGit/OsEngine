@@ -31,6 +31,20 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION logic_order_execution(p_logic_id INTEGER)
+RETURNS TEXT
+LANGUAGE sql STABLE AS $$
+    SELECT CASE
+        WHEN lower(btrim(COALESCE(get_logic_param_text(p_logic_id, 'order_execution'), 'market')))
+             IN ('limit', 'l', 'order_type_limit')
+        THEN 'limit'
+        ELSE 'market'
+    END;
+$$;
+
+COMMENT ON FUNCTION logic_order_execution(INTEGER) IS
+'Тип исполнения заявок логики: market (по умолчанию) или limit — из logic_params.order_execution';
+
 CREATE OR REPLACE FUNCTION logic_resolve_timeframe_id(p_logic_id INTEGER)
 RETURNS INTEGER
 LANGUAGE plpgsql STABLE AS $$
@@ -241,12 +255,30 @@ BEGIN
             CONTINUE;
         END IF;
         v_period := parse_signal_param_num(v_parsed.params, 'period');
-        v_std := parse_signal_param_num(v_parsed.params, 'std_dev');
-        v_fast := parse_signal_param_num(v_parsed.params, 'fast_period');
-        v_slow := parse_signal_param_num(v_parsed.params, 'slow_period');
-        v_signal := parse_signal_param_num(v_parsed.params, 'signal_period');
-        v_k := parse_signal_param_num(v_parsed.params, 'k_period');
-        v_d := parse_signal_param_num(v_parsed.params, 'd_period');
+        v_std := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'std_dev'),
+            parse_signal_param_num(v_parsed.params, 'std')
+        );
+        v_fast := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'fast_period'),
+            parse_signal_param_num(v_parsed.params, 'fast')
+        );
+        v_slow := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'slow_period'),
+            parse_signal_param_num(v_parsed.params, 'slow')
+        );
+        v_signal := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'signal_period'),
+            parse_signal_param_num(v_parsed.params, 'signal')
+        );
+        v_k := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'k_period'),
+            parse_signal_param_num(v_parsed.params, 'k')
+        );
+        v_d := COALESCE(
+            parse_signal_param_num(v_parsed.params, 'd_period'),
+            parse_signal_param_num(v_parsed.params, 'd')
+        );
         v_smooth := parse_signal_param_num(v_parsed.params, 'smooth');
 
         UPDATE security_indicator_series sis
@@ -503,10 +535,10 @@ BEGIN
 
     v_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),
-        'portfolio'
+        'free_cash'
     )));
     IF v_mode NOT IN ('free_cash', 'portfolio', 'portfolio_incl_fund') THEN
-        v_mode := 'portfolio';
+        v_mode := 'free_cash';
     END IF;
 
     v_fund_code := upper(btrim(COALESCE(
@@ -582,7 +614,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
-'База % лота: free_cash|portfolio (default, без фонда)|portfolio_incl_fund (с фондом)';
+'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
@@ -1070,6 +1102,7 @@ DECLARE
     v_trade_id BIGINT;
     v_figi TEXT;
     v_order JSONB;
+    v_commission NUMERIC;
     v_notional NUMERIC;
     v_is_open BOOLEAN;
     v_closed_bar_dt TIMESTAMP;
@@ -1434,6 +1467,7 @@ BEGIN
             v_broker_order_id := NULL;
             v_status := 'filled';
             v_note := NULL;
+            v_commission := 0;
 
             IF v_logic.account_type <> 'fake' THEN
                 v_is_simulated := FALSE;
@@ -1450,17 +1484,36 @@ BEGIN
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
-                            v_logic.account_id, v_figi, v_quantity, v_pp, v_direction
+                            v_logic.account_id, v_figi, v_quantity, v_pp, v_direction,
+                            logic_order_execution(p_logic_id)
                         );
                         v_broker_order_id := COALESCE(
                             v_order->>'orderId',
                             v_order->>'order_id',
                             v_order->'orderState'->>'orderId'
                         );
-                        IF v_broker_order_id IS NOT NULL THEN
-                            v_status := 'submitted';
-                        ELSE
-                            v_status := 'rejected';
+                        v_status := tbank_trade_status_from_post_order(v_order);
+                        v_commission := tbank_order_commission(v_order);
+                        IF v_commission <= 0 AND v_broker_order_id IS NOT NULL THEN
+                            BEGIN
+                                v_order := tbank_get_order_state(
+                                    v_logic.account_id, v_broker_order_id
+                                );
+                                v_commission := tbank_order_commission(v_order);
+                                v_status := COALESCE(
+                                    NULLIF(tbank_trade_status_from_post_order(v_order), 'rejected'),
+                                    v_status
+                                );
+                            EXCEPTION
+                                WHEN OTHERS THEN
+                                    NULL;
+                            END;
+                        END IF;
+                        IF tbank_order_unit_price(v_order) IS NOT NULL
+                           AND tbank_order_unit_price(v_order) > 0 THEN
+                            v_pp := tbank_order_unit_price(v_order);
+                        END IF;
+                        IF v_status = 'rejected' THEN
                             v_note := v_order::TEXT;
                         END IF;
                     END IF;
@@ -1477,13 +1530,13 @@ BEGIN
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, position_event, signal_kind, signal_formula,
-                quantity, price, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
+                quantity, price, commission, bar_dt, is_simulated, is_fictitious, is_shadow, is_test,
                 broker_order_id, status, note
             )
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
                 v_side_id, v_action_id, v_grp.position_event, v_signal_kind, v_formulas,
-                v_quantity, v_pp, v_ind_dt, v_is_simulated, FALSE, v_is_shadow, FALSE,
+                v_quantity, v_pp, COALESCE(v_commission, 0), v_ind_dt, v_is_simulated, FALSE, v_is_shadow, FALSE,
                 v_broker_order_id, v_status, v_note
             )
             ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow) DO NOTHING
