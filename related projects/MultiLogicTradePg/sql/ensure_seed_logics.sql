@@ -10,6 +10,7 @@ DO $$
 DECLARE
     v_account_id INTEGER;
     v_opt_count INTEGER;
+    v_twice_count INTEGER;
 BEGIN
     SELECT acc.id INTO v_account_id
     FROM accounts acc
@@ -59,6 +60,7 @@ BEGIN
         ('CCI Countertrade', 'Контртрендовая. OsEngine-style CCI fade.'),
         ('LinReg Fade', 'Контртрендовая. Fade по каналу LinReg.'),
         ('LinReg Fade Optimized', 'Как LinReg Fade + OPT(std_dev,10).'),
+        ('LinReg Fade Twice Optimized', 'Как LinReg Fade + OPT(std_dev,10)+OPT(period,10).'),
         ('Square Fade', 'Контртрендовая. Fade по каналу SQUARE.'),
         ('ADX Range RSI', NULL),
         ('MACD Hist Fade', NULL),
@@ -107,7 +109,7 @@ BEGIN
         'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
         'BB Stoch Bounce', 'SMAT3 Trend',
         'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик',
-        'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'Square Fade',
+        'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'Square Fade',
         'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal',
         'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
@@ -121,7 +123,7 @@ BEGIN
     INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
     SELECT l.id, 'opt_eval_candles', '20', 'integer'
     FROM logics l
-    WHERE l.name = 'LinReg Fade Optimized'
+    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -147,11 +149,26 @@ BEGIN
     WHERE l.name = 'LinReg Fade Optimized'
       AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('LINREG', 'open',  'long',  'counter', '@LINREG(period=20,std_dev=2,series=LOWER,OPT(std_dev,10),OPT(period,10)) pp <= VALUE', 0),
+        ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10),OPT(period,10)) pp >= VALUE', 1),
+        ('LINREG', 'open',  'short', 'counter', '@LINREG(period=20,std_dev=2,series=UPPER,OPT(std_dev,10),OPT(period,10)) pp >= VALUE', 2),
+        ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10),OPT(period,10)) pp <= VALUE', 3)
+    ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'LinReg Fade Twice Optimized'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
     INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
     SELECT dst.id, ls.security_id, ls.display_order, ls.is_active
     FROM logics src
     JOIN logic_securities ls ON ls.logic_id = src.id
-    JOIN logics dst ON dst.name = 'LinReg Fade Optimized'
+    JOIN logics dst ON dst.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
     WHERE src.name = 'LinReg Fade'
       AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = dst.id)
     ON CONFLICT (logic_id, security_id) DO NOTHING;
@@ -173,7 +190,7 @@ BEGIN
         'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
         'BB Stoch Bounce', 'SMAT3 Trend',
         'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик',
-        'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'Square Fade',
+        'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'Square Fade',
         'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal',
         'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
@@ -197,7 +214,7 @@ BEGIN
         'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
         'BB Stoch Bounce', 'SMAT3 Trend',
         'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик',
-        'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'Square Fade',
+        'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'Square Fade',
         'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal',
         'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
@@ -215,6 +232,14 @@ BEGIN
         RAISE EXCEPTION 'ensure_seed_logics: LinReg Fade Optimized still missing after seed (account_id=%)', v_account_id;
     END IF;
 
-    RAISE NOTICE 'ensure_seed_logics: OK — LinReg Fade Optimized present; logics total=%',
+    SELECT COUNT(*) INTO v_twice_count
+    FROM logics
+    WHERE name = 'LinReg Fade Twice Optimized';
+
+    IF v_twice_count < 1 THEN
+        RAISE EXCEPTION 'ensure_seed_logics: LinReg Fade Twice Optimized still missing after seed (account_id=%)', v_account_id;
+    END IF;
+
+    RAISE NOTICE 'ensure_seed_logics: OK — Optimized + Twice Optimized present; logics total=%',
         (SELECT COUNT(*) FROM logics);
 END $$;

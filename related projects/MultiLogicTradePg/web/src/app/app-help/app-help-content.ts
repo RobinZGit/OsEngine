@@ -176,7 +176,9 @@ OPT — пометить числовой параметр для оптимиз
 Пример close long с двумя OPT:
   @LINREG(period=20,std_dev=2,series=MIDDLE,OPT(period,10),OPT(std_dev,10)) pp >= VALUE
 
-Демо-логика: «LinReg Fade Optimized» — те же fade-сигналы с OPT(std_dev,10).
+Демо-логики:
+• «LinReg Fade Optimized» — fade с OPT(std_dev,10);
+• «LinReg Fade Twice Optimized» — fade с OPT(std_dev,10) и OPT(period,10) (4 ветки + чемпион).
 
 Производительность:
 • Цены и indicator_values общие на бумагу/TF — OPT-ветки их не дублируют в БД.

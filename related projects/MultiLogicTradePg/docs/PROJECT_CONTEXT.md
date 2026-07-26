@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — live equity-curve mid-backtest (FinRes sync, no 50k dump)
+**Последнее обновление:** 2026-07-26 — seed LinReg Fade Twice Optimized (OPT std_dev + period)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-26)
+
+### 2026-07-26 (seed LinReg Fade Twice Optimized)
+
+- Новая дефолтная логика **LinReg Fade Twice Optimized** (FAKE, выкл.): как LinReg Fade, но `OPT(std_dev,10)` + `OPT(period,10)` → чемпион + 4 ветки.
+- Seed в `01` (v56), `sql/ensure_seed_logics.sql`, `api/scripts/seed-linreg-fade-twice-optimized.sql`.
+- Бумаги/стопы как у LinReg Fade; `opt_eval_candles=20`.
 
 ### 2026-07-26 (эквити mid-run ≠ FinRes)
 
@@ -646,6 +652,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-26 | Seed LinReg Fade Twice Optimized (OPT std_dev + period) |
 | 2026-07-26 | Live /equity-curve mid-backtest so portfolio equity matches FinRes without 50k dump |
 | 2026-07-26 | Fix Pages CI: DELETE margin_leverage after CREATE logic_params; push |
 | 2026-07-26 | Skip loading 50k test trades while backtest running (UI hang); push |
@@ -839,4 +846,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **714** — equity mid-run ≠ FinRes; **713** — Pages CI; **712** — params hang during backtest.
+Последние (см. USER_INSTRUCTIONS): **715** — LinReg Fade Twice Optimized; **714** — equity mid-run; **713** — Pages CI.

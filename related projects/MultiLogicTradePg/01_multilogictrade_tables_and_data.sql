@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v54 (идемпотентный запуск)
+-- Версия: v56 (идемпотентный запуск)
+-- v56: seed «LinReg Fade Twice Optimized» — OPT(std_dev,10)+OPT(period,10)
 -- v54: install-on-top ensure всех seed-логик (в т.ч. LinReg Fade Optimized); бумаги Optimized после назначения LinReg Fade
 --      + sql/ensure_seed_logics.sql (post-01, installer проверяет наличие LinReg Fade Optimized)
 -- v53: logic_backtest_runs.last_opt_eval_bar_dt — курсор OPT в тесте (не трогает live param)
@@ -2548,7 +2549,76 @@ JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'LinReg Fade Optimized'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
--- Бумаги Optimized — после назначения LinReg Fade (ниже); здесь только сигналы.
+-- LinReg Fade Twice Optimized: OPT on sigma and period (2² challenger arms + champion)
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT
+    'LinReg Fade Twice Optimized',
+    a.id,
+    FALSE,
+    'Как LinReg Fade, но два OPT: std_dev (±10%) и period/свечи (±10%) — чемпион + 4 ветки, окно opt_eval_candles.'
+FROM (
+    SELECT acc.id
+    FROM accounts acc
+    JOIN brokers br ON br.id = acc.broker_id
+    WHERE br.code = 'T-BANK'
+      AND (acc.account_code = 'FAKE-EFF-001' OR lower(acc.account_type::text) = 'fake')
+    ORDER BY CASE WHEN acc.account_code = 'FAKE-EFF-001' THEN 0 ELSE 1 END, acc.id
+    LIMIT 1
+) a
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, d.param_key, d.default_value, d.value_type
+FROM logics l
+CROSS JOIN logic_param_defs d
+WHERE l.name = 'LinReg Fade Twice Optimized'
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text'),
+    ('opt_eval_candles', '20', 'integer')
+) AS v(param_key, param_value, value_type)
+WHERE l.name = 'LinReg Fade Twice Optimized'
+  AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
+ON CONFLICT (logic_id, param_key) DO UPDATE SET
+    param_value = EXCLUDED.param_value,
+    value_type = EXCLUDED.value_type;
+
+UPDATE logic_params lp
+SET param_value = '1000000',
+    value_type = 'money',
+    updated_at = CURRENT_TIMESTAMP
+FROM logics l
+WHERE l.id = lp.logic_id
+  AND l.name ILIKE 'LinReg Fade%Optimized%'
+  AND lp.param_key IN ('initial_balance', 'current_balance')
+  AND btrim(COALESCE(lp.param_value, '')) = '';
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('LINREG', 'open',  'long',  'counter', '@LINREG(period=20,std_dev=2,series=LOWER,OPT(std_dev,10),OPT(period,10)) pp <= VALUE', 0),
+    ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10),OPT(period,10)) pp >= VALUE', 1),
+    ('LINREG', 'open',  'short', 'counter', '@LINREG(period=20,std_dev=2,series=UPPER,OPT(std_dev,10),OPT(period,10)) pp >= VALUE', 2),
+    ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10),OPT(period,10)) pp <= VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'LinReg Fade Twice Optimized'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- Бумаги Optimized / Twice — после назначения LinReg Fade (ниже); здесь только сигналы.
 
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
@@ -2646,17 +2716,17 @@ CROSS JOIN LATERAL (
     ORDER BY s.id, sp.prefix
 ) q
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized',
+    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized',
     'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
 ON CONFLICT (logic_id, security_id) DO NOTHING;
 
--- Optimized: предпочтительно те же бумаги, что у LinReg Fade (если уже есть)
+-- Optimized / Twice: предпочтительно те же бумаги, что у LinReg Fade (если уже есть)
 INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
 SELECT dst.id, ls.security_id, ls.display_order, ls.is_active
 FROM logics src
 JOIN logic_securities ls ON ls.logic_id = src.id
-JOIN logics dst ON dst.name = 'LinReg Fade Optimized'
+JOIN logics dst ON dst.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
 WHERE src.name = 'LinReg Fade'
 ON CONFLICT (logic_id, security_id) DO UPDATE SET
     is_active = EXCLUDED.is_active,
@@ -2672,7 +2742,7 @@ CROSS JOIN (VALUES
     ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
 WHERE l.name IN (
-    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized',
+    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized',
     'Square Fade', 'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal'
 )
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
@@ -3304,6 +3374,7 @@ CROSS JOIN (VALUES
     ('CCI Countertrade', 'Контртрендовая. OsEngine-style CCI fade.'),
     ('LinReg Fade', 'Контртрендовая. Fade по каналу LinReg.'),
     ('LinReg Fade Optimized', 'Как LinReg Fade + OPT(std_dev,10).'),
+    ('LinReg Fade Twice Optimized', 'Как LinReg Fade + OPT(std_dev,10)+OPT(period,10).'),
     ('Square Fade', 'Контртрендовая. Fade по каналу SQUARE.'),
     ('ADX Range RSI', NULL),
     ('MACD Hist Fade', NULL),
@@ -3353,7 +3424,7 @@ WHERE l.name IN (
     'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
     'BB Stoch Bounce', 'SMAT3 Trend',
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик',
-    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'Square Fade',
+    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'Square Fade',
     'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal',
     'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
     'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
@@ -3367,7 +3438,7 @@ ON CONFLICT (logic_id, param_key) DO NOTHING;
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
 SELECT l.id, 'opt_eval_candles', '20', 'integer'
 FROM logics l
-WHERE l.name = 'LinReg Fade Optimized'
+WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
   AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -3379,7 +3450,7 @@ SET param_value = '20',
 WHERE param_key = 'opt_eval_candles'
   AND param_value IS DISTINCT FROM '20';
 
--- Сигналы Optimized, если логику только что создали ensure-блоком
+-- Сигналы Optimized / Twice, если логику только что создали ensure-блоком
 INSERT INTO logic_indicator_signals (
     logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
 )
@@ -3395,12 +3466,27 @@ JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'LinReg Fade Optimized'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
--- Бумаги: если у seed пусто — все акции; Optimized предпочитает состав LinReg Fade
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('LINREG', 'open',  'long',  'counter', '@LINREG(period=20,std_dev=2,series=LOWER,OPT(std_dev,10),OPT(period,10)) pp <= VALUE', 0),
+    ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10),OPT(period,10)) pp >= VALUE', 1),
+    ('LINREG', 'open',  'short', 'counter', '@LINREG(period=20,std_dev=2,series=UPPER,OPT(std_dev,10),OPT(period,10)) pp >= VALUE', 2),
+    ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=2,series=MIDDLE,OPT(std_dev,10),OPT(period,10)) pp <= VALUE', 3)
+) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'LinReg Fade Twice Optimized'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+-- Бумаги: если у seed пусто — все акции; Optimized/Twice предпочитают состав LinReg Fade
 INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
 SELECT dst.id, ls.security_id, ls.display_order, ls.is_active
 FROM logics src
 JOIN logic_securities ls ON ls.logic_id = src.id
-JOIN logics dst ON dst.name = 'LinReg Fade Optimized'
+JOIN logics dst ON dst.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
 WHERE src.name = 'LinReg Fade'
   AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = dst.id)
 ON CONFLICT (logic_id, security_id) DO NOTHING;
@@ -3422,7 +3508,7 @@ WHERE l.name IN (
     'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
     'BB Stoch Bounce', 'SMAT3 Trend',
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик',
-    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'Square Fade',
+    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'Square Fade',
     'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal',
     'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
     'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
@@ -3446,7 +3532,7 @@ WHERE l.name IN (
     'Stochastic Levels', 'EMA Price Cross', 'Dual MA Trend', 'SMA Stoch Pullback',
     'BB Stoch Bounce', 'SMAT3 Trend',
     'L1 — лонг, тренд', 'L2 — лонг, боковик', 'L3 — шорт, тренд', 'L4 — шорт, боковик',
-    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'Square Fade',
+    'CCI Countertrade', 'LinReg Fade', 'LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'Square Fade',
     'ADX Range RSI', 'MACD Hist Fade', 'ATR Spike Reversal',
     'MACD Signal Cross', 'ADX DI Trend', 'SMA100 Trend', 'LinReg Slope Trend', 'PACC Momentum Trend',
     'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
