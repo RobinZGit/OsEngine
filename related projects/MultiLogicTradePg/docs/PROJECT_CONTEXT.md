@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — mid-run test-panel trades (opens + recent closes)
+**Последнее обновление:** 2026-07-27 — cycle budget ≤ equity (short proceeds / borrowed cash out of sizing)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -117,7 +117,14 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-26)
+## Что сделано (актуально на 2026-07-27)
+
+### 2026-07-27 (плечо 1: не считать выручку шорта / заёмный кэш)
+
+- **Симптом (remote logic 359):** short Open уходил в маржу сверх остатка при «плече 1» (10% × 10 поз); брокер `30042 Not enough assets for a margin trade`.
+- **Причина:** `position_size_base=free_cash` → T-Bank `cash_amount` / test `current_balance` растут от выручки short (и могут включать заём); между циклами потолок `%×max` пересчитывался от раздутой базы. Mid-cycle freeze не спасал cross-cycle.
+- **Фикс:** `logic_account_net_equity` (real = broker `amount`; fake = cash − short notional + long MTM) + `logic_exposure_cycle_budget` = `LEAST(sizing_base, equity)`. Live `process_logic_trades` + `sql/logic_trade_runner.sql`; backtest `free_cash` = `LEAST(cash, portfolio_equity)`.
+- **На remote:** применить обновлённый `02` (или полный upgrade), иначе бой продолжит старую логику.
 
 ### 2026-07-26 (mid-run: пустые бумаги/открытия/закрытия)
 
@@ -636,7 +643,8 @@
 - [x] v48 `security_resume` per paper×side (long/short); local DB + installers; no release (2026-07-25).
 - [x] Backtest: single-flight `load_prices` by key + per-run indicator SQL (`api/logic-backtest.js`, 2026-07-25).
 - [x] Real account actions: sell-all portfolio + buy TBRU bonds (UI + SQL/API, 2026-07-25).
-- [ ] Validate real-account logic (attach to real, confirm qty vs free cash, no oversized rejects).
+- [ ] Validate real-account logic after equity-cap deploy (qty vs equity, no short-proceeds inflation).
+- [ ] Apply `02` equity-cap fix on remote (logic 359 / live T-Bank) and confirm no 30042 from oversized short opens.
 - [x] GitHub release **real-trade-1** — боевая торговля (2026-07-26).
 
 ---
@@ -657,6 +665,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-27 | Cap cycle budget at equity — exclude short proceeds / borrowed cash from lot+exposure base |
 | 2026-07-26 | Mid-run test-panel: opens + recent closes while backtest running |
 | 2026-07-26 | Seed LinReg Fade Twice Optimized (OPT std_dev + period) |
 | 2026-07-26 | Live /equity-curve mid-backtest so portfolio equity matches FinRes without 50k dump |

@@ -710,6 +710,126 @@ $$;
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
 'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
+-- Чистая стоимость счёта для потолка риска (плечо 1):
+-- real → portfolio amount брокера; fake → cash − short_notional + long_mtm.
+-- Нужно потому, что free_cash / cash_amount растёт от short-выручки и иначе
+-- потолок %×макс.позиций раздувается выше equity.
+CREATE OR REPLACE FUNCTION logic_account_net_equity(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_account_id INTEGER;
+    v_account_type VARCHAR;
+    v_bal JSONB;
+    v_cash NUMERIC;
+    v_equity NUMERIC;
+    v_short_notional NUMERIC;
+    v_long_mtm NUMERIC := 0;
+    v_sec RECORD;
+    v_price NUMERIC;
+    v_long_qty NUMERIC;
+BEGIN
+    SELECT l.account_id, lower(COALESCE(a.account_type, 'fake'))
+    INTO v_account_id, v_account_type
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id;
+
+    IF NOT FOUND THEN
+        RETURN 0;
+    END IF;
+
+    IF v_account_type <> 'fake' THEN
+        BEGIN
+            v_bal := fetch_tbank_account_balance(v_account_id);
+            IF v_bal IS NULL OR (v_bal->>'error') IS NOT NULL THEN
+                RETURN 0;
+            END IF;
+            -- amount = собственный капитал (без «раздутого» cash от шорта/займа).
+            RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+        EXCEPTION
+            WHEN OTHERS THEN
+                RETURN 0;
+        END;
+    END IF;
+
+    -- Fake: current_balance includes short proceeds — subtract short entry notional.
+    v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
+    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
+    INTO v_short_notional
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                WHERE l.open_trade_id = lt.id
+            ), 0),
+            0
+        ) AS qty
+    ) rem
+    WHERE lt.logic_id = p_logic_id
+      AND NOT lt.is_shadow
+      AND lt.is_test = FALSE
+      AND COALESCE(lt.opt_lane, '') = ''
+      AND lt.status IN ('filled', 'submitted')
+      AND s.name = 'Open'
+      AND a.name = 'Short'
+      AND rem.qty > 0;
+
+    FOR v_sec IN
+        SELECT ls.security_id
+        FROM logic_securities ls
+        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+    LOOP
+        v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
+        IF v_long_qty <= 0 THEN
+            CONTINUE;
+        END IF;
+        v_price := logic_ensure_security_market_price(
+            p_logic_id, v_sec.security_id, p_timeframe_id
+        );
+        IF v_price IS NOT NULL AND v_price > 0 THEN
+            v_long_mtm := v_long_mtm + v_long_qty * v_price;
+        END IF;
+    END LOOP;
+
+    v_equity := v_cash - COALESCE(v_short_notional, 0) + COALESCE(v_long_mtm, 0);
+    RETURN GREATEST(0, v_equity);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_account_net_equity(INTEGER, INTEGER) IS
+'Equity для потолка Open (плечо 1): real=amount брокера; fake=cash−short+long_mtm. Режет раздутый free_cash после шортов.';
+
+-- База цикла / потолка: min(база лота, equity), чтобы short-выручка / заём не поднимали плечо.
+CREATE OR REPLACE FUNCTION logic_exposure_cycle_budget(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_sizing NUMERIC;
+    v_equity NUMERIC;
+BEGIN
+    v_sizing := GREATEST(0, COALESCE(logic_position_sizing_base(p_logic_id, p_timeframe_id), 0));
+    v_equity := GREATEST(0, COALESCE(logic_account_net_equity(p_logic_id, p_timeframe_id), 0));
+    IF v_equity > 0 AND v_sizing > 0 THEN
+        RETURN LEAST(v_sizing, v_equity);
+    END IF;
+    RETURN v_sizing;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_exposure_cycle_budget(INTEGER, INTEGER) IS
+'База цикла для % лота и потолка %×макс.позиций: LEAST(sizing_base, equity) — плечо ≤ 1 от equity.';
+
 -- Номинал уже открытых long+short (чемпион / бой или test; opt_lane отделяет paper OPT).
 -- Drop 3-arg overload so callers use the 4-arg form (p_run_id DEFAULT NULL).
 DROP FUNCTION IF EXISTS logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT);
@@ -1334,10 +1454,10 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_balance := logic_ensure_balance(p_logic_id);
     v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
-    -- Зафиксировать базу на цикл: short Open раздувает free_cash у брокера —
-    -- без фиксации каждый следующий Open берёт % от уже раздутого кэша (маржа).
+    -- База цикла ≤ equity: free_cash/cash_amount растёт от short-выручки / займа;
+    -- mid-cycle freeze alone does not stop that. LEAST(sizing, equity) = плечо ≤ 1.
     -- После Close базу обновляем (свитч: кэш +/- для следующего Open).
-    v_cycle_budget := COALESCE(v_sizing_base, 0);
+    v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
     -- Потолок риска из тех же 2 параметров: 10 поз × 10% = 100% базы; 20×10% = 200%.
     -- Long и short считаются в одном номинале (шорт не может «набрать» сверх этого).
     v_max_exposure := v_cycle_budget
@@ -1374,7 +1494,7 @@ BEGIN
         PERFORM logic_close_positions_eod_except_funds(p_logic_id);
         v_balance := logic_ensure_balance(p_logic_id);
         v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
-        v_cycle_budget := COALESCE(v_sizing_base, 0);
+        v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
         v_max_exposure := v_cycle_budget
             * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
             * v_max_positions;
@@ -1779,7 +1899,7 @@ BEGIN
                AND v_status <> 'rejected' THEN
                 v_spent_notional := logic_open_notional_exposure(p_logic_id, FALSE, '');
                 v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
-                v_cycle_budget := COALESCE(v_sizing_base, 0);
+                v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
                 v_max_exposure := v_cycle_budget
                     * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
                     * v_max_positions;

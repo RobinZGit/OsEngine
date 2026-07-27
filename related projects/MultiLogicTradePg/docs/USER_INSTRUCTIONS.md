@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+717. On a remote server, I bought with a margin, more than, or rather, sold with a margin, more than the rest of the account, although the first shoulder is set. Of course, the money we have taken should not be taken into account when calculating in positions. More precisely, the money from the borrowed papers. Well, and the borrowed money, if there is.
+
 716. For some reason, there is no paper, there is no opening, there is no closing, why?
 
 715. I made one more logic by default LinrecFade Twice Optimized Twice Optimized And there will be optimization and by Sigma, well, by deviation And by the number of candles
