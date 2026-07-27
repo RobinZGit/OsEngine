@@ -17,7 +17,7 @@ WHERE l.name = 'LinReg Fade Optimized'
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 UPDATE logic_params lp
-SET param_value = '20', value_type = 'integer'
+SET param_value = '200', value_type = 'integer'
 FROM logics l
 WHERE l.id = lp.logic_id
   AND l.name = 'LinReg Fade Optimized'
@@ -58,7 +58,7 @@ ON CONFLICT (logic_id, security_id) DO UPDATE SET
     is_active = EXCLUDED.is_active,
     display_order = EXCLUDED.display_order;
 
--- Promote window: default 20 (editable in UI «Свечей окна OPT»)
+-- Promote window: default 200 (editable in UI «Свечей окна OPT»)
 UPDATE logic_params lp
 SET param_value = '20', value_type = 'integer'
 FROM logics l

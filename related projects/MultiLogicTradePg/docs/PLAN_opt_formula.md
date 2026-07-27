@@ -50,7 +50,7 @@ Also:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `opt_eval_candles` | `20` | After N closed TF candles, compare FinRes of champion vs each opt_lane (closes in window), promote best param values into formulas, reset window |
+| `opt_eval_candles` | `200` | After N closed TF candles, compare FinRes of champion vs each opt_lane (closes in window), promote best param values into formulas, reset window |
 
 Service params: `last_opt_eval_bar_dt`, `opt_window_started_bar_dt` (optional).
 

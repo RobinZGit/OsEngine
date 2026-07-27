@@ -1034,7 +1034,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       close_positions_eod: trading.close_positions_eod === true,
       order_execution: trading.order_execution === 'limit' ? 'limit' : 'market',
-      opt_eval_candles: this.formatIntParam(trading.opt_eval_candles ?? 20, 20),
+      opt_eval_candles: this.formatIntParam(trading.opt_eval_candles ?? 200, 200),
       reset_balance: false,
     };
   }

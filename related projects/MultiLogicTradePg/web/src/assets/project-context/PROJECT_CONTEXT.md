@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-26 — fix Pages CI: DELETE margin_leverage after CREATE logic_params
+**Последнее обновление:** 2026-07-27 — push: `opt_eval_candles` default 200; OPT paper equity-cap; FinRes/run_id; installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -117,7 +117,51 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-26)
+## Что сделано (актуально на 2026-07-27)
+
+### 2026-07-27 (OPT promote: sigma «ползёт вниз», FinRes-дыры 10×)
+
+- **Симптом (тест #2136):** почти всегда promote `std_dev:down` (2 → ~0.25); в окне FinRes ветки ≫ чемпиона при ±10% параметра.
+- **Причины:** (1) **баг сравнения размеров** — чемпион в тесте уже `LEAST(cash, equity)`, OPT paper до фикса брал сырой cash / без room → абсолютный FinRes ветки раздут; (2) **метрика** = сумма closed FinRes за окно → у mean-reversion более узкий канал = больше сделок = выше сумма (даже при честном размере) → ratchet вниз; (3) `logic_opt_lane_finres` без `run_id` мог мешать чужие тесты.
+- **Фикс:** OPT sizing = cycle budget + room (уже); sync `logic_backtest_runner.sql` free_cash=`LEAST`; FinRes + `run_id` + exclude `opt:promote`. Пересчёт окна с MTM/нормировкой — по желанию (отдельное решение).
+
+### 2026-07-27 (OPT paper без потолка equity — «лоты 100k»)
+
+- **Симптом (remote logic 359, новый дамп):** после фикса чемпиона в списке сделок снова «огромные» short/long (~комиссия 30 ≈ 0.03% от ~100k); брокер по-прежнему `30042` на части реальных Open.
+- **Разбор:** реальные champion-opens ~10% от ~43k (норма); **OPT paper** (`is_simulated`, `opt_lane`) считал лот от сырого `logic_position_sizing_base` / fallback **1_000_000**, без `logic_exposure_cycle_budget` и без room `%×max_open_positions`.
+- **Фикс:** `process_logic_opt_trades` — live: `logic_exposure_cycle_budget`; test: `LEAST(cash, backtest equity)`; на ветку — `logic_open_notional_exposure` + room как у чемпиона (`sql/logic_opt.sql` + `02`).
+- **На remote:** обязательно применить обновлённый **`02`** (installer/upgrade). UI-only install без SQL не закрывает дыру.
+
+### 2026-07-27 (кнопка «Сброс OPT» у окна свечей)
+
+- В «Параметры логики» слева от «Свечей окна OPT» — кнопка **Сброс OPT**.
+- `logic_opt_reset_to_initial`: вернуть начальные формулы (earliest snapshot / `params_prev` первого promote), `DELETE` live `opt_lane` сделок, сброс `last_opt_eval_bar_dt`, apply indicator params.
+- При первом live-курсоре OPT — авто-snapshot начальных баз.
+- API: `POST /api/logics/:id/opt-reset`.
+
+### 2026-07-27 (плечо 1: не считать выручку шорта / заёмный кэш)
+
+- **Симптом (remote logic 359):** short Open уходил в маржу сверх остатка при «плече 1» (10% × 10 поз); брокер `30042 Not enough assets for a margin trade`.
+- **Причина:** `position_size_base=free_cash` → T-Bank `cash_amount` / test `current_balance` растут от выручки short (и могут включать заём); между циклами потолок `%×max` пересчитывался от раздутой базы. Mid-cycle freeze не спасал cross-cycle.
+- **Фикс:** `logic_account_net_equity` (real = broker `amount`; fake = cash − short notional + long MTM) + `logic_exposure_cycle_budget` = `LEAST(sizing_base, equity)`. Live `process_logic_trades` + `sql/logic_trade_runner.sql`; backtest `free_cash` = `LEAST(cash, portfolio_equity)`.
+- **На remote:** применить обновлённый `02` (или полный upgrade), иначе бой продолжит старую логику.
+
+### 2026-07-26 (mid-run: пустые бумаги/открытия/закрытия)
+
+- **Причина:** после фикса «не вешать вкладку» mid-run не грузился full trade dump; эквити шла из `/equity-curve`, а списки сделок/бумаг — из пустого `trades[]`.
+- **Фикс:** `GET /api/logic-trades/test-panel` — все champion Open + до 2500 последних Close (без OPT paper); poll при открытом «Тестирование» во время running. Полный dump — после finish.
+
+### 2026-07-26 (seed LinReg Fade Twice Optimized)
+
+- Новая дефолтная логика **LinReg Fade Twice Optimized** (FAKE, выкл.): как LinReg Fade, но `OPT(std_dev,10)` + `OPT(period,10)` → чемпион + 4 ветки.
+- Seed в `01` (v56), `sql/ensure_seed_logics.sql`, `api/scripts/seed-linreg-fade-twice-optimized.sql`.
+- Бумаги/стопы как у LinReg Fade; `opt_eval_candles=200` (после v56).
+
+### 2026-07-26 (эквити mid-run ≠ FinRes)
+
+- **Симптом:** во время теста FinRes растёт (напр. +251k), «Эквити портфеля» почти плоская / другой масштаб.
+- **Причина:** после фикса «не вешать вкладку» полный dump сделок mid-run не грузится; FinRes — из `/pnl-summary`, график — из устаревшего `trades[]`.
+- **Фикс:** `GET /api/logic-trades/equity-curve` (только Close champion, те же фильтры что pnl-summary); poll при открытом блоке «Тестирование»; панель предпочитает live curve. Champion-only (`opt_lane=''`) сохранён. Full 50k dump по-прежнему только после finish.
 
 ### 2026-07-26 (GitHub Pages CI: verify-sql падал)
 
@@ -129,6 +173,11 @@
 
 - **Причина:** poll качал полный список тестовых сделок (до 50k / ~40 МБ) пока `running` — парсинг вешал вкладку («загрузка…» у параметров).
 - **Фикс:** не загружать full test trades dump во время running; сделки — после finish; прогресс/FinRes из status/pnl-summary.
+
+### 2026-07-27 (форма: Свечей окна OPT = 200)
+
+- Дефолт `opt_eval_candles` **200** (раньше 20): `logic_param_defs`, seed Optimized/Twice, UPDATE всех `logic_params`, fallbacks в `logic_opt`/`02`, API/UI/help.
+- `01` v56 UPDATE; `sql/ensure_seed_logics.sql` синхронизирован.
 
 ### 2026-07-26 (форма: Свечей окна OPT = 20)
 
@@ -619,7 +668,8 @@
 - [x] v48 `security_resume` per paper×side (long/short); local DB + installers; no release (2026-07-25).
 - [x] Backtest: single-flight `load_prices` by key + per-run indicator SQL (`api/logic-backtest.js`, 2026-07-25).
 - [x] Real account actions: sell-all portfolio + buy TBRU bonds (UI + SQL/API, 2026-07-25).
-- [ ] Validate real-account logic (attach to real, confirm qty vs free cash, no oversized rejects).
+- [ ] Validate real-account logic after equity-cap deploy (qty vs equity, no short-proceeds inflation).
+- [ ] Apply `02` equity-cap fix on remote (logic 359 / live T-Bank) and confirm no 30042 from oversized short opens.
 - [x] GitHub release **real-trade-1** — боевая торговля (2026-07-26).
 
 ---
@@ -640,6 +690,14 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-27 | Push: opt_eval_candles 20→200; OPT equity-cap + FinRes run_id; installers |
+| 2026-07-27 | Default opt_eval_candles 20→200 for all logics (01/API/UI) |
+| 2026-07-27 | OPT paper: same equity + %×max exposure cap as champion (was free_cash/1e6) |
+| 2026-07-27 | Button «Сброс OPT»: restore initial bases + clear live opt_lane book; push |
+| 2026-07-27 | Cap cycle budget at equity — exclude short proceeds / borrowed cash from lot+exposure base |
+| 2026-07-26 | Mid-run test-panel: opens + recent closes while backtest running |
+| 2026-07-26 | Seed LinReg Fade Twice Optimized (OPT std_dev + period) |
+| 2026-07-26 | Live /equity-curve mid-backtest so portfolio equity matches FinRes without 50k dump |
 | 2026-07-26 | Fix Pages CI: DELETE margin_leverage after CREATE logic_params; push |
 | 2026-07-26 | Skip loading 50k test trades while backtest running (UI hang); push |
 | 2026-07-26 | UI opt_eval_candles=20 + reset all logics; installers; push |
@@ -832,4 +890,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **712** — params form hang during backtest; **711** — opt_eval_candles UI=20.
+Последние (см. USER_INSTRUCTIONS): **715** — LinReg Fade Twice Optimized; **714** — equity mid-run; **713** — Pages CI.

@@ -121,18 +121,18 @@ BEGIN
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
     INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
-    SELECT l.id, 'opt_eval_candles', '20', 'integer'
+    SELECT l.id, 'opt_eval_candles', '200', 'integer'
     FROM logics l
     WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
     UPDATE logic_params
-    SET param_value = '20',
+    SET param_value = '200',
         value_type = 'integer',
         updated_at = CURRENT_TIMESTAMP
     WHERE param_key = 'opt_eval_candles'
-      AND param_value IS DISTINCT FROM '20';
+      AND param_value IS DISTINCT FROM '200';
 
     INSERT INTO logic_indicator_signals (
         logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order

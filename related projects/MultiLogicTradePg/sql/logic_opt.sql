@@ -661,13 +661,15 @@ $$;
 
 DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP);
 DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP, BOOLEAN);
+DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP, BOOLEAN, BIGINT);
 
 CREATE OR REPLACE FUNCTION logic_opt_lane_finres(
     p_logic_id INTEGER,
     p_opt_lane TEXT,
     p_from_bar TIMESTAMP,
     p_to_bar TIMESTAMP,
-    p_is_test BOOLEAN DEFAULT FALSE
+    p_is_test BOOLEAN DEFAULT FALSE,
+    p_run_id BIGINT DEFAULT NULL
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
@@ -681,8 +683,14 @@ LANGUAGE sql STABLE AS $$
       AND s.name = 'Close'
       AND lt.status IN ('filled', 'submitted')
       AND lt.financial_result IS NOT NULL
+      AND COALESCE(lt.trade_reason, '') <> 'opt:promote'
       AND (p_from_bar IS NULL OR lt.bar_dt > p_from_bar)
-      AND (p_to_bar IS NULL OR lt.bar_dt <= p_to_bar);
+      AND (p_to_bar IS NULL OR lt.bar_dt <= p_to_bar)
+      AND (
+          NOT COALESCE(p_is_test, FALSE)
+          OR p_run_id IS NULL
+          OR lt.run_id = p_run_id
+      );
 $$;
 
 DROP FUNCTION IF EXISTS logic_opt_close_open_lanes(INTEGER, INTEGER, TIMESTAMP);
@@ -830,7 +838,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    v_n := GREATEST(1, COALESCE(get_logic_param_numeric(p_logic_id, 'opt_eval_candles', 20), 20)::INTEGER);
+    v_n := GREATEST(1, COALESCE(get_logic_param_numeric(p_logic_id, 'opt_eval_candles', 200), 200)::INTEGER);
 
     IF v_is_test THEN
         IF p_run_id IS NULL THEN
@@ -885,7 +893,8 @@ BEGIN
     END IF;
 
     v_champ := logic_opt_lane_finres(
-        p_logic_id, '', v_last_dt, p_closed_bar_dt, v_is_test
+        p_logic_id, '', v_last_dt, p_closed_bar_dt, v_is_test,
+        CASE WHEN v_is_test THEN p_run_id ELSE NULL END
     );
     v_best_score := v_champ;
     v_best_lane := '';
@@ -894,7 +903,8 @@ BEGIN
     FOR v_arm IN SELECT * FROM logic_opt_build_arms(p_logic_id)
     LOOP
         v_score := logic_opt_lane_finres(
-            p_logic_id, v_arm.lane, v_last_dt, p_closed_bar_dt, v_is_test
+            p_logic_id, v_arm.lane, v_last_dt, p_closed_bar_dt, v_is_test,
+            CASE WHEN v_is_test THEN p_run_id ELSE NULL END
         );
         IF v_score > v_best_score THEN
             v_best_score := v_score;
@@ -1054,6 +1064,12 @@ DECLARE
     v_position_size_pct NUMERIC;
     v_max_order_amount NUMERIC;
     v_sizing_base NUMERIC;
+    v_cycle_budget NUMERIC;
+    v_max_exposure NUMERIC;
+    v_spent_notional NUMERIC;
+    v_room NUMERIC;
+    v_order_notional NUMERIC;
+    v_equity_cap NUMERIC;
     v_trade_id BIGINT;
     v_comm NUMERIC;
     v_max_positions INTEGER;
@@ -1096,18 +1112,48 @@ BEGIN
     v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 5)::INTEGER);
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
-    v_sizing_base := COALESCE(
-        NULLIF(p_sizing_base, 0),
-        CASE WHEN v_is_test THEN NULL ELSE logic_position_sizing_base(p_logic_id, p_tf_id) END
-    );
-    IF v_sizing_base IS NULL OR v_sizing_base <= 0 THEN
-        IF v_is_test AND p_run_id IS NOT NULL THEN
-            SELECT COALESCE(NULLIF(r.test_balance, 0), 1000000)
-            INTO v_sizing_base
-            FROM logic_backtest_runs r WHERE r.id = p_run_id;
+
+    -- Как у чемпиона: база цикла ≤ equity. Раньше OPT брал сырой free_cash / 1e6
+    -- → paper-лоты ~100k при cash_amount после шортов (путать с маржой брокера).
+    IF v_is_test THEN
+        v_cycle_budget := COALESCE(NULLIF(p_sizing_base, 0), NULL);
+        IF v_cycle_budget IS NULL OR v_cycle_budget <= 0 THEN
+            IF p_run_id IS NOT NULL THEN
+                SELECT COALESCE(NULLIF(r.test_balance, 0), 1000000)
+                INTO v_cycle_budget
+                FROM logic_backtest_runs r WHERE r.id = p_run_id;
+            END IF;
+            v_cycle_budget := COALESCE(NULLIF(v_cycle_budget, 0), 1000000);
         END IF;
-        v_sizing_base := COALESCE(NULLIF(v_sizing_base, 0), 1000000);
+        BEGIN
+            v_equity_cap := logic_backtest_portfolio_equity(
+                p_logic_id, p_tf_id, p_closed_bar_dt, v_cycle_budget
+            );
+            IF v_equity_cap IS NOT NULL AND v_equity_cap > 0 THEN
+                v_cycle_budget := LEAST(v_cycle_budget, v_equity_cap);
+            END IF;
+        EXCEPTION
+            WHEN undefined_function THEN
+                NULL;
+            WHEN OTHERS THEN
+                NULL;
+        END;
+    ELSE
+        v_cycle_budget := COALESCE(
+            NULLIF(p_sizing_base, 0),
+            logic_exposure_cycle_budget(p_logic_id, p_tf_id)
+        );
+        IF v_cycle_budget IS NULL OR v_cycle_budget <= 0 THEN
+            v_cycle_budget := COALESCE(
+                NULLIF(logic_position_sizing_base(p_logic_id, p_tf_id), 0),
+                1000000
+            );
+        END IF;
     END IF;
+    v_sizing_base := v_cycle_budget;
+    v_max_exposure := v_cycle_budget
+        * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+        * v_max_positions;
 
     -- Кэш канала на бар: 34 бумаги × 2 std_dev × 4 сигнала → было 272 calc, станет ~68
     PERFORM logic_opt_ensure_linreg_cache();
@@ -1139,6 +1185,10 @@ BEGIN
                 END
             ), 0) > 0
         ) q;
+
+        v_spent_notional := logic_open_notional_exposure(
+            p_logic_id, v_is_test, v_arm.lane, CASE WHEN v_is_test THEN p_run_id ELSE NULL END
+        );
 
         FOR v_sec IN
             SELECT
@@ -1227,15 +1277,24 @@ BEGIN
                         IF v_held_long > 0 OR v_open_lane >= v_max_positions THEN
                             CONTINUE;
                         END IF;
+                        v_room := GREATEST(0, v_max_exposure - v_spent_notional);
+                        IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
+                            v_room := LEAST(v_room, v_max_order_amount);
+                        END IF;
                         v_quantity := logic_calc_open_quantity(
-                            v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
+                            v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                         );
                         IF v_quantity < v_lot_size THEN
-                            IF v_is_futures AND v_sizing_base IS NOT NULL AND v_sizing_base > 0 THEN
+                            IF v_is_futures AND v_cycle_budget IS NOT NULL AND v_cycle_budget > 0
+                               AND v_lot_size * v_pp <= v_room THEN
                                 v_quantity := v_lot_size;
                             ELSE
                                 CONTINUE;
                             END IF;
+                        END IF;
+                        v_order_notional := v_quantity * v_pp;
+                        IF v_order_notional > v_room + 0.000001 THEN
+                            CONTINUE;
                         END IF;
                         v_side_id := v_side_open_id;
                         v_action_id := v_action_long_id;
@@ -1251,15 +1310,24 @@ BEGIN
                     IF v_held_short > 0 OR v_open_lane >= v_max_positions THEN
                         CONTINUE;
                     END IF;
+                    v_room := GREATEST(0, v_max_exposure - v_spent_notional);
+                    IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
+                        v_room := LEAST(v_room, v_max_order_amount);
+                    END IF;
                     v_quantity := logic_calc_open_quantity(
-                        v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_max_order_amount
+                        v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
                     IF v_quantity < v_lot_size THEN
-                        IF v_is_futures AND v_sizing_base IS NOT NULL AND v_sizing_base > 0 THEN
+                        IF v_is_futures AND v_cycle_budget IS NOT NULL AND v_cycle_budget > 0
+                           AND v_lot_size * v_pp <= v_room THEN
                             v_quantity := v_lot_size;
                         ELSE
                             CONTINUE;
                         END IF;
+                    END IF;
+                    v_order_notional := v_quantity * v_pp;
+                    IF v_order_notional > v_room + 0.000001 THEN
+                        CONTINUE;
                     END IF;
                     v_side_id := v_side_open_id;
                     v_action_id := v_action_short_id;
@@ -1296,8 +1364,12 @@ BEGIN
                     v_created := v_created + 1;
                     IF v_is_open_event THEN
                         v_open_lane := v_open_lane + 1;
+                        v_spent_notional := v_spent_notional + (v_quantity * v_pp);
                     ELSE
                         v_open_lane := GREATEST(0, v_open_lane - 1);
+                        v_spent_notional := GREATEST(
+                            0, v_spent_notional - (v_quantity * v_pp)
+                        );
                     END IF;
                     -- Tech log только в бою — в тесте тысячи строк сильно тормозят.
                     IF NOT v_is_test THEN
@@ -1325,7 +1397,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION process_logic_opt_trades(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT, NUMERIC) IS
-'Бумажные сделки OPT-веток (opt_lane) на закрытой свече; live или is_test+run_id.';
+'Бумажные сделки OPT-веток (opt_lane): база = exposure_cycle_budget (≤ equity), потолок %×макс.поз как у чемпиона.';
 
 COMMENT ON FUNCTION logic_opt_maybe_promote(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT) IS
 'Каждые opt_eval_candles: FinRes чемпиона vs ветки; promote + history (run_id в тесте).';

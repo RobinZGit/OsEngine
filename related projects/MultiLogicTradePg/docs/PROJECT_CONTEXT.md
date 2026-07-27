@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-27 — кнопка «Сброс OPT» (начальные базы + очистка opt_lane книги)
+**Последнее обновление:** 2026-07-27 — push: `opt_eval_candles` default 200; OPT paper equity-cap; FinRes/run_id; installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -119,6 +119,19 @@
 
 ## Что сделано (актуально на 2026-07-27)
 
+### 2026-07-27 (OPT promote: sigma «ползёт вниз», FinRes-дыры 10×)
+
+- **Симптом (тест #2136):** почти всегда promote `std_dev:down` (2 → ~0.25); в окне FinRes ветки ≫ чемпиона при ±10% параметра.
+- **Причины:** (1) **баг сравнения размеров** — чемпион в тесте уже `LEAST(cash, equity)`, OPT paper до фикса брал сырой cash / без room → абсолютный FinRes ветки раздут; (2) **метрика** = сумма closed FinRes за окно → у mean-reversion более узкий канал = больше сделок = выше сумма (даже при честном размере) → ratchet вниз; (3) `logic_opt_lane_finres` без `run_id` мог мешать чужие тесты.
+- **Фикс:** OPT sizing = cycle budget + room (уже); sync `logic_backtest_runner.sql` free_cash=`LEAST`; FinRes + `run_id` + exclude `opt:promote`. Пересчёт окна с MTM/нормировкой — по желанию (отдельное решение).
+
+### 2026-07-27 (OPT paper без потолка equity — «лоты 100k»)
+
+- **Симптом (remote logic 359, новый дамп):** после фикса чемпиона в списке сделок снова «огромные» short/long (~комиссия 30 ≈ 0.03% от ~100k); брокер по-прежнему `30042` на части реальных Open.
+- **Разбор:** реальные champion-opens ~10% от ~43k (норма); **OPT paper** (`is_simulated`, `opt_lane`) считал лот от сырого `logic_position_sizing_base` / fallback **1_000_000**, без `logic_exposure_cycle_budget` и без room `%×max_open_positions`.
+- **Фикс:** `process_logic_opt_trades` — live: `logic_exposure_cycle_budget`; test: `LEAST(cash, backtest equity)`; на ветку — `logic_open_notional_exposure` + room как у чемпиона (`sql/logic_opt.sql` + `02`).
+- **На remote:** обязательно применить обновлённый **`02`** (installer/upgrade). UI-only install без SQL не закрывает дыру.
+
 ### 2026-07-27 (кнопка «Сброс OPT» у окна свечей)
 
 - В «Параметры логики» слева от «Свечей окна OPT» — кнопка **Сброс OPT**.
@@ -142,7 +155,7 @@
 
 - Новая дефолтная логика **LinReg Fade Twice Optimized** (FAKE, выкл.): как LinReg Fade, но `OPT(std_dev,10)` + `OPT(period,10)` → чемпион + 4 ветки.
 - Seed в `01` (v56), `sql/ensure_seed_logics.sql`, `api/scripts/seed-linreg-fade-twice-optimized.sql`.
-- Бумаги/стопы как у LinReg Fade; `opt_eval_candles=20`.
+- Бумаги/стопы как у LinReg Fade; `opt_eval_candles=200` (после v56).
 
 ### 2026-07-26 (эквити mid-run ≠ FinRes)
 
@@ -160,6 +173,11 @@
 
 - **Причина:** poll качал полный список тестовых сделок (до 50k / ~40 МБ) пока `running` — парсинг вешал вкладку («загрузка…» у параметров).
 - **Фикс:** не загружать full test trades dump во время running; сделки — после finish; прогресс/FinRes из status/pnl-summary.
+
+### 2026-07-27 (форма: Свечей окна OPT = 200)
+
+- Дефолт `opt_eval_candles` **200** (раньше 20): `logic_param_defs`, seed Optimized/Twice, UPDATE всех `logic_params`, fallbacks в `logic_opt`/`02`, API/UI/help.
+- `01` v56 UPDATE; `sql/ensure_seed_logics.sql` синхронизирован.
 
 ### 2026-07-26 (форма: Свечей окна OPT = 20)
 
@@ -672,6 +690,9 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-27 | Push: opt_eval_candles 20→200; OPT equity-cap + FinRes run_id; installers |
+| 2026-07-27 | Default opt_eval_candles 20→200 for all logics (01/API/UI) |
+| 2026-07-27 | OPT paper: same equity + %×max exposure cap as champion (was free_cash/1e6) |
 | 2026-07-27 | Button «Сброс OPT»: restore initial bases + clear live opt_lane book; push |
 | 2026-07-27 | Cap cycle budget at equity — exclude short proceeds / borrowed cash from lot+exposure base |
 | 2026-07-26 | Mid-run test-panel: opens + recent closes while backtest running |

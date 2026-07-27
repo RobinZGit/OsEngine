@@ -35,7 +35,7 @@ export interface LogicRow {
   close_positions_eod?: boolean;
   /** Тип исполнения боевых заявок: market (по умолчанию) | limit. */
   order_execution?: 'market' | 'limit';
-  /** Окно promote OPT: число закрытых свечей TF (по умолчанию 20). */
+  /** Окно promote OPT: число закрытых свечей TF (по умолчанию 200). */
   opt_eval_candles?: number;
   account_code: string;
   account_name: string;

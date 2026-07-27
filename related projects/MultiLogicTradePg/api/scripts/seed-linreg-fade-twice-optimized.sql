@@ -18,7 +18,7 @@ WHERE l.name = 'LinReg Fade Twice Optimized'
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 UPDATE logic_params lp
-SET param_value = '20', value_type = 'integer'
+SET param_value = '200', value_type = 'integer'
 FROM logics l
 WHERE l.id = lp.logic_id
   AND l.name = 'LinReg Fade Twice Optimized'

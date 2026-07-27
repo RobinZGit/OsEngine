@@ -6,7 +6,7 @@ CREATE INDEX IF NOT EXISTS idx_logic_trades_opt_lane ON logic_trades(logic_id, o
     WHERE opt_lane <> '';
 
 INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order) VALUES
-    ('opt_eval_candles', 'Свечей окна OPT', 'integer', '20',
+    ('opt_eval_candles', 'Свечей окна OPT', 'integer', '200',
      'Через сколько закрытых свечей TF сравнить FinRes чемпиона и OPT-веток и подставить лучшие значения в формулы', 19),
     ('last_opt_eval_bar_dt', 'Последняя оценка OPT', 'text', '',
      'Служебный: open time свечи TF последней смены OPT-параметров', 95)

@@ -1682,9 +1682,18 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_use_opt := logic_opt_logic_has_opt(p_logic_id);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
-    -- База на весь бар (как в live): short не должен раздувать free_cash mid-bar.
+    -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN
-        v_cycle_budget := GREATEST(0, COALESCE(p_balance, 0));
+        -- p_balance растёт от short Open; equity = cash + long − short уже «свой» капитал.
+        v_cycle_budget := LEAST(
+            GREATEST(0, COALESCE(p_balance, 0)),
+            GREATEST(
+                0,
+                COALESCE(logic_backtest_portfolio_equity(
+                    p_logic_id, p_tf_id, p_bar_dt, p_balance
+                ), 0)
+            )
+        );
     ELSIF v_size_mode = 'portfolio_incl_fund' THEN
         v_cycle_budget := GREATEST(
             0,
@@ -1895,7 +1904,15 @@ BEGIN
                     p_logic_id, TRUE, '', p_run_id
                 );
                 IF v_size_mode = 'free_cash' THEN
-                    v_cycle_budget := GREATEST(0, COALESCE(p_balance, 0));
+                    v_cycle_budget := LEAST(
+                        GREATEST(0, COALESCE(p_balance, 0)),
+                        GREATEST(
+                            0,
+                            COALESCE(logic_backtest_portfolio_equity(
+                                p_logic_id, p_tf_id, p_bar_dt, p_balance
+                            ), 0)
+                        )
+                    );
                 ELSIF v_size_mode = 'portfolio_incl_fund' THEN
                     v_cycle_budget := GREATEST(
                         0,

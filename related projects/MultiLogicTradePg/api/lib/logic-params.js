@@ -46,7 +46,7 @@ const DEFAULTS = {
   [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.ORDER_EXECUTION]: { value: 'market', type: 'text' },
-  [PARAM_KEYS.OPT_EVAL_CANDLES]: { value: '20', type: 'integer' },
+  [PARAM_KEYS.OPT_EVAL_CANDLES]: { value: '200', type: 'integer' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -157,8 +157,8 @@ function rowsToTradingParams(rows) {
     })(),
     opt_eval_candles: (() => {
       const n = map[PARAM_KEYS.OPT_EVAL_CANDLES];
-      const v = n != null ? Number(n) : 20;
-      return Number.isInteger(v) && v >= 1 ? v : 20;
+      const v = n != null ? Number(n) : 200;
+      return Number.isInteger(v) && v >= 1 ? v : 200;
     })(),
   };
 }

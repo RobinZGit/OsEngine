@@ -1308,7 +1308,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'В конце торговой сессии (или на последней свече дня) закрыть все позиции, кроме денежного фонда TMON/LQDT/SBMM', 17),
     ('order_execution', 'Тип исполнения заявок', 'text', 'market',
      'market — рыночная заявка (сразу в сессию); limit — лимитная по цене сигнала (может висеть в стакане). По умолчанию market', 18),
-    ('opt_eval_candles', 'Свечей окна OPT', 'integer', '20',
+    ('opt_eval_candles', 'Свечей окна OPT', 'integer', '200',
      'Через сколько закрытых свечей TF сравнить FinRes чемпиона и OPT-веток (±%) и подставить лучшие значения параметров в формулы', 19),
     ('last_opt_eval_bar_dt', 'Последняя оценка OPT', 'text', '',
      'Служебный: open time свечи TF последней смены OPT-параметров', 95),
@@ -2515,7 +2515,7 @@ CROSS JOIN (VALUES
     ('current_balance', '1000000', 'money'),
     ('commission_pct', '0.03', 'number'),
     ('cost_method', 'FIFO', 'text'),
-    ('opt_eval_candles', '20', 'integer')
+    ('opt_eval_candles', '200', 'integer')
 ) AS v(param_key, param_value, value_type)
 WHERE l.name = 'LinReg Fade Optimized'
   AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
@@ -2585,7 +2585,7 @@ CROSS JOIN (VALUES
     ('current_balance', '1000000', 'money'),
     ('commission_pct', '0.03', 'number'),
     ('cost_method', 'FIFO', 'text'),
-    ('opt_eval_candles', '20', 'integer')
+    ('opt_eval_candles', '200', 'integer')
 ) AS v(param_key, param_value, value_type)
 WHERE l.name = 'LinReg Fade Twice Optimized'
   AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
@@ -3436,19 +3436,19 @@ WHERE l.name IN (
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
-SELECT l.id, 'opt_eval_candles', '20', 'integer'
+SELECT l.id, 'opt_eval_candles', '200', 'integer'
 FROM logics l
 WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
   AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
--- v55: окно OPT по умолчанию 20 (раньше у Optimized для теста иногда ставили 5)
+-- v56: окно OPT по умолчанию 200 (раньше 20)
 UPDATE logic_params
-SET param_value = '20',
+SET param_value = '200',
     value_type = 'integer',
     updated_at = CURRENT_TIMESTAMP
 WHERE param_key = 'opt_eval_candles'
-  AND param_value IS DISTINCT FROM '20';
+  AND param_value IS DISTINCT FROM '200';
 
 -- Сигналы Optimized / Twice, если логику только что создали ensure-блоком
 INSERT INTO logic_indicator_signals (
