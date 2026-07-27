@@ -1616,7 +1616,10 @@
 
                               <label class="stop-field">
                                 <span>Тип</span>
-                                <select [(ngModel)]="stopFormDraft.scope_type">
+                                <select
+                                  [ngModel]="stopFormDraft.scope_type"
+                                  (ngModelChange)="onStopFormScopeChange($event)"
+                                >
                                   @for (sc of stopScopesFor(stopForm.ruleKind); track sc) {
                                     <option
                                       [ngValue]="sc"
@@ -1635,6 +1638,38 @@
                                   inputmode="decimal"
                                   [(ngModel)]="stopFormDraft.value"
                                   placeholder="0.00"
+                                />
+                              </label>
+
+                              <label class="stop-field stop-field-value">
+                                <span>% инверсии</span>
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  [(ngModel)]="stopFormDraft.inversion_value"
+                                  placeholder="0.00"
+                                  [attr.readonly]="
+                                    stopNeedsInversionValue(
+                                      stopFormDraft.scope_type,
+                                      stopForm.ruleKind
+                                    )
+                                      ? null
+                                      : ''
+                                  "
+                                  [class.stop-field-inactive]="
+                                    !stopNeedsInversionValue(
+                                      stopFormDraft.scope_type,
+                                      stopForm.ruleKind
+                                    )
+                                  "
+                                  [title]="
+                                    stopNeedsInversionValue(
+                                      stopFormDraft.scope_type,
+                                      stopForm.ruleKind
+                                    )
+                                      ? 'Доп. просадка shadow до включения инверсии'
+                                      : 'Сначала выберите тип «инверсия при повторной просадке»'
+                                  "
                                 />
                               </label>
 
@@ -1676,6 +1711,10 @@
                               <th>Тип</th>
 
                               <th>Значение</th>
+
+                              <th title="Доп. просадка shadow до инверсии (только security_inversion)">
+                                % инверсии
+                              </th>
 
                               <th>Единица</th>
 
@@ -1731,6 +1770,38 @@
                                     [value]="stop.value"
                                     [disabled]="isStopSaving(stop.id)"
                                     (blur)="onStopValueBlur(stop, $any($event.target).value)"
+                                    (keydown.enter)="$any($event.target).blur()"
+                                  />
+
+                                </td>
+
+                                <td>
+
+                                  <input
+                                    type="text"
+                                    class="stop-value-input"
+                                    [class.stop-field-inactive]="
+                                      !stopNeedsInversionValue(stop.scope_type, stop.rule_kind)
+                                    "
+                                    [value]="
+                                      stopNeedsInversionValue(stop.scope_type, stop.rule_kind)
+                                        ? (stop.inversion_value ?? '')
+                                        : ''
+                                    "
+                                    [attr.readonly]="
+                                      isStopSaving(stop.id) ||
+                                      !stopNeedsInversionValue(stop.scope_type, stop.rule_kind)
+                                        ? ''
+                                        : null
+                                    "
+                                    [title]="
+                                      stopNeedsInversionValue(stop.scope_type, stop.rule_kind)
+                                        ? 'Доп. просадка shadow до включения инверсии'
+                                        : 'Сначала выберите тип «инверсия при повторной просадке»'
+                                    "
+                                    (blur)="
+                                      onStopInversionValueBlur(stop, $any($event.target).value)
+                                    "
                                     (keydown.enter)="$any($event.target).blur()"
                                   />
 

@@ -638,10 +638,22 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('STOCH период K', 'STOCH_PERIOD', 'integer', '14'),
     ('T-Bank API токен', 'TBANK_API_TOKEN', 'secret', ''),
     ('Техническое логирование', 'APP_TECH_LOGGING', 'boolean', '0'),
-    ('Очистка лишних данных (диск)', 'APP_CLEANUP_DISK', 'boolean', '0'),
+    ('Очистка лишних данных (диск)', 'APP_CLEANUP_DISK', 'boolean', '1'),
     ('Последняя автоочистка диска', 'APP_CLEANUP_LAST_AT', 'text', ''),
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', '')
 ON CONFLICT (short_name) DO NOTHING;
+
+-- v57: автоочистка диска по умолчанию ON (обрезка indicator_values в cleanup)
+UPDATE parameter_values pv
+SET value = '1'
+FROM parameter_types pt, parameter_sets ps
+WHERE pv.parameter_type_id = pt.id
+  AND pv.parameter_set_id = ps.id
+  AND ps.name = 'Default'
+  AND pt.short_name = 'APP_CLEANUP_DISK'
+  AND COALESCE(pv.value, '0') IS DISTINCT FROM '1';
+
+
 
 -- ============================================
 -- Таблица: parameter_sets (наборы параметров)
@@ -1696,6 +1708,7 @@ ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS rule_kind VARCHAR(20) CHECK (ru
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS scope_type VARCHAR(40);
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value NUMERIC(18, 6) CHECK (value > 0);
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS value_unit VARCHAR(10) CHECK (value_unit IN ('percent', 'atr'));
+ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS inversion_value NUMERIC(18, 6);
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logic_stops ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
@@ -1763,6 +1776,8 @@ EXCEPTION
 END $mlt$;
 
 COMMENT ON COLUMN logic_stops.value_unit IS 'percent | atr';
+COMMENT ON COLUMN logic_stops.inversion_value IS
+'Только security_inversion: доп. %% просадки shadow-позиций до включения инверсии боевой логики по бумаге. NULL для остальных scope.';
 
 -- Неторговые интервалы логики (MSK): сделки в эти окна не открываются при use_non_trading_periods
 CREATE TABLE IF NOT EXISTS logic_non_trading_intervals (

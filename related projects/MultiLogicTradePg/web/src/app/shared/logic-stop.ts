@@ -72,20 +72,29 @@ export const LOGIC_STOP_SCOPES_TAKE_PROFIT: LogicStopScopeType[] = [
  * Scope, которые показываем в UI, но нельзя выбрать при создании/смене типа.
  * Уже сохранённые правила с этими типами остаются в таблице.
  *
- * SL: инверсия при повторной просадке; портфель с обновлением.
+ * SL: портфель с обновлением (пока недоступен).
  * TP: любые типы по всему портфелю логики.
+ * security_inversion — доступен; нужен inversion_value (% инверсии).
  */
 export function isStopScopeChoosable(
   scope: LogicStopScopeType,
   ruleKind: LogicStopRuleKind
 ): boolean {
   if (ruleKind === 'stop_loss') {
-    return scope !== 'security_inversion' && scope !== 'portfolio_resume';
+    return scope !== 'portfolio_resume';
   }
   if (ruleKind === 'take_profit') {
     return scope === 'security';
   }
   return false;
+}
+
+/** Колонка «% инверсии» активна только для security_inversion. */
+export function stopNeedsInversionValue(
+  scope: LogicStopScopeType,
+  ruleKind: LogicStopRuleKind
+): boolean {
+  return ruleKind === 'stop_loss' && scope === 'security_inversion';
 }
 
 export function stopScopesForRuleKind(

@@ -948,21 +948,35 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       if (i1 < i0) [i0, i1] = [i1, i0];
       const x0 = left + i0 * candleWidth;
       const x1 = left + (i1 + 1) * candleWidth;
-      const inverted = range.kind === 'inverted';
-      // Бледные зоны: gray = бумага выкл.; pink = локальная инверсия.
-      ctx.fillStyle = inverted
-        ? 'rgba(244, 114, 182, 0.22)'
-        : 'rgba(148, 163, 184, 0.42)';
+      const kind = range.kind ?? 'paused';
+      // Бледные зоны: green = shadow; gray = бумага выкл.; pink = инверсия.
+      const fill =
+        kind === 'inverted'
+          ? 'rgba(251, 207, 232, 0.45)'
+          : kind === 'shadow'
+            ? 'rgba(187, 247, 208, 0.45)'
+            : 'rgba(203, 213, 225, 0.5)';
+      const stroke =
+        kind === 'inverted'
+          ? 'rgba(244, 114, 182, 0.4)'
+          : kind === 'shadow'
+            ? 'rgba(74, 222, 128, 0.45)'
+            : 'rgba(148, 163, 184, 0.55)';
+      const labelColor =
+        kind === 'inverted'
+          ? 'rgba(157, 23, 77, 0.9)'
+          : kind === 'shadow'
+            ? 'rgba(21, 128, 61, 0.9)'
+            : 'rgba(51, 65, 85, 0.95)';
+      ctx.fillStyle = fill;
       ctx.fillRect(x0, top, Math.max(3, x1 - x0), bottom - top);
-      ctx.strokeStyle = inverted
-        ? 'rgba(190, 24, 93, 0.45)'
-        : 'rgba(100, 116, 139, 0.55)';
+      ctx.strokeStyle = stroke;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.strokeRect(x0 + 0.5, top + 0.5, Math.max(3, x1 - x0) - 1, bottom - top - 1);
       ctx.setLineDash([]);
       if (range.label) {
-        ctx.fillStyle = inverted ? 'rgba(159, 18, 57, 0.95)' : 'rgba(51, 65, 85, 0.95)';
+        ctx.fillStyle = labelColor;
         ctx.font = `600 ${this.px(10)}px system-ui, sans-serif`;
         ctx.fillText(range.label, x0 + 4, top + this.px(14));
       }

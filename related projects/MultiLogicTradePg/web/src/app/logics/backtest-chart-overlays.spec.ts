@@ -275,7 +275,7 @@ describe('backtest-chart-overlays', () => {
     expect(markers[1].ruleKind).toBe('take_profit');
   });
 
-  it('buildShadedDisabledRanges covers shadow and stop_loss windows', () => {
+  it('buildShadedDisabledRanges marks shadow windows green-kind', () => {
     const ranges = buildShadedDisabledRanges([
       trade({ bar_dt: '2026-04-10 10:00:00', is_shadow: false, side_name: 'Open' }),
       trade({
@@ -298,7 +298,8 @@ describe('backtest-chart-overlays', () => {
       }),
     ]);
     expect(ranges.length).toBeGreaterThan(0);
-    expect(ranges[0].label).toBe('выкл.');
+    expect(ranges[0].kind).toBe('shadow');
+    expect(ranges[0].label).toBe('shadow');
     expect(ranges[0].startDt).toBe('2026-04-10 11:00:00');
     expect(ranges[0].endDt).toBe('2026-04-10 13:00:00');
   });
@@ -329,8 +330,30 @@ describe('backtest-chart-overlays', () => {
       }),
     ]);
     expect(ranges.length).toBe(1);
+    expect(ranges[0].kind).toBe('shadow');
     expect(ranges[0].startDt).toBe('2026-06-23 19:15:00');
     expect(ranges[0].endDt).toBe('2026-06-24 17:15:00');
+  });
+
+  it('buildShadedDisabledRanges uses paused when stop without shadow trades', () => {
+    const ranges = buildShadedDisabledRanges([
+      trade({ bar_dt: '2026-04-10 10:00:00', side_name: 'Open' }),
+      trade({
+        id: 2,
+        bar_dt: '2026-04-10 11:00:00',
+        side_name: 'Close',
+        trade_reason: 'stop_loss:security',
+      }),
+      trade({
+        id: 3,
+        bar_dt: '2026-04-10 14:00:00',
+        side_name: 'Open',
+        is_shadow: false,
+      }),
+    ]);
+    expect(ranges.length).toBe(1);
+    expect(ranges[0].kind).toBe('paused');
+    expect(ranges[0].label).toBe('выкл.');
   });
 
   it('tradeDtWindow returns first and last trade bar_dt', () => {

@@ -1497,13 +1497,31 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       progress_pct: 100,
       finished_at: new Date(),
     });
-  } finally {
+    } finally {
     // Promote в тесте переписывает формулы — вернуть стартовый снимок OPT.
     try {
       await pool.query(`SELECT logic_opt_restore_formulas_from_run($1)`, [runId]);
     } catch (err) {
       console.warn('logic_opt_restore_formulas_from_run', err?.message || err);
     }
+    // Обрезка ненужных indicator_values (сироты + старые), без удаления чужих тестов.
+    // Не блокируем завершение прогона: fire-and-forget.
+    pool
+      .query('SELECT cleanup_unused_indicator_values() AS result')
+      .then((res) => {
+        const r = res.rows?.[0]?.result;
+        if (r && r.skipped) {
+          console.log('cleanup_unused_indicator_values skipped', r.reason || r);
+        } else if (r) {
+          console.log(
+            'cleanup_unused_indicator_values',
+            `orphans=${r.orphans_deleted ?? 0} aged=${r.aged_deleted ?? 0}`
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn('cleanup_unused_indicator_values', err?.message || err);
+      });
     activeBacktestRuns.delete(runKey);
   }
 }

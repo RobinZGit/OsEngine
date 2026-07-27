@@ -278,6 +278,22 @@
   line-height: 1.35;
 }
 
+.paper-chart-legend .leg-swatch {
+  font-weight: 700;
+}
+
+.paper-chart-legend .leg-shadow {
+  color: #4ade80;
+}
+
+.paper-chart-legend .leg-paused {
+  color: #94a3b8;
+}
+
+.paper-chart-legend .leg-inverted {
+  color: #f9a8d4;
+}
+
 .trade-pnl-pos {
   color: #15803d;
 }

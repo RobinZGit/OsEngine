@@ -94,7 +94,7 @@ function isScopeValidForRuleKind(ruleKind, scopeType) {
 function isScopeChoosableForRuleKind(ruleKind, scopeType) {
   if (!isScopeValidForRuleKind(ruleKind, scopeType)) return false;
   if (ruleKind === 'stop_loss') {
-    return scopeType !== 'security_inversion' && scopeType !== 'portfolio_resume';
+    return scopeType !== 'portfolio_resume';
   }
   if (ruleKind === 'take_profit') {
     return scopeType === 'security';
@@ -2549,7 +2549,9 @@ app.get('/api/logic-stops', async (req, res) => {
       `
       SELECT
         id, logic_id, rule_kind, scope_type,
-        value::float8 AS value, value_unit,
+        value::float8 AS value,
+        inversion_value::float8 AS inversion_value,
+        value_unit,
         display_order, is_active, created_at
       FROM logic_stops
       WHERE logic_id = $1
@@ -2570,6 +2572,11 @@ app.post('/api/logic-stops', async (req, res) => {
   const scopeType = btrimStr(req.body?.scope_type);
   const valueUnit = btrimStr(req.body?.value_unit);
   const value = Number(req.body?.value);
+  const inversionRaw = req.body?.inversion_value;
+  const inversionValue =
+    inversionRaw != null && inversionRaw !== ''
+      ? Number(inversionRaw)
+      : null;
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;
@@ -2592,7 +2599,7 @@ app.post('/api/logic-stops', async (req, res) => {
       error:
         ruleKind === 'take_profit'
           ? 'take_profit by portfolio is not choosable (only security)'
-          : 'this stop-loss scope is not choosable (security_inversion / portfolio_resume)',
+          : 'this stop-loss scope is not choosable (portfolio_resume)',
     });
     return;
   }
@@ -2604,6 +2611,14 @@ app.post('/api/logic-stops', async (req, res) => {
     res.status(400).json({ error: 'value must be a positive number' });
     return;
   }
+  const needsInversion = ruleKind === 'stop_loss' && scopeType === 'security_inversion';
+  if (needsInversion && (!Number.isFinite(inversionValue) || inversionValue <= 0)) {
+    res.status(400).json({
+      error: 'inversion_value must be a positive number for security_inversion',
+    });
+    return;
+  }
+  const storedInversion = needsInversion ? inversionValue : null;
   try {
     const { rows: orderRows } = await pool.query(
       `SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order
@@ -2614,12 +2629,14 @@ app.post('/api/logic-stops', async (req, res) => {
     const { rows } = await pool.query(
       `
       INSERT INTO logic_stops
-        (logic_id, rule_kind, scope_type, value, value_unit, display_order)
-      VALUES ($1, $2, $3, $4, $5, $6)
+        (logic_id, rule_kind, scope_type, value, inversion_value, value_unit, display_order)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id, logic_id, rule_kind, scope_type,
-        value::float8 AS value, value_unit, display_order, is_active, created_at
+        value::float8 AS value,
+        inversion_value::float8 AS inversion_value,
+        value_unit, display_order, is_active, created_at
       `,
-      [logicId, ruleKind, scopeType, value, valueUnit, displayOrder]
+      [logicId, ruleKind, scopeType, value, storedInversion, valueUnit, displayOrder]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -2633,6 +2650,17 @@ app.put('/api/logic-stops/:id', async (req, res) => {
   const scopeType = req.body?.scope_type != null ? btrimStr(req.body.scope_type) : null;
   const valueUnit = req.body?.value_unit != null ? btrimStr(req.body.value_unit) : null;
   const value = req.body?.value != null ? Number(req.body.value) : null;
+  const hasInversionPatch = Object.prototype.hasOwnProperty.call(
+    req.body ?? {},
+    'inversion_value'
+  );
+  const inversionRaw = hasInversionPatch ? req.body.inversion_value : undefined;
+  const inversionValue =
+    hasInversionPatch && inversionRaw != null && inversionRaw !== ''
+      ? Number(inversionRaw)
+      : hasInversionPatch
+        ? null
+        : undefined;
   const isActive = req.body?.is_active;
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Invalid id' });
@@ -2646,17 +2674,26 @@ app.put('/api/logic-stops/:id', async (req, res) => {
     res.status(400).json({ error: 'value must be a positive number' });
     return;
   }
+  if (
+    hasInversionPatch &&
+    inversionValue != null &&
+    (!Number.isFinite(inversionValue) || inversionValue <= 0)
+  ) {
+    res.status(400).json({ error: 'inversion_value must be a positive number' });
+    return;
+  }
   try {
+    const { rows: existingRows } = await pool.query(
+      'SELECT rule_kind, scope_type, inversion_value FROM logic_stops WHERE id = $1',
+      [id]
+    );
+    if (existingRows.length === 0) {
+      res.status(404).json({ error: 'Stop rule not found' });
+      return;
+    }
+    const ruleKind = existingRows[0].rule_kind;
+    const nextScope = scopeType || existingRows[0].scope_type;
     if (scopeType) {
-      const { rows: kindRows } = await pool.query(
-        'SELECT rule_kind FROM logic_stops WHERE id = $1',
-        [id]
-      );
-      if (kindRows.length === 0) {
-        res.status(404).json({ error: 'Stop rule not found' });
-        return;
-      }
-      const ruleKind = kindRows[0].rule_kind;
       if (!isScopeValidForRuleKind(ruleKind, scopeType)) {
         res.status(400).json({
           error:
@@ -2671,21 +2708,41 @@ app.put('/api/logic-stops/:id', async (req, res) => {
           error:
             ruleKind === 'take_profit'
               ? 'take_profit by portfolio is not choosable (only security)'
-              : 'this stop-loss scope is not choosable (security_inversion / portfolio_resume)',
+              : 'this stop-loss scope is not choosable (portfolio_resume)',
         });
         return;
       }
     }
+    const needsInversion =
+      ruleKind === 'stop_loss' && nextScope === 'security_inversion';
+    if (needsInversion) {
+      const priorInv = existingRows[0].inversion_value;
+      const effectiveInv = hasInversionPatch ? inversionValue : priorInv;
+      if (effectiveInv == null || !Number.isFinite(Number(effectiveInv)) || Number(effectiveInv) <= 0) {
+        res.status(400).json({
+          error: 'inversion_value must be a positive number for security_inversion',
+        });
+        return;
+      }
+    }
+
     const { rows } = await pool.query(
       `
       UPDATE logic_stops
       SET scope_type = COALESCE($2, scope_type),
           value = COALESCE($3, value),
           value_unit = COALESCE($4, value_unit),
-          is_active = COALESCE($5::boolean, is_active)
+          is_active = COALESCE($5::boolean, is_active),
+          inversion_value = CASE
+            WHEN $6::boolean THEN $7::numeric
+            WHEN $2 IS NOT NULL AND $2 <> 'security_inversion' THEN NULL
+            ELSE inversion_value
+          END
       WHERE id = $1
       RETURNING id, logic_id, rule_kind, scope_type,
-        value::float8 AS value, value_unit, display_order, is_active, created_at
+        value::float8 AS value,
+        inversion_value::float8 AS inversion_value,
+        value_unit, display_order, is_active, created_at
       `,
       [
         id,
@@ -2693,6 +2750,12 @@ app.put('/api/logic-stops/:id', async (req, res) => {
         value != null ? value : null,
         valueUnit || null,
         isActive === undefined ? null : isActive,
+        hasInversionPatch || (scopeType != null && !needsInversion),
+        hasInversionPatch
+          ? inversionValue
+          : scopeType != null && !needsInversion
+            ? null
+            : null,
       ]
     );
     if (rows.length === 0) {
@@ -3216,6 +3279,66 @@ const LOGIC_TRADE_SELECT = `
   JOIN timeframes tf ON tf.id = lt.timeframe_id
 `;
 
+/**
+ * Mid-run Testing panel: same columns as LOGIC_TRADE_SELECT, but remaining_qty is
+ * one set-based join on logic_trade_lots (not per-row logic_trade_open_remaining_qty).
+ * Under vacuum / large runs the per-row function can hang the API pool and leave the
+ * UI empty (inFlight stuck) while FinRes from /pnl-summary still updates.
+ */
+const LOGIC_TRADE_SELECT_TEST_PANEL = `
+  SELECT
+    lt.id,
+    lt.logic_id,
+    lt.account_id,
+    lt.security_id,
+    lt.timeframe_id,
+    lt.side_id,
+    lt.action_id,
+    lt.signal_kind,
+    lt.signal_formula,
+    lt.quantity,
+    lt.price,
+    to_char(lt.bar_dt, 'YYYY-MM-DD HH24:MI:SS') AS bar_dt,
+    to_char(lt.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at,
+    lt.is_simulated,
+    lt.is_fictitious,
+    lt.is_shadow,
+    lt.is_test,
+    lt.run_id,
+    lt.trade_reason,
+    lt.broker_order_id,
+    lt.status,
+    lt.commission,
+    lt.financial_result,
+    lt.note,
+    COALESCE(lt.opt_lane, '') AS opt_lane,
+    lt.created_at,
+    CASE
+      WHEN sd.name = 'Open' AND lt.status IN ('filled', 'submitted')
+        THEN (lt.quantity - COALESCE(lot.closed_qty, 0))
+      ELSE NULL
+    END AS remaining_qty,
+    s.name AS security_name,
+    sp.prefix AS security_prefix,
+    sd.name AS side_name,
+    ac.name AS action_name,
+    tf.tf AS timeframe_tf
+  FROM logic_trades lt
+  JOIN securities s ON s.id = lt.security_id
+  LEFT JOIN LATERAL (
+    SELECT prefix FROM security_prefixes WHERE security_id = s.id ORDER BY exchange_id LIMIT 1
+  ) sp ON TRUE
+  JOIN sides sd ON sd.id = lt.side_id
+  JOIN actions ac ON ac.id = lt.action_id
+  JOIN timeframes tf ON tf.id = lt.timeframe_id
+  LEFT JOIN (
+    SELECT open_trade_id, SUM(quantity) AS closed_qty
+    FROM logic_trade_lots
+    WHERE logic_id = $1
+    GROUP BY open_trade_id
+  ) lot ON lot.open_trade_id = lt.id
+`;
+
 app.get('/api/logic-trades', async (req, res) => {
   const logicId = Number(req.query.logic_id);
   if (!Number.isInteger(logicId) || logicId <= 0) {
@@ -3686,7 +3809,7 @@ app.get('/api/logic-trades/test-panel', async (req, res) => {
     const { rows } = await pool.query(
       `
       WITH base AS (
-        ${LOGIC_TRADE_SELECT}
+        ${LOGIC_TRADE_SELECT_TEST_PANEL}
         WHERE lt.logic_id = $1
           AND lt.is_test = TRUE
           AND COALESCE(lt.is_shadow, FALSE) = FALSE
@@ -3695,7 +3818,10 @@ app.get('/api/logic-trades/test-panel', async (req, res) => {
           ${runFilter}
       ),
       opens AS (
-        SELECT * FROM base WHERE side_name = 'Open'
+        -- Only still-open positions (matches UI «Сделки открытия» filter).
+        SELECT * FROM base
+        WHERE side_name = 'Open'
+          AND COALESCE(remaining_qty, 0) > 0
       ),
       closes AS (
         SELECT * FROM base

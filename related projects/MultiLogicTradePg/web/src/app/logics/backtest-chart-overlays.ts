@@ -276,37 +276,44 @@ function shortenStopLabel(reason: string): string {
 }
 
 /**
- * Периоды отключения бумаги: is_shadow и пауза после stop_loss
- * до следующего обычного (не теневого) Open — бумага снова «вкл.».
- * Close во время паузы (в т.ч. хвост позиции) зону выкл. не снимает.
+ * Зоны режима бумаги для графиков цены/эквити:
+ * - shadow (бледно-зелёный) — теневые сделки / shadow-режим;
+ * - paused (бледно-серый) — бумага выкл. после SL без shadow;
+ * - inverted (бледно-розовый) — локальная инверсия логики.
+ *
+ * Close во время паузы зону не снимает; снимает обычный (не теневой) Open.
  */
 export function buildShadedDisabledRanges(trades: LogicTradeRow[]): ChartShadedRange[] {
   const sorted = [...trades].sort((a, b) =>
     dtKey(a.bar_dt || a.executed_at).localeCompare(dtKey(b.bar_dt || b.executed_at))
   );
   const ranges: ChartShadedRange[] = [];
-  let start: string | null = null;
-  let lastOffDt: string | null = null;
-  let invStart: string | null = null;
-  let invLastDt: string | null = null;
 
-  const flush = (endDt: string) => {
-    if (!start) return;
-    const end = endDt || lastOffDt || start;
-    if (dtKey(end) < dtKey(start)) return;
+  type OffKind = 'shadow' | 'paused';
+  let offKind: OffKind | null = null;
+  let offStart: string | null = null;
+  let offLast: string | null = null;
+  let invStart: string | null = null;
+  let invLast: string | null = null;
+
+  const flushOff = (endDt: string) => {
+    if (!offStart || !offKind) return;
+    const end = endDt || offLast || offStart;
+    if (dtKey(end) < dtKey(offStart)) return;
     ranges.push({
-      startDt: start,
+      startDt: offStart,
       endDt: end,
-      label: 'выкл.',
-      kind: 'paused',
+      label: offKind === 'shadow' ? 'shadow' : 'выкл.',
+      kind: offKind,
     });
-    start = null;
-    lastOffDt = null;
+    offKind = null;
+    offStart = null;
+    offLast = null;
   };
 
   const flushInversion = (endDt: string) => {
     if (!invStart) return;
-    const end = endDt || invLastDt || invStart;
+    const end = endDt || invLast || invStart;
     if (dtKey(end) < dtKey(invStart)) return;
     ranges.push({
       startDt: invStart,
@@ -315,47 +322,69 @@ export function buildShadedDisabledRanges(trades: LogicTradeRow[]): ChartShadedR
       kind: 'inverted',
     });
     invStart = null;
-    invLastDt = null;
+    invLast = null;
   };
 
   for (const t of sorted) {
     const dt = t.bar_dt || t.executed_at;
     const reason = (t.trade_reason || '').toLowerCase();
+
+    // Toggle inversion windows (close → invert on; next inversion close → off).
     if (reason.includes('security_inversion')) {
       if (invStart) {
         flushInversion(dt);
       } else {
+        flushOff(dt);
         invStart = dt;
-        invLastDt = dt;
+        invLast = dt;
       }
       continue;
     }
+
     if (invStart) {
-      invLastDt = dt;
+      invLast = dt;
+      // While inverted, real trades continue — do not start shadow/paused zones.
+      continue;
     }
+
     const stopPause =
       t.side_name === 'Close' &&
       (reason.includes('stop_loss') || reason.includes('security_resume'));
 
-    if (t.is_shadow || stopPause) {
-      if (!start) start = dt;
-      lastOffDt = dt;
+    if (t.is_shadow) {
+      if (!offStart) {
+        offStart = dt;
+        offKind = 'shadow';
+      } else {
+        offKind = 'shadow';
+      }
+      offLast = dt;
       continue;
     }
-    if (start) {
+
+    if (stopPause) {
+      if (!offStart) {
+        offStart = dt;
+        offKind = 'paused';
+      }
+      offLast = dt;
+      continue;
+    }
+
+    if (offStart) {
       if (t.side_name === 'Open') {
-        flush(dt);
+        flushOff(dt);
       } else {
-        // Реальный Close в паузе — зона выкл. продолжается
-        lastOffDt = dt;
+        // Реальный Close в паузе — зона выкл./shadow продолжается
+        offLast = dt;
       }
     }
   }
-  if (start && lastOffDt) {
-    flush(lastOffDt);
+  if (offStart && offLast) {
+    flushOff(offLast);
   }
-  if (invStart && invLastDt) {
-    flushInversion(invLastDt);
+  if (invStart && invLast) {
+    flushInversion(invLast);
   }
   return ranges;
 }

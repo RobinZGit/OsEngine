@@ -9,11 +9,23 @@ import {
   SimpleChanges,
   ViewChild,
 } from '@angular/core';
-import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
+import {
+  ChartEquityPoint,
+  ChartShadedRange,
+  ChartStopMarker,
+} from '../models/market.model';
+
+/** Цвета зон режима бумаги (как на ценовом графике). */
+export const EQUITY_SHADE_COLORS = {
+  shadow: { fill: 'rgba(187, 247, 208, 0.45)', stroke: 'rgba(74, 222, 128, 0.4)' },
+  paused: { fill: 'rgba(203, 213, 225, 0.5)', stroke: 'rgba(148, 163, 184, 0.5)' },
+  inverted: { fill: 'rgba(251, 207, 232, 0.45)', stroke: 'rgba(244, 114, 182, 0.4)' },
+} as const;
 
 /**
  * Отдельный график эквити: общая (синяя), long (зелёная бледная), short (красная бледная).
  * Вертикали — срабатывания портфельного SL/TP.
+ * Зоны — shadow / выкл. / инверсия по бумаге.
  */
 @Component({
   selector: 'app-equity-curve-chart',
@@ -29,6 +41,11 @@ import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
         @if (stopMarkers.length) {
           · <span class="leg-sl">|</span> SL портфель ·
           <span class="leg-tp">|</span> TP портфель
+        }
+        @if (showModeLegend) {
+          · <span class="leg-shadow">▮</span> shadow ·
+          <span class="leg-paused">▮</span> выкл. ·
+          <span class="leg-inverted">▮</span> инверсия
         }
       </p>
     </div>
@@ -72,6 +89,18 @@ import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
         color: #059669;
         font-weight: 700;
       }
+      .leg-shadow {
+        color: #4ade80;
+        opacity: 0.85;
+      }
+      .leg-paused {
+        color: #94a3b8;
+        opacity: 0.9;
+      }
+      .leg-inverted {
+        color: #f9a8d4;
+        opacity: 0.95;
+      }
     `,
   ],
 })
@@ -83,6 +112,10 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
   @Input() shorts: ChartEquityPoint[] = [];
   /** Портфельные SL/TP (вертикали на баре срабатывания). */
   @Input() stopMarkers: ChartStopMarker[] = [];
+  /** Зоны shadow / выкл. / инверсия (график эквити бумаги). */
+  @Input() shadedRanges: ChartShadedRange[] = [];
+  /** Показать подписи цветов зон в легенде (для бумаг). */
+  @Input() showModeLegend = false;
 
   private resizeObs: ResizeObserver | null = null;
 
@@ -149,6 +182,27 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
     const plotH = cssH - padT - padB;
     const xOf = (t: number) => padL + ((t - t0) / (t1 - t0)) * plotW;
     const yOf = (v: number) => padT + ((vMax - v) / (vMax - vMin)) * plotH;
+
+    // Zones behind series (shadow / paused / inverted).
+    for (const range of this.shadedRanges) {
+      const a = Date.parse(range.startDt);
+      const b = Date.parse(range.endDt);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      if (hi < t0 || lo > t1) continue;
+      const x0 = xOf(Math.max(lo, t0));
+      const x1 = xOf(Math.min(hi, t1));
+      const kind = range.kind ?? 'paused';
+      const colors =
+        kind === 'inverted'
+          ? EQUITY_SHADE_COLORS.inverted
+          : kind === 'shadow'
+            ? EQUITY_SHADE_COLORS.shadow
+            : EQUITY_SHADE_COLORS.paused;
+      ctx.fillStyle = colors.fill;
+      ctx.fillRect(x0, padT, Math.max(2, x1 - x0), plotH);
+    }
 
     // zero line
     ctx.strokeStyle = '#cbd5e1';

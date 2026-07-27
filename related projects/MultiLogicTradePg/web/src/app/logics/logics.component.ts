@@ -2,8 +2,8 @@ import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, Chan
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { Subject, exhaustMap, takeUntil, timer, forkJoin, of } from 'rxjs';
-import { catchError, debounceTime, filter, map } from 'rxjs/operators';
+import { Subject, exhaustMap, takeUntil, timer, forkJoin, of, timeout } from 'rxjs';
+import { catchError, debounceTime, filter, finalize, map } from 'rxjs/operators';
 import {
   BacktestReportListItem,
   LogicsService,
@@ -43,6 +43,7 @@ import {
   isStopScopeChoosable,
   ruleKindLabel,
   scopeTypeLabel,
+  stopNeedsInversionValue,
   stopScopesForRuleKind,
   valueUnitLabel,
 } from '../shared/logic-stop';
@@ -80,6 +81,7 @@ type StopFormState = {
 type StopFormDraft = {
   scope_type: LogicStopScopeType;
   value: string;
+  inversion_value: string;
   value_unit: LogicStopValueUnit;
 };
 
@@ -248,12 +250,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
   stopFormDraft: StopFormDraft = {
     scope_type: 'security_resume',
     value: '',
+    inversion_value: '',
     value_unit: 'percent',
   };
 
   readonly stopUnits = LOGIC_STOP_UNITS;
   stopScopesFor = stopScopesForRuleKind;
   isStopScopeChoosable = isStopScopeChoosable;
+  stopNeedsInversionValue = stopNeedsInversionValue;
 
   tbankTokenDialogOpen = false;
   tbankTokenDialogContext: 'prices' | 'logic' | 'trades' = 'logic';
@@ -2139,6 +2143,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       // SL: по бумаге×стороне с возобновлением; TP: только по бумаге (портфельные TP недоступны)
       scope_type: ruleKind === 'stop_loss' ? 'security_resume' : 'security',
       value: '',
+      inversion_value: '',
       value_unit: 'percent',
     };
     if (!this.expandedLogics.has(logicId)) {
@@ -2170,12 +2175,21 @@ export class LogicsComponent implements OnInit, OnDestroy {
       alert('Этот тип правила сейчас недоступен для выбора');
       return;
     }
+    let inversionValue: number | null = null;
+    if (stopNeedsInversionValue(this.stopFormDraft.scope_type, ruleKind)) {
+      inversionValue = Number(this.stopFormDraft.inversion_value.replace(',', '.'));
+      if (!Number.isFinite(inversionValue) || inversionValue <= 0) {
+        alert('Укажите положительное число в поле «% инверсии»');
+        return;
+      }
+    }
     this.logicsService
       .createLogicStop({
         logic_id: logicId,
         rule_kind: ruleKind,
         scope_type: this.stopFormDraft.scope_type,
         value,
+        inversion_value: inversionValue,
         value_unit: this.stopFormDraft.value_unit,
       })
       .subscribe({
@@ -2195,6 +2209,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     patch: {
       scope_type?: LogicStopScopeType;
       value?: number;
+      inversion_value?: number | null;
       value_unit?: LogicStopValueUnit;
     }
   ): void {
@@ -2205,6 +2220,22 @@ export class LogicsComponent implements OnInit, OnDestroy {
     ) {
       return;
     }
+    // Switching to inversion: default % инверсии from current «Значение» so the
+    // column unlocks (otherwise field stays disabled until inversion_value exists).
+    if (
+      patch.scope_type === 'security_inversion' &&
+      (patch.inversion_value == null || Number(patch.inversion_value) <= 0) &&
+      (stop.inversion_value == null || Number(stop.inversion_value) <= 0)
+    ) {
+      const fallback = Number(stop.value);
+      patch = {
+        ...patch,
+        inversion_value: Number.isFinite(fallback) && fallback > 0 ? fallback : 1,
+      };
+    }
+    if (patch.scope_type != null && patch.scope_type !== 'security_inversion') {
+      patch = { ...patch, inversion_value: null };
+    }
     this.savingStopIds.add(stop.id);
     this.logicsService.updateLogicStop(stop.id, patch).subscribe({
       next: (updated) => {
@@ -2214,9 +2245,26 @@ export class LogicsComponent implements OnInit, OnDestroy {
           list.map((s) => (s.id === updated.id ? updated : s))
         );
         this.savingStopIds.delete(stop.id);
+        this.cdr.markForCheck();
       },
-      error: () => this.savingStopIds.delete(stop.id),
+      error: (err) => {
+        this.savingStopIds.delete(stop.id);
+        alert(err?.error?.error || 'Не удалось сохранить правило стопа');
+      },
     });
+  }
+
+  /** Add-form: when type becomes inversion, unlock and prefill % инверсии. */
+  onStopFormScopeChange(scope: LogicStopScopeType): void {
+    this.stopFormDraft.scope_type = scope;
+    if (
+      this.stopForm &&
+      stopNeedsInversionValue(scope, this.stopForm.ruleKind) &&
+      !String(this.stopFormDraft.inversion_value || '').trim()
+    ) {
+      const fromValue = String(this.stopFormDraft.value || '').trim();
+      this.stopFormDraft.inversion_value = fromValue || '1';
+    }
   }
 
   onStopValueBlur(stop: LogicStopRow, raw: string): void {
@@ -2225,6 +2273,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
     this.saveStopRow(stop, { value });
+  }
+
+  onStopInversionValueBlur(stop: LogicStopRow, raw: string): void {
+    if (!stopNeedsInversionValue(stop.scope_type, stop.rule_kind)) return;
+    const inversionValue = Number(String(raw).replace(',', '.'));
+    if (
+      !Number.isFinite(inversionValue) ||
+      inversionValue <= 0 ||
+      inversionValue === Number(stop.inversion_value)
+    ) {
+      return;
+    }
+    this.saveStopRow(stop, { inversion_value: inversionValue });
   }
 
   deleteStop(stop: LogicStopRow, event: Event): void {
@@ -3095,21 +3156,28 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.testTradesInFlight.add(logicId);
     // Полный последний прогон: иначе LIMIT 5000 даёт другой финрез, чем колонка «Тест» (pnl-summary).
     const runId = this.backtestRuns.get(Number(logicId))?.id ?? null;
-    this.logicsService.getLogicTrades(logicId, 50000, true, runId).pipe(takeUntil(this.destroy$)).subscribe({
-      next: (rows) => {
-        this.testTradesInFlight.delete(logicId);
-        const prev = this.logicTradesTest.get(Number(logicId));
-        if (prev && this.sameTradeListFingerprint(prev, rows)) {
+    this.logicsService
+      .getLogicTrades(logicId, 50000, true, runId)
+      .pipe(
+        timeout(90_000),
+        takeUntil(this.destroy$),
+        finalize(() => this.testTradesInFlight.delete(logicId))
+      )
+      .subscribe({
+        next: (rows) => {
+          const prev = this.logicTradesTest.get(Number(logicId));
+          if (prev && this.sameTradeListFingerprint(prev, rows)) {
+            this.rebuildTestTradesView(logicId);
+            return;
+          }
+          this.logicTradesTest.set(Number(logicId), rows);
           this.rebuildTestTradesView(logicId);
-          return;
-        }
-        this.logicTradesTest.set(Number(logicId), rows);
-        this.rebuildTestTradesView(logicId);
-      },
-      error: () => {
-        this.testTradesInFlight.delete(logicId);
-      },
-    });
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          /* timeout / network — inFlight cleared in finalize; next poll retries */
+        },
+      });
   }
 
   private refreshAllTradesSummaries(): void {
@@ -3153,10 +3221,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const runId = this.backtestRuns.get(id)?.id ?? null;
     this.logicsService
       .getLogicTradesTestPanel(id, runId, 2500)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(
+        // Hung pool (vacuum / old per-row remaining_qty) used to stick inFlight forever → empty panel.
+        timeout(45_000),
+        takeUntil(this.destroy$),
+        finalize(() => this.testTradesInFlight.delete(id))
+      )
       .subscribe({
         next: (resp) => {
-          this.testTradesInFlight.delete(id);
           const rows = resp.rows ?? [];
           const prev = this.logicTradesTest.get(id);
           if (prev && this.sameTradeListFingerprint(prev, rows)) {
@@ -3168,7 +3240,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.cdr.markForCheck();
         },
         error: () => {
-          this.testTradesInFlight.delete(id);
+          /* timeout / network — finalize clears inFlight; heavyTick retries */
         },
       });
   }
@@ -3181,10 +3253,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.testEquityInFlight.add(id);
     this.logicsService
       .getLogicTradesEquityCurve(id, true)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(
+        timeout(30_000),
+        takeUntil(this.destroy$),
+        finalize(() => this.testEquityInFlight.delete(id))
+      )
       .subscribe({
         next: (resp) => {
-          this.testEquityInFlight.delete(id);
           this.testEquityByLogic.set(id, {
             total: resp.total ?? [],
             long: resp.long ?? [],
@@ -3193,7 +3268,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.cdr.markForCheck();
         },
         error: () => {
-          this.testEquityInFlight.delete(id);
+          /* timeout / network — finalize clears inFlight */
         },
       });
   }

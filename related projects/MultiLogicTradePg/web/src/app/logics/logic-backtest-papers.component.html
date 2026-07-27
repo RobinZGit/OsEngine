@@ -99,6 +99,8 @@
                         [total]="overlays(paper.security_id).equity"
                         [longs]="overlays(paper.security_id).equityLong"
                         [shorts]="overlays(paper.security_id).equityShort"
+                        [shadedRanges]="overlays(paper.security_id).shaded"
+                        [showModeLegend]="true"
                       />
                     </div>
                   } @else {
@@ -133,7 +135,11 @@
                         />
                       </div>
                       <p class="paper-chart-legend">
-                        ▲▼ вход/выход · SL/TP · бледная зона — выкл. · полоса PnL внизу · ⟸сд./сд.⟹ — по сделкам · ⛶ полный экран
+                        ▲▼ вход/выход · SL/TP ·
+                        <span class="leg-swatch leg-shadow">▮</span> shadow ·
+                        <span class="leg-swatch leg-paused">▮</span> выкл. ·
+                        <span class="leg-swatch leg-inverted">▮</span> инверсия ·
+                        полоса PnL внизу · ⟸сд./сд.⟹ · ⛶
                       </p>
                     }
                   }

@@ -364,6 +364,7 @@ export class LogicsService {
     rule_kind: 'stop_loss' | 'take_profit';
     scope_type: LogicStopScopeType;
     value: number;
+    inversion_value?: number | null;
     value_unit: LogicStopValueUnit;
   }): Observable<LogicStopRow> {
     return this.http.post<LogicStopRow>(
@@ -377,6 +378,7 @@ export class LogicsService {
     body: {
       scope_type?: LogicStopScopeType;
       value?: number;
+      inversion_value?: number | null;
       value_unit?: LogicStopValueUnit;
       is_active?: boolean;
     }

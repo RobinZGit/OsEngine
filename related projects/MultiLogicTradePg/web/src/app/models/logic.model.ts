@@ -165,6 +165,8 @@ export interface LogicStopRow {
     | 'portfolio_ltp_renew'
     | 'security_ltp_renew';
   value: number;
+  /** Доп. %% для security_inversion (просадка shadow → инверсия). */
+  inversion_value: number | null;
   value_unit: 'percent' | 'atr';
   display_order: number;
   is_active: boolean;
