@@ -50,14 +50,14 @@ Also:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `opt_eval_candles` | `200` | After N closed TF candles, compare FinRes of champion vs each opt_lane (closes in window), promote best param values into formulas, reset window |
+| `opt_eval_candles` | `200` | After N closed TF candles, compare FinRes of champion vs each opt_lane (**closed PnL in window + MTM of still-open positions as if closed at market on the eval bar**), promote best param values into formulas, reset window |
 
 Service params: `last_opt_eval_bar_dt`, `opt_window_started_bar_dt` (optional).
 
 ## Promote
 
 1. Window = last `opt_eval_candles` closed bars of logic TF (by `bar_dt`).
-2. Score = sum(`financial_result`) of filled Close trades with matching `opt_lane` (and not test).
+2. Score = closed FinRes in `(from, to]` **plus** `MTM(to) − MTM(from)` on still-open lots (mark at TF close). Same for champion and each OPT lane. Pre-window inventory PnL cancels out.
 3. If best challenger beats champion (strict `>`): rewrite each `key=old` in formulas to winner’s numeric value; keep `OPT(key,pct)`; log `opt.promote`.
 4. Close/reset challenger open positions (books-only); start new window.
 5. Re-apply indicator params + sync for champion (and rebuild opt indicator cache if used).

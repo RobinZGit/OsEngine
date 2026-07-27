@@ -11878,26 +11878,134 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS logic_trade_open_remaining_qty_at(BIGINT, TIMESTAMP);
+CREATE OR REPLACE FUNCTION logic_trade_open_remaining_qty_at(
+    p_open_trade_id BIGINT,
+    p_at_bar TIMESTAMP
+)
+RETURNS NUMERIC
+LANGUAGE sql STABLE AS $fn$
+    SELECT CASE
+        WHEN lt.id IS NULL OR lt.bar_dt > p_at_bar THEN 0
+        ELSE GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                JOIN logic_trades c ON c.id = l.close_trade_id
+                WHERE l.open_trade_id = lt.id
+                  AND c.bar_dt <= p_at_bar
+            ), 0),
+            0
+        )
+    END
+    FROM logic_trades lt
+    WHERE lt.id = p_open_trade_id;
+$fn$;
+
+COMMENT ON FUNCTION logic_trade_open_remaining_qty_at(BIGINT, TIMESTAMP) IS
+'Open lot remaining qty as of p_at_bar (closes with bar_dt > p_at_bar ignored).';
+
+DROP FUNCTION IF EXISTS logic_opt_lane_mtm(INTEGER, TEXT, TIMESTAMP, BOOLEAN, BIGINT, INTEGER);
+CREATE OR REPLACE FUNCTION logic_opt_lane_mtm(
+    p_logic_id INTEGER,
+    p_opt_lane TEXT,
+    p_at_bar TIMESTAMP,
+    p_is_test BOOLEAN,
+    p_run_id BIGINT,
+    p_tf_id INTEGER
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $fn$
+DECLARE
+    v_is_test BOOLEAN := COALESCE(p_is_test, FALSE);
+    v_lane TEXT := COALESCE(p_opt_lane, '');
+    v_mtm NUMERIC := 0;
+    v_open RECORD;
+    v_rem NUMERIC;
+    v_price NUMERIC;
+BEGIN
+    IF p_at_bar IS NULL OR p_tf_id IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    FOR v_open IN
+        SELECT lt.id, lt.security_id, lt.price, a.name AS action_name
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND COALESCE(lt.opt_lane, '') = v_lane
+          AND lt.is_test = v_is_test
+          AND NOT lt.is_shadow
+          AND s.name = 'Open'
+          AND lt.status IN ('filled', 'submitted')
+          AND lt.bar_dt <= p_at_bar
+          AND (
+              NOT v_is_test
+              OR p_run_id IS NULL
+              OR lt.run_id = p_run_id
+          )
+    LOOP
+        v_rem := logic_trade_open_remaining_qty_at(v_open.id, p_at_bar);
+        IF v_rem IS NULL OR v_rem <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        SELECT p.close_price INTO v_price
+        FROM prices p
+        WHERE p.security_id = v_open.security_id
+          AND p.timeframe_id = p_tf_id
+          AND p.dt = p_at_bar
+        LIMIT 1;
+        IF v_price IS NULL OR v_price <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        IF v_open.action_name = 'Long' THEN
+            v_mtm := v_mtm + v_rem * (v_price - v_open.price);
+        ELSE
+            v_mtm := v_mtm + v_rem * (v_open.price - v_price);
+        END IF;
+    END LOOP;
+
+    RETURN COALESCE(v_mtm, 0);
+END;
+$fn$;
+
+COMMENT ON FUNCTION logic_opt_lane_mtm(INTEGER, TEXT, TIMESTAMP, BOOLEAN, BIGINT, INTEGER) IS
+'Unrealized PnL of lane opens still open at p_at_bar (mark at TF close).';
+
 DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP);
 DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP, BOOLEAN);
 DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP, BOOLEAN, BIGINT);
+DROP FUNCTION IF EXISTS logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP, BOOLEAN, BIGINT, INTEGER);
 
+-- Window score: closed FinRes in (from, to] + MTM(to) - MTM(from).
 CREATE OR REPLACE FUNCTION logic_opt_lane_finres(
     p_logic_id INTEGER,
     p_opt_lane TEXT,
     p_from_bar TIMESTAMP,
     p_to_bar TIMESTAMP,
     p_is_test BOOLEAN DEFAULT FALSE,
-    p_run_id BIGINT DEFAULT NULL
+    p_run_id BIGINT DEFAULT NULL,
+    p_tf_id INTEGER DEFAULT NULL
 )
 RETURNS NUMERIC
-LANGUAGE sql STABLE AS $$
+LANGUAGE plpgsql STABLE AS $fn$
+DECLARE
+    v_is_test BOOLEAN := COALESCE(p_is_test, FALSE);
+    v_lane TEXT := COALESCE(p_opt_lane, '');
+    v_closed NUMERIC := 0;
+    v_mtm_to NUMERIC := 0;
+    v_mtm_from NUMERIC := 0;
+BEGIN
     SELECT COALESCE(SUM(lt.financial_result), 0)
+    INTO v_closed
     FROM logic_trades lt
     JOIN sides s ON s.id = lt.side_id
     WHERE lt.logic_id = p_logic_id
-      AND COALESCE(lt.opt_lane, '') = COALESCE(p_opt_lane, '')
-      AND lt.is_test = COALESCE(p_is_test, FALSE)
+      AND COALESCE(lt.opt_lane, '') = v_lane
+      AND lt.is_test = v_is_test
       AND NOT lt.is_shadow
       AND s.name = 'Close'
       AND lt.status IN ('filled', 'submitted')
@@ -11906,11 +12014,30 @@ LANGUAGE sql STABLE AS $$
       AND (p_from_bar IS NULL OR lt.bar_dt > p_from_bar)
       AND (p_to_bar IS NULL OR lt.bar_dt <= p_to_bar)
       AND (
-          NOT COALESCE(p_is_test, FALSE)
+          NOT v_is_test
           OR p_run_id IS NULL
           OR lt.run_id = p_run_id
       );
-$$;
+
+    IF p_tf_id IS NULL OR p_to_bar IS NULL THEN
+        RETURN COALESCE(v_closed, 0);
+    END IF;
+
+    v_mtm_to := logic_opt_lane_mtm(
+        p_logic_id, v_lane, p_to_bar, v_is_test, p_run_id, p_tf_id
+    );
+    IF p_from_bar IS NOT NULL THEN
+        v_mtm_from := logic_opt_lane_mtm(
+            p_logic_id, v_lane, p_from_bar, v_is_test, p_run_id, p_tf_id
+        );
+    END IF;
+
+    RETURN COALESCE(v_closed, 0) + COALESCE(v_mtm_to, 0) - COALESCE(v_mtm_from, 0);
+END;
+$fn$;
+
+COMMENT ON FUNCTION logic_opt_lane_finres(INTEGER, TEXT, TIMESTAMP, TIMESTAMP, BOOLEAN, BIGINT, INTEGER) IS
+'OPT window score: closed FinRes in window + (MTM at to - MTM at from).';
 
 DROP FUNCTION IF EXISTS logic_opt_close_open_lanes(INTEGER, INTEGER, TIMESTAMP);
 DROP FUNCTION IF EXISTS logic_opt_close_open_lanes(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT);
@@ -12113,7 +12240,8 @@ BEGIN
 
     v_champ := logic_opt_lane_finres(
         p_logic_id, '', v_last_dt, p_closed_bar_dt, v_is_test,
-        CASE WHEN v_is_test THEN p_run_id ELSE NULL END
+        CASE WHEN v_is_test THEN p_run_id ELSE NULL END,
+        p_tf_id
     );
     v_best_score := v_champ;
     v_best_lane := '';
@@ -12123,7 +12251,8 @@ BEGIN
     LOOP
         v_score := logic_opt_lane_finres(
             p_logic_id, v_arm.lane, v_last_dt, p_closed_bar_dt, v_is_test,
-            CASE WHEN v_is_test THEN p_run_id ELSE NULL END
+            CASE WHEN v_is_test THEN p_run_id ELSE NULL END,
+            p_tf_id
         );
         IF v_score > v_best_score THEN
             v_best_score := v_score;

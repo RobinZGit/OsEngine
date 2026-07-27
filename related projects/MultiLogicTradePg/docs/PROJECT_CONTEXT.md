@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-27 — push: `opt_eval_candles` default 200; OPT paper equity-cap; FinRes/run_id; installers
+**Последнее обновление:** 2026-07-27 — push assembly: OPT window FinRes (closed+ΔMTM) in 02 + installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -173,6 +173,18 @@
 
 - **Причина:** poll качал полный список тестовых сделок (до 50k / ~40 МБ) пока `running` — парсинг вешал вкладку («загрузка…» у параметров).
 - **Фикс:** не загружать full test trades dump во время running; сделки — после finish; прогресс/FinRes из status/pnl-summary.
+
+### 2026-07-27 (OPT promote: closed + ΔMTM окна)
+
+- В отчёте #2136 / run 191 огромный разрыв FinRes (448 vs −8956): в БД жила **старая** метрика «только Close» (MTM-функция не держалась в PG).
+- Плюс абсолютный рублёвый FinRes при разном числе/размере сделок (чемпион ~5× больше opens).
+- Скор: `closed(from,to] + MTM(to) − MTM(from)`; `logic_trade_open_remaining_qty_at`; накатка на локальную БД.
+
+### 2026-07-27 (OPT promote: FinRes + MTM открытых)
+
+- Скор сравнения чемпион vs OPT-ветки: сумма `financial_result` Close в окне **+** MTM остатка Open на баре оценки (как будто закрыли по `prices.close` TF, минус комиссия Close).
+- Устраняет bias «0 закрытий → FinRes 0 лучше убытка чемпиона».
+- `logic_opt_lane_finres(..., p_tf_id)`; sync `sql/logic_opt.sql` + `02`.
 
 ### 2026-07-27 (форма: Свечей окна OPT = 200)
 
@@ -690,6 +702,9 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-27 | Ship OPT closed+ΔMTM procedures in 02 + rebuild installers for roll-up |
+| 2026-07-27 | OPT score = closed window + ΔMTM; fix DB had closed-only |
+| 2026-07-27 | OPT promote score: closed FinRes + MTM opens (market close) |
 | 2026-07-27 | Push: opt_eval_candles 20→200; OPT equity-cap + FinRes run_id; installers |
 | 2026-07-27 | Default opt_eval_candles 20→200 for all logics (01/API/UI) |
 | 2026-07-27 | OPT paper: same equity + %×max exposure cap as champion (was free_cash/1e6) |

@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+723. I got this error, the previous error, I got it by rolling up. See that all the procedures have also been updated in the assembly, because now I will also roll up, and it is necessary that all the relevant postgres procedures are in the assembly.
+
+722. Financial results should be compared in such a way as if we closed all transactions in the market. That is, we need to take the pre-comparison of closed FINRES and add, as if we closed all the others in the market. Both for the current logic and for the logic that we compare, which is in the shadow. Follow-up: report still shows huge FinRes gaps champion vs OPT — investigate.
+
 721. All logic by default, set the parameter of the candles to change the optimization to 200, it was 20, let it be 200 by default.
 
 720. Look at the strategy of the last test with optimization. It always reduced this parameter sigma or deviation. And I don't understand why it decreased so steadily, and it decreased very sharply. Every time the financial result, in some logic, the reduction was much greater than the current one. Is there any mistake here? They are only 10% different, but the difference in financial results is stable. (report #2136)
