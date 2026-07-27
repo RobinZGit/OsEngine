@@ -624,6 +624,22 @@ export class LogicsService {
     );
   }
 
+  /** Сброс OPT к начальным базам + очистка live opt_lane книги. */
+  resetOptToInitial(logicId: number): Observable<{
+    ok?: boolean;
+    formulas_restored?: number;
+    opt_trades_deleted?: number;
+    source?: string;
+    message?: string;
+    error?: string;
+    signals?: LogicIndicatorSignalRow[];
+  }> {
+    return this.http.post(
+      `${this.appConfig.apiUrl}/logics/${logicId}/opt-reset`,
+      {}
+    );
+  }
+
   /** Снимок / promote параметров формул и OPT для отчёта. */
   getOptParamHistory(
     logicId: number,

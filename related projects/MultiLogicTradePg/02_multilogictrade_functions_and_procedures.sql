@@ -12079,6 +12079,8 @@ BEGIN
             SET last_opt_eval_bar_dt = p_closed_bar_dt
             WHERE id = p_run_id;
         ELSE
+            -- Первый live-курсор: снимок начальных баз для будущего «Сброс OPT».
+            PERFORM logic_opt_snapshot_params(p_logic_id, NULL, p_closed_bar_dt);
             PERFORM logic_upsert_param(
                 p_logic_id,
                 'last_opt_eval_bar_dt',
@@ -12595,6 +12597,185 @@ $$;
 
 COMMENT ON FUNCTION logic_opt_restore_formulas_from_run(BIGINT) IS
 'После теста: вернуть формулы сигналов из стартового снимка OPT (promote не должен остаться в бою).';
+
+
+CREATE OR REPLACE FUNCTION logic_opt_reset_to_initial(p_logic_id INTEGER)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_formulas JSONB;
+    v_bases JSONB;
+    v_item JSONB;
+    v_sid INTEGER;
+    v_formula TEXT;
+    v_sig RECORD;
+    v_new_formula TEXT;
+    v_restored INTEGER := 0;
+    v_deleted INTEGER := 0;
+    v_source TEXT := 'none';
+    v_sec RECORD;
+    v_after JSONB;
+BEGIN
+    IF p_logic_id IS NULL OR p_logic_id <= 0 THEN
+        RETURN jsonb_build_object('ok', FALSE, 'error', 'invalid logic_id');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM logics WHERE id = p_logic_id) THEN
+        RETURN jsonb_build_object('ok', FALSE, 'error', 'logic not found');
+    END IF;
+
+    IF NOT logic_opt_logic_has_opt(p_logic_id) THEN
+        RETURN jsonb_build_object(
+            'ok', TRUE,
+            'formulas_restored', 0,
+            'opt_trades_deleted', 0,
+            'source', 'none',
+            'message', 'В формулах нет OPT — сброс не нужен'
+        );
+    END IF;
+
+    -- Сначала найти начальные (до любых новых snapshot).
+    SELECT h.formulas
+    INTO v_formulas
+    FROM logic_opt_param_history h
+    WHERE h.logic_id = p_logic_id
+      AND h.event_kind = 'snapshot'
+      AND h.run_id IS NULL
+      AND COALESCE(h.lane, '') <> 'reset'
+      AND jsonb_typeof(h.formulas) = 'array'
+      AND jsonb_array_length(h.formulas) > 0
+    ORDER BY h.id
+    LIMIT 1;
+
+    IF v_formulas IS NOT NULL THEN
+        v_source := 'snapshot_live';
+    ELSE
+        SELECT h.formulas
+        INTO v_formulas
+        FROM logic_opt_param_history h
+        WHERE h.logic_id = p_logic_id
+          AND h.event_kind = 'snapshot'
+          AND COALESCE(h.lane, '') <> 'reset'
+          AND jsonb_typeof(h.formulas) = 'array'
+          AND jsonb_array_length(h.formulas) > 0
+        ORDER BY h.id
+        LIMIT 1;
+        IF v_formulas IS NOT NULL THEN
+            v_source := 'snapshot';
+        END IF;
+    END IF;
+
+    IF v_formulas IS NULL THEN
+        SELECT h.params_prev
+        INTO v_bases
+        FROM logic_opt_param_history h
+        WHERE h.logic_id = p_logic_id
+          AND h.event_kind = 'promote'
+          AND h.params_prev IS NOT NULL
+          AND jsonb_typeof(h.params_prev) = 'object'
+          AND h.params_prev <> '{}'::jsonb
+        ORDER BY h.id
+        LIMIT 1;
+        IF v_bases IS NOT NULL THEN
+            v_source := 'params_prev';
+        END IF;
+    END IF;
+
+    -- Восстановить формулы
+    IF v_formulas IS NOT NULL THEN
+        FOR v_item IN SELECT * FROM jsonb_array_elements(v_formulas)
+        LOOP
+            v_sid := NULLIF(v_item->>'signal_id', '')::INTEGER;
+            v_formula := v_item->>'formula';
+            IF v_sid IS NULL OR v_formula IS NULL OR btrim(v_formula) = '' THEN
+                CONTINUE;
+            END IF;
+            UPDATE logic_indicator_signals
+            SET formula = v_formula
+            WHERE id = v_sid
+              AND logic_id = p_logic_id
+              AND formula IS DISTINCT FROM v_formula;
+            IF FOUND THEN
+                v_restored := v_restored + 1;
+            END IF;
+        END LOOP;
+    ELSIF v_bases IS NOT NULL THEN
+        FOR v_sig IN
+            SELECT id, formula
+            FROM logic_indicator_signals
+            WHERE logic_id = p_logic_id AND is_active = TRUE
+        LOOP
+            v_new_formula := logic_opt_rewrite_formula_bases(v_sig.formula, v_bases);
+            IF v_new_formula IS DISTINCT FROM v_sig.formula THEN
+                UPDATE logic_indicator_signals
+                SET formula = v_new_formula
+                WHERE id = v_sig.id;
+                v_restored := v_restored + 1;
+            END IF;
+        END LOOP;
+    END IF;
+
+    -- Очистить бумажную книгу OPT (live, не test).
+    DELETE FROM logic_trades lt
+    WHERE lt.logic_id = p_logic_id
+      AND COALESCE(lt.opt_lane, '') <> ''
+      AND lt.is_test = FALSE;
+    GET DIAGNOSTICS v_deleted = ROW_COUNT;
+
+    -- Сбросить курсор окна OPT — следующий цикл начнёт заново.
+    DELETE FROM logic_params
+    WHERE logic_id = p_logic_id
+      AND param_key = 'last_opt_eval_bar_dt';
+
+    FOR v_sec IN
+        SELECT security_id
+        FROM logic_securities
+        WHERE logic_id = p_logic_id AND is_active = TRUE
+    LOOP
+        CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
+    END LOOP;
+
+    v_after := logic_opt_collect_formula_state(p_logic_id);
+    PERFORM logic_opt_record_param_event(
+        p_logic_id, NULL, CURRENT_TIMESTAMP::TIMESTAMP, 'snapshot',
+        'reset',
+        v_after->'bases',
+        NULL, NULL, NULL
+    );
+
+    PERFORM logic_trade_log(
+        p_logic_id,
+        'opt.reset',
+        format(
+            'Сброс OPT: source=%s, formulas=%s, deleted_opt_trades=%s',
+            v_source, v_restored, v_deleted
+        ),
+        jsonb_build_object(
+            'source', v_source,
+            'formulas_restored', v_restored,
+            'opt_trades_deleted', v_deleted
+        ),
+        NULL,
+        NULL
+    );
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'formulas_restored', v_restored,
+        'opt_trades_deleted', v_deleted,
+        'source', v_source,
+        'message', CASE
+            WHEN v_source = 'none' THEN
+                'Книга OPT очищена; начальные базы в истории не найдены — формулы не менялись'
+            ELSE
+                format('OPT сброшен к начальным (%s)', v_source)
+        END
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_opt_reset_to_initial(INTEGER) IS
+'Сброс OPT: вернуть начальные базы формул (snapshot / params_prev), удалить live opt_lane сделки, сбросить last_opt_eval_bar_dt.';
 
 -- ---------------------------------------------------------------------------
 -- История параметров OPT / формул (отчёт теста)

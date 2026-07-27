@@ -2161,6 +2161,61 @@ app.get('/api/logics/:id/opt-param-history', async (req, res) => {
   }
 });
 
+/** Сброс OPT: начальные базы формул + очистка live opt_lane книги. */
+app.post('/api/logics/:id/opt-reset', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows: exists } = await pool.query(
+      'SELECT id FROM logics WHERE id = $1',
+      [id]
+    );
+    if (exists.length === 0) {
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    const { rows } = await pool.query(
+      `SELECT logic_opt_reset_to_initial($1) AS r`,
+      [id]
+    );
+    const result = rows[0]?.r ?? {};
+    if (result && result.ok === false) {
+      res.status(400).json({ error: result.error || 'opt reset failed', ...result });
+      return;
+    }
+    const { rows: signals } = await pool.query(
+      `
+      SELECT
+        lis.id,
+        lis.logic_id,
+        lis.indicator_id,
+        lis.position_event,
+        lis.position_side,
+        lis.signal_kind,
+        lis.formula,
+        lis.rating,
+        lis.rating_test,
+        lis.display_order,
+        lis.is_active,
+        i.code AS indicator_code,
+        i.name AS indicator_name
+      FROM logic_indicator_signals lis
+      JOIN indicators i ON i.id = lis.indicator_id
+      WHERE lis.logic_id = $1
+      ORDER BY lis.display_order, lis.id
+      `,
+      [id]
+    );
+    res.json({ ...result, signals });
+  } catch (err) {
+    console.error('POST /api/logics/:id/opt-reset', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.patch('/api/logics/:id/trading-params', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {

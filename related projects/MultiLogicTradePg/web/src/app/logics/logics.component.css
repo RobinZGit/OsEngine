@@ -1591,6 +1591,18 @@ tbody tr.logic-main-row:hover {
   max-width: 5rem;
 }
 
+.params-opt-candles-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.params-opt-reset-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .params-hint {
   font-size: 0.78rem;
   color: #6b7280;

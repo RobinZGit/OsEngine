@@ -273,6 +273,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private savingStopIds = new Set<number>();
   private savingParamsIds = new Set<number>();
   private copyingLogicIds = new Set<number>();
+  private optResettingIds = new Set<number>();
   paramsDrafts = new Map<
     number,
     {
@@ -811,6 +812,53 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.getParamsDraft(logicId).opt_eval_candles = value;
     this.paramsDirtyIds.add(logicId);
     this.paramsSaveErrors.delete(logicId);
+  }
+
+  isOptResetting(logicId: number): boolean {
+    return this.optResettingIds.has(logicId);
+  }
+
+  resetOptParameters(logicId: number): void {
+    if (this.optResettingIds.has(logicId)) return;
+    const ok = confirm(
+      'Сбросить оптимизированные параметры к начальным значениям и очистить бумажную книгу OPT (opt_lane)? Чемпионские сделки не удаляются.'
+    );
+    if (!ok) return;
+    this.optResettingIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+    this.logicsService.resetOptToInitial(logicId).subscribe({
+      next: (resp) => {
+        this.optResettingIds.delete(logicId);
+        if (resp?.ok === false) {
+          this.paramsSaveErrors.set(
+            logicId,
+            resp.error || resp.message || 'Сброс OPT не выполнен'
+          );
+          return;
+        }
+        if (Array.isArray(resp.signals)) {
+          this.logicSignals.set(logicId, resp.signals);
+          for (const r of resp.signals) {
+            this.formulaDrafts.set(r.id, r.formula);
+          }
+          this.rebuildSignalIndicatorIds(logicId);
+        } else {
+          this.loadSignalsForLogic(logicId, true);
+        }
+        this.paramsSaveErrors.delete(logicId);
+        // Soft notice via existing error slot is wrong; use empty + reload trades if panel open
+        this.loadParamsForLogic(logicId, true);
+        const msg = resp.message || 'OPT сброшен';
+        window.alert(msg);
+      },
+      error: (err) => {
+        this.optResettingIds.delete(logicId);
+        this.paramsSaveErrors.set(
+          logicId,
+          err?.error?.error || err?.message || 'Ошибка сброса OPT'
+        );
+      },
+    });
   }
 
   private formatPctParam(value: number | string | null | undefined): string {

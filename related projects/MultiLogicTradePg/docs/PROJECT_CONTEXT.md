@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-27 — cycle budget ≤ equity (short proceeds / borrowed cash out of sizing)
+**Последнее обновление:** 2026-07-27 — кнопка «Сброс OPT» (начальные базы + очистка opt_lane книги)
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-27)
+
+### 2026-07-27 (кнопка «Сброс OPT» у окна свечей)
+
+- В «Параметры логики» слева от «Свечей окна OPT» — кнопка **Сброс OPT**.
+- `logic_opt_reset_to_initial`: вернуть начальные формулы (earliest snapshot / `params_prev` первого promote), `DELETE` live `opt_lane` сделок, сброс `last_opt_eval_bar_dt`, apply indicator params.
+- При первом live-курсоре OPT — авто-snapshot начальных баз.
+- API: `POST /api/logics/:id/opt-reset`.
 
 ### 2026-07-27 (плечо 1: не считать выручку шорта / заёмный кэш)
 
@@ -665,6 +672,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-27 | Button «Сброс OPT»: restore initial bases + clear live opt_lane book; push |
 | 2026-07-27 | Cap cycle budget at equity — exclude short proceeds / borrowed cash from lot+exposure base |
 | 2026-07-26 | Mid-run test-panel: opens + recent closes while backtest running |
 | 2026-07-26 | Seed LinReg Fade Twice Optimized (OPT std_dev + period) |

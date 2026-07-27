@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+718. It is necessary to consider the possibility of resetting the optimized parameters to the initial values. This is probably where there will be a button, where we have a parameter of the number of candles through which to change. You need to make a button on the left to reset the optimized parameter to the initial value. By clicking on the button, you can clear the book and rewrite the values to the new one. And immediately put it in the repository.
+
 717. On a remote server, I bought with a margin, more than, or rather, sold with a margin, more than the rest of the account, although the first shoulder is set. Of course, the money we have taken should not be taken into account when calculating in positions. More precisely, the money from the borrowed papers. Well, and the borrowed money, if there is.
 
 716. For some reason, there is no paper, there is no opening, there is no closing, why?
