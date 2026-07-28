@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — offline OPT grid + broom shadow-reset + lilac OPT testing UI; installers rebuild; push
+**Последнее обновление:** 2026-07-28 — rename «Параметры по умолчанию» + bold «Сброс OPT»; installers rebuild; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -119,6 +119,11 @@
 
 ## Что сделано (актуально на 2026-07-28)
 
+### 2026-07-28 (подписи OPT на панели сигналов)
+
+- «Сброс параметров» → **«Параметры по умолчанию»**; Help/docs.
+- Кнопка **«Сброс OPT»** в параметрах — жирный янтарный стиль, заметнее.
+
 ### 2026-07-28 (метла + цвет OPT + анти-мигание)
 
 - Кнопка-метла на доске логик: `POST /api/logics/:id/shadow-reset` — удалить live `is_shadow` сделки, снять pause/инверсию, `is_active=TRUE` по всем бумагам логики; при enable — rating precalc.
@@ -130,7 +135,7 @@
 - Чекбокс **«Оптимизировать»** рядом с Запуск в блоке Тестирование; модалка параметров из формул сигналов (шаг, итерации ±, лимит 81 комбинаций).
 - Один `logic_backtest_runs`: чемпион = defaults (эквити/сделки как обычно); сетка = бумажные `opt_lane` без mid-run promote; `logic_opt_grid_finalize` → `opt_grid_results`.
 - Один последовательный прогон баров (не N параллельных потоков на ветку).
-- Отчёт OPT (HTML); на панели «Сигналы» — «Применить лучшие OPT» / «Сброс параметров».
+- Отчёт OPT (HTML); на панели «Сигналы» — «Применить лучшие OPT» / «Параметры по умолчанию».
 
 ### 2026-07-28 (resume_sl_no_reduce — не снижать цель security_resume)
 
@@ -756,6 +761,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Rename «Параметры по умолчанию» + bold «Сброс OPT»; installers; push |
 | 2026-07-28 | Ship offline OPT grid + broom shadow-reset + lilac OPT UI + flicker fix; installers; push |
 | 2026-07-28 | Ship resume_sl_no_reduce (HWM security_resume) + rebuild installers; push |
 | 2026-07-28 | resume_sl_no_reduce: HWM for security_resume (default off); live+backtest+UI+docs |

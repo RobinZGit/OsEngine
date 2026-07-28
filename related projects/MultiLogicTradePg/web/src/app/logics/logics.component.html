@@ -1245,11 +1245,11 @@
                           <button
                             type="button"
                             class="btn btn-sm btn-muted"
-                            title="Вернуть начальные базы параметров сигналов (как Сброс OPT)"
+                            title="Вернуть базы параметров сигналов к значениям по умолчанию и очистить бумажную книгу OPT"
                             [disabled]="isOptResetting(row.id)"
                             (click)="resetOptParameters(row.id); $event.stopPropagation()"
                           >
-                            {{ isOptResetting(row.id) ? '…' : 'Сброс параметров' }}
+                            {{ isOptResetting(row.id) ? '…' : 'Параметры по умолчанию' }}
                           </button>
 
                           <button

@@ -1642,6 +1642,21 @@ tbody tr.logic-main-row:hover {
 .params-opt-reset-btn {
   white-space: nowrap;
   flex-shrink: 0;
+  font-weight: 700;
+  color: #b45309;
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.params-opt-reset-btn:hover:not(:disabled) {
+  color: #92400e;
+  border-color: #d97706;
+  background: #fef3c7;
+}
+
+.params-opt-reset-btn:disabled {
+  opacity: 0.65;
+  font-weight: 700;
 }
 
 .params-hint {

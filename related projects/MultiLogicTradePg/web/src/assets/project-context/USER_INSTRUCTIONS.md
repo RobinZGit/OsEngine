@@ -6,6 +6,12 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+732. push
+
+731. Make the Reset Opt button a brighter bold font to make it noticeable.
+
+730. parameter reset button rename seterameters by default
+
 729. push
 
 728. For some reason, the block is not always lilac. Sometimes it's yellow, sometimes it's lilac. I need to correct it so that the color doesn't twitch. And one more question. Don't do it, just tell me. If we... How is optimization arranged? Is it in one stream or something else? Or maybe you can run it for each parameter change, your own parallel stream? Or is it not worth it?
