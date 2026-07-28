@@ -1727,12 +1727,16 @@ app.post('/api/logics/export', async (req, res) => {
 });
 
 /**
- * Импорт bundle: создаёт логики с теми же бумагами/сигналами/стопами/параметрами.
- * Тесты и сделки не импортируются (пустой журнал).
+ * Импорт bundle: по имени — перезапись; иначе новая логика.
+ * Тесты/сделки не импортируются; last_opt_grid из файла восстанавливается.
+ * Body: bundle JSON; optional overwrite_by_name (default true).
  */
 app.post('/api/logics/import', async (req, res) => {
   try {
-    const result = await importLogicBundle(pool, req.body);
+    const overwriteByName = req.body?.overwrite_by_name !== false;
+    const bundle = { ...req.body };
+    delete bundle.overwrite_by_name;
+    const result = await importLogicBundle(pool, bundle, { overwriteByName });
     res.status(201).json(result);
   } catch (err) {
     console.error('POST /api/logics/import', err);

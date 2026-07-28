@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — persist last OPT grid on logics; Apply best + auto reports; installers; push
+**Последнее обновление:** 2026-07-28 — per-row export/import icons + last OPT in bundle (overwrite by name); push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (иконки export/import на доске + OPT в bundle)
+
+- В `col-actions` рядом с edit/copy: export / import / broom; в шапке — те же иконки вместо текста.
+- Bundle v2: params/signals/stops/securities + `last_opt_grid` (без сделок/свечей/тестов); импорт по имени — перезапись, иначе новая; кэш OPT для «Применить лучшие OPT».
 
 ### 2026-07-28 (кэш Apply best OPT + авто-отчёты)
 
@@ -767,6 +772,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Per-row export/import icons; bundle v2 + last OPT; overwrite by name; installers; push |
 | 2026-07-28 | Persist last OPT on logics; Apply best recover; auto-open reports; installers; push |
 | 2026-07-28 | Rename «Параметры по умолчанию» + bold «Сброс OPT»; installers; push |
 | 2026-07-28 | Ship offline OPT grid + broom shadow-reset + lilac OPT UI + flicker fix; installers; push |

@@ -2746,6 +2746,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
       alert('Отметьте логики для экспорта (чекбокс справа)');
       return;
     }
+    this.downloadLogicExport(ids);
+  }
+
+  exportOneLogic(row: LogicRow, event: Event): void {
+    event.stopPropagation();
+    this.downloadLogicExport([row.id], row.name);
+  }
+
+  private downloadLogicExport(ids: number[], preferredName?: string): void {
     if (this.exportImportBusy) return;
     this.exportImportBusy = true;
     this.logicsService.exportLogics(ids).subscribe({
@@ -2753,19 +2762,35 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.exportImportBusy = false;
         const names = (bundle.logics || []).map((l) => l.name);
         const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const safe =
+          String(preferredName || names[0] || 'logics')
+            .replace(/[^\w\-а-яА-ЯёЁ]+/g, '_')
+            .slice(0, 60) || 'logics';
         const blob = new Blob([JSON.stringify(bundle, null, 2)], {
           type: 'application/json;charset=utf-8',
         });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `multilogic-logics-${stamp}.json`;
+        a.download =
+          ids.length === 1
+            ? `multilogic-logic-${safe}-${stamp}.json`
+            : `multilogic-logics-${stamp}.json`;
         a.click();
         URL.revokeObjectURL(url);
+        const optN = (bundle.logics || []).filter(
+          (l) =>
+            Array.isArray(l.last_opt_grid?.results) &&
+            (l.last_opt_grid?.results?.length ?? 0) > 0
+        ).length;
         alert(
-          names.length === 1
+          (names.length === 1
             ? `Экспортирована логика: ${names[0]}`
-            : `Экспортированы логики (${names.length}):\n${names.join('\n')}`
+            : `Экспортированы логики (${names.length}):\n${names.join('\n')}`) +
+            (optN
+              ? `\n(с кэшем OPT: ${optN})`
+              : '') +
+            `\nБез сделок, свечей и тестов.`
         );
       },
       error: (err) => {
@@ -2818,7 +2843,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  triggerImportLogics(): void {
+  triggerImportLogics(event?: Event): void {
+    event?.stopPropagation();
     if (this.exportImportBusy) return;
     const input = this.logicImportFile?.nativeElement;
     if (!input) return;
@@ -2837,22 +2863,32 @@ export class LogicsComponent implements OnInit, OnDestroy {
       try {
         const text = String(reader.result || '');
         const bundle = JSON.parse(text);
-        this.logicsService.importLogics(bundle).subscribe({
+        this.logicsService.importLogics(bundle, { overwriteByName: true }).subscribe({
           next: (result) => {
             this.exportImportBusy = false;
             this.loadLogicsOnce();
-            const names = (result.imported || []).map((r) => r.name);
+            const lines = (result.imported || []).map((r) => {
+              const act = r.action === 'updated' ? 'обновлена' : 'создана';
+              const opt = r.has_opt_grid ? ', OPT' : '';
+              return `${r.name} (${act}${opt})`;
+            });
             let msg =
-              names.length === 1
-                ? `Импортирована логика: ${names[0]}`
-                : `Импортированы логики (${names.length}):\n${names.join('\n')}`;
+              lines.length === 1
+                ? `Импорт: ${lines[0]}`
+                : `Импортировано (${lines.length}):\n${lines.join('\n')}`;
+            msg +=
+              '\nПо имени — перезапись; иначе новая. Сделки/тесты не переносятся.';
             if (result.warnings?.length) {
               msg += `\n\nПредупреждения:\n${result.warnings.slice(0, 12).join('\n')}`;
               if (result.warnings.length > 12) {
                 msg += `\n… ещё ${result.warnings.length - 12}`;
               }
             }
+            for (const r of result.imported || []) {
+              this.refreshOptGridAvailability(r.id);
+            }
             alert(msg);
+            this.cdr.markForCheck();
           },
           error: (err) => {
             this.exportImportBusy = false;

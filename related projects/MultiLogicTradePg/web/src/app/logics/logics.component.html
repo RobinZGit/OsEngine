@@ -40,22 +40,34 @@
 
         <button
           type="button"
-          class="btn-io"
-          title="Экспорт отмеченных логик (настройки и бумаги, без тестов)"
+          class="icon-btn icon-export"
+          title="Экспорт отмеченных логик: настройки, бумаги, сигналы, стопы и кэш OPT; без сделок, свечей и тестов"
+          aria-label="Экспорт отмеченных логик"
           [disabled]="exportImportBusy || selectedExportIds.size === 0"
           (click)="exportSelectedLogics()"
         >
-          Экспорт
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 2l4 4h-3v8h-2V6H8l4-4zm-7 14v4h14v-4h2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4h2z"
+            />
+          </svg>
         </button>
 
         <button
           type="button"
-          class="btn-io"
-          title="Импорт логик из JSON (бумаги как в файле, тесты пустые)"
+          class="icon-btn icon-import"
+          title="Импорт логик из JSON: по имени — перезапись, иначе новая; восстанавливает кэш OPT для «Применить лучшие OPT»"
+          aria-label="Импорт логик"
           [disabled]="exportImportBusy"
           (click)="triggerImportLogics()"
         >
-          Импорт
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 16l-4-4h3V4h2v8h3l-4 4zm-7 2v2h14v-2H5z"
+            />
+          </svg>
         </button>
 
         <input
@@ -486,9 +498,69 @@
 
                   type="button"
 
+                  class="icon-btn icon-export"
+
+                  title="Экспорт этой логики: настройки, бумаги, сигналы, стопы и кэш OPT; без сделок, свечей и тестов"
+
+                  aria-label="Экспорт логики"
+
+                  [disabled]="exportImportBusy"
+
+                  (click)="exportOneLogic(row, $event)"
+
+                >
+
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+
+                    <path
+
+                      fill="currentColor"
+
+                      d="M12 2l4 4h-3v8h-2V6H8l4-4zm-7 14v4h14v-4h2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4h2z"
+
+                    />
+
+                  </svg>
+
+                </button>
+
+                <button
+
+                  type="button"
+
+                  class="icon-btn icon-import"
+
+                  title="Импорт JSON: по имени — перезапись, иначе новая; восстанавливает кэш OPT"
+
+                  aria-label="Импорт логики"
+
+                  [disabled]="exportImportBusy"
+
+                  (click)="triggerImportLogics($event)"
+
+                >
+
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+
+                    <path
+
+                      fill="currentColor"
+
+                      d="M12 16l-4-4h3V4h2v8h3l-4 4zm-7 2v2h14v-2H5z"
+
+                    />
+
+                  </svg>
+
+                </button>
+
+                <button
+
+                  type="button"
+
                   class="icon-btn icon-broom"
 
-                  title="Очистить теневую историю: снять shadow/паузу, включить все бумаги логики"
+                  title="Очистить теневую историю: удалить shadow-сделки, снять паузу/инверсию, включить все бумаги логики; при включённой логике — предрасчёт рейтинга"
 
                   aria-label="Очистить теневую историю"
 

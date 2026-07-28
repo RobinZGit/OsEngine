@@ -86,6 +86,7 @@ export interface LogicExportBundle {
   format: string;
   version: number;
   exported_at?: string;
+  overwrite_by_name?: boolean;
   logics: Array<{
     name: string;
     note?: string | null;
@@ -101,7 +102,24 @@ export interface LogicExportBundle {
       display_order?: number;
       is_active?: boolean;
     }>;
+    last_opt_grid?: {
+      results: unknown[];
+      run_id?: number | null;
+      at?: string | null;
+    } | null;
   }>;
+}
+
+export interface LogicImportResult {
+  imported: Array<{
+    id: number;
+    name: string;
+    source_name?: string;
+    action?: 'created' | 'updated' | string;
+    securities_count?: number;
+    has_opt_grid?: boolean;
+  }>;
+  warnings?: string[];
 }
 
 /** Full trades + logic context dump for AI/debug (test or live). */
@@ -132,16 +150,6 @@ export interface LogicTradesExportBundle {
   trades: LogicTradeRow[];
   lots: LogicTradeLotRow[];
   note?: string;
-}
-
-export interface LogicImportResult {
-  imported: Array<{
-    id: number;
-    name: string;
-    source_name: string;
-    securities_count: number;
-  }>;
-  warnings: string[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -188,8 +196,8 @@ export class LogicsService {
   }
 
   /**
-   * Экспорт выбранных логик (JSON): карточка, params, signals, stops, papers.
-   * Без тестов/сделок.
+   * Экспорт выбранных логик (JSON): карточка, params, signals, stops, papers, last OPT.
+   * Без тестов/сделок/свечей.
    */
   exportLogics(ids: number[]): Observable<LogicExportBundle> {
     return this.http.post<LogicExportBundle>(
@@ -198,11 +206,20 @@ export class LogicsService {
     );
   }
 
-  /** Импорт JSON-bundle: те же бумаги и настройки; тесты пустые. */
-  importLogics(bundle: LogicExportBundle): Observable<LogicImportResult> {
+  /**
+   * Импорт JSON-bundle. По умолчанию перезапись по имени; иначе новая логика.
+   * last_opt_grid из файла восстанавливается (кнопка «Применить лучшие OPT»).
+   */
+  importLogics(
+    bundle: LogicExportBundle,
+    opts?: { overwriteByName?: boolean }
+  ): Observable<LogicImportResult> {
     return this.http.post<LogicImportResult>(
       `${this.appConfig.apiUrl}/logics/import`,
-      bundle
+      {
+        ...bundle,
+        overwrite_by_name: opts?.overwriteByName !== false,
+      }
     );
   }
 

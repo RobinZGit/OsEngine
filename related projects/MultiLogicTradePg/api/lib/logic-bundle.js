@@ -1,13 +1,13 @@
 /**
  * Export / import logics as a portable JSON bundle.
- * Includes: card, params, signals, stops, securities (papers).
- * Excludes: trades, backtest runs, ratings history, runtime pause/invert state.
+ * Includes: card, params, signals, stops, securities, last offline OPT grid.
+ * Excludes: trades, candles, backtest runs, ratings history, runtime pause/invert/shadow.
  */
 
 const { syncRealAccountBalancesIfNeeded } = require('./logic-params');
 
 const FORMAT = 'multilogictrade.logic-bundle';
-const VERSION = 1;
+const VERSION = 2;
 
 function uniqueLogicName(client, desiredName, suffixBase = 'import') {
   return (async () => {
@@ -30,6 +30,21 @@ function uniqueLogicName(client, desiredName, suffixBase = 'import') {
   })();
 }
 
+function packLastOptGrid(row) {
+  if (
+    row.last_opt_grid_results == null ||
+    !Array.isArray(row.last_opt_grid_results) ||
+    row.last_opt_grid_results.length === 0
+  ) {
+    return null;
+  }
+  return {
+    results: row.last_opt_grid_results,
+    run_id: row.last_opt_grid_run_id != null ? Number(row.last_opt_grid_run_id) : null,
+    at: row.last_opt_grid_at ? new Date(row.last_opt_grid_at).toISOString() : null,
+  };
+}
+
 /**
  * @param {import('pg').Pool|import('pg').PoolClient} db
  * @param {number[]} ids
@@ -49,6 +64,9 @@ async function buildLogicBundle(db, ids) {
       l.name,
       l.note,
       l.is_enabled,
+      l.last_opt_grid_results,
+      l.last_opt_grid_run_id,
+      l.last_opt_grid_at,
       a.account_code,
       b.code AS broker_code
     FROM logics l
@@ -156,7 +174,6 @@ async function buildLogicBundle(db, ids) {
       is_active: s.is_active,
     });
   }
-  // Dedupe papers by (prefix, instrument_market) — join may duplicate if several exchanges
   const securitiesByLogic = new Map();
   for (const s of securityRows) {
     if (!securitiesByLogic.has(s.logic_id)) securitiesByLogic.set(s.logic_id, []);
@@ -190,6 +207,7 @@ async function buildLogicBundle(db, ids) {
       signals: signalsByLogic.get(l.id) || [],
       stops: stopsByLogic.get(l.id) || [],
       securities: securitiesByLogic.get(l.id) || [],
+      last_opt_grid: packLastOptGrid(l),
     })),
   };
 }
@@ -217,7 +235,6 @@ async function resolveAccountId(client, account) {
     );
     if (rows[0]) return rows[0].id;
   }
-  // Fallback: first fake account (typical for portable imports)
   const { rows: fake } = await client.query(
     `
     SELECT id FROM accounts
@@ -275,11 +292,188 @@ async function resolveSecurityId(client, paper) {
   return null;
 }
 
+async function writeLastOptGrid(client, logicId, lastOptGrid) {
+  try {
+    if (
+      lastOptGrid &&
+      Array.isArray(lastOptGrid.results) &&
+      lastOptGrid.results.length > 0
+    ) {
+      await client.query(
+        `
+        UPDATE logics
+        SET
+          last_opt_grid_results = $2::jsonb,
+          last_opt_grid_run_id = $3,
+          last_opt_grid_at = COALESCE($4::timestamptz, CURRENT_TIMESTAMP)
+        WHERE id = $1
+        `,
+        [
+          logicId,
+          JSON.stringify(lastOptGrid.results),
+          lastOptGrid.run_id != null && Number.isFinite(Number(lastOptGrid.run_id))
+            ? Number(lastOptGrid.run_id)
+            : null,
+          lastOptGrid.at || null,
+        ]
+      );
+    } else {
+      await client.query(
+        `
+        UPDATE logics
+        SET
+          last_opt_grid_results = NULL,
+          last_opt_grid_run_id = NULL,
+          last_opt_grid_at = NULL
+        WHERE id = $1
+        `,
+        [logicId]
+      );
+    }
+  } catch (err) {
+    if (err?.code !== '42703') throw err;
+  }
+}
+
+/**
+ * Replace params/signals/stops/securities (+ last OPT) for an existing or new logic id.
+ */
+async function replaceLogicContents(client, logicId, item, warnings, nameForWarn) {
+  await client.query(
+    `
+    INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+    SELECT $1, d.param_key, d.default_value, d.value_type
+    FROM logic_param_defs d
+    ON CONFLICT (logic_id, param_key) DO NOTHING
+    `,
+    [logicId]
+  );
+
+  for (const p of item.params || []) {
+    if (!p?.param_key) continue;
+    await client.query(
+      `
+      INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (logic_id, param_key) DO UPDATE SET
+        param_value = EXCLUDED.param_value,
+        value_type = EXCLUDED.value_type,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        logicId,
+        String(p.param_key),
+        p.param_value != null ? String(p.param_value) : '',
+        p.value_type != null ? String(p.value_type) : 'text',
+      ]
+    );
+  }
+
+  await client.query(`DELETE FROM logic_indicator_signals WHERE logic_id = $1`, [
+    logicId,
+  ]);
+  await client.query(`DELETE FROM logic_stops WHERE logic_id = $1`, [logicId]);
+  await client.query(`DELETE FROM logic_securities WHERE logic_id = $1`, [logicId]);
+
+  for (const sig of item.signals || []) {
+    const indicatorId = await resolveIndicatorId(client, sig.indicator_code);
+    if (!indicatorId) {
+      warnings.push(
+        `${nameForWarn}: индикатор ${sig.indicator_code || '?'} не найден — сигнал пропущен`
+      );
+      continue;
+    }
+    await client.query(
+      `
+      INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind,
+        formula, rating, rating_test, display_order, is_active
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7, $8)
+      `,
+      [
+        logicId,
+        indicatorId,
+        sig.position_event === 'close' ? 'close' : 'open',
+        sig.position_side === 'short' ? 'short' : 'long',
+        sig.signal_kind === 'counter' ? 'counter' : 'trend',
+        String(sig.formula || ''),
+        Number.isFinite(Number(sig.display_order)) ? Number(sig.display_order) : 0,
+        sig.is_active === false ? false : true,
+      ]
+    );
+  }
+
+  for (const st of item.stops || []) {
+    await client.query(
+      `
+      INSERT INTO logic_stops (
+        logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `,
+      [
+        logicId,
+        st.rule_kind === 'take_profit' ? 'take_profit' : 'stop_loss',
+        st.scope_type === 'security_ltp_renew'
+          ? 'portfolio_ltp_renew'
+          : [
+                'security',
+                'security_resume',
+                'security_inversion',
+                'portfolio',
+                'portfolio_resume',
+                'portfolio_ltp_renew',
+              ].includes(st.scope_type)
+            ? st.scope_type
+            : 'security',
+        Number(st.value) || 0,
+        st.value_unit === 'atr' ? 'atr' : 'percent',
+        Number.isFinite(Number(st.display_order)) ? Number(st.display_order) : 0,
+        st.is_active === false ? false : true,
+      ]
+    );
+  }
+
+  let papersAdded = 0;
+  for (const paper of item.securities || []) {
+    const securityId = await resolveSecurityId(client, paper);
+    if (!securityId) {
+      warnings.push(
+        `${nameForWarn}: бумага ${paper.prefix || paper.security_name || '?'} (${paper.instrument_market || 'stock'}) не найдена — пропущена`
+      );
+      continue;
+    }
+    await client.query(
+      `
+      INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (logic_id, security_id) DO UPDATE SET
+        display_order = EXCLUDED.display_order,
+        is_active = EXCLUDED.is_active
+      `,
+      [
+        logicId,
+        securityId,
+        Number.isFinite(Number(paper.display_order)) ? Number(paper.display_order) : 0,
+        paper.is_active === false ? false : true,
+      ]
+    );
+    papersAdded += 1;
+  }
+
+  await writeLastOptGrid(client, logicId, item.last_opt_grid || null);
+  await syncRealAccountBalancesIfNeeded(client, logicId, { force: true });
+  return papersAdded;
+}
+
 /**
  * @param {import('pg').Pool} pool
  * @param {object} bundle
+ * @param {{ overwriteByName?: boolean }} [opts]
+ *   overwriteByName (default true): same name → replace contents; else create with unique name.
  */
-async function importLogicBundle(pool, bundle) {
+async function importLogicBundle(pool, bundle, opts = {}) {
   if (!bundle || bundle.format !== FORMAT) {
     const err = new Error(`Неверный формат файла (ожидается ${FORMAT})`);
     err.status = 400;
@@ -291,6 +485,7 @@ async function importLogicBundle(pool, bundle) {
     err.status = 400;
     throw err;
   }
+  const overwriteByName = opts.overwriteByName !== false;
 
   const imported = [];
   const warnings = [];
@@ -300,146 +495,72 @@ async function importLogicBundle(pool, bundle) {
 
     for (const item of list) {
       const desiredName = String(item?.name || '').trim() || 'Imported logic';
-      const name = await uniqueLogicName(client, desiredName, 'import');
       const accountId = await resolveAccountId(client, item?.account);
       const note = item?.note != null ? String(item.note) : null;
 
-      const { rows: inserted } = await client.query(
-        `
-        INSERT INTO logics (name, account_id, is_enabled, note)
-        VALUES ($1, $2, FALSE, $3)
-        RETURNING id, name
-        `,
-        [name, accountId, note]
-      );
-      const logicId = inserted[0].id;
+      let logicId = null;
+      let name = desiredName;
+      let action = 'created';
 
-      // Defaults first, then overwrite from file (same as create + copy intent)
-      await client.query(
-        `
-        INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
-        SELECT $1, d.param_key, d.default_value, d.value_type
-        FROM logic_param_defs d
-        ON CONFLICT (logic_id, param_key) DO NOTHING
-        `,
-        [logicId]
-      );
-
-      for (const p of item.params || []) {
-        if (!p?.param_key) continue;
-        await client.query(
-          `
-          INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (logic_id, param_key) DO UPDATE SET
-            param_value = EXCLUDED.param_value,
-            value_type = EXCLUDED.value_type,
-            updated_at = CURRENT_TIMESTAMP
-          `,
-          [
-            logicId,
-            String(p.param_key),
-            p.param_value != null ? String(p.param_value) : '',
-            p.value_type != null ? String(p.value_type) : 'text',
-          ]
+      if (overwriteByName) {
+        const { rows: existing } = await client.query(
+          `SELECT id, name FROM logics WHERE name = $1 LIMIT 1`,
+          [desiredName]
         );
-      }
-
-      for (const sig of item.signals || []) {
-        const indicatorId = await resolveIndicatorId(client, sig.indicator_code);
-        if (!indicatorId) {
-          warnings.push(
-            `${name}: индикатор ${sig.indicator_code || '?'} не найден — сигнал пропущен`
+        if (existing.length > 0) {
+          logicId = existing[0].id;
+          name = existing[0].name;
+          action = 'updated';
+          await client.query(
+            `
+            UPDATE logics
+            SET account_id = $2, note = $3, is_enabled = FALSE
+            WHERE id = $1
+            `,
+            [logicId, accountId, note]
           );
-          continue;
         }
-        await client.query(
-          `
-          INSERT INTO logic_indicator_signals (
-            logic_id, indicator_id, position_event, position_side, signal_kind,
-            formula, rating, rating_test, display_order, is_active
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7, $8)
-          `,
-          [
-            logicId,
-            indicatorId,
-            sig.position_event === 'close' ? 'close' : 'open',
-            sig.position_side === 'short' ? 'short' : 'long',
-            sig.signal_kind === 'counter' ? 'counter' : 'trend',
-            String(sig.formula || ''),
-            Number.isFinite(Number(sig.display_order)) ? Number(sig.display_order) : 0,
-            sig.is_active === false ? false : true,
-          ]
-        );
       }
 
-      for (const st of item.stops || []) {
-        await client.query(
-          `
-          INSERT INTO logic_stops (
-            logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          `,
-          [
-            logicId,
-            st.rule_kind === 'take_profit' ? 'take_profit' : 'stop_loss',
-            st.scope_type === 'security_ltp_renew'
-              ? 'portfolio_ltp_renew'
-              : [
-                    'security',
-                    'security_resume',
-                    'security_inversion',
-                    'portfolio',
-                    'portfolio_resume',
-                    'portfolio_ltp_renew',
-                  ].includes(st.scope_type)
-                ? st.scope_type
-                : 'security',
-            Number(st.value) || 0,
-            st.value_unit === 'atr' ? 'atr' : 'percent',
-            Number.isFinite(Number(st.display_order)) ? Number(st.display_order) : 0,
-            st.is_active === false ? false : true,
-          ]
-        );
-      }
-
-      let papersAdded = 0;
-      for (const paper of item.securities || []) {
-        const securityId = await resolveSecurityId(client, paper);
-        if (!securityId) {
-          warnings.push(
-            `${name}: бумага ${paper.prefix || paper.security_name || '?'} (${paper.instrument_market || 'stock'}) не найдена — пропущена`
-          );
-          continue;
+      if (logicId == null) {
+        if (!overwriteByName) {
+          name = await uniqueLogicName(client, desiredName, 'import');
+        } else {
+          // Name free — create with exact name
+          name = desiredName;
         }
-        await client.query(
+        const { rows: inserted } = await client.query(
           `
-          INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (logic_id, security_id) DO UPDATE SET
-            display_order = EXCLUDED.display_order,
-            is_active = EXCLUDED.is_active
+          INSERT INTO logics (name, account_id, is_enabled, note)
+          VALUES ($1, $2, FALSE, $3)
+          RETURNING id, name
           `,
-          [
-            logicId,
-            securityId,
-            Number.isFinite(Number(paper.display_order)) ? Number(paper.display_order) : 0,
-            paper.is_active === false ? false : true,
-          ]
+          [name, accountId, note]
         );
-        papersAdded += 1;
+        logicId = inserted[0].id;
+        name = inserted[0].name;
+        action = 'created';
       }
 
-      // Real: не оставлять 1M из JSON — остаток с брокера или 0
-      await syncRealAccountBalancesIfNeeded(client, logicId, { force: true });
+      const papersAdded = await replaceLogicContents(
+        client,
+        logicId,
+        item,
+        warnings,
+        name
+      );
 
       imported.push({
         id: logicId,
         name,
         source_name: desiredName,
+        action,
         securities_count: papersAdded,
+        has_opt_grid: !!(
+          item.last_opt_grid &&
+          Array.isArray(item.last_opt_grid.results) &&
+          item.last_opt_grid.results.length > 0
+        ),
       });
     }
 
