@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — refresh Help/docs/schema for PostOrder lots + sell-all + exports; USER_INSTRUCTIONS; installers; push
+**Последнее обновление:** 2026-07-28 — Phase A: Express routers (`api/routes/*` + thin `server.js`); Help/docs; installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (Phase A: Express routers из `api/server.js`)
+
+- Монолит ~5.2k строк → тонкий `api/server.js` (~80 строк) + `api/lib/server-shared.js` + `api/routes/{settings,indicators,market,references,logics,trades,backtest,ops}.js`.
+- URL и поведение без смены контракта; smoke: `node --check` + регистрация **96** маршрутов.
+- Скрипт разбиения: `api/scripts/split-server-routes.mjs`; локальный бэкап `server.js.pre-routes-bak` в `.gitignore`.
+- Phase B (дробление `logics.component.ts` / огромных SQL) — **не** начата.
 
 ### 2026-07-28 (актуализация Help / схемы / контекста / инструкций)
 
@@ -726,6 +733,7 @@
 - [x] v43b: изоляция бой / тест / прекалк рейтингов (без взаимных lock-stall).
 - [x] v43c: финрез теста привязан к сделкам/`run_id` (не stale PnL из `logic_backtest_runs`).
 - [x] Применить `lot_size` + функции на рабочей БД (`00`→`02`, 2026-07-15); бэктесты после пересборки нужно перезапустить.
+- [ ] Phase B: разбить oversized UI/SQL (`logics.component.ts`, `01`/`02`) — после Phase A routers.
 - [ ] Расширить оценку формул сигналов (CROSS; AND внутри одной формулы).
 - [ ] `is_fictitious` — логика заполнения.
 - [ ] Заполнить `tbank_figi` где возможно (частично через `resolve_tbank_instrument_id`).
@@ -802,6 +810,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Phase A: split api/server.js → routes/* + server-shared; Help/docs; installers; push |
 | 2026-07-28 | Refresh Help/docs/schema (lots, sell-all, exports); USER_INSTRUCTIONS; installers; push |
 | 2026-07-28 | Fix sell-all undersell (lots÷lot_size); quantity-based sell-all; installers; push |
 | 2026-07-28 | Fix PostOrder shares→lots (FLOT×10); refresh MOEX lot_size; installers; push |
@@ -1021,4 +1030,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **747** — push docs; **746** — актуальность Help/схемы/комментов/контекста/инструкций при каждом push; **745** — push sell-all.
+Последние (см. USER_INSTRUCTIONS): **748** — first routers (Phase A); **747** — push docs; **746** — актуальность Help/схемы/комментов/контекста/инструкций при каждом push.

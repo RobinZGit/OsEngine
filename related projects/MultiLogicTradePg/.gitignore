@@ -14,5 +14,8 @@ installer/windows/dist/*
 # Секреты API (пароль PostgreSQL)
 api/.env
 
+# Локальный бэкап монолита до Phase A routers (не в git)
+api/server.js.pre-routes-bak
+
 # Angular / IDE
 web/.angular/

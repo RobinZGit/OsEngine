@@ -255,19 +255,16 @@ UI-only install без наката 01/02/hotfix бой не чинит.`,
   {
     id: 'api',
     title: 'API и сервисы (для понимания)',
-    body: `Express (api/server.js) — HTTP к PostgreSQL. Основные группы:
-• /api/logics — логики, копирование, параметры, сигналы, стопы, бумаги, сделки, бэктест, pnl, export/import bundle, shadow-reset, opt-reset.
-• /api/accounts/:id/sell-all, buy-bonds — действия реального счёта T-Bank.
-• /api/securities, /api/prices, /api/security-indicator-series — бумаги, цены, серии индикаторов.
-• /api/indicators — справочник индикаторов.
-• /api/settings/tbank-token, /api/settings/tech-logging, /api/settings/cleanup — токен, журнал, очистка диска.
-• /api/maintenance/cleanup — ручной запуск cleanup_trading_disk_space() (цены, тесты, логи + обрезка indicator_values).
-• Авто: после каждого бэктеста — cleanup_unused_indicator_values(); по расписанию — если APP_CLEANUP_DISK включён (по умолчанию да).
-• Обрезка indicator_values: сироты без активной серии + старше ~120 дней; running-тесты защищены (date_from − warmup).
-• /api/schema — структура БД для шестерёнки.
+    body: `Express: тонкий api/server.js (bootstrap) + маршруты api/routes/* + общие хелперы api/lib/server-shared.js. URL те же. Группы файлов:
+• settings — health, settings, maintenance cleanup
+• indicators / market — индикаторы, бумаги, цены, серии
+• references — brokers, exchanges, accounts (+ sell-all / buy-bonds)
+• logics / trades / backtest — логики, параметры, сигналы, стопы, бумаги, сделки, бэктест, pnl, export/import, shadow-reset, opt
+• ops — tech-log, processes, schema
+• Авто: после бэктеста — cleanup_unused_indicator_values(); по расписанию — если APP_CLEANUP_DISK включён.
 • Trade runner — фоновый цикл сделок при открытом UI (heartbeat).
 
-В Angular сервисы (web/src/app/services/*.ts) — тонкие обёртки над этими URL; в коде у публичных методов есть краткие JSDoc-комментарии.`,
+В Angular сервисы (web/src/app/services/*.ts) — тонкие обёртки над этими URL; JSDoc у публичных методов.`,
   },
   {
     id: 'install',
