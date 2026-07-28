@@ -70,6 +70,22 @@
   color: #b91c1c;
 }
 
+.icon-broom {
+  color: #0f766e;
+  border-color: #99f6e4;
+}
+
+.icon-broom:hover:not(:disabled) {
+  background: #f0fdfa;
+  border-color: #5eead4;
+  color: #0f766e;
+}
+
+.icon-broom:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .icon-copy {
   color: #374151;
   font-size: 1.05rem;
@@ -627,6 +643,16 @@ tbody tr.logic-main-row:hover {
   background: #fcd34d !important;
 }
 
+/* Тест + оптимизация: сиреневый вместо жёлтого */
+.row-testing-opt {
+  background: #ddd6fe !important;
+  box-shadow: inset 3px 0 0 #7c3aed;
+}
+
+.row-testing-opt:hover {
+  background: #c4b5fd !important;
+}
+
 .row-inversion {
   outline: 2px solid #ef4444;
   outline-offset: -2px;
@@ -689,6 +715,14 @@ tbody tr.logic-main-row:hover {
   font-variant-numeric: tabular-nums;
   color: #92400e;
   white-space: nowrap;
+}
+
+.logic-test-progress-opt .logic-test-progress-date {
+  color: #5b21b6;
+}
+
+.logic-test-progress-opt .logic-test-progress-ring {
+  color: #6d28d9;
 }
 
 .logic-test-progress {

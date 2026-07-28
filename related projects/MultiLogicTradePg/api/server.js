@@ -50,6 +50,7 @@ const {
   getLogicParamsDetailed,
   syncRealAccountBalancesIfNeeded,
   resetLogicTradingStateOnAccountChange,
+  resetLogicShadowTradingState,
 } = require('./lib/logic-params');
 const { buildLogicBundle, importLogicBundle } = require('./lib/logic-bundle');
 const { writeTechLogEvent } = require('./lib/tech-log');
@@ -2165,6 +2166,230 @@ app.get('/api/logics/:id/opt-param-history', async (req, res) => {
   }
 });
 
+/** Apply best offline-grid params from last completed test into signal formulas. */
+app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows: runs } = await pool.query(
+      `
+      SELECT id, opt_grid_results
+      FROM logic_backtest_runs
+      WHERE logic_id = $1
+        AND status = 'completed'
+        AND opt_grid_results IS NOT NULL
+        AND jsonb_typeof(opt_grid_results) = 'array'
+        AND jsonb_array_length(opt_grid_results) > 0
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [id]
+    );
+    if (runs.length === 0) {
+      res.status(400).json({ error: 'Нет результатов оптимизации. Сначала запустите тест с галочкой «Оптимизировать».' });
+      return;
+    }
+    const results = runs[0].opt_grid_results;
+    const best = [...results].sort(
+      (a, b) => Number(b.finres || 0) - Number(a.finres || 0)
+    )[0];
+    if (!best || best.is_champion || !best.values || Object.keys(best.values).length === 0) {
+      // Champion won — still allow "apply" as no-op message, or apply champion values (none).
+      if (best?.is_champion) {
+        res.json({
+          ok: true,
+          message: 'Лучший результат — параметры по умолчанию (чемпион). Формулы не менялись.',
+          run_id: runs[0].id,
+          best,
+          updated: 0,
+        });
+        return;
+      }
+      res.status(400).json({ error: 'Не удалось выбрать лучшие параметры' });
+      return;
+    }
+
+    // Snapshot before rewrite so «Сброс» / reset can restore.
+    try {
+      await pool.query(`SELECT logic_opt_snapshot_params($1, $2, NULL)`, [
+        id,
+        runs[0].id,
+      ]);
+    } catch (err) {
+      console.warn('opt-grid-apply snapshot', err?.message || err);
+    }
+
+    const { rows: signals } = await pool.query(
+      `SELECT id, formula FROM logic_indicator_signals WHERE logic_id = $1 AND is_active = TRUE`,
+      [id]
+    );
+
+    const values = best.values;
+    let updated = 0;
+    for (const sig of signals) {
+      const next = rewriteFormulaBasesNode(sig.formula, values);
+      if (next !== sig.formula) {
+        await pool.query(
+          `UPDATE logic_indicator_signals SET formula = $1 WHERE id = $2`,
+          [next, sig.id]
+        );
+        updated++;
+      }
+    }
+
+    const { rows: outSignals } = await pool.query(
+      `
+      SELECT
+        lis.id, lis.logic_id, lis.indicator_id, lis.position_event, lis.position_side,
+        lis.signal_kind, lis.formula, lis.rating, lis.rating_test, lis.display_order, lis.is_active,
+        i.code AS indicator_code, i.name AS indicator_name
+      FROM logic_indicator_signals lis
+      JOIN indicators i ON i.id = lis.indicator_id
+      WHERE lis.logic_id = $1
+      ORDER BY lis.display_order, lis.id
+      `,
+      [id]
+    );
+
+    res.json({
+      ok: true,
+      run_id: runs[0].id,
+      best,
+      updated,
+      signals: outSignals,
+    });
+  } catch (err) {
+    console.error('POST /api/logics/:id/opt-grid-apply-best', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function rewriteFormulaBasesNode(formula, values) {
+  const text = String(formula ?? '');
+  const at = text.indexOf('@');
+  if (at < 0) return text;
+  const open = text.indexOf('(', at);
+  if (open < 0) return text;
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '(') depth++;
+    else if (text[i] === ')') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close < 0) return text;
+  const inside = text.slice(open + 1, close);
+  const parts = [];
+  let cur = '';
+  let d = 0;
+  for (let i = 0; i < inside.length; i++) {
+    const ch = inside[i];
+    if (ch === '(') d++;
+    else if (ch === ')') d = Math.max(0, d - 1);
+    if (ch === ',' && d === 0) {
+      if (cur.trim()) parts.push(cur.trim());
+      cur = '';
+    } else cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+
+  const out = parts.map((p) => {
+    if (!p || /^OPT\s*\(/i.test(p)) return p;
+    const eq = p.indexOf('=');
+    if (eq <= 0) return p;
+    const key = p.slice(0, eq).trim();
+    const canon = key.toLowerCase();
+    for (const [vk, vv] of Object.entries(values || {})) {
+      if (String(vk).toLowerCase() === canon && Number.isFinite(Number(vv))) {
+        return `${key}=${vv}`;
+      }
+    }
+    return p;
+  });
+  return text.slice(0, open + 1) + out.join(',') + text.slice(close);
+}
+
+app.get('/api/logics/:id/opt-grid-results', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT id, opt_grid_results
+      FROM logic_backtest_runs
+      WHERE logic_id = $1
+        AND status = 'completed'
+        AND opt_grid_results IS NOT NULL
+        AND jsonb_typeof(opt_grid_results) = 'array'
+        AND jsonb_array_length(opt_grid_results) > 0
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [id]
+    );
+    if (rows.length === 0) {
+      res.json({ run_id: null, results: null });
+      return;
+    }
+    res.json({ run_id: rows[0].id, results: rows[0].opt_grid_results });
+  } catch (err) {
+    console.error('GET /api/logics/:id/opt-grid-results', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Очистка теневой истории: live is_shadow сделки, снятие pause/инверсии,
+ * все бумаги логики → is_active; при включённой логике — предрасчёт рейтинга.
+ */
+app.post('/api/logics/:id/shadow-reset', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows: exists } = await pool.query(
+      `SELECT id, is_enabled FROM logics WHERE id = $1`,
+      [id]
+    );
+    if (exists.length === 0) {
+      res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+
+    const cleared = await resetLogicShadowTradingState(pool, id);
+
+    let rating_precalc = null;
+    if (exists[0].is_enabled) {
+      rating_precalc = await startRatingPrecalc(pool, id);
+    }
+
+    res.json({
+      ok: true,
+      ...cleared,
+      rating_precalc,
+      message:
+        'Теневые сделки очищены, бумаги снова включены в логику' +
+        (rating_precalc ? '; запущен предрасчёт рейтинга' : ''),
+    });
+  } catch (err) {
+    console.error('POST /api/logics/:id/shadow-reset', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Сброс OPT: начальные базы формул + очистка live opt_lane книги. */
 app.post('/api/logics/:id/opt-reset', async (req, res) => {
   const id = Number(req.params.id);
@@ -4030,7 +4255,11 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       res.status(409).json({ error: 'Тестирование уже выполняется', run_id: active[0].id });
       return;
     }
-    const runId = await startBacktest(pool, logicId, dateFrom, dateTo);
+    const optGrid =
+      req.body?.opt_grid && typeof req.body.opt_grid === 'object'
+        ? req.body.opt_grid
+        : null;
+    const runId = await startBacktest(pool, logicId, dateFrom, dateTo, optGrid);
     res.status(202).json({ ok: true, run_id: runId });
   } catch (err) {
     console.error('POST /api/logic-backtest/start', err);
@@ -4073,7 +4302,10 @@ app.get('/api/logic-backtest/active', async (_req, res) => {
         r.total_bars, r.processed_bars, r.trades_created,
         r.test_balance::float8 AS test_balance,
         r.financial_result::float8 AS financial_result,
-        r.cancel_requested, r.error_message, r.started_at, r.finished_at, r.created_at
+        r.cancel_requested, r.error_message, r.started_at, r.finished_at, r.created_at,
+        (r.opt_grid_arms IS NOT NULL AND jsonb_typeof(r.opt_grid_arms) = 'array'
+          AND jsonb_array_length(r.opt_grid_arms) > 0) AS opt_grid_enabled,
+        r.opt_grid_results
       FROM logic_backtest_runs r
       WHERE r.status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
       ORDER BY r.logic_id, r.id DESC

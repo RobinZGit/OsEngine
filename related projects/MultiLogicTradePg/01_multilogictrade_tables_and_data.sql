@@ -3850,7 +3850,11 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     error_message TEXT,
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_opt_eval_bar_dt TIMESTAMP,
+    opt_grid_config JSONB,
+    opt_grid_arms JSONB,
+    opt_grid_results JSONB
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
@@ -3885,6 +3889,17 @@ ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NO
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS last_opt_eval_bar_dt TIMESTAMP;
 COMMENT ON COLUMN logic_backtest_runs.last_opt_eval_bar_dt IS
 'Курсор окна OPT в прогоне теста (отдельно от live last_opt_eval_bar_dt в logic_params)';
+
+-- Offline grid optimization (checkbox «Оптимизировать» next to test): paper opt_lanes, no promote.
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS opt_grid_config JSONB;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS opt_grid_arms JSONB;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS opt_grid_results JSONB;
+COMMENT ON COLUMN logic_backtest_runs.opt_grid_config IS
+'UI grid: {params:[{param_key,base,step,iterations,enabled,...}], max_combos}';
+COMMENT ON COLUMN logic_backtest_runs.opt_grid_arms IS
+'Prebuilt lanes [{lane, values}] for process_logic_opt_trades (absolute steps, no promote)';
+COMMENT ON COLUMN logic_backtest_runs.opt_grid_results IS
+'Ranked FinRes after run: [{lane, values, finres, rank, is_champion}]';
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 

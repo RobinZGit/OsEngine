@@ -1,5 +1,6 @@
 import {
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   EventEmitter,
   HostBinding,
@@ -51,6 +52,15 @@ import {
   openBacktestReportWindow,
   renderBacktestReportHtml,
 } from './backtest-report';
+import {
+  OPT_GRID_MAX_COMBOS,
+  OptGridParamRow,
+  OptGridResultRow,
+  buildOptGridArms,
+  collectOptGridParamsFromFormulas,
+  countOptGridCombos,
+} from './opt-grid';
+import { renderOptGridReportHtml } from './opt-grid-report';
 
 
 
@@ -85,6 +95,10 @@ export interface BacktestRunStatus {
 
   error_message: string | null;
 
+  /** Same test run hosted offline grid (paper opt_lanes). */
+  opt_grid_enabled?: boolean;
+
+  opt_grid_results?: OptGridResultRow[] | null;
 }
 
 
@@ -112,6 +126,7 @@ export interface BacktestRunStatus {
 
 export class LogicPositionsPanelComponent implements OnChanges {
   private readonly logicsService = inject(LogicsService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   @Input({ required: true }) logicRow!: LogicRow;
 
@@ -164,9 +179,16 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
 
 
+  /** Signal formulas of this logic (for optimize-param list). */
+  @Input() signalFormulas: string[] = [];
+
   @Output() closeAll = new EventEmitter<void>();
 
-  @Output() startBacktest = new EventEmitter<{ date_from: string; date_to: string }>();
+  @Output() startBacktest = new EventEmitter<{
+    date_from: string;
+    date_to: string;
+    opt_grid?: { config: { params: OptGridParamRow[] }; arms: ReturnType<typeof buildOptGridArms> } | null;
+  }>();
 
   @Output() cancelBacktest = new EventEmitter<void>();
 
@@ -212,7 +234,20 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   periodTo = '';
 
+  /** Same test run: also trade paper grid lanes. */
+  optimizeEnabled = false;
 
+  /** Modal with grid params (outside <details> so it always shows). */
+  showOptGridDialog = false;
+
+  optGridParams: OptGridParamRow[] = [];
+
+  optGridError: string | null = null;
+
+
+
+  /** Expose limit for template. */
+  readonly OPT_GRID_MAX_COMBOS = OPT_GRID_MAX_COMBOS;
 
   tradeOperationLabel = tradeOperationLabel;
 
@@ -230,9 +265,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
   }
 
   get title(): string {
-
-    return this.mode === 'live' ? 'Позиции' : 'Тестирование';
-
+    if (this.mode === 'live') return 'Позиции';
+    if (this.isBacktestRunning && this.backtestRun?.opt_grid_enabled) {
+      return 'Тестирование с оптимизацией';
+    }
+    return 'Тестирование';
   }
 
 
@@ -260,6 +297,140 @@ export class LogicPositionsPanelComponent implements OnChanges {
       changes['summaryEquityShort']
     ) {
       this.rebuildTradeCaches();
+    }
+    if (changes['signalFormulas'] && this.optimizeEnabled) {
+      this.refreshOptGridParams();
+      this.cdr.markForCheck();
+    }
+  }
+
+  get optGridComboCount(): number {
+    return countOptGridCombos(this.optGridParams);
+  }
+
+  get optGridOverLimit(): boolean {
+    return this.optGridComboCount > OPT_GRID_MAX_COMBOS;
+  }
+
+  onOptimizeToggle(checked: boolean, event?: Event): void {
+    event?.stopPropagation();
+    this.optimizeEnabled = !!checked;
+    this.optGridError = null;
+    if (this.optimizeEnabled) {
+      if (!this.blockExpanded) {
+        this.toggleBlock.emit();
+      }
+      this.refreshOptGridParams();
+      this.showOptGridDialog = true;
+      this.periodDialogOpen.emit(true);
+    } else {
+      this.showOptGridDialog = false;
+      this.periodDialogOpen.emit(false);
+    }
+    this.cdr.detectChanges();
+  }
+
+  /** Re-open params modal while optimize stays on. */
+  openOptGridDialog(event?: Event): void {
+    event?.stopPropagation();
+    if (!this.optimizeEnabled || this.isBacktestRunning) return;
+    this.refreshOptGridParams();
+    this.showOptGridDialog = true;
+    this.periodDialogOpen.emit(true);
+    this.cdr.detectChanges();
+  }
+
+  closeOptGridDialog(event?: Event): void {
+    event?.stopPropagation();
+    this.showOptGridDialog = false;
+    this.periodDialogOpen.emit(false);
+    this.cdr.detectChanges();
+  }
+
+  cancelOptGridDialog(event?: Event): void {
+    event?.stopPropagation();
+    this.optimizeEnabled = false;
+    this.showOptGridDialog = false;
+    this.optGridError = null;
+    this.periodDialogOpen.emit(false);
+    this.cdr.detectChanges();
+  }
+
+  refreshOptGridParams(): void {
+    const prev = new Map(this.optGridParams.map((p) => [p.id, p]));
+    const next = collectOptGridParamsFromFormulas(this.signalFormulas || []);
+    for (const row of next) {
+      const old = prev.get(row.id);
+      if (old) {
+        row.enabled = old.enabled;
+        row.step = old.step;
+        row.iterations = old.iterations;
+        row.base = old.base;
+      }
+    }
+    this.optGridParams = next;
+    this.validateOptGrid();
+  }
+
+  onOptParamEnabled(id: string, enabled: boolean): void {
+    const row = this.optGridParams.find((p) => p.id === id);
+    if (!row) return;
+    row.enabled = enabled;
+    this.validateOptGrid();
+    this.cdr.markForCheck();
+  }
+
+  onOptParamStep(id: string, raw: string): void {
+    const row = this.optGridParams.find((p) => p.id === id);
+    if (!row) return;
+    const n = Number(String(raw).replace(',', '.'));
+    if (Number.isFinite(n) && n > 0) row.step = n;
+    this.validateOptGrid();
+    this.cdr.markForCheck();
+  }
+
+  onOptParamIterations(id: string, raw: string): void {
+    const row = this.optGridParams.find((p) => p.id === id);
+    if (!row) return;
+    const n = Math.round(Number(raw));
+    if (Number.isInteger(n) && n >= 0 && n <= 20) row.iterations = n;
+    this.validateOptGrid();
+    this.cdr.markForCheck();
+  }
+
+  validateOptGrid(): void {
+    const n = this.optGridComboCount;
+    if (n > OPT_GRID_MAX_COMBOS) {
+      this.optGridError = `Лимит комбинаций превышен: ${n} > ${OPT_GRID_MAX_COMBOS}. Снимите галочки или уменьшите «Итераций (±)».`;
+    } else if (this.optimizeEnabled && n === 0) {
+      this.optGridError = 'Отметьте хотя бы один параметр для оптимизации.';
+    } else {
+      this.optGridError = null;
+    }
+  }
+
+  hasOptGridResults(): boolean {
+    const r = this.backtestRun?.opt_grid_results;
+    return Array.isArray(r) && r.length > 0;
+  }
+
+  onOpenOptGridReport(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const rows = this.backtestRun?.opt_grid_results;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      alert('Нет результатов оптимизации для этого прогона.');
+      return;
+    }
+    const html = renderOptGridReportHtml({
+      logicName: this.logicRow?.name || `logic-${this.logicRow?.id}`,
+      dateFrom: this.backtestRun?.date_from ?? '',
+      dateTo: this.backtestRun?.date_to ?? '',
+      runId: this.backtestRun?.id ?? null,
+      rows: rows as OptGridResultRow[],
+    });
+    if (!openBacktestReportWindow(html, `Оптимизация — ${this.logicRow?.name}`)) {
+      alert('Не удалось открыть окно отчёта. Разрешите всплывающие окна.');
     }
   }
 
@@ -769,7 +940,39 @@ export class LogicPositionsPanelComponent implements OnChanges {
       this.periodFrom,
       this.periodTo,
     );
-    this.startBacktest.emit({ date_from: this.periodFrom, date_to: this.periodTo });
+
+    let opt_grid: {
+      config: { params: OptGridParamRow[] };
+      arms: ReturnType<typeof buildOptGridArms>;
+    } | null = null;
+
+    if (this.optimizeEnabled) {
+      this.validateOptGrid();
+      if (this.optGridError) {
+        alert(this.optGridError);
+        return;
+      }
+      const arms = buildOptGridArms(this.optGridParams);
+      if (arms.length === 0) {
+        alert('Отметьте хотя бы один параметр для оптимизации.');
+        return;
+      }
+      const ok = confirm(
+        `Будет выполнен тест и одновременно оптимизация (${arms.length} бумажных веток рядом с параметрами по умолчанию).\n` +
+          `Это может заметно замедлить прогон.\n\nПродолжить?`
+      );
+      if (!ok) return;
+      opt_grid = {
+        config: { params: this.optGridParams.map((p) => ({ ...p })) },
+        arms,
+      };
+    }
+
+    this.startBacktest.emit({
+      date_from: this.periodFrom,
+      date_to: this.periodTo,
+      opt_grid,
+    });
   }
 
 

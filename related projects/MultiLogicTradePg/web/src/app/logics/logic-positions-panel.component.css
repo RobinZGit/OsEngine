@@ -297,6 +297,22 @@
   opacity: 0.85;
 }
 
+/* Тест + OPT: сиреневая подсветка вместо жёлтой */
+.positions-panel-outer .panel-backtest-opt {
+  background: #ede9fe;
+  border-color: #7c3aed;
+  box-shadow: inset 3px 0 0 #7c3aed;
+}
+
+.positions-panel-outer .panel-backtest-opt > .signals-summary,
+.positions-panel-outer .panel-backtest-opt.signals-block {
+  background: #ddd6fe;
+}
+
+.positions-panel-outer .panel-backtest-opt .signals-summary-head .positions-summary-pnl {
+  opacity: 0.85;
+}
+
 .positions-panel-outer .backtest-progress-in-block {
   margin: 0 0.75rem 0.5rem;
   padding: 0 0.25rem;
@@ -631,4 +647,93 @@
   font-weight: 400;
   max-width: 11rem;
   line-height: 1.2;
+}
+
+.opt-grid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.opt-grid-form {
+  margin: 0.5rem 0.75rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  max-height: min(320px, 40vh);
+  overflow: auto;
+}
+
+.opt-grid-form-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.opt-grid-combo {
+  font-variant-numeric: tabular-nums;
+  color: #475569;
+}
+
+.opt-grid-combo.opt-grid-over {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.opt-grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.opt-grid-table th,
+.opt-grid-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.3rem 0.4rem;
+  text-align: left;
+}
+
+.opt-grid-input {
+  width: 4.5rem;
+  padding: 0.15rem 0.3rem;
+}
+
+.opt-grid-error {
+  color: #b91c1c;
+  font-size: 0.8rem;
+  margin: 0.5rem 0 0;
+}
+
+.opt-grid-hint,
+.opt-grid-empty {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin: 0.5rem 0 0;
+}
+
+.opt-grid-dialog {
+  max-width: min(720px, 94vw);
+  width: 100%;
+}
+
+.opt-grid-dialog-lead {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.opt-grid-dialog-scroll {
+  max-height: min(420px, 50vh);
+  overflow: auto;
+  margin-bottom: 0.5rem;
 }

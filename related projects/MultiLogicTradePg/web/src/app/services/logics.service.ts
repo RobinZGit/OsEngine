@@ -566,6 +566,10 @@ export class LogicsService {
     logic_id: number;
     date_from: string;
     date_to: string;
+    opt_grid?: {
+      config?: unknown;
+      arms?: { lane: string; values: Record<string, number> }[];
+    } | null;
   }): Observable<{ ok: boolean; run_id: number }> {
     return this.http.post<{ ok: boolean; run_id: number }>(
       `${this.appConfig.apiUrl}/logic-backtest/start`,
@@ -637,6 +641,47 @@ export class LogicsService {
     return this.http.post(
       `${this.appConfig.apiUrl}/logics/${logicId}/opt-reset`,
       {}
+    );
+  }
+
+  /** Очистка теневых live-сделок + снятие pause/инверсии + is_active по бумагам. */
+  resetShadowTrading(logicId: number): Observable<{
+    ok?: boolean;
+    cleared_shadow_trades?: number;
+    securities_reactivated?: number;
+    rating_precalc?: unknown;
+    message?: string;
+    error?: string;
+  }> {
+    return this.http.post(
+      `${this.appConfig.apiUrl}/logics/${logicId}/shadow-reset`,
+      {}
+    );
+  }
+
+  /** Apply best offline-grid params from last completed test into formulas. */
+  applyOptGridBest(logicId: number): Observable<{
+    ok?: boolean;
+    message?: string;
+    updated?: number;
+    best?: unknown;
+    run_id?: number;
+    signals?: LogicIndicatorSignalRow[];
+    error?: string;
+  }> {
+    return this.http.post(
+      `${this.appConfig.apiUrl}/logics/${logicId}/opt-grid-apply-best`,
+      {}
+    );
+  }
+
+  /** Latest completed run with opt_grid_results (for Apply button). */
+  getLatestOptGridResults(logicId: number): Observable<{
+    run_id: number | null;
+    results: unknown[] | null;
+  }> {
+    return this.http.get<{ run_id: number | null; results: unknown[] | null }>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/opt-grid-results`
     );
   }
 

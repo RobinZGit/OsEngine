@@ -1475,6 +1475,12 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       tfId
     );
 
+    try {
+      await pool.query(`SELECT logic_opt_grid_finalize($1)`, [runId]);
+    } catch (err) {
+      console.warn('logic_opt_grid_finalize', err?.message || err);
+    }
+
     await updateRun(pool, runId, {
       status: 'completed',
       progress_pct: 100,
@@ -1630,14 +1636,44 @@ async function finishCancelled(pool, runId, logicId, balance, processed, total) 
   schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
 }
 
-async function startBacktest(pool, logicId, dateFrom, dateTo) {
+async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null) {
+  const arms =
+    optGrid && Array.isArray(optGrid.arms) && optGrid.arms.length > 0
+      ? optGrid.arms.map((a) => ({
+          lane: String(a.lane || ''),
+          values: a.values && typeof a.values === 'object' ? a.values : {},
+        }))
+      : null;
+  const config = optGrid && optGrid.config != null ? optGrid.config : null;
+
+  if (arms && arms.length > 81) {
+    throw new Error(
+      `Слишком много комбинаций оптимизации (${arms.length}). Лимит 81: снимите галочки или уменьшите итерации.`
+    );
+  }
+
   const { rows } = await pool.query(
     `
-    INSERT INTO logic_backtest_runs (logic_id, date_from, date_to, status, progress_pct, phase_message, started_at)
-    VALUES ($1, $2, $3, 'pending', 0, 'Старт', CURRENT_TIMESTAMP)
+    INSERT INTO logic_backtest_runs (
+      logic_id, date_from, date_to, status, progress_pct, phase_message, started_at,
+      opt_grid_config, opt_grid_arms
+    )
+    VALUES (
+      $1, $2, $3, 'pending', 0,
+      CASE WHEN $4::jsonb IS NOT NULL THEN 'Старт (тест + оптимизация)' ELSE 'Старт' END,
+      CURRENT_TIMESTAMP,
+      $5::jsonb,
+      $4::jsonb
+    )
     RETURNING id
     `,
-    [logicId, dateFrom, dateTo]
+    [
+      logicId,
+      dateFrom,
+      dateTo,
+      arms ? JSON.stringify(arms) : null,
+      config ? JSON.stringify(config) : null,
+    ]
   );
   const runId = rows[0].id;
   // Снимок параметров формул/OPT на старте (отчёт + restore после promote в тесте).
@@ -1669,7 +1705,10 @@ async function getBacktestStatus(pool, logicId, runId) {
       total_bars, processed_bars, trades_created,
       test_balance::float8 AS test_balance,
       financial_result::float8 AS financial_result,
-      cancel_requested, error_message, started_at, finished_at, created_at
+      cancel_requested, error_message, started_at, finished_at, created_at,
+      (opt_grid_arms IS NOT NULL AND jsonb_typeof(opt_grid_arms) = 'array'
+        AND jsonb_array_length(opt_grid_arms) > 0) AS opt_grid_enabled,
+      opt_grid_results
     FROM logic_backtest_runs
     WHERE logic_id = $1
   `;

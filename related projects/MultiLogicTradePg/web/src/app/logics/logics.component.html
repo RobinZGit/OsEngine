@@ -282,7 +282,8 @@
 
               [class.row-expanded]="isLogicExpanded(row.id)"
 
-              [class.row-testing]="isBacktestRunning(row.id)"
+              [class.row-testing]="isBacktestPlainRunning(row.id)"
+              [class.row-testing-opt]="isBacktestOptRunning(row.id)"
               [class.row-inversion]="row.inversion"
               [class.row-portfolio-paused]="row.portfolio_trading_paused"
 
@@ -339,8 +340,13 @@
                     @if (isBacktestRunning(row.id)) {
                       <span
                         class="logic-test-progress-wrap"
+                        [class.logic-test-progress-opt]="isBacktestOptRunning(row.id)"
                         [title]="backtestProgressTitle(row.id)"
-                        [attr.aria-label]="'Тестирование ' + backtestProgressPct(row.id) + '%'"
+                        [attr.aria-label]="
+                          (isBacktestOptRunning(row.id)
+                            ? 'Тестирование с оптимизацией '
+                            : 'Тестирование ') + backtestProgressPct(row.id) + '%'
+                        "
                       >
                         <span class="logic-test-progress">
                           <span class="logic-test-progress-ring" aria-hidden="true">↻</span>
@@ -473,6 +479,36 @@
                 >
 
                   +
+
+                </button>
+
+                <button
+
+                  type="button"
+
+                  class="icon-btn icon-broom"
+
+                  title="Очистить теневую историю: снять shadow/паузу, включить все бумаги логики"
+
+                  aria-label="Очистить теневую историю"
+
+                  [disabled]="isShadowResetting(row.id) || isBacktestRunning(row.id)"
+
+                  (click)="resetShadowTrading(row, $event)"
+
+                >
+
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+
+                    <path
+
+                      fill="currentColor"
+
+                      d="M19.36 2.72l1.42 1.42-5.72 5.71c1.08 1.54 1.04 3.66-.29 5.24l-1.41-1.41c.66-.89.66-2.16-.08-2.97L5.66 18.34a2 2 0 0 1-2.83-2.83l7.63-7.62c-.81-.74-2.08-.74-2.97-.08L6.08 6.4c1.58-1.33 3.7-1.37 5.24-.29l5.71-5.72 1.42 1.42-1.06 1.06 1.41 1.41 1.56-1.56zM4 20h16v2H4v-2z"
+
+                    />
+
+                  </svg>
 
                 </button>
 
@@ -1195,6 +1231,26 @@
                         </span>
 
                         <span class="signals-summary-actions">
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-muted"
+                            title="Записать в формулы лучшие параметры последнего теста с оптимизацией"
+                            [disabled]="!hasOptGridBest(row.id) || isOptGridApplying(row.id)"
+                            (click)="applyOptGridBest(row.id, $event)"
+                          >
+                            {{ isOptGridApplying(row.id) ? '…' : 'Применить лучшие OPT' }}
+                          </button>
+
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-muted"
+                            title="Вернуть начальные базы параметров сигналов (как Сброс OPT)"
+                            [disabled]="isOptResetting(row.id)"
+                            (click)="resetOptParameters(row.id); $event.stopPropagation()"
+                          >
+                            {{ isOptResetting(row.id) ? '…' : 'Сброс параметров' }}
+                          </button>
 
                           <button
                             type="button"
@@ -2254,6 +2310,7 @@
                         [timeframeId]="timeframeIdForLogic(row)"
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [pinnedPaper]="cashFundPinnedPaper(row)"
+                        [signalFormulas]="signalFormulasFor(row.id)"
                         (toggleBlock)="toggleTestTradesBlock(row.id)"
                         (startBacktest)="startBacktestRun(row.id, $event)"
                         (periodDialogOpen)="onPeriodDialogOpen($event)"

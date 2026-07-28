@@ -961,6 +961,20 @@ DECLARE
     v_prev_bases JSONB;
     v_is_test BOOLEAN := COALESCE(p_is_test, FALSE);
 BEGIN
+    -- Offline grid on the same test run: no mid-run promote (full-period ranking at finish).
+    IF v_is_test AND p_run_id IS NOT NULL THEN
+        IF EXISTS (
+            SELECT 1
+            FROM logic_backtest_runs r
+            WHERE r.id = p_run_id
+              AND r.opt_grid_arms IS NOT NULL
+              AND jsonb_typeof(r.opt_grid_arms) = 'array'
+              AND jsonb_array_length(r.opt_grid_arms) > 0
+        ) THEN
+            RETURN FALSE;
+        END IF;
+    END IF;
+
     IF NOT logic_opt_logic_has_opt(p_logic_id) THEN
         RETURN FALSE;
     END IF;
@@ -1204,8 +1218,23 @@ DECLARE
     v_max_positions INTEGER;
     v_open_lane INTEGER;
     v_is_test BOOLEAN := COALESCE(p_is_test, FALSE);
+    v_grid_arms JSONB := NULL;
+    v_use_grid BOOLEAN := FALSE;
 BEGIN
-    IF NOT logic_opt_logic_has_opt(p_logic_id) THEN
+    -- Same backtest run: formula OPT() arms OR offline grid arms stored on the run.
+    IF v_is_test AND p_run_id IS NOT NULL THEN
+        SELECT r.opt_grid_arms
+        INTO v_grid_arms
+        FROM logic_backtest_runs r
+        WHERE r.id = p_run_id;
+        IF v_grid_arms IS NOT NULL
+           AND jsonb_typeof(v_grid_arms) = 'array'
+           AND jsonb_array_length(v_grid_arms) > 0 THEN
+            v_use_grid := TRUE;
+        END IF;
+    END IF;
+
+    IF NOT v_use_grid AND NOT logic_opt_logic_has_opt(p_logic_id) THEN
         RETURN 0;
     END IF;
 
@@ -1288,7 +1317,14 @@ BEGIN
     PERFORM logic_opt_ensure_linreg_cache();
     TRUNCATE opt_linreg_cache;
 
-    FOR v_arm IN SELECT * FROM logic_opt_build_arms(p_logic_id)
+    FOR v_arm IN
+        SELECT a->>'lane' AS lane, a->'values' AS values_json
+        FROM jsonb_array_elements(v_grid_arms) AS a
+        WHERE v_use_grid
+        UNION ALL
+        SELECT b.lane, b.values_json
+        FROM logic_opt_build_arms(p_logic_id) AS b
+        WHERE NOT v_use_grid
     LOOP
         -- Один раз на ветку: число бумаг с открытой позицией (раньше — на каждую бумагу).
         SELECT COUNT(*)::INTEGER INTO v_open_lane
@@ -2015,3 +2051,104 @@ $$;
 
 COMMENT ON FUNCTION logic_opt_param_history_for_report(INTEGER, BIGINT) IS
 'JSON-массив истории OPT/параметров для отчёта; при пустой истории — виртуальный снимок.';
+
+-- Rank offline grid lanes on the same backtest run (champion = empty opt_lane).
+CREATE OR REPLACE FUNCTION logic_opt_grid_finalize(p_run_id BIGINT)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic_id INTEGER;
+    v_arms JSONB;
+    v_champ NUMERIC := 0;
+    v_rows JSONB := '[]'::jsonb;
+    v_arm JSONB;
+    v_lane TEXT;
+    v_fin NUMERIC;
+    v_arr JSONB := '[]'::jsonb;
+    v_i INTEGER := 0;
+    v_item JSONB;
+BEGIN
+    SELECT r.logic_id, r.opt_grid_arms
+    INTO v_logic_id, v_arms
+    FROM logic_backtest_runs r
+    WHERE r.id = p_run_id;
+
+    IF v_logic_id IS NULL
+       OR v_arms IS NULL
+       OR jsonb_typeof(v_arms) <> 'array'
+       OR jsonb_array_length(v_arms) = 0 THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT COALESCE(SUM(lt.financial_result), 0)
+    INTO v_champ
+    FROM logic_trades lt
+    WHERE lt.logic_id = v_logic_id
+      AND lt.run_id = p_run_id
+      AND lt.is_test = TRUE
+      AND COALESCE(lt.is_shadow, FALSE) = FALSE
+      AND COALESCE(lt.opt_lane, '') = ''
+      AND lt.status IN ('filled', 'submitted');
+
+    v_arr := v_arr || jsonb_build_array(
+        jsonb_build_object(
+            'lane', '',
+            'values', '{}'::jsonb,
+            'finres', v_champ,
+            'is_champion', TRUE
+        )
+    );
+
+    FOR v_arm IN SELECT * FROM jsonb_array_elements(v_arms)
+    LOOP
+        v_lane := COALESCE(v_arm->>'lane', '');
+        SELECT COALESCE(SUM(lt.financial_result), 0)
+        INTO v_fin
+        FROM logic_trades lt
+        WHERE lt.logic_id = v_logic_id
+          AND lt.run_id = p_run_id
+          AND lt.is_test = TRUE
+          AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND COALESCE(lt.opt_lane, '') = v_lane
+          AND lt.status IN ('filled', 'submitted');
+
+        v_arr := v_arr || jsonb_build_array(
+            jsonb_build_object(
+                'lane', v_lane,
+                'values', COALESCE(v_arm->'values', '{}'::jsonb),
+                'finres', v_fin,
+                'is_champion', FALSE
+            )
+        );
+    END LOOP;
+
+    -- Rank by finres DESC
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_set(
+                e.elem,
+                '{rank}',
+                to_jsonb(e.ord::INTEGER),
+                TRUE
+            )
+            ORDER BY e.ord
+        ),
+        '[]'::jsonb
+    )
+    INTO v_rows
+    FROM (
+        SELECT elem,
+               ROW_NUMBER() OVER (ORDER BY (elem->>'finres')::NUMERIC DESC, elem->>'lane') AS ord
+        FROM jsonb_array_elements(v_arr) AS elem
+    ) e;
+
+    UPDATE logic_backtest_runs
+    SET opt_grid_results = v_rows
+    WHERE id = p_run_id;
+
+    RETURN v_rows;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_opt_grid_finalize(BIGINT) IS
+'После теста с opt_grid_arms: FinRes чемпиона и каждой grid-ветки, rank; пишет opt_grid_results.';

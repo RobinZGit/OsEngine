@@ -261,8 +261,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Постоянное предупреждение у блока «Сделки», пока токен невалиден и логика включена. */
   tbankTokenAlert: { reason: 'missing' | 'invalid'; message: string } | null = null;
   private pendingEnableLogic: LogicRow | null = null;
-  private pendingBacktest: { logicId: number; period: { date_from: string; date_to: string } } | null =
-    null;
+  private pendingBacktest: {
+    logicId: number;
+    period: {
+      date_from: string;
+      date_to: string;
+      opt_grid?: {
+        config?: unknown;
+        arms?: { lane: string; values: Record<string, number> }[];
+      } | null;
+    };
+  } | null = null;
   private lastTbankTokenCheckAt = 0;
   private readonly tbankTokenCheckMs = 30000;
 
@@ -274,6 +283,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private savingParamsIds = new Set<number>();
   private copyingLogicIds = new Set<number>();
   private optResettingIds = new Set<number>();
+  private shadowResettingIds = new Set<number>();
   paramsDrafts = new Map<
     number,
     {
@@ -347,6 +357,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         if (!testing) {
           this.loadTestTradesForLogic(logicId, true);
           this.refreshTestPnlSummary();
+          this.refreshOptGridAvailability(logicId);
         } else if (testOpen) {
           this.loadTestTradesPanelForLogic(logicId);
         }
@@ -825,6 +836,80 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.optResettingIds.has(logicId);
   }
 
+  private optGridBestIds = new Set<number>();
+  private optGridApplyingIds = new Set<number>();
+
+  signalFormulasFor(logicId: number): string[] {
+    return (this.logicSignals.get(logicId) ?? [])
+      .filter((s) => s.is_active !== false)
+      .map((s) => s.formula)
+      .filter((f) => !!f);
+  }
+
+  hasOptGridBest(logicId: number): boolean {
+    return this.optGridBestIds.has(logicId);
+  }
+
+  isOptGridApplying(logicId: number): boolean {
+    return this.optGridApplyingIds.has(logicId);
+  }
+
+  refreshOptGridAvailability(logicId: number): void {
+    this.logicsService.getLatestOptGridResults(logicId).subscribe({
+      next: (res) => {
+        if (res?.run_id && Array.isArray(res.results) && res.results.length > 0) {
+          this.optGridBestIds.add(logicId);
+        } else {
+          this.optGridBestIds.delete(logicId);
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.optGridBestIds.delete(logicId);
+      },
+    });
+  }
+
+  applyOptGridBest(logicId: number, event: Event): void {
+    event.stopPropagation();
+    if (this.optGridApplyingIds.has(logicId)) return;
+    const ok = confirm(
+      'Записать в формулы сигналов лучшие параметры последнего теста с оптимизацией?'
+    );
+    if (!ok) return;
+    this.optGridApplyingIds.add(logicId);
+    this.logicsService.applyOptGridBest(logicId).subscribe({
+      next: (resp) => {
+        this.optGridApplyingIds.delete(logicId);
+        if (resp?.ok === false) {
+          alert(resp.error || 'Не удалось применить параметры');
+          return;
+        }
+        if (Array.isArray(resp.signals)) {
+          this.logicSignals.set(logicId, resp.signals);
+          for (const r of resp.signals) {
+            this.formulaDrafts.set(r.id, r.formula);
+          }
+          this.rebuildSignalIndicatorIds(logicId);
+        } else {
+          this.loadSignalsForLogic(logicId, true);
+        }
+        if (resp.message) {
+          alert(resp.message);
+        } else {
+          alert(
+            `Применено. Обновлено формул: ${resp.updated ?? 0}.`
+          );
+        }
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.optGridApplyingIds.delete(logicId);
+        alert(err?.error?.error || 'Не удалось применить параметры');
+      },
+    });
+  }
+
   resetOptParameters(logicId: number): void {
     if (this.optResettingIds.has(logicId)) return;
     const ok = confirm(
@@ -864,6 +949,54 @@ export class LogicsComponent implements OnInit, OnDestroy {
           logicId,
           err?.error?.error || err?.message || 'Ошибка сброса OPT'
         );
+      },
+    });
+  }
+
+  isShadowResetting(logicId: number): boolean {
+    return this.shadowResettingIds.has(logicId);
+  }
+
+  /** Clear live shadow trades, unpause papers, re-activate all securities of the logic. */
+  resetShadowTrading(row: LogicRow, event: Event): void {
+    event.stopPropagation();
+    if (this.shadowResettingIds.has(row.id) || this.isBacktestRunning(row.id)) return;
+    const ok = confirm(
+      `Очистить теневую историю логики «${row.name}»?\n\n` +
+        '• удаляются только теневые (shadow) боевые сделки;\n' +
+        '• снимаются пауза/инверсия портфеля и бумаг;\n' +
+        '• все бумаги логики снова включаются (is_active);\n' +
+        '• при включённой логике обновляется история рейтингов, как при старте.\n\n' +
+        'Реальные (не теневые) сделки не удаляются.'
+    );
+    if (!ok) return;
+    this.shadowResettingIds.add(row.id);
+    this.logicsService.resetShadowTrading(row.id).subscribe({
+      next: (resp) => {
+        this.shadowResettingIds.delete(row.id);
+        const idx = this.logics.findIndex((l) => l.id === row.id);
+        if (idx >= 0) {
+          this.logics[idx] = {
+            ...this.logics[idx],
+            portfolio_trading_paused: false,
+          };
+          this.logics = [...this.logics];
+        }
+        this.loadSecuritiesForLogic(row.id, true);
+        this.loadTradesForLogic(row.id, true);
+        this.loadSignalsForLogic(row.id, true);
+        const cleared = resp.cleared_shadow_trades ?? 0;
+        const secs = resp.securities_reactivated ?? 0;
+        alert(
+          resp.message ||
+            `Теневые сделки очищены (${cleared}), бумаг обновлено: ${secs}.`
+        );
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.shadowResettingIds.delete(row.id);
+        alert(err?.error?.error || err?.message || 'Не удалось очистить теневую историю');
+        this.cdr.markForCheck();
       },
     });
   }
@@ -1307,6 +1440,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     } else {
       this.expandedSignalsBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
+      this.refreshOptGridAvailability(logicId);
     }
   }
 
@@ -1948,6 +2082,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.backtestUi.isRunning(logicId);
   }
 
+  /** Test run with offline OPT grid (paper lanes). */
+  isBacktestOptRunning(logicId: number): boolean {
+    if (!this.isBacktestRunning(logicId)) return false;
+    return !!this.backtestRuns.get(logicId)?.opt_grid_enabled;
+  }
+
+  /** Plain test without OPT grid. */
+  isBacktestPlainRunning(logicId: number): boolean {
+    return this.isBacktestRunning(logicId) && !this.isBacktestOptRunning(logicId);
+  }
+
   /** Bound in template so CD sees Map updates from the shared service. */
   backtestUiTick(): number {
     return this.backtestUi.uiTick;
@@ -1961,7 +2106,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   backtestProgressTitle(logicId: number): string {
     const run = this.backtestRuns.get(logicId);
-    if (!run) return 'Идёт тестирование';
+    const opt = !!run?.opt_grid_enabled;
+    if (!run) return opt ? 'Идёт тестирование с оптимизацией' : 'Идёт тестирование';
     const pct = this.backtestProgressPct(logicId);
     const phase = run.phase_message || run.status || '';
     const detail = run.phase_detail ? ` — ${run.phase_detail}` : '';
@@ -1969,7 +2115,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const barPart = bar ? ` · ${bar}` : '';
     const period = formatDateRangeLabel(run.date_from, run.date_to);
     const periodPart = period ? ` (${period})` : '';
-    return `Тест ${pct}%${barPart}: ${phase}${detail}${periodPart}`;
+    const head = opt ? 'Тест+OPT' : 'Тест';
+    return `${head} ${pct}%${barPart}: ${phase}${detail}${periodPart}`;
   }
 
   backtestCurrentBarLabel(logicId: number): string {
@@ -3043,7 +3190,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  startBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
+  startBacktestRun(
+    logicId: number,
+    period: {
+      date_from: string;
+      date_to: string;
+      opt_grid?: {
+        config?: unknown;
+        arms?: { lane: string; values: Record<string, number> }[];
+      } | null;
+    }
+  ): void {
     // Тест: тот же глобальный токен, что у seed-логик — без повторного HTTP-verify на каждую копию.
     this.settings.getTbankTokenConfigured().subscribe({
       next: (status) => {
@@ -3060,15 +3217,31 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  private doStartBacktestRun(logicId: number, period: { date_from: string; date_to: string }): void {
+  private doStartBacktestRun(
+    logicId: number,
+    period: {
+      date_from: string;
+      date_to: string;
+      opt_grid?: {
+        config?: unknown;
+        arms?: { lane: string; values: Record<string, number> }[];
+      } | null;
+    }
+  ): void {
     this.logicsService
-      .startBacktest({ logic_id: logicId, date_from: period.date_from, date_to: period.date_to })
+      .startBacktest({
+        logic_id: logicId,
+        date_from: period.date_from,
+        date_to: period.date_to,
+        opt_grid: period.opt_grid ?? null,
+      })
       .subscribe({
         next: () => {
           // Единственный владелец status-poll — BacktestUiStateService.watch().
           this.backtestUi.watch(logicId);
           this.expandedTestTradesBlocks.add(logicId);
           this.loadSignalsForLogic(logicId);
+          this.refreshOptGridAvailability(logicId);
         },
         error: (err) => alert(err?.error?.error || 'Не удалось запустить тест'),
       });

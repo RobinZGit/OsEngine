@@ -19,9 +19,93 @@
     </div>
   }
 
+  @if (isTest && showOptGridDialog) {
+    <div class="backtest-dialog-backdrop" (click)="closeOptGridDialog()">
+      <div class="backtest-dialog opt-grid-dialog" (click)="$event.stopPropagation()">
+        <h3>Параметры оптимизации</h3>
+        <p class="opt-grid-dialog-lead">
+          Тот же прогон теста: чемпион — параметры по умолчанию; отмеченные — бумажные ветки.
+          Итераций (±) — шаги в минус и в плюс от базы.
+        </p>
+        <div class="opt-grid-form-head">
+          <span class="opt-grid-combo" [class.opt-grid-over]="optGridOverLimit">
+            Комбинаций: {{ optGridComboCount }} / {{ OPT_GRID_MAX_COMBOS }}
+          </span>
+        </div>
+        @if (optGridParams.length === 0) {
+          <p class="opt-grid-empty">Нет числовых параметров в формулах сигналов этой логики. Откройте блок «Сигналы» или проверьте формулы.</p>
+        } @else {
+          <div class="opt-grid-dialog-scroll">
+            <table class="opt-grid-table">
+              <thead>
+                <tr>
+                  <th title="Включить параметр в сетку">Опт.</th>
+                  <th>Параметр</th>
+                  <th>База</th>
+                  <th>Шаг</th>
+                  <th title="Число шагов в каждую сторону от базы: минус и плюс (итераций=1 → база−шаг, база, база+шаг)">
+                    Итераций (±)
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (p of optGridParams; track p.id) {
+                  <tr>
+                    <td>
+                      <input
+                        type="checkbox"
+                        [ngModel]="p.enabled"
+                        (ngModelChange)="onOptParamEnabled(p.id, $event)"
+                      />
+                    </td>
+                    <td>{{ p.label }}</td>
+                    <td>{{ p.base }}</td>
+                    <td>
+                      <input
+                        type="text"
+                        class="opt-grid-input"
+                        [ngModel]="p.step"
+                        (ngModelChange)="onOptParamStep(p.id, $event)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        class="opt-grid-input"
+                        [ngModel]="p.iterations"
+                        (ngModelChange)="onOptParamIterations(p.id, $event)"
+                      />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        @if (optGridError) {
+          <p class="opt-grid-error">{{ optGridError }}</p>
+        }
+        <div class="backtest-dialog-actions">
+          <button
+            type="button"
+            class="btn btn-sm btn-ok"
+            [disabled]="!!optGridError || (optimizeEnabled && optGridComboCount === 0 && optGridParams.length > 0)"
+            (click)="closeOptGridDialog()"
+          >
+            Готово
+          </button>
+          <button type="button" class="btn btn-sm btn-muted" (click)="cancelOptGridDialog()">
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
   <details
     class="signals-block trades-block positions-panel"
-    [class.panel-backtest-active]="isTest && isBacktestRunning"
+    [class.panel-backtest-active]="isTest && isBacktestRunning && !backtestRun?.opt_grid_enabled"
+    [class.panel-backtest-opt]="isTest && isBacktestRunning && !!backtestRun?.opt_grid_enabled"
     [open]="blockExpanded"
   >
     <summary class="signals-summary trades-summary">
@@ -91,11 +175,44 @@
           >
             Отчёт
           </button>
+          @if (hasOptGridResults()) {
+            <button
+              type="button"
+              class="btn-report-backtest"
+              title="HTML-отчёт оптимизации (ветки того же прогона теста)"
+              (click)="onOpenOptGridReport($event)"
+            >
+              Отчёт OPT
+            </button>
+          }
+          <label
+            class="opt-grid-toggle"
+            title="В том же прогоне теста: бумажные ветки параметров рядом с чемпионом"
+            (click)="$event.stopPropagation()"
+          >
+            <input
+              type="checkbox"
+              [ngModel]="optimizeEnabled"
+              (ngModelChange)="onOptimizeToggle($event)"
+              [disabled]="isBacktestRunning"
+            />
+            Оптимизировать
+          </label>
+          @if (optimizeEnabled && !isBacktestRunning) {
+            <button
+              type="button"
+              class="btn-report-backtest"
+              title="Открыть форму выбора параметров оптимизации"
+              (click)="openOptGridDialog($event)"
+            >
+              Параметры OPT…
+            </button>
+          }
           <button
             type="button"
             class="btn-run-backtest"
             [class.btn-stop]="isBacktestRunning"
-            [disabled]="isCancelling"
+            [disabled]="isCancelling || (optimizeEnabled && !!optGridError && !isBacktestRunning)"
             [title]="isBacktestRunning ? 'Остановить тестирование' : 'Запустить тестирование'"
             (click)="onPlayOrStop($event)"
           >

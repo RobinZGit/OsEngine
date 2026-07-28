@@ -106,7 +106,7 @@ export class BacktestUiStateService implements OnDestroy {
       this.bump();
       return;
     }
-    this.runs.set(id, row);
+    this.runs.set(id, this.mergeStickyOptFlag(id, row));
     const st = String(row.status ?? '').trim().toLowerCase();
     if (ACTIVE_STATUSES.has(st)) {
       this.pollIds.add(id);
@@ -120,6 +120,33 @@ export class BacktestUiStateService implements OnDestroy {
       this.statusSubs.delete(id);
     }
     this.bump();
+  }
+
+  /**
+   * Keep lilac OPT color stable: /active used to omit opt_grid_enabled and
+   * briefly overwrite a true flag → yellow flicker. Same run id sticky.
+   */
+  private mergeStickyOptFlag(
+    logicId: number,
+    row: BacktestRunStatus
+  ): BacktestRunStatus {
+    const prev = this.runs.get(logicId);
+    const next: BacktestRunStatus = {
+      ...row,
+      opt_grid_enabled: !!row.opt_grid_enabled,
+    };
+    if (
+      prev &&
+      Number(prev.id) === Number(row.id) &&
+      !!prev.opt_grid_enabled &&
+      !next.opt_grid_enabled
+    ) {
+      next.opt_grid_enabled = true;
+      if (prev.opt_grid_results != null && next.opt_grid_results == null) {
+        next.opt_grid_results = prev.opt_grid_results;
+      }
+    }
+    return next;
   }
 
   isRunning(logicId: number): boolean {
@@ -148,7 +175,7 @@ export class BacktestUiStateService implements OnDestroy {
           for (const row of resp?.rows ?? []) {
             const logicId = Number(row.logic_id);
             if (!Number.isFinite(logicId) || logicId <= 0) continue;
-            this.runs.set(logicId, row);
+            this.runs.set(logicId, this.mergeStickyOptFlag(logicId, row));
             this.pollIds.add(logicId);
             this.expandTestBlocks.add(logicId);
           }

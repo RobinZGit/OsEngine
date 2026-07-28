@@ -679,6 +679,94 @@ async function resetLogicTradingStateOnAccountChange(poolOrClient, logicId) {
   return { cleared_trades: del.rowCount || 0 };
 }
 
+/**
+ * Сброс теневого режима логики: удалить live shadow-сделки,
+ * снять pause/resume/инверсию, включить все бумаги логики (is_active),
+ * как после «чистого» старта (без удаления чемпионских live-сделок).
+ */
+async function resetLogicShadowTradingState(poolOrClient, logicId) {
+  const id = Number(logicId);
+  if (!Number.isInteger(id) || id <= 0) {
+    return { cleared_shadow_trades: 0, securities_reactivated: 0 };
+  }
+
+  await poolOrClient.query(
+    `
+    DELETE FROM logic_trade_lots
+    WHERE logic_id = $1
+      AND (
+        close_trade_id IN (
+          SELECT id FROM logic_trades
+          WHERE logic_id = $1
+            AND COALESCE(is_shadow, FALSE) = TRUE
+            AND COALESCE(is_test, FALSE) = FALSE
+        )
+        OR open_trade_id IN (
+          SELECT id FROM logic_trades
+          WHERE logic_id = $1
+            AND COALESCE(is_shadow, FALSE) = TRUE
+            AND COALESCE(is_test, FALSE) = FALSE
+        )
+      )
+    `,
+    [id]
+  );
+
+  const del = await poolOrClient.query(
+    `
+    DELETE FROM logic_trades
+    WHERE logic_id = $1
+      AND COALESCE(is_shadow, FALSE) = TRUE
+      AND COALESCE(is_test, FALSE) = FALSE
+    `,
+    [id]
+  );
+
+  await poolOrClient.query(
+    `
+    UPDATE logics
+    SET
+      portfolio_trading_paused = FALSE,
+      portfolio_equity_peak = NULL,
+      portfolio_stop_resume_equity = NULL,
+      portfolio_stop_resume_baseline = NULL,
+      portfolio_stop_resume_at = NULL
+    WHERE id = $1
+    `,
+    [id]
+  );
+
+  const sec = await poolOrClient.query(
+    `
+    UPDATE logic_securities
+    SET
+      is_active = TRUE,
+      real_trading_paused = FALSE,
+      real_trading_paused_long = FALSE,
+      real_trading_paused_short = FALSE,
+      real_trading_inverted = FALSE,
+      stop_resume_equity = NULL,
+      stop_resume_baseline = NULL,
+      stop_resume_triggered_at = NULL,
+      stop_resume_equity_long = NULL,
+      stop_resume_baseline_long = NULL,
+      stop_resume_triggered_at_long = NULL,
+      stop_resume_equity_short = NULL,
+      stop_resume_baseline_short = NULL,
+      stop_resume_triggered_at_short = NULL,
+      stop_resume_hwm_long = NULL,
+      stop_resume_hwm_short = NULL
+    WHERE logic_id = $1
+    `,
+    [id]
+  );
+
+  return {
+    cleared_shadow_trades: del.rowCount || 0,
+    securities_reactivated: sec.rowCount || 0,
+  };
+}
+
 /** Throttle T-Bank balance sync: min interval per logic (ms). */
 const REAL_BALANCE_SYNC_TTL_MS = 60_000;
 const realBalanceSyncAt = new Map();
@@ -760,5 +848,6 @@ module.exports = {
   updateCurrentBalance,
   syncRealAccountBalancesIfNeeded,
   resetLogicTradingStateOnAccountChange,
+  resetLogicShadowTradingState,
   getLogicParamsDetailed,
 };

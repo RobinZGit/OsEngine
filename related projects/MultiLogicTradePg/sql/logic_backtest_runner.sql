@@ -2496,8 +2496,16 @@ BEGIN
         v_balance := logic_backtest_process_signals(
             p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
         );
-        -- OPT paper + редкий promote (без tech-log; история только при смене баз)
-        IF logic_opt_logic_has_opt(p_logic_id) THEN
+        -- Same test run: formula OPT() and/or offline grid paper lanes (opt_lane).
+        -- Grid: no promote — rank FinRes at finish.
+        IF logic_opt_logic_has_opt(p_logic_id)
+           OR EXISTS (
+                SELECT 1 FROM logic_backtest_runs r
+                WHERE r.id = p_run_id
+                  AND r.opt_grid_arms IS NOT NULL
+                  AND jsonb_typeof(r.opt_grid_arms) = 'array'
+                  AND jsonb_array_length(r.opt_grid_arms) > 0
+           ) THEN
             PERFORM process_logic_opt_trades(
                 p_logic_id, p_tf_id, p_bar_dt, TRUE, p_run_id, v_balance
             );
