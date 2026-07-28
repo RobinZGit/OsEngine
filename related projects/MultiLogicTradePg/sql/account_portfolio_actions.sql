@@ -155,7 +155,7 @@ BEGIN
 
         BEGIN
             -- Всегда рынок: кнопка «Продать всё» не зависит от order_execution логик.
-            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir, 'market');
+            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir, 'market', TRUE);
             v_sold := v_sold || jsonb_build_array(jsonb_build_object(
                 'figi', v_figi,
                 'ticker', v_ticker,

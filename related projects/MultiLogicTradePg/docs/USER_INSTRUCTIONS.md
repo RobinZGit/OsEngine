@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+743. push (after PostOrder lots fix)
+
+742. With remote servers, again, it took more than the balance on the account, although the first shoulder, we'll see why. (export live logic 1720 LinReg Fade copy 4 optimize — FLOT Short 13×75.27, commission 4.90)
+
 741. push / immediately put it in the repository
 
 740. It turned out ugly. These buttons need to be moved where they were, there, these icons. That is, they will be where they were, on the left side, on the same panel. Just for them, the place should be ... they should be visible to everyone. Is it possible to do this, so that the name of the logic and all icons are placed in the line of this panel? Well, and the checkboxes, respectively. On-off and on-off. Well, if there is no place at all, then they can be hidden there. Well, I see, I have a lot of free space in the line, and the icons are not all visible. This is wrong. And immediately put it in the repository.

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — logics row icons back on the right (sticky); secondary cols hide when tight; installers; push
+**Последнее обновление:** 2026-07-28 — fix T-Bank PostOrder shares→lots (FLOT×10 oversize); refresh MOEX lot_size; installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (бой: PostOrder штуки→лоты — перерасход FLOT)
+
+- **Симптом (logic 1720 remote):** Short Open FLOT `qty=13` в книге, комиссия ~4.90 ≈ 0.05% от **130×75.27** — брокер исполнил **13 лотов**, а не 13 акций (TQBR lot=10).
+- **Причина:** `tbank_post_order` слал `quantity` как штуки; T-Invest API ждёт **лоты**. Sell-all уже слал лоты; runner/stops/cash-fund — штуки.
+- **Фикс:** `tbank_post_order(..., p_quantity_is_lots DEFAULT FALSE)` делит штуки на `instrument.lot` (GetInstrumentBy + кэш `securities.lot_size`); sell-all/bond buy передают `TRUE`. Обновлены lot_size MOEX TQBR в `01` (FLOT=10, SBER=1, FEES=10000, …). Hotfix: `api/scripts/apply-tbank-post-order-lots.sql`.
+- **На remote:** применить hotfix SQL или полный upgrade `01`/`02` — UI-only не чинит бой.
 
 ### 2026-07-28 (иконки снова справа + всегда видны)
 
@@ -782,6 +789,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Fix PostOrder shares→lots (FLOT×10); refresh MOEX lot_size; installers; push |
 | 2026-07-28 | Row icons back right + sticky; hide secondary cols when tight; installers; push |
 | 2026-07-28 | Sticky left row actions (broom); remove per-row import/export; header I/O only; installers; push |
 | 2026-07-28 | Per-row export/import icons; bundle v2 + last OPT; overwrite by name; installers; push |

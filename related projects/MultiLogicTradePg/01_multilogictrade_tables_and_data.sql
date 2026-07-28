@@ -426,23 +426,24 @@ ON CONFLICT (security_id, exchange_id) DO UPDATE SET
     instrument_market = EXCLUDED.instrument_market,
     note = EXCLUDED.note;
 
--- Лотность акций MOEX (штук в лоте TQBR; фьючерсы — 1 контракт)
+-- Лотность акций MOEX TQBR (штук в лоте; актуальные LOTSIZE на 2026-07-28; фьючерсы — 1 контракт)
 UPDATE securities s
 SET lot_size = v.lot
 FROM security_prefixes sp
 JOIN exchanges e ON e.id = sp.exchange_id
 JOIN (VALUES
-    ('SBER', 10), ('SBERP', 10), ('GAZP', 10), ('LKOH', 10),
-    ('ROSN', 10), ('NVTK', 10), ('GMKN', 10), ('TATN', 10), ('TATNP', 10),
-    ('PLZL', 10), ('ALRS', 10), ('CHMF', 10), ('NLMK', 10), ('MAGN', 10),
-    ('MTLR', 10), ('MTLRP', 10), ('MGNT', 10), ('MTSS', 10), ('RUAL', 10),
-    ('HYDR', 10), ('PHOR', 10), ('MOEX', 10), ('TRNFP', 10), ('UPRO', 10),
-    ('SNGS', 1), ('SNGSP', 1), ('VTBR', 1), ('IRAO', 1), ('FEES', 1),
-    ('RTKM', 1), ('YDEX', 1), ('AFLT', 1), ('FLOT', 1), ('AFKS', 1)
+    ('SBER', 1), ('SBERP', 1), ('GAZP', 10), ('LKOH', 1),
+    ('ROSN', 1), ('NVTK', 1), ('GMKN', 10), ('TATN', 1), ('TATNP', 1),
+    ('PLZL', 1), ('ALRS', 10), ('CHMF', 1), ('NLMK', 10), ('MAGN', 10),
+    ('MTLR', 1), ('MTLRP', 10), ('MGNT', 1), ('MTSS', 10), ('RUAL', 10),
+    ('HYDR', 1000), ('PHOR', 1), ('MOEX', 10), ('TRNFP', 1), ('UPRO', 1000),
+    ('SNGS', 100), ('SNGSP', 10), ('VTBR', 1), ('IRAO', 100), ('FEES', 10000),
+    ('RTKM', 10), ('YDEX', 1), ('AFLT', 10), ('FLOT', 10), ('AFKS', 100),
+    ('TMON', 1), ('LQDT', 1), ('SBMM', 1)
 ) AS v(prefix, lot) ON sp.prefix = v.prefix
 WHERE s.id = sp.security_id
   AND e.name = 'MOEX'
-  AND sp.instrument_market = 'stock';
+  AND sp.instrument_market IN ('stock', 'other');
 
 -- ============================================
 -- Таблица: timeframes (таймфреймы)

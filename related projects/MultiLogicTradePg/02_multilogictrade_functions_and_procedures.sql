@@ -21545,6 +21545,81 @@ COMMENT ON FUNCTION tbank_trade_status_from_post_order(JSONB) IS
 
 DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR);
 DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR, VARCHAR, BOOLEAN);
+
+-- Lot size for PostOrder: T-Bank instrument.lot (authoritative), else securities.lot_size.
+CREATE OR REPLACE FUNCTION tbank_figi_lot_size(
+    p_api_url TEXT,
+    p_token TEXT,
+    p_figi VARCHAR
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_response http_response;
+    v_headers http_header[];
+    v_instrument JSONB;
+    v_lot INTEGER;
+    v_sec_id INTEGER;
+BEGIN
+    IF p_figi IS NULL OR btrim(p_figi) = '' THEN
+        RETURN 1;
+    END IF;
+
+    BEGIN
+        PERFORM configure_http_ssl();
+        v_headers := ARRAY[
+            http_header('Authorization', 'Bearer ' || p_token),
+            http_header('Accept', 'application/json')
+        ];
+        SELECT * INTO v_response FROM http((
+            'POST',
+            rtrim(COALESCE(p_api_url, 'https://invest-public-api.tinkoff.ru/rest'), '/')
+                || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy',
+            v_headers,
+            'application/json',
+            jsonb_build_object(
+                'id_type', 'INSTRUMENT_ID_TYPE_FIGI',
+                'id', btrim(p_figi)
+            )::TEXT
+        )::http_request);
+        IF v_response.status = 200 THEN
+            v_instrument := COALESCE(v_response.content::JSONB->'instrument', v_response.content::JSONB);
+            v_lot := NULLIF(regexp_replace(COALESCE(v_instrument->>'lot', ''), '[^0-9]', '', 'g'), '')::INTEGER;
+            IF v_lot IS NOT NULL AND v_lot >= 1 THEN
+                SELECT sp.security_id INTO v_sec_id
+                FROM security_prefixes sp
+                WHERE sp.tbank_figi = btrim(p_figi)
+                ORDER BY sp.exchange_id
+                LIMIT 1;
+                IF v_sec_id IS NOT NULL THEN
+                    UPDATE securities
+                    SET lot_size = v_lot
+                    WHERE id = v_sec_id
+                      AND lot_size IS DISTINCT FROM v_lot;
+                END IF;
+                RETURN v_lot;
+            END IF;
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+
+    SELECT GREATEST(1, COALESCE(s.lot_size, 1))
+    INTO v_lot
+    FROM security_prefixes sp
+    JOIN securities s ON s.id = sp.security_id
+    WHERE sp.tbank_figi = btrim(p_figi)
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    RETURN GREATEST(1, COALESCE(v_lot, 1));
+END;
+$$;
+
+COMMENT ON FUNCTION tbank_figi_lot_size(TEXT, TEXT, VARCHAR) IS
+'T-Bank instrument.lot по FIGI (кэш в securities.lot_size); иначе lot_size из БД / 1.';
 
 CREATE OR REPLACE FUNCTION tbank_post_order(
     p_account_id INTEGER,
@@ -21552,7 +21627,8 @@ CREATE OR REPLACE FUNCTION tbank_post_order(
     p_quantity NUMERIC,
     p_price NUMERIC,
     p_direction VARCHAR,
-    p_order_execution VARCHAR DEFAULT 'market'
+    p_order_execution VARCHAR DEFAULT 'market',
+    p_quantity_is_lots BOOLEAN DEFAULT FALSE
 )
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
@@ -21565,6 +21641,8 @@ DECLARE
     v_exec TEXT;
     v_body JSONB;
     v_order_type TEXT;
+    v_lot INTEGER;
+    v_lots BIGINT;
 BEGIN
     SELECT btrim(a.token_encrypted), b.api_url, a.account_code
     INTO v_token, v_api_url, v_account_code
@@ -21597,12 +21675,26 @@ BEGIN
         v_order_type := 'ORDER_TYPE_MARKET';
     END IF;
 
+    -- PostOrder.quantity = LOTS (T-Invest API). Runner/stops/cash-fund pass SHARES;
+    -- sell-all / bond plan pass lots with p_quantity_is_lots=TRUE.
+    IF COALESCE(p_quantity_is_lots, FALSE) THEN
+        v_lots := floor(COALESCE(p_quantity, 0))::BIGINT;
+    ELSE
+        v_lot := tbank_figi_lot_size(v_api_url, v_token, p_figi);
+        v_lots := floor(COALESCE(p_quantity, 0) / v_lot)::BIGINT;
+    END IF;
+    IF v_lots IS NULL OR v_lots < 1 THEN
+        RAISE EXCEPTION
+            'tbank_post_order: need ≥1 lot (qty=%, is_lots=%, figi=%)',
+            p_quantity, COALESCE(p_quantity_is_lots, FALSE), p_figi;
+    END IF;
+
     -- market: сразу в сессию; limit: по цене сигнала (может висеть).
     -- confirmMarginTrade — для шорта/маржи.
     v_body := jsonb_build_object(
         'accountId', v_resolved->>'account_id',
         'figi', p_figi,
-        'quantity', p_quantity,
+        'quantity', v_lots,
         'direction', v_dir,
         'orderType', v_order_type,
         'confirmMarginTrade', TRUE,
@@ -21626,8 +21718,8 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR, VARCHAR) IS
-'T-Bank PostOrder: order_execution=market|limit (default market); confirmMarginTrade для шорта.';
+COMMENT ON FUNCTION tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR, VARCHAR, BOOLEAN) IS
+'T-Bank PostOrder: quantity в лотах. По умолчанию p_quantity=штуки → деление на instrument.lot; p_quantity_is_lots=TRUE если уже лоты.';
 
 CREATE OR REPLACE FUNCTION tbank_cancel_order(
     p_account_id INTEGER,
@@ -22082,7 +22174,7 @@ BEGIN
 
         BEGIN
             -- Всегда рынок: кнопка «Продать всё» не зависит от order_execution логик.
-            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir, 'market');
+            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir, 'market', TRUE);
             v_sold := v_sold || jsonb_build_array(jsonb_build_object(
                 'figi', v_figi,
                 'ticker', v_ticker,

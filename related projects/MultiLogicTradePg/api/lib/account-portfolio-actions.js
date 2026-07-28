@@ -202,7 +202,7 @@ async function executeBuyBonds(pool, accountId, opts = {}) {
     if (!row.figi || !row.lots) continue;
     try {
       const { rows } = await pool.query(
-        `SELECT tbank_post_order($1, $2, $3, $4, 'BUY') AS r`,
+        `SELECT tbank_post_order($1, $2, $3, $4, 'BUY', 'market', TRUE) AS r`,
         [accountId, row.figi, row.lots, row.unit_price]
       );
       placed.push({
