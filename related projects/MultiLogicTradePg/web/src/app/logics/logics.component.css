@@ -131,9 +131,14 @@
 }
 
 .col-actions {
-  width: 6.25rem;
+  width: 6.1rem;
+  min-width: 6.1rem;
+  max-width: 6.1rem;
   white-space: nowrap;
-  text-align: right;
+  text-align: left;
+  overflow: visible;
+  padding-left: 0.15rem;
+  padding-right: 0.15rem;
 }
 
 .col-combat-pnl,
@@ -186,14 +191,93 @@
 }
 
 .col-actions .icon-btn {
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
   border: none;
   background: transparent;
+  flex-shrink: 0;
 }
 
 .col-actions .icon-btn + .icon-btn {
-  margin-left: 0.05rem;
+  margin-left: 0;
+}
+
+.col-actions .icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Keep expand / enable / row actions pinned on the left when the table scrolls horizontally. */
+.table-wrap > table th.col-expand,
+.table-wrap > table td.col-expand,
+.table-wrap > table th.col-check,
+.table-wrap > table td.col-check,
+.table-wrap > table th.col-actions,
+.table-wrap > table td.col-actions {
+  position: sticky;
+  z-index: 2;
+  overflow: visible;
+  background: #fff;
+}
+
+.table-wrap > table th.col-expand,
+.table-wrap > table th.col-check,
+.table-wrap > table th.col-actions {
+  z-index: 3;
+  background: #f9fafb;
+}
+
+.table-wrap > table th.col-expand,
+.table-wrap > table td.col-expand {
+  left: 0;
+}
+
+.table-wrap > table th.col-check,
+.table-wrap > table td.col-check {
+  left: 2rem;
+}
+
+.table-wrap > table th.col-actions,
+.table-wrap > table td.col-actions {
+  left: 5.1rem;
+  box-shadow: 4px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+.logic-main-row.row-enabled td.col-expand,
+.logic-main-row.row-enabled td.col-check,
+.logic-main-row.row-enabled td.col-actions {
+  background: #c7d7f0;
+}
+
+.logic-main-row.row-disabled td.col-expand,
+.logic-main-row.row-disabled td.col-check,
+.logic-main-row.row-disabled td.col-actions {
+  background: #dde3ec;
+}
+
+.logic-main-row.row-enabled:hover td.col-expand,
+.logic-main-row.row-enabled:hover td.col-check,
+.logic-main-row.row-enabled:hover td.col-actions {
+  background: #b9cce9;
+}
+
+.logic-main-row.row-disabled:hover td.col-expand,
+.logic-main-row.row-disabled:hover td.col-check,
+.logic-main-row.row-disabled:hover td.col-actions {
+  background: #d3dae5;
+}
+
+.logic-main-row.row-testing td.col-expand,
+.logic-main-row.row-testing td.col-check,
+.logic-main-row.row-testing td.col-actions {
+  background: #fde68a;
+}
+
+.logic-main-row.row-testing-opt td.col-expand,
+.logic-main-row.row-testing-opt td.col-check,
+.logic-main-row.row-testing-opt td.col-actions {
+  background: #ddd6fe;
 }
 
 .subtitle-row {

@@ -2749,11 +2749,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.downloadLogicExport(ids);
   }
 
-  exportOneLogic(row: LogicRow, event: Event): void {
-    event.stopPropagation();
-    this.downloadLogicExport([row.id], row.name);
-  }
-
   private downloadLogicExport(ids: number[], preferredName?: string): void {
     if (this.exportImportBusy) return;
     this.exportImportBusy = true;

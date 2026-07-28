@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — per-row export/import icons + last OPT in bundle (overwrite by name); push
+**Последнее обновление:** 2026-07-28 — row actions sticky left (broom visible); drop per-row import/export (header only); installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -119,9 +119,14 @@
 
 ## Что сделано (актуально на 2026-07-28)
 
+### 2026-07-28 (действия строки слева + только шапочный import/export)
+
+- `col-actions` (edit/copy/broom/delete) сразу после «Вкл.»; sticky слева при горизонтальном скролле; компактные иконки, `overflow: visible`.
+- Per-row import/export убраны — только шапка (чекбоксы справа + иконки); та же логика bundle v2 / overwrite by name / last OPT.
+
 ### 2026-07-28 (иконки export/import на доске + OPT в bundle)
 
-- В `col-actions` рядом с edit/copy: export / import / broom; в шапке — те же иконки вместо текста.
+- В шапке — иконки export/import; ранее также были в строке (снято в follow-up выше).
 - Bundle v2: params/signals/stops/securities + `last_opt_grid` (без сделок/свечей/тестов); импорт по имени — перезапись, иначе новая; кэш OPT для «Применить лучшие OPT».
 
 ### 2026-07-28 (кэш Apply best OPT + авто-отчёты)
@@ -772,6 +777,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Sticky left row actions (broom); remove per-row import/export; header I/O only; installers; push |
 | 2026-07-28 | Per-row export/import icons; bundle v2 + last OPT; overwrite by name; installers; push |
 | 2026-07-28 | Persist last OPT on logics; Apply best recover; auto-open reports; installers; push |
 | 2026-07-28 | Rename «Параметры по умолчанию» + bold «Сброс OPT»; installers; push |

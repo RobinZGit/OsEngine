@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+739. push
+
+738. icons of the broom, import and export on the logics tab probably they are somehow just not visible it is necessary to make them always visible in the list that is, squeeze them somehow, press them to the left edge if it does not fit on the screen this is the first and the second probably the import and export buttons in general, you can remove we have on top of the import and export buttons and there you select it with checkboxes and import and export you just check that they work the same if not the same then in those procedures of import and export which are on the top buttons add all the logic that is now laid import and export
+
 737. the drop-down opt button, or rather its actions, will also need to be done on the logics name tab on the main one, which is gray or purple or yellow, there on the left, next to the edit buttons, copy to a new one, make a cleaning button in the form of a broom and with a hint that is the same as on this button and do the same action, you also need to make the export and import buttons on the same tab on the same page also in the form of icons, select the export and import icons of the picture, not the words, well, and accordingly with hints, select what they do, the export should load the logic with all the parameters, but without the results well, without candles, without shadow results, without positions, yes, I think without positions, but maybe you need to also upload the results of the last optimization if they are without any candles and others, and the import button accordingly, upload a file of this format, and if there is already logic with such a name, then it should be rewritten, and if not, then a new one will appear, well, and accordingly, the optimization parameter should be applied , such a button should be available if you are unloaded, but if you are ported with these parameters, I do this so that it is possible to transfer the logic even to a remote server and import it and upload it immediately to the repository
 
 736. push
