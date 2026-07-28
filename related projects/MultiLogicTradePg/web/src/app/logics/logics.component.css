@@ -1659,6 +1659,26 @@ tbody tr.logic-main-row:hover {
   font-weight: 700;
 }
 
+.params-opt-apply-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #5b21b6;
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+}
+
+.params-opt-apply-btn:hover:not(:disabled) {
+  color: #4c1d95;
+  border-color: #7c3aed;
+  background: #ede9fe;
+}
+
+.params-opt-apply-btn:disabled {
+  opacity: 0.65;
+  font-weight: 700;
+}
+
 .params-hint {
   font-size: 0.78rem;
   color: #6b7280;

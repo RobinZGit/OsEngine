@@ -6,9 +6,15 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
-732. push
+736. push
 
-731. Make the Reset Opt button a brighter bold font to make it noticeable.
+735. Now it wrote, when I pressed the button to apply the best results to the opt, that there are no results of optimization. Do I really need to do it all over again? It should be saved, this optimization. See if it is saved or not. Try to restore it, if it is saved. And in the future, if there is some kind of optimization, then it should always be there. I only force the button to reset the results of the signals, so that the optimization would also be reset. But if not pressed, then so that it remains in the database and is always available.
+
+734. Optimization of the logic has passed, and the button to apply the best opt does not work, is not active. I will make it active and also brighter than it is now. This is one. And two. Reports after testing and after optimization, let them appear in separate lines themselves. That is, not only on the button so that they can be downloaded, but also themselves would they appear. Opened.
+
+733. Make the Reset Opt button a brighter bold font to make it noticeable.
+
+732. push
 
 730. parameter reset button rename seterameters by default
 

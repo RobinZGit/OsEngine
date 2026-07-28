@@ -1222,6 +1222,17 @@ ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_latched BOOLEAN 
 COMMENT ON COLUMN logics.portfolio_linear_tp_latched IS
 'После срабатывания portfolio_ltp_renew: не взводить снова, пока track% не уйдёт ниже arm% (анти-чоп)';
 
+-- Last offline OPT grid (checkbox «Оптимизировать»): survives until explicit «Сброс OPT» / «Параметры по умолчанию».
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS last_opt_grid_results JSONB;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS last_opt_grid_run_id BIGINT;
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS last_opt_grid_at TIMESTAMP;
+COMMENT ON COLUMN logics.last_opt_grid_results IS
+'Последняя offline-сетка OPT [{lane,values,finres,rank,is_champion}]; для «Применить лучшие OPT» до явного сброса';
+COMMENT ON COLUMN logics.last_opt_grid_run_id IS
+'logic_backtest_runs.id источника last_opt_grid_results';
+COMMENT ON COLUMN logics.last_opt_grid_at IS
+'Когда записан last_opt_grid_results';
+
 COMMENT ON COLUMN logics.portfolio_trading_paused IS
 'portfolio_resume SL: реал остановлен, сделки идут в shadow до восстановления equity';
 COMMENT ON COLUMN logics.portfolio_equity_peak IS

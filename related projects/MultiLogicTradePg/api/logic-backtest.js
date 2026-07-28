@@ -1773,6 +1773,12 @@ async function cancelBacktest(pool, runId) {
   }
 
   if (rowCount > 0) {
+    // Rank OPT grid even on stop — so «Применить лучшие OPT» still works.
+    try {
+      await pool.query(`SELECT logic_opt_grid_finalize($1)`, [runId]);
+    } catch (err) {
+      console.warn('logic_opt_grid_finalize (cancel)', err?.message || err);
+    }
     schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
   }
 

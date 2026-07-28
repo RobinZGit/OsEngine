@@ -1234,9 +1234,9 @@
 
                           <button
                             type="button"
-                            class="btn btn-sm btn-muted"
+                            class="btn btn-sm params-opt-apply-btn"
                             title="Записать в формулы лучшие параметры последнего теста с оптимизацией"
-                            [disabled]="!hasOptGridBest(row.id) || isOptGridApplying(row.id)"
+                            [disabled]="isOptGridApplying(row.id)"
                             (click)="applyOptGridBest(row.id, $event)"
                           >
                             {{ isOptGridApplying(row.id) ? '…' : 'Применить лучшие OPT' }}

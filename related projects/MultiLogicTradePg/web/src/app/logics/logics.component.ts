@@ -276,6 +276,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private readonly tbankTokenCheckMs = 30000;
 
   private readonly destroy$ = new Subject<void>();
+  /** Logic ids that were mid-backtest — used to detect finish after pollIds drop. */
+  private backtestWasRunning = new Set<number>();
   private savingIds = new Set<number>();
   private formulaDrafts = new Map<number, string>();
   private savingFormulaIds = new Set<number>();
@@ -351,8 +353,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     // Status poll owns BacktestUiStateService; here only light UI after debounced bumps.
     this.backtestUi.changes$.pipe(debounceTime(300), takeUntil(this.destroy$)).subscribe(() => {
-      for (const logicId of [...this.backtestPollIds]) {
+      const watchIds = new Set<number>([
+        ...this.backtestPollIds,
+        ...this.backtestWasRunning,
+        ...this.backtestRuns.keys(),
+      ]);
+      for (const logicId of watchIds) {
         const testing = this.isBacktestRunning(logicId);
+        const was = this.backtestWasRunning.has(logicId);
+        if (testing) {
+          this.backtestWasRunning.add(logicId);
+        } else if (was) {
+          this.backtestWasRunning.delete(logicId);
+          this.onBacktestJustFinished(logicId);
+        }
         const testOpen = this.expandedTestTradesBlocks.has(logicId);
         if (!testing) {
           this.loadTestTradesForLogic(logicId, true);
@@ -636,6 +650,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     // Прогреть сигналы/стопы сразу — не ждать открытия блоков.
     this.loadSignalsForLogic(row.id);
     this.loadStopsForLogic(row.id);
+    this.refreshOptGridAvailability(row.id);
   }
 
   /** Collapse expanded logic (same as clicking the row when open). */
@@ -847,7 +862,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   hasOptGridBest(logicId: number): boolean {
-    return this.optGridBestIds.has(logicId);
+    if (this.optGridBestIds.has(logicId)) return true;
+    const r = this.backtestFor(logicId)?.opt_grid_results;
+    return Array.isArray(r) && r.length > 0;
   }
 
   isOptGridApplying(logicId: number): boolean {
@@ -855,17 +872,23 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   refreshOptGridAvailability(logicId: number): void {
+    const local = this.backtestFor(logicId)?.opt_grid_results;
+    if (Array.isArray(local) && local.length > 0) {
+      this.optGridBestIds.add(logicId);
+      this.cdr.markForCheck();
+    }
     this.logicsService.getLatestOptGridResults(logicId).subscribe({
       next: (res) => {
         if (res?.run_id && Array.isArray(res.results) && res.results.length > 0) {
           this.optGridBestIds.add(logicId);
-        } else {
+        } else if (!(Array.isArray(local) && local.length > 0)) {
           this.optGridBestIds.delete(logicId);
         }
         this.cdr.markForCheck();
       },
       error: () => {
-        this.optGridBestIds.delete(logicId);
+        /* keep local flag if status already has results */
+        this.cdr.markForCheck();
       },
     });
   }
@@ -873,6 +896,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   applyOptGridBest(logicId: number, event: Event): void {
     event.stopPropagation();
     if (this.optGridApplyingIds.has(logicId)) return;
+    if (!this.hasOptGridBest(logicId)) {
+      alert(
+        'Нет результатов оптимизации. Сначала завершите тест с галочкой «Оптимизировать».'
+      );
+      return;
+    }
     const ok = confirm(
       'Записать в формулы сигналов лучшие параметры последнего теста с оптимизацией?'
     );
@@ -908,6 +937,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
         alert(err?.error?.error || 'Не удалось применить параметры');
       },
     });
+  }
+
+  /** After a run leaves active status: enable Apply OPT + refresh trades/results. */
+  private onBacktestJustFinished(logicId: number): void {
+    const run = this.backtestFor(logicId);
+    if (Array.isArray(run?.opt_grid_results) && run!.opt_grid_results!.length > 0) {
+      this.optGridBestIds.add(logicId);
+    }
+    this.refreshOptGridAvailability(logicId);
+    this.expandedTestTradesBlocks.add(logicId);
+    this.loadTestTradesForLogic(logicId, true);
+    this.cdr.markForCheck();
   }
 
   resetOptParameters(logicId: number): void {

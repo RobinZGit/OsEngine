@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — rename «Параметры по умолчанию» + bold «Сброс OPT»; installers rebuild; push
+**Последнее обновление:** 2026-07-28 — persist last OPT grid on logics; Apply best + auto reports; installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (кэш Apply best OPT + авто-отчёты)
+
+- `logics.last_opt_grid_*`: результат offline-сетки живёт на логике до «Параметры по умолчанию» / «Сброс OPT» (cleanup больше не уничтожает Apply).
+- `resolveLastOptGridResults`: кэш → run → finalize по arms; Apply всегда активна (фиолетовая); авто-открытие отчёта теста и OPT после прогона.
+- Finalize также при Стоп; SQL 01/02 + `api/lib/opt-grid-store.js`.
 
 ### 2026-07-28 (подписи OPT на панели сигналов)
 
@@ -761,6 +767,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Persist last OPT on logics; Apply best recover; auto-open reports; installers; push |
 | 2026-07-28 | Rename «Параметры по умолчанию» + bold «Сброс OPT»; installers; push |
 | 2026-07-28 | Ship offline OPT grid + broom shadow-reset + lilac OPT UI + flicker fix; installers; push |
 | 2026-07-28 | Ship resume_sl_no_reduce (HWM security_resume) + rebuild installers; push |

@@ -1764,6 +1764,19 @@ BEGIN
     WHERE logic_id = p_logic_id
       AND param_key = 'last_opt_eval_bar_dt';
 
+    -- Offline grid: clear persisted Apply-best cache (and run snapshots of results).
+    UPDATE logics
+    SET
+      last_opt_grid_results = NULL,
+      last_opt_grid_run_id = NULL,
+      last_opt_grid_at = NULL
+    WHERE id = p_logic_id;
+
+    UPDATE logic_backtest_runs
+    SET opt_grid_results = NULL
+    WHERE logic_id = p_logic_id
+      AND opt_grid_results IS NOT NULL;
+
     FOR v_sec IN
         SELECT security_id
         FROM logic_securities
@@ -1812,7 +1825,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_reset_to_initial(INTEGER) IS
-'Сброс OPT: вернуть начальные базы формул (snapshot / params_prev), удалить live opt_lane сделки, сбросить last_opt_eval_bar_dt.';
+'Сброс OPT: вернуть начальные базы формул, удалить live opt_lane, сбросить last_opt_eval_bar_dt и last_opt_grid_* (кэш Apply best).';
 
 -- ---------------------------------------------------------------------------
 -- История параметров OPT / формул (отчёт теста)
@@ -2146,9 +2159,17 @@ BEGIN
     SET opt_grid_results = v_rows
     WHERE id = p_run_id;
 
+    -- Keep on the logic until explicit OPT reset (Apply best must find it later).
+    UPDATE logics
+    SET
+      last_opt_grid_results = v_rows,
+      last_opt_grid_run_id = p_run_id,
+      last_opt_grid_at = CURRENT_TIMESTAMP
+    WHERE id = v_logic_id;
+
     RETURN v_rows;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_grid_finalize(BIGINT) IS
-'После теста с opt_grid_arms: FinRes чемпиона и каждой grid-ветки, rank; пишет opt_grid_results.';
+'После теста с opt_grid_arms: FinRes чемпиона и каждой grid-ветки, rank; пишет opt_grid_results и logics.last_opt_grid_*.';

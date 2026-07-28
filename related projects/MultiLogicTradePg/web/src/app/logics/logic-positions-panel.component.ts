@@ -302,6 +302,43 @@ export class LogicPositionsPanelComponent implements OnChanges {
       this.refreshOptGridParams();
       this.cdr.markForCheck();
     }
+    if (this.isTest) {
+      const running = this.isBacktestRunning;
+      if (this.prevBacktestRunning && !running) {
+        this.scheduleAutoOpenReports();
+      }
+      this.prevBacktestRunning = running;
+    }
+  }
+
+  /** After test (+ OPT) finishes: open report windows without waiting for button clicks. */
+  private scheduleAutoOpenReports(): void {
+    const runId = this.backtestRun?.id ?? null;
+    if (runId == null || this.autoReportOpenedForRunId === runId) return;
+    const st = String(this.backtestRun?.status ?? '')
+      .trim()
+      .toLowerCase();
+    if (st !== 'completed' && st !== 'cancelled') return;
+    this.autoReportOpenedForRunId = runId;
+    // Let parent finish loading trades for this run.
+    window.setTimeout(() => this.autoOpenFinishedReports(), 500);
+  }
+
+  private autoOpenFinishedReports(): void {
+    if (!this.isTest) return;
+    this.openTestReportWindow(true);
+    if (this.hasOptGridResults()) {
+      this.openOptGridReportWindow(true);
+      return;
+    }
+    // Results may land one poll after status=completed.
+    if (this.backtestRun?.opt_grid_enabled) {
+      window.setTimeout(() => {
+        if (this.hasOptGridResults()) {
+          this.openOptGridReportWindow(true);
+        }
+      }, 1500);
+    }
   }
 
   get optGridComboCount(): number {
@@ -417,9 +454,15 @@ export class LogicPositionsPanelComponent implements OnChanges {
   onOpenOptGridReport(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
+    this.openOptGridReportWindow(false);
+  }
+
+  private openOptGridReportWindow(silent: boolean): void {
     const rows = this.backtestRun?.opt_grid_results;
     if (!Array.isArray(rows) || rows.length === 0) {
-      alert('Нет результатов оптимизации для этого прогона.');
+      if (!silent) {
+        alert('Нет результатов оптимизации для этого прогона.');
+      }
       return;
     }
     const html = renderOptGridReportHtml({
@@ -430,7 +473,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
       rows: rows as OptGridResultRow[],
     });
     if (!openBacktestReportWindow(html, `Оптимизация — ${this.logicRow?.name}`)) {
-      alert('Не удалось открыть окно отчёта. Разрешите всплывающие окна.');
+      if (!silent) {
+        alert('Не удалось открыть окно отчёта. Разрешите всплывающие окна.');
+      }
     }
   }
 
@@ -513,6 +558,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   /** Локальный флаг сразу после нажатия «Стоп», пока статус ещё running. */
   cancelling = false;
+
+  /** Avoid re-opening the same run's reports on every poll. */
+  private autoReportOpenedForRunId: number | null = null;
+  private prevBacktestRunning = false;
 
   get isBacktestRunning(): boolean {
 
@@ -878,9 +927,15 @@ export class LogicPositionsPanelComponent implements OnChanges {
   onOpenReport(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
+    this.openTestReportWindow(false);
+  }
+
+  private openTestReportWindow(silent: boolean): void {
     if (!this.isTest) return;
     if (!this.hasReportableTrades()) {
-      alert('Нет закрытых тестовых сделок для отчёта. Сначала завершите прогон.');
+      if (!silent) {
+        alert('Нет закрытых тестовых сделок для отчёта. Сначала завершите прогон.');
+      }
       return;
     }
     const runId = this.backtestRun?.id ?? null;
@@ -893,9 +948,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
       const html = renderBacktestReportHtml(model);
       const title = `Отчёт теста — ${model.logicName}`;
       if (!openBacktestReportWindow(html, title)) {
-        alert(
-          'Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.'
-        );
+        if (!silent) {
+          alert(
+            'Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.'
+          );
+        }
       }
     };
     this.logicsService.getOptParamHistory(this.logicRow.id, runId).subscribe({

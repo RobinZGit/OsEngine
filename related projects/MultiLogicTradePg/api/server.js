@@ -24,6 +24,7 @@ const {
   cancelBacktest,
   resumeOrphanBacktests,
 } = require('./logic-backtest');
+const { resolveLastOptGridResults } = require('./lib/opt-grid-store');
 const {
   listBacktestReports,
   getBacktestReport,
@@ -2166,7 +2167,7 @@ app.get('/api/logics/:id/opt-param-history', async (req, res) => {
   }
 });
 
-/** Apply best offline-grid params from last completed test into signal formulas. */
+/** Apply best offline-grid params from last OPT (logic cache or recovered run). */
 app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -2174,25 +2175,17 @@ app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
     return;
   }
   try {
-    const { rows: runs } = await pool.query(
-      `
-      SELECT id, opt_grid_results
-      FROM logic_backtest_runs
-      WHERE logic_id = $1
-        AND status = 'completed'
-        AND opt_grid_results IS NOT NULL
-        AND jsonb_typeof(opt_grid_results) = 'array'
-        AND jsonb_array_length(opt_grid_results) > 0
-      ORDER BY id DESC
-      LIMIT 1
-      `,
-      [id]
-    );
-    if (runs.length === 0) {
-      res.status(400).json({ error: 'Нет результатов оптимизации. Сначала запустите тест с галочкой «Оптимизировать».' });
+    const found = await resolveLastOptGridResults(pool, id);
+    if (!found.results || !Array.isArray(found.results) || found.results.length === 0) {
+      res.status(400).json({
+        error:
+          'Нет сохранённых результатов оптимизации. Запустите тест с «Оптимизировать» ещё раз — после этого они останутся до «Параметры по умолчанию» / «Сброс OPT».',
+        source: found.source,
+      });
       return;
     }
-    const results = runs[0].opt_grid_results;
+    const results = found.results;
+    const runId = found.run_id;
     const best = [...results].sort(
       (a, b) => Number(b.finres || 0) - Number(a.finres || 0)
     )[0];
@@ -2202,9 +2195,10 @@ app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
         res.json({
           ok: true,
           message: 'Лучший результат — параметры по умолчанию (чемпион). Формулы не менялись.',
-          run_id: runs[0].id,
+          run_id: runId,
           best,
           updated: 0,
+          source: found.source,
         });
         return;
       }
@@ -2214,10 +2208,12 @@ app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
 
     // Snapshot before rewrite so «Сброс» / reset can restore.
     try {
-      await pool.query(`SELECT logic_opt_snapshot_params($1, $2, NULL)`, [
-        id,
-        runs[0].id,
-      ]);
+      if (runId) {
+        await pool.query(`SELECT logic_opt_snapshot_params($1, $2, NULL)`, [
+          id,
+          runId,
+        ]);
+      }
     } catch (err) {
       console.warn('opt-grid-apply snapshot', err?.message || err);
     }
@@ -2256,10 +2252,11 @@ app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
 
     res.json({
       ok: true,
-      run_id: runs[0].id,
+      run_id: runId,
       best,
       updated,
       signals: outSignals,
+      source: found.source,
     });
   } catch (err) {
     console.error('POST /api/logics/:id/opt-grid-apply-best', err);
@@ -2324,25 +2321,16 @@ app.get('/api/logics/:id/opt-grid-results', async (req, res) => {
     return;
   }
   try {
-    const { rows } = await pool.query(
-      `
-      SELECT id, opt_grid_results
-      FROM logic_backtest_runs
-      WHERE logic_id = $1
-        AND status = 'completed'
-        AND opt_grid_results IS NOT NULL
-        AND jsonb_typeof(opt_grid_results) = 'array'
-        AND jsonb_array_length(opt_grid_results) > 0
-      ORDER BY id DESC
-      LIMIT 1
-      `,
-      [id]
-    );
-    if (rows.length === 0) {
-      res.json({ run_id: null, results: null });
+    const found = await resolveLastOptGridResults(pool, id);
+    if (!found.results) {
+      res.json({ run_id: null, results: null, source: found.source });
       return;
     }
-    res.json({ run_id: rows[0].id, results: rows[0].opt_grid_results });
+    res.json({
+      run_id: found.run_id,
+      results: found.results,
+      source: found.source,
+    });
   } catch (err) {
     console.error('GET /api/logics/:id/opt-grid-results', err);
     res.status(500).json({ error: err.message });
