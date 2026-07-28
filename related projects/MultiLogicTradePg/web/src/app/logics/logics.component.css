@@ -131,14 +131,13 @@
 }
 
 .col-actions {
-  width: 6.1rem;
-  min-width: 6.1rem;
-  max-width: 6.1rem;
+  width: 6.75rem;
+  min-width: 6.75rem;
   white-space: nowrap;
-  text-align: left;
+  text-align: right;
   overflow: visible;
-  padding-left: 0.15rem;
-  padding-right: 0.15rem;
+  padding-left: 0.2rem;
+  padding-right: 0.25rem;
 }
 
 .col-combat-pnl,
@@ -191,28 +190,30 @@
 }
 
 .col-actions .icon-btn {
-  width: 1.45rem;
-  height: 1.45rem;
+  width: 1.55rem;
+  height: 1.55rem;
   padding: 0;
   border: none;
   background: transparent;
-  flex-shrink: 0;
+  vertical-align: middle;
 }
 
 .col-actions .icon-btn + .icon-btn {
-  margin-left: 0;
+  margin-left: 0.02rem;
 }
 
 .col-actions .icon-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
-/* Keep expand / enable / row actions pinned on the left when the table scrolls horizontally. */
+/* Pin enable on the left; export checkbox + row icons on the right — always visible. */
 .table-wrap > table th.col-expand,
 .table-wrap > table td.col-expand,
 .table-wrap > table th.col-check,
 .table-wrap > table td.col-check,
+.table-wrap > table th.col-export,
+.table-wrap > table td.col-export,
 .table-wrap > table th.col-actions,
 .table-wrap > table td.col-actions {
   position: sticky;
@@ -223,6 +224,7 @@
 
 .table-wrap > table th.col-expand,
 .table-wrap > table th.col-check,
+.table-wrap > table th.col-export,
 .table-wrap > table th.col-actions {
   z-index: 3;
   background: #f9fafb;
@@ -236,46 +238,58 @@
 .table-wrap > table th.col-check,
 .table-wrap > table td.col-check {
   left: 2rem;
+  box-shadow: 4px 0 6px -4px rgba(15, 23, 42, 0.16);
 }
 
 .table-wrap > table th.col-actions,
 .table-wrap > table td.col-actions {
-  left: 5.1rem;
-  box-shadow: 4px 0 6px -4px rgba(15, 23, 42, 0.18);
+  right: 0;
+  box-shadow: -4px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
+.table-wrap > table th.col-export,
+.table-wrap > table td.col-export {
+  right: 6.75rem;
 }
 
 .logic-main-row.row-enabled td.col-expand,
 .logic-main-row.row-enabled td.col-check,
+.logic-main-row.row-enabled td.col-export,
 .logic-main-row.row-enabled td.col-actions {
   background: #c7d7f0;
 }
 
 .logic-main-row.row-disabled td.col-expand,
 .logic-main-row.row-disabled td.col-check,
+.logic-main-row.row-disabled td.col-export,
 .logic-main-row.row-disabled td.col-actions {
   background: #dde3ec;
 }
 
 .logic-main-row.row-enabled:hover td.col-expand,
 .logic-main-row.row-enabled:hover td.col-check,
+.logic-main-row.row-enabled:hover td.col-export,
 .logic-main-row.row-enabled:hover td.col-actions {
   background: #b9cce9;
 }
 
 .logic-main-row.row-disabled:hover td.col-expand,
 .logic-main-row.row-disabled:hover td.col-check,
+.logic-main-row.row-disabled:hover td.col-export,
 .logic-main-row.row-disabled:hover td.col-actions {
   background: #d3dae5;
 }
 
 .logic-main-row.row-testing td.col-expand,
 .logic-main-row.row-testing td.col-check,
+.logic-main-row.row-testing td.col-export,
 .logic-main-row.row-testing td.col-actions {
   background: #fde68a;
 }
 
 .logic-main-row.row-testing-opt td.col-expand,
 .logic-main-row.row-testing-opt td.col-check,
+.logic-main-row.row-testing-opt td.col-export,
 .logic-main-row.row-testing-opt td.col-actions {
   background: #ddd6fe;
 }
@@ -708,6 +722,9 @@ table {
 .table-wrap > table {
   font-size: 0.84rem;
   table-layout: fixed;
+  /* Prefer horizontal scroll over crushing the right-side action icons. */
+  min-width: 62rem;
+  width: 100%;
 }
 
 th,
@@ -899,34 +916,59 @@ tbody tr.logic-main-row:hover {
 }
 
 .col-logic {
-  width: 18rem;
+  width: auto;
+  min-width: 9rem;
 }
 
 .col-account-id {
-  width: 4rem;
+  width: 3.5rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .col-account {
-  width: 15rem;
+  width: 9.5rem;
   white-space: nowrap;
 }
 
 .col-account-type {
-  width: 5.3rem;
+  width: 4.5rem;
   white-space: nowrap;
 }
 
 .col-broker {
-  width: 5rem;
+  width: 4.2rem;
   white-space: nowrap;
 }
 
 .col-active {
-  width: 4.3rem;
+  width: 3.6rem;
   text-align: center;
   white-space: nowrap;
+}
+
+/* When space is tight, hide secondary columns first — keep name, checkboxes, icons. */
+@media (max-width: 1180px) {
+  .table-wrap > table .col-account-id,
+  .table-wrap > table .col-active,
+  .table-wrap > table .col-broker {
+    display: none;
+  }
+
+  .table-wrap > table {
+    min-width: 48rem;
+  }
+}
+
+@media (max-width: 920px) {
+  .table-wrap > table .col-account,
+  .table-wrap > table .col-account-type {
+    display: none;
+  }
+
+  .table-wrap > table {
+    min-width: 36rem;
+  }
 }
 
 .enable-check {

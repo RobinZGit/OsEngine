@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+741. push / immediately put it in the repository
+
+740. It turned out ugly. These buttons need to be moved where they were, there, these icons. That is, they will be where they were, on the left side, on the same panel. Just for them, the place should be ... they should be visible to everyone. Is it possible to do this, so that the name of the logic and all icons are placed in the line of this panel? Well, and the checkboxes, respectively. On-off and on-off. Well, if there is no place at all, then they can be hidden there. Well, I see, I have a lot of free space in the line, and the icons are not all visible. This is wrong. And immediately put it in the repository.
+
 739. push
 
 738. icons of the broom, import and export on the logics tab probably they are somehow just not visible it is necessary to make them always visible in the list that is, squeeze them somehow, press them to the left edge if it does not fit on the screen this is the first and the second probably the import and export buttons in general, you can remove we have on top of the import and export buttons and there you select it with checkboxes and import and export you just check that they work the same if not the same then in those procedures of import and export which are on the top buttons add all the logic that is now laid import and export

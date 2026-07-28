@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — row actions sticky left (broom visible); drop per-row import/export (header only); installers; push
+**Последнее обновление:** 2026-07-28 — logics row icons back on the right (sticky); secondary cols hide when tight; installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -119,10 +119,15 @@
 
 ## Что сделано (актуально на 2026-07-28)
 
+### 2026-07-28 (иконки снова справа + всегда видны)
+
+- `col-actions` (edit/copy/broom/delete) снова в конце строки; sticky справа вместе с чекбоксом экспорта; «Вкл.» sticky слева.
+- Таблица не сжимает иконки (`min-width` + scroll); на узком экране скрываются вторичные колонки (acc_id/брокер/актив./счёт), имя и иконки остаются.
+
 ### 2026-07-28 (действия строки слева + только шапочный import/export)
 
-- `col-actions` (edit/copy/broom/delete) сразу после «Вкл.»; sticky слева при горизонтальном скролле; компактные иконки, `overflow: visible`.
-- Per-row import/export убраны — только шапка (чекбоксы справа + иконки); та же логика bundle v2 / overwrite by name / last OPT.
+- Per-row import/export убраны — только шапка (чекбоксы + иконки I/O); bundle v2 / overwrite by name / last OPT.
+- (Слева sticky для actions — откатили как «ugly»; см. блок выше.)
 
 ### 2026-07-28 (иконки export/import на доске + OPT в bundle)
 
@@ -777,6 +782,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Row icons back right + sticky; hide secondary cols when tight; installers; push |
 | 2026-07-28 | Sticky left row actions (broom); remove per-row import/export; header I/O only; installers; push |
 | 2026-07-28 | Per-row export/import icons; bundle v2 + last OPT; overwrite by name; installers; push |
 | 2026-07-28 | Persist last OPT on logics; Apply best recover; auto-open reports; installers; push |
