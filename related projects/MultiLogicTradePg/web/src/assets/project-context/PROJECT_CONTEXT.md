@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — fix sell-all undersell after PostOrder lots (quantity shares→lots, is_lots=TRUE); installers; push
+**Последнее обновление:** 2026-07-28 — refresh Help/docs/schema for PostOrder lots + sell-all + exports; USER_INSTRUCTIONS; installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (актуализация Help / схемы / контекста / инструкций)
+
+- Help: главы «Бой T-Bank: лоты…», «Экспорт и отчёты»; обновлены логики (метла, I/O шапки, sticky, last OPT), вкладки, API.
+- PROJECT_CONTEXT: устаревшие формулировки sell-all (LIMIT→market) и lot_size; ссылка на последние USER_INSTRUCTIONS.
+- schema-offline.json пересобран из 01/02 (`generate:schema`); COMMENT ON PostOrder/sell-all уже в 02.
+- Правило: при каждом push — и контекст, и новые пункты USER_INSTRUCTIONS.
 
 ### 2026-07-28 (Продать всё: недопродажа после shares→lots)
 
@@ -507,7 +514,7 @@
 ### 2026-07-25 (Счета: продать всё / купить облигации — только real)
 
 - Справочники → Счета: кнопки **только** у `account_type=real` и брокера T-BANK.
-- **Продать всё:** `POST /api/accounts/:id/sell-all` → `account_sell_all_at_market` — все невалютные позиции портфеля (акции/облигации/фонды…), LIMIT по текущей цене.
+- **Продать всё:** `POST /api/accounts/:id/sell-all` → `account_sell_all_at_market` — market sell всех невалютных позиций (quantity штуки − blocked → лоты, `is_lots=TRUE`); затем book-close логик без второй заявки.
 - **Купить облигации:** диалог — сумма (дефолт = свободный кэш), фонд **TBRU** («Т-Капитал Облигации»); жадная покупка по доходности (корп. раньше ОФЗ), состав из MultiLogicTradeA / porti.ru.
 - SQL: `sql/account_portfolio_actions.sql` (+ блок в `02`); Node: `api/lib/bond-tbru-*.js`, `account-portfolio-actions.js`.
 - На fake-счетах кнопок нет.
@@ -630,7 +637,7 @@
 70. **Fix лага UI при нескольких тестах / выборе даты:** poll больше не грузит ×5000 сделок по всем логикам каждые 2 с; кэш `tradesFor`/`signalIndicatorIds`; пауза poll на диалоге периода; OnPush positions-panel.
 71. **v44 logics.note + контртренд OsEngine:** колонка `logics.note`; поле «Примечание» в редакторе; подписи у всех seed; +5 логик CCI/LinReg/ADX/MACD/ATR Fade.
 72. **Комиссия % от номинала сделки:** `logic_trade_calc_commission` = `price × quantity × commission_pct / 100` (было % от депозита — ломало mean-reversion бэктесты).
-73. **Лотность бумаги (v44b):** `securities.lot_size` (MOEX TQBR: 10 для большинства акций, 1 для VTBR и др.); `logic_security_lot_size` + `logic_calc_open_quantity(..., lot_size)` — объём открытия округляется вниз до лота; runner и бэктест; колонка «Лот» в блоке бумаг логики; API `/api/securities`, `/api/logic-securities`.
+73. **Лотность бумаги (v44b+):** `securities.lot_size` (MOEX TQBR, seed обновлён 2026-07-28: FLOT=10, SBER=1, FEES=10000, …); при PostOrder лот с T-Bank GetInstrumentBy кэшируется в `lot_size`. `logic_calc_open_quantity` округляет вниз до лота (штуки в книге). PostOrder: штуки→лоты (`is_lots=FALSE`) или уже лоты (`TRUE`). Колонка «Лот» в бумагах логики.
 74. **Инверсия логики:** param `inversion` (default false); условия `≥↔≤`, `>↔<` + сделки Long↔Short (как ReverseSignals+ReverseSides / OsEngine); UI галочка в параметрах.
 75. **Эквити в тесте:** переключатель «График / Эквити» у блока Бумаги; общая синяя + бледные long(зел.)/short(кр.).
 76. **Финрез (% депозита):** в скобках у боевого/тестового финреза и на панелях Позиции/Тестирование / плитках бумаг.
@@ -795,6 +802,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Refresh Help/docs/schema (lots, sell-all, exports); USER_INSTRUCTIONS; installers; push |
 | 2026-07-28 | Fix sell-all undersell (lots÷lot_size); quantity-based sell-all; installers; push |
 | 2026-07-28 | Fix PostOrder shares→lots (FLOT×10); refresh MOEX lot_size; installers; push |
 | 2026-07-28 | Row icons back right + sticky; hide secondary cols when tight; installers; push |
@@ -1013,4 +1021,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **715** — LinReg Fade Twice Optimized; **714** — equity mid-run; **713** — Pages CI.
+Последние (см. USER_INSTRUCTIONS): **747** — push docs; **746** — актуальность Help/схемы/комментов/контекста/инструкций при каждом push; **745** — push sell-all.

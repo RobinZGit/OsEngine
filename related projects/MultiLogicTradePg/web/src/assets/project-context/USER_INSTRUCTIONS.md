@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+747. push
+
+746. Look, the relevance of the help, the structure of the database, there may be reports of all sorts of testing and other reports that are uploaded. Also, the relevance of the comments in the code. The relevance of the context, the relevance of user requests. I asked, in addition to the context, to post my instructions, too, on a regular basis. And the changes are immediately posted for Push.
+
 745. push
 
 744. Check the button to sell everything on the market in positions. It seems to me that it sold not the amount of lots, less than there was, not everything sold. Check there is such a lot or not.

@@ -26,15 +26,16 @@ alwaysApply: true
 **Порядок для агента и разработчика (обязательно, каждый раз при выкладке кода):**
 
 1. **Сначала** обновить `docs/PROJECT_CONTEXT.md` (см. чеклист ниже) — дата, «что сделано», история, версия схемы.
-2. **Новые инструкции пользователя** — добавить в начало `docs/USER_INSTRUCTIONS.md` (полный текст/кратко); в `PROJECT_CONTEXT` не дублировать весь журнал.
-3. Если менялись файлы, входящие в installers (SQL/API/UI/scripts/docs/installer), **пересобрать оба**:
+2. **Новые инструкции пользователя** — **обязательно** добавить в начало `docs/USER_INSTRUCTIONS.md` (полный текст/кратко) при каждом push, где был запрос Sergey в сессии; в `PROJECT_CONTEXT` не дублировать весь журнал, только ссылку + последние номера.
+3. **Help** (`web/src/app/app-help/app-help-content.ts`) и **COMMENT ON / JSDoc** — обновить, если менялось поведение для пользователя или сигнатуры SQL/API; при правках `01`/`02` — `npm run generate:schema` (schema-offline для шестерёнки offline).
+4. Если менялись файлы, входящие в installers (SQL/API/UI/scripts/docs/installer), **пересобрать оба**:
    - `installer/windows/dist/MultiLogicTradePgSetup.exe`
    - `installer/linux/dist/MultiLogicTradePg-linux.tar.gz`
    (см. `.cursor/rules/installer-freshness.mdc`, удобно: `.\installer\build-all-installers.ps1`).
-4. **Затем** закоммитить код, installer artifacts (если пересобирались) **и** контекст/инструкции **в одном push**.
-5. **Не пушить** код/SQL/installer changes без актуального `PROJECT_CONTEXT.md`, `USER_INSTRUCTIONS.md` (если менялись инструкции) и актуальных **обоих** installer artifacts в `origin`.
-6. Если забыли контекст или installer rebuild — сразу follow-up commit до того, как считать выкладку завершённой.
-7. **Не** создавать/переиздавать GitHub Release, пока пользователь явно не попросит.
+5. **Затем** закоммитить код, installer artifacts (если пересобирались) **и** контекст/инструкции/Help **в одном push**.
+6. **Не пушить** код/SQL/installer changes без актуального `PROJECT_CONTEXT.md`, `USER_INSTRUCTIONS.md` и актуальных **обоих** installer artifacts в `origin`.
+7. Если забыли контекст, инструкции, Help или installer rebuild — сразу follow-up commit до того, как считать выкладку завершённой.
+8. **Не** создавать/переиздавать GitHub Release, пока пользователь явно не попросит.
 
 Если hotfix после push — снова обновить контекст и сделать follow-up commit **до** того, как считать выкладку завершённой.
 
