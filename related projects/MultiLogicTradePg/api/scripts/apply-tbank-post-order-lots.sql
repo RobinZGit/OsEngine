@@ -191,3 +191,144 @@ JOIN (VALUES
 WHERE s.id = sp.security_id
   AND e.name = 'MOEX'
   AND sp.instrument_market IN ('stock', 'other');
+
+-- Sell-all: after PostOrder shares→lots default, old sell-all that passed quantityLots
+-- without TRUE sold floor(lots/lot_size) — undersell. Rebuild from quantity (shares).
+CREATE OR REPLACE FUNCTION account_sell_all_at_market(p_account_id INTEGER)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_acc RECORD;
+    v_pack JSONB;
+    v_pos JSONB;
+    v_type TEXT;
+    v_figi TEXT;
+    v_ticker TEXT;
+    v_shares NUMERIC;
+    v_blocked_lots NUMERIC;
+    v_lot INTEGER;
+    v_sell_shares NUMERIC;
+    v_lots NUMERIC;
+    v_price NUMERIC;
+    v_dir TEXT;
+    v_order JSONB;
+    v_sold JSONB := '[]'::JSONB;
+    v_errors JSONB := '[]'::JSONB;
+    v_skipped JSONB := '[]'::JSONB;
+BEGIN
+    SELECT * INTO v_acc FROM account_require_real_tbank(p_account_id) LIMIT 1;
+    v_pack := fetch_tbank_portfolio_positions(p_account_id);
+
+    FOR v_pos IN SELECT value FROM jsonb_array_elements(COALESCE(v_pack->'positions', '[]'::JSONB))
+    LOOP
+        v_type := upper(COALESCE(v_pos->>'instrumentType', v_pos->>'instrument_type', ''));
+        IF v_type LIKE '%CURRENCY%' THEN
+            v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
+                'figi', v_pos->>'figi',
+                'reason', 'currency'
+            ));
+            CONTINUE;
+        END IF;
+
+        v_figi := NULLIF(btrim(COALESCE(v_pos->>'figi', '')), '');
+        v_ticker := COALESCE(v_pos->>'ticker', v_figi, '?');
+        IF v_figi IS NULL THEN
+            v_errors := v_errors || jsonb_build_array(jsonb_build_object(
+                'ticker', v_ticker,
+                'error', 'no_figi'
+            ));
+            CONTINUE;
+        END IF;
+
+        v_shares := COALESCE(parse_tbank_quotation(v_pos->'quantity'), 0);
+        v_blocked_lots := COALESCE(
+            parse_tbank_quotation(COALESCE(v_pos->'blockedLots', v_pos->'blocked_lots')),
+            0
+        );
+        v_lot := tbank_figi_lot_size(v_acc.api_url, v_acc.token, v_figi);
+        v_sell_shares := v_shares - (v_blocked_lots * v_lot);
+
+        IF abs(v_sell_shares) < v_lot THEN
+            v_lots := COALESCE(
+                parse_tbank_quotation(COALESCE(v_pos->'quantityLots', v_pos->'quantity_lots')),
+                0
+            ) - v_blocked_lots;
+            IF abs(v_lots) >= 1 THEN
+                v_sell_shares := v_lots * v_lot;
+            END IF;
+        END IF;
+
+        IF abs(v_sell_shares) < v_lot THEN
+            v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
+                'figi', v_figi,
+                'ticker', v_ticker,
+                'reason', 'zero_lots',
+                'shares', v_shares,
+                'blocked_lots', v_blocked_lots,
+                'lot', v_lot
+            ));
+            CONTINUE;
+        END IF;
+
+        IF v_sell_shares > 0 THEN
+            v_dir := 'SELL';
+        ELSE
+            v_dir := 'BUY';
+            v_sell_shares := abs(v_sell_shares);
+        END IF;
+
+        v_lots := floor(v_sell_shares / v_lot);
+        IF v_lots < 1 THEN
+            v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
+                'figi', v_figi,
+                'ticker', v_ticker,
+                'reason', 'below_one_lot',
+                'sell_shares', v_sell_shares,
+                'lot', v_lot
+            ));
+            CONTINUE;
+        END IF;
+
+        v_price := COALESCE(
+            NULLIF(parse_tbank_quotation(v_pos->'currentPrice'), 0),
+            NULLIF(parse_tbank_quotation(v_pos->'averagePositionPriceFifo'), 0),
+            NULLIF(parse_tbank_quotation(v_pos->'averagePositionPrice'), 0),
+            1
+        );
+
+        BEGIN
+            v_order := tbank_post_order(
+                p_account_id, v_figi, v_lots, v_price, v_dir, 'market', TRUE
+            );
+            v_sold := v_sold || jsonb_build_array(jsonb_build_object(
+                'figi', v_figi,
+                'ticker', v_ticker,
+                'lots', v_lots,
+                'shares', v_lots * v_lot,
+                'lot_size', v_lot,
+                'price', v_price,
+                'direction', v_dir,
+                'instrument_type', v_type,
+                'order', v_order
+            ));
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_errors := v_errors || jsonb_build_array(jsonb_build_object(
+                    'figi', v_figi,
+                    'ticker', v_ticker,
+                    'lots', v_lots,
+                    'shares', v_lots * v_lot,
+                    'direction', v_dir,
+                    'error', SQLERRM
+                ));
+        END;
+    END LOOP;
+
+    RETURN account_sell_all_at_market_with_books(
+        p_account_id, v_sold, v_errors, v_skipped, v_pack->'cash_amount'
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION account_sell_all_at_market(INTEGER) IS
+'Реальный T-Bank: market sell-all по quantity(штуки)−blocked; PostOrder лоты с is_lots=TRUE; затем book-close логик';

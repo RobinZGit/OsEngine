@@ -84,13 +84,17 @@ CREATE OR REPLACE FUNCTION account_sell_all_at_market(p_account_id INTEGER)
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
 DECLARE
+    v_acc RECORD;
     v_pack JSONB;
     v_pos JSONB;
     v_type TEXT;
     v_figi TEXT;
     v_ticker TEXT;
+    v_shares NUMERIC;
+    v_blocked_lots NUMERIC;
+    v_lot INTEGER;
+    v_sell_shares NUMERIC;
     v_lots NUMERIC;
-    v_qty NUMERIC;
     v_price NUMERIC;
     v_dir TEXT;
     v_order JSONB;
@@ -98,6 +102,7 @@ DECLARE
     v_errors JSONB := '[]'::JSONB;
     v_skipped JSONB := '[]'::JSONB;
 BEGIN
+    SELECT * INTO v_acc FROM account_require_real_tbank(p_account_id) LIMIT 1;
     v_pack := fetch_tbank_portfolio_positions(p_account_id);
 
     FOR v_pos IN SELECT value FROM jsonb_array_elements(COALESCE(v_pack->'positions', '[]'::JSONB))
@@ -121,29 +126,56 @@ BEGIN
             CONTINUE;
         END IF;
 
-        v_lots := COALESCE(parse_tbank_quotation(v_pos->'quantityLots'), 0);
-        IF v_lots = 0 THEN
-            v_qty := COALESCE(parse_tbank_quotation(v_pos->'quantity'), 0);
-            -- без lot size считаем quantity уже в лотах, если целое
-            IF v_qty = trunc(v_qty) THEN
-                v_lots := v_qty;
+        -- quantity = штуки (актуально); quantityLots deprecated — не слать его в PostOrder как лоты
+        -- без повторного деления: tbank_post_order(..., shares, ..., is_lots=FALSE).
+        v_shares := COALESCE(parse_tbank_quotation(v_pos->'quantity'), 0);
+        v_blocked_lots := COALESCE(
+            parse_tbank_quotation(COALESCE(v_pos->'blockedLots', v_pos->'blocked_lots')),
+            0
+        );
+        v_lot := tbank_figi_lot_size(v_acc.api_url, v_acc.token, v_figi);
+        v_sell_shares := v_shares - (v_blocked_lots * v_lot);
+
+        -- Fallback: если quantity пустой, взять quantityLots × lot
+        IF abs(v_sell_shares) < v_lot THEN
+            v_lots := COALESCE(
+                parse_tbank_quotation(COALESCE(v_pos->'quantityLots', v_pos->'quantity_lots')),
+                0
+            ) - v_blocked_lots;
+            IF abs(v_lots) >= 1 THEN
+                v_sell_shares := v_lots * v_lot;
             END IF;
         END IF;
 
-        IF v_lots = 0 THEN
+        IF abs(v_sell_shares) < v_lot THEN
             v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
                 'figi', v_figi,
                 'ticker', v_ticker,
-                'reason', 'zero_lots'
+                'reason', 'zero_lots',
+                'shares', v_shares,
+                'blocked_lots', v_blocked_lots,
+                'lot', v_lot
             ));
             CONTINUE;
         END IF;
 
-        IF v_lots > 0 THEN
+        IF v_sell_shares > 0 THEN
             v_dir := 'SELL';
         ELSE
             v_dir := 'BUY';
-            v_lots := abs(v_lots);
+            v_sell_shares := abs(v_sell_shares);
+        END IF;
+
+        v_lots := floor(v_sell_shares / v_lot);
+        IF v_lots < 1 THEN
+            v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
+                'figi', v_figi,
+                'ticker', v_ticker,
+                'reason', 'below_one_lot',
+                'sell_shares', v_sell_shares,
+                'lot', v_lot
+            ));
+            CONTINUE;
         END IF;
 
         v_price := COALESCE(
@@ -154,12 +186,16 @@ BEGIN
         );
 
         BEGIN
-            -- Всегда рынок: кнопка «Продать всё» не зависит от order_execution логик.
-            v_order := tbank_post_order(p_account_id, v_figi, v_lots, v_price, v_dir, 'market', TRUE);
+            -- Уже лоты (посчитали из quantity−blocked). TRUE = не делить повторно.
+            v_order := tbank_post_order(
+                p_account_id, v_figi, v_lots, v_price, v_dir, 'market', TRUE
+            );
             v_sold := v_sold || jsonb_build_array(jsonb_build_object(
                 'figi', v_figi,
                 'ticker', v_ticker,
                 'lots', v_lots,
+                'shares', v_lots * v_lot,
+                'lot_size', v_lot,
                 'price', v_price,
                 'direction', v_dir,
                 'instrument_type', v_type,
@@ -171,6 +207,7 @@ BEGIN
                     'figi', v_figi,
                     'ticker', v_ticker,
                     'lots', v_lots,
+                    'shares', v_lots * v_lot,
                     'direction', v_dir,
                     'error', SQLERRM
                 ));
@@ -185,7 +222,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION account_sell_all_at_market(INTEGER) IS
-'Реальный T-Bank: market sell-all портфеля, затем book-close открытых позиций всех логик счёта (без повторного PostOrder)';
+'Реальный T-Bank: market sell-all по quantity(штуки)−blocked; PostOrder через shares→lots; затем book-close логик';
 
 -- Book-close after broker is already flat (or repair orphan opens).
 CREATE OR REPLACE FUNCTION account_book_close_logic_positions(

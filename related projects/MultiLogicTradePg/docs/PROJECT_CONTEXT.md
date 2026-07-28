@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — fix T-Bank PostOrder shares→lots (FLOT×10 oversize); refresh MOEX lot_size; installers; push
+**Последнее обновление:** 2026-07-28 — fix sell-all undersell after PostOrder lots (quantity shares→lots, is_lots=TRUE); installers; push
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (Продать всё: недопродажа после shares→lots)
+
+- **Симптом:** «Продать всё» на рынке продавало меньше лотов, чем было в портфеле.
+- **Причина:** после фикса PostOrder (штуки→лоты) sell-all продолжал брать `quantityLots` и слать без `is_lots=TRUE` → повторное `floor(lots/lot_size)` (напр. 13→1 при lot=10). Старый fallback «quantity=лоты» был неверен (`quantity` = штуки).
+- **Фикс:** sell-all считает лоты из `quantity`−`blockedLots`×lot; PostOrder с `TRUE`; hotfix-скрипт обновляет и sell-all.
 
 ### 2026-07-28 (бой: PostOrder штуки→лоты — перерасход FLOT)
 
@@ -789,6 +795,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Fix sell-all undersell (lots÷lot_size); quantity-based sell-all; installers; push |
 | 2026-07-28 | Fix PostOrder shares→lots (FLOT×10); refresh MOEX lot_size; installers; push |
 | 2026-07-28 | Row icons back right + sticky; hide secondary cols when tight; installers; push |
 | 2026-07-28 | Sticky left row actions (broom); remove per-row import/export; header I/O only; installers; push |

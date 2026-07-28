@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+745. push
+
+744. Check the button to sell everything on the market in positions. It seems to me that it sold not the amount of lots, less than there was, not everything sold. Check there is such a lot or not.
+
 743. push (after PostOrder lots fix)
 
 742. With remote servers, again, it took more than the balance on the account, although the first shoulder, we'll see why. (export live logic 1720 LinReg Fade copy 4 optimize — FLOT Short 13×75.27, commission 4.90)
