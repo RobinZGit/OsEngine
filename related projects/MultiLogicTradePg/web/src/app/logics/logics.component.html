@@ -1095,6 +1095,22 @@
 
                                 </label>
 
+                                <label
+                                  class="params-reset"
+                                  title="Только для SL «по бумаге и стороне с возобновлением»: при новой остановке цель track не ниже прежнего максимума (только вверх). По умолчанию выкл."
+                                  (click)="$event.stopPropagation()"
+                                >
+
+                                  <input
+                                    type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).resume_sl_no_reduce"
+                                    (ngModelChange)="onParamsResumeSlNoReduceChange(row.id, $event)"
+                                  />
+
+                                  Не снижать цель возобновления SL
+
+                                </label>
+
                                 <label class="params-reset" (click)="$event.stopPropagation()">
 
                                   <input

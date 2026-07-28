@@ -1119,7 +1119,14 @@ DECLARE
     v_port_paused BOOLEAN;
     v_side_name TEXT;
     v_side_paused BOOLEAN;
+    v_hwm NUMERIC;
+    v_target NUMERIC;
+    v_no_reduce BOOLEAN;
 BEGIN
+    v_no_reduce := COALESCE(
+        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+        FALSE
+    );
     FOR v_stop IN
         SELECT * FROM logic_stops ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
@@ -1264,8 +1271,12 @@ BEGIN
                         CASE WHEN v_side_name = 'long'
                             THEN COALESCE(st.stop_resume_baseline_long, st.stop_resume_baseline)
                             ELSE COALESCE(st.stop_resume_baseline_short, st.stop_resume_baseline)
+                        END,
+                        CASE WHEN v_side_name = 'long'
+                            THEN st.stop_resume_hwm_long
+                            ELSE st.stop_resume_hwm_short
                         END
-                    INTO v_side_paused, v_resume_equity, v_resume_baseline
+                    INTO v_side_paused, v_resume_equity, v_resume_baseline, v_hwm
                     FROM logic_backtest_security_state st
                     WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
 
@@ -1273,6 +1284,7 @@ BEGIN
                         v_side_paused := FALSE;
                         v_resume_equity := NULL;
                         v_resume_baseline := NULL;
+                        v_hwm := NULL;
                     END IF;
 
                     IF v_side_paused THEN
@@ -1320,6 +1332,9 @@ BEGIN
                     v_track_before := logic_backtest_security_side_track_value(
                         p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE, v_side_name
                     );
+                    v_target := logic_resume_sl_peak_target(
+                        p_logic_id, v_track_before, v_hwm
+                    );
                     SELECT *
                     INTO v_closed, p_balance
                     FROM logic_backtest_close_security(
@@ -1334,32 +1349,44 @@ BEGIN
                         INSERT INTO logic_backtest_security_state (
                             run_id, security_id, real_trading_paused,
                             real_trading_paused_long,
-                            stop_resume_equity_long, stop_resume_baseline_long
+                            stop_resume_equity_long, stop_resume_baseline_long,
+                            stop_resume_hwm_long
                         )
                         VALUES (
                             p_run_id, v_sec.security_id, TRUE,
-                            TRUE, v_track_before, v_track_after
+                            TRUE, v_target, v_track_after,
+                            CASE WHEN v_no_reduce THEN v_target ELSE NULL END
                         )
                         ON CONFLICT (run_id, security_id) DO UPDATE SET
                             real_trading_paused = TRUE,
                             real_trading_paused_long = TRUE,
                             stop_resume_equity_long = EXCLUDED.stop_resume_equity_long,
-                            stop_resume_baseline_long = EXCLUDED.stop_resume_baseline_long;
+                            stop_resume_baseline_long = EXCLUDED.stop_resume_baseline_long,
+                            stop_resume_hwm_long = CASE
+                                WHEN v_no_reduce THEN EXCLUDED.stop_resume_hwm_long
+                                ELSE logic_backtest_security_state.stop_resume_hwm_long
+                            END;
                     ELSE
                         INSERT INTO logic_backtest_security_state (
                             run_id, security_id, real_trading_paused,
                             real_trading_paused_short,
-                            stop_resume_equity_short, stop_resume_baseline_short
+                            stop_resume_equity_short, stop_resume_baseline_short,
+                            stop_resume_hwm_short
                         )
                         VALUES (
                             p_run_id, v_sec.security_id, TRUE,
-                            TRUE, v_track_before, v_track_after
+                            TRUE, v_target, v_track_after,
+                            CASE WHEN v_no_reduce THEN v_target ELSE NULL END
                         )
                         ON CONFLICT (run_id, security_id) DO UPDATE SET
                             real_trading_paused = TRUE,
                             real_trading_paused_short = TRUE,
                             stop_resume_equity_short = EXCLUDED.stop_resume_equity_short,
-                            stop_resume_baseline_short = EXCLUDED.stop_resume_baseline_short;
+                            stop_resume_baseline_short = EXCLUDED.stop_resume_baseline_short,
+                            stop_resume_hwm_short = CASE
+                                WHEN v_no_reduce THEN EXCLUDED.stop_resume_hwm_short
+                                ELSE logic_backtest_security_state.stop_resume_hwm_short
+                            END;
                     END IF;
                 END LOOP;
             END LOOP;

@@ -309,4 +309,5 @@
 162. «each testing should save your report… browser cache or Postgres… on the main page… top plushes… log button… forward-backward… saving should not interfere with testing… periodicity… separate process… immediately upload to the repository.»
 163. «Remake security_inversion stop-loss: same name; remove percent new / % инверсии; per paper start from scratch; growth does not arm inversion; SL % → shadow; when back to zero toggle inversion; same SL on inverted; through zero again flip back.»
 164. «Order buys on paper with best result / rating at the moment best PnL — if under ~50 lines do it.»
+165. «Logic param checkbox for stop-loss with renewal: do not reduce resume stake; default off; when on, on renew never lower resume target — only keep or raise (last max / HWM); paper may stay off to the end.»
 

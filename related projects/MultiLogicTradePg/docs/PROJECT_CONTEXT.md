@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — fix CI Pages: UPDATE parameter_values после CREATE (01); build 81 ship earlier
+**Последнее обновление:** 2026-07-28 — ship `resume_sl_no_reduce` (HWM for security_resume, default off) + installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (resume_sl_no_reduce — не снижать цель security_resume)
+
+- Param `resume_sl_no_reduce` (boolean, **default false**): UI checkbox «Не снижать цель возобновления SL» в параметрах логики.
+- Только для `security_resume`: при новой остановке цель = `GREATEST(HWM, track_before)`; HWM хранится в `stop_resume_hwm_long/short` (live + backtest); при resume HWM **не** сбрасывается.
+- Helper `logic_resume_sl_peak_target`; warm-up переносит HWM; API/Help/docs.
 
 ### 2026-07-28 (fix CI GitHub Pages — 01 parameter_values)
 
@@ -686,6 +692,7 @@
 - [x] Installer UX: короткий status text + progress bar ниже 100% во время post-install (2026-07-18).
 - [x] Stop-loss `security_inversion`: локальная инверсия по бумаге, runner/backtest/UI/chart support, SQL scripts synced, installer rebuilt (2026-07-18).
 - [x] Remake `security_inversion`: без `inversion_value`; toggle inverted при возврате shadow к нулю (2026-07-28).
+- [x] `resume_sl_no_reduce`: HWM цели security_resume (default off); live+backtest+UI; installers shipped (2026-07-28).
 - [x] `warmup_pretest`: preliminary test before enabling live for `security_resume`/`security_inversion`, transfer tested paper states to live, installer rebuilt (2026-07-18).
 - [x] Copy logic UX: success alert with new name; copy (+) button same black as edit/delete (2026-07-18).
 - [x] Fix install-over (No): clean npm + Angular CLI verify; fix launcher FreePorts Out-File (2026-07-18).
@@ -736,6 +743,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Ship resume_sl_no_reduce (HWM security_resume) + rebuild installers; push |
+| 2026-07-28 | resume_sl_no_reduce: HWM for security_resume (default off); live+backtest+UI+docs |
 | 2026-07-28 | Push: remake inversion SL; chart zones; PnL-first opens + mid-run panel hotfix; installers |
 | 2026-07-28 | Open priority: papers by closed PnL DESC (backtest+live+OPT); sync 02 |
 | 2026-07-28 | Remake security_inversion: drop inversion_value; SL→shadow→zero toggles invert (live+backtest+UI) |

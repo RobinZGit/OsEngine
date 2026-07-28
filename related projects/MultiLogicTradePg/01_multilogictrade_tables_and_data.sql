@@ -1311,6 +1311,8 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'Инверсия логики: условия наоборот (≥↔≤, >↔<) и сделки в противоположную сторону (Long↔Short)', 12),
     ('warmup_pretest', 'Прогрев (предварительное тестирование)', 'boolean', 'true',
      'Перед включением боя: прогнать тест за rating_lookback_days и перенести состояния бумаг для security_resume/security_inversion', 13),
+    ('resume_sl_no_reduce', 'Не снижать цель возобновления SL', 'boolean', 'false',
+     'Только для stop-loss «с возобновлением» (security_resume): при новой остановке цель track не ниже прежнего максимума (только вверх). Выкл. по умолчанию', 20),
     ('cash_fund_code', 'Денежный фонд (парк кэша)', 'text', '',
      'Пусто = не покупать. TMON / LQDT / SBMM — runner паркует избыток кэша на реальном счёте (1 раз на закрытую свечу TF)', 14),
     ('cash_fund_threshold', 'Порог портфеля (equity), ₽', 'money', '1000000',
@@ -1829,6 +1831,8 @@ CREATE TABLE IF NOT EXISTS logic_securities (
     stop_resume_equity_short NUMERIC(20, 6),
     stop_resume_baseline_short NUMERIC(20, 6),
     stop_resume_triggered_at_short TIMESTAMP,
+    stop_resume_hwm_long NUMERIC(20, 6),
+    stop_resume_hwm_short NUMERIC(20, 6),
     linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE,
     linear_tp_last_price NUMERIC(18, 6),
     linear_tp_arm_bar_dt TIMESTAMP,
@@ -1853,6 +1857,8 @@ ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at_l
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_equity_short NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_baseline_short NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_triggered_at_short TIMESTAMP;
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_hwm_long NUMERIC(20, 6);
+ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS stop_resume_hwm_short NUMERIC(20, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_last_price NUMERIC(18, 6);
 ALTER TABLE logic_securities ADD COLUMN IF NOT EXISTS linear_tp_arm_bar_dt TIMESTAMP;
@@ -1904,6 +1910,10 @@ COMMENT ON COLUMN logic_securities.stop_resume_equity_short IS
 'Цель возобновления реальной Short-торговли (track до SL по стороне)';
 COMMENT ON COLUMN logic_securities.stop_resume_baseline_short IS
 'Track Short сразу после SL (база для теневого восстановления)';
+COMMENT ON COLUMN logic_securities.stop_resume_hwm_long IS
+'High-water mark цели resume Long (resume_sl_no_reduce): не снижать ниже этого максимума';
+COMMENT ON COLUMN logic_securities.stop_resume_hwm_short IS
+'High-water mark цели resume Short (resume_sl_no_reduce)';
 COMMENT ON COLUMN logic_securities.linear_tp_armed IS
 'TRUE — линейный TP (security_ltp_renew) взведён: ждём снижения цены для продажи';
 COMMENT ON COLUMN logic_securities.linear_tp_last_price IS
@@ -4007,6 +4017,8 @@ CREATE TABLE IF NOT EXISTS logic_backtest_security_state (
     stop_resume_baseline_long NUMERIC(20, 6),
     stop_resume_equity_short NUMERIC(20, 6),
     stop_resume_baseline_short NUMERIC(20, 6),
+    stop_resume_hwm_long NUMERIC(20, 6),
+    stop_resume_hwm_short NUMERIC(20, 6),
     linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE,
     linear_tp_last_price NUMERIC(18, 6),
     linear_tp_arm_bar_dt TIMESTAMP,
@@ -4025,6 +4037,8 @@ ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_e
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline_long NUMERIC(20, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_equity_short NUMERIC(20, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_baseline_short NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_hwm_long NUMERIC(20, 6);
+ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS stop_resume_hwm_short NUMERIC(20, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_armed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_last_price NUMERIC(18, 6);
 ALTER TABLE logic_backtest_security_state ADD COLUMN IF NOT EXISTS linear_tp_arm_bar_dt TIMESTAMP;

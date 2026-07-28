@@ -291,6 +291,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: string;
       inversion: boolean;
       warmup_pretest: boolean;
+      resume_sl_no_reduce: boolean;
       cash_fund_code: string;
       cash_fund_threshold: string;
       use_non_trading_periods: boolean;
@@ -781,6 +782,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsResumeSlNoReduceChange(logicId: number, value: boolean): void {
+    this.getParamsDraft(logicId).resume_sl_no_reduce = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   onParamsCashFundCodeChange(logicId: number, value: string): void {
     this.getParamsDraft(logicId).cash_fund_code = String(value ?? '')
       .trim()
@@ -944,6 +951,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days?: number;
       inversion?: boolean;
       warmup_pretest?: boolean;
+      resume_sl_no_reduce?: boolean;
       cash_fund_code?: string;
       cash_fund_threshold?: number;
       use_non_trading_periods?: boolean;
@@ -973,6 +981,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     rating_lookback_days?: number;
     inversion?: boolean;
     warmup_pretest?: boolean;
+    resume_sl_no_reduce?: boolean;
     cash_fund_code?: string;
     cash_fund_threshold?: number;
     use_non_trading_periods?: boolean;
@@ -994,6 +1003,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     rating_lookback_days: string;
     inversion: boolean;
     warmup_pretest: boolean;
+    resume_sl_no_reduce: boolean;
     cash_fund_code: string;
     cash_fund_threshold: string;
     use_non_trading_periods: boolean;
@@ -1027,6 +1037,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: this.formatIntParam(trading.rating_lookback_days ?? 7, 7),
       inversion: !!trading.inversion,
       warmup_pretest: trading.warmup_pretest !== false,
+      resume_sl_no_reduce: trading.resume_sl_no_reduce === true,
       cash_fund_code,
       cash_fund_threshold: this.formatBalanceDraft(
         trading.cash_fund_threshold != null ? trading.cash_fund_threshold : 1000000
@@ -1075,6 +1086,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: row.rating_lookback_days,
       inversion: row.inversion,
       warmup_pretest: row.warmup_pretest,
+      resume_sl_no_reduce: row.resume_sl_no_reduce,
       cash_fund_code: row.cash_fund_code,
       cash_fund_threshold: row.cash_fund_threshold,
       use_non_trading_periods: row.use_non_trading_periods,
@@ -1204,6 +1216,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         rating_lookback_days,
         inversion: draft.inversion,
         warmup_pretest: draft.warmup_pretest,
+        resume_sl_no_reduce: draft.resume_sl_no_reduce,
         cash_fund_code,
         cash_fund_threshold,
         use_non_trading_periods: draft.use_non_trading_periods,

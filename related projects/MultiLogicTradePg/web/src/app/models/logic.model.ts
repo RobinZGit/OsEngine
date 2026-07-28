@@ -25,6 +25,11 @@ export interface LogicRow {
   portfolio_trading_paused?: boolean;
   /** Перед включением боя: предварительный тест для stop resume / inversion states. */
   warmup_pretest?: boolean;
+  /**
+   * security_resume: при повторном стопе цель возобновления не ниже прежнего максимума (HWM).
+   * По умолчанию выкл.
+   */
+  resume_sl_no_reduce?: boolean;
   /** Денежный фонд для парковки кэша: '' | TMON | LQDT | SBMM (runner later). */
   cash_fund_code?: string;
   /** Порог equity портфеля (₽): парковать min(кэш, equity−порог−уже_в_фонде). */
@@ -60,6 +65,7 @@ export interface LogicTradingParamsPayload {
   rating_lookback_days?: number;
   inversion?: boolean;
   warmup_pretest?: boolean;
+  resume_sl_no_reduce?: boolean;
   cash_fund_code?: string;
   cash_fund_threshold?: number;
   use_non_trading_periods?: boolean;
@@ -83,6 +89,7 @@ export interface LogicTradingParamsResponse {
   rating_lookback_days: number;
   inversion: boolean;
   warmup_pretest: boolean;
+  resume_sl_no_reduce: boolean;
   cash_fund_code: string;
   cash_fund_threshold: number;
   use_non_trading_periods: boolean;

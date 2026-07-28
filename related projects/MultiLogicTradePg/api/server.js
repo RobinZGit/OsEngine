@@ -156,7 +156,9 @@ async function transferWarmupSecurityState(pool, logicId, runId) {
       stop_resume_triggered_at_long = NULL,
       stop_resume_equity_short = NULL,
       stop_resume_baseline_short = NULL,
-      stop_resume_triggered_at_short = NULL
+      stop_resume_triggered_at_short = NULL,
+      stop_resume_hwm_long = NULL,
+      stop_resume_hwm_short = NULL
     WHERE logic_id = $1
     `,
     [logicId]
@@ -183,6 +185,8 @@ async function transferWarmupSecurityState(pool, logicId, runId) {
         WHEN COALESCE(st.real_trading_paused_short, FALSE) THEN CURRENT_TIMESTAMP
         ELSE NULL
       END,
+      stop_resume_hwm_long = st.stop_resume_hwm_long,
+      stop_resume_hwm_short = st.stop_resume_hwm_short,
       stop_resume_equity = NULL,
       stop_resume_baseline = NULL,
       stop_resume_triggered_at = CASE
@@ -4727,6 +4731,11 @@ function parseLogicTradingParams(body) {
 
   if (body?.warmup_pretest !== undefined) {
     out.warmup_pretest = Boolean(body.warmup_pretest);
+    hasField = true;
+  }
+
+  if (body?.resume_sl_no_reduce !== undefined) {
+    out.resume_sl_no_reduce = Boolean(body.resume_sl_no_reduce);
     hasField = true;
   }
 

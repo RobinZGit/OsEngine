@@ -916,6 +916,31 @@ BEGIN
 END;
 $$;
 
+-- Цель resume для security_resume: при resume_sl_no_reduce не ниже HWM (только вверх).
+CREATE OR REPLACE FUNCTION logic_resume_sl_peak_target(
+    p_logic_id INTEGER,
+    p_track_before NUMERIC,
+    p_hwm NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF NOT COALESCE(
+        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+        FALSE
+    ) THEN
+        RETURN p_track_before;
+    END IF;
+    RETURN GREATEST(
+        COALESCE(p_hwm, p_track_before),
+        COALESCE(p_track_before, 0)
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_resume_sl_peak_target(INTEGER, NUMERIC, NUMERIC) IS
+'security_resume: track_before или GREATEST(hwm, track_before) если resume_sl_no_reduce.';
+
 CREATE OR REPLACE FUNCTION logic_check_security_resume(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -1922,15 +1947,26 @@ BEGIN
                 DECLARE
                     v_side_name TEXT;
                     v_side_paused BOOLEAN;
+                    v_hwm NUMERIC;
+                    v_target NUMERIC;
+                    v_no_reduce BOOLEAN;
                 BEGIN
+                    v_no_reduce := COALESCE(
+                        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+                        FALSE
+                    );
                     FOREACH v_side_name IN ARRAY ARRAY['long', 'short']
                     LOOP
                         SELECT CASE
                             WHEN v_side_name = 'long'
                                 THEN COALESCE(ls.real_trading_paused_long, FALSE)
                             ELSE COALESCE(ls.real_trading_paused_short, FALSE)
+                        END,
+                        CASE
+                            WHEN v_side_name = 'long' THEN ls.stop_resume_hwm_long
+                            ELSE ls.stop_resume_hwm_short
                         END
-                        INTO v_side_paused
+                        INTO v_side_paused, v_hwm
                         FROM logic_securities ls
                         WHERE ls.logic_id = p_logic_id
                           AND ls.security_id = v_sec.security_id;
@@ -1949,19 +1985,24 @@ BEGIN
                         v_track_before := logic_security_side_track_value(
                             p_logic_id, v_sec.security_id, v_tf_id, FALSE, v_side_name
                         );
+                        v_target := logic_resume_sl_peak_target(
+                            p_logic_id, v_track_before, v_hwm
+                        );
                         PERFORM logic_trade_log(
                             p_logic_id, 'stop.trigger',
                             format(
-                                'SL с возобновлением sec=%s side=%s: просадка %s%% >= %s%%, track=%s',
+                                'SL с возобновлением sec=%s side=%s: просадка %s%% >= %s%%, track=%s target=%s',
                                 v_sec.security_id, v_side_name,
-                                round(v_drawdown, 4), v_stop.value, v_track_before
+                                round(v_drawdown, 4), v_stop.value, v_track_before, v_target
                             ),
                             jsonb_build_object(
                                 'security_id', v_sec.security_id,
                                 'position_side', v_side_name,
                                 'drawdown_pct', v_drawdown,
                                 'scope', 'security_resume',
-                                'track_before', v_track_before
+                                'track_before', v_track_before,
+                                'resume_target', v_target,
+                                'resume_sl_no_reduce', v_no_reduce
                             ),
                             v_sec.security_id, v_tf_id
                         );
@@ -1978,18 +2019,26 @@ BEGIN
                         IF v_side_name = 'long' THEN
                             UPDATE logic_securities
                             SET real_trading_paused_long = TRUE,
-                                stop_resume_equity_long = v_track_before,
+                                stop_resume_equity_long = v_target,
                                 stop_resume_baseline_long = v_track_after,
                                 stop_resume_triggered_at_long = CURRENT_TIMESTAMP,
+                                stop_resume_hwm_long = CASE
+                                    WHEN v_no_reduce THEN v_target
+                                    ELSE stop_resume_hwm_long
+                                END,
                                 real_trading_paused = TRUE
                             WHERE logic_id = p_logic_id
                               AND security_id = v_sec.security_id;
                         ELSE
                             UPDATE logic_securities
                             SET real_trading_paused_short = TRUE,
-                                stop_resume_equity_short = v_track_before,
+                                stop_resume_equity_short = v_target,
                                 stop_resume_baseline_short = v_track_after,
                                 stop_resume_triggered_at_short = CURRENT_TIMESTAMP,
+                                stop_resume_hwm_short = CASE
+                                    WHEN v_no_reduce THEN v_target
+                                    ELSE stop_resume_hwm_short
+                                END,
                                 real_trading_paused = TRUE
                             WHERE logic_id = p_logic_id
                               AND security_id = v_sec.security_id;

@@ -4573,6 +4573,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7262,6 +7264,31 @@ BEGIN
 END;
 $$;
 
+-- Цель resume для security_resume: при resume_sl_no_reduce не ниже HWM (только вверх).
+CREATE OR REPLACE FUNCTION logic_resume_sl_peak_target(
+    p_logic_id INTEGER,
+    p_track_before NUMERIC,
+    p_hwm NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF NOT COALESCE(
+        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+        FALSE
+    ) THEN
+        RETURN p_track_before;
+    END IF;
+    RETURN GREATEST(
+        COALESCE(p_hwm, p_track_before),
+        COALESCE(p_track_before, 0)
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_resume_sl_peak_target(INTEGER, NUMERIC, NUMERIC) IS
+'security_resume: track_before или GREATEST(hwm, track_before) если resume_sl_no_reduce.';
+
 CREATE OR REPLACE FUNCTION logic_check_security_resume(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -8268,15 +8295,26 @@ BEGIN
                 DECLARE
                     v_side_name TEXT;
                     v_side_paused BOOLEAN;
+                    v_hwm NUMERIC;
+                    v_target NUMERIC;
+                    v_no_reduce BOOLEAN;
                 BEGIN
+                    v_no_reduce := COALESCE(
+                        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+                        FALSE
+                    );
                     FOREACH v_side_name IN ARRAY ARRAY['long', 'short']
                     LOOP
                         SELECT CASE
                             WHEN v_side_name = 'long'
                                 THEN COALESCE(ls.real_trading_paused_long, FALSE)
                             ELSE COALESCE(ls.real_trading_paused_short, FALSE)
+                        END,
+                        CASE
+                            WHEN v_side_name = 'long' THEN ls.stop_resume_hwm_long
+                            ELSE ls.stop_resume_hwm_short
                         END
-                        INTO v_side_paused
+                        INTO v_side_paused, v_hwm
                         FROM logic_securities ls
                         WHERE ls.logic_id = p_logic_id
                           AND ls.security_id = v_sec.security_id;
@@ -8295,19 +8333,24 @@ BEGIN
                         v_track_before := logic_security_side_track_value(
                             p_logic_id, v_sec.security_id, v_tf_id, FALSE, v_side_name
                         );
+                        v_target := logic_resume_sl_peak_target(
+                            p_logic_id, v_track_before, v_hwm
+                        );
                         PERFORM logic_trade_log(
                             p_logic_id, 'stop.trigger',
                             format(
-                                'SL с возобновлением sec=%s side=%s: просадка %s%% >= %s%%, track=%s',
+                                'SL с возобновлением sec=%s side=%s: просадка %s%% >= %s%%, track=%s target=%s',
                                 v_sec.security_id, v_side_name,
-                                round(v_drawdown, 4), v_stop.value, v_track_before
+                                round(v_drawdown, 4), v_stop.value, v_track_before, v_target
                             ),
                             jsonb_build_object(
                                 'security_id', v_sec.security_id,
                                 'position_side', v_side_name,
                                 'drawdown_pct', v_drawdown,
                                 'scope', 'security_resume',
-                                'track_before', v_track_before
+                                'track_before', v_track_before,
+                                'resume_target', v_target,
+                                'resume_sl_no_reduce', v_no_reduce
                             ),
                             v_sec.security_id, v_tf_id
                         );
@@ -8324,18 +8367,26 @@ BEGIN
                         IF v_side_name = 'long' THEN
                             UPDATE logic_securities
                             SET real_trading_paused_long = TRUE,
-                                stop_resume_equity_long = v_track_before,
+                                stop_resume_equity_long = v_target,
                                 stop_resume_baseline_long = v_track_after,
                                 stop_resume_triggered_at_long = CURRENT_TIMESTAMP,
+                                stop_resume_hwm_long = CASE
+                                    WHEN v_no_reduce THEN v_target
+                                    ELSE stop_resume_hwm_long
+                                END,
                                 real_trading_paused = TRUE
                             WHERE logic_id = p_logic_id
                               AND security_id = v_sec.security_id;
                         ELSE
                             UPDATE logic_securities
                             SET real_trading_paused_short = TRUE,
-                                stop_resume_equity_short = v_track_before,
+                                stop_resume_equity_short = v_target,
                                 stop_resume_baseline_short = v_track_after,
                                 stop_resume_triggered_at_short = CURRENT_TIMESTAMP,
+                                stop_resume_hwm_short = CASE
+                                    WHEN v_no_reduce THEN v_target
+                                    ELSE stop_resume_hwm_short
+                                END,
                                 real_trading_paused = TRUE
                             WHERE logic_id = p_logic_id
                               AND security_id = v_sec.security_id;
@@ -8950,6 +9001,62 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -16692,7 +16799,14 @@ DECLARE
     v_port_paused BOOLEAN;
     v_side_name TEXT;
     v_side_paused BOOLEAN;
+    v_hwm NUMERIC;
+    v_target NUMERIC;
+    v_no_reduce BOOLEAN;
 BEGIN
+    v_no_reduce := COALESCE(
+        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+        FALSE
+    );
     FOR v_stop IN
         SELECT * FROM logic_stops ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
@@ -16837,8 +16951,12 @@ BEGIN
                         CASE WHEN v_side_name = 'long'
                             THEN COALESCE(st.stop_resume_baseline_long, st.stop_resume_baseline)
                             ELSE COALESCE(st.stop_resume_baseline_short, st.stop_resume_baseline)
+                        END,
+                        CASE WHEN v_side_name = 'long'
+                            THEN st.stop_resume_hwm_long
+                            ELSE st.stop_resume_hwm_short
                         END
-                    INTO v_side_paused, v_resume_equity, v_resume_baseline
+                    INTO v_side_paused, v_resume_equity, v_resume_baseline, v_hwm
                     FROM logic_backtest_security_state st
                     WHERE st.run_id = p_run_id AND st.security_id = v_sec.security_id;
 
@@ -16846,6 +16964,7 @@ BEGIN
                         v_side_paused := FALSE;
                         v_resume_equity := NULL;
                         v_resume_baseline := NULL;
+                        v_hwm := NULL;
                     END IF;
 
                     IF v_side_paused THEN
@@ -16893,6 +17012,9 @@ BEGIN
                     v_track_before := logic_backtest_security_side_track_value(
                         p_logic_id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE, v_side_name
                     );
+                    v_target := logic_resume_sl_peak_target(
+                        p_logic_id, v_track_before, v_hwm
+                    );
                     SELECT *
                     INTO v_closed, p_balance
                     FROM logic_backtest_close_security(
@@ -16907,32 +17029,44 @@ BEGIN
                         INSERT INTO logic_backtest_security_state (
                             run_id, security_id, real_trading_paused,
                             real_trading_paused_long,
-                            stop_resume_equity_long, stop_resume_baseline_long
+                            stop_resume_equity_long, stop_resume_baseline_long,
+                            stop_resume_hwm_long
                         )
                         VALUES (
                             p_run_id, v_sec.security_id, TRUE,
-                            TRUE, v_track_before, v_track_after
+                            TRUE, v_target, v_track_after,
+                            CASE WHEN v_no_reduce THEN v_target ELSE NULL END
                         )
                         ON CONFLICT (run_id, security_id) DO UPDATE SET
                             real_trading_paused = TRUE,
                             real_trading_paused_long = TRUE,
                             stop_resume_equity_long = EXCLUDED.stop_resume_equity_long,
-                            stop_resume_baseline_long = EXCLUDED.stop_resume_baseline_long;
+                            stop_resume_baseline_long = EXCLUDED.stop_resume_baseline_long,
+                            stop_resume_hwm_long = CASE
+                                WHEN v_no_reduce THEN EXCLUDED.stop_resume_hwm_long
+                                ELSE logic_backtest_security_state.stop_resume_hwm_long
+                            END;
                     ELSE
                         INSERT INTO logic_backtest_security_state (
                             run_id, security_id, real_trading_paused,
                             real_trading_paused_short,
-                            stop_resume_equity_short, stop_resume_baseline_short
+                            stop_resume_equity_short, stop_resume_baseline_short,
+                            stop_resume_hwm_short
                         )
                         VALUES (
                             p_run_id, v_sec.security_id, TRUE,
-                            TRUE, v_track_before, v_track_after
+                            TRUE, v_target, v_track_after,
+                            CASE WHEN v_no_reduce THEN v_target ELSE NULL END
                         )
                         ON CONFLICT (run_id, security_id) DO UPDATE SET
                             real_trading_paused = TRUE,
                             real_trading_paused_short = TRUE,
                             stop_resume_equity_short = EXCLUDED.stop_resume_equity_short,
-                            stop_resume_baseline_short = EXCLUDED.stop_resume_baseline_short;
+                            stop_resume_baseline_short = EXCLUDED.stop_resume_baseline_short,
+                            stop_resume_hwm_short = CASE
+                                WHEN v_no_reduce THEN EXCLUDED.stop_resume_hwm_short
+                                ELSE logic_backtest_security_state.stop_resume_hwm_short
+                            END;
                     END IF;
                 END LOOP;
             END LOOP;
@@ -19380,6 +19514,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
 
 
 

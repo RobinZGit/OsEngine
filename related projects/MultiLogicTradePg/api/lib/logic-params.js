@@ -16,6 +16,7 @@ const PARAM_KEYS = {
   RATING_LOOKBACK_DAYS: 'rating_lookback_days',
   INVERSION: 'inversion',
   WARMUP_PRETEST: 'warmup_pretest',
+  RESUME_SL_NO_REDUCE: 'resume_sl_no_reduce',
   CASH_FUND_CODE: 'cash_fund_code',
   CASH_FUND_THRESHOLD: 'cash_fund_threshold',
   USE_NON_TRADING_PERIODS: 'use_non_trading_periods',
@@ -41,6 +42,7 @@ const DEFAULTS = {
   [PARAM_KEYS.RATING_LOOKBACK_DAYS]: { value: '7', type: 'integer' },
   [PARAM_KEYS.INVERSION]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.WARMUP_PRETEST]: { value: 'true', type: 'boolean' },
+  [PARAM_KEYS.RESUME_SL_NO_REDUCE]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.CASH_FUND_CODE]: { value: '', type: 'text' },
   [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '1000000', type: 'money' },
   [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
@@ -135,6 +137,7 @@ function rowsToTradingParams(rows) {
         : 7,
     inversion: map[PARAM_KEYS.INVERSION] === true,
     warmup_pretest: map[PARAM_KEYS.WARMUP_PRETEST] !== false,
+    resume_sl_no_reduce: map[PARAM_KEYS.RESUME_SL_NO_REDUCE] === true,
     cash_fund_code: (() => {
       const raw =
         map[PARAM_KEYS.CASH_FUND_CODE] != null
@@ -443,6 +446,16 @@ async function saveTradingParams(pool, logicId, payload) {
       logicId,
       PARAM_KEYS.WARMUP_PRETEST,
       payload.warmup_pretest ? 'true' : 'false',
+      'boolean'
+    );
+  }
+
+  if (payload.resume_sl_no_reduce !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.RESUME_SL_NO_REDUCE,
+      payload.resume_sl_no_reduce ? 'true' : 'false',
       'boolean'
     );
   }
