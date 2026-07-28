@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — push: remake security_inversion (без % инверсии); зоны green/gray/pink; opens по PnL DESC; hotfix mid-run empty panel; installers
+**Последнее обновление:** 2026-07-28 — fix CI Pages: UPDATE parameter_values после CREATE (01); build 81 ship earlier
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-28)
+
+### 2026-07-28 (fix CI GitHub Pages — 01 parameter_values)
+
+- **Ошибка:** `relation "parameter_values" does not exist` на `UPDATE parameter_values` (v57 cleanup default) — UPDATE стоял **до** `CREATE TABLE parameter_values`.
+- **Фикс:** перенести UPDATE сразу после seed `parameter_values`.
 
 ### 2026-07-28 (приоритет открытия: лучший PnL бумаги)
 

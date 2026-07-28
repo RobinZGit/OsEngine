@@ -643,16 +643,6 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', '')
 ON CONFLICT (short_name) DO NOTHING;
 
--- v57: автоочистка диска по умолчанию ON (обрезка indicator_values в cleanup)
-UPDATE parameter_values pv
-SET value = '1'
-FROM parameter_types pt, parameter_sets ps
-WHERE pv.parameter_type_id = pt.id
-  AND pv.parameter_set_id = ps.id
-  AND ps.name = 'Default'
-  AND pt.short_name = 'APP_CLEANUP_DISK'
-  AND COALESCE(pv.value, '0') IS DISTINCT FROM '1';
-
 
 
 -- ============================================
@@ -717,6 +707,17 @@ FROM parameter_sets ps
 JOIN parameter_types pt ON pt.short_name = 'TBANK_API_TOKEN'
 WHERE ps.name = 'Default'
 ON CONFLICT (parameter_set_id, parameter_type_id) DO NOTHING;
+
+-- v57: автоочистка диска по умолчанию ON (обрезка indicator_values в cleanup).
+-- После CREATE/seed parameter_values — иначе fresh DB в CI падает (relation does not exist).
+UPDATE parameter_values pv
+SET value = '1'
+FROM parameter_types pt, parameter_sets ps
+WHERE pv.parameter_type_id = pt.id
+  AND pv.parameter_set_id = ps.id
+  AND ps.name = 'Default'
+  AND pt.short_name = 'APP_CLEANUP_DISK'
+  AND COALESCE(pv.value, '0') IS DISTINCT FROM '1';
 
 -- ============================================
 -- Таблица: indicators (справочник индикаторов)
