@@ -441,7 +441,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
       const next = {
         markers: buildTradeMarkers(secTrades),
         stops: buildStopMarkers(secTrades),
-        shaded: buildShadedDisabledRanges(secTrades),
+        shaded: buildShadedDisabledRanges(secTrades, this.dateFrom, this.dateTo),
         equity: buildEquityPoints(secTrades, this.dateFrom),
         equityLong: buildEquityPoints(secTrades, this.dateFrom, 'long'),
         equityShort: buildEquityPoints(secTrades, this.dateFrom, 'short'),

@@ -43,7 +43,6 @@ import {
   isStopScopeChoosable,
   ruleKindLabel,
   scopeTypeLabel,
-  stopNeedsInversionValue,
   stopScopesForRuleKind,
   valueUnitLabel,
 } from '../shared/logic-stop';
@@ -81,7 +80,6 @@ type StopFormState = {
 type StopFormDraft = {
   scope_type: LogicStopScopeType;
   value: string;
-  inversion_value: string;
   value_unit: LogicStopValueUnit;
 };
 
@@ -250,14 +248,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   stopFormDraft: StopFormDraft = {
     scope_type: 'security_resume',
     value: '',
-    inversion_value: '',
     value_unit: 'percent',
   };
 
   readonly stopUnits = LOGIC_STOP_UNITS;
   stopScopesFor = stopScopesForRuleKind;
   isStopScopeChoosable = isStopScopeChoosable;
-  stopNeedsInversionValue = stopNeedsInversionValue;
 
   tbankTokenDialogOpen = false;
   tbankTokenDialogContext: 'prices' | 'logic' | 'trades' = 'logic';
@@ -2143,7 +2139,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
       // SL: по бумаге×стороне с возобновлением; TP: только по бумаге (портфельные TP недоступны)
       scope_type: ruleKind === 'stop_loss' ? 'security_resume' : 'security',
       value: '',
-      inversion_value: '',
       value_unit: 'percent',
     };
     if (!this.expandedLogics.has(logicId)) {
@@ -2175,21 +2170,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
       alert('Этот тип правила сейчас недоступен для выбора');
       return;
     }
-    let inversionValue: number | null = null;
-    if (stopNeedsInversionValue(this.stopFormDraft.scope_type, ruleKind)) {
-      inversionValue = Number(this.stopFormDraft.inversion_value.replace(',', '.'));
-      if (!Number.isFinite(inversionValue) || inversionValue <= 0) {
-        alert('Укажите положительное число в поле «% инверсии»');
-        return;
-      }
-    }
     this.logicsService
       .createLogicStop({
         logic_id: logicId,
         rule_kind: ruleKind,
         scope_type: this.stopFormDraft.scope_type,
         value,
-        inversion_value: inversionValue,
         value_unit: this.stopFormDraft.value_unit,
       })
       .subscribe({
@@ -2209,7 +2195,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
     patch: {
       scope_type?: LogicStopScopeType;
       value?: number;
-      inversion_value?: number | null;
       value_unit?: LogicStopValueUnit;
     }
   ): void {
@@ -2219,22 +2204,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
       !isStopScopeChoosable(patch.scope_type, stop.rule_kind)
     ) {
       return;
-    }
-    // Switching to inversion: default % инверсии from current «Значение» so the
-    // column unlocks (otherwise field stays disabled until inversion_value exists).
-    if (
-      patch.scope_type === 'security_inversion' &&
-      (patch.inversion_value == null || Number(patch.inversion_value) <= 0) &&
-      (stop.inversion_value == null || Number(stop.inversion_value) <= 0)
-    ) {
-      const fallback = Number(stop.value);
-      patch = {
-        ...patch,
-        inversion_value: Number.isFinite(fallback) && fallback > 0 ? fallback : 1,
-      };
-    }
-    if (patch.scope_type != null && patch.scope_type !== 'security_inversion') {
-      patch = { ...patch, inversion_value: null };
     }
     this.savingStopIds.add(stop.id);
     this.logicsService.updateLogicStop(stop.id, patch).subscribe({
@@ -2254,17 +2223,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Add-form: when type becomes inversion, unlock and prefill % инверсии. */
   onStopFormScopeChange(scope: LogicStopScopeType): void {
     this.stopFormDraft.scope_type = scope;
-    if (
-      this.stopForm &&
-      stopNeedsInversionValue(scope, this.stopForm.ruleKind) &&
-      !String(this.stopFormDraft.inversion_value || '').trim()
-    ) {
-      const fromValue = String(this.stopFormDraft.value || '').trim();
-      this.stopFormDraft.inversion_value = fromValue || '1';
-    }
   }
 
   onStopValueBlur(stop: LogicStopRow, raw: string): void {
@@ -2273,19 +2233,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return;
     }
     this.saveStopRow(stop, { value });
-  }
-
-  onStopInversionValueBlur(stop: LogicStopRow, raw: string): void {
-    if (!stopNeedsInversionValue(stop.scope_type, stop.rule_kind)) return;
-    const inversionValue = Number(String(raw).replace(',', '.'));
-    if (
-      !Number.isFinite(inversionValue) ||
-      inversionValue <= 0 ||
-      inversionValue === Number(stop.inversion_value)
-    ) {
-      return;
-    }
-    this.saveStopRow(stop, { inversion_value: inversionValue });
   }
 
   deleteStop(stop: LogicStopRow, event: Event): void {
@@ -3198,8 +3145,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
       // Full 50k dump only after finish (OPT paper would freeze the tab).
       if (testOpen) {
         this.loadTestEquityForLogic(id);
-        // Panel feed: every heavy tick mid-run (not every 2s) to keep tab responsive.
-        if (testing && heavyTick) {
+        // Mid-run: refresh panel every poll (not only heavyTick) so a timed-out
+        // request can retry soon; full dump still only after finish.
+        if (testing) {
           this.loadTestTradesPanelForLogic(id);
         }
       } else if (!testing) {
@@ -3222,8 +3170,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.logicsService
       .getLogicTradesTestPanel(id, runId, 2500)
       .pipe(
-        // Hung pool (vacuum / old per-row remaining_qty) used to stick inFlight forever → empty panel.
-        timeout(45_000),
+        // Prefer fail-fast retry over long hang: empty panel while FinRes moves.
+        timeout(20_000),
         takeUntil(this.destroy$),
         finalize(() => this.testTradesInFlight.delete(id))
       )
@@ -3240,7 +3188,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.cdr.markForCheck();
         },
         error: () => {
-          /* timeout / network — finalize clears inFlight; heavyTick retries */
+          /* timeout / network — finalize clears inFlight; next poll retries */
         },
       });
   }

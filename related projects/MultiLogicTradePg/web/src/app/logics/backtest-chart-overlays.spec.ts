@@ -275,37 +275,40 @@ describe('backtest-chart-overlays', () => {
     expect(markers[1].ruleKind).toBe('take_profit');
   });
 
-  it('buildShadedDisabledRanges marks shadow windows green-kind', () => {
-    const ranges = buildShadedDisabledRanges([
-      trade({ bar_dt: '2026-04-10 10:00:00', is_shadow: false, side_name: 'Open' }),
-      trade({
-        id: 2,
-        bar_dt: '2026-04-10 11:00:00',
-        side_name: 'Close',
-        trade_reason: 'stop_loss:security',
-      }),
-      trade({
-        id: 3,
-        bar_dt: '2026-04-10 12:00:00',
-        is_shadow: true,
-        side_name: 'Open',
-      }),
-      trade({
-        id: 4,
-        bar_dt: '2026-04-10 13:00:00',
-        is_shadow: false,
-        side_name: 'Open',
-      }),
-    ]);
-    expect(ranges.length).toBeGreaterThan(0);
-    expect(ranges[0].kind).toBe('shadow');
-    expect(ranges[0].label).toBe('shadow');
-    expect(ranges[0].startDt).toBe('2026-04-10 11:00:00');
-    expect(ranges[0].endDt).toBe('2026-04-10 13:00:00');
+  it('buildShadedDisabledRanges: green normal → gray shadow → green again', () => {
+    const ranges = buildShadedDisabledRanges(
+      [
+        trade({ bar_dt: '2026-04-10 10:00:00', is_shadow: false, side_name: 'Open' }),
+        trade({
+          id: 2,
+          bar_dt: '2026-04-10 11:00:00',
+          side_name: 'Close',
+          trade_reason: 'stop_loss:security',
+        }),
+        trade({
+          id: 3,
+          bar_dt: '2026-04-10 12:00:00',
+          is_shadow: true,
+          side_name: 'Open',
+        }),
+        trade({
+          id: 4,
+          bar_dt: '2026-04-10 13:00:00',
+          is_shadow: false,
+          side_name: 'Open',
+        }),
+      ],
+      '2026-04-10 09:00:00',
+      '2026-04-10 15:00:00'
+    );
+    expect(ranges.map((r) => r.kind)).toEqual(['normal', 'shadow', 'normal']);
+    expect(ranges[0].startDt).toBe('2026-04-10 09:00:00');
+    expect(ranges[1].startDt).toBe('2026-04-10 11:00:00');
+    expect(ranges[1].endDt).toBe('2026-04-10 13:00:00');
+    expect(ranges[2].kind).toBe('normal');
   });
 
-  it('buildShadedDisabledRanges keeps off through take_profit until real Open', () => {
-    // Как PHOR/ФосАгро: stop → shadow opens → TP close (без реального Open)
+  it('buildShadedDisabledRanges keeps shadow through take_profit until real Open', () => {
     const ranges = buildShadedDisabledRanges([
       trade({ bar_dt: '2026-06-23 11:00:00', side_name: 'Open' }),
       trade({
@@ -329,31 +332,58 @@ describe('backtest-chart-overlays', () => {
         financial_result: 358,
       }),
     ]);
-    expect(ranges.length).toBe(1);
-    expect(ranges[0].kind).toBe('shadow');
-    expect(ranges[0].startDt).toBe('2026-06-23 19:15:00');
-    expect(ranges[0].endDt).toBe('2026-06-24 17:15:00');
+    expect(ranges.map((r) => r.kind)).toEqual(['normal', 'shadow']);
+    expect(ranges[1].startDt).toBe('2026-06-23 19:15:00');
+    expect(ranges[1].endDt).toBe('2026-06-24 17:15:00');
   });
 
-  it('buildShadedDisabledRanges uses paused when stop without shadow trades', () => {
+  it('buildShadedDisabledRanges: security_inversion toggles pink after shadow→zero', () => {
     const ranges = buildShadedDisabledRanges([
       trade({ bar_dt: '2026-04-10 10:00:00', side_name: 'Open' }),
       trade({
         id: 2,
         bar_dt: '2026-04-10 11:00:00',
         side_name: 'Close',
-        trade_reason: 'stop_loss:security',
+        trade_reason: 'stop_loss:security_inversion',
       }),
       trade({
         id: 3,
-        bar_dt: '2026-04-10 14:00:00',
+        bar_dt: '2026-04-10 12:00:00',
+        is_shadow: true,
         side_name: 'Open',
+      }),
+      trade({
+        id: 4,
+        bar_dt: '2026-04-10 13:00:00',
         is_shadow: false,
+        side_name: 'Open',
+      }),
+      trade({
+        id: 5,
+        bar_dt: '2026-04-10 14:00:00',
+        side_name: 'Close',
+        trade_reason: 'stop_loss:security_inversion:inverted',
+      }),
+      trade({
+        id: 6,
+        bar_dt: '2026-04-10 15:00:00',
+        is_shadow: true,
+        side_name: 'Open',
+      }),
+      trade({
+        id: 7,
+        bar_dt: '2026-04-10 16:00:00',
+        is_shadow: false,
+        side_name: 'Open',
       }),
     ]);
-    expect(ranges.length).toBe(1);
-    expect(ranges[0].kind).toBe('paused');
-    expect(ranges[0].label).toBe('выкл.');
+    expect(ranges.map((r) => r.kind)).toEqual([
+      'normal',
+      'shadow',
+      'inverted',
+      'shadow',
+      'normal',
+    ]);
   });
 
   it('tradeDtWindow returns first and last trade bar_dt', () => {

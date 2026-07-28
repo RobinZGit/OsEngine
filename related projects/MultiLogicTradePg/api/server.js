@@ -2572,11 +2572,6 @@ app.post('/api/logic-stops', async (req, res) => {
   const scopeType = btrimStr(req.body?.scope_type);
   const valueUnit = btrimStr(req.body?.value_unit);
   const value = Number(req.body?.value);
-  const inversionRaw = req.body?.inversion_value;
-  const inversionValue =
-    inversionRaw != null && inversionRaw !== ''
-      ? Number(inversionRaw)
-      : null;
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
     return;
@@ -2611,14 +2606,6 @@ app.post('/api/logic-stops', async (req, res) => {
     res.status(400).json({ error: 'value must be a positive number' });
     return;
   }
-  const needsInversion = ruleKind === 'stop_loss' && scopeType === 'security_inversion';
-  if (needsInversion && (!Number.isFinite(inversionValue) || inversionValue <= 0)) {
-    res.status(400).json({
-      error: 'inversion_value must be a positive number for security_inversion',
-    });
-    return;
-  }
-  const storedInversion = needsInversion ? inversionValue : null;
   try {
     const { rows: orderRows } = await pool.query(
       `SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order
@@ -2630,13 +2617,13 @@ app.post('/api/logic-stops', async (req, res) => {
       `
       INSERT INTO logic_stops
         (logic_id, rule_kind, scope_type, value, inversion_value, value_unit, display_order)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, NULL, $5, $6)
       RETURNING id, logic_id, rule_kind, scope_type,
         value::float8 AS value,
         inversion_value::float8 AS inversion_value,
         value_unit, display_order, is_active, created_at
       `,
-      [logicId, ruleKind, scopeType, value, storedInversion, valueUnit, displayOrder]
+      [logicId, ruleKind, scopeType, value, valueUnit, displayOrder]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -2650,17 +2637,6 @@ app.put('/api/logic-stops/:id', async (req, res) => {
   const scopeType = req.body?.scope_type != null ? btrimStr(req.body.scope_type) : null;
   const valueUnit = req.body?.value_unit != null ? btrimStr(req.body.value_unit) : null;
   const value = req.body?.value != null ? Number(req.body.value) : null;
-  const hasInversionPatch = Object.prototype.hasOwnProperty.call(
-    req.body ?? {},
-    'inversion_value'
-  );
-  const inversionRaw = hasInversionPatch ? req.body.inversion_value : undefined;
-  const inversionValue =
-    hasInversionPatch && inversionRaw != null && inversionRaw !== ''
-      ? Number(inversionRaw)
-      : hasInversionPatch
-        ? null
-        : undefined;
   const isActive = req.body?.is_active;
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Invalid id' });
@@ -2674,17 +2650,9 @@ app.put('/api/logic-stops/:id', async (req, res) => {
     res.status(400).json({ error: 'value must be a positive number' });
     return;
   }
-  if (
-    hasInversionPatch &&
-    inversionValue != null &&
-    (!Number.isFinite(inversionValue) || inversionValue <= 0)
-  ) {
-    res.status(400).json({ error: 'inversion_value must be a positive number' });
-    return;
-  }
   try {
     const { rows: existingRows } = await pool.query(
-      'SELECT rule_kind, scope_type, inversion_value FROM logic_stops WHERE id = $1',
+      'SELECT rule_kind, scope_type FROM logic_stops WHERE id = $1',
       [id]
     );
     if (existingRows.length === 0) {
@@ -2692,7 +2660,6 @@ app.put('/api/logic-stops/:id', async (req, res) => {
       return;
     }
     const ruleKind = existingRows[0].rule_kind;
-    const nextScope = scopeType || existingRows[0].scope_type;
     if (scopeType) {
       if (!isScopeValidForRuleKind(ruleKind, scopeType)) {
         res.status(400).json({
@@ -2713,18 +2680,6 @@ app.put('/api/logic-stops/:id', async (req, res) => {
         return;
       }
     }
-    const needsInversion =
-      ruleKind === 'stop_loss' && nextScope === 'security_inversion';
-    if (needsInversion) {
-      const priorInv = existingRows[0].inversion_value;
-      const effectiveInv = hasInversionPatch ? inversionValue : priorInv;
-      if (effectiveInv == null || !Number.isFinite(Number(effectiveInv)) || Number(effectiveInv) <= 0) {
-        res.status(400).json({
-          error: 'inversion_value must be a positive number for security_inversion',
-        });
-        return;
-      }
-    }
 
     const { rows } = await pool.query(
       `
@@ -2733,11 +2688,7 @@ app.put('/api/logic-stops/:id', async (req, res) => {
           value = COALESCE($3, value),
           value_unit = COALESCE($4, value_unit),
           is_active = COALESCE($5::boolean, is_active),
-          inversion_value = CASE
-            WHEN $6::boolean THEN $7::numeric
-            WHEN $2 IS NOT NULL AND $2 <> 'security_inversion' THEN NULL
-            ELSE inversion_value
-          END
+          inversion_value = NULL
       WHERE id = $1
       RETURNING id, logic_id, rule_kind, scope_type,
         value::float8 AS value,
@@ -2750,12 +2701,6 @@ app.put('/api/logic-stops/:id', async (req, res) => {
         value != null ? value : null,
         valueUnit || null,
         isActive === undefined ? null : isActive,
-        hasInversionPatch || (scopeType != null && !needsInversion),
-        hasInversionPatch
-          ? inversionValue
-          : scopeType != null && !needsInversion
-            ? null
-            : null,
       ]
     );
     if (rows.length === 0) {

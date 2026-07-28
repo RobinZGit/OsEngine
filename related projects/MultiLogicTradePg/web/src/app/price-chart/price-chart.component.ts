@@ -948,26 +948,26 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       if (i1 < i0) [i0, i1] = [i1, i0];
       const x0 = left + i0 * candleWidth;
       const x1 = left + (i1 + 1) * candleWidth;
-      const kind = range.kind ?? 'paused';
-      // Бледные зоны: green = shadow; gray = бумага выкл.; pink = инверсия.
+      const kind = range.kind ?? 'normal';
+      // Бледные зоны: green = обычная логика; gray = shadow; pink = инверсия.
       const fill =
         kind === 'inverted'
           ? 'rgba(251, 207, 232, 0.45)'
-          : kind === 'shadow'
-            ? 'rgba(187, 247, 208, 0.45)'
-            : 'rgba(203, 213, 225, 0.5)';
+          : kind === 'shadow' || kind === 'paused'
+            ? 'rgba(203, 213, 225, 0.5)'
+            : 'rgba(187, 247, 208, 0.4)';
       const stroke =
         kind === 'inverted'
           ? 'rgba(244, 114, 182, 0.4)'
-          : kind === 'shadow'
-            ? 'rgba(74, 222, 128, 0.45)'
-            : 'rgba(148, 163, 184, 0.55)';
+          : kind === 'shadow' || kind === 'paused'
+            ? 'rgba(148, 163, 184, 0.55)'
+            : 'rgba(74, 222, 128, 0.4)';
       const labelColor =
         kind === 'inverted'
           ? 'rgba(157, 23, 77, 0.9)'
-          : kind === 'shadow'
-            ? 'rgba(21, 128, 61, 0.9)'
-            : 'rgba(51, 65, 85, 0.95)';
+          : kind === 'shadow' || kind === 'paused'
+            ? 'rgba(51, 65, 85, 0.95)'
+            : 'rgba(21, 128, 61, 0.9)';
       ctx.fillStyle = fill;
       ctx.fillRect(x0, top, Math.max(3, x1 - x0), bottom - top);
       ctx.strokeStyle = stroke;

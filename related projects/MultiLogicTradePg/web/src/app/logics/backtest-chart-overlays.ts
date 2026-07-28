@@ -275,117 +275,114 @@ function shortenStopLabel(reason: string): string {
   return `${s.slice(0, 40)}…`;
 }
 
+type PaperModeKind = 'normal' | 'shadow' | 'inverted';
+
+function paperModeLabel(kind: PaperModeKind): string {
+  if (kind === 'shadow') return 'shadow';
+  if (kind === 'inverted') return 'инверсия';
+  return 'обычная';
+}
+
 /**
- * Зоны режима бумаги для графиков цены/эквити:
- * - shadow (бледно-зелёный) — теневые сделки / shadow-режим;
- * - paused (бледно-серый) — бумага выкл. после SL без shadow;
- * - inverted (бледно-розовый) — локальная инверсия логики.
+ * Зоны режима бумаги на весь период теста:
+ * - normal (зелёный) — обычная боевая логика;
+ * - shadow (серый) — теневой режим после SL;
+ * - inverted (розовый) — локальная инверсия после возврата shadow к нулю.
  *
- * Close во время паузы зону не снимает; снимает обычный (не теневой) Open.
+ * security_inversion: SL → shadow; реальный Open после shadow → toggle inverted.
+ * Close в shadow зону не снимает; снимает обычный (не теневой) Open.
  */
-export function buildShadedDisabledRanges(trades: LogicTradeRow[]): ChartShadedRange[] {
-  const sorted = [...trades].sort((a, b) =>
-    dtKey(a.bar_dt || a.executed_at).localeCompare(dtKey(b.bar_dt || b.executed_at))
-  );
+export function buildShadedDisabledRanges(
+  trades: LogicTradeRow[],
+  periodStartDt?: string | null,
+  periodEndDt?: string | null
+): ChartShadedRange[] {
+  const sorted = [...trades].sort((a, b) => {
+    const ka = dtKey(a.bar_dt || a.executed_at);
+    const kb = dtKey(b.bar_dt || b.executed_at);
+    if (ka !== kb) return ka.localeCompare(kb);
+    const rank = (t: LogicTradeRow) =>
+      t.side_name === 'Close' ? 0 : t.side_name === 'Open' ? 1 : 2;
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
+    return (a.id ?? 0) - (b.id ?? 0);
+  });
+
+  const firstTradeDt = sorted.length
+    ? sorted[0].bar_dt || sorted[0].executed_at
+    : null;
+  const lastTradeDt = sorted.length
+    ? sorted[sorted.length - 1].bar_dt || sorted[sorted.length - 1].executed_at
+    : null;
+  const startDt = (periodStartDt && String(periodStartDt).trim()) || firstTradeDt;
+  const endDt = (periodEndDt && String(periodEndDt).trim()) || lastTradeDt;
+  if (!startDt || !endDt) {
+    return [];
+  }
+
   const ranges: ChartShadedRange[] = [];
-
-  type OffKind = 'shadow' | 'paused';
-  let offKind: OffKind | null = null;
-  let offStart: string | null = null;
-  let offLast: string | null = null;
-  let invStart: string | null = null;
-  let invLast: string | null = null;
-
-  const flushOff = (endDt: string) => {
-    if (!offStart || !offKind) return;
-    const end = endDt || offLast || offStart;
-    if (dtKey(end) < dtKey(offStart)) return;
-    ranges.push({
-      startDt: offStart,
-      endDt: end,
-      label: offKind === 'shadow' ? 'shadow' : 'выкл.',
-      kind: offKind,
-    });
-    offKind = null;
-    offStart = null;
-    offLast = null;
+  const state = {
+    mode: 'normal' as PaperModeKind,
+    rangeStart: startDt,
+    inverted: false,
+    /** После SL security_inversion следующий реальный Open переключает inverted. */
+    pendingInversionToggle: false,
   };
 
-  const flushInversion = (endDt: string) => {
-    if (!invStart) return;
-    const end = endDt || invLast || invStart;
-    if (dtKey(end) < dtKey(invStart)) return;
+  const flush = (untilDt: string) => {
+    if (!state.rangeStart) return;
+    if (dtKey(untilDt) < dtKey(state.rangeStart)) return;
     ranges.push({
-      startDt: invStart,
-      endDt: end,
-      label: 'инверсия',
-      kind: 'inverted',
+      startDt: state.rangeStart,
+      endDt: untilDt,
+      label: paperModeLabel(state.mode),
+      kind: state.mode,
     });
-    invStart = null;
-    invLast = null;
+  };
+
+  const switchMode = (next: PaperModeKind, atDt: string) => {
+    if (next === state.mode) return;
+    flush(atDt);
+    state.mode = next;
+    state.rangeStart = atDt;
   };
 
   for (const t of sorted) {
     const dt = t.bar_dt || t.executed_at;
+    if (!dt) continue;
     const reason = (t.trade_reason || '').toLowerCase();
-
-    // Toggle inversion windows (close → invert on; next inversion close → off).
-    if (reason.includes('security_inversion')) {
-      if (invStart) {
-        flushInversion(dt);
-      } else {
-        flushOff(dt);
-        invStart = dt;
-        invLast = dt;
-      }
-      continue;
-    }
-
-    if (invStart) {
-      invLast = dt;
-      // While inverted, real trades continue — do not start shadow/paused zones.
-      continue;
-    }
-
-    const stopPause =
+    const isInversionStop =
+      t.side_name === 'Close' && reason.includes('security_inversion');
+    const isStopPause =
       t.side_name === 'Close' &&
       (reason.includes('stop_loss') || reason.includes('security_resume'));
 
+    // SL → shadow (обычный / resume / inversion). Инверсию ещё не включаем.
+    if (isStopPause || isInversionStop) {
+      if (isInversionStop) {
+        state.pendingInversionToggle = true;
+      }
+      switchMode('shadow', dt);
+      continue;
+    }
+
     if (t.is_shadow) {
-      if (!offStart) {
-        offStart = dt;
-        offKind = 'shadow';
-      } else {
-        offKind = 'shadow';
-      }
-      offLast = dt;
+      switchMode('shadow', dt);
       continue;
     }
 
-    if (stopPause) {
-      if (!offStart) {
-        offStart = dt;
-        offKind = 'paused';
+    // Реальный Open после shadow → обычная или инверсия (toggle для security_inversion).
+    if (state.mode === 'shadow' && t.side_name === 'Open') {
+      if (state.pendingInversionToggle) {
+        state.inverted = !state.inverted;
+        state.pendingInversionToggle = false;
       }
-      offLast = dt;
+      switchMode(state.inverted ? 'inverted' : 'normal', dt);
       continue;
     }
+  }
 
-    if (offStart) {
-      if (t.side_name === 'Open') {
-        flushOff(dt);
-      } else {
-        // Реальный Close в паузе — зона выкл./shadow продолжается
-        offLast = dt;
-      }
-    }
-  }
-  if (offStart && offLast) {
-    flushOff(offLast);
-  }
-  if (invStart && invLast) {
-    flushInversion(invLast);
-  }
+  flush(endDt);
   return ranges;
 }
 

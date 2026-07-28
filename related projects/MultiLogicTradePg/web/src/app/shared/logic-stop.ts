@@ -74,7 +74,7 @@ export const LOGIC_STOP_SCOPES_TAKE_PROFIT: LogicStopScopeType[] = [
  *
  * SL: портфель с обновлением (пока недоступен).
  * TP: любые типы по всему портфелю логики.
- * security_inversion — доступен; нужен inversion_value (% инверсии).
+ * security_inversion — доступен; один порог «Значение» (%), без отдельного % инверсии.
  */
 export function isStopScopeChoosable(
   scope: LogicStopScopeType,
@@ -87,14 +87,6 @@ export function isStopScopeChoosable(
     return scope === 'security';
   }
   return false;
-}
-
-/** Колонка «% инверсии» активна только для security_inversion. */
-export function stopNeedsInversionValue(
-  scope: LogicStopScopeType,
-  ruleKind: LogicStopRuleKind
-): boolean {
-  return ruleKind === 'stop_loss' && scope === 'security_inversion';
 }
 
 export function stopScopesForRuleKind(

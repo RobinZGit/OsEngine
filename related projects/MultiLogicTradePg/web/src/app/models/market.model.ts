@@ -157,13 +157,18 @@ export interface ChartStopMarker {
   label: string;
 }
 
-/** Затемнённый интервал на графике бумаги / эквити. */
+/** Цветной интервал режима бумаги на графике цены / эквити. */
 export interface ChartShadedRange {
   startDt: string;
   endDt: string;
   label?: string;
-  /** shadow = теневой режим; paused = бумага выкл.; inverted = инверсия логики. */
-  kind?: 'shadow' | 'paused' | 'inverted';
+  /**
+   * normal = обычная логика (зелёный);
+   * shadow = теневой режим (серый);
+   * inverted = инверсия (розовый);
+   * paused — устарело, рисуется как shadow.
+   */
+  kind?: 'normal' | 'shadow' | 'inverted' | 'paused';
 }
 
 /** Точка кумулятивного PnL по бумаге (с нуля). */

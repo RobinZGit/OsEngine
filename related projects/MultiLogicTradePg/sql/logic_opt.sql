@@ -1319,13 +1319,31 @@ BEGIN
             p_logic_id, v_is_test, v_arm.lane, CASE WHEN v_is_test THEN p_run_id ELSE NULL END
         );
 
+        -- Как у чемпиона: лучший PnL ветки; один GROUP BY на бар (не N коррелированных SUM).
         FOR v_sec IN
             SELECT
                 ls.security_id,
                 COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
             FROM logic_securities ls
+            LEFT JOIN (
+                SELECT lt.security_id,
+                       COALESCE(SUM(lt.financial_result), 0) AS pnl
+                FROM logic_trades lt
+                JOIN sides s ON s.id = lt.side_id
+                WHERE lt.logic_id = p_logic_id
+                  AND lt.is_test = v_is_test
+                  AND NOT lt.is_shadow
+                  AND COALESCE(lt.opt_lane, '') = v_arm.lane
+                  AND (NOT v_is_test OR lt.run_id = p_run_id)
+                  AND s.name = 'Close'
+                  AND lt.status IN ('filled', 'submitted')
+                GROUP BY lt.security_id
+            ) pnl ON pnl.security_id = ls.security_id
             WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
               AND NOT logic_is_cash_fund_security(ls.security_id)
+            ORDER BY COALESCE(pnl.pnl, 0) DESC,
+                     ls.display_order NULLS LAST,
+                     ls.id
         LOOP
             v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
             v_lot_size := logic_security_lot_size(v_sec.security_id);

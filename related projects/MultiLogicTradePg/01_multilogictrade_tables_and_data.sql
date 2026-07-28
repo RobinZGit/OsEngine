@@ -1777,7 +1777,7 @@ END $mlt$;
 
 COMMENT ON COLUMN logic_stops.value_unit IS 'percent | atr';
 COMMENT ON COLUMN logic_stops.inversion_value IS
-'Только security_inversion: доп. %% просадки shadow-позиций до включения инверсии боевой логики по бумаге. NULL для остальных scope.';
+'Устарело (2026-07-28): security_inversion использует только value (%). Колонка оставлена для совместимости; всегда NULL.';
 
 -- Неторговые интервалы логики (MSK): сделки в эти окна не открываются при use_non_trading_periods
 CREATE TABLE IF NOT EXISTS logic_non_trading_intervals (

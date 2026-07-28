@@ -282,11 +282,11 @@
   font-weight: 700;
 }
 
-.paper-chart-legend .leg-shadow {
+.paper-chart-legend .leg-normal {
   color: #4ade80;
 }
 
-.paper-chart-legend .leg-paused {
+.paper-chart-legend .leg-shadow {
   color: #94a3b8;
 }
 

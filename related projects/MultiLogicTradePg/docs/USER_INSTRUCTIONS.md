@@ -307,4 +307,6 @@
 160. «Test + logic with take-profit with renewal: working often, portfolio sagging — see why, improve so it is fixed on the splash and does not fade.»
 161. «Tests with re-launches clog resources / hang longer; two tests running — optimize Angular to free resources.»
 162. «each testing should save your report… browser cache or Postgres… on the main page… top plushes… log button… forward-backward… saving should not interfere with testing… periodicity… separate process… immediately upload to the repository.»
+163. «Remake security_inversion stop-loss: same name; remove percent new / % инверсии; per paper start from scratch; growth does not arm inversion; SL % → shadow; when back to zero toggle inversion; same SL on inverted; through zero again flip back.»
+164. «Order buys on paper with best result / rating at the moment best PnL — if under ~50 lines do it.»
 

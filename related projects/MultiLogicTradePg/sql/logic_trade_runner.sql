@@ -1535,6 +1535,7 @@ BEGIN
         v_tf_id
     );
 
+    -- При нехватке слотов — лучший PnL; один GROUP BY, без коррелированного SUM на бумагу.
     FOR v_sec IN
         SELECT
             ls.security_id,
@@ -1543,9 +1544,25 @@ BEGIN
             COALESCE(ls.real_trading_paused_short, FALSE) AS real_trading_paused_short,
             COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
         FROM logic_securities ls
+        LEFT JOIN (
+            SELECT lt.security_id,
+                   COALESCE(SUM(lt.financial_result), 0) AS pnl
+            FROM logic_trades lt
+            JOIN sides s ON s.id = lt.side_id
+            WHERE lt.logic_id = p_logic_id
+              AND lt.is_test = FALSE
+              AND NOT lt.is_shadow
+              AND COALESCE(lt.opt_lane, '') = ''
+              AND s.name = 'Close'
+              AND lt.status IN ('filled', 'submitted')
+            GROUP BY lt.security_id
+        ) pnl ON pnl.security_id = ls.security_id
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
           -- Денежный фонд только для парковки кэша, не для сигналов
           AND NOT logic_is_cash_fund_security(ls.security_id)
+        ORDER BY COALESCE(pnl.pnl, 0) DESC,
+                 ls.display_order NULLS LAST,
+                 ls.id
     LOOP
         v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);

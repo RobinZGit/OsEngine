@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-27 — зоны shadow/выкл./инверсия на графиках эквити бумаг + SL security_inversion (% инверсии)
+**Последнее обновление:** 2026-07-28 — push: remake security_inversion (без % инверсии); зоны green/gray/pink; opens по PnL DESC; hotfix mid-run empty panel; installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -83,7 +83,7 @@
 - **AND:** сделка только если **все** активные сигналы одной группы `(position_event × position_side)` сработали; OR → отдельные logics;
 - **`logic_signal_rating_pending`** + **`logic_signal_rating_history`**: сработал → pending; на **следующей** свече ход → **% годовых** vs **`base_annual_rate_pct`** (дефолт 20) → `±1`; history с `logic_id`+`security_id`+`signal_id` для графика **на бумаге**;
 - **Бэктест Стоп:** `cancel` сразу ставит `status=cancelled`, результат теста **не удаляется**; UI не висит на «Останавливаю…»;
-- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|**security_resume** (бумага×сторона)|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit` / **`inversion_value`** для security_inversion);
+- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|**security_resume** (бумага×сторона)|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit`; колонка `inversion_value` устарела / не используется);
 - **`logic_securities`** — портфель бумаг логики + пауза resume по сторонам: `real_trading_paused_long/short`, `stop_resume_*_long/short` (v48); `real_trading_paused` = OR сторон;
 - **`logic_trades`** — сделки: `position_event`, `signal_kind`, `is_simulated`, **`is_fictitious`**, `commission`, **`financial_result`** (только Close), **`run_id`** (прогон теста → `logic_backtest_runs`; NULL у боя), `bar_dt`, `status`; side Open/Close через `sides`; уникальность бара: `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`;
 - **`logic_trade_lots`** — пакеты закрытия (FIFO / средняя): связь close↔open, суммы, комиссии, PnL по пакету;
@@ -117,18 +117,28 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-27)
+## Что сделано (актуально на 2026-07-28)
 
-### 2026-07-27 (зоны shadow / выкл. / инверсия на графиках бумаг)
+### 2026-07-28 (приоритет открытия: лучший PnL бумаги)
 
-- На **эквити бумаги** (Тестирование / Позиции → Бумаги → режим Эквити) и на ценовом графике: бледно-зелёный = shadow, бледно-серый = выкл., бледно-розовый = инверсия; легенда с подписями.
-- `ChartShadedRange.kind`: `shadow` | `paused` | `inverted`; `buildShadedDisabledRanges` различает режимы.
+- При лимите слотов/room: обход бумаг `ORDER BY` сумма closed FinRes **DESC**, затем `display_order`, `id` (тест, бой, OPT-ветки).
+- В начале теста у всех 0 → стабильный tie-break; дальше слоты получают бумаги с лучшим текущим результатом.
+- **Hotfix:** коррелированный `SUM` на каждую бумагу тормозил бар → mid-run UI пустой (сделки/портфель), FinRes из `/pnl-summary` ещё рос. Заменено на один `LEFT JOIN … GROUP BY` на бар; panel timeout 20s + poll каждый тик.
 
-### 2026-07-27 (SL security_inversion + % инверсии)
+### 2026-07-28 (remake SL security_inversion — без % инверсии)
 
-- Тип снова **выбираемый**; колонка `logic_stops.inversion_value` («% инверсии»).
-- Машина: DD≥value → shadow → shadow DD≥inversion_value → бой с инверсией → ошибочный DD≥value → снова shadow → track к пику → обычная логика.
-- UI: поле `% инверсии` разблокируется при выборе типа (default = Значение).
+- Убраны UI/API для `inversion_value`; один порог — `value` (%).
+- Машина по бумаге: DD≥value → close + shadow; shadow к пику/нулю → toggle `real_trading_inverted`; тот же % на инвертированной логике.
+- SQL: `logic_stop_runner.sql` + `logic_backtest_runner.sql`; Help обновлён.
+
+### 2026-07-28 (цвета зон на графиках бумаг — как просил Sergey)
+
+- Зелёный = **обычная** логика; серый = **shadow**; розовый = **инверсия**. Зоны покрывают весь период теста.
+- `buildShadedDisabledRanges`: SL → shadow; реальный Open после shadow+security_inversion → toggle pink; не путать с «выкл.» и не красить green как shadow.
+
+### 2026-07-27 (зоны на графиках бумаг)
+
+- Эквити/цена бумаг: зоны режима; легенда обновлена 2026-07-28 (обычная/shadow/инверсия).
 
 ### 2026-07-27 (OPT promote: sigma «ползёт вниз», FinRes-дыры 10×)
 
@@ -301,7 +311,7 @@
 ### 2026-07-26 (Недоступные типы SL/TP + инструкции в Help)
 
 - UI: типы видны в `<select>`, но `disabled` для выбора: SL `portfolio_resume`; TP все портфельные (`portfolio`, `portfolio_ltp_renew`). API отклоняет создание/смену на эти типы.
-- **`security_inversion` снова выбираемый** (2026-07-27): колонка `logic_stops.inversion_value` («% инверсии»). Машина состояний по бумаге: просадка ≥ `value` → shadow; shadow DD ≥ `inversion_value` → боевая инверсия (`real_trading_inverted`); ошибочный DD ≥ `value` → снова shadow; восстановление track к пику → обычная логика.
+- **`security_inversion`** (2026-07-28 remake): один `%` (`value`). DD≥value → shadow; возврат shadow к пику/нулю → toggle `real_trading_inverted`; тот же стоп на инвертированной логике; снова через ноль → снятие инверсии. `inversion_value` не используется.
 - Дефолт нового TP: `security` (по бумаге).
 - `docs/USER_INSTRUCTIONS.md` — только формулировки запросов Sergey; Help → «Инструкции пользователя»; sync в assets; `PROJECT_CONTEXT` держит ссылку без полного дубля.
 
@@ -576,7 +586,7 @@
 89. **UI processes/formulas/select-all:** сверху на странице logics добавлена панель активных процессов (`GET /api/processes`: pg_stat_activity, running backtests, enabled trade runner, pg_cron если доступен + локальный rating precalc). В picker бумаг групповой checkbox больше не disabled и может снять выбор. Формула сигнала — full-width textarea с переносом, Ctrl+Enter сохраняет; warning `sig.rating ?? 0` убран.
 90. **Правила актуальности SQL/installer:** добавлено `.cursor/rules/installer-freshness.mdc`; `database-scripts.mdc` и `project-context.mdc` теперь явно требуют держать `00`–`03`, `docs/PROJECT_CONTEXT.md` и `installer/windows/dist/MultiLogicTradePgSetup.exe` в актуальном состоянии. При изменении SQL/API/UI/scripts/docs/installer sources — пересобрать installer и коммитить `.exe` вместе с изменениями.
 91. **Installer UX status/progress:** длинный `StatusMsg` post-install заменён на короткий «Настройка приложения... См. INSTALL_PROTOCOL.txt»; перед скрытым post-install шагом progress bar ставится примерно на 85%, после завершения — на 100%.
-92. **Stop-loss security_inversion:** scope `security_inversion` + колонка `inversion_value`. Состояния по бумаге: normal → shadow (DD≥value) → inverted real (shadow DD≥inversion_value) → снова shadow при ошибке (DD≥value) → ordinary при восстановлении к пику. `real_trading_inverted` XOR с глобальной `inversion`. UI: колонка «% инверсии», badge «инверсия».
+92. **Stop-loss security_inversion:** один `%` (`value`); `inversion_value` не используется. normal/inverted real → DD≥value → shadow → возврат к пику/нулю → toggle `real_trading_inverted`. `real_trading_inverted` XOR с глобальной `inversion`. UI без колонки «% инверсии»; badge «инверсия».
 93. **Warm-up перед включением боя:** добавлен boolean param `warmup_pretest` (default TRUE), UI checkbox «Прогрев (предварительное тестирование)». При включении логики с активным stop_loss `security_resume` или `security_inversion` API оставляет `is_enabled=FALSE`, запускает backtest за `rating_lookback_days`, раскрывает блок «Тестирование», после `completed` переносит `real_trading_paused`/`real_trading_inverted`/resume targets из `logic_backtest_security_state` в live `logic_securities`, затем включает логику и запускает rating precalc. Повторный click во время warm-up переиспользует текущий run.
 94. **Copy logic UX:** после успешного `POST /api/logics/:id/copy` — `alert` «Логика скопирована: {name}»; после OK — прокрутка к новой развёрнутой строке; кнопка «+» того же цвета, что карандаш/корзина (`#374151`).
 95. **Fix install-over («Нет»):** post-install останавливает :3000/:4200, удаляет `api`/`web` `node_modules` (+ `.angular`), затем чистый `npm ci` и проверка `web\node_modules\@angular\cli\bin\ng.js`. Launcher `FreePorts`: `taskkill` через PowerShell `2>$null` (убран `2>nul | Out-Null`, который давал Out-File на устройство nul).
@@ -670,6 +680,7 @@
 - [x] Project rules: SQL scripts and Windows installer must always be current; rebuild installer for shipped changes (2026-07-18).
 - [x] Installer UX: короткий status text + progress bar ниже 100% во время post-install (2026-07-18).
 - [x] Stop-loss `security_inversion`: локальная инверсия по бумаге, runner/backtest/UI/chart support, SQL scripts synced, installer rebuilt (2026-07-18).
+- [x] Remake `security_inversion`: без `inversion_value`; toggle inverted при возврате shadow к нулю (2026-07-28).
 - [x] `warmup_pretest`: preliminary test before enabling live for `security_resume`/`security_inversion`, transfer tested paper states to live, installer rebuilt (2026-07-18).
 - [x] Copy logic UX: success alert with new name; copy (+) button same black as edit/delete (2026-07-18).
 - [x] Fix install-over (No): clean npm + Angular CLI verify; fix launcher FreePorts Out-File (2026-07-18).
@@ -720,6 +731,9 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-28 | Push: remake inversion SL; chart zones; PnL-first opens + mid-run panel hotfix; installers |
+| 2026-07-28 | Open priority: papers by closed PnL DESC (backtest+live+OPT); sync 02 |
+| 2026-07-28 | Remake security_inversion: drop inversion_value; SL→shadow→zero toggles invert (live+backtest+UI) |
 | 2026-07-27 | Paper equity/price zones: shadow green / disabled gray / inversion pink + legends; SL inversion_value; push |
 | 2026-07-27 | Auto-trim unused indicator_values (orphans+age; protect running tests) |
 | 2026-07-27 | Ship OPT closed+ΔMTM procedures in 02 + rebuild installers for roll-up |
