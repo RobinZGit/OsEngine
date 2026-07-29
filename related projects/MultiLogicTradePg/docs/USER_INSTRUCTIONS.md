@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+763. Android file pickers: all folders (e.g. Downloads); limit extensions to picture or text
+
 762. Add a link to the corresponding repositories to each item on My Projects
 
 761. Pour it in / merge Crypt + My Projects to main (GitHub Pages)

@@ -314,6 +314,10 @@ canvas {
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
+        <div class="canvas-toolbar">
+          <button type="button" id="btnLoadText" class="btn btn-ghost">Load .txt</button>
+          <span class="hint">Or type below · Android: pick Downloads / any folder</span>
+        </div>
         <label class="field-label" for="message">Message</label>
         <textarea id="message" placeholder="Type text to encrypt…" rows="10"></textarea>
         <p id="textStatus" class="status" aria-live="polite"></p>
@@ -339,8 +343,10 @@ canvas {
       </section>
     </main>
 
-    <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/*" hidden />
-    <input type="file" id="templateInput" accept="image/png,image/jpeg,image/webp,image/*" hidden />
+    <!-- Extension-only accept (no image/*) so Android opens folder/Documents UI, e.g. Downloads -->
+    <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.jpe,.webp,.gif,.bmp,.heic,.heif" hidden />
+    <input type="file" id="templateInput" accept=".png,.jpg,.jpeg,.jpe,.webp,.gif,.bmp,.heic,.heif" hidden />
+    <input type="file" id="textFileInput" accept=".txt,.text,.md,.csv,.json,.log,.html,.htm" hidden />
   </div>
   <script>
 (() => {
@@ -350,6 +356,15 @@ canvas {
   const CARRIER_H = 500;
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
+  // Extension lists only — Android Gallery often opens for image/*; extensions → folder picker (Downloads etc.)
+  const ACCEPT_IMAGES = ".png,.jpg,.jpeg,.jpe,.webp,.gif,.bmp,.heic,.heif";
+  const ACCEPT_TEXT = ".txt,.text,.md,.csv,.json,.log,.html,.htm";
+  const IMAGE_EXT = new Set(
+    ACCEPT_IMAGES.split(",").map((s) => s.trim().toLowerCase().replace(/^\./, ""))
+  );
+  const TEXT_EXT = new Set(
+    ACCEPT_TEXT.split(",").map((s) => s.trim().toLowerCase().replace(/^\./, ""))
+  );
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -369,8 +384,10 @@ canvas {
     btnClear: document.getElementById("btnClear"),
     fileInput: document.getElementById("fileInput"),
     templateInput: document.getElementById("templateInput"),
+    textFileInput: document.getElementById("textFileInput"),
     templateName: document.getElementById("templateName"),
     encKey: document.getElementById("encKey"),
+    btnLoadText: document.getElementById("btnLoadText"),
   };
 
   let mode = "text"; // "text" | "picture"
@@ -991,12 +1008,50 @@ canvas {
     }
   }
 
+  function fileExt(name) {
+    const m = /\.([^.]+)$/.exec(String(name || "").toLowerCase());
+    return m ? m[1] : "";
+  }
+
+  function isAllowedFile(file, allowedExt) {
+    const ext = fileExt(file && file.name);
+    return !!ext && allowedExt.has(ext);
+  }
+
+  /**
+   * Android: prefer extension accept (not image/*) so the system file manager
+   * opens with folders (Downloads, etc.) instead of only the Gallery.
+   */
+  function openFilePicker(input, accept) {
+    input.removeAttribute("capture");
+    input.setAttribute("accept", accept);
+    input.value = "";
+    input.click();
+  }
+
+  async function loadTextFromFile(file) {
+    const text = await file.text();
+    els.message.value = text;
+    setMode("text", { keepResult: true });
+    setStatus(`Loaded text from “${file.name}” (${text.length} character(s)).`);
+  }
+
   // Events
   els.modeText.addEventListener("click", () => setMode("text"));
   els.modePicture.addEventListener("click", () => setMode("picture"));
   els.btnEncrypt.addEventListener("click", encrypt);
-  els.btnDecrypt.addEventListener("click", () => els.fileInput.click());
-  els.btnTemplate.addEventListener("click", () => els.templateInput.click());
+  els.btnDecrypt.addEventListener("click", () => {
+    openFilePicker(els.fileInput, ACCEPT_IMAGES);
+    setStatus("Pick encrypted picture — any folder (e.g. Downloads). Images only.");
+  });
+  els.btnTemplate.addEventListener("click", () => {
+    openFilePicker(els.templateInput, ACCEPT_IMAGES);
+    setStatus("Pick template picture — any folder (e.g. Downloads). Images only.");
+  });
+  els.btnLoadText.addEventListener("click", () => {
+    openFilePicker(els.textFileInput, ACCEPT_TEXT);
+    setStatus("Pick a text file — any folder (e.g. Downloads). Text only.");
+  });
   els.btnClear.addEventListener("click", () => {
     clearDrawing();
     setStatus("Canvas cleared.");
@@ -1004,14 +1059,32 @@ canvas {
   els.fileInput.addEventListener("change", () => {
     const file = els.fileInput.files && els.fileInput.files[0];
     els.fileInput.value = "";
-    if (file) decryptFromFile(file);
+    if (!file) return;
+    if (!isAllowedFile(file, IMAGE_EXT)) {
+      setStatus("Not an image. Allowed: " + ACCEPT_IMAGES);
+      return;
+    }
+    decryptFromFile(file);
   });
   els.templateInput.addEventListener("change", () => {
     const file = els.templateInput.files && els.templateInput.files[0];
     els.templateInput.value = "";
-    if (file) {
-      setTemplateFromFile(file).catch((err) => setStatus(err.message || String(err)));
+    if (!file) return;
+    if (!isAllowedFile(file, IMAGE_EXT)) {
+      setStatus("Not an image. Allowed: " + ACCEPT_IMAGES);
+      return;
     }
+    setTemplateFromFile(file).catch((err) => setStatus(err.message || String(err)));
+  });
+  els.textFileInput.addEventListener("change", () => {
+    const file = els.textFileInput.files && els.textFileInput.files[0];
+    els.textFileInput.value = "";
+    if (!file) return;
+    if (!isAllowedFile(file, TEXT_EXT)) {
+      setStatus("Not a text file. Allowed: " + ACCEPT_TEXT);
+      return;
+    }
+    loadTextFromFile(file).catch((err) => setStatus(err.message || String(err)));
   });
 
   els.drawCanvas.addEventListener("pointerdown", onPointerDown);
