@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+767. Add Crypt version number on the form for GitHub Pages (so tablet shows whether the build updated)
+
 766. Fix note encrypt/decrypt: expand template to note size; parity even=white odd=ink; exact-pixel decode (was blank sheet)
 
 765. Note encode: B/W only — white background, any non-white → black; rename Picture to handwritten note

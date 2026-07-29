@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Parity Stego</title>
+  <title>Crypt v1.5 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -227,6 +227,18 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.version-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #9ec9b8;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: nowrap;
+  user-select: text;
+}
+
 .canvas-wrap {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -305,6 +317,7 @@ canvas {
         </div>
       </div>
       <div class="strip-right">
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.5</span>
         <button type="button" id="btnTemplate" class="btn btn-ghost">Template</button>
         <button type="button" id="btnEncrypt" class="btn btn-primary">Encrypt</button>
         <button type="button" id="btnDecrypt" class="btn btn-secondary">Decrypt</button>
@@ -356,6 +369,8 @@ canvas {
   const CARRIER_H = 500;
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
+  /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
+  const APP_VERSION = "Crypt v1.5";
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -1172,6 +1187,9 @@ canvas {
 
   clearDrawing();
   setMode("text");
+  const verEl = document.getElementById("appVersion");
+  if (verEl) verEl.textContent = APP_VERSION;
+  setStatus(APP_VERSION + " ready.");
 })();
 
   </script>
