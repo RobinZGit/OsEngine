@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+782. Scrollbars (rewinding stripes) too thin for finger on tablet — make thick rounded bars you can drag with a finger, not mouse-thin
+
 781. Note strokes too thin / don't cling to finger — make clearly thicker with rounded tips so finger stays in the stroke
 
 780. Russian and English field/button names (Encrypt/Decrypt); default Russian; language checkboxes
