@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Launch MultiLogic Trade: API :3000 + Angular :4200
+# Launch MultiLogic Trade API only (headless live trading, no Angular).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Prefer install root: script may live in installer/linux or directly in app root.
 if [[ -f "$SCRIPT_DIR/../../api/server.js" ]]; then
   APP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 elif [[ -f "$SCRIPT_DIR/../api/server.js" ]]; then
@@ -15,17 +14,15 @@ else
   exit 1
 fi
 
-WEB="$APP_ROOT/web"
 API="$APP_ROOT/api"
 
 echo
 echo " ========================================================"
-echo "  MultiLogic Trade Progress Start (Linux)"
-echo "  One session: API :3000 + Angular :4200 + PostgreSQL"
+echo "  MultiLogic Trade Server Start (Linux)"
+echo "  API only — live trading without Angular UI"
 echo " ========================================================"
 echo
 echo "  APP: $APP_ROOT"
-echo "  WEB: $WEB"
 echo "  API: $API"
 echo
 
@@ -56,12 +53,8 @@ if [[ ! -f "$API/server.js" ]]; then
   echo "[ERROR] Missing $API/server.js" >&2
   exit 1
 fi
-if [[ ! -f "$WEB/package.json" ]]; then
-  echo "[ERROR] Missing $WEB/package.json" >&2
-  exit 1
-fi
-if [[ ! -d "$API/node_modules" || ! -d "$WEB/node_modules" ]]; then
-  echo "[ERROR] node_modules missing. Re-run installer/linux/install.sh" >&2
+if [[ ! -d "$API/node_modules" ]]; then
+  echo "[ERROR] api/node_modules missing. Re-run installer/linux/install.sh" >&2
   exit 1
 fi
 
@@ -79,43 +72,12 @@ free_port() {
   fi
 }
 
-echo "  [1/3] Free ports 3000 and 4200..."
-free_port 3000
-free_port 4200
+echo "  [1/2] Free port ${PORT}..."
+free_port "$PORT"
 sleep 1
 
-cleanup() {
-  if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    kill "$API_PID" 2>/dev/null || true
-  fi
-  if [[ -n "${WEB_PID:-}" ]] && kill -0 "$WEB_PID" 2>/dev/null; then
-    kill "$WEB_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM
-
-echo "  [2/3] Starting API on :${PORT}..."
-(
-  cd "$API"
-  node server.js
-) &
-API_PID=$!
-
-echo "  [3/3] Starting Angular on :4200..."
-(
-  cd "$WEB"
-  if [[ -f "$WEB/node_modules/@angular/cli/bin/ng.js" ]]; then
-    node "$WEB/node_modules/@angular/cli/bin/ng.js" serve --port 4200 --host localhost --open=false --configuration=development
-  else
-    npx ng serve --port 4200 --host localhost --open=false --configuration=development
-  fi
-) &
-WEB_PID=$!
-
+echo "  [2/2] Starting API on :${PORT} (headless trading)..."
+echo "  Keep this process running. Ctrl+C stops live trading."
 echo
-echo "  API PID=$API_PID  WEB PID=$WEB_PID"
-echo "  Open http://localhost:4200"
-echo "  Ctrl+C to stop both."
-echo
-
-wait
+cd "$API"
+exec node server.js

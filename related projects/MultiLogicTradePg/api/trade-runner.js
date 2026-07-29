@@ -9,20 +9,59 @@ const TRADE_CYCLE_LOCK_KEY = 'multilogictrade_run_trade_cycle';
 let running = false;
 
 /**
- * Цикл сделок: по одной логике за autocommit-запрос (не держим lock logic_params
- * на весь прогон всех логик). Логики с активным бэктестом пропускаются.
+ * Env TRADE_RUNNER_REQUIRE_UI=1|0 overrides DB APP_TRADE_RUNNER_REQUIRE_UI.
+ * Default (unset / DB 0): headless — cycles run while API is up (server / after install-over).
+ */
+function requireUiFromEnv() {
+  const v = process.env.TRADE_RUNNER_REQUIRE_UI;
+  if (v === undefined || v === '') return null;
+  const s = String(v).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(s)) return true;
+  if (['0', 'false', 'no', 'off'].includes(s)) return false;
+  return null;
+}
+
+async function isTradeRunnerUiRequired(client) {
+  const env = requireUiFromEnv();
+  if (env !== null) return env;
+  try {
+    const { rows } = await client.query(`SELECT trade_runner_require_ui() AS ok`);
+    return Boolean(rows[0]?.ok);
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function isUiSessionActiveDb(client) {
+  try {
+    const { rows } = await client.query(`SELECT trade_runner_ui_is_active() AS ok`);
+    return Boolean(rows[0]?.ok);
+  } catch (_e) {
+    return isUiSessionActive();
+  }
+}
+
+/**
+ * Цикл сделок: по одной логике за autocommit-запрос.
  * TRADE_RUNNER_ENABLED=0 — отключить fallback.
- * Автозапуск только при активной сессии Angular (heartbeat).
+ * По умолчанию UI не нужен; TRADE_RUNNER_REQUIRE_UI=1 — только при heartbeat Angular.
  */
 async function runTradeCycle(pool, opts = {}) {
   if (running) return { skipped: true, reason: 'node_busy' };
-  if (!opts.manual && !isUiSessionActive()) {
-    return { skipped: true, reason: 'ui_inactive' };
-  }
   running = true;
   const client = await pool.connect();
   let locked = false;
   try {
+    const requireUi = await isTradeRunnerUiRequired(client);
+    if (
+      !opts.manual &&
+      requireUi &&
+      !isUiSessionActive() &&
+      !(await isUiSessionActiveDb(client))
+    ) {
+      return { skipped: true, reason: 'ui_inactive' };
+    }
+
     const { rows: lockRows } = await client.query(
       `SELECT pg_try_advisory_lock(hashtext($1)) AS ok`,
       [TRADE_CYCLE_LOCK_KEY]
@@ -32,7 +71,12 @@ async function runTradeCycle(pool, opts = {}) {
     }
     locked = true;
 
-    if (!opts.manual && !(await isUiSessionActiveDb(client))) {
+    if (
+      !opts.manual &&
+      requireUi &&
+      !(await isUiSessionActiveDb(client)) &&
+      !isUiSessionActive()
+    ) {
       return { skipped: true, reason: 'ui_inactive' };
     }
 
@@ -71,7 +115,6 @@ async function runTradeCycle(pool, opts = {}) {
     skippedBacktest = Math.max(0, enabledN - logics.length);
 
     for (const row of logics) {
-      // Каждый SELECT — своя транзакция: locks logic_params/prices отпускаются сразу.
       const { rows: stopRows } = await client.query(
         `SELECT process_logic_stops($1)::int AS n`,
         [row.id]
@@ -98,6 +141,7 @@ async function runTradeCycle(pool, opts = {}) {
       skipped_backtest: skippedBacktest,
       at: new Date().toISOString(),
       source: 'node',
+      require_ui: requireUi,
     };
 
     if (processed === 0 && skippedBacktest > 0) {
@@ -132,15 +176,6 @@ async function runTradeCycle(pool, opts = {}) {
   }
 }
 
-async function isUiSessionActiveDb(client) {
-  try {
-    const { rows } = await client.query(`SELECT trade_runner_ui_is_active() AS ok`);
-    return Boolean(rows[0]?.ok);
-  } catch (_e) {
-    return isUiSessionActive();
-  }
-}
-
 function startTradeRunner(pool) {
   const enabled = process.env.TRADE_RUNNER_ENABLED !== '0';
   if (!enabled) {
@@ -150,12 +185,18 @@ function startTradeRunner(pool) {
     return;
   }
 
+  const envGate = requireUiFromEnv();
+  const mode =
+    envGate === true
+      ? 'UI required (env)'
+      : envGate === false
+        ? 'headless (env)'
+        : 'headless by default (DB APP_TRADE_RUNNER_REQUIRE_UI)';
   console.log(
-    `Trade runner fallback: every ${RUNNER_INTERVAL_MS}ms when UI is open; per-logic commit; skip logics in backtest`
+    `Trade runner fallback: every ${RUNNER_INTERVAL_MS}ms; ${mode}; per-logic commit; skip logics in backtest`
   );
 
   setInterval(() => {
-    if (!isUiSessionActive()) return;
     runTradeCycle(pool).catch((err) => {
       console.error('Trade runner cycle error', err.message);
     });

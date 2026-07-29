@@ -6,65 +6,69 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
-769. push (security_inversion paper×side remake + installers 99)
+769. After GitHub update + install-over: if logic checkboxes were on, restore real trading reliably without Angular (server is light); installer should start API; enabled logics must trade again.
 
-768. Bump Crypt form version so GitHub Pages shows the new build (tell which version will be used)
+768. push (headless trade runner + Server_Start; installers 100)
 
-767. Add Crypt version number on the form for GitHub Pages (so tablet shows whether the build updated)
+767. push (security_inversion paper×side remake + installers 99)
+
+767. Bump Crypt form version so GitHub Pages shows the new build (tell which version will be used)
+
+766. Add Crypt version number on the form for GitHub Pages (so tablet shows whether the build updated)
 
 759. «Make stop-loss on paper inversion like paper with renewal: cut on the side when reaching interruption sum; same for paper×side with inversion toggle on zero.»
 
 758. push
 
-766. Fix note encrypt/decrypt: expand template to note size; parity even=white odd=ink; exact-pixel decode (was blank sheet)
+765. Fix note encrypt/decrypt: expand template to note size; parity even=white odd=ink; exact-pixel decode (was blank sheet)
 
-765. Note encode: B/W only — white background, any non-white → black; rename Picture to handwritten note
+764. Note encode: B/W only — white background, any non-white → black; rename Picture to handwritten note
 
-764. File picker: any file, no extensions — system file manager by default (Downloads)
+763. File picker: any file, no extensions — system file manager by default (Downloads)
 
-763. Android file pickers: all folders (e.g. Downloads); limit extensions to picture or text
+762. Android file pickers: all folders (e.g. Downloads); limit extensions to picture or text
 
-762. Add a link to the corresponding repositories to each item on My Projects
+761. Add a link to the corresponding repositories to each item on My Projects
 
-761. Pour it in / merge Crypt + My Projects to main (GitHub Pages)
+760. Pour it in / merge Crypt + My Projects to main (GitHub Pages)
 
-760. My Projects link wrongly opens MultiLogic Trade PG SPA — must open hub listing Crypt, MultiLogic PG, FINRESP, UN Calculator, Dietitian, Total Calendar; do not list MacroRithm
+759. My Projects link wrongly opens MultiLogic Trade PG SPA — must open hub listing Crypt, MultiLogic PG, FINRESP, UN Calculator, Dietitian, Total Calendar; do not list MacroRithm
 
-759. Publish on GitHub Pages a My Projects / My Published Projects hub with links to Crypt, MultiLogic, UN Calculator, Dietitian, Calendar (+ other published apps)
+758. Publish on GitHub Pages a My Projects / My Published Projects hub with links to Crypt, MultiLogic, UN Calculator, Dietitian, Calendar (+ other published apps)
 
-758. Decrypt should try text and picture, pick the more real-looking one, and switch the mode to it
+757. Decrypt should try text and picture, pick the more real-looking one, and switch the mode to it
 
-757. Publish Crypt parity-stego link on GitHub Pages with MultiLogicTradePg deploy (not «GeekPages»)
+756. Publish Crypt parity-stego link on GitHub Pages with MultiLogicTradePg deploy (not «GeekPages»)
 
-756. push
+755. push
 
-755. GET /api/logic-trades/equity-curve TypeError: Assignment to constant variable (trades.js dateFromFinal)
+754. GET /api/logic-trades/equity-curve TypeError: Assignment to constant variable (trades.js dateFromFinal)
 
-754. The colors of the tiles are not always on the entire length of the line… when I started the test, the whole line becomes yellow, and when I open it, I do not have the gray color of the ends of the right and left tiles painted, you need to paint them too when initializing
+753. The colors of the tiles are not always on the entire length of the line… when I started the test, the whole line becomes yellow, and when I open it, I do not have the gray color of the ends of the right and left tiles painted, you need to paint them too when initializing
 
-753. push
+752. push
 
-752. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting
+751. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting
 
-751. Describe the principle of inversion in the description, in a separate chapter, where the parameters of logic write about inversion separately, with examples of simple logics
+750. Describe the principle of inversion in the description, in a separate chapter, where the parameters of logic write about inversion separately, with examples of simple logics
 
-750. Well, then look at the current test two strategies, two logics, one with inversion, the other is the same without…
+749. Well, then look at the current test two strategies, two logics, one with inversion, the other is the same without…
 
-749. Look, now there are two tests, and one equity with a financial result somehow does not stick together…
+748. Look, now there are two tests, and one equity with a financial result somehow does not stick together…
 
-748. Let's make the first routers. (Phase A: split oversized api/server.js into Express route modules)
+747. Let's make the first routers. (Phase A: split oversized api/server.js into Express route modules)
 
-747. push
+746. push
 
-746. Look, the relevance of the help, the structure of the database, there may be reports of all sorts of testing and other reports that are uploaded. Also, the relevance of the comments in the code. The relevance of the context, the relevance of user requests. I asked, in addition to the context, to post my instructions, too, on a regular basis. And the changes are immediately posted for Push.
+745. Look, the relevance of the help, the structure of the database, there may be reports of all sorts of testing and other reports that are uploaded. Also, the relevance of the comments in the code. The relevance of the context, the relevance of user requests. I asked, in addition to the context, to post my instructions, too, on a regular basis. And the changes are immediately posted for Push.
 
-745. push
+744. push
 
-744. Check the button to sell everything on the market in positions. It seems to me that it sold not the amount of lots, less than there was, not everything sold. Check there is such a lot or not.
+743. Check the button to sell everything on the market in positions. It seems to me that it sold not the amount of lots, less than there was, not everything sold. Check there is such a lot or not.
 
-743. push (after PostOrder lots fix)
+742. push (after PostOrder lots fix)
 
-742. With remote servers, again, it took more than the balance on the account, although the first shoulder, we'll see why. (export live logic 1720 LinReg Fade copy 4 optimize — FLOT Short 13×75.27, commission 4.90)
+741. With remote servers, again, it took more than the balance on the account, although the first shoulder, we'll see why. (export live logic 1720 LinReg Fade copy 4 optimize — FLOT Short 13×75.27, commission 4.90)
 
 741. push / immediately put it in the repository
 

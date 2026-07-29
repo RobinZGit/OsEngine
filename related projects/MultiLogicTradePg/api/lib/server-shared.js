@@ -245,6 +245,90 @@ function watchWarmupBacktest(pool, logicId, runId) {
   setTimeout(poll, 2000);
 }
 
+/**
+ * After API restart / install-over: re-attach warm-up watchers and finish
+ * warm-ups that completed while the process was down (checkbox intent = enable).
+ */
+async function resumeOrphanWarmups(pool) {
+  const activeStatuses = ['pending', 'loading_prices', 'loading_indicators', 'running'];
+  let watching = 0;
+  let finished = 0;
+
+  const { rows: active } = await pool.query(
+    `
+    SELECT l.id AS logic_id, r.id AS run_id
+    FROM logics l
+    JOIN logic_backtest_runs r ON r.logic_id = l.id
+    WHERE l.is_enabled = FALSE
+      AND r.status = ANY($1::text[])
+      AND r.id = (
+        SELECT MAX(r2.id) FROM logic_backtest_runs r2 WHERE r2.logic_id = l.id
+      )
+    `,
+    [activeStatuses]
+  );
+
+  for (const row of active) {
+    const need = await logicNeedsWarmup(pool, row.logic_id);
+    if (!need.enabled) continue;
+    watchWarmupBacktest(pool, row.logic_id, row.run_id);
+    watching += 1;
+  }
+
+  const { rows: stuck } = await pool.query(
+    `
+    SELECT DISTINCT ON (e.logic_id)
+      e.logic_id,
+      (e.payload->>'run_id')::int AS run_id
+    FROM app_tech_log e
+    JOIN logics l ON l.id = e.logic_id
+    JOIN logic_backtest_runs r ON r.id = (e.payload->>'run_id')::int
+    WHERE e.operation = 'logic.warmup.started'
+      AND e.logic_id IS NOT NULL
+      AND l.is_enabled = FALSE
+      AND e.created_at > NOW() - INTERVAL '7 days'
+      AND r.status = 'completed'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM app_tech_log x
+        WHERE x.logic_id = e.logic_id
+          AND x.operation IN ('logic.warmup.enabled', 'logic.warmup.failed')
+          AND x.created_at >= e.created_at
+      )
+    ORDER BY e.logic_id, e.created_at DESC
+    `
+  );
+
+  for (const row of stuck) {
+    if (!row.run_id) continue;
+    const need = await logicNeedsWarmup(pool, row.logic_id);
+    if (!need.enabled) continue;
+    try {
+      await transferWarmupSecurityState(pool, row.logic_id, row.run_id);
+      const { rows } = await pool.query(
+        `UPDATE logics SET is_enabled = TRUE WHERE id = $1 RETURNING id`,
+        [row.logic_id]
+      );
+      if (rows.length > 0) {
+        finished += 1;
+        await writeTechLogEvent(pool, {
+          threadKey: `logic:${row.logic_id}:warmup`,
+          operation: 'logic.warmup.enabled',
+          message: `Warm-up completed after API restart, logic enabled (run ${row.run_id})`,
+          source: 'api',
+          logicId: row.logic_id,
+          payload: { run_id: row.run_id, resumed: true },
+        });
+        startRatingPrecalc(pool, row.logic_id).catch(() => {});
+      }
+    } catch (err) {
+      console.error('resumeOrphanWarmups finish', row.logic_id, err.message);
+    }
+  }
+
+  return { watching, finished };
+}
+
 function rewriteFormulaBasesNode(formula, values) {
   const text = String(formula ?? '');
   const at = text.indexOf('@');
@@ -1063,6 +1147,7 @@ function createRouteContext(pool) {
     logicNeedsWarmup,
     transferWarmupSecurityState,
     watchWarmupBacktest,
+    resumeOrphanWarmups,
     rewriteFormulaBasesNode,
     parseTimeHm,
     fetchNonTradingIntervals,

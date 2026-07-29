@@ -17,7 +17,7 @@ const { Pool } = require('pg');
 const { resumeOrphanBacktests } = require('./logic-backtest');
 const { startTradeRunner } = require('./trade-runner');
 const { startMaintenanceScheduler } = require('./maintenance-scheduler');
-const { createRouteContext } = require('./lib/server-shared');
+const { createRouteContext, resumeOrphanWarmups } = require('./lib/server-shared');
 
 const registerSettingsRoutes = require('./routes/settings');
 const registerIndicatorsRoutes = require('./routes/indicators');
@@ -68,6 +68,24 @@ app.listen(port, () => {
   console.log(`CORS origin: ${corsOrigin}`);
   startTradeRunner(pool);
   startMaintenanceScheduler(pool);
+  pool
+    .query(`SELECT logic_sync_all_real_account_balances() AS n`)
+    .then((r) => {
+      const n = r.rows[0]?.n;
+      if (n != null) {
+        console.log(`Real account balances synced for ${n} logic(s)`);
+      }
+    })
+    .catch((err) => console.error('logic_sync_all_real_account_balances', err.message));
+  resumeOrphanWarmups(pool)
+    .then((r) => {
+      if (r.watching > 0 || r.finished > 0) {
+        console.log(
+          `Warm-up resume: watching=${r.watching} finished_enabled=${r.finished}`
+        );
+      }
+    })
+    .catch((err) => console.error('resumeOrphanWarmups', err));
   resumeOrphanBacktests(pool)
     .then((r) => {
       if (r.scheduled > 0) {

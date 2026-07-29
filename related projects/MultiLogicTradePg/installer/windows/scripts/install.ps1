@@ -706,7 +706,8 @@ try {
             "PGPASSWORD=$PostgresPassword",
             "PORT=3000",
             "CORS_ORIGIN=http://localhost:4200",
-            "TRADE_RUNNER_INTERVAL_MS=15000"
+            "TRADE_RUNNER_INTERVAL_MS=15000",
+            "TRADE_RUNNER_REQUIRE_UI=0"
         ) -join [Environment]::NewLine
         Write-Utf8NoBomText -Path (Join-Path $InstallDir "api\.env") -Text $content
     }

@@ -2021,12 +2021,12 @@ BEGIN
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'locked');
     END IF;
 
-    IF NOT trade_runner_ui_is_active() THEN
+    IF trade_runner_require_ui() AND NOT trade_runner_ui_is_active() THEN
         PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));
         PERFORM app_tech_log_event(
             'trade-runner',
             'cycle.skip',
-            'Пропуск: UI не активен (закройте Angular — робот не торгует)',
+            'Пропуск: UI не активен (APP_TRADE_RUNNER_REQUIRE_UI=1)',
             'postgresql'
         );
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'ui_inactive');

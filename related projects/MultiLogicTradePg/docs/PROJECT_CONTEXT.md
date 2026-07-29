@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — push: security_inversion paper×side + toggle; installers 99; Crypt + My Projects on Pages
+**Последнее обновление:** 2026-07-29 — push: headless trade runner + Server_Start; installers **100** / `1.0.100`
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -98,7 +98,8 @@
 - UI **Операции** (`/operations`): пять сворачиваемых блоков — **«Параметры логики»**, **«Сигналы на логике»**, **«Стоп-лосс и тейк-профит»**, **«Ценные бумаги»**, **«Сделки»** (по умолчанию свёрнуты);
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
-- **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **только при открытом Angular** (heartbeat → `APP_TRADE_RUNNER_HB`, TTL 90 с); ручной `POST /api/logic-trades/run`;
+- **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **по умолчанию headless** (API up → торгует включённые логики; Angular не обязателен); опционально `TRADE_RUNNER_REQUIRE_UI=1` / `APP_TRADE_RUNNER_REQUIRE_UI=1` — только при heartbeat UI; ручной `POST /api/logic-trades/run`;
+- **Сервер / install-over:** `web\MultiLogic_Trade_Server_Start.bat` (API only); installer post-install запускает Server Start по умолчанию; при старте API — `logic_sync_all_real_account_balances` + `resumeOrphanWarmups`;
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
 - **v41 пакет логик** (по мотивам OsEngine): ещё **10** логик на `FAKE-EFF-001`, `is_enabled=FALSE`, все акции, SL/TP как у демо;
 - **v43 L1–L4** (из MultiLogicTradeA/FINRESP): лонг/шорт × тренд/боковик; AND-сигналы; без Strict/Regime/OnFlip; индикаторы SMA100, LINREG, ATR GROWTH5, ADX, CCI, MACD HISTOGRAM, STOCH; комиссия default **0.03**;
@@ -117,6 +118,14 @@
 ---
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (headless live trading после install-over)
+
+- Запрос: после GitHub update + install-over включённые логики должны снова торговать надёжно, без обязательного Angular (сервер лёгкий).
+- **По умолчанию UI не требуется:** `TRADE_RUNNER_REQUIRE_UI=0` / `APP_TRADE_RUNNER_REQUIRE_UI` default `0`; Node + `run_trade_cycle` гейтят UI только если флаг включён.
+- **`MultiLogic_Trade_Server_Start.bat`** (+ Linux `start-multilogic-trade-server.sh`): только API; installer post-install запускает Server Start по умолчанию (UI — опционально).
+- При старте API: sync real balances + `resumeOrphanWarmups` (дожать warm-up после рестарта).
+- Старый режим «только с открытым Angular»: `TRADE_RUNNER_REQUIRE_UI=1` или параметр `APP_TRADE_RUNNER_REQUIRE_UI=1`.
 
 ### 2026-07-29 (security_inversion: бумага×сторона как resume)
 
@@ -667,7 +676,7 @@
 42. **v26 live data в runner:** `logic_refresh_market_data` — робот сам грузит свечи (T-Bank/MOEX) и пересчитывает индикаторы; окно `logic_trade_load_date_from` (M1/M2 — только сегодня).
 43. **v27 T-Bank UTC→MSK:** `market_candle_dt_from_iso` при записи свечей T-Bank; иначе `prices.dt` на +3 ч от `logic_last_closed_bar_dt` → `trade.not_ready`.
 44. **v28 chart pan perf:** rAF redraw, `loadingOlder` не блокирует перемотку; fullscreen ниже вкладок; логи `chart.pan.*`, `chart.redraw.slow`, `indicator.rangeSync.retryStorm`.
-45. **v29 runner только с UI:** heartbeat Angular → `touch_trade_runner_ui_heartbeat`; `run_trade_cycle` пропускает без UI; блок сделок со scroll.
+45. **v29 runner UI heartbeat (устарело как обязательное):** heartbeat Angular → `APP_TRADE_RUNNER_HB`; с 2026-07-29 по умолчанию **headless** (`APP_TRADE_RUNNER_REQUIRE_UI=0`); UI-gate только при флаге.
 46. **v30 intraday TF:** runner **15 с**; `logic_trade_sync_point_count` (M1=400, M2=300, M5=200 свечей); T-Bank UTC→MSK (`market_candle_dt_from_iso`).
 47. **v31 PnL и пакеты сделок:** параметры **`commission_pct`** (% от депозита на сделку для фейка) и **`cost_method`** (FIFO / AVERAGE); колонки `logic_trades.commission`, `financial_result`; таблица **`logic_trade_lots`**; функции `logic_trade_finalize`, `logic_trade_build_lots`, `logic_trade_rebuild_pnl`; UI — параметры комиссии/метода, разворот строки сделки → таблица пакетов; API `GET /api/logic-trade-lots?trade_id=`; fix клика по блоку «Сделки»; исходник `sql/logic_trade_pnl.sql`.
 48. **v32 проверка токена T-Bank:** `tbank_verify_token()`; красный баннер у блока позиций; клик → диалог.
@@ -862,6 +871,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | Push: headless trade runner + Server_Start after install-over; warm-up/balance resume; installers 100 |
+| 2026-07-29 | Headless trade runner (no UI by default); Server_Start after install-over; warm-up/balance resume on API boot |
 | 2026-07-29 | Push: security_inversion paper×side like resume + toggle; shadow base; Help/UI; installers 99 |
 | 2026-07-29 | Merge Crypt + My Projects hub to main (GitHub Pages publish) || 2026-07-29 | Push: equity-curve let fix; sticky CSS vars; Testing header full-width; installers |
 | 2026-07-29 | My Projects hub on GitHub Pages + Crypt auto-detect decrypt |

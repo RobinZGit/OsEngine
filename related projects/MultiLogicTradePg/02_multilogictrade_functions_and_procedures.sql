@@ -636,6 +636,31 @@ $$;
 COMMENT ON FUNCTION trade_runner_ui_is_active() IS
 'TRUE, если Angular недавно слал heartbeat (APP_TRADE_RUNNER_HB)';
 
+CREATE OR REPLACE FUNCTION trade_runner_require_ui()
+RETURNS BOOLEAN
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_raw TEXT;
+BEGIN
+    SELECT lower(btrim(pv.value))
+    INTO v_raw
+    FROM parameter_values pv
+    JOIN parameter_types pt ON pt.id = pv.parameter_type_id
+    JOIN parameter_sets ps ON ps.id = pv.parameter_set_id
+    WHERE ps.name = 'Default'
+      AND pt.short_name = 'APP_TRADE_RUNNER_REQUIRE_UI'
+    LIMIT 1;
+
+    IF v_raw IS NULL OR v_raw = '' THEN
+        RETURN FALSE;
+    END IF;
+    RETURN v_raw IN ('1', 'true', 'yes', 'on', 't');
+END;
+$$;
+
+COMMENT ON FUNCTION trade_runner_require_ui() IS
+'TRUE только если APP_TRADE_RUNNER_REQUIRE_UI включён; по умолчанию FALSE (headless / сервер)';
+
 CREATE OR REPLACE PROCEDURE touch_trade_runner_ui_heartbeat()
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -4493,6 +4518,7 @@ $$;
 COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER) IS
 'Проставляет param_* серий бумаги из formula сигналов логики перед sync.';
 -- @end calc_ind_extra
+
 
 
 
@@ -9124,6 +9150,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -15849,12 +15903,12 @@ BEGIN
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'locked');
     END IF;
 
-    IF NOT trade_runner_ui_is_active() THEN
+    IF trade_runner_require_ui() AND NOT trade_runner_ui_is_active() THEN
         PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));
         PERFORM app_tech_log_event(
             'trade-runner',
             'cycle.skip',
-            'Пропуск: UI не активен (закройте Angular — робот не торгует)',
+            'Пропуск: UI не активен (APP_TRADE_RUNNER_REQUIRE_UI=1)',
             'postgresql'
         );
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'ui_inactive');
@@ -20073,6 +20127,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

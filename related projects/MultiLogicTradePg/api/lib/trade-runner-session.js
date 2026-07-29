@@ -1,6 +1,6 @@
 'use strict';
 
-/** Сессия UI: робот сделок только пока Angular шлёт heartbeat. */
+/** Сессия UI (опционально): heartbeat Angular. По умолчанию runner headless — UI не обязателен. */
 const UI_TTL_MS = Number(process.env.TRADE_RUNNER_UI_TTL_MS) || 90000;
 
 let lastUiHeartbeatAt = 0;
