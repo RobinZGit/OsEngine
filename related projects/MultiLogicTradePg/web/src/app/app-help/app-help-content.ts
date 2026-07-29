@@ -92,6 +92,7 @@ export const APP_HELP_SECTIONS: HelpSection[] = [
 Биржа: MOEX (акции и фьючерсы). Цены: T-Bank API и/или MOEX ISS (нужен токен T-Bank для коротких таймфреймов).
 
 В шапке:
+• Crypt — отдельный HTML-инструмент (parity stego): спрятать текст или рисунок в картинку; на GitHub Pages также https://robinzgit.github.io/OsEngine/crypt-parity-stego.html
 • Логирование — пишет события в app_tech_log (trade runner, сигналы, ошибки).
 • Книга (эта справка) — описание экранов и понятий; «Контекст проекта» — docs/PROJECT_CONTEXT.md; «Инструкции пользователя» — только формулировки запросов Sergey (docs/USER_INSTRUCTIONS.md).
 • Шестерёнка — структура БД (таблицы / функции / процедуры / диаграмма FK). При работающем API читает живую PostgreSQL; если БД недоступна — из SQL-скриптов репозитория (schema-offline.json).`,

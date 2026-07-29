@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+756. Publish Crypt parity-stego link on GitHub Pages with MultiLogicTradePg deploy (not «GeekPages»)
+
 755. push
 
 754. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting

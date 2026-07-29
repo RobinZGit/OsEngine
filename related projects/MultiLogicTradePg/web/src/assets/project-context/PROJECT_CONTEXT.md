@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export fix; installers
+**Последнее обновление:** 2026-07-29 — Crypt parity-stego on GitHub Pages (`crypt-parity-stego.html` + шапка UI); tools/parity-stego.html
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (Crypt → GitHub Pages)
+
+- Инструмент `tools/parity-stego.html` (+ копия `web/src/assets/tools/parity-stego.html`).
+- Pages workflow копирует **`/OsEngine/crypt-parity-stego.html`**; в шапке UI ссылка **Crypt**; Help/README/`docs/index.html` обновлены.
+- Ключ: пустой = без ключа; иначе ≥3 символов. Ветка `cursor/crypt-parity-stego-2292` (публикация на Pages после merge в `main`).
 
 ### 2026-07-29 (export: LOGIC_TRADE_SELECT is not defined)
 

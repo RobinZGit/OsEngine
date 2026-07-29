@@ -6,6 +6,7 @@ import { AppHelpPanelComponent } from './app-help/app-help-panel.component';
 import { AppSettingsPanelComponent } from './app-settings/app-settings-panel.component';
 import { TechLogService } from './services/tech-log.service';
 import { TradeRunnerSessionService } from './services/trade-runner-session.service';
+import { assetUrl } from './shared/asset-url';
 
 @Component({
   selector: 'app-root',
@@ -26,6 +27,13 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
         <span>PostgreSQL + Angular</span>
       </div>
       <div class="app-bar-right">
+        <a
+          class="crypt-link"
+          [href]="cryptToolUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Crypt — parity stego (text/picture)"
+        >Crypt</a>
         <label class="tech-log-toggle" title="Журнал app_tech_log: trade runner, сигналы, параметры">
           <input
             type="checkbox"
@@ -127,6 +135,23 @@ import { TradeRunnerSessionService } from './services/trade-runner-session.servi
         align-items: center;
         gap: 0.35rem;
       }
+      .crypt-link {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0.55rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        color: #f9fafb;
+        text-decoration: none;
+        font-size: 0.88rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+      .crypt-link:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
       .tech-log-toggle {
         display: inline-flex;
         align-items: center;
@@ -200,6 +225,8 @@ export class AppComponent implements OnInit, OnDestroy {
   helpOpen = false;
   settingsOpen = false;
   techLoggingEnabled = false;
+  /** Standalone Crypt tool (GitHub Pages + local assets). */
+  readonly cryptToolUrl = assetUrl('assets/tools/parity-stego.html');
 
   constructor(
     private readonly techLog: TechLogService,

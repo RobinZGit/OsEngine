@@ -60,9 +60,13 @@ psql -U postgres -d multilogictrade -f 02_multilogictrade_functions_and_procedur
 ```
 
 **GitHub Pages (только UI, без API):**  
-https://robinzgit.github.io/MultiLogicTradePg/  
+https://robinzgit.github.io/OsEngine/  
 
-Ссылка также на [странице документации OsEngine](https://robinzgit.github.io/OsEngine/).
+**Crypt (parity stego):**  
+https://robinzgit.github.io/OsEngine/crypt-parity-stego.html  
+(также ссылка **Crypt** в шапке UI; исходник `tools/parity-stego.html`)
+
+Ссылка также на [странице документации OsEngine](https://robinzgit.github.io/OsEngine/) / `docs/index.html`.
 
 Если API недоступен (типично на GitHub Pages), на форме показывается сообщение о невозможности подключения к БД.  
 URL API настраивается в `web/src/assets/app-config.json`.
