@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.8 — Parity Stego</title>
+  <title>Crypt v1.9 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -337,7 +337,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.8</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.9</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
@@ -357,7 +357,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.8</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.9</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -373,7 +373,7 @@ canvas {
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
           <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <span class="hint">Handwritten note: Encrypt saves B/W (even=white, odd=black ink). Unencoded picture → noise.</span>
+          <span class="hint">Note → Encrypt into Template (file still looks like template). Decrypt: even→white, odd→black.</span>
         </div>
         <div class="canvas-wrap">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
@@ -404,7 +404,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.8";
+  const APP_VERSION = "Crypt v1.9";
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -525,16 +525,6 @@ canvas {
     return sum & 1;
   }
 
-  /** Paint a pixel as pure white (even) or pure black (odd) for note files. */
-  function setBwPixel(data, index, bit) {
-    const i = index * 4;
-    const v = bit & 1 ? 0 : 255;
-    data[i] = v;
-    data[i + 1] = v;
-    data[i + 2] = v;
-    data[i + 3] = 255;
-  }
-
   /**
    * Empty key → encrypt/decrypt without a key (no scrambling).
    * Non-empty key must be at least MIN_KEY_LEN characters.
@@ -595,26 +585,28 @@ canvas {
 
   /**
    * Set parity of RGBA sum to desiredBit (0 even, 1 odd)
-   * by nudging the blue channel ±1 when needed.
+   * by nudging one channel ±1 when needed. Alpha stays 255.
    */
   function setPixelBit(data, index, desiredBit) {
     const i = index * 4;
-    const sum = data[i] + data[i + 1] + data[i + 2] + data[i + 3];
-    const current = sum & 1;
-    if (current === (desiredBit & 1)) return;
+    data[i + 3] = 255;
+    const want = desiredBit & 1;
+    if (((data[i] + data[i + 1] + data[i + 2] + data[i + 3]) & 1) === want) return;
 
-    // Prefer adjusting blue; keep channel in 0..255
-    let b = data[i + 2];
-    if (b < 255) data[i + 2] = b + 1;
-    else if (b > 0) data[i + 2] = b - 1;
-    else {
-      // Blue stuck; try green then red then alpha
-      if (data[i + 1] < 255) data[i + 1] += 1;
-      else if (data[i + 1] > 0) data[i + 1] -= 1;
-      else if (data[i] < 255) data[i] += 1;
-      else if (data[i] > 0) data[i] -= 1;
-      else if (data[i + 3] < 255) data[i + 3] += 1;
-      else if (data[i + 3] > 0) data[i + 3] -= 1;
+    // Prefer blue, then green, then red — never leave alpha semi-transparent
+    const order = [2, 1, 0];
+    for (const ch of order) {
+      const v = data[i + ch];
+      if (v < 255) {
+        data[i + ch] = v + 1;
+        if (((data[i] + data[i + 1] + data[i + 2] + data[i + 3]) & 1) === want) return;
+        data[i + ch] = v;
+      }
+      if (v > 0) {
+        data[i + ch] = v - 1;
+        if (((data[i] + data[i + 1] + data[i + 2] + data[i + 3]) & 1) === want) return;
+        data[i + ch] = v;
+      }
     }
   }
 
@@ -720,19 +712,30 @@ canvas {
     );
   }
 
+  function downloadBlob(blob, filename) {
+    if (!blob) {
+      setStatus("Could not create file.");
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function downloadCanvas(canvas, filename) {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        setStatus("Could not create file.");
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    }, "image/png");
+    canvas.toBlob((blob) => downloadBlob(blob, filename), "image/png");
+  }
+
+  function canvasToPngBlob(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) reject(new Error("Could not create PNG."));
+        else resolve(blob);
+      }, "image/png");
+    });
   }
 
   function textToBits(text) {
@@ -859,7 +862,7 @@ canvas {
     }
   }
 
-  function encryptPicture() {
+  async function encryptPicture() {
     try {
       const resolved = resolveKey();
       if (!resolved.ok) {
@@ -871,7 +874,7 @@ canvas {
       const noteW = els.drawCanvas.width;
       const noteH = els.drawCanvas.height;
 
-      // Bits from the white note canvas: white→0 (even), any non-white→1 (odd)
+      // 1) Bits from the note: white paper → 0 (even), any non-white stroke → 1 (odd)
       const { bits: noteBits } = drawingToBits(els.drawCanvas);
       const inkCount = noteBits.reduce((n, b) => n + (b ? 1 : 0), 0);
       if (inkCount === 0) {
@@ -879,36 +882,71 @@ canvas {
         return;
       }
 
-      // Note file is itself B/W: even sum → white, odd sum → black ink.
-      // Not the colorful text-mode template. Unencoded photos decode as noise.
-      const bits = applyKeyToBits(noteBits, key);
-      const out = document.createElement("canvas");
-      out.width = noteW;
-      out.height = noteH;
-      const ctx = out.getContext("2d", { willReadFrequently: true });
-      const imageData = ctx.createImageData(noteW, noteH);
-      for (let i = 0; i < bits.length; i++) setBwPixel(imageData.data, i, bits[i]);
+      // 2) Start from Template (default or chosen) — encrypted file must LOOK like the template
+      const carrier = expandTemplateToNoteSize(noteW, noteH);
+      const cw = carrier.width;
+      const ch = carrier.height;
+
+      // 3) Full bit plane: note region from drawing; area outside note = even (white)
+      const plainBits = new Array(cw * ch);
+      for (let y = 0; y < ch; y++) {
+        for (let x = 0; x < cw; x++) {
+          const i = y * cw + x;
+          if (x < noteW && y < noteH) plainBits[i] = noteBits[y * noteW + x];
+          else plainBits[i] = 0;
+        }
+      }
+
+      const bits = applyKeyToBits(plainBits, key);
+      const ctx = carrier.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
+      const imageData = ctx.getImageData(0, 0, cw, ch);
+      // Nudge template pixels ±1 so RGBA sum parity matches each bit (looks almost the same)
+      encodeBitsIntoImageData(imageData, bits);
       ctx.putImageData(imageData, 0, 0);
 
-      // Sanity: parity must match the bit plane
-      const check = ctx.getImageData(0, 0, noteW, noteH);
+      // Sanity on canvas before PNG
+      const check = ctx.getImageData(0, 0, cw, ch);
       let odd = 0;
       let mismatch = 0;
-      for (let i = 0; i < noteW * noteH; i++) {
+      for (let i = 0; i < cw * ch; i++) {
         const bit = pixelBit(check.data, i);
         odd += bit;
         if (bit !== (bits[i] & 1)) mismatch++;
       }
       if (mismatch > 0 || odd === 0) {
-        setStatus("Encode failed: B/W parity mismatch. Try again.");
+        setStatus(
+          `Encode failed on canvas: mismatch ${mismatch}, odd ${odd}. Try another template.`
+        );
         return;
       }
 
-      downloadCanvas(out, "encrypted-note.png");
+      // PNG round-trip check — catches color-management wiping parity to all-even (white decrypt)
+      const blob = await canvasToPngBlob(carrier);
+      const reloaded = await loadExactPixelCanvas(blob);
+      const rctx = reloaded.getContext("2d", { willReadFrequently: true });
+      const re = rctx.getImageData(0, 0, reloaded.width, reloaded.height);
+      let oddPng = 0;
+      let mismatchPng = 0;
+      const nCheck = Math.min(cw * ch, reloaded.width * reloaded.height);
+      for (let i = 0; i < nCheck; i++) {
+        const bit = pixelBit(re.data, i);
+        oddPng += bit;
+        if (bit !== (bits[i] & 1)) mismatchPng++;
+      }
+      if (mismatchPng > nCheck * 0.01 || oddPng < inkCount * 0.5) {
+        setStatus(
+          `PNG round-trip lost parity (mismatch ${mismatchPng}, odd ${oddPng}/${odd}). ` +
+            `Keep the file as PNG; do not re-save in the gallery.`
+        );
+        return;
+      }
+
+      downloadBlob(blob, "encrypted-note.png");
       setStatus(
         keyStatusPrefix("Encrypted", withoutKey, key) +
-          ` Note ${noteW}×${noteH} B/W file (even=white, odd=ink), ink ${inkCount} px, odd ${odd}.` +
-          (key ? " With a key the file looks like noise until Decrypt." : " Without a key the file looks like your note.")
+          ` Note → template ${cw}×${ch} (still looks like template). ` +
+          `even=white / odd=ink on Decrypt. ink ${inkCount}, odd ${oddPng}.` +
+          (customTemplateName ? ` · ${customTemplateName}` : " · default template")
       );
     } catch (err) {
       setStatus(err.message || String(err));
@@ -917,7 +955,10 @@ canvas {
 
   function encrypt() {
     if (mode === "text") encryptText();
-    else encryptPicture();
+    else {
+      setStatus("Encrypting note into template…");
+      encryptPicture();
+    }
   }
 
   function loadImageFromFile(file) {
@@ -942,10 +983,36 @@ canvas {
 
   /**
    * Load image into a canvas with exact pixels when possible.
-   * Avoids color-management shifts that destroy RGBA sum parity on decrypt.
-   * Do not rewrite alpha — that would flip parity on unencoded photos.
+   * Avoids color-management shifts that destroy RGBA sum parity on decrypt
+   * (that bug showed as an all-white note).
    */
   async function loadExactPixelCanvas(file) {
+    const buf =
+      file instanceof Blob ? await file.arrayBuffer() : null;
+
+    // Prefer ImageDecoder (raw PNG frames, no color manage) when available
+    if (buf && typeof ImageDecoder !== "undefined") {
+      try {
+        const type = (file.type && file.type.startsWith("image/")) ? file.type : "image/png";
+        const decoder = new ImageDecoder({ data: buf, type });
+        const { image } = await decoder.decode({ frameIndex: 0 });
+        const canvas = document.createElement("canvas");
+        canvas.width = image.displayWidth || image.codedWidth;
+        canvas.height = image.displayHeight || image.codedHeight;
+        const ctx = canvas.getContext("2d", {
+          willReadFrequently: true,
+          colorSpace: "srgb",
+          alpha: true,
+        });
+        ctx.drawImage(image, 0, 0);
+        if (image.close) image.close();
+        if (decoder.close) decoder.close();
+        return canvas;
+      } catch (_) {
+        /* fall through */
+      }
+    }
+
     let bitmap = null;
     try {
       bitmap = await createImageBitmap(file, {
@@ -963,7 +1030,7 @@ canvas {
         const canvas = document.createElement("canvas");
         canvas.width = img.naturalWidth || img.width;
         canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const ctx = canvas.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
         ctx.drawImage(img, 0, 0);
         return canvas;
       }
@@ -971,7 +1038,7 @@ canvas {
     const canvas = document.createElement("canvas");
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
     ctx.drawImage(bitmap, 0, 0);
     if (bitmap.close) bitmap.close();
     return canvas;
@@ -1243,7 +1310,7 @@ canvas {
   if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
   setStatus(
     APP_VERSION +
-      " ready. Note Decrypt = B/W from parity (even→white, odd→black). Unencoded picture → noise."
+      " ready. Note Encrypt = nudge Template parity (file looks like template). Decrypt: even→white, odd→black."
   );
 })();
 

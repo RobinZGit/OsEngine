@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+776. Note encrypt must use Template (file looks like template); change pixel parity even/odd; decrypt even→white odd→black — not a B/W file without template; white decrypt was wrong
+
 775. push (always open Angular UI after install; cycle logs; installers 102)
 
 774. When installing, always run the Angular UI unless explicitly unchecked; when launching trade, the form should try to open.
