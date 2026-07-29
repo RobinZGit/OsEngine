@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — Crypt parity-stego on GitHub Pages (`crypt-parity-stego.html` + шапка UI); tools/parity-stego.html
+**Последнее обновление:** 2026-07-29 — My Projects hub on GitHub Pages; Crypt parity-stego; tools/*.html
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -125,6 +125,7 @@
 - Pages workflow копирует **`/OsEngine/crypt-parity-stego.html`**; в шапке UI ссылка **Crypt**; Help/README/`docs/index.html` обновлены.
 - Ключ: пустой = без ключа; иначе ≥3 символов. Ветка `cursor/crypt-parity-stego-2292` (публикация на Pages после merge в `main`).
 - **Decrypt auto:** пробует text и picture, выбирает более «похожий на реальный» результат и переключает свитч режима.
+- **My Projects hub:** `tools/my-projects.html` → https://robinzgit.github.io/OsEngine/my-projects.html (Crypt, MultiLogic Pg, FINRESP/TradeA, UN Calculator, Диетолог, TotalCalendar, MacroRithm); кнопка в шапке.
 
 ### 2026-07-29 (export: LOGIC_TRADE_SELECT is not defined)
 
@@ -843,6 +844,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | My Projects hub on GitHub Pages (all published apps) + Crypt auto-detect decrypt |
 | 2026-07-29 | Crypt parity-stego on GitHub Pages (crypt-parity-stego.html + Crypt in app bar); PR branch |
 | 2026-07-29 | Push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export; installers |
 | 2026-07-29 | Push: inversion sides-only + Help chapter; equity mid-run fix; sticky row colors; installers |

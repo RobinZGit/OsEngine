@@ -85,9 +85,11 @@ jobs:
         working-directory: related projects/MultiLogicTradePg
         run: |
           cp tools/parity-stego.html web/dist/web/browser/crypt-parity-stego.html
-          # Keep assets copy in sync for in-app link
+          cp tools/my-projects.html web/dist/web/browser/my-projects.html
+          # Keep assets copy in sync for in-app links
           mkdir -p web/dist/web/browser/assets/tools
           cp tools/parity-stego.html web/dist/web/browser/assets/tools/parity-stego.html
+          cp tools/my-projects.html web/dist/web/browser/assets/tools/my-projects.html
 
       - name: SPA fallback
         working-directory: related projects/MultiLogicTradePg/web

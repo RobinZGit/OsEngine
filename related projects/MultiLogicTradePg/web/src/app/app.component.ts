@@ -29,6 +29,13 @@ import { assetUrl } from './shared/asset-url';
       <div class="app-bar-right">
         <a
           class="crypt-link"
+          [href]="myProjectsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="My Published Projects — hub of GitHub Pages apps"
+        >My Projects</a>
+        <a
+          class="crypt-link"
           [href]="cryptToolUrl"
           target="_blank"
           rel="noopener noreferrer"
@@ -227,6 +234,8 @@ export class AppComponent implements OnInit, OnDestroy {
   techLoggingEnabled = false;
   /** Standalone Crypt tool (GitHub Pages + local assets). */
   readonly cryptToolUrl = assetUrl('assets/tools/parity-stego.html');
+  /** Hub of published GitHub Pages projects. */
+  readonly myProjectsUrl = assetUrl('assets/tools/my-projects.html');
 
   constructor(
     private readonly techLog: TechLogService,

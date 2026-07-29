@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Published Projects — RobinZGit</title>
+  <style>
+    :root {
+      --bg0: #0f1a24;
+      --bg1: #1a2e3a;
+      --card: #243846;
+      --ink: #e8f0f4;
+      --muted: #9bb0bd;
+      --accent: #3db89a;
+      --accent2: #5b8fd4;
+      --line: #355060;
+      --font: "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 15% 0%, #2a4a55 0%, transparent 45%),
+        radial-gradient(ellipse at 90% 100%, #1e3d35 0%, transparent 40%),
+        linear-gradient(160deg, var(--bg0), var(--bg1));
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(1.6rem, 4vw, 2.1rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0 0 1.75rem;
+      color: var(--muted);
+      font-size: 1.02rem;
+      line-height: 1.5;
+    }
+    .list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .list a {
+      display: block;
+      padding: 1rem 1.15rem;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(36, 56, 70, 0.85);
+      color: var(--ink);
+      text-decoration: none;
+      transition: border-color 0.15s, transform 0.15s, background 0.15s;
+    }
+    .list a:hover {
+      border-color: var(--accent);
+      background: rgba(45, 70, 85, 0.95);
+      transform: translateY(-1px);
+    }
+    .list .title {
+      display: block;
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 0.25rem;
+    }
+    .list .desc {
+      display: block;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+    .list .url {
+      display: block;
+      margin-top: 0.45rem;
+      font-size: 0.8rem;
+      color: var(--accent2);
+      word-break: break-all;
+    }
+    .more {
+      margin-top: 2rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--line);
+    }
+    .more h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    footer {
+      margin-top: 2.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    footer a { color: var(--accent2); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>My Published Projects</h1>
+    <p class="lead">
+      Публичные проекты на GitHub Pages (RobinZGit).
+      Open any card to launch the site.
+    </p>
+
+    <ol class="list">
+      <li>
+        <a href="https://robinzgit.github.io/OsEngine/crypt-parity-stego.html">
+          <span class="title">1. Crypt — cipher / parity stego</span>
+          <span class="desc">Hide text or a drawing in a picture (pixel parity). Optional key (≥3 chars).</span>
+          <span class="url">robinzgit.github.io/OsEngine/crypt-parity-stego.html</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://robinzgit.github.io/OsEngine/">
+          <span class="title">2. MultiLogic Trade (PostgreSQL)</span>
+          <span class="desc">Trading UI: logics, papers, indicators, backtests. Full trading needs local API + PostgreSQL.</span>
+          <span class="url">robinzgit.github.io/OsEngine/</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://robinzgit.github.io/MultiLogicTradeA/">
+          <span class="title">3. MultiLogic FINRESP calculator</span>
+          <span class="desc">Angular FINRESP calculator and MultiLogicTradeA UI.</span>
+          <span class="url">robinzgit.github.io/MultiLogicTradeA/</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://robinzgit.github.io/UN_Calculator/">
+          <span class="title">4. UN Calculator</span>
+          <span class="desc">UN Calculator web app.</span>
+          <span class="url">robinzgit.github.io/UN_Calculator/</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://robinzgit.github.io/dietolog_client/">
+          <span class="title">5. Dietitian (Диетолог)</span>
+          <span class="desc">Dietolog client on GitHub Pages.</span>
+          <span class="url">robinzgit.github.io/dietolog_client/</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://robinzgit.github.io/TotalCalendarJS/">
+          <span class="title">6. Total Calendar</span>
+          <span class="desc">TotalCalendarJS — calendar engine / UI.</span>
+          <span class="url">robinzgit.github.io/TotalCalendarJS/</span>
+        </a>
+      </li>
+    </ol>
+
+    <div class="more">
+      <h2>Also published</h2>
+      <ol class="list">
+        <li>
+          <a href="https://robinzgit.github.io/MacroRithmJS/">
+            <span class="title">MacroRithmJS</span>
+            <span class="desc">Planning rhythmic businesses.</span>
+            <span class="url">robinzgit.github.io/MacroRithmJS/</span>
+          </a>
+        </li>
+      </ol>
+    </div>
+
+    <footer>
+      Source hub file lives in OsEngine →
+      <code>related projects/MultiLogicTradePg/tools/my-projects.html</code>.
+      GitHub: <a href="https://github.com/RobinZGit">RobinZGit</a>.
+    </footer>
+  </div>
+</body>
+</html>

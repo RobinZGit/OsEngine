@@ -62,6 +62,10 @@ psql -U postgres -d multilogictrade -f 02_multilogictrade_functions_and_procedur
 **GitHub Pages (только UI, без API):**  
 https://robinzgit.github.io/OsEngine/  
 
+**My Published Projects (хаб ссылок):**  
+https://robinzgit.github.io/OsEngine/my-projects.html  
+(также кнопка **My Projects** в шапке UI)
+
 **Crypt (parity stego):**  
 https://robinzgit.github.io/OsEngine/crypt-parity-stego.html  
 (также ссылка **Crypt** в шапке UI; исходник `tools/parity-stego.html`)
