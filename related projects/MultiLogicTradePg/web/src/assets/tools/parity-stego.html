@@ -231,7 +231,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
-  background: #f7f4ea;
+  background: #ffffff;
   touch-action: none;
 }
 
@@ -297,7 +297,7 @@ canvas {
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
           <button type="button" id="modeText" class="mode-btn is-active" data-mode="text">Text</button>
-          <button type="button" id="modePicture" class="mode-btn" data-mode="picture">Picture</button>
+          <button type="button" id="modePicture" class="mode-btn" data-mode="picture">Note</button>
         </div>
         <div class="key-field">
           <label for="encKey">Key</label>
@@ -326,7 +326,7 @@ canvas {
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
           <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <span class="hint">Draw with mouse or stylus · Template/Decrypt open all files</span>
+          <span class="hint">Handwritten note (B/W): white paper, any non-white ink → black in encode</span>
         </div>
         <div class="canvas-wrap">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
@@ -381,7 +381,7 @@ canvas {
     btnLoadText: document.getElementById("btnLoadText"),
   };
 
-  let mode = "text"; // "text" | "picture"
+  let mode = "text"; // "text" | "picture" (UI label: Note = handwritten note)
   let drawing = false;
   let lastPoint = null;
   /** User-chosen carrier image (HTMLImageElement), or null → built-in default. */
@@ -411,9 +411,11 @@ canvas {
   }
 
   function clearDrawing() {
-    drawCtx.fillStyle = "#f7f4ea";
+    // White paper for handwritten notes; encode is strict black/white.
+    drawCtx.fillStyle = "#ffffff";
     drawCtx.fillRect(0, 0, els.drawCanvas.width, els.drawCanvas.height);
-    drawCtx.strokeStyle = "#1a1a1a";
+    drawCtx.strokeStyle = "#000000";
+    drawCtx.fillStyle = "#000000";
     drawCtx.lineWidth = 3;
     drawCtx.lineCap = "round";
     drawCtx.lineJoin = "round";
@@ -449,9 +451,8 @@ canvas {
     lastPoint = canvasPoint(els.drawCanvas, e);
     drawCtx.beginPath();
     drawCtx.arc(lastPoint.x, lastPoint.y, drawCtx.lineWidth / 2, 0, Math.PI * 2);
-    drawCtx.fillStyle = "#1a1a1a";
+    drawCtx.fillStyle = "#000000";
     drawCtx.fill();
-    drawCtx.fillStyle = "#f7f4ea";
   }
 
   function onPointerMove(e) {
@@ -700,17 +701,26 @@ canvas {
   }
 
   /** Drawing: dark ink → bit 1 (odd/black), light → bit 0 (even/white). */
+  /**
+   * Handwritten note → strict B/W bits for parity encode.
+   * White (near #fff) → 0 (even); any other color → 1 (odd/black).
+   * Anti-aliased greys count as ink (black).
+   */
   function drawingToBits(sourceCanvas) {
     const w = sourceCanvas.width;
     const h = sourceCanvas.height;
     const ctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
     const src = ctx.getImageData(0, 0, w, h).data;
     const bits = new Array(w * h);
+    // Near-white paper only; everything else is black ink in the encoded note.
+    const WHITE_MIN = 250;
     for (let i = 0; i < w * h; i++) {
       const o = i * 4;
-      // luminance; treat near-ink as black bit
-      const lum = 0.299 * src[o] + 0.587 * src[o + 1] + 0.114 * src[o + 2];
-      bits[i] = lum < 140 ? 1 : 0;
+      const r = src[o];
+      const g = src[o + 1];
+      const b = src[o + 2];
+      const isWhite = r >= WHITE_MIN && g >= WHITE_MIN && b >= WHITE_MIN;
+      bits[i] = isWhite ? 0 : 1;
     }
     return { bits, width: w, height: h };
   }
@@ -778,14 +788,14 @@ canvas {
       scaled.width = cw;
       scaled.height = ch;
       const sctx = scaled.getContext("2d");
-      sctx.fillStyle = "#f7f4ea";
+      sctx.fillStyle = "#ffffff";
       sctx.fillRect(0, 0, cw, ch);
       sctx.drawImage(els.drawCanvas, 0, 0, cw, ch);
 
       const { bits: plainBits } = drawingToBits(scaled);
       const hasInk = plainBits.some((b) => b === 1);
       if (!hasInk) {
-        setStatus("Draw something first.");
+        setStatus("Write a handwritten note first (non-white strokes on white paper).");
         return;
       }
 
@@ -794,10 +804,10 @@ canvas {
       const imageData = ctx.getImageData(0, 0, cw, ch);
       encodeBitsIntoImageData(imageData, bits);
       ctx.putImageData(imageData, 0, 0);
-      downloadCanvas(carrier, "encrypted-picture.png");
+      downloadCanvas(carrier, "encrypted-note.png");
       setStatus(
         keyStatusPrefix("Encrypted", withoutKey, key) +
-          " Drawing → PNG" +
+          " Handwritten note → B/W parity PNG" +
           (customTemplateName ? ` · template: ${customTemplateName}` : " · default template") +
           "."
       );
@@ -984,6 +994,7 @@ canvas {
 
       const chooseText = textCand.score >= picCand.score;
       const chosen = chooseText ? "text" : "picture";
+      const chosenLabel = chooseText ? "text" : "note";
       setMode(chosen, { keepResult: true });
 
       if (chooseText) {
@@ -994,9 +1005,9 @@ canvas {
 
       const keyMsg = keyStatusPrefix("Decrypted", withoutKey, key);
       setStatus(
-        `${keyMsg} Auto-detected ${chosen} ` +
-          `(text ${textCand.score.toFixed(2)} vs picture ${picCand.score.toFixed(2)}). ` +
-          `Switch set to ${chosen}.`
+        `${keyMsg} Auto-detected ${chosenLabel} ` +
+          `(text ${textCand.score.toFixed(2)} vs note ${picCand.score.toFixed(2)}). ` +
+          `Switch set to ${chosenLabel}.`
       );
     } catch (err) {
       setStatus(err.message || String(err));
