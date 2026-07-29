@@ -37,7 +37,7 @@ export function scopeTypeLabel(
     case 'security_resume':
       return 'По бумаге и стороне (возобновление при достижении суммы прерывания)';
     case 'security_inversion':
-      return 'По бумаге (инверсия при повторной просадке)';
+      return 'По бумаге и стороне (инверсия при достижении суммы прерывания)';
     case 'portfolio':
       return 'По всему портфелю логики';
     case 'portfolio_resume':

@@ -6,9 +6,15 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+769. push (security_inversion paper×side remake + installers 99)
+
 768. Bump Crypt form version so GitHub Pages shows the new build (tell which version will be used)
 
 767. Add Crypt version number on the form for GitHub Pages (so tablet shows whether the build updated)
+
+759. «Make stop-loss on paper inversion like paper with renewal: cut on the side when reaching interruption sum; same for paper×side with inversion toggle on zero.»
+
+758. push
 
 766. Fix note encrypt/decrypt: expand template to note size; parity even=white odd=ink; exact-pixel decode (was blank sheet)
 

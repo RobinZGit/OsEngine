@@ -1512,12 +1512,16 @@ COMMENT ON FUNCTION logic_process_linear_tp_security(INTEGER, INTEGER, INTEGER, 
 'Deprecated: линейный TP перенесён на portfolio_ltp_renew (logic_process_linear_tp_portfolio).';
 
 -- ============================================
--- security_inversion state machine (per paper)
--- One threshold = stop value (%). No inversion_value.
--- normal/inverted real → DD >= value → shadow (flag kept)
--- shadow → baseline + shadow_track >= peak ("zero") → unpause + TOGGLE inverted
--- Growing in the "correct" direction never arms inversion by itself.
+-- security_inversion state machine (paper × side)
+-- Same pause/shadow/resume as security_resume, but on shadow→zero
+-- toggles real_trading_inverted (XOR with logic checkbox).
+-- When inverted: DD/close use opposite position side (long signals → shorts).
+-- Shadow recovery uses base logic (ignore paper inverted) in trade runner.
+-- Growing never arms inversion by itself. No inversion_value.
 -- ============================================
+
+DROP FUNCTION IF EXISTS logic_security_inversion_enter_shadow(INTEGER, INTEGER, INTEGER, NUMERIC, NUMERIC, TEXT);
+DROP FUNCTION IF EXISTS logic_security_inversion_enter_shadow(INTEGER, INTEGER, INTEGER, NUMERIC, NUMERIC, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION logic_security_inversion_enter_shadow(
     p_logic_id INTEGER,
@@ -1525,27 +1529,52 @@ CREATE OR REPLACE FUNCTION logic_security_inversion_enter_shadow(
     p_timeframe_id INTEGER,
     p_track_before NUMERIC,
     p_track_after NUMERIC,
-    p_reason TEXT
+    p_reason TEXT,
+    p_position_side TEXT DEFAULT NULL
 )
 RETURNS VOID
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_side TEXT;
 BEGIN
+    v_side := logic_normalize_position_side(p_position_side);
     -- Keep real_trading_inverted: crossing zero later toggles it.
-    UPDATE logic_securities
-    SET real_trading_paused = TRUE,
-        real_trading_paused_long = TRUE,
-        real_trading_paused_short = TRUE,
-        stop_resume_equity = p_track_before,
-        stop_resume_baseline = p_track_after,
-        stop_resume_triggered_at = CURRENT_TIMESTAMP,
-        stop_resume_equity_long = p_track_before,
-        stop_resume_baseline_long = p_track_after,
-        stop_resume_triggered_at_long = CURRENT_TIMESTAMP,
-        stop_resume_equity_short = p_track_before,
-        stop_resume_baseline_short = p_track_after,
-        stop_resume_triggered_at_short = CURRENT_TIMESTAMP
-    WHERE logic_id = p_logic_id
-      AND security_id = p_security_id;
+    IF v_side = 'long' THEN
+        UPDATE logic_securities
+        SET real_trading_paused = TRUE,
+            real_trading_paused_long = TRUE,
+            stop_resume_equity_long = p_track_before,
+            stop_resume_baseline_long = p_track_after,
+            stop_resume_triggered_at_long = CURRENT_TIMESTAMP
+        WHERE logic_id = p_logic_id
+          AND security_id = p_security_id;
+    ELSIF v_side = 'short' THEN
+        UPDATE logic_securities
+        SET real_trading_paused = TRUE,
+            real_trading_paused_short = TRUE,
+            stop_resume_equity_short = p_track_before,
+            stop_resume_baseline_short = p_track_after,
+            stop_resume_triggered_at_short = CURRENT_TIMESTAMP
+        WHERE logic_id = p_logic_id
+          AND security_id = p_security_id;
+    ELSE
+        -- Legacy whole-paper shadow (both sides)
+        UPDATE logic_securities
+        SET real_trading_paused = TRUE,
+            real_trading_paused_long = TRUE,
+            real_trading_paused_short = TRUE,
+            stop_resume_equity = p_track_before,
+            stop_resume_baseline = p_track_after,
+            stop_resume_triggered_at = CURRENT_TIMESTAMP,
+            stop_resume_equity_long = p_track_before,
+            stop_resume_baseline_long = p_track_after,
+            stop_resume_triggered_at_long = CURRENT_TIMESTAMP,
+            stop_resume_equity_short = p_track_before,
+            stop_resume_baseline_short = p_track_after,
+            stop_resume_triggered_at_short = CURRENT_TIMESTAMP
+        WHERE logic_id = p_logic_id
+          AND security_id = p_security_id;
+    END IF;
 
     PERFORM logic_trade_log(
         p_logic_id,
@@ -1555,6 +1584,7 @@ BEGIN
             'security_id', p_security_id,
             'scope', 'security_inversion',
             'phase', 'shadow',
+            'position_side', v_side,
             'track_before', p_track_before,
             'track_after', p_track_after
         ),
@@ -1572,38 +1602,26 @@ CREATE OR REPLACE FUNCTION logic_check_security_inversion(
 RETURNS BOOLEAN
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_stop RECORD;
     v_ls RECORD;
-    v_paused BOOLEAN;
-    v_real_dd NUMERIC;
     v_shadow_track NUMERIC;
-    v_closed INTEGER;
-    v_track_before NUMERIC;
-    v_track_after NUMERIC;
+    v_resumed BOOLEAN := FALSE;
+    v_paused_long BOOLEAN;
+    v_paused_short BOOLEAN;
     v_was_inverted BOOLEAN;
     v_now_inverted BOOLEAN;
 BEGIN
-    SELECT ls.*
-    INTO v_stop
-    FROM logic_stops ls
-    WHERE ls.logic_id = p_logic_id
-      AND ls.rule_kind = 'stop_loss'
-      AND ls.is_active = TRUE
-      AND ls.scope_type = 'security_inversion'
-    ORDER BY ls.display_order, ls.id
-    LIMIT 1;
-
-    IF NOT FOUND OR v_stop.value_unit <> 'percent' THEN
-        RETURN FALSE;
-    END IF;
-
+    -- Recovery only (like logic_check_security_resume). New SL → process_logic_stops.
     SELECT
         COALESCE(ls.real_trading_inverted, FALSE) AS inverted,
-        COALESCE(ls.real_trading_paused, FALSE) AS paused_paper,
         COALESCE(ls.real_trading_paused_long, FALSE) AS paused_long,
         COALESCE(ls.real_trading_paused_short, FALSE) AS paused_short,
-        COALESCE(ls.stop_resume_equity_long, ls.stop_resume_equity) AS resume_equity,
-        COALESCE(ls.stop_resume_baseline_long, ls.stop_resume_baseline) AS resume_baseline
+        ls.stop_resume_equity_long,
+        ls.stop_resume_baseline_long,
+        ls.stop_resume_equity_short,
+        ls.stop_resume_baseline_short,
+        COALESCE(ls.real_trading_paused, FALSE) AS paused_paper,
+        ls.stop_resume_equity,
+        ls.stop_resume_baseline
     INTO v_ls
     FROM logic_securities ls
     WHERE ls.logic_id = p_logic_id
@@ -1613,95 +1631,132 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    v_paused := v_ls.paused_paper OR v_ls.paused_long OR v_ls.paused_short;
+    v_paused_long := v_ls.paused_long;
+    v_paused_short := v_ls.paused_short;
 
-    -- Shadow: recover to "zero" (peak at stop) → resume real + toggle inversion
-    IF v_paused THEN
-        IF v_ls.resume_equity IS NOT NULL AND v_ls.resume_baseline IS NOT NULL THEN
-            v_shadow_track := logic_security_track_value(
-                p_logic_id, p_security_id, p_timeframe_id, TRUE
-            );
-            IF COALESCE(v_ls.resume_baseline, 0) + COALESCE(v_shadow_track, 0)
-               >= COALESCE(v_ls.resume_equity, 0) THEN
-                v_was_inverted := v_ls.inverted;
-                v_now_inverted := NOT v_was_inverted;
-                UPDATE logic_securities
-                SET real_trading_paused = FALSE,
-                    real_trading_paused_long = FALSE,
-                    real_trading_paused_short = FALSE,
-                    real_trading_inverted = v_now_inverted,
-                    stop_resume_equity = NULL,
-                    stop_resume_baseline = NULL,
-                    stop_resume_triggered_at = NULL,
-                    stop_resume_equity_long = NULL,
-                    stop_resume_baseline_long = NULL,
-                    stop_resume_triggered_at_long = NULL,
-                    stop_resume_equity_short = NULL,
-                    stop_resume_baseline_short = NULL,
-                    stop_resume_triggered_at_short = NULL
-                WHERE logic_id = p_logic_id
-                  AND security_id = p_security_id;
-                PERFORM logic_trade_log(
-                    p_logic_id, 'stop.inversion_toggle',
-                    format(
-                        'SL inversion sec=%s: shadow вернул к нулю → inverted %s→%s',
-                        p_security_id, v_was_inverted, v_now_inverted
-                    ),
-                    jsonb_build_object(
-                        'security_id', p_security_id,
-                        'phase', CASE WHEN v_now_inverted THEN 'inverted' ELSE 'normal' END,
-                        'baseline', v_ls.resume_baseline,
-                        'shadow_track', v_shadow_track,
-                        'peak', v_ls.resume_equity,
-                        'inverted_before', v_was_inverted,
-                        'inverted_after', v_now_inverted
-                    ),
-                    p_security_id, p_timeframe_id
-                );
-                RETURN TRUE;
-            END IF;
+    IF v_ls.paused_paper AND NOT v_paused_long AND NOT v_paused_short THEN
+        v_paused_long := TRUE;
+        v_paused_short := TRUE;
+        IF v_ls.stop_resume_equity_long IS NULL THEN
+            v_ls.stop_resume_equity_long := v_ls.stop_resume_equity;
+            v_ls.stop_resume_baseline_long := v_ls.stop_resume_baseline;
         END IF;
-        RETURN FALSE;
+        IF v_ls.stop_resume_equity_short IS NULL THEN
+            v_ls.stop_resume_equity_short := v_ls.stop_resume_equity;
+            v_ls.stop_resume_baseline_short := v_ls.stop_resume_baseline;
+        END IF;
     END IF;
 
-    -- Real trading (normal or inverted): same SL % → close + shadow
-    v_real_dd := logic_security_drawdown_pct(
-        p_logic_id, p_security_id, p_timeframe_id, FALSE
-    );
-    IF v_real_dd < v_stop.value THEN
-        RETURN FALSE;
+    IF v_paused_long
+       AND v_ls.stop_resume_equity_long IS NOT NULL
+       AND v_ls.stop_resume_baseline_long IS NOT NULL THEN
+        v_shadow_track := logic_security_side_track_value(
+            p_logic_id, p_security_id, p_timeframe_id, TRUE, 'long'
+        );
+        IF COALESCE(v_ls.stop_resume_baseline_long, 0) + COALESCE(v_shadow_track, 0)
+           >= COALESCE(v_ls.stop_resume_equity_long, 0) THEN
+            v_was_inverted := v_ls.inverted;
+            v_now_inverted := NOT v_was_inverted;
+            UPDATE logic_securities
+            SET real_trading_paused_long = FALSE,
+                stop_resume_equity_long = NULL,
+                stop_resume_baseline_long = NULL,
+                stop_resume_triggered_at_long = NULL,
+                real_trading_inverted = v_now_inverted,
+                real_trading_paused = COALESCE(real_trading_paused_short, FALSE),
+                stop_resume_equity = CASE
+                    WHEN COALESCE(real_trading_paused_short, FALSE) THEN stop_resume_equity
+                    ELSE NULL
+                END,
+                stop_resume_baseline = CASE
+                    WHEN COALESCE(real_trading_paused_short, FALSE) THEN stop_resume_baseline
+                    ELSE NULL
+                END,
+                stop_resume_triggered_at = CASE
+                    WHEN COALESCE(real_trading_paused_short, FALSE) THEN stop_resume_triggered_at
+                    ELSE NULL
+                END
+            WHERE logic_id = p_logic_id
+              AND security_id = p_security_id;
+            PERFORM logic_trade_log(
+                p_logic_id, 'stop.inversion_toggle',
+                format(
+                    'SL inversion sec=%s long: shadow→ноль → inverted %s→%s',
+                    p_security_id, v_was_inverted, v_now_inverted
+                ),
+                jsonb_build_object(
+                    'security_id', p_security_id,
+                    'position_side', 'long',
+                    'inverted_before', v_was_inverted,
+                    'inverted_after', v_now_inverted,
+                    'shadow_track', v_shadow_track,
+                    'target', v_ls.stop_resume_equity_long
+                ),
+                p_security_id, p_timeframe_id
+            );
+            v_resumed := TRUE;
+            v_ls.inverted := v_now_inverted;
+            v_paused_long := FALSE;
+        END IF;
     END IF;
 
-    -- Peak ("zero" target) = track before closing positions
-    v_track_before := logic_security_track_value(
-        p_logic_id, p_security_id, p_timeframe_id, FALSE
-    );
-    v_closed := logic_close_security_positions_market(
-        p_logic_id, p_security_id, FALSE,
-        CASE
-            WHEN v_ls.inverted THEN 'stop_loss:security_inversion:inverted'
-            ELSE 'stop_loss:security_inversion'
-        END
-    );
-    v_track_after := logic_security_track_value(
-        p_logic_id, p_security_id, p_timeframe_id, FALSE
-    );
-    PERFORM logic_security_inversion_enter_shadow(
-        p_logic_id, p_security_id, p_timeframe_id,
-        v_track_before,
-        v_track_after,
-        format(
-            'SL inversion sec=%s: DD %s%% >= %s%% → shadow (inverted=%s)',
-            p_security_id, round(v_real_dd, 4), v_stop.value, v_ls.inverted
-        )
-    );
+    IF v_paused_short
+       AND v_ls.stop_resume_equity_short IS NOT NULL
+       AND v_ls.stop_resume_baseline_short IS NOT NULL THEN
+        v_shadow_track := logic_security_side_track_value(
+            p_logic_id, p_security_id, p_timeframe_id, TRUE, 'short'
+        );
+        IF COALESCE(v_ls.stop_resume_baseline_short, 0) + COALESCE(v_shadow_track, 0)
+           >= COALESCE(v_ls.stop_resume_equity_short, 0) THEN
+            v_was_inverted := v_ls.inverted;
+            v_now_inverted := NOT v_was_inverted;
+            UPDATE logic_securities
+            SET real_trading_paused_short = FALSE,
+                stop_resume_equity_short = NULL,
+                stop_resume_baseline_short = NULL,
+                stop_resume_triggered_at_short = NULL,
+                real_trading_inverted = v_now_inverted,
+                real_trading_paused = COALESCE(real_trading_paused_long, FALSE),
+                stop_resume_equity = CASE
+                    WHEN COALESCE(real_trading_paused_long, FALSE) THEN stop_resume_equity
+                    ELSE NULL
+                END,
+                stop_resume_baseline = CASE
+                    WHEN COALESCE(real_trading_paused_long, FALSE) THEN stop_resume_baseline
+                    ELSE NULL
+                END,
+                stop_resume_triggered_at = CASE
+                    WHEN COALESCE(real_trading_paused_long, FALSE) THEN stop_resume_triggered_at
+                    ELSE NULL
+                END
+            WHERE logic_id = p_logic_id
+              AND security_id = p_security_id;
+            PERFORM logic_trade_log(
+                p_logic_id, 'stop.inversion_toggle',
+                format(
+                    'SL inversion sec=%s short: shadow→ноль → inverted %s→%s',
+                    p_security_id, v_was_inverted, v_now_inverted
+                ),
+                jsonb_build_object(
+                    'security_id', p_security_id,
+                    'position_side', 'short',
+                    'inverted_before', v_was_inverted,
+                    'inverted_after', v_now_inverted,
+                    'shadow_track', v_shadow_track,
+                    'target', v_ls.stop_resume_equity_short
+                ),
+                p_security_id, p_timeframe_id
+            );
+            v_resumed := TRUE;
+        END IF;
+    END IF;
 
-    RETURN TRUE;
+    RETURN v_resumed;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_check_security_inversion(INTEGER, INTEGER, INTEGER) IS
-'security_inversion: DD≥value → shadow; shadow back to peak/zero → toggle real_trading_inverted.';
+'security_inversion: per side shadow→peak/zero → unpause that side + toggle real_trading_inverted.';
 
 CREATE OR REPLACE FUNCTION process_logic_stops(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -2049,6 +2104,118 @@ BEGIN
                 CONTINUE;
             END IF;
 
+            IF v_stop.scope_type = 'security_inversion' THEN
+                -- Same as resume (paper × side), keep inverted flag; toggle on shadow→zero.
+                DECLARE
+                    v_side_name TEXT;
+                    v_side_paused BOOLEAN;
+                    v_hwm NUMERIC;
+                    v_target NUMERIC;
+                    v_no_reduce BOOLEAN;
+                    v_inverted BOOLEAN;
+                    v_pos_side TEXT;
+                BEGIN
+                    v_no_reduce := COALESCE(
+                        get_logic_param_boolean(p_logic_id, 'resume_sl_no_reduce', FALSE),
+                        FALSE
+                    );
+                    FOREACH v_side_name IN ARRAY ARRAY['long', 'short']
+                    LOOP
+                        SELECT CASE
+                            WHEN v_side_name = 'long'
+                                THEN COALESCE(ls.real_trading_paused_long, FALSE)
+                            ELSE COALESCE(ls.real_trading_paused_short, FALSE)
+                        END,
+                        CASE
+                            WHEN v_side_name = 'long' THEN ls.stop_resume_hwm_long
+                            ELSE ls.stop_resume_hwm_short
+                        END,
+                        COALESCE(ls.real_trading_inverted, FALSE)
+                        INTO v_side_paused, v_hwm, v_inverted
+                        FROM logic_securities ls
+                        WHERE ls.logic_id = p_logic_id
+                          AND ls.security_id = v_sec.security_id;
+
+                        IF COALESCE(v_side_paused, FALSE) THEN
+                            CONTINUE;
+                        END IF;
+
+                        v_pos_side := CASE
+                            WHEN v_inverted THEN
+                                CASE WHEN v_side_name = 'long' THEN 'short' ELSE 'long' END
+                            ELSE v_side_name
+                        END;
+
+                        v_drawdown := logic_security_side_drawdown_pct(
+                            p_logic_id, v_sec.security_id, v_tf_id, FALSE, v_pos_side
+                        );
+                        IF v_drawdown < v_stop.value THEN
+                            CONTINUE;
+                        END IF;
+
+                        v_track_before := logic_security_side_track_value(
+                            p_logic_id, v_sec.security_id, v_tf_id, FALSE, v_pos_side
+                        );
+                        v_target := logic_resume_sl_peak_target(
+                            p_logic_id, v_track_before, v_hwm
+                        );
+                        PERFORM logic_trade_log(
+                            p_logic_id, 'stop.trigger',
+                            format(
+                                'SL inversion sec=%s side=%s: просадка %s%% >= %s%% → shadow',
+                                v_sec.security_id, v_side_name,
+                                round(v_drawdown, 4), v_stop.value
+                            ),
+                            jsonb_build_object(
+                                'security_id', v_sec.security_id,
+                                'position_side', v_side_name,
+                                'pos_side', v_pos_side,
+                                'drawdown_pct', v_drawdown,
+                                'scope', 'security_inversion',
+                                'inverted', v_inverted
+                            ),
+                            v_sec.security_id, v_tf_id
+                        );
+                        v_closed := logic_close_security_positions_market(
+                            p_logic_id, v_sec.security_id, FALSE,
+                            CASE
+                                WHEN v_inverted THEN
+                                    format('stop_loss:security_inversion:inverted:%s', v_side_name)
+                                ELSE
+                                    format('stop_loss:security_inversion:%s', v_side_name)
+                            END,
+                            v_pos_side
+                        );
+                        v_actions := v_actions + v_closed;
+                        v_track_after := logic_security_side_track_value(
+                            p_logic_id, v_sec.security_id, v_tf_id, FALSE, v_pos_side
+                        );
+                        PERFORM logic_security_inversion_enter_shadow(
+                            p_logic_id, v_sec.security_id, v_tf_id,
+                            v_target, v_track_after,
+                            format(
+                                'SL inversion sec=%s side=%s: бой стороны выкл., shadow (peak=%s)',
+                                v_sec.security_id, v_side_name, v_target
+                            ),
+                            v_side_name
+                        );
+                        IF v_no_reduce THEN
+                            IF v_side_name = 'long' THEN
+                                UPDATE logic_securities
+                                SET stop_resume_hwm_long = v_target
+                                WHERE logic_id = p_logic_id AND security_id = v_sec.security_id;
+                            ELSE
+                                UPDATE logic_securities
+                                SET stop_resume_hwm_short = v_target
+                                WHERE logic_id = p_logic_id AND security_id = v_sec.security_id;
+                            END IF;
+                        END IF;
+                        v_actions := v_actions + 1;
+                    END LOOP;
+                END;
+                CONTINUE;
+            END IF;
+
             v_drawdown := logic_security_drawdown_pct(
                 p_logic_id, v_sec.security_id, v_tf_id, FALSE
             );
@@ -2075,56 +2242,6 @@ BEGIN
                     p_logic_id, v_sec.security_id, FALSE
                 );
                 v_actions := v_actions + v_closed;
-            ELSIF v_stop.scope_type = 'security_inversion' THEN
-                -- Already in shadow/inverted → handled by logic_check_security_inversion
-                IF EXISTS (
-                    SELECT 1 FROM logic_securities ls
-                    WHERE ls.logic_id = p_logic_id
-                      AND ls.security_id = v_sec.security_id
-                      AND (
-                          COALESCE(ls.real_trading_paused, FALSE)
-                          OR COALESCE(ls.real_trading_paused_long, FALSE)
-                          OR COALESCE(ls.real_trading_paused_short, FALSE)
-                          OR COALESCE(ls.real_trading_inverted, FALSE)
-                      )
-                ) THEN
-                    CONTINUE;
-                END IF;
-
-                v_track_before := logic_security_track_value(
-                    p_logic_id, v_sec.security_id, v_tf_id, FALSE
-                );
-                PERFORM logic_trade_log(
-                    p_logic_id, 'stop.trigger',
-                    format(
-                        'SL inversion sec=%s: просадка %s%% >= %s%% → shadow',
-                        v_sec.security_id, round(v_drawdown, 4), v_stop.value
-                    ),
-                    jsonb_build_object(
-                        'security_id', v_sec.security_id,
-                        'drawdown_pct', v_drawdown,
-                        'scope', 'security_inversion',
-                        'phase', 'shadow'
-                    ),
-                    v_sec.security_id, v_tf_id
-                );
-                v_closed := logic_close_security_positions_market(
-                    p_logic_id, v_sec.security_id, FALSE,
-                    'stop_loss:security_inversion'
-                );
-                v_actions := v_actions + v_closed;
-                v_track_after := logic_security_track_value(
-                    p_logic_id, v_sec.security_id, v_tf_id, FALSE
-                );
-                PERFORM logic_security_inversion_enter_shadow(
-                    p_logic_id, v_sec.security_id, v_tf_id,
-                    v_track_before, v_track_after,
-                    format(
-                        'SL inversion sec=%s: бой выключен, только shadow (peak=%s)',
-                        v_sec.security_id, v_track_before
-                    )
-                );
-                v_actions := v_actions + 1;
             END IF;
         END LOOP;
     END IF;

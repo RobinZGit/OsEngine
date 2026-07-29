@@ -1564,7 +1564,6 @@ BEGIN
                  ls.display_order NULLS LAST,
                  ls.id
     LOOP
-        v_eff_inversion := (v_inversion <> COALESCE(v_sec.real_trading_inverted, FALSE));
         v_lot_size := logic_security_lot_size(v_sec.security_id);
         v_is_futures := logic_security_is_futures(v_sec.security_id);
 
@@ -1588,6 +1587,13 @@ BEGIN
                             AND NOT v_sec.real_trading_paused_short)
                     ELSE v_sec.real_trading_paused
                 END;
+            -- Shadow → zero uses base logic only; paper inverted applies to real book.
+            v_eff_inversion := (
+                v_inversion <> CASE
+                    WHEN v_is_shadow THEN FALSE
+                    ELSE COALESCE(v_sec.real_trading_inverted, FALSE)
+                END
+            );
             v_all_ok := TRUE;
             v_formulas := NULL;
             v_signal_kind := NULL;
