@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+764. File picker: any file, no extensions — system file manager by default (Downloads)
+
 763. Android file pickers: all folders (e.g. Downloads); limit extensions to picture or text
 
 762. Add a link to the corresponding repositories to each item on My Projects
