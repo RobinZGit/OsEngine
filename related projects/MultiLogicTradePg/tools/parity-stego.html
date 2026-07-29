@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Parity Stego</title>
+  <style>
+:root {
+  --bg: #1a2332;
+  --bg-elevated: #243044;
+  --strip: #15202e;
+  --ink: #e8eef6;
+  --muted: #8b9bb0;
+  --accent: #3d9a7a;
+  --accent-hover: #48b08c;
+  --secondary: #4a6fa5;
+  --secondary-hover: #5a82bc;
+  --line: #314257;
+  --danger: #c45c5c;
+  --radius: 10px;
+  --font: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(ellipse at 20% 0%, #2a3d55 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 80%, #1e3a32 0%, transparent 45%),
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, var(--strip), #101824);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.strip-left,
+.strip-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.key-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-field label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.key-field input {
+  width: min(180px, 40vw);
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font: inherit;
+}
+
+.key-field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mode-switch {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.mode-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 40px;
+  touch-action: manipulation;
+}
+
+.mode-btn.is-active {
+  background: var(--ink);
+  color: var(--strip);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 42px;
+  touch-action: manipulation;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #06241a;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--secondary);
+  color: #f4f7fb;
+}
+
+.btn-secondary:hover {
+  background: var(--secondary-hover);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-elevated);
+}
+
+.workspace {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.panel {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel.is-visible {
+  display: flex;
+}
+
+.field-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+  .hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.template-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #f7f4ea;
+  touch-action: none;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.status {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.result-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.result-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.decrypt-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .strip {
+    padding: 10px 12px;
+  }
+
+  .workspace {
+    padding: 12px;
+  }
+
+  .btn {
+    padding: 10px 12px;
+  }
+}
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="strip">
+      <div class="strip-left">
+        <div class="mode-switch" role="group" aria-label="Mode">
+          <button type="button" id="modeText" class="mode-btn is-active" data-mode="text">Text</button>
+          <button type="button" id="modePicture" class="mode-btn" data-mode="picture">Picture</button>
+        </div>
+        <div class="key-field">
+          <label for="encKey">Key</label>
+          <input type="text" id="encKey" placeholder="empty → 111" value="" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <div class="strip-right">
+        <button type="button" id="btnTemplate" class="btn btn-ghost">Template</button>
+        <button type="button" id="btnEncrypt" class="btn btn-primary">Encrypt</button>
+        <button type="button" id="btnDecrypt" class="btn btn-secondary">Decrypt</button>
+        <span id="templateName" class="hint template-name"></span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section id="panelText" class="panel is-visible">
+        <label class="field-label" for="message">Message</label>
+        <textarea id="message" placeholder="Type text to encrypt…" rows="10"></textarea>
+        <p id="textStatus" class="status" aria-live="polite"></p>
+      </section>
+
+      <section id="panelPicture" class="panel">
+        <div class="canvas-toolbar">
+          <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
+          <span class="hint">Draw with mouse or stylus</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="drawCanvas" width="800" height="500"></canvas>
+        </div>
+        <p id="pictureStatus" class="status" aria-live="polite"></p>
+      </section>
+
+      <section id="panelResult" class="panel result-panel">
+        <h2 class="result-title">Decrypt result</h2>
+        <pre id="decryptText" class="decrypt-text" hidden></pre>
+        <div id="decryptCanvasWrap" class="canvas-wrap" hidden>
+          <canvas id="decryptCanvas" width="800" height="500"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/*" hidden />
+    <input type="file" id="templateInput" accept="image/png,image/jpeg,image/webp,image/*" hidden />
+  </div>
+  <script>
+(() => {
+  "use strict";
+
+  const CARRIER_W = 800;
+  const CARRIER_H = 500;
+  const LENGTH_BITS = 32; // message length in bytes (uint32)
+  const DEFAULT_KEY = "111";
+
+  const els = {
+    modeText: document.getElementById("modeText"),
+    modePicture: document.getElementById("modePicture"),
+    panelText: document.getElementById("panelText"),
+    panelPicture: document.getElementById("panelPicture"),
+    message: document.getElementById("message"),
+    textStatus: document.getElementById("textStatus"),
+    pictureStatus: document.getElementById("pictureStatus"),
+    drawCanvas: document.getElementById("drawCanvas"),
+    decryptCanvas: document.getElementById("decryptCanvas"),
+    decryptText: document.getElementById("decryptText"),
+    decryptCanvasWrap: document.getElementById("decryptCanvasWrap"),
+    btnEncrypt: document.getElementById("btnEncrypt"),
+    btnDecrypt: document.getElementById("btnDecrypt"),
+    btnTemplate: document.getElementById("btnTemplate"),
+    btnClear: document.getElementById("btnClear"),
+    fileInput: document.getElementById("fileInput"),
+    templateInput: document.getElementById("templateInput"),
+    templateName: document.getElementById("templateName"),
+    encKey: document.getElementById("encKey"),
+  };
+
+  let mode = "text"; // "text" | "picture"
+  let drawing = false;
+  let lastPoint = null;
+  /** User-chosen carrier image (HTMLImageElement), or null → built-in default. */
+  let customTemplate = null;
+  let customTemplateName = "";
+
+  const drawCtx = els.drawCanvas.getContext("2d", { willReadFrequently: true });
+  const decryptCtx = els.decryptCanvas.getContext("2d", { willReadFrequently: true });
+
+  function setStatus(text) {
+    if (mode === "text") els.textStatus.textContent = text;
+    else els.pictureStatus.textContent = text;
+  }
+
+  function setMode(next) {
+    mode = next;
+    els.modeText.classList.toggle("is-active", mode === "text");
+    els.modePicture.classList.toggle("is-active", mode === "picture");
+    els.panelText.classList.toggle("is-visible", mode === "text");
+    els.panelPicture.classList.toggle("is-visible", mode === "picture");
+    els.decryptText.hidden = true;
+    els.decryptCanvasWrap.hidden = true;
+    setStatus("");
+  }
+
+  function clearDrawing() {
+    drawCtx.fillStyle = "#f7f4ea";
+    drawCtx.fillRect(0, 0, els.drawCanvas.width, els.drawCanvas.height);
+    drawCtx.strokeStyle = "#1a1a1a";
+    drawCtx.lineWidth = 3;
+    drawCtx.lineCap = "round";
+    drawCtx.lineJoin = "round";
+  }
+
+  function canvasPoint(canvas, event) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
+  }
+
+  function strokeTo(point) {
+    if (!lastPoint) {
+      lastPoint = point;
+      return;
+    }
+    drawCtx.beginPath();
+    drawCtx.moveTo(lastPoint.x, lastPoint.y);
+    drawCtx.lineTo(point.x, point.y);
+    drawCtx.stroke();
+    lastPoint = point;
+  }
+
+  function onPointerDown(e) {
+    if (mode !== "picture") return;
+    e.preventDefault();
+    els.drawCanvas.setPointerCapture(e.pointerId);
+    drawing = true;
+    lastPoint = canvasPoint(els.drawCanvas, e);
+    drawCtx.beginPath();
+    drawCtx.arc(lastPoint.x, lastPoint.y, drawCtx.lineWidth / 2, 0, Math.PI * 2);
+    drawCtx.fillStyle = "#1a1a1a";
+    drawCtx.fill();
+    drawCtx.fillStyle = "#f7f4ea";
+  }
+
+  function onPointerMove(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    strokeTo(canvasPoint(els.drawCanvas, e));
+  }
+
+  function onPointerUp(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    drawing = false;
+    lastPoint = null;
+  }
+
+  /** Sum R+G+B+A parity: even = 0 (white), odd = 1 (black). */
+  function pixelBit(data, index) {
+    const i = index * 4;
+    const sum = data[i] + data[i + 1] + data[i + 2] + data[i + 3];
+    return sum & 1;
+  }
+
+  /**
+   * Empty key → default "111" (with a status note for the caller).
+   */
+  function resolveKey() {
+    const raw = (els.encKey.value || "").trim();
+    if (!raw) {
+      return { key: DEFAULT_KEY, usedDefault: true };
+    }
+    return { key: raw, usedDefault: false };
+  }
+
+  function hashKey(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function next() {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** XOR payload bits with a keystream derived from the key (same for encrypt/decrypt). */
+  function applyKeyToBits(bits, key) {
+    const rng = mulberry32(hashKey(key));
+    const out = new Array(bits.length);
+    for (let i = 0; i < bits.length; i++) {
+      const kBit = rng() < 0.5 ? 0 : 1;
+      out[i] = bits[i] ^ kBit;
+    }
+    return out;
+  }
+
+  function emptyKeyMessage(action) {
+    return `Empty key — ${action} with key ${DEFAULT_KEY}.`;
+  }
+
+  /**
+   * Set parity of RGBA sum to desiredBit (0 even, 1 odd)
+   * by nudging the blue channel ±1 when needed.
+   */
+  function setPixelBit(data, index, desiredBit) {
+    const i = index * 4;
+    const sum = data[i] + data[i + 1] + data[i + 2] + data[i + 3];
+    const current = sum & 1;
+    if (current === (desiredBit & 1)) return;
+
+    // Prefer adjusting blue; keep channel in 0..255
+    let b = data[i + 2];
+    if (b < 255) data[i + 2] = b + 1;
+    else if (b > 0) data[i + 2] = b - 1;
+    else {
+      // Blue stuck; try green then red then alpha
+      if (data[i + 1] < 255) data[i + 1] += 1;
+      else if (data[i + 1] > 0) data[i + 1] -= 1;
+      else if (data[i] < 255) data[i] += 1;
+      else if (data[i] > 0) data[i] -= 1;
+      else if (data[i + 3] < 255) data[i + 3] += 1;
+      else if (data[i + 3] > 0) data[i + 3] -= 1;
+    }
+  }
+
+  function createDefaultCarrier() {
+    const canvas = document.createElement("canvas");
+    canvas.width = CARRIER_W;
+    canvas.height = CARRIER_H;
+    const ctx = canvas.getContext("2d");
+
+    const g = ctx.createLinearGradient(0, 0, CARRIER_W, CARRIER_H);
+    g.addColorStop(0, "#d8e4f0");
+    g.addColorStop(0.45, "#c5d6c8");
+    g.addColorStop(1, "#e2d5c4");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, CARRIER_W, CARRIER_H);
+
+    // Soft noise so the image looks natural and has varied parity
+    const img = ctx.getImageData(0, 0, CARRIER_W, CARRIER_H);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (Math.random() * 18) | 0;
+      d[i] = Math.min(255, d[i] + n);
+      d[i + 1] = Math.min(255, d[i + 1] + ((n * 0.7) | 0));
+      d[i + 2] = Math.min(255, d[i + 2] + ((n * 0.5) | 0));
+      d[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+
+    ctx.fillStyle = "rgba(40, 55, 70, 0.35)";
+    ctx.font = "600 28px Segoe UI, sans-serif";
+    ctx.fillText("Parity carrier template", 28, 48);
+    ctx.font = "16px Segoe UI, sans-serif";
+    ctx.fillText("Looks like a normal picture — data lives in pixel parity.", 28, 78);
+
+    return canvas;
+  }
+
+  /** Carrier for encryption: user template if chosen, otherwise default. */
+  function createCarrierCanvas() {
+    if (!customTemplate) return createDefaultCarrier();
+
+    const w = customTemplate.naturalWidth || customTemplate.width;
+    const h = customTemplate.naturalHeight || customTemplate.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(customTemplate, 0, 0, w, h);
+    // Ensure opaque alpha so parity of A is stable
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    for (let i = 3; i < d.length; i += 4) d[i] = 255;
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  function syncDrawCanvasToCarrier(width, height) {
+    const w = width || CARRIER_W;
+    const h = height || CARRIER_H;
+    if (els.drawCanvas.width !== w || els.drawCanvas.height !== h) {
+      els.drawCanvas.width = w;
+      els.drawCanvas.height = h;
+    }
+    clearDrawing();
+  }
+
+  async function setTemplateFromFile(file) {
+    const img = await loadImageFromFile(file);
+    customTemplate = img;
+    customTemplateName = file.name || "template";
+    els.templateName.textContent = customTemplateName;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    syncDrawCanvasToCarrier(w, h);
+    setStatus(`Template loaded: ${customTemplateName} (${w}×${h}). Used on Encrypt.`);
+  }
+
+  function downloadCanvas(canvas, filename) {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setStatus("Could not create file.");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  }
+
+  function textToBits(text) {
+    // UTF-8 bytes: 8 pixels (bits) per byte — works for Cyrillic too
+    const bytes = new TextEncoder().encode(text);
+    if (bytes.length > 0xffffffff) throw new Error("Text too long");
+
+    const bits = [];
+    // length header = number of bytes (32 bits, big-endian)
+    const len = bytes.length;
+    for (let b = 31; b >= 0; b--) bits.push((len >>> b) & 1);
+
+    for (let i = 0; i < bytes.length; i++) {
+      const code = bytes[i];
+      for (let b = 7; b >= 0; b--) bits.push((code >> b) & 1);
+    }
+    return bits;
+  }
+
+  function bitsToText(bits) {
+    if (bits.length < LENGTH_BITS) return "";
+
+    let len = 0;
+    for (let i = 0; i < LENGTH_BITS; i++) len = (len << 1) | bits[i];
+
+    const maxBytes = Math.floor((bits.length - LENGTH_BITS) / 8);
+    const count = Math.min(len, maxBytes);
+    const bytes = new Uint8Array(count);
+    for (let c = 0; c < count; c++) {
+      let code = 0;
+      const base = LENGTH_BITS + c * 8;
+      for (let b = 0; b < 8; b++) code = (code << 1) | bits[base + b];
+      bytes[c] = code;
+    }
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+
+  function encodeBitsIntoImageData(imageData, bits) {
+    const pixels = imageData.width * imageData.height;
+    if (bits.length > pixels) {
+      throw new Error(`Need ${bits.length} pixels, carrier has only ${pixels}.`);
+    }
+    for (let i = 0; i < bits.length; i++) {
+      setPixelBit(imageData.data, i, bits[i]);
+    }
+  }
+
+  function decodeBitsFromImageData(imageData, bitCount) {
+    const pixels = imageData.width * imageData.height;
+    const n = Math.min(bitCount, pixels);
+    const bits = new Array(n);
+    for (let i = 0; i < n; i++) bits[i] = pixelBit(imageData.data, i);
+    return bits;
+  }
+
+  /** Drawing: dark ink → bit 1 (odd/black), light → bit 0 (even/white). */
+  function drawingToBits(sourceCanvas) {
+    const w = sourceCanvas.width;
+    const h = sourceCanvas.height;
+    const ctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
+    const src = ctx.getImageData(0, 0, w, h).data;
+    const bits = new Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const o = i * 4;
+      // luminance; treat near-ink as black bit
+      const lum = 0.299 * src[o] + 0.587 * src[o + 1] + 0.114 * src[o + 2];
+      bits[i] = lum < 140 ? 1 : 0;
+    }
+    return { bits, width: w, height: h };
+  }
+
+  function bitsToBwImageData(bits, width, height) {
+    const imageData = decryptCtx.createImageData(width, height);
+    const d = imageData.data;
+    for (let i = 0; i < width * height; i++) {
+      const v = bits[i] ? 0 : 255; // odd/black vs even/white
+      const o = i * 4;
+      d[o] = v;
+      d[o + 1] = v;
+      d[o + 2] = v;
+      d[o + 3] = 255;
+    }
+    return imageData;
+  }
+
+  function encryptText() {
+    const text = els.message.value;
+    if (!text) {
+      setStatus("Enter some text first.");
+      return;
+    }
+    try {
+      const { key, usedDefault } = resolveKey();
+      const carrier = createCarrierCanvas();
+      const ctx = carrier.getContext("2d", { willReadFrequently: true });
+      const imageData = ctx.getImageData(0, 0, carrier.width, carrier.height);
+      const plainBits = textToBits(text);
+      const bits = applyKeyToBits(plainBits, key);
+      encodeBitsIntoImageData(imageData, bits);
+      ctx.putImageData(imageData, 0, 0);
+      downloadCanvas(carrier, "encrypted-text.png");
+      let msg = usedDefault
+        ? emptyKeyMessage("encrypted")
+        : `Encrypted with key.`;
+      msg +=
+        ` ${text.length} character(s) → PNG` +
+        (customTemplateName ? ` (template: ${customTemplateName})` : " (default template)") +
+        ".";
+      setStatus(msg);
+    } catch (err) {
+      setStatus(err.message || String(err));
+    }
+  }
+
+  function encryptPicture() {
+    try {
+      const { key, usedDefault } = resolveKey();
+      const carrier = createCarrierCanvas();
+      const cw = carrier.width;
+      const ch = carrier.height;
+
+      // Scale drawing to carrier size if needed
+      const scaled = document.createElement("canvas");
+      scaled.width = cw;
+      scaled.height = ch;
+      const sctx = scaled.getContext("2d");
+      sctx.fillStyle = "#f7f4ea";
+      sctx.fillRect(0, 0, cw, ch);
+      sctx.drawImage(els.drawCanvas, 0, 0, cw, ch);
+
+      const { bits: plainBits } = drawingToBits(scaled);
+      const hasInk = plainBits.some((b) => b === 1);
+      if (!hasInk) {
+        setStatus("Draw something first.");
+        return;
+      }
+
+      const bits = applyKeyToBits(plainBits, key);
+      const ctx = carrier.getContext("2d", { willReadFrequently: true });
+      const imageData = ctx.getImageData(0, 0, cw, ch);
+      encodeBitsIntoImageData(imageData, bits);
+      ctx.putImageData(imageData, 0, 0);
+      downloadCanvas(carrier, "encrypted-picture.png");
+      let msg = usedDefault
+        ? emptyKeyMessage("encrypted")
+        : "Encrypted with key.";
+      msg +=
+        " Drawing → PNG" +
+        (customTemplateName ? ` (template: ${customTemplateName})` : " (default template)") +
+        ".";
+      setStatus(msg);
+    } catch (err) {
+      setStatus(err.message || String(err));
+    }
+  }
+
+  function encrypt() {
+    if (mode === "text") encryptText();
+    else encryptPicture();
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not load image."));
+      };
+      img.src = url;
+    });
+  }
+
+  async function decryptFromFile(file) {
+    try {
+      const { key, usedDefault } = resolveKey();
+      const img = await loadImageFromFile(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      if (mode === "text") {
+        const maxBits = Math.min(imageData.width * imageData.height, LENGTH_BITS + 8 * 20000);
+        const rawBits = decodeBitsFromImageData(imageData, maxBits);
+        const bits = applyKeyToBits(rawBits, key);
+        const text = bitsToText(bits);
+        els.decryptCanvasWrap.hidden = true;
+        els.decryptText.hidden = false;
+        els.decryptText.textContent = text || "(empty / no text found)";
+        els.message.value = text;
+        let msg = usedDefault
+          ? emptyKeyMessage("decrypted")
+          : "Decrypted with key.";
+        msg += ` Text (${text.length} character(s)).`;
+        setStatus(msg);
+      } else {
+        const rawBits = decodeBitsFromImageData(imageData, imageData.width * imageData.height);
+        const bits = applyKeyToBits(rawBits, key);
+        els.decryptCanvas.width = imageData.width;
+        els.decryptCanvas.height = imageData.height;
+        const bw = bitsToBwImageData(bits, imageData.width, imageData.height);
+        decryptCtx.putImageData(bw, 0, 0);
+        els.decryptText.hidden = true;
+        els.decryptCanvasWrap.hidden = false;
+        let msg = usedDefault
+          ? emptyKeyMessage("decrypted")
+          : "Decrypted with key.";
+        msg += " Picture from pixel parity (even=white, odd=black).";
+        setStatus(msg);
+      }
+    } catch (err) {
+      setStatus(err.message || String(err));
+    }
+  }
+
+  // Events
+  els.modeText.addEventListener("click", () => setMode("text"));
+  els.modePicture.addEventListener("click", () => setMode("picture"));
+  els.btnEncrypt.addEventListener("click", encrypt);
+  els.btnDecrypt.addEventListener("click", () => els.fileInput.click());
+  els.btnTemplate.addEventListener("click", () => els.templateInput.click());
+  els.btnClear.addEventListener("click", () => {
+    clearDrawing();
+    setStatus("Canvas cleared.");
+  });
+  els.fileInput.addEventListener("change", () => {
+    const file = els.fileInput.files && els.fileInput.files[0];
+    els.fileInput.value = "";
+    if (file) decryptFromFile(file);
+  });
+  els.templateInput.addEventListener("change", () => {
+    const file = els.templateInput.files && els.templateInput.files[0];
+    els.templateInput.value = "";
+    if (file) {
+      setTemplateFromFile(file).catch((err) => setStatus(err.message || String(err)));
+    }
+  });
+
+  els.drawCanvas.addEventListener("pointerdown", onPointerDown);
+  els.drawCanvas.addEventListener("pointermove", onPointerMove);
+  els.drawCanvas.addEventListener("pointerup", onPointerUp);
+  els.drawCanvas.addEventListener("pointercancel", onPointerUp);
+  els.drawCanvas.addEventListener("pointerleave", onPointerUp);
+
+  clearDrawing();
+  setMode("text");
+})();
+
+  </script>
+</body>
+</html>
