@@ -388,15 +388,18 @@ canvas {
     else els.pictureStatus.textContent = text;
   }
 
-  function setMode(next) {
+  function setMode(next, options) {
+    const keepResult = options && options.keepResult;
     mode = next;
     els.modeText.classList.toggle("is-active", mode === "text");
     els.modePicture.classList.toggle("is-active", mode === "picture");
     els.panelText.classList.toggle("is-visible", mode === "text");
     els.panelPicture.classList.toggle("is-visible", mode === "picture");
-    els.decryptText.hidden = true;
-    els.decryptCanvasWrap.hidden = true;
-    setStatus("");
+    if (!keepResult) {
+      els.decryptText.hidden = true;
+      els.decryptCanvasWrap.hidden = true;
+      setStatus("");
+    }
   }
 
   function clearDrawing() {
@@ -816,6 +819,129 @@ canvas {
     });
   }
 
+  function readLengthFromBits(bits) {
+    if (bits.length < LENGTH_BITS) return -1;
+    let len = 0;
+    for (let i = 0; i < LENGTH_BITS; i++) len = (len << 1) | bits[i];
+    return len >>> 0;
+  }
+
+  /** How much a decoded string looks like real text (0..1). */
+  function scoreTextCandidate(bits) {
+    const pixels = bits.length;
+    const maxBytes = Math.floor((pixels - LENGTH_BITS) / 8);
+    const len = readLengthFromBits(bits);
+    if (len < 0 || len > maxBytes || len > 20000) {
+      return { score: 0, text: "", reason: "bad length" };
+    }
+    if (len === 0) {
+      return { score: 0.05, text: "", reason: "empty" };
+    }
+
+    const text = bitsToText(bits);
+    if (!text) {
+      return { score: 0, text: "", reason: "empty decode" };
+    }
+
+    const utf8Len = new TextEncoder().encode(text).length;
+    let score = 0;
+    if (utf8Len === len) score += 0.25;
+    else score += Math.max(0, 0.25 - Math.abs(utf8Len - len) / Math.max(len, 1));
+
+    let printable = 0;
+    let letters = 0;
+    let weird = 0;
+    for (const ch of text) {
+      const cp = ch.codePointAt(0);
+      const isLetter =
+        (cp >= 0x41 && cp <= 0x5a) ||
+        (cp >= 0x61 && cp <= 0x7a) ||
+        (cp >= 0x400 && cp <= 0x4ff) ||
+        (cp >= 0x500 && cp <= 0x52f);
+      const isPrint =
+        ch === "\n" ||
+        ch === "\r" ||
+        ch === "\t" ||
+        (cp >= 0x20 && cp <= 0x7e) ||
+        (cp >= 0xa0 && cp < 0xd800) ||
+        (cp >= 0xe000 && cp <= 0xfffd);
+      if (isPrint) printable++;
+      else weird++;
+      if (isLetter || (cp >= 0x30 && cp <= 0x39)) letters++;
+    }
+    const n = Math.max(text.length, 1);
+    const printableRatio = printable / n;
+    const letterRatio = letters / n;
+    score += 0.45 * printableRatio;
+    score += 0.25 * Math.min(1, letterRatio / 0.35);
+    if (weird > 0) score -= Math.min(0.4, weird / n);
+    if (len >= 1 && len <= 4 && printableRatio > 0.9) score += 0.1;
+    score = Math.max(0, Math.min(1, score));
+    return { score, text, reason: `print=${printableRatio.toFixed(2)}` };
+  }
+
+  /** How much a B/W bit plane looks like a drawing (0..1), not random noise. */
+  function scorePictureCandidate(bits, width, height) {
+    const n = width * height;
+    if (n === 0 || bits.length < n) {
+      return { score: 0, bits, reason: "empty" };
+    }
+
+    let black = 0;
+    for (let i = 0; i < n; i++) if (bits[i]) black++;
+    const ink = black / n;
+
+    let inkScore = 0;
+    if (ink > 0.002 && ink < 0.35) {
+      const ideal = 0.06;
+      inkScore = Math.max(0, 1 - Math.abs(ink - ideal) / 0.3);
+    } else if (ink >= 0.35 && ink <= 0.65) {
+      inkScore = 0.08;
+    } else {
+      inkScore = 0.02;
+    }
+
+    let same = 0;
+    let edges = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (x + 1 < width) {
+          edges++;
+          if (bits[i] === bits[i + 1]) same++;
+        }
+        if (y + 1 < height) {
+          edges++;
+          if (bits[i] === bits[i + width]) same++;
+        }
+      }
+    }
+    const agree = edges ? same / edges : 0.5;
+    const agreeScore = Math.max(0, Math.min(1, (agree - 0.55) / 0.4));
+    const score = Math.max(0, Math.min(1, 0.45 * inkScore + 0.55 * agreeScore));
+    return {
+      score,
+      bits,
+      reason: `ink=${(ink * 100).toFixed(1)}% agree=${agree.toFixed(2)}`,
+    };
+  }
+
+  function showTextDecryptResult(text) {
+    els.decryptCanvasWrap.hidden = true;
+    els.decryptText.hidden = false;
+    els.decryptText.textContent = text || "(empty / no text found)";
+    els.message.value = text;
+  }
+
+  function showPictureDecryptResult(bits, width, height) {
+    els.decryptCanvas.width = width;
+    els.decryptCanvas.height = height;
+    const bw = bitsToBwImageData(bits, width, height);
+    decryptCtx.putImageData(bw, 0, 0);
+    els.decryptText.hidden = true;
+    els.decryptCanvasWrap.hidden = false;
+  }
+
   async function decryptFromFile(file) {
     try {
       const resolved = resolveKey();
@@ -826,39 +952,40 @@ canvas {
       const { key, withoutKey } = resolved;
       const img = await loadImageFromFile(file);
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, width, height);
 
-      if (mode === "text") {
-        const maxBits = Math.min(imageData.width * imageData.height, LENGTH_BITS + 8 * 20000);
-        const rawBits = decodeBitsFromImageData(imageData, maxBits);
-        const bits = applyKeyToBits(rawBits, key);
-        const text = bitsToText(bits);
-        els.decryptCanvasWrap.hidden = true;
-        els.decryptText.hidden = false;
-        els.decryptText.textContent = text || "(empty / no text found)";
-        els.message.value = text;
-        setStatus(
-          keyStatusPrefix("Decrypted", withoutKey, key) +
-            ` Text (${text.length} character(s)).`
-        );
+      // Always try both decoding modes with the same key
+      const maxTextBits = Math.min(width * height, LENGTH_BITS + 8 * 20000);
+      const textRaw = decodeBitsFromImageData(imageData, maxTextBits);
+      const textBits = applyKeyToBits(textRaw, key);
+      const textCand = scoreTextCandidate(textBits);
+
+      const picRaw = decodeBitsFromImageData(imageData, width * height);
+      const picBits = applyKeyToBits(picRaw, key);
+      const picCand = scorePictureCandidate(picBits, width, height);
+
+      const chooseText = textCand.score >= picCand.score;
+      const chosen = chooseText ? "text" : "picture";
+      setMode(chosen, { keepResult: true });
+
+      if (chooseText) {
+        showTextDecryptResult(textCand.text);
       } else {
-        const rawBits = decodeBitsFromImageData(imageData, imageData.width * imageData.height);
-        const bits = applyKeyToBits(rawBits, key);
-        els.decryptCanvas.width = imageData.width;
-        els.decryptCanvas.height = imageData.height;
-        const bw = bitsToBwImageData(bits, imageData.width, imageData.height);
-        decryptCtx.putImageData(bw, 0, 0);
-        els.decryptText.hidden = true;
-        els.decryptCanvasWrap.hidden = false;
-        setStatus(
-          keyStatusPrefix("Decrypted", withoutKey, key) +
-            " Picture from pixel parity (even=white, odd=black)."
-        );
+        showPictureDecryptResult(picCand.bits, width, height);
       }
+
+      const keyMsg = keyStatusPrefix("Decrypted", withoutKey, key);
+      setStatus(
+        `${keyMsg} Auto-detected ${chosen} ` +
+          `(text ${textCand.score.toFixed(2)} vs picture ${picCand.score.toFixed(2)}). ` +
+          `Switch set to ${chosen}.`
+      );
     } catch (err) {
       setStatus(err.message || String(err));
     }

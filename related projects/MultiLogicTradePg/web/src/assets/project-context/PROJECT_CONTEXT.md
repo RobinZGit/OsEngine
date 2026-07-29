@@ -124,6 +124,7 @@
 - Инструмент `tools/parity-stego.html` (+ копия `web/src/assets/tools/parity-stego.html`).
 - Pages workflow копирует **`/OsEngine/crypt-parity-stego.html`**; в шапке UI ссылка **Crypt**; Help/README/`docs/index.html` обновлены.
 - Ключ: пустой = без ключа; иначе ≥3 символов. Ветка `cursor/crypt-parity-stego-2292` (публикация на Pages после merge в `main`).
+- **Decrypt auto:** пробует text и picture, выбирает более «похожий на реальный» результат и переключает свитч режима.
 
 ### 2026-07-29 (export: LOGIC_TRADE_SELECT is not defined)
 
@@ -842,6 +843,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | Crypt parity-stego on GitHub Pages (crypt-parity-stego.html + Crypt in app bar); PR branch |
 | 2026-07-29 | Push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export; installers |
 | 2026-07-29 | Push: inversion sides-only + Help chapter; equity mid-run fix; sticky row colors; installers |
 | 2026-07-29 | Inversion = Long↔Short only (no ≥/≤ flip); band-fade spam/hang; docs |

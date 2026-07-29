@@ -6,7 +6,9 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
-756. Publish Crypt parity-stego link on GitHub Pages with MultiLogicTradePg deploy (not «GeekPages»)
+756. Decrypt should try text and picture, pick the more real-looking one, and switch the mode to it
+
+755. Publish Crypt parity-stego link on GitHub Pages with MultiLogicTradePg deploy (not «GeekPages»)
 
 755. push
 
