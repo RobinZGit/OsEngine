@@ -10,6 +10,8 @@
 
 772. Server Start crash: resumeOrphanWarmups is not a function (after install 100)
 
+772. Non-encoded file must not look like template on Note decrypt — B/W noise from parity (even=white, odd=ink); encoded note = even except drawn lines odd; always decode as B/W mix
+
 771. push (headless trade runner + Server_Start; installers 100)
 
 770. Check if GitHub Pages Crypt updated; version not visible on form — make version larger/clearer

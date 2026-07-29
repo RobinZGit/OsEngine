@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.7 — Parity Stego</title>
+  <title>Crypt v1.8 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -337,7 +337,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.7</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.8</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
@@ -357,7 +357,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.7</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.8</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -373,7 +373,7 @@ canvas {
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
           <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <span class="hint">Handwritten note (B/W): white paper, any non-white ink → black in encode</span>
+          <span class="hint">Handwritten note: Encrypt saves B/W (even=white, odd=black ink). Unencoded picture → noise.</span>
         </div>
         <div class="canvas-wrap">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
@@ -404,7 +404,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.7";
+  const APP_VERSION = "Crypt v1.8";
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -518,11 +518,21 @@ canvas {
     lastPoint = null;
   }
 
-  /** Sum R+G+B+A parity: even = 0 (white), odd = 1 (black). */
+  /** Sum R+G+B+A parity: even = 0 (white), odd = 1 (black ink). */
   function pixelBit(data, index) {
     const i = index * 4;
     const sum = data[i] + data[i + 1] + data[i + 2] + data[i + 3];
     return sum & 1;
+  }
+
+  /** Paint a pixel as pure white (even) or pure black (odd) for note files. */
+  function setBwPixel(data, index, bit) {
+    const i = index * 4;
+    const v = bit & 1 ? 0 : 255;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+    data[i + 3] = 255;
   }
 
   /**
@@ -861,7 +871,7 @@ canvas {
       const noteW = els.drawCanvas.width;
       const noteH = els.drawCanvas.height;
 
-      // 1) Bits from the white note canvas: white→0 (even), any non-white→1 (odd)
+      // Bits from the white note canvas: white→0 (even), any non-white→1 (odd)
       const { bits: noteBits } = drawingToBits(els.drawCanvas);
       const inkCount = noteBits.reduce((n, b) => n + (b ? 1 : 0), 0);
       if (inkCount === 0) {
@@ -869,42 +879,36 @@ canvas {
         return;
       }
 
-      // 2) Expand template to at least noteW×noteH
-      const carrier = expandTemplateToNoteSize(noteW, noteH);
-      const cw = carrier.width;
-      const ch = carrier.height;
-
-      // 3) Full carrier bit plane: note region from drawing; extended area = white (0)
-      const plainBits = new Array(cw * ch);
-      for (let y = 0; y < ch; y++) {
-        for (let x = 0; x < cw; x++) {
-          const i = y * cw + x;
-          if (x < noteW && y < noteH) plainBits[i] = noteBits[y * noteW + x];
-          else plainBits[i] = 0;
-        }
-      }
-
-      const bits = applyKeyToBits(plainBits, key);
-      const ctx = carrier.getContext("2d", { willReadFrequently: true });
-      const imageData = ctx.getImageData(0, 0, cw, ch);
-      // Pixel-wise: nudge template so RGBA sum parity matches each bit
-      encodeBitsIntoImageData(imageData, bits);
+      // Note file is itself B/W: even sum → white, odd sum → black ink.
+      // Not the colorful text-mode template. Unencoded photos decode as noise.
+      const bits = applyKeyToBits(noteBits, key);
+      const out = document.createElement("canvas");
+      out.width = noteW;
+      out.height = noteH;
+      const ctx = out.getContext("2d", { willReadFrequently: true });
+      const imageData = ctx.createImageData(noteW, noteH);
+      for (let i = 0; i < bits.length; i++) setBwPixel(imageData.data, i, bits[i]);
       ctx.putImageData(imageData, 0, 0);
 
-      // Sanity: read back before download
-      const check = ctx.getImageData(0, 0, cw, ch);
+      // Sanity: parity must match the bit plane
+      const check = ctx.getImageData(0, 0, noteW, noteH);
       let odd = 0;
-      for (let i = 0; i < cw * ch; i++) odd += pixelBit(check.data, i);
-      if (odd === 0) {
-        setStatus("Encode failed: no odd pixels after write. Try again.");
+      let mismatch = 0;
+      for (let i = 0; i < noteW * noteH; i++) {
+        const bit = pixelBit(check.data, i);
+        odd += bit;
+        if (bit !== (bits[i] & 1)) mismatch++;
+      }
+      if (mismatch > 0 || odd === 0) {
+        setStatus("Encode failed: B/W parity mismatch. Try again.");
         return;
       }
 
-      downloadCanvas(carrier, "encrypted-note.png");
+      downloadCanvas(out, "encrypted-note.png");
       setStatus(
         keyStatusPrefix("Encrypted", withoutKey, key) +
-          ` Note ${noteW}×${noteH} → template ${cw}×${ch}, ink ${inkCount} px, odd ${odd}.` +
-          (customTemplateName ? ` · ${customTemplateName}` : " · default template")
+          ` Note ${noteW}×${noteH} B/W file (even=white, odd=ink), ink ${inkCount} px, odd ${odd}.` +
+          (key ? " With a key the file looks like noise until Decrypt." : " Without a key the file looks like your note.")
       );
     } catch (err) {
       setStatus(err.message || String(err));
@@ -939,6 +943,7 @@ canvas {
   /**
    * Load image into a canvas with exact pixels when possible.
    * Avoids color-management shifts that destroy RGBA sum parity on decrypt.
+   * Do not rewrite alpha — that would flip parity on unencoded photos.
    */
   async function loadExactPixelCanvas(file) {
     let bitmap = null;
@@ -969,10 +974,6 @@ canvas {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0);
     if (bitmap.close) bitmap.close();
-    // Force opaque alpha for stable R+G+B+A parity
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    for (let i = 3; i < imageData.data.length; i += 4) imageData.data[i] = 255;
-    ctx.putImageData(imageData, 0, 0);
     return canvas;
   }
 
@@ -1041,7 +1042,7 @@ canvas {
   function scorePictureCandidate(bits, width, height) {
     const n = width * height;
     if (n === 0 || bits.length < n) {
-      return { score: 0, bits, reason: "empty" };
+      return { score: 0, bits, ink: 0, reason: "empty" };
     }
 
     let black = 0;
@@ -1049,11 +1050,13 @@ canvas {
     const ink = black / n;
 
     let inkScore = 0;
+    // Sparse handwriting
     if (ink > 0.002 && ink < 0.35) {
       const ideal = 0.06;
       inkScore = Math.max(0, 1 - Math.abs(ink - ideal) / 0.3);
     } else if (ink >= 0.35 && ink <= 0.65) {
-      inkScore = 0.08;
+      // ~50% = unencoded noise (still a valid picture decode)
+      inkScore = 0.2;
     } else {
       inkScore = 0.02;
     }
@@ -1079,6 +1082,7 @@ canvas {
     return {
       score,
       bits,
+      ink,
       reason: `ink=${(ink * 100).toFixed(1)}% agree=${agree.toFixed(2)}`,
     };
   }
@@ -1123,27 +1127,39 @@ canvas {
       const picRaw = decodeBitsFromImageData(imageData, width * height);
       const picBits = applyKeyToBits(picRaw, key);
       const picCand = scorePictureCandidate(picBits, width, height);
+      const inkPct = (picCand.ink || 0) * 100;
+      const looksLikeNoise = inkPct >= 35 && inkPct <= 65;
 
-      // Respect current mode if user chose Note/Text; else auto-detect
+      // Note mode → always B/W parity picture. Unencoded ≈ noise; keep it as noise.
       let chosen;
       if (mode === "picture") chosen = "picture";
+      else if (looksLikeNoise && textCand.score < 0.85) chosen = "picture";
       else if (mode === "text" && textCand.score >= 0.35) chosen = "text";
       else chosen = textCand.score >= picCand.score ? "text" : "picture";
 
-      const chosenLabel = chosen === "text" ? "text" : "note";
+      const chosenLabel = chosen === "text" ? "text" : "note/B/W";
       setMode(chosen, { keepResult: true });
 
       if (chosen === "text") {
         showTextDecryptResult(textCand.text);
       } else {
         showPictureDecryptResult(picBits, width, height);
+        try {
+          els.decryptCanvasWrap.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch (_) {
+          /* ignore */
+        }
       }
 
       const odd = picBits.reduce((n, b) => n + (b ? 1 : 0), 0);
       const keyMsg = keyStatusPrefix("Decrypted", withoutKey, key);
+      const shape = looksLikeNoise
+        ? "noise (unencoded / keyed — B/W dots, not the colorful template)"
+        : inkPct < 1
+          ? "almost blank (nearly all even/white)"
+          : "note-like (odd=ink lines, even=white)";
       setStatus(
-        `${keyMsg} ${chosenLabel} ` +
-          `(text ${textCand.score.toFixed(2)} / note ${picCand.score.toFixed(2)}, odd px ${odd}).`
+        `${keyMsg} ${chosenLabel}: even→white, odd→black · odd ${odd} (${inkPct.toFixed(1)}%) · ${shape}.`
       );
     } catch (err) {
       setStatus(err.message || String(err));
@@ -1225,7 +1241,10 @@ canvas {
   if (verEl) verEl.textContent = APP_VERSION;
   const versionBar = document.getElementById("versionBar");
   if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
-  setStatus(APP_VERSION + " ready.");
+  setStatus(
+    APP_VERSION +
+      " ready. Note Decrypt = B/W from parity (even→white, odd→black). Unencoded picture → noise."
+  );
 })();
 
   </script>

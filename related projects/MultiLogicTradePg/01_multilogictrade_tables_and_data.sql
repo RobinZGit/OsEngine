@@ -606,15 +606,17 @@ COMMENT ON COLUMN prices.contract_prefix IS 'Тикер конкретного �
 CREATE TABLE IF NOT EXISTS parameter_types (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
-    short_name VARCHAR(20) NOT NULL UNIQUE,
+    short_name VARCHAR(40) NOT NULL UNIQUE,
     value_type VARCHAR(20) NOT NULL,
     default_value TEXT
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS name VARCHAR(100);
-ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS short_name VARCHAR(20);
+ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS short_name VARCHAR(40);
 ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS value_type VARCHAR(20);
 ALTER TABLE parameter_types ADD COLUMN IF NOT EXISTS default_value TEXT;
+-- Widen short_name for keys like APP_TRADE_RUNNER_REQUIRE_UI (was VARCHAR(20)).
+ALTER TABLE parameter_types ALTER COLUMN short_name TYPE VARCHAR(40);
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
