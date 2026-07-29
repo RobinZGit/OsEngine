@@ -6,19 +6,29 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
-758. push
+761. Pour it in / merge Crypt + My Projects to main (GitHub Pages)
 
-757. GET /api/logic-trades/equity-curve TypeError: Assignment to constant variable (trades.js dateFromFinal)
+760. My Projects link wrongly opens MultiLogic Trade PG SPA — must open hub listing Crypt, MultiLogic PG, FINRESP, UN Calculator, Dietitian, Total Calendar; do not list MacroRithm
 
-756. The colors of the tiles are not always on the entire length of the line… when I started the test, the whole line becomes yellow, and when I open it, I do not have the gray color of the ends of the right and left tiles painted, you need to paint them too when initializing
+759. Publish on GitHub Pages a My Projects / My Published Projects hub with links to Crypt, MultiLogic, UN Calculator, Dietitian, Calendar (+ other published apps)
 
-755. push
+758. Decrypt should try text and picture, pick the more real-looking one, and switch the mode to it
 
-754. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting
+757. Publish Crypt parity-stego link on GitHub Pages with MultiLogicTradePg deploy (not «GeekPages»)
 
-753. Describe the principle of inversion in the description, in a separate chapter, where the parameters of logic write about inversion separately, with examples of simple logics
+756. push
 
-752. Well, then look at the current test two strategies, two logics, one with inversion, the other is the same without…
+755. GET /api/logic-trades/equity-curve TypeError: Assignment to constant variable (trades.js dateFromFinal)
+
+754. The colors of the tiles are not always on the entire length of the line… when I started the test, the whole line becomes yellow, and when I open it, I do not have the gray color of the ends of the right and left tiles painted, you need to paint them too when initializing
+
+753. push
+
+752. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting
+
+751. Describe the principle of inversion in the description, in a separate chapter, where the parameters of logic write about inversion separately, with examples of simple logics
+
+750. Well, then look at the current test two strategies, two logics, one with inversion, the other is the same without…
 
 749. Look, now there are two tests, and one equity with a financial result somehow does not stick together…
 

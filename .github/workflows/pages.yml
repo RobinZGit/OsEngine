@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - 'related projects/MultiLogicTradePg/web/**'
+      - 'related projects/MultiLogicTradePg/tools/**'
       - 'related projects/MultiLogicTradePg/docs/PROJECT_CONTEXT.md'
       - 'related projects/MultiLogicTradePg/docs/LOCAL_SETUP.md'
       - 'related projects/MultiLogicTradePg/00_create_database.sql'
@@ -79,6 +80,16 @@ jobs:
       - name: Build Angular (GitHub Pages /OsEngine/)
         working-directory: related projects/MultiLogicTradePg/web
         run: npx ng build --configuration production --base-href "/OsEngine/"
+
+      - name: Publish Crypt parity-stego (short URL on Pages)
+        working-directory: related projects/MultiLogicTradePg
+        run: |
+          cp tools/parity-stego.html web/dist/web/browser/crypt-parity-stego.html
+          cp tools/my-projects.html web/dist/web/browser/my-projects.html
+          # Keep assets copy in sync for in-app links
+          mkdir -p web/dist/web/browser/assets/tools
+          cp tools/parity-stego.html web/dist/web/browser/assets/tools/parity-stego.html
+          cp tools/my-projects.html web/dist/web/browser/assets/tools/my-projects.html
 
       - name: SPA fallback
         working-directory: related projects/MultiLogicTradePg/web
