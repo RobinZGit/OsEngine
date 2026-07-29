@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+783. Don't see update / version 1.15 vs 1.14 — check GitHub Pages; thick scrollbars not visible on tablet; fix version badge + finger scroll buttons
+
 782. Scrollbars (rewinding stripes) too thin for finger on tablet — make thick rounded bars you can drag with a finger, not mouse-thin
 
 781. Note strokes too thin / don't cling to finger — make clearly thicker with rounded tips so finger stays in the stroke

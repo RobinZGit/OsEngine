@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.14 — Parity Stego</title>
+  <title>Crypt v1.16 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -394,6 +394,63 @@ textarea:focus {
   border-radius: 10px;
 }
 
+/* Big finger buttons — Android often hides CSS scrollbars */
+.scroll-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+}
+
+.scroll-shell-mid {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 0;
+  flex: 1;
+}
+
+.scroll-shell-mid .scroll-pane-xy {
+  flex: 1;
+  min-width: 0;
+}
+
+.scroll-btn {
+  appearance: none;
+  border: 2px solid #3d9a7a;
+  background: #1e4a3a;
+  color: #c8f0dc;
+  font-size: 1.25rem;
+  font-weight: 800;
+  border-radius: 14px;
+  min-width: 52px;
+  min-height: 52px;
+  padding: 8px 10px;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.scroll-btn-up,
+.scroll-btn-down {
+  width: 100%;
+  min-height: 56px;
+}
+
+.scroll-btn-left,
+.scroll-btn-right {
+  align-self: stretch;
+  min-width: 56px;
+}
+
+.scroll-btn:active {
+  background: #3d9a7a;
+  color: #06241a;
+}
+
 .canvas-wrap {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -474,7 +531,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.14</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.16</span>
       </div>
       <div class="strip-left">
         <div class="lang-switch" role="group" aria-label="Language">
@@ -498,7 +555,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.14</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.16</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -519,8 +576,16 @@ canvas {
           <button type="button" id="btnGrowNote" class="btn btn-ghost" title="Увеличить холст заметки">Больше</button>
           <span id="noteSizeLabel" class="hint">Заметка 800×500 · прокрутка вниз и вбок</span>
         </div>
-        <div id="drawScroll" class="scroll-pane-xy">
-          <canvas id="drawCanvas" width="800" height="500"></canvas>
+        <div class="scroll-shell" id="drawScrollShell">
+          <button type="button" class="scroll-btn scroll-btn-up" data-scroll="drawScroll" data-dx="0" data-dy="-160" aria-label="Scroll up">▲</button>
+          <div class="scroll-shell-mid">
+            <button type="button" class="scroll-btn scroll-btn-left" data-scroll="drawScroll" data-dx="-160" data-dy="0" aria-label="Scroll left">◀</button>
+            <div id="drawScroll" class="scroll-pane-xy">
+              <canvas id="drawCanvas" width="800" height="500"></canvas>
+            </div>
+            <button type="button" class="scroll-btn scroll-btn-right" data-scroll="drawScroll" data-dx="160" data-dy="0" aria-label="Scroll right">▶</button>
+          </div>
+          <button type="button" class="scroll-btn scroll-btn-down" data-scroll="drawScroll" data-dx="0" data-dy="160" aria-label="Scroll down">▼</button>
         </div>
         <p id="pictureStatus" class="status" aria-live="polite"></p>
       </section>
@@ -530,8 +595,16 @@ canvas {
         <div id="decryptTextScroll" class="scroll-pane-y" hidden>
           <pre id="decryptText" class="decrypt-text"></pre>
         </div>
-        <div id="decryptCanvasWrap" class="scroll-pane-xy" hidden>
-          <canvas id="decryptCanvas" width="800" height="500"></canvas>
+        <div class="scroll-shell" id="decryptScrollShell" hidden>
+          <button type="button" class="scroll-btn scroll-btn-up" data-scroll="decryptCanvasWrap" data-dx="0" data-dy="-160" aria-label="Scroll up">▲</button>
+          <div class="scroll-shell-mid">
+            <button type="button" class="scroll-btn scroll-btn-left" data-scroll="decryptCanvasWrap" data-dx="-160" data-dy="0" aria-label="Scroll left">◀</button>
+            <div id="decryptCanvasWrap" class="scroll-pane-xy">
+              <canvas id="decryptCanvas" width="800" height="500"></canvas>
+            </div>
+            <button type="button" class="scroll-btn scroll-btn-right" data-scroll="decryptCanvasWrap" data-dx="160" data-dy="0" aria-label="Scroll right">▶</button>
+          </div>
+          <button type="button" class="scroll-btn scroll-btn-down" data-scroll="decryptCanvasWrap" data-dx="0" data-dy="160" aria-label="Scroll down">▼</button>
         </div>
       </section>
     </main>
@@ -550,7 +623,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.14";
+  const APP_VERSION = "Crypt v1.16";
 
   const I18N = {
     ru: {
@@ -569,7 +642,7 @@ canvas {
       clear: "Очистить",
       larger: "Больше",
       largerTitle: "Увеличить холст заметки",
-      noteSize: (w, h) => `Заметка ${w}×${h} · прокрутка вниз и вбок`,
+      noteSize: (w, h) => `Заметка ${w}×${h} · кнопки ▲▼◀▶ для прокрутки пальцем`,
       resultTitle: "Результат расшифровки (одна картинка · чёт→белый · нечёт→чёрный)",
       build: "Сборка",
       ready:
@@ -709,6 +782,7 @@ canvas {
     decryptText: document.getElementById("decryptText"),
     decryptTextScroll: document.getElementById("decryptTextScroll"),
     decryptCanvasWrap: document.getElementById("decryptCanvasWrap"),
+    decryptScrollShell: document.getElementById("decryptScrollShell"),
     noteSizeLabel: document.getElementById("noteSizeLabel"),
     btnEncrypt: document.getElementById("btnEncrypt"),
     btnDecrypt: document.getElementById("btnDecrypt"),
@@ -751,6 +825,7 @@ canvas {
       els.panelResult.hidden = true;
       els.decryptText.hidden = true;
       if (els.decryptTextScroll) els.decryptTextScroll.hidden = true;
+      if (els.decryptScrollShell) els.decryptScrollShell.hidden = true;
       els.decryptCanvasWrap.hidden = true;
       setStatus("");
     }
@@ -1515,6 +1590,7 @@ canvas {
 
   function showTextDecryptResult(text) {
     els.panelResult.hidden = false;
+    if (els.decryptScrollShell) els.decryptScrollShell.hidden = true;
     els.decryptCanvasWrap.hidden = true;
     if (els.decryptTextScroll) els.decryptTextScroll.hidden = false;
     els.decryptText.hidden = false;
@@ -1530,8 +1606,8 @@ canvas {
     const bw = bitsToBwImageData(bits, width, height);
     decryptCtx.putImageData(bw, 0, 0);
     els.decryptText.hidden = true;
+    if (els.decryptScrollShell) els.decryptScrollShell.hidden = false;
     els.decryptCanvasWrap.hidden = false;
-    // Do not paint onto the Note canvas — that duplicated the same B/W picture.
   }
 
   async function decryptFromFile(file) {
@@ -1677,6 +1753,48 @@ canvas {
   els.drawCanvas.addEventListener("pointercancel", onPointerUp);
   // Do not end the stroke on pointerleave — with a thick finger line the tip
   // wobbles; ending on leave made gaps ("doesn't cling"). Capture keeps drawing.
+
+  // Finger-friendly scroll buttons (CSS scrollbars are often invisible on Android)
+  (function wireScrollButtons() {
+    let holdTimer = null;
+    let holdTarget = null;
+    let holdDx = 0;
+    let holdDy = 0;
+
+    function step() {
+      if (!holdTarget) return;
+      holdTarget.scrollLeft += holdDx;
+      holdTarget.scrollTop += holdDy;
+    }
+
+    function startHold(btn) {
+      const id = btn.getAttribute("data-scroll");
+      const pane = id && document.getElementById(id);
+      if (!pane) return;
+      holdTarget = pane;
+      holdDx = Number(btn.getAttribute("data-dx") || 0);
+      holdDy = Number(btn.getAttribute("data-dy") || 0);
+      step();
+      clearInterval(holdTimer);
+      holdTimer = setInterval(step, 80);
+    }
+
+    function stopHold() {
+      clearInterval(holdTimer);
+      holdTimer = null;
+      holdTarget = null;
+    }
+
+    document.querySelectorAll(".scroll-btn").forEach((btn) => {
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        startHold(btn);
+      });
+      btn.addEventListener("pointerup", stopHold);
+      btn.addEventListener("pointercancel", stopHold);
+      btn.addEventListener("pointerleave", stopHold);
+    });
+  })();
 
   clearDrawing();
   setMode("text");
