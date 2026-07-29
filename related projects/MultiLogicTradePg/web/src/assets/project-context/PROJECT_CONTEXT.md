@@ -125,7 +125,7 @@
 - Pages workflow копирует **`/OsEngine/crypt-parity-stego.html`**; в шапке UI ссылка **Crypt**; Help/README/`docs/index.html` обновлены.
 - Ключ: пустой = без ключа; иначе ≥3 символов. Ветка `cursor/crypt-parity-stego-2292` (публикация на Pages после merge в `main`).
 - **Decrypt auto:** пробует text и picture, выбирает более «похожий на реальный» результат и переключает свитч режима.
-- **My Projects hub:** `tools/my-projects.html` → https://robinzgit.github.io/OsEngine/my-projects.html (Crypt, MultiLogic Pg, FINRESP/TradeA, UN Calculator, Диетолог, TotalCalendar, MacroRithm); кнопка в шапке.
+- **My Projects hub:** `tools/my-projects.html` → https://robinzgit.github.io/OsEngine/my-projects.html (Crypt, MultiLogic PG, FINRESP/TradeA, UN Calculator, Диетолог, TotalCalendar); кнопка в шапке открывает именно хаб (не SPA). Без MacroRithm.
 
 ### 2026-07-29 (export: LOGIC_TRADE_SELECT is not defined)
 

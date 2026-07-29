@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+759. My Projects link wrongly opens MultiLogic Trade PG SPA — must open hub listing Crypt, MultiLogic PG, FINRESP, UN Calculator, Dietitian, Total Calendar; do not list MacroRithm
+
 758. Publish on GitHub Pages a My Projects / My Published Projects hub with links to Crypt, MultiLogic, UN Calculator, Dietitian, Calendar (+ other published apps)
 
 757. Decrypt should try text and picture, pick the more real-looking one, and switch the mode to it

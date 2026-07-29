@@ -8,7 +8,6 @@
     :root {
       --bg0: #0f1a24;
       --bg1: #1a2e3a;
-      --card: #243846;
       --ink: #e8f0f4;
       --muted: #9bb0bd;
       --accent: #3db89a;
@@ -51,6 +50,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      counter-reset: proj;
     }
     .list a {
       display: block;
@@ -86,19 +86,6 @@
       color: var(--accent2);
       word-break: break-all;
     }
-    .more {
-      margin-top: 2rem;
-      padding-top: 1.25rem;
-      border-top: 1px solid var(--line);
-    }
-    .more h2 {
-      margin: 0 0 0.75rem;
-      font-size: 1rem;
-      color: var(--muted);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
     footer {
       margin-top: 2.5rem;
       color: var(--muted);
@@ -111,72 +98,58 @@
   <div class="wrap">
     <h1>My Published Projects</h1>
     <p class="lead">
-      Публичные проекты на GitHub Pages (RobinZGit).
-      Open any card to launch the site.
+      Список опубликованных проектов на GitHub Pages.
+      Нажмите карточку — откроется сайт.
     </p>
 
     <ol class="list">
       <li>
-        <a href="https://robinzgit.github.io/OsEngine/crypt-parity-stego.html">
+        <a href="./crypt-parity-stego.html">
           <span class="title">1. Crypt — cipher / parity stego</span>
-          <span class="desc">Hide text or a drawing in a picture (pixel parity). Optional key (≥3 chars).</span>
-          <span class="url">robinzgit.github.io/OsEngine/crypt-parity-stego.html</span>
+          <span class="desc">Шифр: спрятать текст или рисунок в картинку (чётность пикселей).</span>
+          <span class="url">…/OsEngine/crypt-parity-stego.html</span>
         </a>
       </li>
       <li>
-        <a href="https://robinzgit.github.io/OsEngine/">
-          <span class="title">2. MultiLogic Trade (PostgreSQL)</span>
-          <span class="desc">Trading UI: logics, papers, indicators, backtests. Full trading needs local API + PostgreSQL.</span>
-          <span class="url">robinzgit.github.io/OsEngine/</span>
+        <a href="./">
+          <span class="title">2. MultiLogic Trade PG</span>
+          <span class="desc">Торговый UI (PostgreSQL + Angular). Полная торговля — только локально с API.</span>
+          <span class="url">…/OsEngine/</span>
         </a>
       </li>
       <li>
         <a href="https://robinzgit.github.io/MultiLogicTradeA/">
-          <span class="title">3. MultiLogic FINRESP calculator</span>
-          <span class="desc">Angular FINRESP calculator and MultiLogicTradeA UI.</span>
+          <span class="title">3. FINRESP calculator (MultiLogicTradeA)</span>
+          <span class="desc">Калькулятор FINRESP / Angular MultiLogicTradeA.</span>
           <span class="url">robinzgit.github.io/MultiLogicTradeA/</span>
         </a>
       </li>
       <li>
         <a href="https://robinzgit.github.io/UN_Calculator/">
           <span class="title">4. UN Calculator</span>
-          <span class="desc">UN Calculator web app.</span>
+          <span class="desc">Калькулятор UN.</span>
           <span class="url">robinzgit.github.io/UN_Calculator/</span>
         </a>
       </li>
       <li>
         <a href="https://robinzgit.github.io/dietolog_client/">
-          <span class="title">5. Dietitian (Диетолог)</span>
-          <span class="desc">Dietolog client on GitHub Pages.</span>
+          <span class="title">5. Dietitian / Диетолог</span>
+          <span class="desc">Клиент dietolog на GitHub Pages.</span>
           <span class="url">robinzgit.github.io/dietolog_client/</span>
         </a>
       </li>
       <li>
         <a href="https://robinzgit.github.io/TotalCalendarJS/">
           <span class="title">6. Total Calendar</span>
-          <span class="desc">TotalCalendarJS — calendar engine / UI.</span>
+          <span class="desc">TotalCalendarJS — календарь.</span>
           <span class="url">robinzgit.github.io/TotalCalendarJS/</span>
         </a>
       </li>
     </ol>
 
-    <div class="more">
-      <h2>Also published</h2>
-      <ol class="list">
-        <li>
-          <a href="https://robinzgit.github.io/MacroRithmJS/">
-            <span class="title">MacroRithmJS</span>
-            <span class="desc">Planning rhythmic businesses.</span>
-            <span class="url">robinzgit.github.io/MacroRithmJS/</span>
-          </a>
-        </li>
-      </ol>
-    </div>
-
     <footer>
-      Source hub file lives in OsEngine →
-      <code>related projects/MultiLogicTradePg/tools/my-projects.html</code>.
-      GitHub: <a href="https://github.com/RobinZGit">RobinZGit</a>.
+      Хаб: <code>my-projects.html</code> ·
+      <a href="https://github.com/RobinZGit">RobinZGit</a>
     </footer>
   </div>
 </body>
