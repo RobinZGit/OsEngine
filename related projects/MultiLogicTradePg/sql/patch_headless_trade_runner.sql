@@ -1,6 +1,8 @@
 -- Headless trade runner (default): UI heartbeat optional.
 -- Applied via 01 (parameter type) + 02 (functions). Safe to re-run on existing DBs.
 
+ALTER TABLE parameter_types ALTER COLUMN short_name TYPE VARCHAR(40);
+
 INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('Trade runner требует открытый UI', 'APP_TRADE_RUNNER_REQUIRE_UI', 'boolean', '0')
 ON CONFLICT (short_name) DO NOTHING;
