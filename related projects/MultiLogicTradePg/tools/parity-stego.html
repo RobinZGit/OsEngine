@@ -344,7 +344,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.10</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.11</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
@@ -364,7 +364,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.10</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.11</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -380,7 +380,7 @@ canvas {
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
           <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <span class="hint">Decrypt any picture → B/W: even sum = white, odd = black. Unencoded template → noise (not a white sheet).</span>
+          <span class="hint">Draw note here. Decrypt result appears once below (B/W: even→white, odd→black).</span>
         </div>
         <div class="canvas-wrap">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
@@ -389,7 +389,7 @@ canvas {
       </section>
 
       <section id="panelResult" class="result-panel" hidden>
-        <h2 class="result-title">Decrypt result (B/W · even→white · odd→black)</h2>
+        <h2 class="result-title">Decrypt result (one picture · even→white · odd→black)</h2>
         <pre id="decryptText" class="decrypt-text" hidden></pre>
         <div id="decryptCanvasWrap" class="canvas-wrap" hidden>
           <canvas id="decryptCanvas" width="800" height="500"></canvas>
@@ -411,7 +411,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.10";
+  const APP_VERSION = "Crypt v1.11";
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -1179,12 +1179,8 @@ canvas {
     decryptCtx.putImageData(bw, 0, 0);
     els.decryptText.hidden = true;
     els.decryptCanvasWrap.hidden = false;
-
-    // Also paint onto the Note canvas — previously only the hidden result
-    // panel was updated, so Decrypt looked like a blank white sheet.
-    els.drawCanvas.width = width;
-    els.drawCanvas.height = height;
-    drawCtx.putImageData(bw, 0, 0);
+    // Do not paint onto the Note canvas — that duplicated the same B/W picture
+    // and looked like “two almost identical decodes.”
   }
 
   async function decryptFromFile(file) {
@@ -1330,7 +1326,7 @@ canvas {
   if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
   setStatus(
     APP_VERSION +
-      " ready. Decrypt shows B/W here: even→white, odd→black. Unencoded template → noise (not a white sheet)."
+      " ready. Decrypt shows one B/W picture below (even→white, odd→black). Note canvas above is only for drawing."
   );
 })();
 
