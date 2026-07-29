@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — push: headless trade runner + Server_Start; installers **100** / `1.0.100`
+**Последнее обновление:** 2026-07-29 — hotfix push: export `resumeOrphanWarmups`; installers **101** / `1.0.101`
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,6 +118,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (hotfix: Server Start crash)
+
+- `resumeOrphanWarmups is not a function` — функция была только в `createRouteContext()`, не в `module.exports`.
+- Фикс: экспорт из `api/lib/server-shared.js`; ASCII в `Server_Start.bat` (без mojibake em-dash).
 
 ### 2026-07-29 (headless live trading после install-over)
 
@@ -871,6 +876,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | Hotfix: export resumeOrphanWarmups (Server Start TypeError); installers 101 |
 | 2026-07-29 | Push: headless trade runner + Server_Start after install-over; warm-up/balance resume; installers 100 |
 | 2026-07-29 | Headless trade runner (no UI by default); Server_Start after install-over; warm-up/balance resume on API boot |
 | 2026-07-29 | Push: security_inversion paper×side like resume + toggle; shadow base; Help/UI; installers 99 |

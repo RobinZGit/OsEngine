@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+773. push (hotfix resumeOrphanWarmups export; installers 101)
+
+772. Server Start crash: resumeOrphanWarmups is not a function (after install 100)
+
 771. push (headless trade runner + Server_Start; installers 100)
 
 770. Check if GitHub Pages Crypt updated; version not visible on form — make version larger/clearer

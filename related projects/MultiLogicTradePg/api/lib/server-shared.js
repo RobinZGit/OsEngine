@@ -1181,4 +1181,5 @@ function createRouteContext(pool) {
 
 module.exports = {
   createRouteContext,
+  resumeOrphanWarmups,
 };

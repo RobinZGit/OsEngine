@@ -18,7 +18,7 @@ for %%I in ("%WEB%") do set "WEB=%%~fI"
 echo.
 echo  ========================================================
 echo   MultiLogic Trade Server Start
-echo   API :3000 only — live trading without Angular UI
+echo   API :3000 only - live trading without Angular UI
 echo  ========================================================
 echo.
 echo  WEB: %WEB%
@@ -83,7 +83,7 @@ echo  [3/3] Start API in THIS window (do not close it)...
 echo.
 echo  API:     http://localhost:%PORT%
 echo  Trading: headless (TRADE_RUNNER_REQUIRE_UI=0)
-echo  UI:      optional — run MultiLogic_Trade_Progress_Start.bat when needed
+echo  UI:      optional - run MultiLogic_Trade_Progress_Start.bat when needed
 echo.
 echo  Ctrl+C - stop API and live trading
 echo  --------------------------------------------------------
