@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — hotfix push: export `resumeOrphanWarmups`; installers **101** / `1.0.101`
+**Последнее обновление:** 2026-07-29 — push: always open Angular UI after install; cycle console logs; installers **102** / `1.0.102`
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -99,7 +99,7 @@
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
 - **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **по умолчанию headless** (API up → торгует включённые логики; Angular не обязателен); опционально `TRADE_RUNNER_REQUIRE_UI=1` / `APP_TRADE_RUNNER_REQUIRE_UI=1` — только при heartbeat UI; ручной `POST /api/logic-trades/run`;
-- **Сервер / install-over:** `web\MultiLogic_Trade_Server_Start.bat` (API only); installer post-install запускает Server Start по умолчанию; при старте API — `logic_sync_all_real_account_balances` + `resumeOrphanWarmups`;
+- **Сервер / install-over:** после установки **по умолчанию** открывается Angular UI (`MultiLogic_Trade_Progress_Start.bat`); «API only» — только если пользователь явно снял галочку / выбрал Server Start. Runner по-прежнему headless (`TRADE_RUNNER_REQUIRE_UI=0`): закрытие браузера не останавливает бой, пока открыто окно launcher.
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
 - **v41 пакет логик** (по мотивам OsEngine): ещё **10** логик на `FAKE-EFF-001`, `is_enabled=FALSE`, все акции, SL/TP как у демо;
 - **v43 L1–L4** (из MultiLogicTradeA/FINRESP): лонг/шорт × тренд/боковик; AND-сигналы; без Strict/Regime/OnFlip; индикаторы SMA100, LINREG, ATR GROWTH5, ADX, CCI, MACD HISTOGRAM, STOCH; комиссия default **0.03**;
@@ -118,6 +118,18 @@
 ---
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (после установки всегда открывать Angular UI)
+
+- Запрос: при установке всегда запускать Angular-форму, если явно не указано «не открывать»; при запуске торговли форма тоже должна открываться.
+- Installer post-install: **Open MultiLogic Trade UI** включено по умолчанию; **API only** — unchecked.
+- Desktop shortcut — только UI-launcher; Server Start — в меню «Пуск» как явный opt-in.
+- Linux `start-multilogic-trade.sh` — `xdg-open` браузера на :4200.
+
+### 2026-07-29 (Server Start «тишина» = норма)
+
+- После `balances synced` API **работает**; циклы шли без `console.log` → окно казалось зависшим.
+- Добавлен лог каждые ~15 с: `Trade cycle: processed=… created=…`; при старте — число enabled logics.
 
 ### 2026-07-29 (hotfix: Server Start crash)
 
@@ -876,6 +888,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | Push: always open Angular UI after install (API-only opt-in); Trade cycle console logs; installers 102 |
 | 2026-07-29 | Hotfix: export resumeOrphanWarmups (Server Start TypeError); installers 101 |
 | 2026-07-29 | Push: headless trade runner + Server_Start after install-over; warm-up/balance resume; installers 100 |
 | 2026-07-29 | Headless trade runner (no UI by default); Server_Start after install-over; warm-up/balance resume on API boot |

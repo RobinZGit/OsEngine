@@ -71,18 +71,18 @@ Source: "{#SourceRoot}\installer\windows\*"; DestDir: "{app}\installer\windows";
 
 [Icons]
 ; Launch via cmd.exe /k so the console stays open (Explorer shortcuts to .bat/.cmd often flash and close).
-Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade Server (API)"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; Comment: "API only — live trading without Angular (keep window open)"
-Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"
+Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"
+Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade Server (API only)"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; Comment: "Только API — без Angular (явно без UI)"
 Name: "{autoprograms}\MultiLogic Trade\Install protocol"; Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Comment: "Открыть протокол установки MultiLogicTradePg"
-Name: "{autodesktop}\MultiLogic Trade Server"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; Comment: "API only — headless live trading"; Tasks: desktopicon
-Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular)"; Tasks: desktopicon
+Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"; Tasks: desktopicon
 
 [Run]
 ; DbMode is written to installer\windows\db-mode.txt in PreparePostInstall (read by run_postinstall.cmd).
 Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Настройка приложения... См. INSTALL_PROTOCOL.txt"; Flags: waituntilterminated runhidden; BeforeInstall: PreparePostInstall; AfterInstall: FinishPostInstall
-; After install-over: start API headless so enabled logics resume trading without opening Angular.
-Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; Description: "Start API server (live trading, no UI)"; Flags: postinstall nowait skipifsilent runasoriginaluser
-Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Run MultiLogic Trade (API + Angular UI)"; Flags: postinstall nowait skipifsilent unchecked runasoriginaluser
+; Always open Angular UI after install unless the user unchecks this box.
+Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Open MultiLogic Trade UI (API + Angular)"; Flags: postinstall nowait skipifsilent runasoriginaluser
+; Opt-in: API only, no Angular (explicit — leave unchecked by default).
+Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; Description: "Start API only (no Angular UI)"; Flags: postinstall nowait skipifsilent unchecked runasoriginaluser
 Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Description: "Open installation protocol"; Flags: postinstall skipifsilent unchecked runasoriginaluser; Check: InstallProtocolExists
 
 [Code]

@@ -86,6 +86,7 @@ echo  Trading: headless (TRADE_RUNNER_REQUIRE_UI=0)
 echo  UI:      optional - run MultiLogic_Trade_Progress_Start.bat when needed
 echo.
 echo  Ctrl+C - stop API and live trading
+echo  Keep this window open. Every ~15s a "Trade cycle:" line should appear.
 echo  --------------------------------------------------------
 echo.
 

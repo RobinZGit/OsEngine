@@ -197,9 +197,24 @@ function startTradeRunner(pool) {
   );
 
   setInterval(() => {
-    runTradeCycle(pool).catch((err) => {
-      console.error('Trade runner cycle error', err.message);
-    });
+    runTradeCycle(pool)
+      .then((out) => {
+        if (!out) return;
+        if (out.skipped) {
+          if (out.reason === 'ui_inactive' || out.reason === 'node_busy') return;
+          console.log(
+            `Trade cycle skip: ${out.reason}` +
+              (out.processed != null ? ` (processed=${out.processed})` : '')
+          );
+          return;
+        }
+        console.log(
+          `Trade cycle: processed=${out.processed} stops=${out.stops} created=${out.created} skip_bt=${out.skipped_backtest}`
+        );
+      })
+      .catch((err) => {
+        console.error('Trade runner cycle error', err.message);
+      });
   }, RUNNER_INTERVAL_MS);
 }
 

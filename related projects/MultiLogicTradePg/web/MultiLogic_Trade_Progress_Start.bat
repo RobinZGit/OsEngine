@@ -119,6 +119,7 @@ echo  [5/5] Start in THIS window (do not close it)...
 echo.
 echo  API:     http://localhost:%PORT%  (background)
 echo  Angular: http://localhost:4200  (below; wait for compilation)
+echo  Trading: headless runner OK if you close the browser - keep THIS window open
 echo.
 echo  Ctrl+C - stop Angular and API
 echo  --------------------------------------------------------

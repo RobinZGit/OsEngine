@@ -92,11 +92,11 @@ database, installs npm packages, and creates launch shortcuts.
    Both shortcuts run via `cmd.exe /k` (console stays open) and start:
 
    ```text
-   web\MultiLogic_Trade_Server_Start.bat
-   (API only — headless live trading; keep the window open)
-
    web\MultiLogic_Trade_Progress_Start.bat
-   (API + Angular UI; trading continues if Angular is closed while API window stays open)
+   (default after install and for trading: API + Angular UI; browser opens automatically)
+
+   web\MultiLogic_Trade_Server_Start.bat
+   (explicit opt-in: API only, no Angular)
    ```
 
    That script refreshes PATH (so Node.js from Setup is visible without re-login),

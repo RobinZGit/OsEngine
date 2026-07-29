@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+775. push (always open Angular UI after install; cycle logs; installers 102)
+
+774. When installing, always run the Angular UI unless explicitly unchecked; when launching trade, the form should try to open.
+
 773. push (hotfix resumeOrphanWarmups export; installers 101)
 
 772. Server Start crash: resumeOrphanWarmups is not a function (after install 100)

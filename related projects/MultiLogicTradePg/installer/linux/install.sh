@@ -568,4 +568,14 @@ ok "Start: $PREFIX/start-multilogic-trade.sh"
 ok "UI:    http://localhost:4200"
 ok "API:   http://localhost:3000"
 ok "Protocol: $PREFIX/INSTALL_PROTOCOL.txt"
+
+# Always open Angular UI after install unless --no-ui / MULTLOGIC_NO_UI=1.
+if [[ "${MULTLOGIC_NO_UI:-0}" != "1" && " ${*} " != *" --no-ui "* ]]; then
+  step "Opening MultiLogic Trade UI (API + Angular)"
+  nohup bash "$PREFIX/start-multilogic-trade.sh" >/tmp/multilogic-trade-start.log 2>&1 &
+  ok "Launcher started in background (log: /tmp/multilogic-trade-start.log)"
+  ok "Browser should open http://localhost:4200 in ~30s"
+else
+  ok "Skipped UI start (MULTLOGIC_NO_UI=1 or --no-ui)"
+fi
 exit 0

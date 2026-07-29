@@ -114,8 +114,18 @@ WEB_PID=$!
 
 echo
 echo "  API PID=$API_PID  WEB PID=$WEB_PID"
-echo "  Open http://localhost:4200"
-echo "  Ctrl+C to stop both."
+echo "  Opening http://localhost:4200 (Angular UI)..."
+echo "  Ctrl+C to stop both. Trading continues if you close the browser only."
 echo
+
+# Try to open the Angular form in the default browser (ignore failures on headless hosts).
+(
+  sleep 27
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "http://localhost:4200/?v=${RANDOM}" >/dev/null 2>&1 || true
+  elif command -v sensible-browser >/dev/null 2>&1; then
+    sensible-browser "http://localhost:4200/" >/dev/null 2>&1 || true
+  fi
+) &
 
 wait

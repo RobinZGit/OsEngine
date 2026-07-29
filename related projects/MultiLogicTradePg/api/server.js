@@ -69,6 +69,25 @@ app.listen(port, () => {
   startTradeRunner(pool);
   startMaintenanceScheduler(pool);
   pool
+    .query(
+      `
+      SELECT COUNT(*)::int AS n
+      FROM logics l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE l.is_enabled = TRUE AND a.is_active = TRUE
+      `
+    )
+    .then((r) => {
+      const n = r.rows[0]?.n ?? 0;
+      console.log(`Enabled logics for live trading: ${n}`);
+      if (n === 0) {
+        console.log(
+          'No enabled logics — open Angular UI and turn on the logic checkbox, or keep this API running after enable.'
+        );
+      }
+    })
+    .catch((err) => console.error('enabled logics count', err.message));
+  pool
     .query(`SELECT logic_sync_all_real_account_balances() AS n`)
     .then((r) => {
       const n = r.rows[0]?.n;
@@ -79,20 +98,17 @@ app.listen(port, () => {
     .catch((err) => console.error('logic_sync_all_real_account_balances', err.message));
   resumeOrphanWarmups(pool)
     .then((r) => {
-      if (r.watching > 0 || r.finished > 0) {
-        console.log(
-          `Warm-up resume: watching=${r.watching} finished_enabled=${r.finished}`
-        );
-      }
+      console.log(
+        `Warm-up resume: watching=${r.watching} finished_enabled=${r.finished}`
+      );
     })
     .catch((err) => console.error('resumeOrphanWarmups', err));
   resumeOrphanBacktests(pool)
     .then((r) => {
-      if (r.scheduled > 0) {
-        console.log(
-          `Backtest resume: scheduled ${r.scheduled} orphan run(s) of ${r.found} found`
-        );
-      }
+      console.log(
+        `Backtest resume: scheduled=${r.scheduled ?? 0} found=${r.found ?? 0}`
+      );
     })
     .catch((err) => console.error('resumeOrphanBacktests', err));
+  console.log('API ready — keep this window open. Trade cycles every 15s (see lines below).');
 });
