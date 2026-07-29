@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+766. Fix note encrypt/decrypt: expand template to note size; parity even=white odd=ink; exact-pixel decode (was blank sheet)
+
 765. Note encode: B/W only — white background, any non-white → black; rename Picture to handwritten note
 
 764. File picker: any file, no extensions — system file manager by default (Downloads)
