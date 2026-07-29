@@ -7,8 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — merge Crypt + My Projects hub to main (GitHub Pages); equity-curve let fix; sticky row CSS; Testing header
-
+**Последнее обновление:** 2026-07-29 — push: security_inversion paper×side + toggle; installers 99; Crypt + My Projects on Pages
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -83,7 +82,7 @@
 - **AND:** сделка только если **все** активные сигналы одной группы `(position_event × position_side)` сработали; OR → отдельные logics;
 - **`logic_signal_rating_pending`** + **`logic_signal_rating_history`**: сработал → pending; на **следующей** свече ход → **% годовых** vs **`base_annual_rate_pct`** (дефолт 20) → `±1`; history с `logic_id`+`security_id`+`signal_id` для графика **на бумаге**;
 - **Бэктест Стоп:** `cancel` сразу ставит `status=cancelled`, результат теста **не удаляется**; UI не висит на «Останавливаю…»;
-- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|**security_resume** (бумага×сторона)|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit`; колонка `inversion_value` устарела / не используется);
+- **`logic_stops`** — стоп-лосс и тейк-профит (`rule_kind` stop_loss|take_profit; stop scopes: security|**security_resume** (бумага×сторона)|**security_inversion** (бумага×сторона + toggle inverted)|portfolio|portfolio_resume; take_profit: security|portfolio|**portfolio_ltp_renew**; `value` / `value_unit`; колонка `inversion_value` устарела / не используется);
 - **`logic_securities`** — портфель бумаг логики + пауза resume по сторонам: `real_trading_paused_long/short`, `stop_resume_*_long/short` (v48); `real_trading_paused` = OR сторон;
 - **`logic_trades`** — сделки: `position_event`, `signal_kind`, `is_simulated`, **`is_fictitious`**, `commission`, **`financial_result`** (только Close), **`run_id`** (прогон теста → `logic_backtest_runs`; NULL у боя), `bar_dt`, `status`; side Open/Close через `sides`; уникальность бара: `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`;
 - **`logic_trade_lots`** — пакеты закрытия (FIFO / средняя): связь close↔open, суммы, комиссии, PnL по пакету;
@@ -118,6 +117,15 @@
 ---
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (security_inversion: бумага×сторона как resume)
+
+- Remake SL `security_inversion` по образцу `security_resume`: просадка **стороны** ≥ % → close + shadow **только этой** стороны; другая сторона остаётся в бою.
+- Возврат shadow стороны к пику («ноль») → unpause стороны + **toggle** `real_trading_inverted` по бумаге.
+- В инверсии DD/close по **противоположной** позиции (long-сигналы → short).
+- Shadow fills: **базовая** логика (игнор paper inverted) — иначе после inverted SL shadow не возвращался к нулю.
+- UI/Help: «По бумаге и стороне (инверсия при достижении суммы прерывания)»; live + backtest + `02` sync.
+- Диагноз churn: track-HWM DD на нормали давал ~10× SL vs resume — убран; затем полный переход на side-machine.
 
 ### 2026-07-29 (Crypt + My Projects → GitHub Pages, merge main)
 
@@ -431,7 +439,7 @@
 ### 2026-07-26 (Недоступные типы SL/TP + инструкции в Help)
 
 - UI: типы видны в `<select>`, но `disabled` для выбора: SL `portfolio_resume`; TP все портфельные (`portfolio`, `portfolio_ltp_renew`). API отклоняет создание/смену на эти типы.
-- **`security_inversion`** (2026-07-28 remake): один `%` (`value`). DD≥value → shadow; возврат shadow к пику/нулю → toggle `real_trading_inverted`; тот же стоп на инвертированной логике; снова через ноль → снятие инверсии. `inversion_value` не используется.
+- **`security_inversion`** (2026-07-29): как `security_resume` — бумага×сторона (long/short); DD стороны ≥ % → close+shadow стороны; shadow→ноль → unpause + toggle `real_trading_inverted`; в инверсии DD/close на opposite position side; shadow на базовой логике. `inversion_value` не используется.
 - Дефолт нового TP: `security` (по бумаге).
 - `docs/USER_INSTRUCTIONS.md` — только формулировки запросов Sergey; Help → «Инструкции пользователя»; sync в assets; `PROJECT_CONTEXT` держит ссылку без полного дубля.
 
@@ -802,6 +810,7 @@
 - [x] Installer UX: короткий status text + progress bar ниже 100% во время post-install (2026-07-18).
 - [x] Stop-loss `security_inversion`: локальная инверсия по бумаге, runner/backtest/UI/chart support, SQL scripts synced, installer rebuilt (2026-07-18).
 - [x] Remake `security_inversion`: без `inversion_value`; toggle inverted при возврате shadow к нулю (2026-07-28).
+- [x] Remake `security_inversion` → paper×side как `security_resume` + toggle; shadow base logic (2026-07-29).
 - [x] `resume_sl_no_reduce`: HWM цели security_resume (default off); live+backtest+UI; installers shipped (2026-07-28).
 - [x] `warmup_pretest`: preliminary test before enabling live for `security_resume`/`security_inversion`, transfer tested paper states to live, installer rebuilt (2026-07-18).
 - [x] Copy logic UX: success alert with new name; copy (+) button same black as edit/delete (2026-07-18).
@@ -853,8 +862,8 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-07-29 | Merge Crypt + My Projects hub to main (GitHub Pages publish) |
-| 2026-07-29 | Push: equity-curve let fix; sticky CSS vars; Testing header full-width; installers |
+| 2026-07-29 | Push: security_inversion paper×side like resume + toggle; shadow base; Help/UI; installers 99 |
+| 2026-07-29 | Merge Crypt + My Projects hub to main (GitHub Pages publish) || 2026-07-29 | Push: equity-curve let fix; sticky CSS vars; Testing header full-width; installers |
 | 2026-07-29 | My Projects hub on GitHub Pages + Crypt auto-detect decrypt |
 | 2026-07-29 | Crypt parity-stego on GitHub Pages (crypt-parity-stego.html + Crypt in app bar) |
 | 2026-07-29 | Push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export; installers |
