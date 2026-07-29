@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.12 — Parity Stego</title>
+  <title>Crypt v1.13 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -93,6 +93,32 @@ body {
 .key-field input:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 2px;
+}
+
+.lang-switch label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  min-height: 36px;
+}
+
+.lang-switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
 }
 
 .mode-switch {
@@ -397,46 +423,50 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.12</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.13</span>
       </div>
       <div class="strip-left">
-        <div class="mode-switch" role="group" aria-label="Mode">
-          <button type="button" id="modeText" class="mode-btn is-active" data-mode="text">Text</button>
-          <button type="button" id="modePicture" class="mode-btn" data-mode="picture" title="Handwritten note (black &amp; white)">Note</button>
+        <div class="lang-switch" role="group" aria-label="Language">
+          <label><input type="checkbox" id="langRu" checked /> Русский</label>
+          <label><input type="checkbox" id="langEn" /> English</label>
+        </div>
+        <div class="mode-switch" role="group" aria-label="Mode" id="modeSwitch">
+          <button type="button" id="modeText" class="mode-btn is-active" data-mode="text">Текст</button>
+          <button type="button" id="modePicture" class="mode-btn" data-mode="picture" title="Рукописная заметка (чёрно-белая)">Заметка</button>
         </div>
         <div class="key-field">
-          <label for="encKey">Key</label>
-          <input type="text" id="encKey" placeholder="empty = no key (min 3 if set)" value="" autocomplete="off" spellcheck="false" />
+          <label for="encKey" id="labelKey">Ключ</label>
+          <input type="text" id="encKey" placeholder="пусто = без ключа (мин. 3, если задан)" value="" autocomplete="off" spellcheck="false" />
         </div>
       </div>
       <div class="strip-right">
-        <button type="button" id="btnTemplate" class="btn btn-ghost">Template</button>
-        <button type="button" id="btnEncrypt" class="btn btn-primary">Encrypt</button>
-        <button type="button" id="btnDecrypt" class="btn btn-secondary">Decrypt</button>
+        <button type="button" id="btnTemplate" class="btn btn-ghost">Шаблон</button>
+        <button type="button" id="btnEncrypt" class="btn btn-primary">Шифровать</button>
+        <button type="button" id="btnDecrypt" class="btn btn-secondary">Расшифровать</button>
         <span id="templateName" class="hint template-name"></span>
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.12</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.13</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
         <div class="canvas-toolbar">
-          <button type="button" id="btnLoadText" class="btn btn-ghost">Load file</button>
-          <span class="hint">Text scrolls down · long text stretches the template on Encrypt</span>
+          <button type="button" id="btnLoadText" class="btn btn-ghost">Загрузить файл</button>
+          <span class="hint" id="hintText">Текст прокручивается вниз · длинный текст растягивает шаблон при шифровании</span>
         </div>
-        <label class="field-label" for="message">Message</label>
+        <label class="field-label" for="message" id="labelMessage">Сообщение</label>
         <div class="scroll-pane-y">
-          <textarea id="message" placeholder="Type text to encrypt…" rows="16"></textarea>
+          <textarea id="message" placeholder="Введите текст для шифрования…" rows="16"></textarea>
         </div>
         <p id="textStatus" class="status" aria-live="polite"></p>
       </section>
 
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
-          <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <button type="button" id="btnGrowNote" class="btn btn-ghost" title="Make note canvas larger">Larger</button>
-          <span id="noteSizeLabel" class="hint">Note 800×500 · scroll down &amp; sideways</span>
+          <button type="button" id="btnClear" class="btn btn-ghost">Очистить</button>
+          <button type="button" id="btnGrowNote" class="btn btn-ghost" title="Увеличить холст заметки">Больше</button>
+          <span id="noteSizeLabel" class="hint">Заметка 800×500 · прокрутка вниз и вбок</span>
         </div>
         <div id="drawScroll" class="scroll-pane-xy">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
@@ -445,7 +475,7 @@ canvas {
       </section>
 
       <section id="panelResult" class="result-panel" hidden>
-        <h2 class="result-title">Decrypt result (one picture · even→white · odd→black)</h2>
+        <h2 class="result-title" id="resultTitle">Результат расшифровки (одна картинка · чёт→белый · нечёт→чёрный)</h2>
         <div id="decryptTextScroll" class="scroll-pane-y" hidden>
           <pre id="decryptText" class="decrypt-text"></pre>
         </div>
@@ -469,7 +499,150 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.12";
+  const APP_VERSION = "Crypt v1.13";
+
+  const I18N = {
+    ru: {
+      modeText: "Текст",
+      modeNote: "Заметка",
+      modeNoteTitle: "Рукописная заметка (чёрно-белая)",
+      key: "Ключ",
+      keyPh: "пусто = без ключа (мин. 3, если задан)",
+      template: "Шаблон",
+      encrypt: "Шифровать",
+      decrypt: "Расшифровать",
+      loadFile: "Загрузить файл",
+      hintText: "Текст прокручивается вниз · длинный текст растягивает шаблон при шифровании",
+      message: "Сообщение",
+      messagePh: "Введите текст для шифрования…",
+      clear: "Очистить",
+      larger: "Больше",
+      largerTitle: "Увеличить холст заметки",
+      noteSize: (w, h) => `Заметка ${w}×${h} · прокрутка вниз и вбок`,
+      resultTitle: "Результат расшифровки (одна картинка · чёт→белый · нечёт→чёрный)",
+      build: "Сборка",
+      ready:
+        " готова. Текст — прокрутка вниз; картинки — вниз и вбок. Шаблон растягивается, если содержимое больше.",
+      langGroup: "Язык",
+      modeGroup: "Режим",
+      emptyText: "Сначала введите текст.",
+      emptyNote: "Сначала напишите рукописную заметку (не белые штрихи на белой бумаге).",
+      keyShort: (n, min) =>
+        `Ключ слишком короткий (${n}). Минимум ${min} символа, или оставьте Ключ пустым.`,
+      encNoKey: (action) =>
+        `${action} без ключа (пустой Ключ). Тот же файл расшифровывается с пустым Ключом.`,
+      encWithKey: (action, key) =>
+        `${action} с ключом «${key}». Для обратной операции нужен тот же ключ.`,
+      actionEncrypt: "Шифрование",
+      actionDecrypt: "Расшифровка",
+      pickDecrypt: "Выберите любой файл (файловый менеджер / Загрузки). Для расшифровки нужна картинка.",
+      pickTemplate: "Выберите любой файл (файловый менеджер / Загрузки). Для шаблона нужна картинка.",
+      pickText: "Выберите любой файл — содержимое загрузится как текст.",
+      cleared: "Холст очищен.",
+      grew: (w, h) =>
+        `Холст заметки увеличен до ${w}×${h}. Прокрутка вниз и вбок. При шифровании шаблон растянется до этого размера.`,
+      encryptingNote: "Шифрование заметки в шаблон…",
+      emptyDecrypt: "(пусто / текст не найден)",
+    },
+    en: {
+      modeText: "Text",
+      modeNote: "Note",
+      modeNoteTitle: "Handwritten note (black & white)",
+      key: "Key",
+      keyPh: "empty = no key (min 3 if set)",
+      template: "Template",
+      encrypt: "Encrypt",
+      decrypt: "Decrypt",
+      loadFile: "Load file",
+      hintText: "Text scrolls down · long text stretches the template on Encrypt",
+      message: "Message",
+      messagePh: "Type text to encrypt…",
+      clear: "Clear",
+      larger: "Larger",
+      largerTitle: "Make note canvas larger",
+      noteSize: (w, h) => `Note ${w}×${h} · scroll down & sideways`,
+      resultTitle: "Decrypt result (one picture · even→white · odd→black)",
+      build: "Build",
+      ready:
+        " ready. Text scrolls down; note/decrypt images scroll down & sideways. Template stretches if content is larger.",
+      langGroup: "Language",
+      modeGroup: "Mode",
+      emptyText: "Enter some text first.",
+      emptyNote: "Write a handwritten note first (non-white strokes on white paper).",
+      keyShort: (n, min) =>
+        `Key is too short (${n}). Use at least ${min} characters, or leave Key empty to work without a key.`,
+      encNoKey: (action) =>
+        `${action} without a key (empty Key). Same file decrypts with an empty Key.`,
+      encWithKey: (action, key) =>
+        `${action} with key “${key}”. Use the same key to reverse it.`,
+      actionEncrypt: "Encrypted",
+      actionDecrypt: "Decrypted",
+      pickDecrypt: "Pick any file (file manager / Downloads). Must be a picture for decrypt.",
+      pickTemplate: "Pick any file (file manager / Downloads). Must be a picture for template.",
+      pickText: "Pick any file — contents loaded as text.",
+      cleared: "Canvas cleared.",
+      grew: (w, h) =>
+        `Note canvas enlarged to ${w}×${h}. Scroll down & sideways. Template stretches to this size on Encrypt.`,
+      encryptingNote: "Encrypting note into template…",
+      emptyDecrypt: "(empty / no text found)",
+    },
+  };
+
+  let lang = "ru";
+
+  function t(key, ...args) {
+    const pack = I18N[lang] || I18N.ru;
+    const val = pack[key];
+    if (typeof val === "function") return val(...args);
+    return val != null ? val : key;
+  }
+
+  function applyLanguage() {
+    const pack = I18N[lang] || I18N.ru;
+    document.documentElement.lang = lang === "ru" ? "ru" : "en";
+    els.modeText.textContent = pack.modeText;
+    els.modePicture.textContent = pack.modeNote;
+    els.modePicture.title = pack.modeNoteTitle;
+    const labelKey = document.getElementById("labelKey");
+    if (labelKey) labelKey.textContent = pack.key;
+    els.encKey.placeholder = pack.keyPh;
+    els.btnTemplate.textContent = pack.template;
+    els.btnEncrypt.textContent = pack.encrypt;
+    els.btnDecrypt.textContent = pack.decrypt;
+    els.btnLoadText.textContent = pack.loadFile;
+    const hintText = document.getElementById("hintText");
+    if (hintText) hintText.textContent = pack.hintText;
+    const labelMessage = document.getElementById("labelMessage");
+    if (labelMessage) labelMessage.textContent = pack.message;
+    els.message.placeholder = pack.messagePh;
+    els.btnClear.textContent = pack.clear;
+    if (els.btnGrowNote) {
+      els.btnGrowNote.textContent = pack.larger;
+      els.btnGrowNote.title = pack.largerTitle;
+    }
+    const resultTitle = document.getElementById("resultTitle");
+    if (resultTitle) resultTitle.textContent = pack.resultTitle;
+    const modeSwitch = document.getElementById("modeSwitch");
+    if (modeSwitch) modeSwitch.setAttribute("aria-label", pack.modeGroup);
+    const langSwitch = document.querySelector(".lang-switch");
+    if (langSwitch) langSwitch.setAttribute("aria-label", pack.langGroup);
+    const versionBar = document.getElementById("versionBar");
+    if (versionBar) versionBar.textContent = pack.build + ": " + APP_VERSION;
+    updateNoteSizeLabel();
+    if (els.langRu) els.langRu.checked = lang === "ru";
+    if (els.langEn) els.langEn.checked = lang === "en";
+  }
+
+  function setLanguage(next) {
+    lang = next === "en" ? "en" : "ru";
+    try {
+      localStorage.setItem("crypt-lang", lang);
+    } catch (_) {
+      /* ignore */
+    }
+    applyLanguage();
+    setStatus(APP_VERSION + t("ready"));
+  }
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -497,6 +670,8 @@ canvas {
     templateName: document.getElementById("templateName"),
     encKey: document.getElementById("encKey"),
     btnLoadText: document.getElementById("btnLoadText"),
+    langRu: document.getElementById("langRu"),
+    langEn: document.getElementById("langEn"),
   };
 
   let mode = "text"; // "text" | "picture" (UI label: Note = handwritten note)
@@ -532,8 +707,7 @@ canvas {
 
   function updateNoteSizeLabel() {
     if (!els.noteSizeLabel) return;
-    els.noteSizeLabel.textContent =
-      `Note ${els.drawCanvas.width}×${els.drawCanvas.height} · scroll down & sideways`;
+    els.noteSizeLabel.textContent = t("noteSize", els.drawCanvas.width, els.drawCanvas.height);
   }
 
   /** Resize note canvas; keeps existing ink when growing. */
@@ -639,8 +813,7 @@ canvas {
     if (raw.length < MIN_KEY_LEN) {
       return {
         ok: false,
-        error:
-          `Key is too short (${raw.length}). Use at least ${MIN_KEY_LEN} characters, or leave Key empty to work without a key.`,
+        error: t("keyShort", raw.length, MIN_KEY_LEN),
       };
     }
     return { ok: true, key: raw, withoutKey: false };
@@ -679,10 +852,8 @@ canvas {
   }
 
   function keyStatusPrefix(action, withoutKey, key) {
-    if (withoutKey) {
-      return `${action} without a key (empty Key). Same file decrypts with an empty Key.`;
-    }
-    return `${action} with key “${key}”. Use the same key to reverse it.`;
+    if (withoutKey) return t("encNoKey", action);
+    return t("encWithKey", action, key);
   }
 
   /**
@@ -948,7 +1119,7 @@ canvas {
   function encryptText() {
     const text = els.message.value;
     if (!text) {
-      setStatus("Enter some text first.");
+      setStatus(t("emptyText"));
       return;
     }
     try {
@@ -968,7 +1139,7 @@ canvas {
       ctx.putImageData(imageData, 0, 0);
       downloadCanvas(carrier, "encrypted-text.png");
       setStatus(
-        keyStatusPrefix("Encrypted", withoutKey, key) +
+        keyStatusPrefix(t("actionEncrypt"), withoutKey, key) +
           ` ${text.length} character(s) → PNG ${carrier.width}×${carrier.height}` +
           (customTemplateName ? ` · template: ${customTemplateName}` : " · default template") +
           (bits.length > CARRIER_W * CARRIER_H ? " · template stretched for text size" : "") +
@@ -995,7 +1166,7 @@ canvas {
       const { bits: noteBits } = drawingToBits(els.drawCanvas);
       const inkCount = noteBits.reduce((n, b) => n + (b ? 1 : 0), 0);
       if (inkCount === 0) {
-        setStatus("Write a handwritten note first (non-white strokes on white paper).");
+        setStatus(t("emptyNote"));
         return;
       }
 
@@ -1060,7 +1231,7 @@ canvas {
 
       downloadBlob(blob, "encrypted-note.png");
       setStatus(
-        keyStatusPrefix("Encrypted", withoutKey, key) +
+        keyStatusPrefix(t("actionEncrypt"), withoutKey, key) +
           ` Note → template ${cw}×${ch} (still looks like template). ` +
           `even=white / odd=ink on Decrypt. ink ${inkCount}, odd ${oddPng}.` +
           (customTemplateName ? ` · ${customTemplateName}` : " · default template")
@@ -1073,7 +1244,7 @@ canvas {
   function encrypt() {
     if (mode === "text") encryptText();
     else {
-      setStatus("Encrypting note into template…");
+      setStatus(t("encryptingNote"));
       encryptPicture();
     }
   }
@@ -1276,7 +1447,7 @@ canvas {
     els.decryptCanvasWrap.hidden = true;
     if (els.decryptTextScroll) els.decryptTextScroll.hidden = false;
     els.decryptText.hidden = false;
-    els.decryptText.textContent = text || "(empty / no text found)";
+    els.decryptText.textContent = text || t("emptyDecrypt");
     els.message.value = text;
   }
 
@@ -1341,7 +1512,7 @@ canvas {
       }
 
       const odd = picBits.reduce((n, b) => n + (b ? 1 : 0), 0);
-      const keyMsg = keyStatusPrefix("Decrypted", withoutKey, key);
+      const keyMsg = keyStatusPrefix(t("actionDecrypt"), withoutKey, key);
       const encodedLikely = !looksLikeNoise && inkPct >= 1 && inkPct < 35;
       const shape = looksLikeNoise
         ? "unencoded → B/W noise (not white)"
@@ -1381,29 +1552,26 @@ canvas {
   els.btnEncrypt.addEventListener("click", encrypt);
   els.btnDecrypt.addEventListener("click", () => {
     openFilePicker(els.fileInput);
-    setStatus("Pick any file (file manager / Downloads). Must be a picture for decrypt.");
+    setStatus(t("pickDecrypt"));
   });
   els.btnTemplate.addEventListener("click", () => {
     openFilePicker(els.templateInput);
-    setStatus("Pick any file (file manager / Downloads). Must be a picture for template.");
+    setStatus(t("pickTemplate"));
   });
   els.btnLoadText.addEventListener("click", () => {
     openFilePicker(els.textFileInput);
-    setStatus("Pick any file — contents loaded as text.");
+    setStatus(t("pickText"));
   });
   els.btnClear.addEventListener("click", () => {
     clearDrawing();
-    setStatus("Canvas cleared.");
+    setStatus(t("cleared"));
   });
   if (els.btnGrowNote) {
     els.btnGrowNote.addEventListener("click", () => {
       const w = Math.min(4096, Math.round(els.drawCanvas.width * 1.25));
       const h = Math.min(4096, Math.round(els.drawCanvas.height * 1.25));
       resizeNoteCanvas(w, h);
-      setStatus(
-        `Note canvas enlarged to ${els.drawCanvas.width}×${els.drawCanvas.height}. ` +
-          `Scroll down & sideways. Template stretches to this size on Encrypt.`
-      );
+      setStatus(t("grew", els.drawCanvas.width, els.drawCanvas.height));
     });
   }
   els.fileInput.addEventListener("change", () => {
@@ -1440,15 +1608,30 @@ canvas {
 
   clearDrawing();
   setMode("text");
+  try {
+    const saved = localStorage.getItem("crypt-lang");
+    if (saved === "en" || saved === "ru") lang = saved;
+  } catch (_) {
+    /* ignore */
+  }
+  if (els.langRu) {
+    els.langRu.addEventListener("change", () => {
+      if (els.langRu.checked) setLanguage("ru");
+      else if (!els.langEn.checked) setLanguage("ru");
+      else setLanguage("en");
+    });
+  }
+  if (els.langEn) {
+    els.langEn.addEventListener("change", () => {
+      if (els.langEn.checked) setLanguage("en");
+      else if (!els.langRu.checked) setLanguage("ru");
+      else setLanguage("ru");
+    });
+  }
+  applyLanguage();
   const verEl = document.getElementById("appVersion");
   if (verEl) verEl.textContent = APP_VERSION;
-  const versionBar = document.getElementById("versionBar");
-  if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
-  updateNoteSizeLabel();
-  setStatus(
-    APP_VERSION +
-      " ready. Text scrolls down; note/decrypt images scroll down & sideways. Template stretches if content is larger."
-  );
+  setStatus(APP_VERSION + t("ready"));
 })();
 
   </script>
