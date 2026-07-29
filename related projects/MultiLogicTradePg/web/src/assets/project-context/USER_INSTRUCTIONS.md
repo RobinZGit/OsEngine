@@ -6,6 +6,12 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+758. push
+
+757. GET /api/logic-trades/equity-curve TypeError: Assignment to constant variable (trades.js dateFromFinal)
+
+756. The colors of the tiles are not always on the entire length of the line… when I started the test, the whole line becomes yellow, and when I open it, I do not have the gray color of the ends of the right and left tiles painted, you need to paint them too when initializing
+
 755. push
 
 754. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting

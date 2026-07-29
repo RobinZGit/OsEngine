@@ -208,8 +208,33 @@
 }
 
 /* Pin enable on the left; export checkbox + row icons on the right — always visible.
-   Sticky cells need their own background (they paint over scrolling cells).
-   Keep that background identical to the row state (gray / blue / yellow / lilac). */
+   Sticky cells paint over the row: they MUST use the same fill as the tr
+   (gray / blue / yellow / lilac), including on first paint and after expand. */
+.logic-main-row {
+  --logic-row-bg: #dde3ec;
+  --logic-row-bg-hover: #d3dae5;
+}
+
+.logic-main-row.row-enabled {
+  --logic-row-bg: #c7d7f0;
+  --logic-row-bg-hover: #b9cce9;
+}
+
+.logic-main-row.row-disabled {
+  --logic-row-bg: #dde3ec;
+  --logic-row-bg-hover: #d3dae5;
+}
+
+.logic-main-row.row-testing {
+  --logic-row-bg: #fde68a;
+  --logic-row-bg-hover: #fcd34d;
+}
+
+.logic-main-row.row-testing-opt {
+  --logic-row-bg: #ddd6fe;
+  --logic-row-bg-hover: #c4b5fd;
+}
+
 .table-wrap > table th.col-expand,
 .table-wrap > table td.col-expand,
 .table-wrap > table th.col-check,
@@ -254,94 +279,19 @@
   right: 6.75rem;
 }
 
-/* Sticky cells: same fill as the rest of the logic row (incl. hover).
-   Testing/opt must beat row-enabled:hover (higher specificity + !important). */
-.logic-main-row.row-enabled > td.col-expand,
-.logic-main-row.row-enabled > td.col-check,
-.logic-main-row.row-enabled > td.col-export,
-.logic-main-row.row-enabled > td.col-actions {
-  background: #c7d7f0;
+/* Always paint sticky ends from the row token (init / expand / hover / testing). */
+.logic-main-row > td.col-expand,
+.logic-main-row > td.col-check,
+.logic-main-row > td.col-export,
+.logic-main-row > td.col-actions {
+  background: var(--logic-row-bg) !important;
 }
 
-.logic-main-row.row-disabled > td.col-expand,
-.logic-main-row.row-disabled > td.col-check,
-.logic-main-row.row-disabled > td.col-export,
-.logic-main-row.row-disabled > td.col-actions {
-  background: #dde3ec;
-}
-
-.logic-main-row.row-enabled:hover > td.col-expand,
-.logic-main-row.row-enabled:hover > td.col-check,
-.logic-main-row.row-enabled:hover > td.col-export,
-.logic-main-row.row-enabled:hover > td.col-actions {
-  background: #b9cce9;
-}
-
-.logic-main-row.row-disabled:hover > td.col-expand,
-.logic-main-row.row-disabled:hover > td.col-check,
-.logic-main-row.row-disabled:hover > td.col-export,
-.logic-main-row.row-disabled:hover > td.col-actions {
-  background: #d3dae5;
-}
-
-.logic-main-row.row-testing > td.col-expand,
-.logic-main-row.row-testing > td.col-check,
-.logic-main-row.row-testing > td.col-export,
-.logic-main-row.row-testing > td.col-actions,
-.logic-main-row.row-testing.row-enabled > td.col-expand,
-.logic-main-row.row-testing.row-enabled > td.col-check,
-.logic-main-row.row-testing.row-enabled > td.col-export,
-.logic-main-row.row-testing.row-enabled > td.col-actions,
-.logic-main-row.row-testing.row-disabled > td.col-expand,
-.logic-main-row.row-testing.row-disabled > td.col-check,
-.logic-main-row.row-testing.row-disabled > td.col-export,
-.logic-main-row.row-testing.row-disabled > td.col-actions {
-  background: #fde68a !important;
-}
-
-.logic-main-row.row-testing:hover > td.col-expand,
-.logic-main-row.row-testing:hover > td.col-check,
-.logic-main-row.row-testing:hover > td.col-export,
-.logic-main-row.row-testing:hover > td.col-actions,
-.logic-main-row.row-testing.row-enabled:hover > td.col-expand,
-.logic-main-row.row-testing.row-enabled:hover > td.col-check,
-.logic-main-row.row-testing.row-enabled:hover > td.col-export,
-.logic-main-row.row-testing.row-enabled:hover > td.col-actions,
-.logic-main-row.row-testing.row-disabled:hover > td.col-expand,
-.logic-main-row.row-testing.row-disabled:hover > td.col-check,
-.logic-main-row.row-testing.row-disabled:hover > td.col-export,
-.logic-main-row.row-testing.row-disabled:hover > td.col-actions {
-  background: #fcd34d !important;
-}
-
-.logic-main-row.row-testing-opt > td.col-expand,
-.logic-main-row.row-testing-opt > td.col-check,
-.logic-main-row.row-testing-opt > td.col-export,
-.logic-main-row.row-testing-opt > td.col-actions,
-.logic-main-row.row-testing-opt.row-enabled > td.col-expand,
-.logic-main-row.row-testing-opt.row-enabled > td.col-check,
-.logic-main-row.row-testing-opt.row-enabled > td.col-export,
-.logic-main-row.row-testing-opt.row-enabled > td.col-actions,
-.logic-main-row.row-testing-opt.row-disabled > td.col-expand,
-.logic-main-row.row-testing-opt.row-disabled > td.col-check,
-.logic-main-row.row-testing-opt.row-disabled > td.col-export,
-.logic-main-row.row-testing-opt.row-disabled > td.col-actions {
-  background: #ddd6fe !important;
-}
-
-.logic-main-row.row-testing-opt:hover > td.col-expand,
-.logic-main-row.row-testing-opt:hover > td.col-check,
-.logic-main-row.row-testing-opt:hover > td.col-export,
-.logic-main-row.row-testing-opt:hover > td.col-actions,
-.logic-main-row.row-testing-opt.row-enabled:hover > td.col-expand,
-.logic-main-row.row-testing-opt.row-enabled:hover > td.col-check,
-.logic-main-row.row-testing-opt.row-enabled:hover > td.col-export,
-.logic-main-row.row-testing-opt.row-enabled:hover > td.col-actions,
-.logic-main-row.row-testing-opt.row-disabled:hover > td.col-expand,
-.logic-main-row.row-testing-opt.row-disabled:hover > td.col-check,
-.logic-main-row.row-testing-opt.row-disabled:hover > td.col-export,
-.logic-main-row.row-testing-opt.row-disabled:hover > td.col-actions {
-  background: #c4b5fd !important;
+.logic-main-row:hover > td.col-expand,
+.logic-main-row:hover > td.col-check,
+.logic-main-row:hover > td.col-export,
+.logic-main-row:hover > td.col-actions {
+  background: var(--logic-row-bg-hover) !important;
 }
 
 .subtitle-row {

@@ -288,9 +288,21 @@
   box-shadow: inset 3px 0 0 #f59e0b;
 }
 
+/* Full-width header tile (head + Export/Stop): same yellow edge-to-edge. */
 .positions-panel-outer .panel-backtest-active > .signals-summary,
-.positions-panel-outer .panel-backtest-active.signals-block {
+.positions-panel-outer .panel-backtest-active.signals-block > .signals-summary {
   background: #fde68a;
+  margin: -0.35rem -0.75rem 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 7px 7px 0 0;
+  box-sizing: border-box;
+  width: calc(100% + 1.5rem);
+  max-width: none;
+}
+
+.positions-panel-outer .panel-backtest-active .signals-summary-head,
+.positions-panel-outer .panel-backtest-active .signals-summary-actions {
+  background: transparent;
 }
 
 .positions-panel-outer .panel-backtest-active .signals-summary-head .positions-summary-pnl {
@@ -305,8 +317,19 @@
 }
 
 .positions-panel-outer .panel-backtest-opt > .signals-summary,
-.positions-panel-outer .panel-backtest-opt.signals-block {
+.positions-panel-outer .panel-backtest-opt.signals-block > .signals-summary {
   background: #ddd6fe;
+  margin: -0.35rem -0.75rem 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 7px 7px 0 0;
+  box-sizing: border-box;
+  width: calc(100% + 1.5rem);
+  max-width: none;
+}
+
+.positions-panel-outer .panel-backtest-opt .signals-summary-head,
+.positions-panel-outer .panel-backtest-opt .signals-summary-actions {
+  background: transparent;
 }
 
 .positions-panel-outer .panel-backtest-opt .signals-summary-head .positions-summary-pnl {

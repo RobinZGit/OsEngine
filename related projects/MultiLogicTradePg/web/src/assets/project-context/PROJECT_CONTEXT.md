@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export fix; installers
+**Последнее обновление:** 2026-07-29 — push: equity-curve const fix; sticky row CSS vars; Testing header full-width; installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -118,6 +118,16 @@
 ---
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (equity-curve: Assignment to constant variable)
+
+- `dateFromFinal` был `const`, затем присваивался из meta run → TypeError на `/api/logic-trades/equity-curve`.
+- Фикс: `let dateFromFinal`.
+
+### 2026-07-29 (sticky ends + шапка теста на всю ширину)
+
+- Цвет строки через `--logic-row-bg` → липкие края всегда залиты (серый/синий/жёлтый/сиреневый) с первого кадра и после раскрытия.
+- Шапка «Тестирование» full-bleed (кнопки Экспорт/Стоп в том же фоне).
 
 ### 2026-07-29 (export: LOGIC_TRADE_SELECT is not defined)
 
@@ -836,6 +846,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | Push: equity-curve let fix; sticky CSS vars; Testing header full-width; installers |
 | 2026-07-29 | Push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export; installers |
 | 2026-07-29 | Push: inversion sides-only + Help chapter; equity mid-run fix; sticky row colors; installers |
 | 2026-07-29 | Inversion = Long↔Short only (no ≥/≤ flip); band-fade spam/hang; docs |

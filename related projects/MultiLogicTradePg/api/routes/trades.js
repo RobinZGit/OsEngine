@@ -443,7 +443,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
         action_name: r.action_name != null ? String(r.action_name) : null,
       }));
 
-    const dateFromFinal =
+    let dateFromFinal =
       rows.find((r) => r.date_from != null)?.date_from != null
         ? String(rows.find((r) => r.date_from != null).date_from)
         : null;
