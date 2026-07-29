@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+779. Make scrollable text (down) and image area (down + sideways); adjust/stretch template to larger note/text size
+
 778. Why two almost same pictures after decrypt — explain; show only one decode result (do not mirror onto Note canvas)
 
 777. Decrypt of unencoded template must show B/W noise not white sheet; even→white odd→black; result panel was hidden (display:none) so only blank note canvas was visible

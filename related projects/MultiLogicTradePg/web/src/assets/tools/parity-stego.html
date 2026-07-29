@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.11 — Parity Stego</title>
+  <title>Crypt v1.12 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -168,15 +168,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 960px;
+  max-width: 1100px;
   width: 100%;
   margin: 0 auto;
+  min-height: 0;
 }
 
 .panel {
   display: none;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  flex: 1;
 }
 
 .panel.is-visible {
@@ -188,6 +191,30 @@ body {
   color: var(--muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* Text: scroll down only */
+.scroll-pane-y {
+  width: 100%;
+  max-height: min(52vh, 480px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+}
+
+.scroll-pane-y textarea {
+  display: block;
+  width: 100%;
+  min-height: min(48vh, 440px);
+  height: min(48vh, 440px);
+  border: 0;
+  border-radius: 0;
+  resize: none;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 textarea {
@@ -213,9 +240,10 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
-  .hint {
+.hint {
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -260,12 +288,33 @@ textarea:focus {
 
 .version-bar {
   width: 100%;
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 10px 16px 0;
   font-size: 1rem;
   font-weight: 700;
   color: #9ec9b8;
+}
+
+/* Image: scroll down and sideways when larger than the viewport */
+.scroll-pane-xy {
+  width: 100%;
+  max-height: min(55vh, 560px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #ffffff;
+  touch-action: pan-x pan-y;
+}
+
+.scroll-pane-xy canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+  cursor: crosshair;
+  touch-action: none;
 }
 
 .canvas-wrap {
@@ -278,8 +327,6 @@ textarea:focus {
 
 canvas {
   display: block;
-  width: 100%;
-  height: auto;
   cursor: crosshair;
   touch-action: none;
 }
@@ -315,12 +362,13 @@ canvas {
   white-space: pre-wrap;
   word-break: break-word;
   padding: 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--bg-elevated);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   font: inherit;
   font-size: 1.05rem;
   line-height: 1.45;
+  min-height: 120px;
 }
 
 @media (max-width: 640px) {
@@ -335,6 +383,11 @@ canvas {
   .btn {
     padding: 10px 12px;
   }
+
+  .scroll-pane-y,
+  .scroll-pane-xy {
+    max-height: min(48vh, 420px);
+  }
 }
 
   </style>
@@ -344,7 +397,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.11</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.12</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
@@ -364,25 +417,28 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.11</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.12</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
         <div class="canvas-toolbar">
           <button type="button" id="btnLoadText" class="btn btn-ghost">Load file</button>
-          <span class="hint">Or type below · Android: Files / Downloads (all files)</span>
+          <span class="hint">Text scrolls down · long text stretches the template on Encrypt</span>
         </div>
         <label class="field-label" for="message">Message</label>
-        <textarea id="message" placeholder="Type text to encrypt…" rows="10"></textarea>
+        <div class="scroll-pane-y">
+          <textarea id="message" placeholder="Type text to encrypt…" rows="16"></textarea>
+        </div>
         <p id="textStatus" class="status" aria-live="polite"></p>
       </section>
 
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
           <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <span class="hint">Draw note here. Decrypt result appears once below (B/W: even→white, odd→black).</span>
+          <button type="button" id="btnGrowNote" class="btn btn-ghost" title="Make note canvas larger">Larger</button>
+          <span id="noteSizeLabel" class="hint">Note 800×500 · scroll down &amp; sideways</span>
         </div>
-        <div class="canvas-wrap">
+        <div id="drawScroll" class="scroll-pane-xy">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
         </div>
         <p id="pictureStatus" class="status" aria-live="polite"></p>
@@ -390,8 +446,10 @@ canvas {
 
       <section id="panelResult" class="result-panel" hidden>
         <h2 class="result-title">Decrypt result (one picture · even→white · odd→black)</h2>
-        <pre id="decryptText" class="decrypt-text" hidden></pre>
-        <div id="decryptCanvasWrap" class="canvas-wrap" hidden>
+        <div id="decryptTextScroll" class="scroll-pane-y" hidden>
+          <pre id="decryptText" class="decrypt-text"></pre>
+        </div>
+        <div id="decryptCanvasWrap" class="scroll-pane-xy" hidden>
           <canvas id="decryptCanvas" width="800" height="500"></canvas>
         </div>
       </section>
@@ -411,7 +469,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.11";
+  const APP_VERSION = "Crypt v1.12";
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -425,11 +483,14 @@ canvas {
     drawCanvas: document.getElementById("drawCanvas"),
     decryptCanvas: document.getElementById("decryptCanvas"),
     decryptText: document.getElementById("decryptText"),
+    decryptTextScroll: document.getElementById("decryptTextScroll"),
     decryptCanvasWrap: document.getElementById("decryptCanvasWrap"),
+    noteSizeLabel: document.getElementById("noteSizeLabel"),
     btnEncrypt: document.getElementById("btnEncrypt"),
     btnDecrypt: document.getElementById("btnDecrypt"),
     btnTemplate: document.getElementById("btnTemplate"),
     btnClear: document.getElementById("btnClear"),
+    btnGrowNote: document.getElementById("btnGrowNote"),
     fileInput: document.getElementById("fileInput"),
     templateInput: document.getElementById("templateInput"),
     textFileInput: document.getElementById("textFileInput"),
@@ -463,9 +524,41 @@ canvas {
     if (!keepResult) {
       els.panelResult.hidden = true;
       els.decryptText.hidden = true;
+      if (els.decryptTextScroll) els.decryptTextScroll.hidden = true;
       els.decryptCanvasWrap.hidden = true;
       setStatus("");
     }
+  }
+
+  function updateNoteSizeLabel() {
+    if (!els.noteSizeLabel) return;
+    els.noteSizeLabel.textContent =
+      `Note ${els.drawCanvas.width}×${els.drawCanvas.height} · scroll down & sideways`;
+  }
+
+  /** Resize note canvas; keeps existing ink when growing. */
+  function resizeNoteCanvas(w, h) {
+    w = Math.max(64, Math.min(4096, w | 0));
+    h = Math.max(64, Math.min(4096, h | 0));
+    const prevW = els.drawCanvas.width;
+    const prevH = els.drawCanvas.height;
+    if (w === prevW && h === prevH) {
+      updateNoteSizeLabel();
+      return;
+    }
+    let prev = null;
+    try {
+      prev = drawCtx.getImageData(0, 0, prevW, prevH);
+    } catch (_) {
+      prev = null;
+    }
+    els.drawCanvas.width = w;
+    els.drawCanvas.height = h;
+    clearDrawing();
+    if (prev) {
+      drawCtx.putImageData(prev, 0, 0);
+    }
+    updateNoteSizeLabel();
   }
 
   function clearDrawing() {
@@ -672,39 +765,48 @@ canvas {
   }
 
   /**
-   * Expand template so width/height are at least the note canvas size.
-   * Extra area is filled by stretching edge pixels (simple extend).
+   * Stretch (scale) template so it covers at least targetW×targetH.
+   * If the note/image is larger than the template, the template is stretched up.
    */
-  function expandTemplateToNoteSize(noteW, noteH) {
+  function stretchTemplateToSize(targetW, targetH) {
     const src = createCarrierCanvas();
-    const outW = Math.max(noteW, src.width);
-    const outH = Math.max(noteH, src.height);
+    const outW = Math.max(1, targetW | 0);
+    const outH = Math.max(1, targetH | 0);
     if (outW === src.width && outH === src.height) return src;
 
     const out = document.createElement("canvas");
     out.width = outW;
     out.height = outH;
     const ctx = out.getContext("2d", { willReadFrequently: true });
-
-    // Fill with average-ish template color, then draw original in top-left
-    const sample = src.getContext("2d").getImageData(0, 0, 1, 1).data;
-    ctx.fillStyle = `rgb(${sample[0]},${sample[1]},${sample[2]})`;
-    ctx.fillRect(0, 0, outW, outH);
-    ctx.drawImage(src, 0, 0);
-
-    // Extend right edge
-    if (outW > src.width) {
-      ctx.drawImage(src, src.width - 1, 0, 1, src.height, src.width, 0, outW - src.width, src.height);
-    }
-    // Extend bottom edge (including already-extended right)
-    if (outH > src.height) {
-      ctx.drawImage(out, 0, src.height - 1, outW, 1, 0, src.height, outW, outH - src.height);
-    }
-
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src, 0, 0, src.width, src.height, 0, 0, outW, outH);
     const imageData = ctx.getImageData(0, 0, outW, outH);
     for (let i = 3; i < imageData.data.length; i += 4) imageData.data[i] = 255;
     ctx.putImageData(imageData, 0, 0);
     return out;
+  }
+
+  /** Keep old name used by note encrypt. */
+  function expandTemplateToNoteSize(noteW, noteH) {
+    return stretchTemplateToSize(Math.max(noteW, 1), Math.max(noteH, 1));
+  }
+
+  /** Grow carrier so it has at least bitCount pixels (for long text). */
+  function stretchTemplateForBitCount(bitCount) {
+    const src = createCarrierCanvas();
+    let w = src.width;
+    let h = src.height;
+    if (w * h >= bitCount) return stretchTemplateToSize(w, h);
+    const aspect = w / Math.max(h, 1);
+    const scale = Math.sqrt(bitCount / (w * h));
+    w = Math.ceil(w * scale);
+    h = Math.ceil(h * scale);
+    while (w * h < bitCount) {
+      w += 1;
+      h = Math.max(1, Math.ceil(w / aspect));
+    }
+    return stretchTemplateToSize(w, h);
   }
 
   async function setTemplateFromFile(file) {
@@ -714,10 +816,14 @@ canvas {
     els.templateName.textContent = customTemplateName;
     const w = img.naturalWidth || img.width;
     const h = img.naturalHeight || img.height;
-    // Keep note canvas size; template is expanded on Encrypt if smaller.
+    // If template is larger than the note, grow the note so you can scroll the full area.
+    if (w > els.drawCanvas.width || h > els.drawCanvas.height) {
+      resizeNoteCanvas(Math.max(els.drawCanvas.width, w), Math.max(els.drawCanvas.height, h));
+    }
     setStatus(
       `Template loaded: ${customTemplateName} (${w}×${h}). ` +
-        `Note canvas ${els.drawCanvas.width}×${els.drawCanvas.height} — template expands on Encrypt if needed.`
+        `Note ${els.drawCanvas.width}×${els.drawCanvas.height}. ` +
+        `On Encrypt the template is stretched if the note/text needs a larger size.`
     );
   }
 
@@ -852,18 +958,20 @@ canvas {
         return;
       }
       const { key, withoutKey } = resolved;
-      const carrier = createCarrierCanvas();
-      const ctx = carrier.getContext("2d", { willReadFrequently: true });
-      const imageData = ctx.getImageData(0, 0, carrier.width, carrier.height);
       const plainBits = textToBits(text);
       const bits = applyKeyToBits(plainBits, key);
+      // Stretch template up when text needs more pixels than the carrier has
+      const carrier = stretchTemplateForBitCount(bits.length);
+      const ctx = carrier.getContext("2d", { willReadFrequently: true });
+      const imageData = ctx.getImageData(0, 0, carrier.width, carrier.height);
       encodeBitsIntoImageData(imageData, bits);
       ctx.putImageData(imageData, 0, 0);
       downloadCanvas(carrier, "encrypted-text.png");
       setStatus(
         keyStatusPrefix("Encrypted", withoutKey, key) +
-          ` ${text.length} character(s) → PNG` +
+          ` ${text.length} character(s) → PNG ${carrier.width}×${carrier.height}` +
           (customTemplateName ? ` · template: ${customTemplateName}` : " · default template") +
+          (bits.length > CARRIER_W * CARRIER_H ? " · template stretched for text size" : "") +
           "."
       );
     } catch (err) {
@@ -891,7 +999,7 @@ canvas {
         return;
       }
 
-      // 2) Start from Template (default or chosen) — encrypted file must LOOK like the template
+      // 2) Stretch Template to note size when the note is larger
       const carrier = expandTemplateToNoteSize(noteW, noteH);
       const cw = carrier.width;
       const ch = carrier.height;
@@ -1166,6 +1274,7 @@ canvas {
   function showTextDecryptResult(text) {
     els.panelResult.hidden = false;
     els.decryptCanvasWrap.hidden = true;
+    if (els.decryptTextScroll) els.decryptTextScroll.hidden = false;
     els.decryptText.hidden = false;
     els.decryptText.textContent = text || "(empty / no text found)";
     els.message.value = text;
@@ -1173,14 +1282,14 @@ canvas {
 
   function showPictureDecryptResult(bits, width, height) {
     els.panelResult.hidden = false;
+    if (els.decryptTextScroll) els.decryptTextScroll.hidden = true;
     els.decryptCanvas.width = width;
     els.decryptCanvas.height = height;
     const bw = bitsToBwImageData(bits, width, height);
     decryptCtx.putImageData(bw, 0, 0);
     els.decryptText.hidden = true;
     els.decryptCanvasWrap.hidden = false;
-    // Do not paint onto the Note canvas — that duplicated the same B/W picture
-    // and looked like “two almost identical decodes.”
+    // Do not paint onto the Note canvas — that duplicated the same B/W picture.
   }
 
   async function decryptFromFile(file) {
@@ -1286,6 +1395,17 @@ canvas {
     clearDrawing();
     setStatus("Canvas cleared.");
   });
+  if (els.btnGrowNote) {
+    els.btnGrowNote.addEventListener("click", () => {
+      const w = Math.min(4096, Math.round(els.drawCanvas.width * 1.25));
+      const h = Math.min(4096, Math.round(els.drawCanvas.height * 1.25));
+      resizeNoteCanvas(w, h);
+      setStatus(
+        `Note canvas enlarged to ${els.drawCanvas.width}×${els.drawCanvas.height}. ` +
+          `Scroll down & sideways. Template stretches to this size on Encrypt.`
+      );
+    });
+  }
   els.fileInput.addEventListener("change", () => {
     const file = els.fileInput.files && els.fileInput.files[0];
     els.fileInput.value = "";
@@ -1324,9 +1444,10 @@ canvas {
   if (verEl) verEl.textContent = APP_VERSION;
   const versionBar = document.getElementById("versionBar");
   if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
+  updateNoteSizeLabel();
   setStatus(
     APP_VERSION +
-      " ready. Decrypt shows one B/W picture below (even→white, odd→black). Note canvas above is only for drawing."
+      " ready. Text scrolls down; note/decrypt images scroll down & sideways. Template stretches if content is larger."
   );
 })();
 
