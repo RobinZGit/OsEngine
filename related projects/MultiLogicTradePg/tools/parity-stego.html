@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.9 — Parity Stego</title>
+  <title>Crypt v1.10 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -292,8 +292,15 @@ canvas {
 }
 
 .result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+
+.result-panel[hidden] {
+  display: none !important;
 }
 
 .result-title {
@@ -337,7 +344,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.9</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.10</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
@@ -357,7 +364,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.9</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.10</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -373,7 +380,7 @@ canvas {
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
           <button type="button" id="btnClear" class="btn btn-ghost">Clear</button>
-          <span class="hint">Note → Encrypt into Template (file still looks like template). Decrypt: even→white, odd→black.</span>
+          <span class="hint">Decrypt any picture → B/W: even sum = white, odd = black. Unencoded template → noise (not a white sheet).</span>
         </div>
         <div class="canvas-wrap">
           <canvas id="drawCanvas" width="800" height="500"></canvas>
@@ -381,8 +388,8 @@ canvas {
         <p id="pictureStatus" class="status" aria-live="polite"></p>
       </section>
 
-      <section id="panelResult" class="panel result-panel">
-        <h2 class="result-title">Decrypt result (B/W parity)</h2>
+      <section id="panelResult" class="result-panel" hidden>
+        <h2 class="result-title">Decrypt result (B/W · even→white · odd→black)</h2>
         <pre id="decryptText" class="decrypt-text" hidden></pre>
         <div id="decryptCanvasWrap" class="canvas-wrap" hidden>
           <canvas id="decryptCanvas" width="800" height="500"></canvas>
@@ -404,13 +411,14 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.9";
+  const APP_VERSION = "Crypt v1.10";
 
   const els = {
     modeText: document.getElementById("modeText"),
     modePicture: document.getElementById("modePicture"),
     panelText: document.getElementById("panelText"),
     panelPicture: document.getElementById("panelPicture"),
+    panelResult: document.getElementById("panelResult"),
     message: document.getElementById("message"),
     textStatus: document.getElementById("textStatus"),
     pictureStatus: document.getElementById("pictureStatus"),
@@ -453,6 +461,7 @@ canvas {
     els.panelText.classList.toggle("is-visible", mode === "text");
     els.panelPicture.classList.toggle("is-visible", mode === "picture");
     if (!keepResult) {
+      els.panelResult.hidden = true;
       els.decryptText.hidden = true;
       els.decryptCanvasWrap.hidden = true;
       setStatus("");
@@ -1155,6 +1164,7 @@ canvas {
   }
 
   function showTextDecryptResult(text) {
+    els.panelResult.hidden = false;
     els.decryptCanvasWrap.hidden = true;
     els.decryptText.hidden = false;
     els.decryptText.textContent = text || "(empty / no text found)";
@@ -1162,12 +1172,19 @@ canvas {
   }
 
   function showPictureDecryptResult(bits, width, height) {
+    els.panelResult.hidden = false;
     els.decryptCanvas.width = width;
     els.decryptCanvas.height = height;
     const bw = bitsToBwImageData(bits, width, height);
     decryptCtx.putImageData(bw, 0, 0);
     els.decryptText.hidden = true;
     els.decryptCanvasWrap.hidden = false;
+
+    // Also paint onto the Note canvas — previously only the hidden result
+    // panel was updated, so Decrypt looked like a blank white sheet.
+    els.drawCanvas.width = width;
+    els.drawCanvas.height = height;
+    drawCtx.putImageData(bw, 0, 0);
   }
 
   async function decryptFromFile(file) {
@@ -1197,22 +1214,22 @@ canvas {
       const inkPct = (picCand.ink || 0) * 100;
       const looksLikeNoise = inkPct >= 35 && inkPct <= 65;
 
-      // Note mode → always B/W parity picture. Unencoded ≈ noise; keep it as noise.
+      // Prefer Note/B/W whenever possible: unencoded template must show noise, not white.
       let chosen;
       if (mode === "picture") chosen = "picture";
-      else if (looksLikeNoise && textCand.score < 0.85) chosen = "picture";
-      else if (mode === "text" && textCand.score >= 0.35) chosen = "text";
-      else chosen = textCand.score >= picCand.score ? "text" : "picture";
+      else if (looksLikeNoise) chosen = "picture";
+      else if (mode === "text" && textCand.score >= 0.55) chosen = "text";
+      else chosen = textCand.score >= picCand.score && textCand.score >= 0.55 ? "text" : "picture";
 
       const chosenLabel = chosen === "text" ? "text" : "note/B/W";
-      setMode(chosen, { keepResult: true });
+      setMode(chosen === "text" ? "text" : "picture", { keepResult: true });
 
       if (chosen === "text") {
         showTextDecryptResult(textCand.text);
       } else {
         showPictureDecryptResult(picBits, width, height);
         try {
-          els.decryptCanvasWrap.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          els.panelResult.scrollIntoView({ block: "nearest", behavior: "smooth" });
         } catch (_) {
           /* ignore */
         }
@@ -1220,11 +1237,14 @@ canvas {
 
       const odd = picBits.reduce((n, b) => n + (b ? 1 : 0), 0);
       const keyMsg = keyStatusPrefix("Decrypted", withoutKey, key);
+      const encodedLikely = !looksLikeNoise && inkPct >= 1 && inkPct < 35;
       const shape = looksLikeNoise
-        ? "noise (unencoded / keyed — B/W dots, not the colorful template)"
+        ? "unencoded → B/W noise (not white)"
         : inkPct < 1
-          ? "almost blank (nearly all even/white)"
-          : "note-like (odd=ink lines, even=white)";
+          ? "almost all even → white (parity missing / bad file)"
+          : encodedLikely
+            ? "looks encoded (odd=ink lines)"
+            : "B/W parity map";
       setStatus(
         `${keyMsg} ${chosenLabel}: even→white, odd→black · odd ${odd} (${inkPct.toFixed(1)}%) · ${shape}.`
       );
@@ -1310,7 +1330,7 @@ canvas {
   if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
   setStatus(
     APP_VERSION +
-      " ready. Note Encrypt = nudge Template parity (file looks like template). Decrypt: even→white, odd→black."
+      " ready. Decrypt shows B/W here: even→white, odd→black. Unencoded template → noise (not a white sheet)."
   );
 })();
 
