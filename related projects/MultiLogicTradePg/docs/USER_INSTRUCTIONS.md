@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+762. Add a link to the corresponding repositories to each item on My Projects
+
 761. Pour it in / merge Crypt + My Projects to main (GitHub Pages)
 
 760. My Projects link wrongly opens MultiLogic Trade PG SPA — must open hub listing Crypt, MultiLogic PG, FINRESP, UN Calculator, Dietitian, Total Calendar; do not list MacroRithm

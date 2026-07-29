@@ -50,41 +50,48 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
-      counter-reset: proj;
     }
-    .list a {
-      display: block;
+    .card {
       padding: 1rem 1.15rem;
       border-radius: 12px;
       border: 1px solid var(--line);
       background: rgba(36, 56, 70, 0.85);
-      color: var(--ink);
-      text-decoration: none;
-      transition: border-color 0.15s, transform 0.15s, background 0.15s;
+      transition: border-color 0.15s, background 0.15s;
     }
-    .list a:hover {
+    .card:hover {
       border-color: var(--accent);
       background: rgba(45, 70, 85, 0.95);
-      transform: translateY(-1px);
     }
-    .list .title {
+    .card .title {
       display: block;
       font-weight: 700;
       font-size: 1.05rem;
       margin-bottom: 0.25rem;
     }
-    .list .desc {
+    .card .desc {
       display: block;
       color: var(--muted);
       font-size: 0.92rem;
       line-height: 1.4;
+      margin-bottom: 0.7rem;
     }
-    .list .url {
-      display: block;
-      margin-top: 0.45rem;
-      font-size: 0.8rem;
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.88rem;
+    }
+    .links a {
       color: var(--accent2);
-      word-break: break-all;
+      text-decoration: none;
+    }
+    .links a:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+    .links .label {
+      color: var(--muted);
+      margin-right: 0.25rem;
     }
     footer {
       margin-top: 2.5rem;
@@ -99,51 +106,57 @@
     <h1>My Published Projects</h1>
     <p class="lead">
       Список опубликованных проектов на GitHub Pages.
-      Нажмите карточку — откроется сайт.
+      У каждого пункта — сайт и репозиторий.
     </p>
 
     <ol class="list">
-      <li>
-        <a href="./crypt-parity-stego.html">
-          <span class="title">1. Crypt — cipher / parity stego</span>
-          <span class="desc">Шифр: спрятать текст или рисунок в картинку (чётность пикселей).</span>
-          <span class="url">…/OsEngine/crypt-parity-stego.html</span>
-        </a>
+      <li class="card">
+        <span class="title">1. Crypt — cipher / parity stego</span>
+        <span class="desc">Шифр: спрятать текст или рисунок в картинку (чётность пикселей).</span>
+        <div class="links">
+          <span><span class="label">Site:</span><a href="./crypt-parity-stego.html">OsEngine/crypt-parity-stego.html</a></span>
+          <span><span class="label">Repo:</span><a href="https://github.com/RobinZGit/OsEngine/tree/main/related%20projects/MultiLogicTradePg/tools">RobinZGit/OsEngine (tools)</a></span>
+        </div>
       </li>
-      <li>
-        <a href="./">
-          <span class="title">2. MultiLogic Trade PG</span>
-          <span class="desc">Торговый UI (PostgreSQL + Angular). Полная торговля — только локально с API.</span>
-          <span class="url">…/OsEngine/</span>
-        </a>
+      <li class="card">
+        <span class="title">2. MultiLogic Trade PG</span>
+        <span class="desc">Торговый UI (PostgreSQL + Angular). Полная торговля — только локально с API.</span>
+        <div class="links">
+          <span><span class="label">Site:</span><a href="./">robinzgit.github.io/OsEngine/</a></span>
+          <span><span class="label">Repo:</span><a href="https://github.com/RobinZGit/OsEngine/tree/main/related%20projects/MultiLogicTradePg">RobinZGit/OsEngine (MultiLogicTradePg)</a></span>
+        </div>
       </li>
-      <li>
-        <a href="https://robinzgit.github.io/MultiLogicTradeA/">
-          <span class="title">3. FINRESP calculator (MultiLogicTradeA)</span>
-          <span class="desc">Калькулятор FINRESP / Angular MultiLogicTradeA.</span>
-          <span class="url">robinzgit.github.io/MultiLogicTradeA/</span>
-        </a>
+      <li class="card">
+        <span class="title">3. FINRESP calculator (MultiLogicTradeA)</span>
+        <span class="desc">Калькулятор FINRESP / Angular MultiLogicTradeA.</span>
+        <div class="links">
+          <span><span class="label">Site:</span><a href="https://robinzgit.github.io/MultiLogicTradeA/">robinzgit.github.io/MultiLogicTradeA/</a></span>
+          <span><span class="label">Repo:</span><a href="https://github.com/RobinZGit/MultiLogicTradeA">RobinZGit/MultiLogicTradeA</a></span>
+        </div>
       </li>
-      <li>
-        <a href="https://robinzgit.github.io/UN_Calculator/">
-          <span class="title">4. UN Calculator</span>
-          <span class="desc">Калькулятор UN.</span>
-          <span class="url">robinzgit.github.io/UN_Calculator/</span>
-        </a>
+      <li class="card">
+        <span class="title">4. UN Calculator</span>
+        <span class="desc">Калькулятор UN.</span>
+        <div class="links">
+          <span><span class="label">Site:</span><a href="https://robinzgit.github.io/UN_Calculator/">robinzgit.github.io/UN_Calculator/</a></span>
+          <span><span class="label">Repo:</span><a href="https://github.com/RobinZGit/UN_Calculator">RobinZGit/UN_Calculator</a></span>
+        </div>
       </li>
-      <li>
-        <a href="https://robinzgit.github.io/dietolog_client/">
-          <span class="title">5. Dietitian / Диетолог</span>
-          <span class="desc">Клиент dietolog на GitHub Pages.</span>
-          <span class="url">robinzgit.github.io/dietolog_client/</span>
-        </a>
+      <li class="card">
+        <span class="title">5. Dietitian / Диетолог</span>
+        <span class="desc">Клиент dietolog на GitHub Pages.</span>
+        <div class="links">
+          <span><span class="label">Site:</span><a href="https://robinzgit.github.io/dietolog_client/">robinzgit.github.io/dietolog_client/</a></span>
+          <span><span class="label">Repo:</span><a href="https://github.com/RobinZGit/dietolog_client">RobinZGit/dietolog_client</a></span>
+        </div>
       </li>
-      <li>
-        <a href="https://robinzgit.github.io/TotalCalendarJS/">
-          <span class="title">6. Total Calendar</span>
-          <span class="desc">TotalCalendarJS — календарь.</span>
-          <span class="url">robinzgit.github.io/TotalCalendarJS/</span>
-        </a>
+      <li class="card">
+        <span class="title">6. Total Calendar</span>
+        <span class="desc">TotalCalendarJS — календарь.</span>
+        <div class="links">
+          <span><span class="label">Site:</span><a href="https://robinzgit.github.io/TotalCalendarJS/">robinzgit.github.io/TotalCalendarJS/</a></span>
+          <span><span class="label">Repo:</span><a href="https://github.com/RobinZGit/TotalCalendarJS">RobinZGit/TotalCalendarJS</a></span>
+        </div>
       </li>
     </ol>
 
