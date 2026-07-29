@@ -234,8 +234,15 @@ export class AppComponent implements OnInit, OnDestroy {
   techLoggingEnabled = false;
   /** Standalone Crypt tool (GitHub Pages + local assets). */
   readonly cryptToolUrl = assetUrl('assets/tools/parity-stego.html');
-  /** Hub of published GitHub Pages projects. */
-  readonly myProjectsUrl = assetUrl('assets/tools/my-projects.html');
+  /**
+   * Hub of published projects. Prefer the Pages root URL so Angular SPA
+   * 404-fallback cannot swallow a missing assets path.
+   */
+  readonly myProjectsUrl =
+    typeof location !== 'undefined' &&
+    /localhost|127\.0\.0\.1/.test(location.hostname)
+      ? assetUrl('assets/tools/my-projects.html')
+      : 'https://robinzgit.github.io/OsEngine/my-projects.html';
 
   constructor(
     private readonly techLog: TechLogService,
