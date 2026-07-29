@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+778. Why two almost same pictures after decrypt — explain; show only one decode result (do not mirror onto Note canvas)
+
 777. Decrypt of unencoded template must show B/W noise not white sheet; even→white odd→black; result panel was hidden (display:none) so only blank note canvas was visible
 
 776. Note encrypt must use Template (file looks like template); change pixel parity even/odd; decrypt even→white odd→black — not a B/W file without template; white decrypt was wrong
