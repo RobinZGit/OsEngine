@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+768. Bump Crypt form version so GitHub Pages shows the new build (tell which version will be used)
+
 767. Add Crypt version number on the form for GitHub Pages (so tablet shows whether the build updated)
 
 766. Fix note encrypt/decrypt: expand template to note size; parity even=white odd=ink; exact-pixel decode (was blank sheet)
