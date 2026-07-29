@@ -6,7 +6,11 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+<<<<<<< HEAD
 769. push (security_inversion paper×side remake + installers 99)
+=======
+769. Check if GitHub Pages Crypt updated; version not visible on form — make version larger/clearer
+>>>>>>> fd21c69 (Make Crypt version v1.7 large and hard to miss on Pages.)
 
 768. Bump Crypt form version so GitHub Pages shows the new build (tell which version will be used)
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Crypt v1.6 — Parity Stego</title>
+  <title>Crypt v1.7 — Parity Stego</title>
   <style>
 :root {
   --bg: #1a2332;
@@ -227,16 +227,45 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.brand-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+
+.brand-name {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
 .version-badge {
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 1.05rem;
+  font-weight: 800;
   letter-spacing: 0.04em;
-  color: #9ec9b8;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
+  color: #c8f0dc;
+  background: #1e4a3a;
+  padding: 8px 14px;
+  border: 1px solid #3d9a7a;
   border-radius: 8px;
   white-space: nowrap;
   user-select: text;
+}
+
+.version-bar {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 10px 16px 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #9ec9b8;
 }
 
 .canvas-wrap {
@@ -306,6 +335,10 @@ canvas {
 <body>
   <div class="app">
     <header class="strip">
+      <div class="brand-row">
+        <span class="brand-name">Crypt</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.7</span>
+      </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode">
           <button type="button" id="modeText" class="mode-btn is-active" data-mode="text">Text</button>
@@ -317,13 +350,14 @@ canvas {
         </div>
       </div>
       <div class="strip-right">
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.6</span>
         <button type="button" id="btnTemplate" class="btn btn-ghost">Template</button>
         <button type="button" id="btnEncrypt" class="btn btn-primary">Encrypt</button>
         <button type="button" id="btnDecrypt" class="btn btn-secondary">Decrypt</button>
         <span id="templateName" class="hint template-name"></span>
       </div>
     </header>
+
+    <p id="versionBar" class="version-bar" aria-live="polite">Build: Crypt v1.7</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -370,7 +404,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.6";
+  const APP_VERSION = "Crypt v1.7";
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -1189,6 +1223,8 @@ canvas {
   setMode("text");
   const verEl = document.getElementById("appVersion");
   if (verEl) verEl.textContent = APP_VERSION;
+  const versionBar = document.getElementById("versionBar");
+  if (versionBar) versionBar.textContent = "Build: " + APP_VERSION;
   setStatus(APP_VERSION + " ready.");
 })();
 
