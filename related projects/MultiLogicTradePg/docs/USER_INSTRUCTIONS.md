@@ -6,11 +6,13 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+771. push (headless trade runner + Server_Start; installers 100)
+
+770. Check if GitHub Pages Crypt updated; version not visible on form — make version larger/clearer
+
 769. After GitHub update + install-over: if logic checkboxes were on, restore real trading reliably without Angular (server is light); installer should start API; enabled logics must trade again.
 
-768. push (headless trade runner + Server_Start; installers 100)
-
-767. push (security_inversion paper×side remake + installers 99)
+768. push (security_inversion paper×side remake + installers 99)
 
 767. Bump Crypt form version so GitHub Pages shows the new build (tell which version will be used)
 
