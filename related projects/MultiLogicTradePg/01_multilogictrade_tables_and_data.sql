@@ -1320,7 +1320,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('rating_lookback_days', 'Дней предрасчёта рейтинга', 'integer', '7',
      'При включении боя: предрасчёт боевых рейтингов сигналов по свечам за N дней (фон)', 11),
     ('inversion', 'Инверсия', 'boolean', 'false',
-     'Инверсия логики: условия наоборот (≥↔≤, >↔<) и сделки в противоположную сторону (Long↔Short)', 12),
+     'Инверсия логики: Long↔Short при тех же условиях сигналов (зеркальные позиции). Условия ≥/≤ не меняются.', 12),
     ('warmup_pretest', 'Прогрев (предварительное тестирование)', 'boolean', 'true',
      'Перед включением боя: прогнать тест за rating_lookback_days и перенести состояния бумаг для security_resume/security_inversion', 13),
     ('resume_sl_no_reduce', 'Не снижать цель возобновления SL', 'boolean', 'false',

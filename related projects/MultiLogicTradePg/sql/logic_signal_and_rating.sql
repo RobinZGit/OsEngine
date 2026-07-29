@@ -49,7 +49,10 @@ $$;
 COMMENT ON FUNCTION get_logic_param_boolean(INTEGER, TEXT, BOOLEAN) IS
 'Булев параметр logic_params (true/1/yes …); пусто → p_default';
 
--- Инверсия сравнения: >=↔<=, >↔< (как ReverseSignals в FINRESP / OsEngine)
+-- Инверсия сравнения: >=↔<=, >↔< (legacy helper).
+-- Param «inversion» / ReverseSides больше НЕ вызывает это на сигналах:
+-- для каналов (pp<=LOWER) инверсия условия даёт pp>=LOWER ≈ всегда true → спам сделок.
+-- Инверсия логики = только Long↔Short при том же условии.
 CREATE OR REPLACE FUNCTION logic_invert_comparison_condition(p_condition TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql IMMUTABLE AS $$

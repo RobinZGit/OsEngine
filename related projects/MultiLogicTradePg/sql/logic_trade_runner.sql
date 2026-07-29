@@ -1605,7 +1605,8 @@ BEGIN
             LOOP
                 SELECT * INTO v_eval
                 FROM logic_signal_evaluate_at(
-                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, v_eff_inversion
+                    -- Inversion flips sides only (see backtest runner); keep conditions.
+                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, FALSE
                 );
 
                 IF v_eval.close_price IS NULL THEN

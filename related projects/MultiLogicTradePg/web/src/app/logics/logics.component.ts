@@ -146,9 +146,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
       total: Array<{ dt: string; value: number }>;
       long: Array<{ dt: string; value: number }>;
       short: Array<{ dt: string; value: number }>;
+      run_id?: number | null;
+      financial_result?: number;
     }
   >();
   private testEquityInFlight = new Set<number>();
+  /** Last equity fetch start time — allow retry if hung past timeout. */
+  private testEquityStartedAt = new Map<number, number>();
   /** Стабильные ссылки для шаблона (без filter на каждый CD). */
   private testTradesViewByLogic = new Map<number, LogicTradeRow[]>();
   private signalIndicatorIdsByLogic = new Map<number, number[]>();
@@ -3309,6 +3313,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
       })
       .subscribe({
         next: () => {
+          // Drop stale mid-run equity / panel so chart cannot show a previous run
+          // (or truncated closes) while FinRes already tracks the new run_id.
+          this.testEquityByLogic.delete(logicId);
+          this.logicTradesTest.delete(logicId);
+          this.testTradesViewByLogic.delete(logicId);
+          this.testEquityInFlight.delete(logicId);
+          this.testEquityStartedAt.delete(logicId);
           // Единственный владелец status-poll — BacktestUiStateService.watch().
           this.backtestUi.watch(logicId);
           this.expandedTestTradesBlocks.add(logicId);
@@ -3454,22 +3465,39 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private loadTestEquityForLogic(logicId: number): void {
     const id = Number(logicId);
     if (!Number.isFinite(id) || id <= 0) return;
-    if (this.testEquityInFlight.has(id)) return;
     if (typeof document !== 'undefined' && document.hidden) return;
+    const now = Date.now();
+    if (this.testEquityInFlight.has(id)) {
+      const started = this.testEquityStartedAt.get(id) ?? 0;
+      // Stuck request (timeout pipe / tab freeze) — allow a fresh poll.
+      if (now - started < 35_000) return;
+      this.testEquityInFlight.delete(id);
+    }
+    const runId = this.backtestRuns.get(id)?.id ?? null;
     this.testEquityInFlight.add(id);
+    this.testEquityStartedAt.set(id, now);
     this.logicsService
-      .getLogicTradesEquityCurve(id, true)
+      .getLogicTradesEquityCurve(id, true, runId)
       .pipe(
-        timeout(30_000),
+        timeout(25_000),
         takeUntil(this.destroy$),
-        finalize(() => this.testEquityInFlight.delete(id))
+        finalize(() => {
+          this.testEquityInFlight.delete(id);
+          this.testEquityStartedAt.delete(id);
+        })
       )
       .subscribe({
         next: (resp) => {
+          const currentRun = this.backtestRuns.get(id)?.id ?? null;
+          if (runId != null && currentRun != null && runId !== currentRun) {
+            return; // response from previous run
+          }
           this.testEquityByLogic.set(id, {
             total: resp.total ?? [],
             long: resp.long ?? [],
             short: resp.short ?? [],
+            run_id: currentRun ?? runId,
+            financial_result: Number(resp.financial_result) || 0,
           });
           this.cdr.markForCheck();
         },
@@ -3540,7 +3568,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
             date_from: r.date_from ?? null,
             date_to: r.date_to ?? null,
           });
+          // If equity curve lags FinRes (common with two concurrent tests), force refresh.
+          const eq = this.testEquityByLogic.get(logicId);
+          const eqLast =
+            eq?.total?.length ? eq.total[eq.total.length - 1]?.value : null;
+          const fr = Number.isFinite(pnl) ? pnl : 0;
+          if (
+            this.expandedTestTradesBlocks.has(logicId) &&
+            (eqLast == null || Math.abs(Number(eqLast) - fr) > 1) &&
+            !this.testEquityInFlight.has(logicId)
+          ) {
+            this.loadTestEquityForLogic(logicId);
+          }
         }
+        this.cdr.markForCheck();
       },
       error: () => {
         this.testPnlInFlight = false;

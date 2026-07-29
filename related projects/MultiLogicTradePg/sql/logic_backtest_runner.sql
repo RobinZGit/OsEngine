@@ -1912,17 +1912,19 @@ BEGIN
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
             LOOP
-                -- OPT: evaluate_at_opt по базам формулы (после promote без полного sync серий)
+                -- Inversion = ReverseSides only (Long↔Short). Do NOT invert
+                -- comparison ops: for band fades (pp<=LOWER) that would become
+                -- pp>=LOWER (almost always true) → trade spam, no equity mirror.
                 IF v_use_opt THEN
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
                         v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt,
-                        v_eff_inversion, NULL
+                        FALSE, NULL
                     );
                 ELSE
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at(
-                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, v_eff_inversion
+                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
                     );
                 END IF;
 

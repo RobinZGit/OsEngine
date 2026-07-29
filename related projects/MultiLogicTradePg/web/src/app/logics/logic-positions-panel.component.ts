@@ -512,15 +512,22 @@ export class LogicPositionsPanelComponent implements OnChanges {
     const liveTotal = this.summaryEquityTotal;
     const liveLong = this.summaryEquityLong;
     const liveShort = this.summaryEquityShort;
-    // Prefer live equity-curve while mid-run (trades may be stale/empty by design).
+    // Prefer live /equity-curve. Mid-run `trades` are test-panel only (last ~2500
+    // closes) — building equity from them makes the chart end ≠ FinRes (full sum).
     if (liveTotal != null && liveTotal.length > 0) {
       this.cachedPortfolioEquity = liveTotal;
       this.cachedPortfolioEquityLong = liveLong?.length ? liveLong : [];
       this.cachedPortfolioEquityShort = liveShort?.length ? liveShort : [];
+      this.alignEquityEndToFinRes();
+    } else if (this.isTest && this.isBacktestRunning) {
+      this.cachedPortfolioEquity = [];
+      this.cachedPortfolioEquityLong = [];
+      this.cachedPortfolioEquityShort = [];
     } else {
       this.cachedPortfolioEquity = buildEquityPoints(this.trades, periodStart);
       this.cachedPortfolioEquityLong = buildEquityPoints(this.trades, periodStart, 'long');
       this.cachedPortfolioEquityShort = buildEquityPoints(this.trades, periodStart, 'short');
+      this.alignEquityEndToFinRes();
     }
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
   }
@@ -610,6 +617,25 @@ export class LogicPositionsPanelComponent implements OnChanges {
   }
 
 
+
+  /**
+   * If live equity lags pnl-summary (slow/stale poll under two tests), nudge the
+   * last total point so the chart end matches the header FinRes.
+   */
+  private alignEquityEndToFinRes(): void {
+    if (!this.isTest || this.summaryFinancialResult == null) return;
+    const fr = Number(this.summaryFinancialResult);
+    if (!Number.isFinite(fr) || this.cachedPortfolioEquity.length === 0) return;
+    const last = this.cachedPortfolioEquity[this.cachedPortfolioEquity.length - 1];
+    if (Math.abs(last.value - fr) <= 0.05) return;
+    const dt =
+      this.backtestRun?.current_bar_dt ||
+      last.dt ||
+      this.backtestRun?.date_to ||
+      this.testPeriodTo ||
+      last.dt;
+    this.cachedPortfolioEquity = [...this.cachedPortfolioEquity, { dt: String(dt), value: fr }];
+  }
 
   displayFinancialResult(): number {
     // Тест: та же цифра, что колонка «Финрез теста» (pnl-summary по run_id).

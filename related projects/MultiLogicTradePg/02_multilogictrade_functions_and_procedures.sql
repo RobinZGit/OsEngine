@@ -4577,6 +4577,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10264,6 +10265,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -13244,8 +13273,9 @@ BEGIN
                 LOOP
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
+                        -- Inversion flips sides only; keep original band/SMA conditions.
                         v_sig.id, v_sec.security_id, p_tf_id, p_closed_bar_dt,
-                        v_eff_inversion, v_arm.values_json
+                        FALSE, v_arm.values_json
                     );
                     IF v_eval.close_price IS NULL THEN
                         v_all_ok := FALSE;
@@ -14060,7 +14090,10 @@ $$;
 COMMENT ON FUNCTION get_logic_param_boolean(INTEGER, TEXT, BOOLEAN) IS
 'Булев параметр logic_params (true/1/yes …); пусто → p_default';
 
--- Инверсия сравнения: >=↔<=, >↔< (как ReverseSignals в FINRESP / OsEngine)
+-- Инверсия сравнения: >=↔<=, >↔< (legacy helper).
+-- Param «inversion» / ReverseSides больше НЕ вызывает это на сигналах:
+-- для каналов (pp<=LOWER) инверсия условия даёт pp>=LOWER ≈ всегда true → спам сделок.
+-- Инверсия логики = только Long↔Short при том же условии.
 CREATE OR REPLACE FUNCTION logic_invert_comparison_condition(p_condition TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql IMMUTABLE AS $$
@@ -15131,7 +15164,8 @@ BEGIN
             LOOP
                 SELECT * INTO v_eval
                 FROM logic_signal_evaluate_at(
-                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, v_eff_inversion
+                    -- Inversion flips sides only (see backtest runner); keep conditions.
+                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, FALSE
                 );
 
                 IF v_eval.close_price IS NULL THEN
@@ -17808,17 +17842,19 @@ BEGIN
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
             LOOP
-                -- OPT: evaluate_at_opt по базам формулы (после promote без полного sync серий)
+                -- Inversion = ReverseSides only (Long↔Short). Do NOT invert
+                -- comparison ops: for band fades (pp<=LOWER) that would become
+                -- pp>=LOWER (almost always true) → trade spam, no equity mirror.
                 IF v_use_opt THEN
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
                         v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt,
-                        v_eff_inversion, NULL
+                        FALSE, NULL
                     );
                 ELSE
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at(
-                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, v_eff_inversion
+                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
                     );
                 END IF;
 
@@ -19738,6 +19774,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

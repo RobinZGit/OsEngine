@@ -1409,8 +1409,9 @@ BEGIN
                 LOOP
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
+                        -- Inversion flips sides only; keep original band/SMA conditions.
                         v_sig.id, v_sec.security_id, p_tf_id, p_closed_bar_dt,
-                        v_eff_inversion, v_arm.values_json
+                        FALSE, v_arm.values_json
                     );
                     IF v_eval.close_price IS NULL THEN
                         v_all_ok := FALSE;

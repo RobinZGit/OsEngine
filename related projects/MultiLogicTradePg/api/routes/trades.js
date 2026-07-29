@@ -1,6 +1,11 @@
 /**
  * Logic trades, lots, heartbeat, close-all.
  */
+const {
+  LOGIC_TRADE_SELECT,
+  LOGIC_TRADE_SELECT_TEST_PANEL,
+} = require('../lib/logic-trade-sql');
+
 module.exports = function registerTradesRoutes(app, ctx) {
   const {
     pool,
@@ -346,6 +351,9 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
   const isTestRaw = req.query.is_test;
   const isTest =
     isTestRaw === '0' || isTestRaw === 'false' ? false : true;
+  const runIdQ = Number(req.query.run_id);
+  const runIdFilter =
+    Number.isInteger(runIdQ) && runIdQ > 0 ? runIdQ : null;
   try {
     const { rows } = await pool.query(
       isTest
@@ -357,6 +365,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
             r.date_to::text AS date_to
           FROM logic_backtest_runs r
           WHERE r.logic_id = $1
+            AND ($2::bigint IS NULL OR r.id = $2::bigint)
           ORDER BY r.id DESC
           LIMIT 1
         ),
@@ -367,7 +376,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
             lt.financial_result::float8 AS financial_result,
             a.name AS action_name
           FROM logic_trades lt
-          CROSS JOIN latest_run lr
+          JOIN latest_run lr ON TRUE
           JOIN actions a ON a.id = lt.action_id
           JOIN sides s ON s.id = lt.side_id
           WHERE lt.logic_id = $1
@@ -392,22 +401,25 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
             )
         )
         SELECT
-          lr.date_from,
-          lr.date_to,
+          (SELECT run_id FROM latest_run) AS run_id,
+          (SELECT date_from FROM latest_run) AS date_from,
+          (SELECT date_to FROM latest_run) AS date_to,
           c.dt,
           c.financial_result,
-          c.action_name
-        FROM latest_run lr
-        LEFT JOIN closes c ON TRUE
+          c.action_name,
+          c.id
+        FROM closes c
         ORDER BY c.dt NULLS LAST, c.id NULLS LAST
         `
         : `
         SELECT
+          NULL::bigint AS run_id,
           NULL::text AS date_from,
           NULL::text AS date_to,
           COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
           lt.financial_result::float8 AS financial_result,
-          a.name AS action_name
+          a.name AS action_name,
+          lt.id
         FROM logic_trades lt
         JOIN actions a ON a.id = lt.action_id
         JOIN sides s ON s.id = lt.side_id
@@ -420,7 +432,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
           AND lt.financial_result IS NOT NULL
         ORDER BY COALESCE(lt.bar_dt, lt.executed_at), lt.id
         `,
-      [logicId]
+      isTest ? [logicId, runIdFilter] : [logicId]
     );
 
     const closes = rows
@@ -431,9 +443,37 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
         action_name: r.action_name != null ? String(r.action_name) : null,
       }));
 
-    const dateFrom =
-      rows[0]?.date_from != null ? String(rows[0].date_from) : null;
-    const dateTo = rows[0]?.date_to != null ? String(rows[0].date_to) : null;
+    const dateFromFinal =
+      rows.find((r) => r.date_from != null)?.date_from != null
+        ? String(rows.find((r) => r.date_from != null).date_from)
+        : null;
+    let dateToFinal =
+      rows.find((r) => r.date_to != null)?.date_to != null
+        ? String(rows.find((r) => r.date_to != null).date_to)
+        : null;
+    let runIdOut =
+      rows.find((r) => r.run_id != null)?.run_id != null
+        ? Number(rows.find((r) => r.run_id != null).run_id)
+        : runIdFilter;
+
+    if (isTest && (dateFromFinal == null || runIdOut == null)) {
+      const meta = await pool.query(
+        `
+        SELECT id AS run_id, date_from::text AS date_from, date_to::text AS date_to
+        FROM logic_backtest_runs
+        WHERE logic_id = $1
+          AND ($2::bigint IS NULL OR id = $2::bigint)
+        ORDER BY id DESC
+        LIMIT 1
+        `,
+        [logicId, runIdFilter]
+      );
+      if (meta.rows[0]) {
+        dateFromFinal = dateFromFinal ?? (meta.rows[0].date_from != null ? String(meta.rows[0].date_from) : null);
+        dateToFinal = dateToFinal ?? (meta.rows[0].date_to != null ? String(meta.rows[0].date_to) : null);
+        runIdOut = runIdOut ?? Number(meta.rows[0].run_id);
+      }
+    }
 
     const buildSeries = (sideFilter) => {
       const filtered =
@@ -447,8 +487,8 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
             });
       if (filtered.length === 0) return [];
       const zeroDt =
-        dateFrom && (!filtered[0].dt || String(dateFrom) <= filtered[0].dt)
-          ? dateFrom
+        dateFromFinal && (!filtered[0].dt || String(dateFromFinal) <= filtered[0].dt)
+          ? dateFromFinal
           : filtered[0].dt;
       let cum = 0;
       const points = [{ dt: zeroDt, value: 0 }];
@@ -470,8 +510,9 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
     res.json({
       logic_id: logicId,
       is_test: isTest,
-      date_from: dateFrom,
-      date_to: dateTo,
+      run_id: runIdOut ?? null,
+      date_from: dateFromFinal,
+      date_to: dateToFinal,
       total: buildSeries(null),
       long: buildSeries('long'),
       short: buildSeries('short'),

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-28 — Phase A: Express routers (`api/routes/*` + thin `server.js`); Help/docs; installers; push
+**Последнее обновление:** 2026-07-29 — push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export fix; installers
 
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
@@ -117,7 +117,33 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-28)
+## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (export: LOGIC_TRADE_SELECT is not defined)
+
+- После Phase A константы `LOGIC_TRADE_SELECT` / `_TEST_PANEL` остались в `logics.js`, а `/api/logic-trades/export` — в `trades.js`.
+- Фикс: `api/lib/logic-trade-sql.js` + require в `trades.js`.
+
+### 2026-07-29 (справка: глава «Инверсия логики»)
+
+- Help → отдельная глава: принцип галочки, что меняется / не меняется, примеры SMA и LinReg Fade, отличие от security_inversion, ссылка на XOR в TradeA.
+- В «Логики» — краткая отсылка; UI: «Инверсия (Long↔Short, те же условия)» + title.
+
+### 2026-07-29 (инверсия: нет зеркала эквити + второй тест «висит»)
+
+- **Данные (runs 210/211):** без inversion ~1650 Open / FinRes ~17k; с inversion ~6615 Open / FinRes ~160k — не зеркало.
+- **Корень:** галочка делала OsEngine ReverseSignals+ReverseSides **без XOR**. Для LinReg Fade `pp <= LOWER` → `pp >= LOWER` (почти всегда true) → спам.
+- **MultiLogicTradeA:** `isReverseSignalsEnabled = ReverseSignals XOR ReverseSides`. При **обоих** флагах ON эффективна только смена сторон → зеркало. «Сопряжённые» ⇄↔ = этот угол. L3/L4 — отдельные запечённые формулы («зеркало L1/L2»), не runtime-галочка.
+- **Симметрия X:** те же условия, Long↔Short (opens+closes).
+- **Фикс:** evaluate_at(..., FALSE); flip только стороны. Накатить `sql/logic_backtest_runner.sql` (+ trade/opt); уже running-тесты перезапустить.
+- **Hang:** спам сделок от старой инверсии условий.
+
+### 2026-07-29 (mid-run: FinRes +92k, эквити уходит в минус)
+
+- **Симптом:** шапка «Фин. результат» растёт (полный `/pnl-summary`), синяя «общая» эквити заканчивается глубоко в минусе; на панели `(…/2500)`.
+- **Не корень:** инверсия / второй параллельный тест как разная математика PnL — оба пути (FinRes и equity-curve) режут shadow/OPT одинаково.
+- **Корень:** mid-run сделки = `test-panel` (последние **2500** Close). Если `/equity-curve` пуст/задержался, график строился из этой усечённой выборки → конец кривой ≠ FinRes. Два теста усиливают таймауты equity-poll.
+- **Фикс:** mid-run не строить эквити из panel-trades; сброс equity при старте; `run_id` на equity-curve; refresh при расхождении с FinRes; лёгкий align конца кривой к FinRes.
 
 ### 2026-07-28 (Phase A: Express routers из `api/server.js`)
 
@@ -645,7 +671,7 @@
 71. **v44 logics.note + контртренд OsEngine:** колонка `logics.note`; поле «Примечание» в редакторе; подписи у всех seed; +5 логик CCI/LinReg/ADX/MACD/ATR Fade.
 72. **Комиссия % от номинала сделки:** `logic_trade_calc_commission` = `price × quantity × commission_pct / 100` (было % от депозита — ломало mean-reversion бэктесты).
 73. **Лотность бумаги (v44b+):** `securities.lot_size` (MOEX TQBR, seed обновлён 2026-07-28: FLOT=10, SBER=1, FEES=10000, …); при PostOrder лот с T-Bank GetInstrumentBy кэшируется в `lot_size`. `logic_calc_open_quantity` округляет вниз до лота (штуки в книге). PostOrder: штуки→лоты (`is_lots=FALSE`) или уже лоты (`TRUE`). Колонка «Лот» в бумагах логики.
-74. **Инверсия логики:** param `inversion` (default false); условия `≥↔≤`, `>↔<` + сделки Long↔Short (как ReverseSignals+ReverseSides / OsEngine); UI галочка в параметрах.
+74. **Инверсия логики:** param `inversion` (default false); **только Long↔Short** при тех же условиях сигналов (зеркало позиций / ReverseSides). Инверсия `≥↔≤` убрана — на каналах (LOWER/UPPER) давала спам сделок. UI галочка в параметрах.
 75. **Эквити в тесте:** переключатель «График / Эквити» у блока Бумаги; общая синяя + бледные long(зел.)/short(кр.).
 76. **Финрез (% депозита):** в скобках у боевого/тестового финреза и на панелях Позиции/Тестирование / плитках бумаг.
 77. **Windows-инсталлятор (исходники):** `installer/windows` — Inno Setup `.iss`, post-install PowerShell, build helper и README. Установка: копирует проект в Program Files, ставит недостающие Node.js 18+ и PostgreSQL 15, пытается поставить pgsql-http, разворачивает БД `00→01→02` с паролем `111`, создаёт `api\.env`, выполняет `npm ci` для `api`/`web`; при старой установке предлагает удалить и поставить заново.
@@ -810,6 +836,10 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-29 | Push: inversion sides-only + Help; equity mid-run; sticky colors; LOGIC_TRADE_SELECT export; installers |
+| 2026-07-29 | Push: inversion sides-only + Help chapter; equity mid-run fix; sticky row colors; installers |
+| 2026-07-29 | Inversion = Long↔Short only (no ≥/≤ flip); band-fade spam/hang; docs |
+| 2026-07-29 | Fix mid-run equity ≠ FinRes (no truncated panel fallback; run_id; align) |
 | 2026-07-28 | Phase A: split api/server.js → routes/* + server-shared; Help/docs; installers; push |
 | 2026-07-28 | Refresh Help/docs/schema (lots, sell-all, exports); USER_INSTRUCTIONS; installers; push |
 | 2026-07-28 | Fix sell-all undersell (lots÷lot_size); quantity-based sell-all; installers; push |
@@ -1030,4 +1060,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **748** — first routers (Phase A); **747** — push docs; **746** — актуальность Help/схемы/комментов/контекста/инструкций при каждом push.
+Последние (см. USER_INSTRUCTIONS): **754** — push; **753** — Help inversion chapter; **752** — mirror vs TradeA XOR; **751** — sticky row colors.

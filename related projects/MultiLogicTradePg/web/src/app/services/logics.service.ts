@@ -529,7 +529,8 @@ export class LogicsService {
   /** Lightweight champion equity (Close PnL only) — safe to poll mid-backtest. */
   getLogicTradesEquityCurve(
     logicId: number,
-    isTest = true
+    isTest = true,
+    runId?: number | null
   ): Observable<{
     logic_id: number;
     is_test: boolean;
@@ -540,7 +541,15 @@ export class LogicsService {
     short: Array<{ dt: string; value: number }>;
     close_count: number;
     financial_result: number;
+    run_id?: number | null;
   }> {
+    const params: Record<string, string> = {
+      logic_id: String(logicId),
+      is_test: isTest ? '1' : '0',
+    };
+    if (runId != null && Number.isFinite(runId) && runId > 0) {
+      params['run_id'] = String(runId);
+    }
     return this.http.get<{
       logic_id: number;
       is_test: boolean;
@@ -551,9 +560,8 @@ export class LogicsService {
       short: Array<{ dt: string; value: number }>;
       close_count: number;
       financial_result: number;
-    }>(`${this.appConfig.apiUrl}/logic-trades/equity-curve`, {
-      params: { logic_id: String(logicId), is_test: isTest ? '1' : '0' },
-    });
+      run_id?: number | null;
+    }>(`${this.appConfig.apiUrl}/logic-trades/equity-curve`, { params });
   }
 
   getLogicTradeLots(tradeId: number): Observable<LogicTradeLotRow[]> {

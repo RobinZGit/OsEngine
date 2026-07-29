@@ -6,6 +6,16 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+755. push
+
+754. push (interrupted) / LOGIC_TRADE_SELECT is not defined when exporting
+
+753. Describe the principle of inversion in the description, in a separate chapter, where the parameters of logic write about inversion separately, with examples of simple logics
+
+752. Well, then look at the current test two strategies, two logics, one with inversion, the other is the same without…
+
+749. Look, now there are two tests, and one equity with a financial result somehow does not stick together…
+
 748. Let's make the first routers. (Phase A: split oversized api/server.js into Express route modules)
 
 747. push
