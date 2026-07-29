@@ -301,7 +301,7 @@ canvas {
         </div>
         <div class="key-field">
           <label for="encKey">Key</label>
-          <input type="text" id="encKey" placeholder="empty → 111" value="" autocomplete="off" spellcheck="false" />
+          <input type="text" id="encKey" placeholder="empty = no key (min 3 if set)" value="" autocomplete="off" spellcheck="false" />
         </div>
       </div>
       <div class="strip-right">
@@ -349,7 +349,7 @@ canvas {
   const CARRIER_W = 800;
   const CARRIER_H = 500;
   const LENGTH_BITS = 32; // message length in bytes (uint32)
-  const DEFAULT_KEY = "111";
+  const MIN_KEY_LEN = 3;
 
   const els = {
     modeText: document.getElementById("modeText"),
@@ -464,14 +464,22 @@ canvas {
   }
 
   /**
-   * Empty key → default "111" (with a status note for the caller).
+   * Empty key → encrypt/decrypt without a key (no scrambling).
+   * Non-empty key must be at least MIN_KEY_LEN characters.
    */
   function resolveKey() {
     const raw = (els.encKey.value || "").trim();
     if (!raw) {
-      return { key: DEFAULT_KEY, usedDefault: true };
+      return { ok: true, key: "", withoutKey: true };
     }
-    return { key: raw, usedDefault: false };
+    if (raw.length < MIN_KEY_LEN) {
+      return {
+        ok: false,
+        error:
+          `Key is too short (${raw.length}). Use at least ${MIN_KEY_LEN} characters, or leave Key empty to work without a key.`,
+      };
+    }
+    return { ok: true, key: raw, withoutKey: false };
   }
 
   function hashKey(str) {
@@ -494,8 +502,9 @@ canvas {
     };
   }
 
-  /** XOR payload bits with a keystream derived from the key (same for encrypt/decrypt). */
+  /** XOR payload with keystream when a key is set; empty key leaves bits unchanged. */
   function applyKeyToBits(bits, key) {
+    if (!key) return bits.slice();
     const rng = mulberry32(hashKey(key));
     const out = new Array(bits.length);
     for (let i = 0; i < bits.length; i++) {
@@ -505,8 +514,11 @@ canvas {
     return out;
   }
 
-  function emptyKeyMessage(action) {
-    return `Empty key — ${action} with key ${DEFAULT_KEY}.`;
+  function keyStatusPrefix(action, withoutKey, key) {
+    if (withoutKey) {
+      return `${action} without a key (empty Key). Same file decrypts with an empty Key.`;
+    }
+    return `${action} with key “${key}”. Use the same key to reverse it.`;
   }
 
   /**
@@ -713,7 +725,12 @@ canvas {
       return;
     }
     try {
-      const { key, usedDefault } = resolveKey();
+      const resolved = resolveKey();
+      if (!resolved.ok) {
+        setStatus(resolved.error);
+        return;
+      }
+      const { key, withoutKey } = resolved;
       const carrier = createCarrierCanvas();
       const ctx = carrier.getContext("2d", { willReadFrequently: true });
       const imageData = ctx.getImageData(0, 0, carrier.width, carrier.height);
@@ -722,14 +739,12 @@ canvas {
       encodeBitsIntoImageData(imageData, bits);
       ctx.putImageData(imageData, 0, 0);
       downloadCanvas(carrier, "encrypted-text.png");
-      let msg = usedDefault
-        ? emptyKeyMessage("encrypted")
-        : `Encrypted with key.`;
-      msg +=
-        ` ${text.length} character(s) → PNG` +
-        (customTemplateName ? ` (template: ${customTemplateName})` : " (default template)") +
-        ".";
-      setStatus(msg);
+      setStatus(
+        keyStatusPrefix("Encrypted", withoutKey, key) +
+          ` ${text.length} character(s) → PNG` +
+          (customTemplateName ? ` · template: ${customTemplateName}` : " · default template") +
+          "."
+      );
     } catch (err) {
       setStatus(err.message || String(err));
     }
@@ -737,7 +752,12 @@ canvas {
 
   function encryptPicture() {
     try {
-      const { key, usedDefault } = resolveKey();
+      const resolved = resolveKey();
+      if (!resolved.ok) {
+        setStatus(resolved.error);
+        return;
+      }
+      const { key, withoutKey } = resolved;
       const carrier = createCarrierCanvas();
       const cw = carrier.width;
       const ch = carrier.height;
@@ -764,14 +784,12 @@ canvas {
       encodeBitsIntoImageData(imageData, bits);
       ctx.putImageData(imageData, 0, 0);
       downloadCanvas(carrier, "encrypted-picture.png");
-      let msg = usedDefault
-        ? emptyKeyMessage("encrypted")
-        : "Encrypted with key.";
-      msg +=
-        " Drawing → PNG" +
-        (customTemplateName ? ` (template: ${customTemplateName})` : " (default template)") +
-        ".";
-      setStatus(msg);
+      setStatus(
+        keyStatusPrefix("Encrypted", withoutKey, key) +
+          " Drawing → PNG" +
+          (customTemplateName ? ` · template: ${customTemplateName}` : " · default template") +
+          "."
+      );
     } catch (err) {
       setStatus(err.message || String(err));
     }
@@ -800,7 +818,12 @@ canvas {
 
   async function decryptFromFile(file) {
     try {
-      const { key, usedDefault } = resolveKey();
+      const resolved = resolveKey();
+      if (!resolved.ok) {
+        setStatus(resolved.error);
+        return;
+      }
+      const { key, withoutKey } = resolved;
       const img = await loadImageFromFile(file);
       const canvas = document.createElement("canvas");
       canvas.width = img.naturalWidth || img.width;
@@ -818,11 +841,10 @@ canvas {
         els.decryptText.hidden = false;
         els.decryptText.textContent = text || "(empty / no text found)";
         els.message.value = text;
-        let msg = usedDefault
-          ? emptyKeyMessage("decrypted")
-          : "Decrypted with key.";
-        msg += ` Text (${text.length} character(s)).`;
-        setStatus(msg);
+        setStatus(
+          keyStatusPrefix("Decrypted", withoutKey, key) +
+            ` Text (${text.length} character(s)).`
+        );
       } else {
         const rawBits = decodeBitsFromImageData(imageData, imageData.width * imageData.height);
         const bits = applyKeyToBits(rawBits, key);
@@ -832,11 +854,10 @@ canvas {
         decryptCtx.putImageData(bw, 0, 0);
         els.decryptText.hidden = true;
         els.decryptCanvasWrap.hidden = false;
-        let msg = usedDefault
-          ? emptyKeyMessage("decrypted")
-          : "Decrypted with key.";
-        msg += " Picture from pixel parity (even=white, odd=black).";
-        setStatus(msg);
+        setStatus(
+          keyStatusPrefix("Decrypted", withoutKey, key) +
+            " Picture from pixel parity (even=white, odd=black)."
+        );
       }
     } catch (err) {
       setStatus(err.message || String(err));
