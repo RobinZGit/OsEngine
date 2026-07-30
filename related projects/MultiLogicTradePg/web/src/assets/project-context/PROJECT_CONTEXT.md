@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Crypt v1.21: decrypt картинки на холст заметки + перо/ластик; Pages main
+**Последнее обновление:** 2026-07-30 — Crypt v1.21 + fix Pages deploy (CSS budget); Pages main
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -125,6 +125,7 @@
 - Расшифровка **заметки/картинки** кладётся сразу на **холст редактирования** (не в отдельную зону снизу) — можно править и снова «Шифровать».
 - Рядом с холстом: **Перо** (по умолчанию) / **Ластик** (белый штрих).
 - Версия формы: **Crypt v1.21** (`tools/parity-stego.html` + assets); push **main** → GitHub Pages.
+- **Pages fix:** деплой падал на `logics.component.css` > 24kb budget → `anyComponentStyle` maximumError **40kb** (`angular.json`).
 
 ### 2026-07-30 (Equity: цель 2680 не ломает шкалу; shadow с момента паузы)
 
