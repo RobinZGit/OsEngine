@@ -376,7 +376,8 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
             lt.id,
             COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
             lt.financial_result::float8 AS financial_result,
-            a.name AS action_name
+            a.name AS action_name,
+            COALESCE(lt.is_shadow, FALSE) AS is_shadow
           FROM logic_trades lt
           JOIN latest_run lr ON TRUE
           JOIN actions a ON a.id = lt.action_id
@@ -384,7 +385,6 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
           WHERE lt.logic_id = $1
             AND lt.is_test = TRUE
             AND s.name = 'Close'
-            AND COALESCE(lt.is_shadow, FALSE) = FALSE
             AND COALESCE(lt.opt_lane, '') = ''
             AND lt.status IN ('filled', 'submitted')
             AND lt.financial_result IS NOT NULL
@@ -409,6 +409,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
           c.dt,
           c.financial_result,
           c.action_name,
+          c.is_shadow,
           c.id
         FROM closes c
         ORDER BY c.dt NULLS LAST, c.id NULLS LAST
@@ -421,6 +422,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
           COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
           lt.financial_result::float8 AS financial_result,
           a.name AS action_name,
+          COALESCE(lt.is_shadow, FALSE) AS is_shadow,
           lt.id
         FROM logic_trades lt
         JOIN actions a ON a.id = lt.action_id
@@ -428,7 +430,6 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
         WHERE lt.logic_id = $1
           AND lt.is_test = FALSE
           AND s.name = 'Close'
-          AND COALESCE(lt.is_shadow, FALSE) = FALSE
           AND COALESCE(lt.opt_lane, '') = ''
           AND lt.status IN ('filled', 'submitted')
           AND lt.financial_result IS NOT NULL
@@ -443,6 +444,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
         dt: String(r.dt),
         financial_result: Number(r.financial_result),
         action_name: r.action_name != null ? String(r.action_name) : null,
+        is_shadow: Boolean(r.is_shadow),
       }));
 
     let dateFromFinal =
@@ -477,7 +479,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
       }
     }
 
-    const buildSeries = (sideFilter) => {
+    const buildSeries = (sideFilter, shadowOnly = false) => {
       const filtered =
         sideFilter == null
           ? closes
@@ -487,14 +489,23 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
               if (sideFilter === 'short') return a === 'short';
               return true;
             });
-      if (filtered.length === 0) return [];
+      const scoped = shadowOnly
+        ? filtered.filter((c) => c.is_shadow)
+        : filtered.filter((c) => !c.is_shadow);
       const zeroDt =
-        dateFromFinal && (!filtered[0].dt || String(dateFromFinal) <= filtered[0].dt)
+        dateFromFinal ||
+        (scoped[0]?.dt ? String(scoped[0].dt) : null) ||
+        (closes[0]?.dt ? String(closes[0].dt) : null);
+      if (scoped.length === 0) {
+        return zeroDt ? [{ dt: zeroDt, value: 0 }] : [];
+      }
+      const startDt =
+        dateFromFinal && (!scoped[0].dt || String(dateFromFinal) <= scoped[0].dt)
           ? dateFromFinal
-          : filtered[0].dt;
+          : scoped[0].dt;
       let cum = 0;
-      const points = [{ dt: zeroDt, value: 0 }];
-      for (const c of filtered) {
+      const points = [{ dt: startDt, value: 0 }];
+      for (const c of scoped) {
         cum += c.financial_result;
         if (
           points.length === 1 &&
@@ -515,13 +526,15 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
       run_id: runIdOut ?? null,
       date_from: dateFromFinal,
       date_to: dateToFinal,
-      total: buildSeries(null),
-      long: buildSeries('long'),
-      short: buildSeries('short'),
-      close_count: closes.length,
+      total: buildSeries(null, false),
+      long: buildSeries('long', false),
+      short: buildSeries('short', false),
+      shadow_total: buildSeries(null, true),
+      close_count: closes.filter((c) => !c.is_shadow).length,
+      shadow_close_count: closes.filter((c) => c.is_shadow).length,
       financial_result:
-        closes.length > 0
-          ? closes.reduce((s, c) => s + c.financial_result, 0)
+        closes.filter((c) => !c.is_shadow).length > 0
+          ? closes.filter((c) => !c.is_shadow).reduce((s, c) => s + c.financial_result, 0)
           : 0,
     });
   } catch (err) {

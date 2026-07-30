@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Trade runner **watchdog**: автоподъём заснувшего цикла (Node + PG) + зелёный/красный чекбокс «включено» и бейдж «торговля остановлена»
+**Последнее обновление:** 2026-07-30 — Equity: shadow пунктир + серые зоны; красный чекбокс при тени портфеля; watchdog v1.0.103
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-30)
+
+### 2026-07-30 (Equity: shadow пунктир + красный чекбокс при тени портфеля)
+
+- Красный чекбокс «вкл.» и бейдж — если **весь портфель в shadow** (`portfolio_trading_paused`); это нормально, не только при asleep runner.
+- Эквити портфеля/бумаги: рисуется **даже без закрытий** (ноль с начала периода); **shadow-эквити** — серый пунктир; периоды shadow — **серая заливка** (в т.ч. portfolio_ltp_renew / portfolio_resume).
+- API `/logic-trades/equity-curve`: shadow closes + `shadow_total`.
 
 ### 2026-07-30 (Trade runner watchdog — сон цикла + UI)
 
@@ -931,6 +937,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Equity: draw without closes; shadow dashed + gray zones; red enable when portfolio shadow |
 | 2026-07-30 | Trade runner watchdog: auto-raise asleep cycle (Node+PG) + green/red enable checkbox + «торговля остановлена» badge |
 | 2026-07-30 | Crypt v1.20: Refresh no-op if Key length 1–2 + message (empty or ≥3); merge main |
 | 2026-07-30 | Crypt v1.19: Refresh = decrypt loaded file with new Key only; button after Key; disabled until Decrypt; merge main |

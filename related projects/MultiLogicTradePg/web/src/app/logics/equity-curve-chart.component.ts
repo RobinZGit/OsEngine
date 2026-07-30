@@ -18,12 +18,12 @@ import {
 /** Цвета зон режима бумаги (как на ценовом графике). */
 export const EQUITY_SHADE_COLORS = {
   normal: { fill: 'rgba(187, 247, 208, 0.4)', stroke: 'rgba(74, 222, 128, 0.35)' },
-  shadow: { fill: 'rgba(203, 213, 225, 0.5)', stroke: 'rgba(148, 163, 184, 0.5)' },
+  shadow: { fill: 'rgba(203, 213, 225, 0.55)', stroke: 'rgba(148, 163, 184, 0.55)' },
   inverted: { fill: 'rgba(251, 207, 232, 0.45)', stroke: 'rgba(244, 114, 182, 0.4)' },
 } as const;
 
 /**
- * Отдельный график эквити: общая (синяя), long (зелёная бледная), short (красная бледная).
+ * Отдельный график эквити: общая (синяя), long/short, shadow (пунктир).
  * Вертикали — срабатывания портфельного SL/TP.
  * Зоны — обычная (зелёный) / shadow (серый) / инверсия (розовый).
  */
@@ -38,11 +38,14 @@ export const EQUITY_SHADE_COLORS = {
         <span class="leg-total">━━</span> общая ·
         <span class="leg-long">──</span> лонги ·
         <span class="leg-short">──</span> шорты
+        @if (shadowTotal.length > 1 || (shadowTotal.length === 1 && shadowTotal[0].value !== 0)) {
+          · <span class="leg-shadow-line">- - -</span> shadow
+        }
         @if (stopMarkers.length) {
           · <span class="leg-sl">|</span> SL портфель ·
           <span class="leg-tp">|</span> TP портфель
         }
-        @if (showModeLegend) {
+        @if (showModeLegend || shadedRanges.length) {
           · <span class="leg-normal">▮</span> обычная ·
           <span class="leg-shadow">▮</span> shadow ·
           <span class="leg-inverted">▮</span> инверсия
@@ -81,6 +84,11 @@ export const EQUITY_SHADE_COLORS = {
         color: #dc2626;
         opacity: 0.65;
       }
+      .leg-shadow-line {
+        color: #64748b;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
       .leg-sl {
         color: #dc2626;
         font-weight: 700;
@@ -110,9 +118,11 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
   @Input() total: ChartEquityPoint[] = [];
   @Input() longs: ChartEquityPoint[] = [];
   @Input() shorts: ChartEquityPoint[] = [];
+  /** Теневая эквити (пунктир). */
+  @Input() shadowTotal: ChartEquityPoint[] = [];
   /** Портфельные SL/TP (вертикали на баре срабатывания). */
   @Input() stopMarkers: ChartStopMarker[] = [];
-  /** Зоны обычная / shadow / инверсия (график эквити бумаги). */
+  /** Зоны обычная / shadow / инверсия (график эквити бумаги / портфеля). */
   @Input() shadedRanges: ChartShadedRange[] = [];
   /** Показать подписи цветов зон в легенде (для бумаг). */
   @Input() showModeLegend = false;
@@ -149,16 +159,27 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const series = [
-      { pts: this.longs, color: 'rgba(22, 163, 74, 0.45)', width: 1.25 },
-      { pts: this.shorts, color: 'rgba(220, 38, 38, 0.45)', width: 1.25 },
-      { pts: this.total, color: '#1d4ed8', width: 2.5 },
+    const series: Array<{
+      pts: ChartEquityPoint[];
+      color: string;
+      width: number;
+      dash: number[];
+    }> = [
+      { pts: this.longs, color: 'rgba(22, 163, 74, 0.45)', width: 1.25, dash: [] },
+      { pts: this.shorts, color: 'rgba(220, 38, 38, 0.45)', width: 1.25, dash: [] },
+      { pts: this.total, color: '#1d4ed8', width: 2.5, dash: [] },
+      {
+        pts: this.shadowTotal,
+        color: '#64748b',
+        width: 2,
+        dash: [7, 5],
+      },
     ].filter((s) => s.pts.length > 0);
 
     if (series.length === 0) {
       ctx.fillStyle = '#94a3b8';
       ctx.font = '12px system-ui, sans-serif';
-      ctx.fillText('Нет закрытых сделок для эквити', 12, cssH / 2);
+      ctx.fillText('Нет данных для эквити', 12, cssH / 2);
       return;
     }
 
@@ -167,7 +188,8 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
     const values = all.map((p) => p.value);
     let t0 = Math.min(...times);
     let t1 = Math.max(...times);
-    if (t1 <= t0) t1 = t0 + 1;
+    // Если только одна точка (ноль без закрытий) — растянуть ось на сутки вперёд.
+    if (t1 <= t0) t1 = t0 + 24 * 60 * 60 * 1000;
     let vMin = Math.min(0, ...values);
     let vMax = Math.max(0, ...values);
     if (vMax === vMin) {
@@ -205,6 +227,7 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
     }
 
     // zero line
+    ctx.setLineDash([]);
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -226,15 +249,25 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
       if (pts.length === 0) continue;
       ctx.strokeStyle = s.color;
       ctx.lineWidth = s.width;
+      ctx.setLineDash(s.dash);
       ctx.beginPath();
-      pts.forEach((p, i) => {
-        const x = xOf(p.t);
-        const y = yOf(p.v);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
+      if (pts.length === 1) {
+        // Одна точка — короткая горизонталь, чтобы ноль был виден без закрытий.
+        const x = xOf(pts[0].t);
+        const y = yOf(pts[0].v);
+        ctx.moveTo(Math.max(padL, x - 8), y);
+        ctx.lineTo(Math.min(cssW - padR, x + plotW * 0.15), y);
+      } else {
+        pts.forEach((p, i) => {
+          const x = xOf(p.t);
+          const y = yOf(p.v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+      }
       ctx.stroke();
     }
+    ctx.setLineDash([]);
 
     // Вертикали портфельного SL/TP (как на ценовом графике).
     for (const m of this.stopMarkers) {

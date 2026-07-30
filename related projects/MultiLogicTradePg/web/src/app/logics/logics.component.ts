@@ -733,10 +733,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return parts.join(' ');
   }
 
-  /** Класс чекбокса «включено»: зелёный пульс (ок) / красный (цикл спит). */
+  /** Класс чекбокса «включено»: зелёный пульс (ок) / красный (цикл спит или тень портфеля). */
   enableCheckClass(row: LogicRow): Record<string, boolean> {
     if (!row.is_enabled) {
       return { 'enable-check': true };
+    }
+    if (row.portfolio_trading_paused) {
+      return {
+        'enable-check': true,
+        'enable-check--stale': true,
+      };
     }
     const alive = this.isLogicTradeAlive(row);
     return {
@@ -749,6 +755,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   enableCheckTitle(row: LogicRow): string {
     if (!row.is_enabled) {
       return 'Логика выключена';
+    }
+    if (row.portfolio_trading_paused) {
+      return (
+        'Реал-торговля портфеля на паузе (тень до возобновления). ' +
+        'Чекбокс красный — это нормально, пока весь портфель в shadow.'
+      );
     }
     const alive = this.isLogicTradeAlive(row);
     const h = this.tradeRunnerHealth;
@@ -764,15 +776,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   showTradeStoppedBadge(row: LogicRow): boolean {
-    return row.is_enabled && this.isLogicTradeAlive(row) === false;
+    if (!row.is_enabled) return false;
+    if (row.portfolio_trading_paused) return true;
+    return this.isLogicTradeAlive(row) === false;
   }
 
   tradeStoppedBadgeText(row: LogicRow): string {
+    const acc = row.account_type === 'real' ? 'бой' : 'фейк';
+    if (row.portfolio_trading_paused) {
+      return `торговля остановлена: тень портфеля (${acc})`;
+    }
     const h = this.tradeRunnerHealth;
     if (h?.status === 'ui_required') {
       return 'торговля остановлена: нет UI';
     }
-    const acc = row.account_type === 'real' ? 'бой' : 'фейк';
     return `торговля остановлена (${acc})`;
   }
 

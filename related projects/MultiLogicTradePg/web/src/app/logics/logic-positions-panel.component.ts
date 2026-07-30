@@ -40,8 +40,8 @@ import {
   LogicBacktestPapersComponent,
 } from './logic-backtest-papers.component';
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
-import { buildEquityPoints, buildPortfolioStopMarkers } from './backtest-chart-overlays';
-import { ChartEquityPoint, ChartStopMarker } from '../models/market.model';
+import { buildEquityPoints, buildPortfolioStopMarkers, buildShadowEquityPoints, buildShadedDisabledRanges } from './backtest-chart-overlays';
+import { ChartEquityPoint, ChartShadedRange, ChartStopMarker } from '../models/market.model';
 import {
   asDateOnly,
   formatDateRangeLabel,
@@ -212,6 +212,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   cachedPortfolioEquity: ChartEquityPoint[] = [];
   cachedPortfolioEquityLong: ChartEquityPoint[] = [];
   cachedPortfolioEquityShort: ChartEquityPoint[] = [];
+  cachedPortfolioEquityShadow: ChartEquityPoint[] = [];
+  cachedPortfolioShadedRanges: ChartShadedRange[] = [];
   cachedPortfolioStopMarkers: ChartStopMarker[] = [];
 
 
@@ -529,6 +531,26 @@ export class LogicPositionsPanelComponent implements OnChanges {
       this.cachedPortfolioEquityShort = buildEquityPoints(this.trades, periodStart, 'short');
       this.alignEquityEndToFinRes();
     }
+    // Shadow-серия и серые зоны — всегда из полного списка сделок панели.
+    this.cachedPortfolioEquityShadow = buildShadowEquityPoints(this.trades, periodStart);
+    const periodEnd = this.isTest
+      ? (this.backtestRun?.date_to ?? this.testPeriodTo ?? null)
+      : this.papersDateTo();
+    let shaded = buildShadedDisabledRanges(this.trades, periodStart, periodEnd);
+    // Если портфель сейчас в тени, а зон нет (ещё нет сделок) — серая зона «сейчас».
+    if (
+      this.logicRow?.portfolio_trading_paused &&
+      !shaded.some((r) => r.kind === 'shadow' || r.kind === 'paused')
+    ) {
+      const from =
+        periodStart ||
+        this.trades[this.trades.length - 1]?.bar_dt ||
+        this.trades[this.trades.length - 1]?.executed_at ||
+        new Date().toISOString();
+      const to = periodEnd || new Date().toISOString();
+      shaded = [{ startDt: String(from), endDt: String(to), kind: 'shadow', label: 'shadow' }];
+    }
+    this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
   }
 
@@ -758,7 +780,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return (
       this.cachedPortfolioEquity.length > 0 ||
       this.cachedPortfolioEquityLong.length > 0 ||
-      this.cachedPortfolioEquityShort.length > 0
+      this.cachedPortfolioEquityShort.length > 0 ||
+      this.cachedPortfolioEquityShadow.length > 0
     );
   }
 

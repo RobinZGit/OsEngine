@@ -353,12 +353,18 @@ export function buildShadedDisabledRanges(
     const reason = (t.trade_reason || '').toLowerCase();
     const isInversionStop =
       t.side_name === 'Close' && reason.includes('security_inversion');
+    const isPortfolioPause =
+      t.side_name === 'Close' &&
+      (reason.includes('portfolio_resume') ||
+        reason.includes('portfolio_ltp_renew') ||
+        ((reason.includes('portfolio') || reason.includes('портфел')) &&
+          (reason.includes('stop_loss') || reason.includes('take_profit'))));
     const isStopPause =
       t.side_name === 'Close' &&
       (reason.includes('stop_loss') || reason.includes('security_resume'));
 
-    // SL → shadow (обычный / resume / inversion). Инверсию ещё не включаем.
-    if (isStopPause || isInversionStop) {
+    // SL / portfolio pause → shadow (обычный / resume / inversion / portfolio LTP).
+    if (isStopPause || isInversionStop || isPortfolioPause) {
       if (isInversionStop) {
         state.pendingInversionToggle = true;
       }
@@ -387,20 +393,29 @@ export function buildShadedDisabledRanges(
 }
 
 /**
- * Кумулятивный PnL по закрытиям (!shadow).
- * Ноль — с начала истории теста (`periodStartDt`), не с первой сделки.
- * @param sideFilter — 'long' | 'short' | null (все)
+ * Кумулятивный PnL по закрытиям.
+ * @param opts.shadowOnly — только is_shadow (для пунктирной теневой эквити)
+ * @param opts.includeShadow — включить shadow в основную серию (редко)
+ * Ноль — с начала периода (`periodStartDt`), даже без закрытий (горизонт «0»).
  */
 export function buildEquityPoints(
   trades: LogicTradeRow[],
   periodStartDt?: string | null,
-  sideFilter?: 'long' | 'short' | null
+  sideFilter?: 'long' | 'short' | null,
+  opts?: { shadowOnly?: boolean; includeShadow?: boolean }
 ): ChartEquityPoint[] {
+  const shadowOnly = Boolean(opts?.shadowOnly);
+  const includeShadow = Boolean(opts?.includeShadow);
   const sorted = [...trades].sort((a, b) =>
     dtKey(a.bar_dt || a.executed_at).localeCompare(dtKey(b.bar_dt || b.executed_at))
   );
   const closes = sorted.filter((t) => {
-    if (t.side_name !== 'Close' || t.is_shadow) return false;
+    if (t.side_name !== 'Close') return false;
+    if (shadowOnly) {
+      if (!t.is_shadow) return false;
+    } else if (!includeShadow && t.is_shadow) {
+      return false;
+    }
     // Champion book only — OPT paper lanes (opt_lane≠'') must not pull equity vs FinRes.
     if ((t.opt_lane ?? '') !== '') return false;
     // Same status filter as /logic-trades/pnl-summary.
@@ -410,17 +425,24 @@ export function buildEquityPoints(
     if (sideFilter === 'short' && t.action_name !== 'Short') return false;
     return true;
   });
-  if (closes.length === 0) return [];
 
   const periodKey = periodStartDt ? dtKey(periodStartDt) : '';
-  const firstTradeDt = sorted[0]?.bar_dt || sorted[0]?.executed_at || closes[0].bar_dt;
+  const firstAnyDt = sorted[0]?.bar_dt || sorted[0]?.executed_at || null;
+  const firstCloseDt = closes[0]?.bar_dt || closes[0]?.executed_at || null;
+  const firstTradeDt = firstCloseDt || firstAnyDt;
   const zeroDt =
     periodKey && (!firstTradeDt || periodKey <= dtKey(firstTradeDt))
       ? periodStartDt!
       : firstTradeDt;
 
+  // Даже без закрытий — рисуем ноль с начала периода / первой сделки (Open).
+  if (closes.length === 0) {
+    if (!zeroDt) return [];
+    return [{ dt: zeroDt, value: 0 }];
+  }
+
   let cum = 0;
-  const points: ChartEquityPoint[] = [{ dt: zeroDt, value: 0 }];
+  const points: ChartEquityPoint[] = [{ dt: zeroDt!, value: 0 }];
   for (const t of closes) {
     cum += Number(t.financial_result);
     const dt = t.bar_dt || t.executed_at;
@@ -431,6 +453,15 @@ export function buildEquityPoints(
     }
   }
   return points;
+}
+
+/** Теневая эквити (только shadow Close) — для пунктира на графике. */
+export function buildShadowEquityPoints(
+  trades: LogicTradeRow[],
+  periodStartDt?: string | null,
+  sideFilter?: 'long' | 'short' | null
+): ChartEquityPoint[] {
+  return buildEquityPoints(trades, periodStartDt, sideFilter, { shadowOnly: true });
 }
 
 /** Обрезать свечи под окно теста/сделок, при лимите — приоритет окну сделок. */

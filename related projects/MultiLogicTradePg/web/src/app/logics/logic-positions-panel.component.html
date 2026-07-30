@@ -314,11 +314,14 @@
               [total]="cachedPortfolioEquity"
               [longs]="cachedPortfolioEquityLong"
               [shorts]="cachedPortfolioEquityShort"
+              [shadowTotal]="cachedPortfolioEquityShadow"
+              [shadedRanges]="cachedPortfolioShadedRanges"
               [stopMarkers]="cachedPortfolioStopMarkers"
+              [showModeLegend]="true"
             />
           </div>
         } @else {
-          <p class="empty">Нет закрытых сделок для эквити портфеля</p>
+          <p class="empty">Нет данных для эквити портфеля</p>
         }
       </div>
     </details>

@@ -30,6 +30,7 @@ import { LogicTradeRow } from '../shared/logic-trade';
 import {
   applyPaperMarkValue,
   buildEquityPoints,
+  buildShadowEquityPoints,
   buildShadedDisabledRanges,
   buildStopMarkers,
   buildTradeMarkers,
@@ -73,6 +74,7 @@ interface PaperOverlays {
   equity: ChartEquityPoint[];
   equityLong: ChartEquityPoint[];
   equityShort: ChartEquityPoint[];
+  equityShadow: ChartEquityPoint[];
 }
 
 interface PaperChartState {
@@ -308,6 +310,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
         equity: [],
         equityLong: [],
         equityShort: [],
+        equityShadow: [],
       };
       this.overlaysBySec.set(securityId, o);
     }
@@ -445,6 +448,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
         equity: buildEquityPoints(secTrades, this.dateFrom),
         equityLong: buildEquityPoints(secTrades, this.dateFrom, 'long'),
         equityShort: buildEquityPoints(secTrades, this.dateFrom, 'short'),
+        equityShadow: buildShadowEquityPoints(secTrades, this.dateFrom),
       };
       this.overlayFingerprintBySec.set(paper.security_id, fingerprint);
       // Poll ~2с не должен подменять ссылки overlays → лишний redraw / ResizeObserver.
@@ -456,6 +460,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
         prev.equity.length === next.equity.length &&
         prev.equityLong.length === next.equityLong.length &&
         prev.equityShort.length === next.equityShort.length &&
+        prev.equityShadow.length === next.equityShadow.length &&
         prevFp === fingerprint
       ) {
         continue;
