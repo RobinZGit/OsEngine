@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Equity: горизонталь «цель возобновления» при тени портфеля (v1.0.106)
+**Последнее обновление:** 2026-07-30 — Equity: цель возобновления без раздутия шкалы + shadow PnL с момента паузы (v1.0.107)
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,15 @@
 ---
 
 ## Что сделано (актуально на 2026-07-30)
+
+### 2026-07-30 (Equity: цель 2680 не ломает шкалу; shadow с момента паузы)
+
+- Проблема: горизонталь «цель 2680» раздувала Y-ось, shadow-кривая прилипала к нулю (выглядело как «дичь»).
+- Фикс UI: шкала по сериям эквити; если цель далеко выше — линия сверху с меткой `цель N ↑ · сейчас X (P%)`.
+- SQL: `logic_portfolio_shadow_pnl` считает shadow только с `portfolio_stop_resume_at` (как в комментарии «после паузы»).
+- График shadow в тени портфеля — с той же метки; API отдаёт `portfolio_stop_resume_at`.
+- Число цели = equity_before − equity_after при закрытии портфеля (нужный shadow PnL), не «пик пунктира ~2000».
+- Installers **v1.0.107**.
 
 ### 2026-07-30 (Equity: горизонталь цели возобновления в тени портфеля)
 
@@ -951,6 +960,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Equity: resume target no scale crush; shadow PnL since pause; installers 107 |
 | 2026-07-30 | Equity: horizontal resume target line while portfolio in shadow; installers 106 |
 | 2026-07-30 | Equity fix: no white trailing gap; shadow dashed starts at first shadow close; installers 105 |
 | 2026-07-30 | Equity: draw without closes; shadow dashed + gray zones; red enable when portfolio shadow |

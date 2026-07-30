@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+792. Look at the file I sent you, this goal is real, there are two thousand, in fact, it has dropped by 100-150 rubles, it seems to me that the goal is some kind of big, the death of a figure, what can you do?
+
 791. On the equity of the portfolio of real transactions, draw a horizontal line, the level to which it should grow, if the portfolio is in the shadow, to what it should reach. immediately spread
 
 790. why is the painted zone in green, there is a dotted and a straight line and in the gray zone first there is a dotted line, and then some kind of white or very light gray zone, and there is still a dotted line first, I don't understand the last white zone what is it why is there some kind of equity — push

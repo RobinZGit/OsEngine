@@ -534,7 +534,17 @@ export class LogicPositionsPanelComponent implements OnChanges {
       this.alignEquityEndToFinRes();
     }
     // Shadow-серия и серые зоны — всегда из полного списка сделок панели.
-    this.cachedPortfolioEquityShadow = buildShadowEquityPoints(this.trades, periodStart);
+    // В тени портфеля — shadow PnL только с момента паузы (как в SQL).
+    const shadowSince =
+      !this.isTest && this.logicRow?.portfolio_trading_paused
+        ? this.logicRow.portfolio_stop_resume_at || null
+        : null;
+    this.cachedPortfolioEquityShadow = buildShadowEquityPoints(
+      this.trades,
+      periodStart,
+      null,
+      shadowSince
+    );
     // Бой: не передавать date-only papersDateTo() — иначе серая заливка обрывается в полночь.
     const periodEnd = this.isTest
       ? (this.backtestRun?.date_to ?? this.testPeriodTo ?? null)

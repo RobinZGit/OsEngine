@@ -464,13 +464,20 @@ export function buildEquityPoints(
   return points;
 }
 
-/** Теневая эквити (только shadow Close) — для пунктира на графике. */
+/** Теневая эквити (только shadow Close) — для пунктира на графике.
+ * @param sinceDt — считать только сделки с этой метки (момент паузы портфеля).
+ */
 export function buildShadowEquityPoints(
   trades: LogicTradeRow[],
   periodStartDt?: string | null,
-  sideFilter?: 'long' | 'short' | null
+  sideFilter?: 'long' | 'short' | null,
+  sinceDt?: string | null
 ): ChartEquityPoint[] {
-  return buildEquityPoints(trades, periodStartDt, sideFilter, { shadowOnly: true });
+  const sinceKey = sinceDt ? dtKey(sinceDt) : '';
+  const scoped = sinceKey
+    ? trades.filter((t) => dtKey(t.bar_dt || t.executed_at) >= sinceKey)
+    : trades;
+  return buildEquityPoints(scoped, sinceDt || periodStartDt, sideFilter, { shadowOnly: true });
 }
 
 /** Обрезать свечи под окно теста/сделок, при лимите — приоритет окну сделок. */

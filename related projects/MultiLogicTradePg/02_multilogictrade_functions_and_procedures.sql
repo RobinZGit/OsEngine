@@ -4914,6 +4914,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7312,17 +7313,27 @@ BEGIN
 END;
 $$;
 
--- Теневой track портфеля: sum(shadow financial_result) после паузы.
+-- Теневой track портфеля: sum(shadow financial_result) после паузы
+-- (с portfolio_stop_resume_at; без даты — все shadow, как раньше).
 CREATE OR REPLACE FUNCTION logic_portfolio_shadow_pnl(p_logic_id INTEGER)
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(SUM(lt.financial_result), 0)
     FROM logic_trades lt
+    CROSS JOIN LATERAL (
+        SELECT l.portfolio_stop_resume_at AS since_at
+        FROM logics l
+        WHERE l.id = p_logic_id
+    ) pause
     WHERE lt.logic_id = p_logic_id
       AND NOT lt.is_test
       AND lt.is_shadow = TRUE
       AND lt.status IN ('filled', 'submitted')
-      AND lt.financial_result IS NOT NULL;
+      AND lt.financial_result IS NOT NULL
+      AND (
+        pause.since_at IS NULL
+        OR COALESCE(lt.bar_dt, lt.executed_at) >= pause.since_at
+      );
 $$;
 
 DROP FUNCTION IF EXISTS logic_close_security_positions_market(INTEGER, INTEGER, BOOLEAN);
@@ -9457,6 +9468,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -20474,6 +20513,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

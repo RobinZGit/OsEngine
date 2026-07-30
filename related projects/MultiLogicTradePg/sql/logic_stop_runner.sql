@@ -625,17 +625,27 @@ BEGIN
 END;
 $$;
 
--- Теневой track портфеля: sum(shadow financial_result) после паузы.
+-- Теневой track портфеля: sum(shadow financial_result) после паузы
+-- (с portfolio_stop_resume_at; без даты — все shadow, как раньше).
 CREATE OR REPLACE FUNCTION logic_portfolio_shadow_pnl(p_logic_id INTEGER)
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(SUM(lt.financial_result), 0)
     FROM logic_trades lt
+    CROSS JOIN LATERAL (
+        SELECT l.portfolio_stop_resume_at AS since_at
+        FROM logics l
+        WHERE l.id = p_logic_id
+    ) pause
     WHERE lt.logic_id = p_logic_id
       AND NOT lt.is_test
       AND lt.is_shadow = TRUE
       AND lt.status IN ('filled', 'submitted')
-      AND lt.financial_result IS NOT NULL;
+      AND lt.financial_result IS NOT NULL
+      AND (
+        pause.since_at IS NULL
+        OR COALESCE(lt.bar_dt, lt.executed_at) >= pause.since_at
+      );
 $$;
 
 DROP FUNCTION IF EXISTS logic_close_security_positions_market(INTEGER, INTEGER, BOOLEAN);

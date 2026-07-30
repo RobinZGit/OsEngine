@@ -42,7 +42,7 @@ export const EQUITY_SHADE_COLORS = {
           · <span class="leg-shadow-line">- - -</span> shadow
         }
         @if (resumeTarget != null) {
-          · <span class="leg-resume">—</span> цель возобновления
+          · <span class="leg-resume">—</span> цель возобновления (нужный shadow PnL)
         }
         @if (stopMarkers.length) {
           · <span class="leg-sl">|</span> SL портфель ·
@@ -208,13 +208,27 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
       this.resumeTarget != null && Number.isFinite(Number(this.resumeTarget))
         ? Number(this.resumeTarget)
         : null;
-    if (resumeY != null) values.push(resumeY);
+    const seriesMax = values.length ? Math.max(0, ...values) : 0;
+    const seriesMin = values.length ? Math.min(0, ...values) : 0;
+    const span = Math.max(seriesMax - seriesMin, 1);
+    // Не раздувать шкалу «целью 2680», если shadow ещё у нуля — иначе кривая прилипает к низу.
+    let resumeOutOfScale = false;
+    let vMin = seriesMin;
+    let vMax = seriesMax;
+    if (resumeY != null) {
+      const softHi = seriesMax + Math.max(span * 0.35, 50);
+      const softLo = seriesMin - Math.max(span * 0.35, 50);
+      if (resumeY <= softHi && resumeY >= softLo) {
+        vMax = Math.max(vMax, resumeY);
+        vMin = Math.min(vMin, resumeY);
+      } else {
+        resumeOutOfScale = true;
+      }
+    }
     let t0 = Math.min(...times);
     let t1 = Math.max(...times);
     // Если только одна точка (ноль без закрытий) — растянуть ось на сутки вперёд.
     if (t1 <= t0) t1 = t0 + 24 * 60 * 60 * 1000;
-    let vMin = Math.min(0, ...values);
-    let vMax = Math.max(0, ...values);
     if (vMax === vMin) {
       vMax += 1;
       vMin -= 1;
@@ -260,19 +274,29 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
 
     // Горизонталь цели возобновления реала (shadow PnL → target−baseline).
     if (resumeY != null) {
-      const y = yOf(resumeY);
+      const shadowNow =
+        this.shadowTotal.length > 0
+          ? Number(this.shadowTotal[this.shadowTotal.length - 1].value)
+          : 0;
+      const yDraw = resumeOutOfScale ? padT + 1 : yOf(resumeY);
       ctx.strokeStyle = '#d97706';
       ctx.lineWidth = 1.75;
       ctx.setLineDash([10, 5]);
       ctx.beginPath();
-      ctx.moveTo(padL, y);
-      ctx.lineTo(cssW - padR, y);
+      ctx.moveTo(padL, yDraw);
+      ctx.lineTo(cssW - padR, yDraw);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = '#b45309';
       ctx.font = '600 10px system-ui, sans-serif';
-      const label = `цель ${this.fmt(resumeY)}`;
-      ctx.fillText(label, Math.max(padL + 4, cssW - padR - 88), Math.max(padT + 10, y - 4));
+      const pct =
+        resumeY > 0 && Number.isFinite(shadowNow)
+          ? Math.max(0, Math.min(999, Math.round((shadowNow / resumeY) * 100)))
+          : 0;
+      const label = resumeOutOfScale
+        ? `цель ${this.fmt(resumeY)} ↑ · сейчас ${this.fmt(shadowNow)} (${pct}%)`
+        : `цель ${this.fmt(resumeY)} · сейчас ${this.fmt(shadowNow)} (${pct}%)`;
+      ctx.fillText(label, Math.max(padL + 4, cssW - padR - Math.min(220, label.length * 6)), Math.max(padT + 10, yDraw - 4));
     }
 
     ctx.fillStyle = '#64748b';

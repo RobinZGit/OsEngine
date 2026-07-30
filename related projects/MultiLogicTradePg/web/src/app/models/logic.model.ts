@@ -27,6 +27,8 @@ export interface LogicRow {
   portfolio_stop_resume_equity?: number | null;
   /** Equity после закрытия реала при pause (baseline + shadow_pnl ≥ target). */
   portfolio_stop_resume_baseline?: number | null;
+  /** Момент входа в тень портфеля (shadow PnL считается с этой метки). */
+  portfolio_stop_resume_at?: string | null;
   /** Активен линейный TP по портфелю с возобновлением (для подписи бейджа). */
   has_portfolio_ltp_renew?: boolean;
   /** Активен стоп-лосс portfolio_resume (для подписи бейджа). */
