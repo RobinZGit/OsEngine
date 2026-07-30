@@ -337,6 +337,56 @@ describe('backtest-chart-overlays', () => {
     expect(ranges[1].endDt).toBe('2026-06-24 17:15:00');
   });
 
+  it('buildShadedDisabledRanges: date-only periodEnd does not truncate intraday shadow', () => {
+    const ranges = buildShadedDisabledRanges(
+      [
+        trade({ bar_dt: '2026-07-29 10:00:00', side_name: 'Open' }),
+        trade({
+          id: 2,
+          bar_dt: '2026-07-29 12:00:00',
+          side_name: 'Close',
+          trade_reason: 'take_profit:portfolio_ltp_renew (5.00%)',
+        }),
+        trade({
+          id: 3,
+          bar_dt: '2026-07-30 15:30:00',
+          side_name: 'Close',
+          is_shadow: true,
+          financial_result: 10,
+        }),
+      ],
+      '2026-07-29',
+      '2026-07-30' // date-only — раньше давало белый хвост после полуночи
+    );
+    expect(ranges.map((r) => r.kind)).toEqual(['normal', 'shadow']);
+    expect(ranges[1].endDt).toBe('2026-07-30 15:30:00');
+  });
+
+  it('buildEquityPoints shadowOnly starts at first shadow close, not period start', () => {
+    const pts = buildEquityPoints(
+      [
+        trade({
+          bar_dt: '2026-07-01 10:00:00',
+          side_name: 'Close',
+          is_shadow: false,
+          financial_result: 5,
+        }),
+        trade({
+          id: 2,
+          bar_dt: '2026-07-10 12:00:00',
+          side_name: 'Close',
+          is_shadow: true,
+          financial_result: 20,
+        }),
+      ],
+      '2026-07-01 00:00:00',
+      null,
+      { shadowOnly: true }
+    );
+    expect(pts[0].dt).toBe('2026-07-10 12:00:00');
+    expect(pts[0].value).toBe(20);
+  });
+
   it('buildShadedDisabledRanges: security_inversion toggles pink after shadow→zero', () => {
     const ranges = buildShadedDisabledRanges([
       trade({ bar_dt: '2026-04-10 10:00:00', side_name: 'Open' }),

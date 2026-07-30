@@ -315,7 +315,12 @@ export function buildShadedDisabledRanges(
     ? sorted[sorted.length - 1].bar_dt || sorted[sorted.length - 1].executed_at
     : null;
   const startDt = (periodStartDt && String(periodStartDt).trim()) || firstTradeDt;
-  const endDt = (periodEndDt && String(periodEndDt).trim()) || lastTradeDt;
+  // date-only periodEnd («2026-07-30») = полночь → белый хвост, пока сделки идут днём.
+  // Берём max(periodEnd, lastTrade), чтобы заливка доходила до последней точки эквити.
+  let endDt = (periodEndDt && String(periodEndDt).trim()) || lastTradeDt;
+  if (lastTradeDt && endDt && dtKey(lastTradeDt) > dtKey(endDt)) {
+    endDt = lastTradeDt;
+  }
   if (!startDt || !endDt) {
     return [];
   }
@@ -429,15 +434,19 @@ export function buildEquityPoints(
   const periodKey = periodStartDt ? dtKey(periodStartDt) : '';
   const firstAnyDt = sorted[0]?.bar_dt || sorted[0]?.executed_at || null;
   const firstCloseDt = closes[0]?.bar_dt || closes[0]?.executed_at || null;
-  const firstTradeDt = firstCloseDt || firstAnyDt;
-  const zeroDt =
-    periodKey && (!firstTradeDt || periodKey <= dtKey(firstTradeDt))
+  const anchorDt = firstAnyDt || firstCloseDt;
+  // Shadow-серия: не тянуть пунктир с начала периода (иначе «фантом» в зелёной зоне).
+  // Старт — с первого shadow Close.
+  // Основная эквити: ноль с periodStart или с первой сделки (Open/Close).
+  const zeroDt = shadowOnly
+    ? firstCloseDt
+    : periodKey && (!anchorDt || periodKey <= dtKey(anchorDt))
       ? periodStartDt!
-      : firstTradeDt;
+      : anchorDt;
 
-  // Даже без закрытий — рисуем ноль с начала периода / первой сделки (Open).
+  // Без закрытий: основная эквити — ноль с начала периода; shadow — пусто.
   if (closes.length === 0) {
-    if (!zeroDt) return [];
+    if (shadowOnly || !zeroDt) return [];
     return [{ dt: zeroDt, value: 0 }];
   }
 

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Equity: shadow пунктир + серые зоны; красный чекбокс при тени портфеля; watchdog v1.0.103
+**Последнее обновление:** 2026-07-30 — Equity: фикс белого хвоста + пунктир shadow только с первой теневой сделки (v1.0.105)
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-30)
+
+### 2026-07-30 (Equity: белый хвост + фантомный пунктир в зелёной зоне)
+
+- Проблема: после серой (shadow) зоны оставался **белый хвост**, а пунктир shadow шёл с нуля через всю **зелёную** зону.
+- Причина: заливка обрывалась по date-only `papersDateTo()` (полночь); shadow-серия якорилась на `periodStart`.
+- Фикс: shadow-линия с первого shadow Close; `buildShadedDisabledRanges` не урезает intraday; в бою при `portfolio_trading_paused` серая зона до «сейчас»; ось времени учитывает концы заливок.
+- Installers **v1.0.105**.
 
 ### 2026-07-30 (Equity: shadow пунктир + красный чекбокс при тени портфеля)
 
@@ -937,6 +944,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Equity fix: no white trailing gap; shadow dashed starts at first shadow close; installers 105 |
 | 2026-07-30 | Equity: draw without closes; shadow dashed + gray zones; red enable when portfolio shadow |
 | 2026-07-30 | Trade runner watchdog: auto-raise asleep cycle (Node+PG) + green/red enable checkbox + «торговля остановлена» badge |
 | 2026-07-30 | Crypt v1.20: Refresh no-op if Key length 1–2 + message (empty or ≥3); merge main |

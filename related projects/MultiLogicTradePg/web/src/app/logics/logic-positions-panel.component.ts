@@ -533,22 +533,27 @@ export class LogicPositionsPanelComponent implements OnChanges {
     }
     // Shadow-серия и серые зоны — всегда из полного списка сделок панели.
     this.cachedPortfolioEquityShadow = buildShadowEquityPoints(this.trades, periodStart);
+    // Бой: не передавать date-only papersDateTo() — иначе серая заливка обрывается в полночь.
     const periodEnd = this.isTest
       ? (this.backtestRun?.date_to ?? this.testPeriodTo ?? null)
-      : this.papersDateTo();
+      : null;
     let shaded = buildShadedDisabledRanges(this.trades, periodStart, periodEnd);
-    // Если портфель сейчас в тени, а зон нет (ещё нет сделок) — серая зона «сейчас».
-    if (
-      this.logicRow?.portfolio_trading_paused &&
-      !shaded.some((r) => r.kind === 'shadow' || r.kind === 'paused')
-    ) {
-      const from =
-        periodStart ||
-        this.trades[this.trades.length - 1]?.bar_dt ||
-        this.trades[this.trades.length - 1]?.executed_at ||
-        new Date().toISOString();
-      const to = periodEnd || new Date().toISOString();
-      shaded = [{ startDt: String(from), endDt: String(to), kind: 'shadow', label: 'shadow' }];
+    const nowIso = new Date().toISOString();
+    // Портфель ещё в тени — тянем серую зону до «сейчас» (не оставляем белый хвост).
+    if (this.logicRow?.portfolio_trading_paused) {
+      const lastShadow = [...shaded]
+        .reverse()
+        .find((r) => r.kind === 'shadow' || r.kind === 'paused');
+      if (lastShadow) {
+        lastShadow.endDt = nowIso;
+      } else {
+        const from =
+          periodStart ||
+          this.trades[this.trades.length - 1]?.bar_dt ||
+          this.trades[this.trades.length - 1]?.executed_at ||
+          nowIso;
+        shaded = [{ startDt: String(from), endDt: nowIso, kind: 'shadow', label: 'shadow' }];
+      }
     }
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);

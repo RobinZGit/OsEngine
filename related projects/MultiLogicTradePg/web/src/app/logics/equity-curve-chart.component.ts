@@ -185,6 +185,12 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
 
     const all = series.flatMap((s) => s.pts);
     const times = all.map((p) => Date.parse(p.dt)).filter((t) => Number.isFinite(t));
+    for (const range of this.shadedRanges) {
+      const a = Date.parse(range.startDt);
+      const b = Date.parse(range.endDt);
+      if (Number.isFinite(a)) times.push(a);
+      if (Number.isFinite(b)) times.push(b);
+    }
     const values = all.map((p) => p.value);
     let t0 = Math.min(...times);
     let t1 = Math.max(...times);
