@@ -285,9 +285,10 @@ textarea:focus {
 
 .brand-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   width: 100%;
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line);
@@ -299,6 +300,14 @@ textarea:focus {
   font-weight: 800;
   letter-spacing: 0.06em;
   color: var(--ink);
+}
+
+.brand-row .lang-switch {
+  padding: 0;
+}
+
+.brand-row .version-badge {
+  margin-left: auto;
 }
 
 .version-badge {
@@ -531,13 +540,13 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.17</span>
-      </div>
-      <div class="strip-left">
         <div class="lang-switch" role="group" aria-label="Language">
           <label><input type="checkbox" id="langRu" checked /> Русский</label>
           <label><input type="checkbox" id="langEn" /> English</label>
         </div>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.18</span>
+      </div>
+      <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode" id="modeSwitch">
           <button type="button" id="modeText" class="mode-btn is-active" data-mode="text">Текст</button>
           <button type="button" id="modePicture" class="mode-btn" data-mode="picture" title="Рукописная заметка (чёрно-белая)">Заметка</button>
@@ -551,12 +560,12 @@ canvas {
         <button type="button" id="btnTemplate" class="btn btn-ghost">Шаблон</button>
         <button type="button" id="btnEncrypt" class="btn btn-primary">Шифровать</button>
         <button type="button" id="btnDecrypt" class="btn btn-secondary">Расшифровать</button>
-        <button type="button" id="btnRefresh" class="btn btn-ghost" title="Снова расшифровать последний файл текущим Ключом (без выбора файла)">Обновить</button>
+        <button type="button" id="btnRefresh" class="btn btn-ghost" title="Сменить Ключ → Обновить: тот же файл из памяти, расшифровка и сразу шифрование новым Ключом (без выбора файла)">Обновить</button>
         <span id="templateName" class="hint template-name"></span>
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.17</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.18</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -624,7 +633,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.17";
+  const APP_VERSION = "Crypt v1.18";
 
   const I18N = {
     ru: {
