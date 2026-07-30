@@ -21,8 +21,12 @@ export interface LogicRow {
   rating_lookback_days?: number;
   /** Инверсия логики: условия наоборот и Long↔Short. */
   inversion?: boolean;
-  /** portfolio_resume SL: весь портфель в shadow до восстановления. */
+  /** portfolio_resume / portfolio_ltp_renew: весь портфель в shadow до восстановления. */
   portfolio_trading_paused?: boolean;
+  /** Активен линейный TP по портфелю с возобновлением (для подписи бейджа). */
+  has_portfolio_ltp_renew?: boolean;
+  /** Активен стоп-лосс portfolio_resume (для подписи бейджа). */
+  has_portfolio_resume_sl?: boolean;
   /** Перед включением боя: предварительный тест для stop resume / inversion states. */
   warmup_pretest?: boolean;
   /**

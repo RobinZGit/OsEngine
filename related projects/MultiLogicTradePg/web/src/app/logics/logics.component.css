@@ -809,7 +809,8 @@ tbody tr.logic-main-row:hover {
 
 .logic-name-main {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 0.45rem;
   min-width: 0;
   max-width: 100%;
@@ -982,6 +983,61 @@ tbody tr.logic-main-row:hover {
 .enable-check:disabled {
   cursor: wait;
   opacity: 0.5;
+}
+
+.enable-check--ok {
+  accent-color: #16a34a;
+  outline: 2px solid rgba(22, 163, 74, 0.55);
+  outline-offset: 1px;
+  border-radius: 2px;
+  animation: enable-check-ok-pulse 1.6s ease-in-out infinite;
+}
+
+.enable-check--stale {
+  accent-color: #dc2626;
+  outline: 2px solid rgba(220, 38, 38, 0.7);
+  outline-offset: 1px;
+  border-radius: 2px;
+  animation: enable-check-stale-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes enable-check-ok-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+    filter: brightness(1.25);
+  }
+}
+
+@keyframes enable-check-stale-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.2);
+    filter: brightness(1.35);
+  }
+}
+
+.trade-stopped-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .rating-precalc-spin {
@@ -1880,6 +1936,12 @@ tbody tr.logic-main-row:hover {
   color: #92400e;
   background: #fef3c7;
   border: 1px solid #fcd34d;
+}
+
+.sec-paused-badge-long {
+  white-space: normal;
+  max-width: min(28rem, 100%);
+  line-height: 1.25;
 }
 
 .sec-inverted-badge {

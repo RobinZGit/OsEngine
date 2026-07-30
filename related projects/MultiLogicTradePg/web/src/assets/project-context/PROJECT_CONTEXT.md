@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Crypt **v1.20**: Обновить при ключе 1–2 символа ничего не делает + сообщение (пусто или ≥3); merge main
+**Последнее обновление:** 2026-07-30 — Trade runner **watchdog**: автоподъём заснувшего цикла (Node + PG) + зелёный/красный чекбокс «включено» и бейдж «торговля остановлена»
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -99,6 +99,7 @@
 - API logics: **`GET/PUT /api/logic-params`** — чтение/запись `logic_params`; signals/stops/securities/trades;
 - **Trade runner (PostgreSQL):** `run_trade_cycle()` → `process_logic_trades()` — **AND-группы** `(position_event × position_side)`; **перед сигналами** `logic_refresh_market_data` + `logic_signal_rating_resolve_pending`; парсинг `@CODE(...) condition` на **`timeframe` из logic_params**; **сигналы только на последней закрытой свече TF**; fake/real; idempotency `(logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow)`; модули `sql/logic_signal_and_rating.sql`, `sql/logic_trade_runner.sql`;
 - **Расписание:** **Node fallback** каждые **15 с** (`TRADE_RUNNER_INTERVAL_MS`, Windows); **pg_cron** раз в минуту (Linux); **по умолчанию headless** (API up → торгует включённые логики; Angular не обязателен); опционально `TRADE_RUNNER_REQUIRE_UI=1` / `APP_TRADE_RUNNER_REQUIRE_UI=1` — только при heartbeat UI; ручной `POST /api/logic-trades/run`;
+- **Watchdog:** Node каждые ~30 с (`TRADE_WATCHDOG_MS`) + PG `trade_runner_watchdog_tick` (pg_cron); stale если нет `APP_TRADE_RUNNER_LAST_OK` >90 с при включённых логиках; kick stuck backends + force cycle; UI: зелёный/красный чекбокс + бейдж «торговля остановлена»;
 - **Сервер / install-over:** после установки **по умолчанию** открывается Angular UI (`MultiLogic_Trade_Progress_Start.bat`); «API only» — только если пользователь явно снял галочку / выбрал Server Start. Runner по-прежнему headless (`TRADE_RUNNER_REQUIRE_UI=0`): закрытие браузера не останавливает бой, пока открыто окно launcher.
 - **Демо-логика** в `01`: `SMA Price Cross Demo` — **follow/breakout**: open AND (SMA + BB UPPER/LOWER + STOCH 50), close **только SMA**; **все акции**; SL **1%** / TP **3%**;
 - **v41 пакет логик** (по мотивам OsEngine): ещё **10** логик на `FAKE-EFF-001`, `is_enabled=FALSE`, все акции, SL/TP как у демо;
@@ -118,6 +119,15 @@
 ---
 
 ## Что сделано (актуально на 2026-07-30)
+
+### 2026-07-30 (Trade runner watchdog — сон цикла + UI)
+
+- Проблема: на удалённом сервере бой ночью «засыпает» (нет сделок), после hotfix install-over снова откатывалось.
+- **Node:** `trade-runner.js` — heartbeat `APP_TRADE_RUNNER_LAST_OK`; watchdog каждые ~30 с; при stale / busy>3 мин — `trade_runner_kick_stuck` + force cycle; per-logic `statement_timeout` 120 с.
+- **Postgres:** `sql/trade_runner_watchdog.sql` → `02`: `touch_trade_runner_last_ok`, `trade_runner_health`, `trade_runner_kick_stuck`, `trade_runner_watchdog_tick`; `run_trade_cycle` пишет last_ok; pg_cron `multilogictrade_trade_watchdog` каждую минуту.
+- **API:** `GET /api/trade-runner/health`, `POST /api/trade-runner/watchdog`.
+- **UI:** чекбокс «включено» — яркий зелёный пульс (цикл жив) / красный пульс (остановка); бейдж у имени «торговля остановлена (бой|фейк)»; при stale Angular подталкивает watchdog.
+- Бейдж портфеля «тень»: длинная подпись только при `portfolio_trading_paused`.
 
 ### 2026-07-30 (Crypt v1.20 — короткий Ключ на Обновить)
 
@@ -146,6 +156,11 @@
 - Версия формы: **Crypt v1.18** (`tools/parity-stego.html` + assets copy).
 
 ## Что сделано (актуально на 2026-07-29)
+
+### 2026-07-29 (бейдж портфеля: понятная подпись «тень»)
+
+- Вместо «портфель: теневой» — длиннее: «реал пауза: линейный TP портфеля → тень до возобновления» (или стоп портфеля).
+- Бейдж только при `portfolio_trading_paused`; тени отдельных бумаг — только в списке бумаг, не на строке логики.
 
 ### 2026-07-29 (после установки всегда открывать Angular UI)
 
@@ -916,6 +931,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Trade runner watchdog: auto-raise asleep cycle (Node+PG) + green/red enable checkbox + «торговля остановлена» badge |
 | 2026-07-30 | Crypt v1.20: Refresh no-op if Key length 1–2 + message (empty or ≥3); merge main |
 | 2026-07-30 | Crypt v1.19: Refresh = decrypt loaded file with new Key only; button after Key; disabled until Decrypt; merge main |
 | 2026-07-30 | Crypt v1.18: RU/EN checkboxes after Crypt name; merge main → Pages |

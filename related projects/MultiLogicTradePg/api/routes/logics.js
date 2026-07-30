@@ -81,6 +81,22 @@ app.get('/api/logics', async (_req, res) => {
         l.is_enabled,
         l.note,
         COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
+        EXISTS (
+          SELECT 1
+          FROM logic_stops ls
+          WHERE ls.logic_id = l.id
+            AND ls.is_active = TRUE
+            AND ls.rule_kind = 'take_profit'
+            AND ls.scope_type IN ('portfolio_ltp_renew', 'security_ltp_renew')
+        ) AS has_portfolio_ltp_renew,
+        EXISTS (
+          SELECT 1
+          FROM logic_stops ls
+          WHERE ls.logic_id = l.id
+            AND ls.is_active = TRUE
+            AND ls.rule_kind = 'stop_loss'
+            AND ls.scope_type = 'portfolio_resume'
+        ) AS has_portfolio_resume_sl,
         a.account_code,
         a.name AS account_name,
         a.account_type,

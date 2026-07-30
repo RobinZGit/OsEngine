@@ -7,6 +7,7 @@ import { catchError, debounceTime, filter, finalize, map } from 'rxjs/operators'
 import {
   BacktestReportListItem,
   LogicsService,
+  TradeRunnerHealth,
 } from '../services/logics.service';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
@@ -104,6 +105,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   loading = true;
   error: string | null = null;
   pollIntervalMs = POLL_INTERVAL_MS;
+  /** Состояние торгового цикла (watchdog) для зелёного/красного чекбокса. */
+  tradeRunnerHealth: TradeRunnerHealth | null = null;
+  private tradeWatchdogNudgeAt = 0;
 
   /** Checkbox selection for export (right column). */
   selectedExportIds = new Set<number>();
@@ -404,21 +408,34 @@ export class LogicsComponent implements OnInit, OnDestroy {
           if (this.editorOpen || this.uiInteractionPause) {
             return of(null);
           }
-          return this.logicsService.getLogics().pipe(
-            catchError((err) => {
-              if (this.loading || this.logics.length === 0) {
-                this.error = logicsLoadErrorMessage(this.appConfig.apiUrl, err);
-              }
-              this.loading = false;
-              return of(null);
-            })
-          );
+          return forkJoin({
+            logics: this.logicsService.getLogics().pipe(
+              catchError((err) => {
+                if (this.loading || this.logics.length === 0) {
+                  this.error = logicsLoadErrorMessage(this.appConfig.apiUrl, err);
+                }
+                this.loading = false;
+                return of(null);
+              })
+            ),
+            health: this.logicsService.getTradeRunnerHealth().pipe(
+              catchError(() => of(null))
+            ),
+          });
         })
       )
       .subscribe({
-        next: (rows) => {
+        next: (pack) => {
           // Диалог / редактор: статус теста крутит BacktestUiStateService — список не трогаем.
-          if (rows == null || this.uiInteractionPause || this.editorOpen) {
+          if (pack == null || this.uiInteractionPause || this.editorOpen) {
+            return;
+          }
+          const rows = pack.logics;
+          if (pack.health) {
+            this.tradeRunnerHealth = pack.health;
+            this.maybeNudgeTradeWatchdog(pack.health);
+          }
+          if (rows == null) {
             return;
           }
           this.logics = rows.map((row) => {
@@ -679,6 +696,124 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const draft = this.paramsDrafts.get(row.id);
     const fromDraft = draft?.name?.trim();
     return fromDraft || row.name || `Логика #${row.id}`;
+  }
+
+  /**
+   * Бейдж только при portfolio_trading_paused (весь портфель).
+   * Пауза отдельных бумаг (теневой режим по бумаге) сюда не попадает.
+   */
+  portfolioShadowBadgeText(row: LogicRow): string {
+    if (row.has_portfolio_ltp_renew && !row.has_portfolio_resume_sl) {
+      return 'реал пауза: линейный TP портфеля → тень до возобновления';
+    }
+    if (row.has_portfolio_resume_sl && !row.has_portfolio_ltp_renew) {
+      return 'реал пауза: стоп портфеля → тень до возобновления';
+    }
+    if (row.has_portfolio_ltp_renew && row.has_portfolio_resume_sl) {
+      return 'реал пауза: TP/стоп портфеля → тень до возобновления';
+    }
+    return 'реал пауза: портфель в тени до возобновления';
+  }
+
+  portfolioShadowBadgeTitle(row: LogicRow): string {
+    const parts: string[] = [
+      'Весь портфель: реальные заявки остановлены, идут только теневые (бумажные) сделки до восстановления equity.',
+      'Не путать с «теневой режим» у отдельных бумаг (их бейджи только в списке бумаг).',
+    ];
+    if (row.has_portfolio_ltp_renew) {
+      parts.push(
+        'Причина может быть линейный take-profit по портфелю с возобновлением (portfolio_ltp_renew).'
+      );
+    }
+    if (row.has_portfolio_resume_sl) {
+      parts.push(
+        'Причина может быть стоп-лосс по портфелю с возобновлением (portfolio_resume).'
+      );
+    }
+    return parts.join(' ');
+  }
+
+  /** Класс чекбокса «включено»: зелёный пульс (ок) / красный (цикл спит). */
+  enableCheckClass(row: LogicRow): Record<string, boolean> {
+    if (!row.is_enabled) {
+      return { 'enable-check': true };
+    }
+    const alive = this.isLogicTradeAlive(row);
+    return {
+      'enable-check': true,
+      'enable-check--ok': alive === true,
+      'enable-check--stale': alive === false,
+    };
+  }
+
+  enableCheckTitle(row: LogicRow): string {
+    if (!row.is_enabled) {
+      return 'Логика выключена';
+    }
+    const alive = this.isLogicTradeAlive(row);
+    const h = this.tradeRunnerHealth;
+    if (alive === true) {
+      return `Торговый цикл работает${h?.last_ok_at ? ` (last OK ${h.last_ok_at})` : ''}`;
+    }
+    if (h?.status === 'ui_required') {
+      return 'Торговля остановлена: нужен открытый UI (APP_TRADE_RUNNER_REQUIRE_UI)';
+    }
+    return `Торговля остановлена или цикл спит${
+      h?.age_sec != null ? ` (${Math.round(h.age_sec)} с без OK)` : ''
+    }. Watchdog пытается поднять.`;
+  }
+
+  showTradeStoppedBadge(row: LogicRow): boolean {
+    return row.is_enabled && this.isLogicTradeAlive(row) === false;
+  }
+
+  tradeStoppedBadgeText(row: LogicRow): string {
+    const h = this.tradeRunnerHealth;
+    if (h?.status === 'ui_required') {
+      return 'торговля остановлена: нет UI';
+    }
+    const acc = row.account_type === 'real' ? 'бой' : 'фейк';
+    return `торговля остановлена (${acc})`;
+  }
+
+  private isLogicTradeAlive(row: LogicRow): boolean | null {
+    if (!row.is_enabled) return null;
+    const h = this.tradeRunnerHealth;
+    if (!h) return null;
+    if (h.status === 'idle') return null;
+    if (h.status === 'ok') {
+      const per = this.logicHealthEntry(row);
+      if (per && per.stale === true) return false;
+      return true;
+    }
+    if (h.status === 'stale' || h.status === 'ui_required' || h.stale) {
+      return false;
+    }
+    return null;
+  }
+
+  private logicHealthEntry(row: LogicRow): { stale?: boolean } | null {
+    const logics = this.tradeRunnerHealth?.logics;
+    if (!logics) return null;
+    if (Array.isArray(logics)) {
+      return (
+        (logics as Array<{ id?: number; stale?: boolean }>).find(
+          (x) => Number(x.id) === row.id
+        ) ?? null
+      );
+    }
+    return logics[String(row.id)] ?? null;
+  }
+
+  private maybeNudgeTradeWatchdog(health: TradeRunnerHealth): void {
+    if (!health.stale && health.status !== 'stale') return;
+    if ((health.enabled_count ?? 0) <= 0) return;
+    if (health.status === 'ui_required') return;
+    const now = Date.now();
+    // Не чаще раза в 45 с — Node watchdog и так крутится; UI только подталкивает.
+    if (now - this.tradeWatchdogNudgeAt < 45000) return;
+    this.tradeWatchdogNudgeAt = now;
+    this.logicsService.raiseTradeRunnerWatchdog().subscribe({ error: () => {} });
   }
 
   onParamsNameChange(logicId: number, value: string): void {

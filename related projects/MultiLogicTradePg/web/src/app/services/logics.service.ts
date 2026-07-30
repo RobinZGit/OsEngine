@@ -51,6 +51,27 @@ export interface ProcessStatusItem {
   started_at?: string | null;
 }
 
+export interface TradeRunnerHealthLogic {
+  stale?: boolean;
+  last_trade_check_at?: string | null;
+  account_type?: string | null;
+  name?: string | null;
+}
+
+export interface TradeRunnerHealth {
+  status: 'ok' | 'stale' | 'idle' | 'ui_required' | string;
+  ok: boolean;
+  stale: boolean;
+  last_ok_at?: string | null;
+  age_sec?: number | null;
+  stale_sec?: number;
+  enabled_count?: number;
+  require_ui?: boolean;
+  ui_active?: boolean;
+  logics?: Record<string, TradeRunnerHealthLogic> | Array<TradeRunnerHealthLogic & { id?: number }>;
+  at?: string;
+}
+
 /** Archived backtest report row (list, no HTML). */
 export interface BacktestReportListItem {
   id: number;
@@ -162,6 +183,18 @@ export class LogicsService {
   /** Список логик с полями счёта/брокера для главной таблицы. */
   getLogics(): Observable<LogicRow[]> {
     return this.http.get<LogicRow[]>(`${this.appConfig.apiUrl}/logics`);
+  }
+
+  /** Жив ли торговый цикл (watchdog): ok / stale / idle / ui_required. */
+  getTradeRunnerHealth(): Observable<TradeRunnerHealth> {
+    return this.http.get<TradeRunnerHealth>(
+      `${this.appConfig.apiUrl}/trade-runner/health`
+    );
+  }
+
+  /** Принудительно поднять заснувший цикл (kick + run). */
+  raiseTradeRunnerWatchdog(): Observable<unknown> {
+    return this.http.post(`${this.appConfig.apiUrl}/trade-runner/watchdog`, {});
   }
 
   /** Активные процессы (бэктесты, runner, pg_stat_activity) для полоски наверху. */

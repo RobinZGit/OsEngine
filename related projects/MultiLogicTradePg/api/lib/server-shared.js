@@ -21,7 +21,7 @@ const {
   startRatingPrecalc,
   getRatingPrecalcStatus,
 } = require('../logic-rating-precalc');
-const { runTradeCycle } = require('../trade-runner');
+const { runTradeCycle, getTradeRunnerHealth, runWatchdogTick } = require('../trade-runner');
 const {
   touchUiHeartbeatDb,
   clearUiHeartbeatDb,
@@ -1116,6 +1116,8 @@ function createRouteContext(pool) {
     startRatingPrecalc,
     getRatingPrecalcStatus,
     runTradeCycle,
+    getTradeRunnerHealth,
+    runWatchdogTick,
     touchUiHeartbeatDb,
     clearUiHeartbeatDb,
     isUiSessionActive,

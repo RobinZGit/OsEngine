@@ -87,6 +87,7 @@ echo  UI:      optional - run MultiLogic_Trade_Progress_Start.bat when needed
 echo.
 echo  Ctrl+C - stop API and live trading
 echo  Keep this window open. Every ~15s a "Trade cycle:" line should appear.
+echo  Watchdog every ~30s raises a stuck/asleep cycle (kick + re-run).
 echo  --------------------------------------------------------
 echo.
 

@@ -644,7 +644,8 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('Очистка лишних данных (диск)', 'APP_CLEANUP_DISK', 'boolean', '1'),
     ('Последняя автоочистка диска', 'APP_CLEANUP_LAST_AT', 'text', ''),
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', ''),
-    ('Trade runner требует открытый UI', 'APP_TRADE_RUNNER_REQUIRE_UI', 'boolean', '0')
+    ('Trade runner требует открытый UI', 'APP_TRADE_RUNNER_REQUIRE_UI', 'boolean', '0'),
+    ('Trade runner last OK', 'APP_TRADE_RUNNER_LAST_OK', 'text', '')
 ON CONFLICT (short_name) DO NOTHING;
 
 

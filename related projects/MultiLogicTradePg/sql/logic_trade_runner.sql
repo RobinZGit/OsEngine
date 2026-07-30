@@ -2060,6 +2060,8 @@ BEGIN
 
     PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));
 
+    CALL touch_trade_runner_last_ok('postgresql');
+
     PERFORM app_tech_log_event(
         'trade-runner',
         'cycle.end',

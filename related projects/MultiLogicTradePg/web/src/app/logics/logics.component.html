@@ -315,11 +315,13 @@
 
                   type="checkbox"
 
-                  class="enable-check"
+                  [ngClass]="enableCheckClass(row)"
 
                   [checked]="row.is_enabled"
 
                   [disabled]="isSaving(row)"
+
+                  [title]="enableCheckTitle(row)"
 
                   (change)="onEnabledChange(row, $any($event.target).checked, $event)"
 
@@ -343,11 +345,17 @@
                 <span class="logic-name-cell">
                   <span class="logic-name-main">
                     <span class="logic-name-text">{{ displayLogicName(row) }}</span>
+                    @if (showTradeStoppedBadge(row)) {
+                      <span
+                        class="trade-stopped-badge"
+                        [title]="enableCheckTitle(row)"
+                      >{{ tradeStoppedBadgeText(row) }}</span>
+                    }
                     @if (row.portfolio_trading_paused) {
                       <span
-                        class="sec-paused-badge"
-                        title="Портфель на паузе (portfolio_resume): реал остановлен, идут теневые сделки до восстановления equity"
-                      >портфель: теневой</span>
+                        class="sec-paused-badge sec-paused-badge-long"
+                        [title]="portfolioShadowBadgeTitle(row)"
+                      >{{ portfolioShadowBadgeText(row) }}</span>
                     }
                     @if (isBacktestRunning(row.id)) {
                       <span
@@ -2177,7 +2185,10 @@
 
                                 <td>{{ sec.security_name }}
                                   @if (sec.real_trading_paused) {
-                                    <span class="sec-paused-badge" title="Реальная торговля приостановлена (SL с возобновлением); идут теневые сделки">теневой режим</span>
+                                    <span
+                                      class="sec-paused-badge"
+                                      title="Только эта бумага: реал на паузе после SL с возобновлением; идут теневые сделки по бумаге. Не весь портфель."
+                                    >бумага: реал→тень (SL с возобновлением)</span>
                                   }
                                   @if (sec.real_trading_inverted) {
                                     <span class="sec-inverted-badge" title="По бумаге включена локальная инверсия после SL">инверсия</span>

@@ -325,7 +325,7 @@ UI-only install без наката 01/02/hotfix бой не чинит.`,
 • logics / trades / backtest — логики, параметры, сигналы, стопы, бумаги, сделки, бэктест, pnl, export/import, shadow-reset, opt
 • ops — tech-log, processes, schema
 • Авто: после бэктеста — cleanup_unused_indicator_values(); по расписанию — если APP_CLEANUP_DISK включён.
-• Trade runner — фоновый цикл сделок при открытом UI (heartbeat).
+• Trade runner — фоновый цикл сделок (по умолчанию headless, Angular не обязателен). Watchdog каждые ~30 с: если цикл спит — kick stuck + повторный запуск. В UI чекбокс «включено» зелёный пульс = цикл жив, красный = торговля остановлена.
 
 В Angular сервисы (web/src/app/services/*.ts) — тонкие обёртки над этими URL; JSDoc у публичных методов.`,
   },
