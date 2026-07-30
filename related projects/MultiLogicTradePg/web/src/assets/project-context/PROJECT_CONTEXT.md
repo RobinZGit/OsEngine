@@ -119,6 +119,13 @@
 
 ## Что сделано (актуально на 2026-07-30)
 
+### 2026-07-30 (Crypt v1.19 — Обновить = только decrypt уже загруженного файла)
+
+- **Обновить / Refresh** стоит сразу после поля **Ключ** (не слева в группе кнопок).
+- Кнопка **disabled**, пока не был выбран файл через **Расшифровать**.
+- По нажатию: снова расшифровать **тот же** загруженный файл текущим Ключом — без file picker, без Encrypt/скачивания.
+- Encrypt больше не активирует Обновить.
+
 ### 2026-07-30 (Crypt v1.18 — RU/EN на строке с именем Crypt + merge main)
 
 - Чекбоксы **Русский / English** перенесены в `brand-row` сразу после имени **Crypt** (над режимом/ключом).
@@ -903,6 +910,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Crypt v1.19: Refresh = decrypt loaded file with new Key only; button after Key; disabled until Decrypt; merge main |
 | 2026-07-30 | Crypt v1.18: RU/EN checkboxes after Crypt name; merge main → Pages |
 | 2026-07-30 | Crypt v1.17: Обновить/Refresh — смена Ключа, тот же файл из памяти, перешифрование без picker; Pages |
 | 2026-07-29 | Push: always open Angular UI after install (API-only opt-in); Trade cycle console logs; installers 102 |
@@ -1137,4 +1145,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **785** — RU/EN on brand row + merge main; **784** — Crypt Refresh after key change; **783** — version/scroll.
+Последние (см. USER_INSTRUCTIONS): **786** — Refresh decrypt-only + after Key + disabled; **785** — RU/EN on brand row; **784** — Crypt Refresh.
