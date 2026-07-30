@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+787. If the key is greater than 0 or less than 3, then the update button does nothing, adding a message that the key should be either not to be or to be different from 3 and more.
+
 786. I did it wrong. The update button will try to load the file again. It should try to decrypt the file with the new key that was already loaded for decryption. And only if it is not loaded can it be. Even if it is not loaded, the update button should be inactive. And I will do it right after the input field for the key. And not from the very left. I will do it right in the main.
 
 785. Russian-English checkboxes should be set to the line above, after the name of the project I mean, the file It should be merged to the main, so it would be published right away
