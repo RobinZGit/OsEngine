@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+786. I did it wrong. The update button will try to load the file again. It should try to decrypt the file with the new key that was already loaded for decryption. And only if it is not loaded can it be. Even if it is not loaded, the update button should be inactive. And I will do it right after the input field for the key. And not from the very left. I will do it right in the main.
+
 785. Russian-English checkboxes should be set to the line above, after the name of the project I mean, the file It should be merged to the main, so it would be published right away
 
 784. When you change encryption key, you need to encrypt again. But not automatically, but make a button refresh, update, well, Russian refresh, English refresh, or something else in the back. So that you can, without loading the file, without pressing the Encryption button, which loads the file, the same file, try to decrypt with the Encryption key, immediately upload everything and publish.
