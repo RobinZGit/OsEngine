@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Crypt **v1.19**: Обновить только перешифровывает уже загруженный Decrypt-файл новым Ключом; кнопка после поля Ключ; disabled без файла; merge main
+**Последнее обновление:** 2026-07-30 — Crypt **v1.20**: Обновить при ключе 1–2 символа ничего не делает + сообщение (пусто или ≥3); merge main
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---

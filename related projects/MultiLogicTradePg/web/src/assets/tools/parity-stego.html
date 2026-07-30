@@ -553,7 +553,7 @@ canvas {
           <label><input type="checkbox" id="langRu" checked /> Русский</label>
           <label><input type="checkbox" id="langEn" /> English</label>
         </div>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.19</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.20</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode" id="modeSwitch">
@@ -562,7 +562,7 @@ canvas {
         </div>
         <div class="key-field">
           <label for="encKey" id="labelKey">Ключ</label>
-          <input type="text" id="encKey" placeholder="пусто = без ключа (мин. 3, если задан)" value="" autocomplete="off" spellcheck="false" />
+          <input type="text" id="encKey" placeholder="пусто или от 3 символов" value="" autocomplete="off" spellcheck="false" />
           <button type="button" id="btnRefresh" class="btn btn-ghost" disabled title="Сначала загрузите файл через «Расшифровать»">Обновить</button>
         </div>
       </div>
@@ -574,7 +574,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.19</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.20</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -642,7 +642,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.19";
+  const APP_VERSION = "Crypt v1.20";
 
   const I18N = {
     ru: {
@@ -650,7 +650,7 @@ canvas {
       modeNote: "Заметка",
       modeNoteTitle: "Рукописная заметка (чёрно-белая)",
       key: "Ключ",
-      keyPh: "пусто = без ключа (мин. 3, если задан)",
+      keyPh: "пусто или от 3 символов",
       template: "Шаблон",
       encrypt: "Шифровать",
       decrypt: "Расшифровать",
@@ -675,7 +675,7 @@ canvas {
       emptyText: "Сначала введите текст.",
       emptyNote: "Сначала напишите рукописную заметку (не белые штрихи на белой бумаге).",
       keyShort: (n, min) =>
-        `Ключ слишком короткий (${n}). Минимум ${min} символа, или оставьте Ключ пустым.`,
+        `Ключ ${n} симв. — так нельзя. Ключ должен быть пустым (без ключа) либо от ${min} символов и больше.`,
       encNoKey: (action) =>
         `${action} без ключа (пустой Ключ). Тот же файл расшифровывается с пустым Ключом.`,
       encWithKey: (action, key) =>
@@ -694,13 +694,15 @@ canvas {
         "Нет загруженного файла. Сначала нажмите «Расшифровать» и выберите файл — потом «Обновить» применит новый Ключ к нему.",
       refreshAgain: (name) =>
         `Обновление: тот же файл «${name}» · текущий Ключ · без выбора файла…`,
+      refreshKeyShort: (n, min) =>
+        `Обновить не выполнено: ключ ${n} симв. Ключ должен быть пустым или от ${min} символов и больше.`,
     },
     en: {
       modeText: "Text",
       modeNote: "Note",
       modeNoteTitle: "Handwritten note (black & white)",
       key: "Key",
-      keyPh: "empty = no key (min 3 if set)",
+      keyPh: "empty or 3+ characters",
       template: "Template",
       encrypt: "Encrypt",
       decrypt: "Decrypt",
@@ -725,7 +727,7 @@ canvas {
       emptyText: "Enter some text first.",
       emptyNote: "Write a handwritten note first (non-white strokes on white paper).",
       keyShort: (n, min) =>
-        `Key is too short (${n}). Use at least ${min} characters, or leave Key empty to work without a key.`,
+        `Key is ${n} character(s) — not allowed. Key must be empty (no key) or ${min}+ characters.`,
       encNoKey: (action) =>
         `${action} without a key (empty Key). Same file decrypts with an empty Key.`,
       encWithKey: (action, key) =>
@@ -744,6 +746,8 @@ canvas {
         "No file loaded yet. Press Decrypt and pick a file first — then Refresh applies the new Key to it.",
       refreshAgain: (name) =>
         `Refresh: same file “${name}” · current Key · no file picker…`,
+      refreshKeyShort: (n, min) =>
+        `Refresh did nothing: key is ${n} character(s). Key must be empty or ${min}+ characters.`,
     },
   };
 
@@ -1760,11 +1764,17 @@ canvas {
   /**
    * Change Key → Refresh: decrypt the already-loaded Decrypt file again with the current Key.
    * No file picker. No encrypt/download. Button is disabled until Decrypt has loaded a file.
+   * Key length 1..2: do nothing except show a message (empty OR ≥3 only).
    */
   async function refreshWithCurrentKey() {
     if (!lastDecryptBlob) {
       updateRefreshButton();
       setStatus(t("refreshNeedFile"));
+      return;
+    }
+    const raw = (els.encKey.value || "").trim();
+    if (raw.length > 0 && raw.length < MIN_KEY_LEN) {
+      setStatus(t("refreshKeyShort", raw.length, MIN_KEY_LEN));
       return;
     }
     const resolved = resolveKey();
