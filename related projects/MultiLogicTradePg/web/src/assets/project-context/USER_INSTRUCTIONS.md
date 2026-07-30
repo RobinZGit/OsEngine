@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+784. When you change encryption key, you need to encrypt again. But not automatically, but make a button refresh, update, well, Russian refresh, English refresh, or something else in the back. So that you can, without loading the file, without pressing the Encryption button, which loads the file, the same file, try to decrypt with the Encryption key, immediately upload everything and publish.
+
 783. Don't see update / version 1.15 vs 1.14 — check GitHub Pages; thick scrollbars not visible on tablet; fix version badge + finger scroll buttons
 
 782. Scrollbars (rewinding stripes) too thin for finger on tablet — make thick rounded bars you can drag with a finger, not mouse-thin

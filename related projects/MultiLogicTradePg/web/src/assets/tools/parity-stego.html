@@ -531,7 +531,7 @@ canvas {
     <header class="strip">
       <div class="brand-row">
         <span class="brand-name">Crypt</span>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.16</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.17</span>
       </div>
       <div class="strip-left">
         <div class="lang-switch" role="group" aria-label="Language">
@@ -551,11 +551,12 @@ canvas {
         <button type="button" id="btnTemplate" class="btn btn-ghost">Шаблон</button>
         <button type="button" id="btnEncrypt" class="btn btn-primary">Шифровать</button>
         <button type="button" id="btnDecrypt" class="btn btn-secondary">Расшифровать</button>
+        <button type="button" id="btnRefresh" class="btn btn-ghost" title="Снова расшифровать последний файл текущим Ключом (без выбора файла)">Обновить</button>
         <span id="templateName" class="hint template-name"></span>
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.16</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.17</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -623,7 +624,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.16";
+  const APP_VERSION = "Crypt v1.17";
 
   const I18N = {
     ru: {
@@ -635,6 +636,9 @@ canvas {
       template: "Шаблон",
       encrypt: "Шифровать",
       decrypt: "Расшифровать",
+      refresh: "Обновить",
+      refreshTitle:
+        "Сменить Ключ → Обновить: тот же файл из памяти, расшифровка и сразу шифрование новым Ключом (без выбора файла).",
       loadFile: "Загрузить файл",
       hintText: "Текст прокручивается вниз · длинный текст растягивает шаблон при шифровании",
       message: "Сообщение",
@@ -646,7 +650,7 @@ canvas {
       resultTitle: "Результат расшифровки (одна картинка · чёт→белый · нечёт→чёрный)",
       build: "Сборка",
       ready:
-        " готова. Текст — прокрутка вниз; картинки — вниз и вбок. Шаблон растягивается, если содержимое больше.",
+        " готова. Текст — прокрутка вниз; картинки — вниз и вбок. Смена Ключа → Обновить (тот же файл, без выбора).",
       langGroup: "Язык",
       modeGroup: "Режим",
       emptyText: "Сначала введите текст.",
@@ -667,6 +671,12 @@ canvas {
         `Холст заметки увеличен до ${w}×${h}. Прокрутка вниз и вбок. При шифровании шаблон растянется до этого размера.`,
       encryptingNote: "Шифрование заметки в шаблон…",
       emptyDecrypt: "(пусто / текст не найден)",
+      refreshNeedFile:
+        "Нет данных в памяти. Сначала «Расшифровать» или «Шифровать» один раз — потом смените Ключ и нажмите «Обновить».",
+      refreshAgain: (name) =>
+        `Обновление: «${name}» · текущий Ключ · без выбора файла…`,
+      refreshReencrypt: (name) =>
+        `Обновление: перешифрование «${name}» текущим Ключом (без выбора файла)…`,
     },
     en: {
       modeText: "Text",
@@ -677,6 +687,9 @@ canvas {
       template: "Template",
       encrypt: "Encrypt",
       decrypt: "Decrypt",
+      refresh: "Refresh",
+      refreshTitle:
+        "Change Key → Refresh: same in-memory file, decrypt and immediately encrypt with the new Key (no file picker).",
       loadFile: "Load file",
       hintText: "Text scrolls down · long text stretches the template on Encrypt",
       message: "Message",
@@ -688,7 +701,7 @@ canvas {
       resultTitle: "Decrypt result (one picture · even→white · odd→black)",
       build: "Build",
       ready:
-        " ready. Text scrolls down; note/decrypt images scroll down & sideways. Template stretches if content is larger.",
+        " ready. Text scrolls down; note/decrypt images scroll down & sideways. Change Key → Refresh (same file, no picker).",
       langGroup: "Language",
       modeGroup: "Mode",
       emptyText: "Enter some text first.",
@@ -709,6 +722,12 @@ canvas {
         `Note canvas enlarged to ${w}×${h}. Scroll down & sideways. Template stretches to this size on Encrypt.`,
       encryptingNote: "Encrypting note into template…",
       emptyDecrypt: "(empty / no text found)",
+      refreshNeedFile:
+        "Nothing in memory yet. Press Decrypt or Encrypt once first — then change Key and press Refresh.",
+      refreshAgain: (name) =>
+        `Refresh: “${name}” · current Key · no file picker…`,
+      refreshReencrypt: (name) =>
+        `Refresh: re-encrypting “${name}” with the current Key (no file picker)…`,
     },
   };
 
@@ -733,6 +752,10 @@ canvas {
     els.btnTemplate.textContent = pack.template;
     els.btnEncrypt.textContent = pack.encrypt;
     els.btnDecrypt.textContent = pack.decrypt;
+    if (els.btnRefresh) {
+      els.btnRefresh.textContent = pack.refresh;
+      els.btnRefresh.title = pack.refreshTitle;
+    }
     els.btnLoadText.textContent = pack.loadFile;
     const hintText = document.getElementById("hintText");
     if (hintText) hintText.textContent = pack.hintText;
@@ -786,6 +809,7 @@ canvas {
     noteSizeLabel: document.getElementById("noteSizeLabel"),
     btnEncrypt: document.getElementById("btnEncrypt"),
     btnDecrypt: document.getElementById("btnDecrypt"),
+    btnRefresh: document.getElementById("btnRefresh"),
     btnTemplate: document.getElementById("btnTemplate"),
     btnClear: document.getElementById("btnClear"),
     btnGrowNote: document.getElementById("btnGrowNote"),
@@ -805,6 +829,18 @@ canvas {
   /** User-chosen carrier image (HTMLImageElement), or null → built-in default. */
   let customTemplate = null;
   let customTemplateName = "";
+  /**
+   * Last carrier PNG kept in memory so Refresh can decrypt again without a file picker.
+   * Set on Decrypt (picked file) and on Encrypt (just-built PNG).
+   */
+  let lastCarrierBlob = null;
+  let lastCarrierName = "";
+  /**
+   * Plaintext remembered after a successful Encrypt/Decrypt so Refresh can re-encrypt
+   * with a new Key without loading a file again.
+   * { kind: "text", text } | { kind: "picture", bits, width, height }
+   */
+  let lastPlainPayload = null;
 
   const drawCtx = els.drawCanvas.getContext("2d", { willReadFrequently: true });
   const decryptCtx = els.decryptCanvas.getContext("2d", { willReadFrequently: true });
@@ -1149,12 +1185,32 @@ canvas {
       setStatus("Could not create file.");
       return;
     }
+    rememberCarrier(blob, filename);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function rememberCarrier(blob, filename) {
+    if (!blob) return;
+    lastCarrierBlob = blob;
+    lastCarrierName = filename || (blob.name ? String(blob.name) : "carrier.png");
+  }
+
+  function rememberPlainText(text) {
+    lastPlainPayload = { kind: "text", text: text == null ? "" : String(text) };
+  }
+
+  function rememberPlainPicture(bits, width, height) {
+    lastPlainPayload = {
+      kind: "picture",
+      bits: bits.slice(),
+      width: width | 0,
+      height: height | 0,
+    };
   }
 
   function downloadCanvas(canvas, filename) {
@@ -1283,6 +1339,7 @@ canvas {
       const imageData = ctx.getImageData(0, 0, carrier.width, carrier.height);
       encodeBitsIntoImageData(imageData, bits);
       ctx.putImageData(imageData, 0, 0);
+      rememberPlainText(text);
       downloadCanvas(carrier, "encrypted-text.png");
       setStatus(
         keyStatusPrefix(t("actionEncrypt"), withoutKey, key) +
@@ -1296,92 +1353,95 @@ canvas {
     }
   }
 
+  /**
+   * Encrypt a note bit-plane (from drawing or remembered Refresh payload).
+   * plainBits length must be noteW*noteH (or full carrier size).
+   */
+  async function encryptPictureFromBits(noteBits, noteW, noteH) {
+    const resolved = resolveKey();
+    if (!resolved.ok) {
+      setStatus(resolved.error);
+      return false;
+    }
+    const { key, withoutKey } = resolved;
+
+    const inkCount = noteBits.reduce((n, b) => n + (b ? 1 : 0), 0);
+    if (inkCount === 0) {
+      setStatus(t("emptyNote"));
+      return false;
+    }
+
+    const carrier = expandTemplateToNoteSize(noteW, noteH);
+    const cw = carrier.width;
+    const ch = carrier.height;
+
+    const plainBits = new Array(cw * ch);
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = y * cw + x;
+        if (x < noteW && y < noteH) plainBits[i] = noteBits[y * noteW + x] & 1;
+        else plainBits[i] = 0;
+      }
+    }
+
+    const bits = applyKeyToBits(plainBits, key);
+    const ctx = carrier.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
+    const imageData = ctx.getImageData(0, 0, cw, ch);
+    encodeBitsIntoImageData(imageData, bits);
+    ctx.putImageData(imageData, 0, 0);
+
+    const check = ctx.getImageData(0, 0, cw, ch);
+    let odd = 0;
+    let mismatch = 0;
+    for (let i = 0; i < cw * ch; i++) {
+      const bit = pixelBit(check.data, i);
+      odd += bit;
+      if (bit !== (bits[i] & 1)) mismatch++;
+    }
+    if (mismatch > 0 || odd === 0) {
+      setStatus(
+        `Encode failed on canvas: mismatch ${mismatch}, odd ${odd}. Try another template.`
+      );
+      return false;
+    }
+
+    const blob = await canvasToPngBlob(carrier);
+    const reloaded = await loadExactPixelCanvas(blob);
+    const rctx = reloaded.getContext("2d", { willReadFrequently: true });
+    const re = rctx.getImageData(0, 0, reloaded.width, reloaded.height);
+    let oddPng = 0;
+    let mismatchPng = 0;
+    const nCheck = Math.min(cw * ch, reloaded.width * reloaded.height);
+    for (let i = 0; i < nCheck; i++) {
+      const bit = pixelBit(re.data, i);
+      oddPng += bit;
+      if (bit !== (bits[i] & 1)) mismatchPng++;
+    }
+    if (mismatchPng > nCheck * 0.01 || oddPng < inkCount * 0.5) {
+      setStatus(
+        `PNG round-trip lost parity (mismatch ${mismatchPng}, odd ${oddPng}/${odd}). ` +
+          `Keep the file as PNG; do not re-save in the gallery.`
+      );
+      return false;
+    }
+
+    rememberPlainPicture(noteBits, noteW, noteH);
+    downloadBlob(blob, "encrypted-note.png");
+    setStatus(
+      keyStatusPrefix(t("actionEncrypt"), withoutKey, key) +
+        ` Note → template ${cw}×${ch} (still looks like template). ` +
+        `even=white / odd=ink on Decrypt. ink ${inkCount}, odd ${oddPng}.` +
+        (customTemplateName ? ` · ${customTemplateName}` : " · default template")
+    );
+    return true;
+  }
+
   async function encryptPicture() {
     try {
-      const resolved = resolveKey();
-      if (!resolved.ok) {
-        setStatus(resolved.error);
-        return;
-      }
-      const { key, withoutKey } = resolved;
-
       const noteW = els.drawCanvas.width;
       const noteH = els.drawCanvas.height;
-
-      // 1) Bits from the note: white paper → 0 (even), any non-white stroke → 1 (odd)
       const { bits: noteBits } = drawingToBits(els.drawCanvas);
-      const inkCount = noteBits.reduce((n, b) => n + (b ? 1 : 0), 0);
-      if (inkCount === 0) {
-        setStatus(t("emptyNote"));
-        return;
-      }
-
-      // 2) Stretch Template to note size when the note is larger
-      const carrier = expandTemplateToNoteSize(noteW, noteH);
-      const cw = carrier.width;
-      const ch = carrier.height;
-
-      // 3) Full bit plane: note region from drawing; area outside note = even (white)
-      const plainBits = new Array(cw * ch);
-      for (let y = 0; y < ch; y++) {
-        for (let x = 0; x < cw; x++) {
-          const i = y * cw + x;
-          if (x < noteW && y < noteH) plainBits[i] = noteBits[y * noteW + x];
-          else plainBits[i] = 0;
-        }
-      }
-
-      const bits = applyKeyToBits(plainBits, key);
-      const ctx = carrier.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
-      const imageData = ctx.getImageData(0, 0, cw, ch);
-      // Nudge template pixels ±1 so RGBA sum parity matches each bit (looks almost the same)
-      encodeBitsIntoImageData(imageData, bits);
-      ctx.putImageData(imageData, 0, 0);
-
-      // Sanity on canvas before PNG
-      const check = ctx.getImageData(0, 0, cw, ch);
-      let odd = 0;
-      let mismatch = 0;
-      for (let i = 0; i < cw * ch; i++) {
-        const bit = pixelBit(check.data, i);
-        odd += bit;
-        if (bit !== (bits[i] & 1)) mismatch++;
-      }
-      if (mismatch > 0 || odd === 0) {
-        setStatus(
-          `Encode failed on canvas: mismatch ${mismatch}, odd ${odd}. Try another template.`
-        );
-        return;
-      }
-
-      // PNG round-trip check — catches color-management wiping parity to all-even (white decrypt)
-      const blob = await canvasToPngBlob(carrier);
-      const reloaded = await loadExactPixelCanvas(blob);
-      const rctx = reloaded.getContext("2d", { willReadFrequently: true });
-      const re = rctx.getImageData(0, 0, reloaded.width, reloaded.height);
-      let oddPng = 0;
-      let mismatchPng = 0;
-      const nCheck = Math.min(cw * ch, reloaded.width * reloaded.height);
-      for (let i = 0; i < nCheck; i++) {
-        const bit = pixelBit(re.data, i);
-        oddPng += bit;
-        if (bit !== (bits[i] & 1)) mismatchPng++;
-      }
-      if (mismatchPng > nCheck * 0.01 || oddPng < inkCount * 0.5) {
-        setStatus(
-          `PNG round-trip lost parity (mismatch ${mismatchPng}, odd ${oddPng}/${odd}). ` +
-            `Keep the file as PNG; do not re-save in the gallery.`
-        );
-        return;
-      }
-
-      downloadBlob(blob, "encrypted-note.png");
-      setStatus(
-        keyStatusPrefix(t("actionEncrypt"), withoutKey, key) +
-          ` Note → template ${cw}×${ch} (still looks like template). ` +
-          `even=white / odd=ink on Decrypt. ink ${inkCount}, odd ${oddPng}.` +
-          (customTemplateName ? ` · ${customTemplateName}` : " · default template")
-      );
+      await encryptPictureFromBits(noteBits, noteW, noteH);
     } catch (err) {
       setStatus(err.message || String(err));
     }
@@ -1610,14 +1670,17 @@ canvas {
     els.decryptCanvasWrap.hidden = false;
   }
 
-  async function decryptFromFile(file) {
+  async function decryptFromFile(file, options) {
+    const fromRefresh = options && options.fromRefresh;
     try {
       const resolved = resolveKey();
       if (!resolved.ok) {
         setStatus(resolved.error);
-        return;
+        return null;
       }
       const { key, withoutKey } = resolved;
+
+      if (file) rememberCarrier(file, file.name || lastCarrierName || "decrypt.png");
 
       // Exact pixels — color management on drawImage was wiping note parity → blank sheet
       const canvas = await loadExactPixelCanvas(file);
@@ -1646,11 +1709,14 @@ canvas {
 
       const chosenLabel = chosen === "text" ? "text" : "note/B/W";
       setMode(chosen === "text" ? "text" : "picture", { keepResult: true });
+      const encodedLikely = !looksLikeNoise && inkPct >= 1 && inkPct < 35;
 
       if (chosen === "text") {
         showTextDecryptResult(textCand.text);
+        if (textCand.score >= 0.55) rememberPlainText(textCand.text);
       } else {
         showPictureDecryptResult(picBits, width, height);
+        if (encodedLikely) rememberPlainPicture(picBits, width, height);
         try {
           els.panelResult.scrollIntoView({ block: "nearest", behavior: "smooth" });
         } catch (_) {
@@ -1660,7 +1726,6 @@ canvas {
 
       const odd = picBits.reduce((n, b) => n + (b ? 1 : 0), 0);
       const keyMsg = keyStatusPrefix(t("actionDecrypt"), withoutKey, key);
-      const encodedLikely = !looksLikeNoise && inkPct >= 1 && inkPct < 35;
       const shape = looksLikeNoise
         ? "unencoded → B/W noise (not white)"
         : inkPct < 1
@@ -1668,12 +1733,78 @@ canvas {
           : encodedLikely
             ? "looks encoded (odd=ink lines)"
             : "B/W parity map";
+      const refreshHint = fromRefresh ? "" : " · Key change → Refresh (same file)";
       setStatus(
-        `${keyMsg} ${chosenLabel}: even→white, odd→black · odd ${odd} (${inkPct.toFixed(1)}%) · ${shape}.`
+        `${keyMsg} ${chosenLabel}: even→white, odd→black · odd ${odd} (${inkPct.toFixed(1)}%) · ${shape}.${refreshHint}`
       );
+      return {
+        chosen,
+        text: textCand.text,
+        picBits,
+        width,
+        height,
+        encodedLikely,
+        looksLikeNoise,
+        textScore: textCand.score,
+      };
     } catch (err) {
       setStatus(err.message || String(err));
+      return null;
     }
+  }
+
+  /**
+   * Change Key → Refresh: use the same in-memory carrier / plaintext.
+   * 1) If plaintext is remembered (after Encrypt/Decrypt) → re-encrypt with current Key and download.
+   * 2) Else if a carrier file is remembered → decrypt it again with current Key (no file picker).
+   * No file picker; does not require pressing Encrypt/Decrypt again.
+   */
+  async function refreshWithCurrentKey() {
+    const resolved = resolveKey();
+    if (!resolved.ok) {
+      setStatus(resolved.error);
+      return;
+    }
+
+    const label = lastCarrierName || "memory";
+
+    // Prefer re-encrypt remembered plaintext with the NEW key (change-key workflow).
+    if (lastPlainPayload) {
+      setStatus(t("refreshReencrypt", label));
+      if (lastPlainPayload.kind === "text") {
+        setMode("text", { keepResult: true });
+        els.message.value = lastPlainPayload.text;
+        encryptText();
+        return;
+      }
+      setMode("picture", { keepResult: true });
+      await encryptPictureFromBits(
+        lastPlainPayload.bits,
+        lastPlainPayload.width,
+        lastPlainPayload.height
+      );
+      return;
+    }
+
+    // Fallback: try decrypting the last carrier with the current Key (try keys / no picker).
+    if (lastCarrierBlob) {
+      setStatus(t("refreshAgain", label));
+      const result = await decryptFromFile(lastCarrierBlob, { fromRefresh: true });
+      if (!result) return;
+      // After a good decrypt, immediately re-encrypt with the current Key and download.
+      if (result.chosen === "text" && result.textScore >= 0.55 && lastPlainPayload) {
+        encryptText();
+      } else if (result.chosen === "picture" && result.encodedLikely && lastPlainPayload) {
+        await encryptPictureFromBits(
+          lastPlainPayload.bits,
+          lastPlainPayload.width,
+          lastPlainPayload.height
+        );
+      }
+      return;
+    }
+
+    setStatus(t("refreshNeedFile"));
   }
 
   /**
@@ -1689,6 +1820,7 @@ canvas {
   async function loadTextFromFile(file) {
     const text = await file.text();
     els.message.value = text;
+    rememberPlainText(text);
     setMode("text", { keepResult: true });
     setStatus(`Loaded “${file.name}” as text (${text.length} character(s)).`);
   }
@@ -1701,6 +1833,11 @@ canvas {
     openFilePicker(els.fileInput);
     setStatus(t("pickDecrypt"));
   });
+  if (els.btnRefresh) {
+    els.btnRefresh.addEventListener("click", () => {
+      refreshWithCurrentKey().catch((err) => setStatus(err.message || String(err)));
+    });
+  }
   els.btnTemplate.addEventListener("click", () => {
     openFilePicker(els.templateInput);
     setStatus(t("pickTemplate"));

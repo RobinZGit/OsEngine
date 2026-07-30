@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-29 — push: always open Angular UI after install; cycle console logs; installers **102** / `1.0.102`
+**Последнее обновление:** 2026-07-30 — Crypt **v1.17**: кнопка **Обновить / Refresh** (смена Ключа → перешифрование того же файла из памяти, без выбора файла) + publish Pages
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -116,6 +116,16 @@
 - после правок — `npm run verify:sql`; правило: `.cursor/rules/database-scripts.mdc`.
 
 ---
+
+## Что сделано (актуально на 2026-07-30)
+
+### 2026-07-30 (Crypt v1.17 — Обновить / Refresh после смены Ключа)
+
+- Кнопка **Обновить** (RU) / **Refresh** (EN) в шапке Crypt рядом с Шифровать/Расшифровать.
+- После **Расшифровать** или **Шифровать** файл и plaintext остаются в памяти.
+- Смена **Ключа** → **Обновить**: перешифрование текущим ключом и скачивание PNG **без** повторного выбора файла и без повторного Encrypt/Decrypt через picker.
+- Если plaintext ещё нет, а carrier есть — Refresh снова расшифровывает тот же файл текущим Ключом; при удачной расшифровке сразу перешифровывает и скачивает.
+- Версия формы: **Crypt v1.17** (`tools/parity-stego.html` + assets copy).
 
 ## Что сделано (актуально на 2026-07-29)
 
@@ -888,6 +898,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Crypt v1.17: Обновить/Refresh — смена Ключа, тот же файл из памяти, перешифрование без picker; Pages |
 | 2026-07-29 | Push: always open Angular UI after install (API-only opt-in); Trade cycle console logs; installers 102 |
 | 2026-07-29 | Hotfix: export resumeOrphanWarmups (Server Start TypeError); installers 101 |
 | 2026-07-29 | Push: headless trade runner + Server_Start after install-over; warm-up/balance resume; installers 100 |
@@ -1120,4 +1131,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **754** — push; **753** — Help inversion chapter; **752** — mirror vs TradeA XOR; **751** — sticky row colors.
+Последние (см. USER_INSTRUCTIONS): **784** — Crypt Refresh after key change; **783** — version/scroll; **782** — thick scrollbars; **781** — thick strokes.
