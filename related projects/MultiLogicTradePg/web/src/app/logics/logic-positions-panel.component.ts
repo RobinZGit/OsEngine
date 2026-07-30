@@ -215,6 +215,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   cachedPortfolioEquityShadow: ChartEquityPoint[] = [];
   cachedPortfolioShadedRanges: ChartShadedRange[] = [];
   cachedPortfolioStopMarkers: ChartStopMarker[] = [];
+  /** Горизонталь цели возобновления (shadow PnL), пока портфель в тени. */
+  cachedPortfolioResumeTarget: number | null = null;
 
 
 
@@ -557,6 +559,20 @@ export class LogicPositionsPanelComponent implements OnChanges {
     }
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
+    this.cachedPortfolioResumeTarget = this.portfolioShadowResumeTarget();
+  }
+
+  /**
+   * Уровень на графике shadow-эквити: baseline + shadow_pnl ≥ target → реал.
+   * На оси PnL это (target − baseline).
+   */
+  private portfolioShadowResumeTarget(): number | null {
+    if (this.isTest) return null;
+    if (!this.logicRow?.portfolio_trading_paused) return null;
+    const target = Number(this.logicRow.portfolio_stop_resume_equity);
+    const baseline = Number(this.logicRow.portfolio_stop_resume_baseline);
+    if (!Number.isFinite(target) || !Number.isFinite(baseline)) return null;
+    return target - baseline;
   }
 
   /** Окно дат для блока Бумаги / эквити (тест — период прогона, бой — по сделкам). */

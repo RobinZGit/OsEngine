@@ -81,6 +81,8 @@ app.get('/api/logics', async (_req, res) => {
         l.is_enabled,
         l.note,
         COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
+        l.portfolio_stop_resume_equity::float8 AS portfolio_stop_resume_equity,
+        l.portfolio_stop_resume_baseline::float8 AS portfolio_stop_resume_baseline,
         EXISTS (
           SELECT 1
           FROM logic_stops ls

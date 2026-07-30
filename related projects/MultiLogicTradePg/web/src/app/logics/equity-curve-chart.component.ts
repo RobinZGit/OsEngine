@@ -41,6 +41,9 @@ export const EQUITY_SHADE_COLORS = {
         @if (shadowTotal.length > 1 || (shadowTotal.length === 1 && shadowTotal[0].value !== 0)) {
           · <span class="leg-shadow-line">- - -</span> shadow
         }
+        @if (resumeTarget != null) {
+          · <span class="leg-resume">—</span> цель возобновления
+        }
         @if (stopMarkers.length) {
           · <span class="leg-sl">|</span> SL портфель ·
           <span class="leg-tp">|</span> TP портфель
@@ -89,6 +92,10 @@ export const EQUITY_SHADE_COLORS = {
         font-weight: 700;
         letter-spacing: 0.5px;
       }
+      .leg-resume {
+        color: #d97706;
+        font-weight: 700;
+      }
       .leg-sl {
         color: #dc2626;
         font-weight: 700;
@@ -120,6 +127,11 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
   @Input() shorts: ChartEquityPoint[] = [];
   /** Теневая эквити (пунктир). */
   @Input() shadowTotal: ChartEquityPoint[] = [];
+  /**
+   * Горизонталь: сколько shadow-PnL нужно набрать до возобновления реала
+   * (portfolio_stop_resume_equity − baseline). Только пока портфель в тени.
+   */
+  @Input() resumeTarget: number | null = null;
   /** Портфельные SL/TP (вертикали на баре срабатывания). */
   @Input() stopMarkers: ChartStopMarker[] = [];
   /** Зоны обычная / shadow / инверсия (график эквити бумаги / портфеля). */
@@ -192,6 +204,11 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
       if (Number.isFinite(b)) times.push(b);
     }
     const values = all.map((p) => p.value);
+    const resumeY =
+      this.resumeTarget != null && Number.isFinite(Number(this.resumeTarget))
+        ? Number(this.resumeTarget)
+        : null;
+    if (resumeY != null) values.push(resumeY);
     let t0 = Math.min(...times);
     let t1 = Math.max(...times);
     // Если только одна точка (ноль без закрытий) — растянуть ось на сутки вперёд.
@@ -240,6 +257,23 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
     ctx.moveTo(padL, yOf(0));
     ctx.lineTo(cssW - padR, yOf(0));
     ctx.stroke();
+
+    // Горизонталь цели возобновления реала (shadow PnL → target−baseline).
+    if (resumeY != null) {
+      const y = yOf(resumeY);
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 1.75;
+      ctx.setLineDash([10, 5]);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(cssW - padR, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#b45309';
+      ctx.font = '600 10px system-ui, sans-serif';
+      const label = `цель ${this.fmt(resumeY)}`;
+      ctx.fillText(label, Math.max(padL + 4, cssW - padR - 88), Math.max(padT + 10, y - 4));
+    }
 
     ctx.fillStyle = '#64748b';
     ctx.font = '10px system-ui, sans-serif';

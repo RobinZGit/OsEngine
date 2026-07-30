@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+791. On the equity of the portfolio of real transactions, draw a horizontal line, the level to which it should grow, if the portfolio is in the shadow, to what it should reach. immediately spread
+
 790. why is the painted zone in green, there is a dotted and a straight line and in the gray zone first there is a dotted line, and then some kind of white or very light gray zone, and there is still a dotted line first, I don't understand the last white zone what is it why is there some kind of equity — push
 
 789. Here is a picture of the real account now. There is a red checkmark, the trade is stopped, and the portfolio is shadow. This is normal. It should be red if the whole portfolio is in the shadow. This is one. And two. Add to the equity of the portfolio, it does not matter if there is a closed transaction or not, so that it draws it, and, for example, the shadow equity is also drawn with some dashes, and the shadow period is marked in some gray color. And immediately this is posted in the repository.

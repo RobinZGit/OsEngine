@@ -23,6 +23,10 @@ export interface LogicRow {
   inversion?: boolean;
   /** portfolio_resume / portfolio_ltp_renew: весь портфель в shadow до восстановления. */
   portfolio_trading_paused?: boolean;
+  /** Цель equity для возобновления реала (до срабатывания pause). */
+  portfolio_stop_resume_equity?: number | null;
+  /** Equity после закрытия реала при pause (baseline + shadow_pnl ≥ target). */
+  portfolio_stop_resume_baseline?: number | null;
   /** Активен линейный TP по портфелю с возобновлением (для подписи бейджа). */
   has_portfolio_ltp_renew?: boolean;
   /** Активен стоп-лосс portfolio_resume (для подписи бейджа). */
