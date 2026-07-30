@@ -148,6 +148,15 @@ body {
   color: var(--strip);
 }
 
+.tool-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
 .btn {
   appearance: none;
   border: 1px solid transparent;
@@ -553,7 +562,7 @@ canvas {
           <label><input type="checkbox" id="langRu" checked /> Русский</label>
           <label><input type="checkbox" id="langEn" /> English</label>
         </div>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.20</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.21</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode" id="modeSwitch">
@@ -574,7 +583,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.20</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.21</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -591,6 +600,10 @@ canvas {
 
       <section id="panelPicture" class="panel">
         <div class="canvas-toolbar">
+          <div class="tool-switch" role="group" aria-label="Инструмент" id="drawToolSwitch">
+            <button type="button" id="toolPen" class="mode-btn is-active" data-tool="pen" title="Перо">Перо</button>
+            <button type="button" id="toolEraser" class="mode-btn" data-tool="eraser" title="Ластик">Ластик</button>
+          </div>
           <button type="button" id="btnClear" class="btn btn-ghost">Очистить</button>
           <button type="button" id="btnGrowNote" class="btn btn-ghost" title="Увеличить холст заметки">Больше</button>
           <span id="noteSizeLabel" class="hint">Заметка 800×500 · прокрутка вниз и вбок</span>
@@ -642,7 +655,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.20";
+  const APP_VERSION = "Crypt v1.21";
 
   const I18N = {
     ru: {
@@ -665,8 +678,14 @@ canvas {
       clear: "Очистить",
       larger: "Больше",
       largerTitle: "Увеличить холст заметки",
+      pen: "Перо",
+      eraser: "Ластик",
+      penTitle: "Рисовать чёрным",
+      eraserTitle: "Стирать (белый)",
+      toolGroup: "Инструмент",
       noteSize: (w, h) => `Заметка ${w}×${h} · кнопки ▲▼◀▶ для прокрутки пальцем`,
       resultTitle: "Результат расшифровки (одна картинка · чёт→белый · нечёт→чёрный)",
+      decryptToNote: "Расшифровка на холсте заметки — можно править и снова шифровать.",
       build: "Сборка",
       ready:
         " готова. После «Расшифровать» смените Ключ и нажмите «Обновить» — тот же файл, без выбора.",
@@ -717,8 +736,14 @@ canvas {
       clear: "Clear",
       larger: "Larger",
       largerTitle: "Make note canvas larger",
+      pen: "Pen",
+      eraser: "Eraser",
+      penTitle: "Draw in black",
+      eraserTitle: "Erase (white)",
+      toolGroup: "Tool",
       noteSize: (w, h) => `Note ${w}×${h} · use ▲▼◀▶ buttons to scroll with a finger`,
       resultTitle: "Decrypt result (one picture · even→white · odd→black)",
+      decryptToNote: "Decrypted onto the note canvas — edit and Encrypt again.",
       build: "Build",
       ready:
         " ready. After Decrypt, change Key and press Refresh — same file, no picker.",
@@ -787,6 +812,16 @@ canvas {
       els.btnGrowNote.textContent = pack.larger;
       els.btnGrowNote.title = pack.largerTitle;
     }
+    if (els.toolPen) {
+      els.toolPen.textContent = pack.pen;
+      els.toolPen.title = pack.penTitle;
+    }
+    if (els.toolEraser) {
+      els.toolEraser.textContent = pack.eraser;
+      els.toolEraser.title = pack.eraserTitle;
+    }
+    const drawToolSwitch = document.getElementById("drawToolSwitch");
+    if (drawToolSwitch) drawToolSwitch.setAttribute("aria-label", pack.toolGroup);
     const resultTitle = document.getElementById("resultTitle");
     if (resultTitle) resultTitle.textContent = pack.resultTitle;
     const modeSwitch = document.getElementById("modeSwitch");
@@ -833,6 +868,8 @@ canvas {
     btnTemplate: document.getElementById("btnTemplate"),
     btnClear: document.getElementById("btnClear"),
     btnGrowNote: document.getElementById("btnGrowNote"),
+    toolPen: document.getElementById("toolPen"),
+    toolEraser: document.getElementById("toolEraser"),
     fileInput: document.getElementById("fileInput"),
     templateInput: document.getElementById("templateInput"),
     textFileInput: document.getElementById("textFileInput"),
@@ -845,6 +882,7 @@ canvas {
 
   let mode = "text"; // "text" | "picture" (UI label: Note = handwritten note)
   let drawing = false;
+  let drawTool = "pen"; // "pen" | "eraser"
   let lastPoint = null;
   /** User-chosen carrier image (HTMLImageElement), or null → built-in default. */
   let customTemplate = null;
@@ -919,21 +957,35 @@ canvas {
   }
 
   const INK_LINE_WIDTH = 22; // thick finger-friendly stroke (was 3 — too thin on tablet)
+  const ERASER_LINE_WIDTH = 28;
 
-  function applyInkStyle() {
-    drawCtx.strokeStyle = "#000000";
-    drawCtx.fillStyle = "#000000";
-    drawCtx.lineWidth = INK_LINE_WIDTH;
+  function setDrawTool(next) {
+    drawTool = next === "eraser" ? "eraser" : "pen";
+    if (els.toolPen) els.toolPen.classList.toggle("is-active", drawTool === "pen");
+    if (els.toolEraser) els.toolEraser.classList.toggle("is-active", drawTool === "eraser");
+    applyDrawStyle();
+  }
+
+  function applyDrawStyle() {
+    const erasing = drawTool === "eraser";
+    drawCtx.strokeStyle = erasing ? "#ffffff" : "#000000";
+    drawCtx.fillStyle = erasing ? "#ffffff" : "#000000";
+    drawCtx.lineWidth = erasing ? ERASER_LINE_WIDTH : INK_LINE_WIDTH;
     drawCtx.lineCap = "round";
     drawCtx.lineJoin = "round";
     drawCtx.miterLimit = 2;
+  }
+
+  /** @deprecated use applyDrawStyle */
+  function applyInkStyle() {
+    applyDrawStyle();
   }
 
   function clearDrawing() {
     // White paper for handwritten notes; encode is strict black/white.
     drawCtx.fillStyle = "#ffffff";
     drawCtx.fillRect(0, 0, els.drawCanvas.width, els.drawCanvas.height);
-    applyInkStyle();
+    applyDrawStyle();
   }
 
   function canvasPoint(canvas, event) {
@@ -951,7 +1003,7 @@ canvas {
       lastPoint = point;
       return;
     }
-    applyInkStyle();
+    applyDrawStyle();
     drawCtx.beginPath();
     drawCtx.moveTo(lastPoint.x, lastPoint.y);
     drawCtx.lineTo(point.x, point.y);
@@ -972,10 +1024,11 @@ canvas {
     }
     drawing = true;
     lastPoint = canvasPoint(els.drawCanvas, e);
-    applyInkStyle();
+    applyDrawStyle();
+    const r = (drawTool === "eraser" ? ERASER_LINE_WIDTH : INK_LINE_WIDTH) / 2;
     // Dot with rounded tip so a tap is a thick visible mark
     drawCtx.beginPath();
-    drawCtx.arc(lastPoint.x, lastPoint.y, INK_LINE_WIDTH / 2, 0, Math.PI * 2);
+    drawCtx.arc(lastPoint.x, lastPoint.y, r, 0, Math.PI * 2);
     drawCtx.fill();
   }
 
@@ -1668,15 +1721,24 @@ canvas {
   }
 
   function showPictureDecryptResult(bits, width, height) {
-    els.panelResult.hidden = false;
+    // Put decrypt onto the editable note canvas (not a separate panel below).
+    els.panelResult.hidden = true;
     if (els.decryptTextScroll) els.decryptTextScroll.hidden = true;
-    els.decryptCanvas.width = width;
-    els.decryptCanvas.height = height;
-    const bw = bitsToBwImageData(bits, width, height);
-    decryptCtx.putImageData(bw, 0, 0);
+    if (els.decryptScrollShell) els.decryptScrollShell.hidden = true;
+    els.decryptCanvasWrap.hidden = true;
     els.decryptText.hidden = true;
-    if (els.decryptScrollShell) els.decryptScrollShell.hidden = false;
-    els.decryptCanvasWrap.hidden = false;
+
+    els.drawCanvas.width = width;
+    els.drawCanvas.height = height;
+    const bw = bitsToBwImageData(bits, width, height);
+    drawCtx.putImageData(bw, 0, 0);
+    applyDrawStyle();
+    updateNoteSizeLabel();
+    try {
+      els.panelPicture.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   async function decryptFromFile(file, options) {
@@ -1724,11 +1786,6 @@ canvas {
         showTextDecryptResult(textCand.text);
       } else {
         showPictureDecryptResult(picBits, width, height);
-        try {
-          els.panelResult.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        } catch (_) {
-          /* ignore */
-        }
       }
 
       const odd = picBits.reduce((n, b) => n + (b ? 1 : 0), 0);
@@ -1742,8 +1799,9 @@ canvas {
             : "B/W parity map";
       const refreshHint =
         fromRefresh || !lastDecryptBlob ? "" : " · Key change → Refresh (same file)";
+      const editHint = chosen === "picture" ? " · " + t("decryptToNote") : "";
       setStatus(
-        `${keyMsg} ${chosenLabel}: even→white, odd→black · odd ${odd} (${inkPct.toFixed(1)}%) · ${shape}.${refreshHint}`
+        `${keyMsg} ${chosenLabel}: even→white, odd→black · odd ${odd} (${inkPct.toFixed(1)}%) · ${shape}.${refreshHint}${editHint}`
       );
       return {
         chosen,
@@ -1806,6 +1864,12 @@ canvas {
   // Events
   els.modeText.addEventListener("click", () => setMode("text"));
   els.modePicture.addEventListener("click", () => setMode("picture"));
+  if (els.toolPen) {
+    els.toolPen.addEventListener("click", () => setDrawTool("pen"));
+  }
+  if (els.toolEraser) {
+    els.toolEraser.addEventListener("click", () => setDrawTool("eraser"));
+  }
   els.btnEncrypt.addEventListener("click", encrypt);
   els.btnDecrypt.addEventListener("click", () => {
     openFilePicker(els.fileInput);
@@ -1935,6 +1999,7 @@ canvas {
   }
   applyLanguage();
   updateRefreshButton();
+  setDrawTool("pen");
   const verEl = document.getElementById("appVersion");
   if (verEl) verEl.textContent = APP_VERSION;
   setStatus(APP_VERSION + t("ready"));

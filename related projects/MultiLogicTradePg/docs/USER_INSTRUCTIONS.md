@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+793. In the encryptor, make such an amendment. First, when we decrypt the picture, it should not be placed in the new area below, but directly to the area where the editing is, so that you can edit right away and encrypt again. This is the first. And secondly, in the same mode, next to this picture, you need to make a choice of an eraser or a pen. By default, a pen, as it is now. We draw, it can draw. So that you can erase what is written. That is, the eraser too. Immediately put it in the main.
+
 792. Look at the file I sent you, this goal is real, there are two thousand, in fact, it has dropped by 100-150 rubles, it seems to me that the goal is some kind of big, the death of a figure, what can you do?
 
 791. On the equity of the portfolio of real transactions, draw a horizontal line, the level to which it should grow, if the portfolio is in the shadow, to what it should reach. immediately spread

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Equity: цель возобновления без раздутия шкалы + shadow PnL с момента паузы (v1.0.107)
+**Последнее обновление:** 2026-07-30 — Crypt v1.21: decrypt картинки на холст заметки + перо/ластик; Pages main
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,12 @@
 ---
 
 ## Что сделано (актуально на 2026-07-30)
+
+### 2026-07-30 (Crypt v1.21 — decrypt на холст + перо/ластик)
+
+- Расшифровка **заметки/картинки** кладётся сразу на **холст редактирования** (не в отдельную зону снизу) — можно править и снова «Шифровать».
+- Рядом с холстом: **Перо** (по умолчанию) / **Ластик** (белый штрих).
+- Версия формы: **Crypt v1.21** (`tools/parity-stego.html` + assets); push **main** → GitHub Pages.
 
 ### 2026-07-30 (Equity: цель 2680 не ломает шкалу; shadow с момента паузы)
 
@@ -960,6 +966,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Crypt v1.21: decrypt note onto edit canvas + pen/eraser; merge main → Pages |
+| 2026-07-30 | Equity: resume target no scale crush; shadow PnL since pause; installers 107 |
 | 2026-07-30 | Equity: horizontal resume target line while portfolio in shadow; installers 106 |
 | 2026-07-30 | Equity fix: no white trailing gap; shadow dashed starts at first shadow close; installers 105 |
 | 2026-07-30 | Equity: draw without closes; shadow dashed + gray zones; red enable when portfolio shadow |
