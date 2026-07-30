@@ -119,6 +119,12 @@
 
 ## Что сделано (актуально на 2026-07-30)
 
+### 2026-07-30 (Crypt v1.20 — короткий Ключ на Обновить)
+
+- Если Ключ длиной **1–2** символа: **Обновить** ничего не делает (не decrypt).
+- Статус: ключ должен быть **пустым** или **от 3 символов и больше**.
+- Placeholder Ключа: «пусто или от 3 символов».
+
 ### 2026-07-30 (Crypt v1.19 — Обновить = только decrypt уже загруженного файла)
 
 - **Обновить / Refresh** стоит сразу после поля **Ключ** (не слева в группе кнопок).
@@ -910,6 +916,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-30 | Crypt v1.20: Refresh no-op if Key length 1–2 + message (empty or ≥3); merge main |
 | 2026-07-30 | Crypt v1.19: Refresh = decrypt loaded file with new Key only; button after Key; disabled until Decrypt; merge main |
 | 2026-07-30 | Crypt v1.18: RU/EN checkboxes after Crypt name; merge main → Pages |
 | 2026-07-30 | Crypt v1.17: Обновить/Refresh — смена Ключа, тот же файл из памяти, перешифрование без picker; Pages |
@@ -1145,4 +1152,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **786** — Refresh decrypt-only + after Key + disabled; **785** — RU/EN on brand row; **784** — Crypt Refresh.
+Последние (см. USER_INSTRUCTIONS): **787** — short Key blocks Refresh; **786** — Refresh decrypt-only; **785** — RU/EN brand row.
