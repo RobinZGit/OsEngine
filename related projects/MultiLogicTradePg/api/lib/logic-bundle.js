@@ -158,7 +158,12 @@ async function buildLogicBundle(db, ids) {
       position_event: s.position_event,
       position_side: s.position_side,
       signal_kind: s.signal_kind,
-      signal_acts_on: s.signal_acts_on === 'base_asset' ? 'base_asset' : 'security',
+      signal_acts_on:
+        s.signal_acts_on === 'base_asset'
+          ? 'base_asset'
+          : s.signal_acts_on === 'contango'
+            ? 'contango'
+            : 'security',
       formula: s.formula,
       display_order: s.display_order,
       is_active: s.is_active,
@@ -399,7 +404,11 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
         sig.position_event === 'close' ? 'close' : 'open',
         sig.position_side === 'short' ? 'short' : 'long',
         sig.signal_kind === 'counter' ? 'counter' : 'trend',
-        sig.signal_acts_on === 'base_asset' ? 'base_asset' : 'security',
+        sig.signal_acts_on === 'base_asset'
+          ? 'base_asset'
+          : sig.signal_acts_on === 'contango'
+            ? 'contango'
+            : 'security',
         String(sig.formula || ''),
         Number.isFinite(Number(sig.display_order)) ? Number(sig.display_order) : 0,
         sig.is_active === false ? false : true,

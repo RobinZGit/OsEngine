@@ -157,7 +157,8 @@ BEGIN
         LIMIT 1;
     END IF;
 
-    IF v_pp IS NULL OR v_pp <= 0 THEN
+    -- close может быть ≤0 у синтетики contango (спред); торги идут по trade security.
+    IF v_pp IS NULL THEN
         RETURN;
     END IF;
 
@@ -169,7 +170,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_bar_data_at(INTEGER, INTEGER, INTEGER, TEXT, TIMESTAMP) IS
-'Индикатор и close на конкретной закрытой свече (exact dt, затем fallback в пределах одного бара)';
+'Индикатор и close на закрытой свече; close допускается ≤0 (контанго/спред)';
 
 CREATE OR REPLACE FUNCTION signal_split_params_top_level(p_params TEXT)
 RETURNS TEXT[]
@@ -1187,14 +1188,27 @@ BEGIN
                 WHEN OTHERS THEN
                     NULL;
             END;
+            -- Contango: материализовать спред, если есть такие сигналы
+            IF EXISTS (
+                SELECT 1 FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id AND lis.is_active
+                  AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+            ) THEN
+                PERFORM sync_contango_prices(
+                    v_sec.security_id,
+                    p_timeframe_id,
+                    prices_topup_date_from(
+                        v_sec.security_id, p_timeframe_id, p_closed_bar_dt, v_date_from
+                    ),
+                    v_date_to
+                );
+            END IF;
             FOR v_sig IN
                 SELECT DISTINCT
                     lis.indicator_id,
-                    CASE
-                        WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
-                            THEN logic_future_underlying_security_id(v_sec.security_id)
-                        ELSE v_sec.security_id
-                    END AS eval_sec_id
+                    logic_signal_resolve_eval_security(
+                        lis.signal_acts_on, v_sec.security_id
+                    ) AS eval_sec_id
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
             LOOP
@@ -1290,14 +1304,14 @@ BEGIN
             END;
         END IF;
 
-        -- Цены базовых активов для signal_acts_on=base_asset
+        -- Цены базовых активов для base_asset / contango
         IF NOT v_skip_http THEN
             FOR v_sig IN
                 SELECT DISTINCT logic_future_underlying_security_id(v_sec.security_id) AS und_id
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
-                  AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+                  AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
             LOOP
                 IF v_sig.und_id IS NULL OR v_sig.und_id = v_sec.security_id THEN
                     CONTINUE;
@@ -1321,6 +1335,16 @@ BEGIN
             END LOOP;
         END IF;
 
+        IF EXISTS (
+            SELECT 1 FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id AND lis.is_active
+              AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+        ) THEN
+            PERFORM sync_contango_prices(
+                v_sec.security_id, p_timeframe_id, v_date_from, v_date_to
+            );
+        END IF;
+
         BEGIN
             CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
         EXCEPTION
@@ -1331,11 +1355,9 @@ BEGIN
         FOR v_sig IN
             SELECT DISTINCT
                 lis.indicator_id,
-                CASE
-                    WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
-                        THEN logic_future_underlying_security_id(v_sec.security_id)
-                    ELSE v_sec.security_id
-                END AS eval_sec_id
+                logic_signal_resolve_eval_security(
+                    lis.signal_acts_on, v_sec.security_id
+                ) AS eval_sec_id
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
         LOOP

@@ -166,8 +166,8 @@ export interface LogicIndicatorSignalRow {
   position_event: 'open' | 'close';
   position_side: 'long' | 'short';
   signal_kind: 'trend' | 'counter';
-  /** security = торгуемая бумага; base_asset = базовый актив фьючерса */
-  signal_acts_on?: 'security' | 'base_asset';
+  /** security = бумага; base_asset = база; contango = ряд (фьючерс − база) */
+  signal_acts_on?: 'security' | 'base_asset' | 'contango';
   formula: string;
   /** Боевой рейтинг сигнала на логике (не справочник indicators). */
   rating: number;

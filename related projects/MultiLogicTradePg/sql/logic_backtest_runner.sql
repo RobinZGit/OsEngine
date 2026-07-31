@@ -294,13 +294,13 @@ BEGIN
         );
     END IF;
 
-    -- Цены базовых активов для signal_acts_on=base_asset
+    -- Цены базовых активов для signal_acts_on=base_asset|contango
     FOR v_ind IN
         SELECT DISTINCT logic_future_underlying_security_id(p_security_id) AS und_id
         FROM logic_indicator_signals lis
         WHERE lis.logic_id = p_logic_id
           AND lis.is_active = TRUE
-          AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+          AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
     LOOP
         IF v_ind.und_id IS NULL OR v_ind.und_id = p_security_id THEN
             CONTINUE;
@@ -324,6 +324,25 @@ BEGIN
             );
         END;
     END LOOP;
+
+    -- Синтетика contango (fut − und) как ряд цен для индикаторов
+    IF EXISTS (
+        SELECT 1 FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id AND lis.is_active
+          AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+    ) THEN
+        BEGIN
+            PERFORM sync_contango_prices(
+                p_security_id, p_tf_id, p_warmup_from::DATE, p_date_to
+            );
+        EXCEPTION WHEN OTHERS THEN
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.prices.contango_error', SQLERRM,
+                jsonb_build_object('security_id', p_security_id, 'role', 'contango'),
+                p_security_id, p_tf_id
+            );
+        END;
+    END IF;
 
     -- Apply @CODE(...period/std_dev...) from signals onto series BEFORE cache skip,
     -- otherwise indicator_values stay on old defaults (e.g. std_dev=2).
@@ -477,12 +496,47 @@ BEGIN
             );
         END;
     END LOOP;
+
+    -- Индикаторы на контанго (signal_acts_on=contango)
+    FOR v_ind IN
+        SELECT DISTINCT
+            lis.indicator_id,
+            logic_contango_security_id(p_security_id) AS eval_sec_id
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+    LOOP
+        IF v_ind.eval_sec_id IS NULL OR v_ind.eval_sec_id = p_security_id THEN
+            CONTINUE;
+        END IF;
+        BEGIN
+            CALL ensure_security_indicator_series(v_ind.eval_sec_id, v_ind.indicator_id);
+            CALL logic_apply_indicator_params_from_signals(p_logic_id, v_ind.eval_sec_id);
+            CALL sync_security_indicator_series_for_indicator(
+                v_ind.eval_sec_id, v_ind.indicator_id, p_tf_id, p_end_dt, p_point_count, FALSE
+            );
+            p_ind_synced := p_ind_synced + 1;
+        EXCEPTION WHEN OTHERS THEN
+            p_ind_errors := p_ind_errors + 1;
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+                jsonb_build_object(
+                    'security_id', v_ind.eval_sec_id,
+                    'trade_security_id', p_security_id,
+                    'indicator_id', v_ind.indicator_id,
+                    'role', 'contango'
+                ),
+                p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
 END;
 $$;
 
 COMMENT ON PROCEDURE logic_backtest_ensure_security_data IS
-'Backtest: load_prices if needed; apply signal formula params; sync indicators (skip cache only if params unchanged). '
-'Also loads/syncs base_asset underlyings for futures signals.';
+'Backtest: load_prices; sync contango; apply signal params; sync indicators. '
+'Also loads/syncs base_asset and contango synthetics for futures signals.';
 
 CREATE OR REPLACE FUNCTION logic_backtest_update_run(
     p_run_id BIGINT,

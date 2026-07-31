@@ -5027,6 +5027,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -11102,6 +11103,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -15030,16 +15059,214 @@ $$;
 COMMENT ON FUNCTION logic_future_underlying_security_id(INTEGER) IS
 'security_id базового актива для фьючерса; NULL если не futures или нет mapping';
 
--- На какой security_id считать сигнал: торгуемая бумага или underlying.
+-- Создать/найти синтетическую бумагу контанго (fut − und) для фьючерса.
+CREATE OR REPLACE FUNCTION logic_ensure_contango_security(p_future_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_und INTEGER;
+    v_synth INTEGER;
+    v_prefix VARCHAR(50);
+    v_type_id INTEGER;
+    v_exch_id INTEGER;
+BEGIN
+    IF p_future_security_id IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT cs.synthetic_security_id
+    INTO v_synth
+    FROM contango_securities cs
+    WHERE cs.future_security_id = p_future_security_id
+    LIMIT 1;
+    IF v_synth IS NOT NULL THEN
+        RETURN v_synth;
+    END IF;
+
+    v_und := logic_future_underlying_security_id(p_future_security_id);
+    IF v_und IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT sp.prefix
+    INTO v_prefix
+    FROM security_prefixes sp
+    WHERE sp.security_id = p_future_security_id
+      AND sp.instrument_market = 'futures'
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    SELECT id INTO v_type_id FROM security_types WHERE name = 'Index' LIMIT 1;
+    IF v_type_id IS NULL THEN
+        SELECT id INTO v_type_id FROM security_types ORDER BY id LIMIT 1;
+    END IF;
+    SELECT id INTO v_exch_id FROM exchanges WHERE name = 'MOEX' LIMIT 1;
+    IF v_exch_id IS NULL THEN
+        SELECT id INTO v_exch_id FROM exchanges ORDER BY id LIMIT 1;
+    END IF;
+
+    INSERT INTO securities (name, security_type_id, lot_size)
+    VALUES (
+        format('Contango %s', COALESCE(NULLIF(btrim(v_prefix), ''), p_future_security_id::TEXT)),
+        v_type_id,
+        1
+    )
+    RETURNING id INTO v_synth;
+
+    INSERT INTO security_prefixes (
+        security_id, exchange_id, prefix, instrument_market, note, underlying_security_id
+    )
+    VALUES (
+        v_synth,
+        v_exch_id,
+        left(format('CTG:%s', COALESCE(NULLIF(btrim(v_prefix), ''), p_future_security_id::TEXT)), 50),
+        'other',
+        'Синтетика: контанго (фьючерс − базовый актив)',
+        v_und
+    )
+    ON CONFLICT (security_id, exchange_id) DO UPDATE SET
+        prefix = EXCLUDED.prefix,
+        instrument_market = EXCLUDED.instrument_market,
+        note = EXCLUDED.note,
+        underlying_security_id = EXCLUDED.underlying_security_id;
+
+    INSERT INTO contango_securities (
+        future_security_id, underlying_security_id, synthetic_security_id
+    )
+    VALUES (p_future_security_id, v_und, v_synth)
+    ON CONFLICT (future_security_id) DO UPDATE SET
+        underlying_security_id = EXCLUDED.underlying_security_id,
+        synthetic_security_id = EXCLUDED.synthetic_security_id
+    RETURNING synthetic_security_id INTO v_synth;
+
+    RETURN v_synth;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_ensure_contango_security(INTEGER) IS
+'Синтетическая бумага контанго для фьючерса; NULL если нет underlying';
+
+CREATE OR REPLACE FUNCTION logic_contango_security_id(p_future_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql AS $$
+    SELECT logic_ensure_contango_security(p_future_security_id);
+$$;
+
+COMMENT ON FUNCTION logic_contango_security_id(INTEGER) IS
+'security_id синтетики contango (создаёт при отсутствии)';
+
+-- Материализовать OHLC контанго: fut − und на общих timestamp.
+CREATE OR REPLACE FUNCTION sync_contango_prices(
+    p_future_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_date_from DATE,
+    p_date_to DATE
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_synth INTEGER;
+    v_und INTEGER;
+    v_n INTEGER := 0;
+BEGIN
+    v_synth := logic_ensure_contango_security(p_future_security_id);
+    IF v_synth IS NULL OR p_timeframe_id IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    SELECT cs.underlying_security_id
+    INTO v_und
+    FROM contango_securities cs
+    WHERE cs.synthetic_security_id = v_synth
+    LIMIT 1;
+    IF v_und IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    INSERT INTO prices (
+        security_id, timeframe_id, dt,
+        open_price, high_price, low_price, close_price,
+        volume, value, contract_prefix
+    )
+    SELECT
+        v_synth,
+        f.timeframe_id,
+        f.dt,
+        f.open_price - u.open_price,
+        GREATEST(
+            f.high_price - u.low_price,
+            f.open_price - u.open_price,
+            f.close_price - u.close_price,
+            f.low_price - u.high_price
+        ),
+        LEAST(
+            f.low_price - u.high_price,
+            f.open_price - u.open_price,
+            f.close_price - u.close_price,
+            f.high_price - u.low_price
+        ),
+        f.close_price - u.close_price,
+        NULL,
+        NULL,
+        NULL
+    FROM prices f
+    JOIN prices u
+      ON u.security_id = v_und
+     AND u.timeframe_id = f.timeframe_id
+     AND u.dt = f.dt
+    WHERE f.security_id = p_future_security_id
+      AND f.timeframe_id = p_timeframe_id
+      AND f.dt::DATE >= COALESCE(p_date_from, f.dt::DATE)
+      AND f.dt::DATE <= COALESCE(p_date_to, f.dt::DATE)
+    ON CONFLICT (security_id, timeframe_id, dt) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price;
+
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RETURN v_n;
+END;
+$$;
+
+COMMENT ON FUNCTION sync_contango_prices(INTEGER, INTEGER, DATE, DATE) IS
+'Записать/обновить синтетические свечи контанго (fut−und) за период';
+
+-- acts_on + trade security → eval security_id (без id сигнала).
+CREATE OR REPLACE FUNCTION logic_signal_resolve_eval_security(
+    p_acts_on TEXT,
+    p_trade_security_id INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_acts TEXT := lower(btrim(COALESCE(p_acts_on, 'security')));
+BEGIN
+    IF p_trade_security_id IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF v_acts = 'base_asset' THEN
+        RETURN logic_future_underlying_security_id(p_trade_security_id);
+    END IF;
+    IF v_acts = 'contango' THEN
+        RETURN logic_contango_security_id(p_trade_security_id);
+    END IF;
+    RETURN p_trade_security_id;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_signal_resolve_eval_security(TEXT, INTEGER) IS
+'security | base_asset | contango → security_id для цен/индикаторов';
+
+-- На какой security_id считать сигнал: торгуемая бумага, underlying или contango.
 CREATE OR REPLACE FUNCTION logic_signal_eval_security_id(
     p_signal_id INTEGER,
     p_trade_security_id INTEGER
 )
 RETURNS INTEGER
-LANGUAGE plpgsql STABLE AS $$
+LANGUAGE plpgsql AS $$
 DECLARE
     v_acts TEXT;
-    v_und INTEGER;
 BEGIN
     SELECT COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security')
     INTO v_acts
@@ -15049,17 +15276,12 @@ BEGIN
     IF v_acts IS NULL THEN
         RETURN NULL;
     END IF;
-    IF v_acts <> 'base_asset' THEN
-        RETURN p_trade_security_id;
-    END IF;
-
-    v_und := logic_future_underlying_security_id(p_trade_security_id);
-    RETURN v_und; -- NULL → evaluate fails (нет базового актива)
+    RETURN logic_signal_resolve_eval_security(v_acts, p_trade_security_id);
 END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_eval_security_id(INTEGER, INTEGER) IS
-'signal_acts_on=security → trade security; base_asset → underlying (или NULL)';
+'signal_acts_on → security | base_asset | contango eval security_id';
 
 CREATE OR REPLACE FUNCTION logic_signal_evaluate_at(
     p_signal_id INTEGER,
@@ -15458,14 +15680,41 @@ BEGIN
                 );
         END;
 
+        -- underlying + contango для сигналов base_asset/contango
+        FOR v_sig IN
+            SELECT DISTINCT logic_future_underlying_security_id(v_sec.security_id) AS und_id
+            FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id
+              AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
+        LOOP
+            IF v_sig.und_id IS NULL OR v_sig.und_id = v_sec.security_id THEN
+                CONTINUE;
+            END IF;
+            BEGIN
+                CALL load_prices(v_sig.und_id, p_timeframe_id, v_date_from, v_date_to);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
+        END LOOP;
+
+        IF EXISTS (
+            SELECT 1 FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id AND lis.is_active
+              AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+        ) THEN
+            PERFORM sync_contango_prices(
+                v_sec.security_id, p_timeframe_id, v_date_from, v_date_to
+            );
+        END IF;
+
         FOR v_sig IN
             SELECT DISTINCT
                 lis.indicator_id,
-                CASE
-                    WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
-                        THEN logic_future_underlying_security_id(v_sec.security_id)
-                    ELSE v_sec.security_id
-                END AS eval_sec_id
+                logic_signal_resolve_eval_security(
+                    lis.signal_acts_on, v_sec.security_id
+                ) AS eval_sec_id
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
         LOOP
@@ -15506,7 +15755,7 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_rating_precalc_ensure_data(INTEGER, INTEGER, INTEGER) IS
-'Перед боевым предрасчётом рейтинга: load_prices на lookback + sync индикаторов сигналов логики';
+'Перед боевым предрасчётом рейтинга: load_prices + contango sync + sync индикаторов';
 
 CREATE OR REPLACE FUNCTION prices_have_closed_bar(
     p_security_id INTEGER,
@@ -15626,14 +15875,27 @@ BEGIN
                 WHEN OTHERS THEN
                     NULL;
             END;
+            -- Contango: материализовать спред, если есть такие сигналы
+            IF EXISTS (
+                SELECT 1 FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id AND lis.is_active
+                  AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+            ) THEN
+                PERFORM sync_contango_prices(
+                    v_sec.security_id,
+                    p_timeframe_id,
+                    prices_topup_date_from(
+                        v_sec.security_id, p_timeframe_id, p_closed_bar_dt, v_date_from
+                    ),
+                    v_date_to
+                );
+            END IF;
             FOR v_sig IN
                 SELECT DISTINCT
                     lis.indicator_id,
-                    CASE
-                        WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
-                            THEN logic_future_underlying_security_id(v_sec.security_id)
-                        ELSE v_sec.security_id
-                    END AS eval_sec_id
+                    logic_signal_resolve_eval_security(
+                        lis.signal_acts_on, v_sec.security_id
+                    ) AS eval_sec_id
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
             LOOP
@@ -15729,14 +15991,14 @@ BEGIN
             END;
         END IF;
 
-        -- Цены базовых активов для signal_acts_on=base_asset
+        -- Цены базовых активов для base_asset / contango
         IF NOT v_skip_http THEN
             FOR v_sig IN
                 SELECT DISTINCT logic_future_underlying_security_id(v_sec.security_id) AS und_id
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
-                  AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+                  AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
             LOOP
                 IF v_sig.und_id IS NULL OR v_sig.und_id = v_sec.security_id THEN
                     CONTINUE;
@@ -15760,6 +16022,16 @@ BEGIN
             END LOOP;
         END IF;
 
+        IF EXISTS (
+            SELECT 1 FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id AND lis.is_active
+              AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+        ) THEN
+            PERFORM sync_contango_prices(
+                v_sec.security_id, p_timeframe_id, v_date_from, v_date_to
+            );
+        END IF;
+
         BEGIN
             CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
         EXCEPTION
@@ -15770,11 +16042,9 @@ BEGIN
         FOR v_sig IN
             SELECT DISTINCT
                 lis.indicator_id,
-                CASE
-                    WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
-                        THEN logic_future_underlying_security_id(v_sec.security_id)
-                    ELSE v_sec.security_id
-                END AS eval_sec_id
+                logic_signal_resolve_eval_security(
+                    lis.signal_acts_on, v_sec.security_id
+                ) AS eval_sec_id
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
         LOOP
@@ -17303,13 +17573,13 @@ BEGIN
         );
     END IF;
 
-    -- Цены базовых активов для signal_acts_on=base_asset
+    -- Цены базовых активов для signal_acts_on=base_asset|contango
     FOR v_ind IN
         SELECT DISTINCT logic_future_underlying_security_id(p_security_id) AS und_id
         FROM logic_indicator_signals lis
         WHERE lis.logic_id = p_logic_id
           AND lis.is_active = TRUE
-          AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+          AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
     LOOP
         IF v_ind.und_id IS NULL OR v_ind.und_id = p_security_id THEN
             CONTINUE;
@@ -17333,6 +17603,25 @@ BEGIN
             );
         END;
     END LOOP;
+
+    -- Синтетика contango (fut − und) как ряд цен для индикаторов
+    IF EXISTS (
+        SELECT 1 FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id AND lis.is_active
+          AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+    ) THEN
+        BEGIN
+            PERFORM sync_contango_prices(
+                p_security_id, p_tf_id, p_warmup_from::DATE, p_date_to
+            );
+        EXCEPTION WHEN OTHERS THEN
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.prices.contango_error', SQLERRM,
+                jsonb_build_object('security_id', p_security_id, 'role', 'contango'),
+                p_security_id, p_tf_id
+            );
+        END;
+    END IF;
 
     -- Apply @CODE(...period/std_dev...) from signals onto series BEFORE cache skip,
     -- otherwise indicator_values stay on old defaults (e.g. std_dev=2).
@@ -17486,12 +17775,47 @@ BEGIN
             );
         END;
     END LOOP;
+
+    -- Индикаторы на контанго (signal_acts_on=contango)
+    FOR v_ind IN
+        SELECT DISTINCT
+            lis.indicator_id,
+            logic_contango_security_id(p_security_id) AS eval_sec_id
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+    LOOP
+        IF v_ind.eval_sec_id IS NULL OR v_ind.eval_sec_id = p_security_id THEN
+            CONTINUE;
+        END IF;
+        BEGIN
+            CALL ensure_security_indicator_series(v_ind.eval_sec_id, v_ind.indicator_id);
+            CALL logic_apply_indicator_params_from_signals(p_logic_id, v_ind.eval_sec_id);
+            CALL sync_security_indicator_series_for_indicator(
+                v_ind.eval_sec_id, v_ind.indicator_id, p_tf_id, p_end_dt, p_point_count, FALSE
+            );
+            p_ind_synced := p_ind_synced + 1;
+        EXCEPTION WHEN OTHERS THEN
+            p_ind_errors := p_ind_errors + 1;
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+                jsonb_build_object(
+                    'security_id', v_ind.eval_sec_id,
+                    'trade_security_id', p_security_id,
+                    'indicator_id', v_ind.indicator_id,
+                    'role', 'contango'
+                ),
+                p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
 END;
 $$;
 
 COMMENT ON PROCEDURE logic_backtest_ensure_security_data IS
-'Backtest: load_prices if needed; apply signal formula params; sync indicators (skip cache only if params unchanged). '
-'Also loads/syncs base_asset underlyings for futures signals.';
+'Backtest: load_prices; sync contango; apply signal params; sync indicators. '
+'Also loads/syncs base_asset and contango synthetics for futures signals.';
 
 CREATE OR REPLACE FUNCTION logic_backtest_update_run(
     p_run_id BIGINT,
@@ -21091,6 +21415,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

@@ -1071,7 +1071,11 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
   const positionSide = req.body?.position_side;
   const signalKind = req.body?.signal_kind;
   const signalActsOn =
-    req.body?.signal_acts_on === 'base_asset' ? 'base_asset' : 'security';
+    req.body?.signal_acts_on === 'base_asset'
+      ? 'base_asset'
+      : req.body?.signal_acts_on === 'contango'
+        ? 'contango'
+        : 'security';
   const formula = btrimStr(req.body?.formula);
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
@@ -1144,7 +1148,9 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
   const signalActsOn = hasActsOn
     ? req.body?.signal_acts_on === 'base_asset'
       ? 'base_asset'
-      : 'security'
+      : req.body?.signal_acts_on === 'contango'
+        ? 'contango'
+        : 'security'
     : null;
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Invalid id' });

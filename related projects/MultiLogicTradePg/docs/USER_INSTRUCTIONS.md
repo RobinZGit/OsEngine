@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+801. Add one more type to the new type of signal on the logic of paper and the basic asset. Contango of paper and the basic asset. And, accordingly, it should react, it should make a difference, and this difference is used as a mass of prices, this indicator, and work according to its standard logic. Immediately put out the repositories.
+
 800. He writes in the tips, natural gas, for a long time, for a long time, probably no longer refers to this, the current period, look, maybe somehow the tips are more fragmented, more broken
 
 799. Change the name of this new logic, not PriceChannelFuge, but FuturesPriceChannel I mean Futures, not Fuge This is the first And the second Add a new parameter to the logic Sell Futures for the number of days of the whole And how many days are there, days before expiration In general, sell Futures for the number of days before their expiration And, accordingly, you need to check I think in the cycle where the sales are at the end of the day, and if the checkbox is turned on or not In any case, if there are 3 days before the expiration on the next day, then sell them Immediately we put everything in the repository.

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — Backtest price tips: chunked load (~30d) + full phase_detail
+**Последнее обновление:** 2026-07-31 — signal_acts_on=contango (фьючерс − база как ряд цен)
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -28,7 +28,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v58**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v59**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -119,6 +119,14 @@
 ---
 
 ## Что сделано (актуально на 2026-07-31)
+
+### 2026-07-31 (signal_acts_on = contango)
+
+- Третий режим «Действует на»: **Контанго** — синтетический ряд цен `OHLC(fut) − OHLC(und)`.
+- Таблица `contango_securities` + `logic_ensure_contango_security` / `sync_contango_prices`.
+- Индикаторы считаются на синтетике стандартным пайплайном; `pp` в формуле = спред (допускается ≤0).
+- Бой/бэктест/рейтинг: грузят базу, материализуют contango, sync индикаторов на eval security.
+- UI select + API/bundle; схема **v59**. Installers **v1.0.113**.
 
 ### 2026-07-31 (Backtest: дробные tip при загрузке цен)
 
@@ -1008,6 +1016,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-31 | signal_acts_on=contango (fut−und price series); v59 / v1.0.113 |
 | 2026-07-31 | Backtest price tips: chunked ~30d load + full phase_detail; v1.0.112 |
 | 2026-07-31 | Futures Price Channel rename + sell N days before expiry (EOD); v58 / v1.0.111 |
 | 2026-07-31 | Futures signal_acts_on + DONCHIAN Price Channel; seed Futures Price Channel + LNREG Base |
@@ -1255,4 +1264,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **800** — backtest tips stuck on Natural Gas; **799** — Futures rename + expiry sell; **798** — Price Channel on futures.
+Последние (см. USER_INSTRUCTIONS): **801** — contango acts_on; **800** — backtest tips Natural Gas; **799** — Futures rename + expiry.

@@ -1285,7 +1285,8 @@
                         <strong>против</strong> (fade / возврат от края). Не смешивайте в одном AND
                         пробой и mean-reversion — сделок почти не будет.
                         Колонка <strong>Действует на</strong>: «Бумага» — торгуемый инструмент;
-                        «Базовый актив» — underlying фьючерса (Price Channel / LINREG на споте или вечном).
+                        «Базовый актив» — underlying фьючерса;
+                        «Контанго» — ряд цен (фьючерс − база), на нём считается индикатор как обычно.
                         «Рейтинг» — сумма боевых оценок сигнала по всем бумагам логики
                         (не зависит от сделок; не тестовый рейтинг). Разверните строку сигнала —
                         список бумаг и график.
@@ -1527,10 +1528,11 @@
                                   [ngModel]="sig.signal_acts_on || 'security'"
                                   [disabled]="isFormulaSaving(sig.id)"
                                   (ngModelChange)="onSignalActsOnChange(sig, $event)"
-                                  title="Бумага = торгуемый инструмент; Базовый актив = underlying фьючерса"
+                                  title="Бумага = торгуемый инструмент; Базовый актив = underlying; Контанго = фьючерс − база (ряд цен для индикатора)"
                                 >
                                   <option value="security">Бумага</option>
                                   <option value="base_asset">Базовый актив</option>
+                                  <option value="contango">Контанго</option>
                                 </select>
                               </td>
 

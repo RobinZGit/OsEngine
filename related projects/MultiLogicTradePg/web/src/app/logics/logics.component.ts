@@ -2794,9 +2794,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   onSignalActsOnChange(
     signal: LogicIndicatorSignalRow,
-    next: 'security' | 'base_asset' | string
+    next: 'security' | 'base_asset' | 'contango' | string
   ): void {
-    const actsOn = next === 'base_asset' ? 'base_asset' : 'security';
+    const actsOn =
+      next === 'base_asset' ? 'base_asset' : next === 'contango' ? 'contango' : 'security';
     if ((signal.signal_acts_on || 'security') === actsOn || this.savingFormulaIds.has(signal.id)) {
       return;
     }

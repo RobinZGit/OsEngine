@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v58 (идемпотентный запуск)
+-- Версия: v59 (идемпотентный запуск)
+-- v59: signal_acts_on += contango (синтет. ряд fut−und); таблица contango_securities
 -- v58: rename seed «Futures Price Channel…» (было Fuge); sell_futures_before_expiry / days
 -- v57: signal_acts_on (security|base_asset); underlying_security_id у futures;
 --      DONCHIAN = Price Channel calc; seed Futures Price Channel + LNREG Base Asset
@@ -1560,7 +1561,7 @@ CREATE TABLE IF NOT EXISTS logic_indicator_signals (
     position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short')),
     signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
     signal_acts_on VARCHAR(20) NOT NULL DEFAULT 'security'
-        CHECK (signal_acts_on IN ('security', 'base_asset')),
+        CHECK (signal_acts_on IN ('security', 'base_asset', 'contango')),
     formula TEXT NOT NULL,
     rating INTEGER NOT NULL DEFAULT 0,
     rating_test INTEGER NOT NULL DEFAULT 0,
@@ -1587,13 +1588,28 @@ UPDATE logic_indicator_signals
 SET signal_acts_on = 'security'
 WHERE signal_acts_on IS NULL OR btrim(signal_acts_on) = '';
 
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_signal_acts_on_check;
 DO $$
 BEGIN
     ALTER TABLE logic_indicator_signals ADD CONSTRAINT logic_indicator_signals_signal_acts_on_check
-        CHECK (signal_acts_on IN ('security', 'base_asset'));
+        CHECK (signal_acts_on IN ('security', 'base_asset', 'contango'));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Синтетические бумаги для signal_acts_on=contango (ряд цен = фьючерс − базовый актив)
+CREATE TABLE IF NOT EXISTS contango_securities (
+    id SERIAL PRIMARY KEY,
+    future_security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    underlying_security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    synthetic_security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    UNIQUE (future_security_id),
+    UNIQUE (synthetic_security_id)
+);
+CREATE INDEX IF NOT EXISTS idx_contango_securities_und
+    ON contango_securities(underlying_security_id);
+COMMENT ON TABLE contango_securities IS
+'Синтетическая бумага контанго: prices = OHLC(fut) − OHLC(und); для signal_acts_on=contango';
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -1658,13 +1674,13 @@ CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_indicator_id
 
 COMMENT ON TABLE logic_indicator_signals IS
 'Сигналы индикаторов для logics: position_event open|close, сторона long|short, тип trend|counter, '
-'signal_acts_on security|base_asset. '
+'signal_acts_on security|base_asset|contango. '
 'В одной логике для сделки нужны ВСЕ активные сигналы той же стороны и того же open/close (AND).';
 COMMENT ON COLUMN logic_indicator_signals.position_event IS 'open | close — открытие или закрытие позиции';
 COMMENT ON COLUMN logic_indicator_signals.position_side IS 'long | short — сторона позиции сигнала';
 COMMENT ON COLUMN logic_indicator_signals.signal_kind IS 'trend | counter';
 COMMENT ON COLUMN logic_indicator_signals.signal_acts_on IS
-'security — индикатор/цена торгуемой бумаги; base_asset — базовый актив фьючерса (underlying_security_id)';
+'security — торгуемая бумага; base_asset — базовый актив; contango — ряд (фьючерс − база) как цены для индикатора';
 COMMENT ON COLUMN logic_indicator_signals.formula IS
 'Редактируемая формула: @RSI(period=14,series=VALUE) VALUE > 50';
 COMMENT ON COLUMN logic_indicator_signals.rating IS

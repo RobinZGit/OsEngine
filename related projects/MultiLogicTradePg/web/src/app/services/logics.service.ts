@@ -376,7 +376,7 @@ export class LogicsService {
     position_event: 'open' | 'close';
     position_side: 'long' | 'short';
     signal_kind: 'trend' | 'counter';
-    signal_acts_on?: 'security' | 'base_asset';
+    signal_acts_on?: 'security' | 'base_asset' | 'contango';
     formula: string;
   }): Observable<LogicIndicatorSignalRow> {
     return this.http.post<LogicIndicatorSignalRow>(
@@ -390,7 +390,7 @@ export class LogicsService {
     body: {
       formula: string;
       is_active?: boolean;
-      signal_acts_on?: 'security' | 'base_asset';
+      signal_acts_on?: 'security' | 'base_asset' | 'contango';
     }
   ): Observable<LogicIndicatorSignalRow> {
     return this.http.put<LogicIndicatorSignalRow>(

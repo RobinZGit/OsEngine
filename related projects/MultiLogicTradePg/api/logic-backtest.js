@@ -657,7 +657,7 @@ async function ensureSecurityData(
     return;
   }
 
-  // Цены базовых активов (signal_acts_on=base_asset) — отдельными кусками в tip.
+  // Цены базы (base_asset/contango) + синтетика contango.
   try {
     const { rows: undRows } = await pool.query(
       `
@@ -672,7 +672,7 @@ async function ensureSecurityData(
       LEFT JOIN security_prefixes sp ON sp.security_id = u.id
       WHERE lis.logic_id = $1
         AND lis.is_active = TRUE
-        AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+        AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
         AND x.und_id IS NOT NULL
         AND x.und_id <> $2
       `,
@@ -698,6 +698,26 @@ async function ensureSecurityData(
           );
         }
       );
+    }
+    const { rows: ctgNeed } = await pool.query(
+      `
+      SELECT 1
+      FROM logic_indicator_signals lis
+      WHERE lis.logic_id = $1
+        AND lis.is_active = TRUE
+        AND COALESCE(lis.signal_acts_on, 'security') = 'contango'
+      LIMIT 1
+      `,
+      [logicId]
+    );
+    if (ctgNeed.length > 0) {
+      await phase('prices_contango', `Контанго: ${secName || secId}`, 0.52);
+      await pool.query(`SELECT sync_contango_prices($1, $2, $3::date, $4::date)`, [
+        secId,
+        tfId,
+        loadDateFrom,
+        dateTo,
+      ]);
     }
   } catch (undErr) {
     await backtestLog(
@@ -809,6 +829,77 @@ async function ensureSecurityData(
       'indicator',
       `Индикаторы ${secName || secId}: ${indDone}/${indicatorIds.length}`,
       0.6 + 0.35 * (indDone / indTotal)
+    );
+  }
+
+  // Индикаторы на base_asset / contango (eval security ≠ trade security)
+  try {
+    const { rows: evalRows } = await pool.query(
+      `
+      SELECT DISTINCT
+        lis.indicator_id,
+        logic_signal_resolve_eval_security(lis.signal_acts_on, $2) AS eval_sec_id,
+        COALESCE(lis.signal_acts_on, 'security') AS acts_on
+      FROM logic_indicator_signals lis
+      WHERE lis.logic_id = $1
+        AND lis.is_active = TRUE
+        AND COALESCE(lis.signal_acts_on, 'security') IN ('base_asset', 'contango')
+      `,
+      [logicId, secId]
+    );
+    for (const er of evalRows) {
+      const evalSecId = Number(er.eval_sec_id);
+      if (!Number.isInteger(evalSecId) || evalSecId <= 0 || evalSecId === Number(secId)) {
+        continue;
+      }
+      try {
+        await pool.query('CALL ensure_security_indicator_series($1, $2)', [
+          evalSecId,
+          er.indicator_id,
+        ]);
+        await pool.query('CALL logic_apply_indicator_params_from_signals($1, $2)', [
+          logicId,
+          evalSecId,
+        ]);
+        await pool.query(
+          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
+          [evalSecId, er.indicator_id, tfId, endDt, pointCount, false]
+        );
+        stats.indSynced += 1;
+        await phase(
+          'indicator_eval',
+          `Индикаторы ${er.acts_on}: ${secName || secId} → sec ${evalSecId}`,
+          0.95
+        );
+      } catch (e) {
+        stats.indErr += 1;
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.indicator.error',
+          e.message,
+          {
+            security_id: evalSecId,
+            trade_security_id: secId,
+            indicator_id: er.indicator_id,
+            role: er.acts_on,
+          },
+          secId,
+          tfId
+        );
+      }
+    }
+  } catch (evalErr) {
+    await backtestLog(
+      pool,
+      runId,
+      logicId,
+      'backtest.indicator.eval_error',
+      evalErr?.message || String(evalErr),
+      { security_id: secId, name: secName },
+      secId,
+      tfId
     );
   }
 
