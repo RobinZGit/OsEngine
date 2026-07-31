@@ -376,6 +376,7 @@ export class LogicsService {
     position_event: 'open' | 'close';
     position_side: 'long' | 'short';
     signal_kind: 'trend' | 'counter';
+    signal_acts_on?: 'security' | 'base_asset';
     formula: string;
   }): Observable<LogicIndicatorSignalRow> {
     return this.http.post<LogicIndicatorSignalRow>(
@@ -386,7 +387,11 @@ export class LogicsService {
 
   updateLogicIndicatorSignal(
     id: number,
-    body: { formula: string; is_active?: boolean }
+    body: {
+      formula: string;
+      is_active?: boolean;
+      signal_acts_on?: 'security' | 'base_asset';
+    }
   ): Observable<LogicIndicatorSignalRow> {
     return this.http.put<LogicIndicatorSignalRow>(
       `${this.appConfig.apiUrl}/logic-indicator-signals/${id}`,

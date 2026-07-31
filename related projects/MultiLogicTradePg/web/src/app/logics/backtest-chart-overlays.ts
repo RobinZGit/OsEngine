@@ -63,6 +63,10 @@ export type PaperListRow = {
   security_id: number;
   security_name: string;
   security_prefix: string | null;
+  /** Базовый актив фьючерса (для второго графика). */
+  underlying_security_id?: number | null;
+  underlying_security_name?: string | null;
+  underlying_prefix?: string | null;
   /** Реализованный финрез (закрытия). У непродаваемого фонда обычно 0. */
   pnl: number;
   commission: number;

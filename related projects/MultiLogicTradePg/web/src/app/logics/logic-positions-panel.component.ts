@@ -33,7 +33,7 @@ import {
 
 } from '../shared/logic-trade';
 
-import { LogicRow } from '../models/logic.model';
+import { LogicRow, LogicSecurityRow } from '../models/logic.model';
 
 import {
   BacktestPaperRow,
@@ -151,6 +151,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   /** Денежный фонд — первая бумага в блоке «Бумаги» (бой и тест). */
   @Input() pinnedPaper: BacktestPaperRow | null = null;
+
+  /** Бумаги логики (underlying для графика базового актива фьючерса). */
+  @Input() logicSecurities: LogicSecurityRow[] = [];
 
   @Input() tradeLots = new Map<number, LogicTradeLotRow[]>();
 

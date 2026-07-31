@@ -157,6 +157,53 @@ $$;
 COMMENT ON FUNCTION logic_signal_move_success(TEXT, TEXT, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
 'Успех сигнала: (ход к следующей свече → % годовых в сторону сигнала) >= base_annual_rate_pct';
 
+-- Базовый актив фьючерса (security_prefixes.underlying_security_id).
+CREATE OR REPLACE FUNCTION logic_future_underlying_security_id(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT sp.underlying_security_id
+    FROM security_prefixes sp
+    WHERE sp.security_id = p_security_id
+      AND sp.instrument_market = 'futures'
+      AND sp.underlying_security_id IS NOT NULL
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+$$;
+
+COMMENT ON FUNCTION logic_future_underlying_security_id(INTEGER) IS
+'security_id базового актива для фьючерса; NULL если не futures или нет mapping';
+
+-- На какой security_id считать сигнал: торгуемая бумага или underlying.
+CREATE OR REPLACE FUNCTION logic_signal_eval_security_id(
+    p_signal_id INTEGER,
+    p_trade_security_id INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_acts TEXT;
+    v_und INTEGER;
+BEGIN
+    SELECT COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security')
+    INTO v_acts
+    FROM logic_indicator_signals lis
+    WHERE lis.id = p_signal_id;
+
+    IF v_acts IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF v_acts <> 'base_asset' THEN
+        RETURN p_trade_security_id;
+    END IF;
+
+    v_und := logic_future_underlying_security_id(p_trade_security_id);
+    RETURN v_und; -- NULL → evaluate fails (нет базового актива)
+END;
+$$;
+
+COMMENT ON FUNCTION logic_signal_eval_security_id(INTEGER, INTEGER) IS
+'signal_acts_on=security → trade security; base_asset → underlying (или NULL)';
+
 CREATE OR REPLACE FUNCTION logic_signal_evaluate_at(
     p_signal_id INTEGER,
     p_security_id INTEGER,
@@ -182,6 +229,7 @@ DECLARE
     v_series TEXT;
     v_bar RECORD;
     v_condition TEXT;
+    v_eval_sec INTEGER;
 BEGIN
     ok := FALSE;
     SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
@@ -199,6 +247,12 @@ BEGIN
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
 
+    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
+    IF v_eval_sec IS NULL THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
         RETURN NEXT;
@@ -206,7 +260,7 @@ BEGIN
     END IF;
     v_series := parse_signal_series(v_parsed.params);
     SELECT * INTO v_bar FROM logic_bar_data_at(
-        p_security_id, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
+        v_eval_sec, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
     );
     IF NOT FOUND THEN
         RETURN NEXT;
@@ -548,15 +602,24 @@ BEGIN
         END;
 
         FOR v_sig IN
-            SELECT DISTINCT lis.indicator_id
+            SELECT DISTINCT
+                lis.indicator_id,
+                CASE
+                    WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+                        THEN logic_future_underlying_security_id(v_sec.security_id)
+                    ELSE v_sec.security_id
+                END AS eval_sec_id
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
         LOOP
+            IF v_sig.eval_sec_id IS NULL THEN
+                CONTINUE;
+            END IF;
             BEGIN
-                CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
-                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
+                CALL ensure_security_indicator_series(v_sig.eval_sec_id, v_sig.indicator_id);
+                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sig.eval_sec_id);
                 CALL sync_security_indicator_series_for_indicator(
-                    v_sec.security_id,
+                    v_sig.eval_sec_id,
                     v_sig.indicator_id,
                     p_timeframe_id,
                     v_end_dt,
@@ -569,9 +632,10 @@ BEGIN
                     p_logic_id,
                     'rating.precalc.indicator.error',
                     format('Предрасчёт: ошибка индикатора sec=%s ind=%s: %s',
-                           v_sec.security_id, v_sig.indicator_id, v_err),
+                           v_sig.eval_sec_id, v_sig.indicator_id, v_err),
                     jsonb_build_object(
-                        'security_id', v_sec.security_id,
+                        'security_id', v_sig.eval_sec_id,
+                        'trade_security_id', v_sec.security_id,
                         'indicator_id', v_sig.indicator_id,
                         'error', v_err
                     ),

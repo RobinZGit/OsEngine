@@ -1,6 +1,8 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v56 (идемпотентный запуск)
+-- Версия: v57 (идемпотентный запуск)
+-- v57: signal_acts_on (security|base_asset); underlying_security_id у futures;
+--      DONCHIAN = Price Channel calc; seed «Price Channel Fuge and LNREG Base Asset»
 -- v56: seed «LinReg Fade Twice Optimized» — OPT(std_dev,10)+OPT(period,10)
 -- v54: install-on-top ensure всех seed-логик (в т.ч. LinReg Fade Optimized); бумаги Optimized после назначения LinReg Fade
 --      + sql/ensure_seed_logics.sql (post-01, installer проверяет наличие LinReg Fade Optimized)
@@ -227,7 +229,8 @@ CREATE TABLE IF NOT EXISTS security_prefixes (
     instrument_market VARCHAR(20) NOT NULL DEFAULT 'stock'
         CHECK (instrument_market IN ('stock', 'futures', 'bonds', 'index', 'other')),
     tbank_figi VARCHAR(50),
-    note VARCHAR(200)
+    note VARCHAR(200),
+    underlying_security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
@@ -236,6 +239,7 @@ ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS prefix VARCHAR(50);
 ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS instrument_market VARCHAR(20) NOT NULL DEFAULT 'stock' CHECK (instrument_market IN ('stock', 'futures', 'bonds', 'index', 'other'));
 ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS tbank_figi VARCHAR(50);
 ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS note VARCHAR(200);
+ALTER TABLE security_prefixes ADD COLUMN IF NOT EXISTS underlying_security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL;
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -252,6 +256,8 @@ CREATE INDEX IF NOT EXISTS idx_security_prefixes_prefix
 COMMENT ON TABLE security_prefixes IS 'Тикеры на торговых площадках; акция и фьючерс различаются security_id и instrument_market';
 COMMENT ON COLUMN security_prefixes.instrument_market IS 'Рынок: stock, futures, bonds, index — различает VTBR-акцию и VTBR-фьючерс';
 COMMENT ON COLUMN security_prefixes.tbank_figi IS 'FIGI инструмента в T-Bank Invest API';
+COMMENT ON COLUMN security_prefixes.underlying_security_id IS
+'Для futures: базовая бумага (акция / вечный фьючерс / иной ряд), на которой считаются сигналы signal_acts_on=base_asset';
 
 -- ============================================
 -- Справочник: 34 акции ММВБ
@@ -397,6 +403,27 @@ ON CONFLICT (security_id, exchange_id) DO UPDATE SET
     instrument_market = EXCLUDED.instrument_market,
     tbank_figi = COALESCE(EXCLUDED.tbank_figi, security_prefixes.tbank_figi),
     note = EXCLUDED.note;
+
+-- v57: futures → underlying (базовый актив для signal_acts_on=base_asset)
+UPDATE security_prefixes fut
+SET underlying_security_id = und.security_id
+FROM (VALUES
+    ('SBRF', 'futures', 'SBER', 'stock'),
+    ('GAZR', 'futures', 'GAZP', 'stock'),
+    ('LKOH', 'futures', 'LKOH', 'stock'),
+    ('VTBR', 'futures', 'VTBR', 'stock'),
+    ('CR', 'futures', 'CNYRUBF', 'futures'),
+    ('Si', 'futures', 'USDRUBF', 'futures'),
+    ('GL', 'futures', 'GLDRUBF', 'futures'),
+    ('GD', 'futures', 'GOLD', 'futures'),
+    ('SV', 'futures', 'SILV', 'futures'),
+    ('MX', 'futures', 'IMOEXF', 'futures')
+) AS m(fut_prefix, fut_market, und_prefix, und_market)
+JOIN security_prefixes und
+  ON und.prefix = m.und_prefix
+ AND und.instrument_market = m.und_market
+WHERE fut.prefix = m.fut_prefix
+  AND fut.instrument_market = m.fut_market;
 
 -- ============================================
 -- Денежные фонды (парк кэша): TMON / LQDT / SBMM
@@ -801,7 +828,7 @@ INSERT INTO indicators (code, name, description, category) VALUES
     ('KDJ', 'KDJ Indicator', 'Индикатор KDJ', 'momentum'),
     ('DMI', 'Directional Movement Index', 'Индекс направленного движения', 'trend'),
     ('KELTNER', 'Keltner Channels', 'Каналы Кельтнера', 'volatility'),
-    ('DONCHIAN', 'Donchian Channels', 'Каналы Дончиана', 'volatility'),
+    ('DONCHIAN', 'Price Channel (Donchian)', 'Канал цен / Дончиан (max high / min low)', 'volatility'),
     ('ROC', 'Rate of Change', 'Темп изменения', 'momentum'),
     ('TRIX', 'Triple Exponential Average', 'Тройное экспоненциальное среднее', 'momentum'),
     ('CMO', 'Chande Momentum Oscillator', 'Осциллятор моментума Чанде', 'momentum'),
@@ -823,7 +850,10 @@ UPDATE indicators SET script = 'SELECT calc_ind_sma(:period, :series, :security_
 UPDATE indicators SET script = 'SELECT calc_ind_ema(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'EMA';
 UPDATE indicators SET script = 'SELECT calc_ind_macd(:fast_period, :slow_period, :signal_period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'MACD';
 UPDATE indicators SET script = 'SELECT calc_ind_bb(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'BB';
+UPDATE indicators SET script = 'SELECT calc_ind_donchian(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'DONCHIAN';
 UPDATE indicators SET script = 'SELECT calc_ind_atr(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ATR';
+UPDATE indicators SET name = 'Price Channel (Donchian)', description = 'Канал цен / Дончиан (max high / min low)' WHERE code = 'DONCHIAN';
+UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code = 'DONCHIAN';
 UPDATE indicators SET script = 'SELECT calc_ind_stoch(:k_period, :d_period, :smooth, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'STOCH';
 UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'CCI';
 UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
@@ -1055,6 +1085,9 @@ JOIN (VALUES
     ('BB', 'MIDDLE', 'Средняя полоса', 'float', FALSE, NULL, 'Middle band', 2),
     ('BB', 'LOWER', 'Нижняя полоса', 'float', FALSE, NULL, 'Lower band', 3),
     ('BB', 'BANDWIDTH', 'Ширина полос', 'float', FALSE, NULL, 'Bandwidth', 4),
+    ('DONCHIAN', 'UPPER', 'Верх канала (Price Channel)', 'float', FALSE, NULL, 'Max high за period', 1),
+    ('DONCHIAN', 'MIDDLE', 'Середина канала', 'float', FALSE, NULL, '(Upper+Lower)/2', 2),
+    ('DONCHIAN', 'LOWER', 'Низ канала (Price Channel)', 'float', FALSE, NULL, 'Min low за period', 3),
     ('ATR', 'ATR', 'Значение ATR', 'float', FALSE, NULL, 'ATR', 1),
     ('ATR', 'ATR_PCT', 'ATR в процентах', 'float', FALSE, NULL, 'ATR %', 2),
     ('ATR', 'GROWTH5', 'Рост ATR за 5 баров %', 'float', FALSE, NULL, 'Бывший GrOk: (ATR/ATR[-5]-1)*100', 3),
@@ -1521,13 +1554,15 @@ CREATE TABLE IF NOT EXISTS logic_indicator_signals (
     position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close')),
     position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short')),
     signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
+    signal_acts_on VARCHAR(20) NOT NULL DEFAULT 'security'
+        CHECK (signal_acts_on IN ('security', 'base_asset')),
     formula TEXT NOT NULL,
     rating INTEGER NOT NULL DEFAULT 0,
     rating_test INTEGER NOT NULL DEFAULT 0,
     display_order INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (logic_id, indicator_id, position_event, position_side, signal_kind)
+    UNIQUE (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on)
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
@@ -1535,12 +1570,25 @@ ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS indicator_id INTEGE
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_event VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (position_event IN ('open', 'close'));
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short'));
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter'));
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS signal_acts_on VARCHAR(20) NOT NULL DEFAULT 'security';
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS formula TEXT;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating_test INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE logic_indicator_signals
+SET signal_acts_on = 'security'
+WHERE signal_acts_on IS NULL OR btrim(signal_acts_on) = '';
+
+DO $$
+BEGIN
+    ALTER TABLE logic_indicator_signals ADD CONSTRAINT logic_indicator_signals_signal_acts_on_check
+        CHECK (signal_acts_on IN ('security', 'base_asset'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -1590,12 +1638,13 @@ END $$;
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_signal_kind_key;
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_side_signal_kind_key;
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_event_position_side_signal_kind_key;
+ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_event_position_side_signal_kind_signal_acts_on_key;
 
 DROP INDEX IF EXISTS logic_indicator_signals_logic_id_indicator_id_signal_kind_key;
 DROP INDEX IF EXISTS idx_logic_indicator_signals_unique;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_logic_indicator_signals_unique
-    ON logic_indicator_signals (logic_id, indicator_id, position_event, position_side, signal_kind);
+    ON logic_indicator_signals (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on);
 
 CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_logic_id
     ON logic_indicator_signals(logic_id);
@@ -1603,11 +1652,14 @@ CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_indicator_id
     ON logic_indicator_signals(indicator_id);
 
 COMMENT ON TABLE logic_indicator_signals IS
-'Сигналы индикаторов для logics: position_event open|close, сторона long|short, тип trend|counter. '
+'Сигналы индикаторов для logics: position_event open|close, сторона long|short, тип trend|counter, '
+'signal_acts_on security|base_asset. '
 'В одной логике для сделки нужны ВСЕ активные сигналы той же стороны и того же open/close (AND).';
 COMMENT ON COLUMN logic_indicator_signals.position_event IS 'open | close — открытие или закрытие позиции';
 COMMENT ON COLUMN logic_indicator_signals.position_side IS 'long | short — сторона позиции сигнала';
 COMMENT ON COLUMN logic_indicator_signals.signal_kind IS 'trend | counter';
+COMMENT ON COLUMN logic_indicator_signals.signal_acts_on IS
+'security — индикатор/цена торгуемой бумаги; base_asset — базовый актив фьючерса (underlying_security_id)';
 COMMENT ON COLUMN logic_indicator_signals.formula IS
 'Редактируемая формула: @RSI(period=14,series=VALUE) VALUE > 50';
 COMMENT ON COLUMN logic_indicator_signals.rating IS
@@ -1964,7 +2016,7 @@ CROSS JOIN (VALUES
 JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'SMA Price Cross Demo'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id)
-ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind) DO NOTHING;
+ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on) DO NOTHING;
 
 -- Все акции (stock) в портфель демо-логики (без дублей при нескольких prefix)
 INSERT INTO logic_securities (logic_id, security_id, display_order)
@@ -2773,6 +2825,84 @@ WHERE src.name = 'LinReg Fade'
 ON CONFLICT (logic_id, security_id) DO UPDATE SET
     is_active = EXCLUDED.is_active,
     display_order = EXCLUDED.display_order;
+
+-- =====================================================================
+-- v57: Price Channel (DONCHIAN) on futures + LINREG Fade on base asset
+-- =====================================================================
+INSERT INTO logics (name, account_id, is_enabled, note)
+SELECT
+    'Price Channel Fuge and LNREG Base Asset',
+    a.id,
+    FALSE,
+    'Фьючерсы: Price Channel (DONCHIAN) counter на самом фьючерсе + LINREG Fade counter на базовом активе (AND).'
+FROM accounts a
+JOIN brokers b ON b.id = a.broker_id
+WHERE b.code = 'T-BANK'
+  AND (a.account_code = 'FAKE-EFF-001' OR lower(a.account_type::text) = 'fake')
+  AND NOT EXISTS (
+      SELECT 1 FROM logics z WHERE z.name = 'Price Channel Fuge and LNREG Base Asset'
+  )
+ORDER BY CASE WHEN a.account_code = 'FAKE-EFF-001' THEN 0 ELSE 1 END, a.id
+LIMIT 1;
+
+INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+SELECT l.id, v.param_key, v.param_value, v.value_type
+FROM logics l
+CROSS JOIN (VALUES
+    ('timeframe', 'M15', 'text'),
+    ('position_size_pct', '10', 'number'),
+    ('max_open_positions', '3', 'integer'),
+    ('initial_balance', '1000000', 'money'),
+    ('current_balance', '1000000', 'money'),
+    ('commission_pct', '0.03', 'number'),
+    ('cost_method', 'FIFO', 'text')
+) AS v(param_key, param_value, value_type)
+WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+  AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
+ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+INSERT INTO logic_indicator_signals (
+    logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, display_order
+)
+SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.signal_acts_on, v.formula, v.display_order
+FROM logics l
+CROSS JOIN (VALUES
+    ('DONCHIAN', 'open',  'long',  'counter', 'security',   '@DONCHIAN(period=20,series=LOWER) pp <= VALUE', 0),
+    ('LINREG',   'open',  'long',  'counter', 'base_asset', '@LINREG(period=20,std_dev=2,series=LOWER) pp <= VALUE', 1),
+    ('DONCHIAN', 'close', 'long',  'trend',   'security',   '@DONCHIAN(period=20,series=MIDDLE) pp >= VALUE', 2),
+    ('LINREG',   'close', 'long',  'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp >= VALUE', 3),
+    ('DONCHIAN', 'open',  'short', 'counter', 'security',   '@DONCHIAN(period=20,series=UPPER) pp >= VALUE', 4),
+    ('LINREG',   'open',  'short', 'counter', 'base_asset', '@LINREG(period=20,std_dev=2,series=UPPER) pp >= VALUE', 5),
+    ('DONCHIAN', 'close', 'short', 'trend',   'security',   '@DONCHIAN(period=20,series=MIDDLE) pp <= VALUE', 6),
+    ('LINREG',   'close', 'short', 'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 7)
+) AS v(ind_code, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
+JOIN indicators i ON i.code = v.ind_code
+WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1, TRUE
+FROM logics l
+CROSS JOIN LATERAL (
+    SELECT DISTINCT ON (s.id)
+        s.id AS security_id,
+        COALESCE(sp.prefix, s.name) AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'futures'
+    ORDER BY s.id, sp.prefix
+) q
+WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+ON CONFLICT (logic_id, security_id) DO NOTHING;
+
+INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
+FROM logics l
+CROSS JOIN (VALUES
+    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
+    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
+) AS v(rule_kind, scope_type, value, value_unit, display_order)
+WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- Стопы seed: insert only if empty
 

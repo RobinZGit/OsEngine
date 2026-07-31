@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+798. The Futures itself should act on the signal of the Price Channel indicator. Price Channel. Tun-Chan, I don't know what it is.
+
+797. Now we will make an update to the MultiLogic3.png in the part of the work with the Futures You need to make a signal for the Futures Of course, the same indicators will act on them as for ordinary papers But also for them you need to add such a bit of a signal as the same indicators, but not for the Futures itself, but for its asset Accordingly, in the signals of logic, you probably need to add another column The signal acts on If it is not filled in, then it acts on this asset itself… Price Channel Fuge and LNREG Base Asset… all Futures prefixes.
+
 796. In the decoder, make a thinner stylus in the picture mode, a thinner line. There is a very thick line on the tablet, which I draw with my finger, that is, with a stylus, and immediately put it in the main.
 
 795. Look why the goal of reaching the briefcase seems to move up and down Last time there was some other goal Everything can't reach this goal And the highest point of equity for some reason rests on this bar And it can't step over it And also, for some reason, this top bar is located at the very top It can make some kind of access from above, but not to the very end To.. + export multilogic-trades-export logic 1720 (цель 26801 · сейчас 45.7).

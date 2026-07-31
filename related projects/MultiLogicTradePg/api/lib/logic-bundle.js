@@ -102,6 +102,7 @@ async function buildLogicBundle(db, ids) {
       lis.position_event,
       lis.position_side,
       lis.signal_kind,
+      COALESCE(lis.signal_acts_on, 'security') AS signal_acts_on,
       lis.formula,
       lis.display_order,
       lis.is_active
@@ -157,6 +158,7 @@ async function buildLogicBundle(db, ids) {
       position_event: s.position_event,
       position_side: s.position_side,
       signal_kind: s.signal_kind,
+      signal_acts_on: s.signal_acts_on === 'base_asset' ? 'base_asset' : 'security',
       formula: s.formula,
       display_order: s.display_order,
       is_active: s.is_active,
@@ -386,10 +388,10 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
     await client.query(
       `
       INSERT INTO logic_indicator_signals (
-        logic_id, indicator_id, position_event, position_side, signal_kind,
+        logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on,
         formula, rating, rating_test, display_order, is_active
       )
-      VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, $8, $9)
       `,
       [
         logicId,
@@ -397,6 +399,7 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
         sig.position_event === 'close' ? 'close' : 'open',
         sig.position_side === 'short' ? 'short' : 'long',
         sig.signal_kind === 'counter' ? 'counter' : 'trend',
+        sig.signal_acts_on === 'base_asset' ? 'base_asset' : 'security',
         String(sig.formula || ''),
         Number.isFinite(Number(sig.display_order)) ? Number(sig.display_order) : 0,
         sig.is_active === false ? false : true,

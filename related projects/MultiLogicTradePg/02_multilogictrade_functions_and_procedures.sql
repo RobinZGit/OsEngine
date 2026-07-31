@@ -2028,6 +2028,116 @@ BEGIN
 END;
 $$;
 
+-- Price Channel / Donchian: UPPER = max high, LOWER = min low, MIDDLE = (U+L)/2
+CREATE OR REPLACE FUNCTION calc_ind_donchian(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    v_upper NUMERIC;
+    v_lower NUMERIC;
+    v_thr NUMERIC;
+BEGIN
+    IF p_indicator_id IS NOT NULL AND p_series NOT IN ('UPPER', 'MIDDLE', 'LOWER') THEN
+        v_thr := get_ind_series_threshold(p_indicator_id, p_series);
+        IF v_thr IS NOT NULL THEN RETURN v_thr; END IF;
+        RETURN NULL;
+    END IF;
+
+    SELECT MAX(high_price), MIN(low_price)
+    INTO v_upper, v_lower
+    FROM (
+        SELECT high_price, low_price
+        FROM prices
+        WHERE security_id = p_security_id
+          AND timeframe_id = p_timeframe_id
+          AND dt <= p_dt
+        ORDER BY dt DESC
+        LIMIT p_period
+    ) s;
+
+    IF v_upper IS NULL OR v_lower IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    RETURN CASE p_series
+        WHEN 'UPPER' THEN v_upper
+        WHEN 'LOWER' THEN v_lower
+        WHEN 'MIDDLE' THEN (v_upper + v_lower) / 2.0
+        ELSE NULL
+    END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION calc_ind_donchian_array(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_highs NUMERIC[];
+    v_lows NUMERIC[];
+    v_n INTEGER;
+    v_upper NUMERIC;
+    v_lower NUMERIC;
+    i INTEGER;
+    j INTEGER;
+    v_start INTEGER;
+BEGIN
+    IF p_series NOT IN ('UPPER', 'MIDDLE', 'LOWER') THEN RETURN; END IF;
+
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(p_period, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.high_price ORDER BY x.dt),
+           array_agg(x.low_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_highs, v_lows, v_n
+    FROM (
+        SELECT p.dt, p.high_price, p.low_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    IF v_n IS NULL OR v_n < p_period THEN RETURN; END IF;
+
+    v_start := GREATEST(p_period, v_n - p_point_count + 1);
+    FOR i IN v_start .. v_n LOOP
+        v_upper := NULL;
+        v_lower := NULL;
+        FOR j IN i - p_period + 1 .. i LOOP
+            v_upper := CASE WHEN v_upper IS NULL OR v_highs[j] > v_upper THEN v_highs[j] ELSE v_upper END;
+            v_lower := CASE WHEN v_lower IS NULL OR v_lows[j] < v_lower THEN v_lows[j] ELSE v_lower END;
+        END LOOP;
+        dt := v_dts[i];
+        value := CASE p_series
+            WHEN 'UPPER' THEN v_upper
+            WHEN 'LOWER' THEN v_lower
+            WHEN 'MIDDLE' THEN (v_upper + v_lower) / 2.0
+        END;
+        RETURN NEXT;
+    END LOOP;
+END;
+$$;
+
 -- ATR
 CREATE OR REPLACE FUNCTION calc_ind_atr(
     p_period INTEGER,
@@ -4915,6 +5025,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -4965,6 +5076,9 @@ BEGIN
         WHEN 'BB' THEN
             RETURN QUERY SELECT * FROM calc_ind_bb_array(
                 COALESCE(p_period, 20), COALESCE(p_std_dev, 2.0), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
+        WHEN 'DONCHIAN' THEN
+            RETURN QUERY SELECT * FROM calc_ind_donchian_array(
+                COALESCE(p_period, 20), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
         WHEN 'ATR' THEN
             RETURN QUERY SELECT * FROM calc_ind_atr_array(
                 COALESCE(p_period, 14), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
@@ -5008,6 +5122,7 @@ LANGUAGE plpgsql STABLE AS $$
 BEGIN
     param_period := CASE upper(p_indicator_code)
         WHEN 'RSI' THEN 14 WHEN 'SMA' THEN 20 WHEN 'EMA' THEN 20 WHEN 'BB' THEN 20
+        WHEN 'DONCHIAN' THEN 20
         WHEN 'ATR' THEN 14 WHEN 'STOCH' THEN 14 WHEN 'SMAT3' THEN 20
         WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20 WHEN 'SQUARE' THEN 20
         ELSE 14 END;
@@ -10930,6 +11045,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -13104,6 +13247,7 @@ DECLARE
     v_condition TEXT;
     v_pp NUMERIC;
     v_ind NUMERIC;
+    v_eval_sec INTEGER;
 BEGIN
     ok := FALSE;
     SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
@@ -13121,6 +13265,12 @@ BEGIN
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
 
+    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
+    IF v_eval_sec IS NULL THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
         RETURN NEXT;
@@ -13135,7 +13285,7 @@ BEGIN
 
     SELECT p.close_price INTO v_pp
     FROM prices p
-    WHERE p.security_id = p_security_id
+    WHERE p.security_id = v_eval_sec
       AND p.timeframe_id = p_tf_id
       AND p.dt = p_bar_dt
     LIMIT 1;
@@ -13145,7 +13295,7 @@ BEGIN
     END IF;
 
     v_ind := logic_opt_calc_ind_at(
-        v_sig.indicator_id, v_params, p_security_id, p_tf_id, p_bar_dt
+        v_sig.indicator_id, v_params, v_eval_sec, p_tf_id, p_bar_dt
     );
     IF v_ind IS NULL THEN
         RETURN NEXT;
@@ -14835,6 +14985,53 @@ $$;
 COMMENT ON FUNCTION logic_signal_move_success(TEXT, TEXT, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
 'Успех сигнала: (ход к следующей свече → % годовых в сторону сигнала) >= base_annual_rate_pct';
 
+-- Базовый актив фьючерса (security_prefixes.underlying_security_id).
+CREATE OR REPLACE FUNCTION logic_future_underlying_security_id(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT sp.underlying_security_id
+    FROM security_prefixes sp
+    WHERE sp.security_id = p_security_id
+      AND sp.instrument_market = 'futures'
+      AND sp.underlying_security_id IS NOT NULL
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+$$;
+
+COMMENT ON FUNCTION logic_future_underlying_security_id(INTEGER) IS
+'security_id базового актива для фьючерса; NULL если не futures или нет mapping';
+
+-- На какой security_id считать сигнал: торгуемая бумага или underlying.
+CREATE OR REPLACE FUNCTION logic_signal_eval_security_id(
+    p_signal_id INTEGER,
+    p_trade_security_id INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_acts TEXT;
+    v_und INTEGER;
+BEGIN
+    SELECT COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security')
+    INTO v_acts
+    FROM logic_indicator_signals lis
+    WHERE lis.id = p_signal_id;
+
+    IF v_acts IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF v_acts <> 'base_asset' THEN
+        RETURN p_trade_security_id;
+    END IF;
+
+    v_und := logic_future_underlying_security_id(p_trade_security_id);
+    RETURN v_und; -- NULL → evaluate fails (нет базового актива)
+END;
+$$;
+
+COMMENT ON FUNCTION logic_signal_eval_security_id(INTEGER, INTEGER) IS
+'signal_acts_on=security → trade security; base_asset → underlying (или NULL)';
+
 CREATE OR REPLACE FUNCTION logic_signal_evaluate_at(
     p_signal_id INTEGER,
     p_security_id INTEGER,
@@ -14860,6 +15057,7 @@ DECLARE
     v_series TEXT;
     v_bar RECORD;
     v_condition TEXT;
+    v_eval_sec INTEGER;
 BEGIN
     ok := FALSE;
     SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
@@ -14877,6 +15075,12 @@ BEGIN
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
 
+    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
+    IF v_eval_sec IS NULL THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
         RETURN NEXT;
@@ -14884,7 +15088,7 @@ BEGIN
     END IF;
     v_series := parse_signal_series(v_parsed.params);
     SELECT * INTO v_bar FROM logic_bar_data_at(
-        p_security_id, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
+        v_eval_sec, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
     );
     IF NOT FOUND THEN
         RETURN NEXT;
@@ -15226,15 +15430,24 @@ BEGIN
         END;
 
         FOR v_sig IN
-            SELECT DISTINCT lis.indicator_id
+            SELECT DISTINCT
+                lis.indicator_id,
+                CASE
+                    WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+                        THEN logic_future_underlying_security_id(v_sec.security_id)
+                    ELSE v_sec.security_id
+                END AS eval_sec_id
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
         LOOP
+            IF v_sig.eval_sec_id IS NULL THEN
+                CONTINUE;
+            END IF;
             BEGIN
-                CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
-                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
+                CALL ensure_security_indicator_series(v_sig.eval_sec_id, v_sig.indicator_id);
+                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sig.eval_sec_id);
                 CALL sync_security_indicator_series_for_indicator(
-                    v_sec.security_id,
+                    v_sig.eval_sec_id,
                     v_sig.indicator_id,
                     p_timeframe_id,
                     v_end_dt,
@@ -15247,9 +15460,10 @@ BEGIN
                     p_logic_id,
                     'rating.precalc.indicator.error',
                     format('Предрасчёт: ошибка индикатора sec=%s ind=%s: %s',
-                           v_sec.security_id, v_sig.indicator_id, v_err),
+                           v_sig.eval_sec_id, v_sig.indicator_id, v_err),
                     jsonb_build_object(
-                        'security_id', v_sec.security_id,
+                        'security_id', v_sig.eval_sec_id,
+                        'trade_security_id', v_sec.security_id,
                         'indicator_id', v_sig.indicator_id,
                         'error', v_err
                     ),
@@ -15384,19 +15598,29 @@ BEGIN
                     NULL;
             END;
             FOR v_sig IN
-                SELECT DISTINCT lis.indicator_id
+                SELECT DISTINCT
+                    lis.indicator_id,
+                    CASE
+                        WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+                            THEN logic_future_underlying_security_id(v_sec.security_id)
+                        ELSE v_sec.security_id
+                    END AS eval_sec_id
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
             LOOP
+                IF v_sig.eval_sec_id IS NULL THEN
+                    CONTINUE;
+                END IF;
                 IF indicator_has_closed_bar(
-                    v_sec.security_id, p_timeframe_id, v_sig.indicator_id, p_closed_bar_dt
+                    v_sig.eval_sec_id, p_timeframe_id, v_sig.indicator_id, p_closed_bar_dt
                 ) THEN
                     CONTINUE;
                 END IF;
                 BEGIN
-                    CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
+                    CALL ensure_security_indicator_series(v_sig.eval_sec_id, v_sig.indicator_id);
+                    CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sig.eval_sec_id);
                     CALL sync_security_indicator_series_for_indicator(
-                        v_sec.security_id,
+                        v_sig.eval_sec_id,
                         v_sig.indicator_id,
                         p_timeframe_id,
                         p_closed_bar_dt,
@@ -15409,9 +15633,10 @@ BEGIN
                         PERFORM logic_trade_log(
                             p_logic_id,
                             'trade.indicator.error',
-                            format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sec.security_id, v_err),
+                            format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sig.eval_sec_id, v_err),
                             jsonb_build_object(
-                                'security_id', v_sec.security_id,
+                                'security_id', v_sig.eval_sec_id,
+                                'trade_security_id', v_sec.security_id,
                                 'indicator_id', v_sig.indicator_id,
                                 'error', v_err
                             ),
@@ -15475,6 +15700,37 @@ BEGIN
             END;
         END IF;
 
+        -- Цены базовых активов для signal_acts_on=base_asset
+        IF NOT v_skip_http THEN
+            FOR v_sig IN
+                SELECT DISTINCT logic_future_underlying_security_id(v_sec.security_id) AS und_id
+                FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id
+                  AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+            LOOP
+                IF v_sig.und_id IS NULL OR v_sig.und_id = v_sec.security_id THEN
+                    CONTINUE;
+                END IF;
+                IF prices_have_closed_bar(v_sig.und_id, p_timeframe_id, p_closed_bar_dt) THEN
+                    CONTINUE;
+                END IF;
+                BEGIN
+                    CALL load_prices(
+                        v_sig.und_id,
+                        p_timeframe_id,
+                        prices_topup_date_from(
+                            v_sig.und_id, p_timeframe_id, p_closed_bar_dt, v_date_from
+                        ),
+                        v_date_to
+                    );
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        NULL;
+                END;
+            END LOOP;
+        END IF;
+
         BEGIN
             CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
         EXCEPTION
@@ -15483,19 +15739,29 @@ BEGIN
         END;
 
         FOR v_sig IN
-            SELECT DISTINCT lis.indicator_id
+            SELECT DISTINCT
+                lis.indicator_id,
+                CASE
+                    WHEN COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+                        THEN logic_future_underlying_security_id(v_sec.security_id)
+                    ELSE v_sec.security_id
+                END AS eval_sec_id
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
         LOOP
+            IF v_sig.eval_sec_id IS NULL THEN
+                CONTINUE;
+            END IF;
             IF indicator_has_closed_bar(
-                v_sec.security_id, p_timeframe_id, v_sig.indicator_id, p_closed_bar_dt
+                v_sig.eval_sec_id, p_timeframe_id, v_sig.indicator_id, p_closed_bar_dt
             ) THEN
                 CONTINUE;
             END IF;
             BEGIN
-                CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
+                CALL ensure_security_indicator_series(v_sig.eval_sec_id, v_sig.indicator_id);
+                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sig.eval_sec_id);
                 CALL sync_security_indicator_series_for_indicator(
-                    v_sec.security_id,
+                    v_sig.eval_sec_id,
                     v_sig.indicator_id,
                     p_timeframe_id,
                     p_closed_bar_dt,
@@ -15508,9 +15774,10 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'trade.indicator.error',
-                        format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sec.security_id, v_err),
+                        format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sig.eval_sec_id, v_err),
                         jsonb_build_object(
-                            'security_id', v_sec.security_id,
+                            'security_id', v_sig.eval_sec_id,
+                            'trade_security_id', v_sec.security_id,
                             'indicator_id', v_sig.indicator_id,
                             'error', v_err
                         ),
@@ -16869,6 +17136,37 @@ BEGIN
         );
     END IF;
 
+    -- Цены базовых активов для signal_acts_on=base_asset
+    FOR v_ind IN
+        SELECT DISTINCT logic_future_underlying_security_id(p_security_id) AS und_id
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+    LOOP
+        IF v_ind.und_id IS NULL OR v_ind.und_id = p_security_id THEN
+            CONTINUE;
+        END IF;
+        IF backtest_prices_cached(
+            v_ind.und_id, p_tf_id, p_warmup_from, p_date_from, p_date_to, 20
+        ) THEN
+            CONTINUE;
+        END IF;
+        BEGIN
+            CALL load_prices(v_ind.und_id, p_tf_id, p_warmup_from, p_date_to);
+        EXCEPTION WHEN OTHERS THEN
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.prices.error', SQLERRM,
+                jsonb_build_object(
+                    'security_id', v_ind.und_id,
+                    'trade_security_id', p_security_id,
+                    'role', 'base_asset'
+                ),
+                p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
+
     -- Apply @CODE(...period/std_dev...) from signals onto series BEFORE cache skip,
     -- otherwise indicator_values stay on old defaults (e.g. std_dev=2).
     CREATE TEMP TABLE IF NOT EXISTS _bt_ind_fp (
@@ -16986,11 +17284,47 @@ BEGIN
             );
         END;
     END LOOP;
+
+    -- Индикаторы на базовом активе (signal_acts_on=base_asset)
+    FOR v_ind IN
+        SELECT DISTINCT
+            lis.indicator_id,
+            logic_future_underlying_security_id(p_security_id) AS eval_sec_id
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+    LOOP
+        IF v_ind.eval_sec_id IS NULL OR v_ind.eval_sec_id = p_security_id THEN
+            CONTINUE;
+        END IF;
+        BEGIN
+            CALL ensure_security_indicator_series(v_ind.eval_sec_id, v_ind.indicator_id);
+            CALL logic_apply_indicator_params_from_signals(p_logic_id, v_ind.eval_sec_id);
+            CALL sync_security_indicator_series_for_indicator(
+                v_ind.eval_sec_id, v_ind.indicator_id, p_tf_id, p_end_dt, p_point_count, FALSE
+            );
+            p_ind_synced := p_ind_synced + 1;
+        EXCEPTION WHEN OTHERS THEN
+            p_ind_errors := p_ind_errors + 1;
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+                jsonb_build_object(
+                    'security_id', v_ind.eval_sec_id,
+                    'trade_security_id', p_security_id,
+                    'indicator_id', v_ind.indicator_id,
+                    'role', 'base_asset'
+                ),
+                p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
 END;
 $$;
 
 COMMENT ON PROCEDURE logic_backtest_ensure_security_data IS
-'Backtest: load_prices if needed; apply signal formula params; sync indicators (skip cache only if params unchanged).';
+'Backtest: load_prices if needed; apply signal formula params; sync indicators (skip cache only if params unchanged). '
+'Also loads/syncs base_asset underlyings for futures signals.';
 
 CREATE OR REPLACE FUNCTION logic_backtest_update_run(
     p_run_id BIGINT,
@@ -20518,6 +20852,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

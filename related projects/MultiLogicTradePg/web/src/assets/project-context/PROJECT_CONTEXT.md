@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — Crypt v1.22 thinner pen in Note mode; Equity resume short MTM
+**Последнее обновление:** 2026-07-31 — Futures signal_acts_on + DONCHIAN Price Channel; seed Price Channel Fuge and LNREG Base Asset
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,17 @@
 ---
 
 ## Что сделано (актуально на 2026-07-31)
+
+### 2026-07-31 (Futures: сигнал «Действует на» + Price Channel / DONCHIAN)
+
+- Колонка `logic_indicator_signals.signal_acts_on`: `security` (по умолчанию) | `base_asset`.
+- `security_prefixes.underlying_security_id` + mapping (SBRF→SBER, GAZR→GAZP, CR→CNYRUBF, Si→USDRUBF, …).
+- **DONCHIAN** = Price Channel (Tun-Chan/Дончиан): calc UPPER/MIDDLE/LOWER; UI name «Price Channel (Donchian)».
+- Оценка/sync/backtest: индикаторы и цены для `base_asset` берутся с underlying.
+- UI: колонка «Действует на»; график бумаги + график базового актива (бой и тест).
+- Seed-логика **Price Channel Fuge and LNREG Base Asset**: DONCHIAN counter на фьючерсе + LINREG Fade на базе; все futures-префиксы.
+- Схема **v57**.
+- Installers: bump к **v1.0.110** при выкладке.
 
 ### 2026-07-31 (Crypt v1.22 — тоньше перо в режиме Заметка)
 
@@ -981,6 +992,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-31 | Futures signal_acts_on + DONCHIAN Price Channel; seed Price Channel Fuge + LNREG Base |
 | 2026-07-31 | Crypt v1.22: thinner pen/eraser in Note (picture) mode for tablet stylus |
 | 2026-07-31 | Equity: portfolio equity − short MTM; chart headroom; resume target null-safe; (цель 26801) |
 | 2026-07-30 | Crypt v1.21: decrypt note onto edit canvas + pen/eraser; merge main → Pages |

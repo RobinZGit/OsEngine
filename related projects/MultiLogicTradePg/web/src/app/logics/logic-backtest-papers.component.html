@@ -143,6 +143,39 @@
                         полоса PnL внизу · ⟸сд./сд.⟹ · ⛶
                       </p>
                     }
+                    @if (
+                      paper.underlying_security_id &&
+                      paper.underlying_security_id !== paper.security_id &&
+                      hasChartCandles(paper.underlying_security_id)
+                    ) {
+                      <p class="paper-chart-status" style="margin-top: 0.75rem">
+                        Базовый актив:
+                        {{ paper.underlying_prefix || paper.underlying_security_name }}
+                      </p>
+                      <div class="paper-chart-host">
+                        <app-price-chart
+                          [title]="
+                            'База: ' +
+                            (paper.underlying_prefix || paper.underlying_security_name || '')
+                          "
+                          [securityId]="paper.underlying_security_id"
+                          [candles]="chartState(paper.underlying_security_id).candles"
+                          [indicatorSeries]="chartIndicatorsForDisplay(paper.underlying_security_id)"
+                          [tradeMarkers]="[]"
+                          [stopMarkers]="[]"
+                          [shadedRanges]="[]"
+                          [equityPoints]="[]"
+                          [focusDt]="chartState(paper.underlying_security_id).focusDt"
+                          focusAlign="start"
+                          [loading]="false"
+                          [loadingOlder]="chartState(paper.underlying_security_id).loadingOlder"
+                          [showRecalcButton]="false"
+                          [error]="null"
+                          (loadOlder)="onLoadOlder(paper.underlying_security_id!)"
+                          (visibleRangeChange)="onVisibleRange(paper.underlying_security_id!, $event)"
+                        />
+                      </div>
+                    }
                   }
 
                   @if (logicId) {

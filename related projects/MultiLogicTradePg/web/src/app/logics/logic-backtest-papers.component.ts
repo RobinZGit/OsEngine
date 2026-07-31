@@ -136,6 +136,13 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   @Input() initialBalance: number | null = null;
   /** Денежный фонд (TMON/LQDT/SBMM) — всегда первой строкой в списке бумаг. */
   @Input() pinnedPaper: BacktestPaperRow | null = null;
+  /** Мета бумаг логики (underlying для фьючерсов → второй график). */
+  @Input() logicSecurities: Array<{
+    security_id: number;
+    underlying_security_id?: number | null;
+    underlying_security_name?: string | null;
+    underlying_prefix?: string | null;
+  }> = [];
 
   get isLive(): boolean {
     return this.mode === 'live';
@@ -166,7 +173,12 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     }
     const periodChanged =
       !!changes['dateFrom'] || !!changes['dateTo'] || !!changes['runId'];
-    if (changes['trades'] || periodChanged || changes['pinnedPaper']) {
+    if (
+      changes['trades'] ||
+      periodChanged ||
+      changes['pinnedPaper'] ||
+      changes['logicSecurities']
+    ) {
       this.rebuildPaperCache({ reloadCharts: periodChanged });
     } else if (changes['reloadToken'] && this.expandedPapers) {
       // Бой: poll обновляет token — подтянуть текущие цены для «сум.» / «цена».
@@ -245,7 +257,14 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     );
     this.chartTick++;
     this.cdr.detectChanges();
-    setTimeout(() => this.ensureChartLoaded(securityId), 0);
+    setTimeout(() => {
+      this.ensureChartLoaded(securityId);
+      const undId = this.paperRows.find((p) => p.security_id === securityId)
+        ?.underlying_security_id;
+      if (undId != null && Number(undId) > 0 && Number(undId) !== securityId) {
+        this.ensureChartLoaded(Number(undId));
+      }
+    }, 0);
   }
 
   /** Есть свечи — для @if (OnPush стабильнее, чем читать Map в шаблоне много раз). */
@@ -425,6 +444,25 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
       this.dateTo,
       this.pinnedPaper
     );
+    const undMap = new Map(
+      (this.logicSecurities || [])
+        .filter((s) => s.underlying_security_id != null)
+        .map((s) => [
+          Number(s.security_id),
+          {
+            underlying_security_id: Number(s.underlying_security_id),
+            underlying_security_name: s.underlying_security_name ?? null,
+            underlying_prefix: s.underlying_prefix ?? null,
+          },
+        ])
+    );
+    for (const paper of this.paperRows) {
+      const und = undMap.get(Number(paper.security_id));
+      if (!und) continue;
+      paper.underlying_security_id = und.underlying_security_id;
+      paper.underlying_security_name = und.underlying_security_name;
+      paper.underlying_prefix = und.underlying_prefix;
+    }
     if (this.expandedPapers) {
       this.refreshOpenMarkValues();
     }

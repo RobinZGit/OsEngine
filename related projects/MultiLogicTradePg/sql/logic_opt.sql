@@ -603,6 +603,7 @@ DECLARE
     v_condition TEXT;
     v_pp NUMERIC;
     v_ind NUMERIC;
+    v_eval_sec INTEGER;
 BEGIN
     ok := FALSE;
     SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
@@ -620,6 +621,12 @@ BEGIN
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
 
+    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
+    IF v_eval_sec IS NULL THEN
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
         RETURN NEXT;
@@ -634,7 +641,7 @@ BEGIN
 
     SELECT p.close_price INTO v_pp
     FROM prices p
-    WHERE p.security_id = p_security_id
+    WHERE p.security_id = v_eval_sec
       AND p.timeframe_id = p_tf_id
       AND p.dt = p_bar_dt
     LIMIT 1;
@@ -644,7 +651,7 @@ BEGIN
     END IF;
 
     v_ind := logic_opt_calc_ind_at(
-        v_sig.indicator_id, v_params, p_security_id, p_tf_id, p_bar_dt
+        v_sig.indicator_id, v_params, v_eval_sec, p_tf_id, p_bar_dt
     );
     IF v_ind IS NULL THEN
         RETURN NEXT;

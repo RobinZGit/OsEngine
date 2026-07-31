@@ -744,7 +744,8 @@ app.post('/api/logics/:id/opt-grid-apply-best', async (req, res) => {
       `
       SELECT
         lis.id, lis.logic_id, lis.indicator_id, lis.position_event, lis.position_side,
-        lis.signal_kind, lis.formula, lis.rating, lis.rating_test, lis.display_order, lis.is_active,
+        lis.signal_kind, COALESCE(lis.signal_acts_on, 'security') AS signal_acts_on,
+        lis.formula, lis.rating, lis.rating_test, lis.display_order, lis.is_active,
         i.code AS indicator_code, i.name AS indicator_name
       FROM logic_indicator_signals lis
       JOIN indicators i ON i.id = lis.indicator_id
@@ -934,6 +935,7 @@ app.get('/api/logic-indicator-signals', async (req, res) => {
         lis.position_event,
         lis.position_side,
         lis.signal_kind,
+        COALESCE(lis.signal_acts_on, 'security') AS signal_acts_on,
         lis.formula,
         lis.rating,
         lis.rating_test,
@@ -1068,6 +1070,8 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
   const positionEvent = req.body?.position_event;
   const positionSide = req.body?.position_side;
   const signalKind = req.body?.signal_kind;
+  const signalActsOn =
+    req.body?.signal_acts_on === 'base_asset' ? 'base_asset' : 'security';
   const formula = btrimStr(req.body?.formula);
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
@@ -1111,14 +1115,14 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
     const { rows } = await pool.query(
       `
       INSERT INTO logic_indicator_signals
-        (logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind) DO UPDATE SET
+        (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on) DO UPDATE SET
         formula = EXCLUDED.formula,
         is_active = TRUE
-      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, formula, rating, rating_test, display_order, is_active
+      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, rating, rating_test, display_order, is_active
     `,
-      [logicId, indicatorId, positionEvent, positionSide, signalKind, formula, displayOrder]
+      [logicId, indicatorId, positionEvent, positionSide, signalKind, signalActsOn, formula, displayOrder]
     );
     const row = rows[0];
     const { rows: meta } = await pool.query(
@@ -1136,6 +1140,12 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
   const id = Number(req.params.id);
   const formula = btrimStr(req.body?.formula);
   const isActive = req.body?.is_active;
+  const hasActsOn = Object.prototype.hasOwnProperty.call(req.body || {}, 'signal_acts_on');
+  const signalActsOn = hasActsOn
+    ? req.body?.signal_acts_on === 'base_asset'
+      ? 'base_asset'
+      : 'security'
+    : null;
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Invalid id' });
     return;
@@ -1170,11 +1180,12 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
       `
       UPDATE logic_indicator_signals
       SET formula = $2,
-          is_active = COALESCE($3::boolean, is_active)
+          is_active = COALESCE($3::boolean, is_active),
+          signal_acts_on = COALESCE($4::varchar, signal_acts_on)
       WHERE id = $1
-      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, formula, rating, rating_test, display_order, is_active
+      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, rating, rating_test, display_order, is_active
     `,
-      [id, formula, isActive === undefined ? null : isActive]
+      [id, formula, isActive === undefined ? null : isActive, signalActsOn]
     );
     const row = rows[0];
     const { rows: meta } = await pool.query(
@@ -1431,18 +1442,29 @@ const LOGIC_SECURITY_SELECT = `
     st.name AS security_type,
     sp.prefix,
     sp.instrument_market,
+    sp.underlying_security_id,
+    und.name AS underlying_security_name,
+    und_sp.prefix AS underlying_prefix,
     sp.exchange_id,
     e.name AS exchange_name
   FROM logic_securities ls
   JOIN securities s ON s.id = ls.security_id
   JOIN security_types st ON st.id = s.security_type_id
   LEFT JOIN LATERAL (
-    SELECT prefix, instrument_market, exchange_id
+    SELECT prefix, instrument_market, exchange_id, underlying_security_id
     FROM security_prefixes
     WHERE security_id = s.id
     ORDER BY exchange_id
     LIMIT 1
   ) sp ON TRUE
+  LEFT JOIN securities und ON und.id = sp.underlying_security_id
+  LEFT JOIN LATERAL (
+    SELECT prefix
+    FROM security_prefixes
+    WHERE security_id = und.id
+    ORDER BY exchange_id
+    LIMIT 1
+  ) und_sp ON TRUE
   LEFT JOIN exchanges e ON e.id = sp.exchange_id
 `;
 

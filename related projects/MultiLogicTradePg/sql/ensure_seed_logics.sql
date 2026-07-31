@@ -87,7 +87,11 @@ BEGIN
         ('SuperTrend CMO Fade', NULL),
         ('Force Index Fade', NULL),
         ('BB StdDev Fade', NULL),
-        ('BB Volume Fade', NULL)
+        ('BB Volume Fade', NULL),
+        (
+            'Price Channel Fuge and LNREG Base Asset',
+            'Фьючерсы: DONCHIAN (Price Channel) на фьючерсе + LINREG Fade на базовом активе.'
+        )
     ) AS v(name, note)
     ON CONFLICT (name) DO NOTHING;
 
@@ -115,7 +119,8 @@ BEGIN
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
-        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
+        'Price Channel Fuge and LNREG Base Asset'
     )
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
@@ -220,9 +225,44 @@ BEGIN
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
-        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
+        'Price Channel Fuge and LNREG Base Asset'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.signal_acts_on, v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('DONCHIAN', 'open',  'long',  'counter', 'security',   '@DONCHIAN(period=20,series=LOWER) pp <= VALUE', 0),
+        ('LINREG',   'open',  'long',  'counter', 'base_asset', '@LINREG(period=20,std_dev=2,series=LOWER) pp <= VALUE', 1),
+        ('DONCHIAN', 'close', 'long',  'trend',   'security',   '@DONCHIAN(period=20,series=MIDDLE) pp >= VALUE', 2),
+        ('LINREG',   'close', 'long',  'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp >= VALUE', 3),
+        ('DONCHIAN', 'open',  'short', 'counter', 'security',   '@DONCHIAN(period=20,series=UPPER) pp >= VALUE', 4),
+        ('LINREG',   'open',  'short', 'counter', 'base_asset', '@LINREG(period=20,std_dev=2,series=UPPER) pp >= VALUE', 5),
+        ('DONCHIAN', 'close', 'short', 'trend',   'security',   '@DONCHIAN(period=20,series=MIDDLE) pp <= VALUE', 6),
+        ('LINREG',   'close', 'short', 'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 7)
+    ) AS v(ind_code, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+    SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1, TRUE
+    FROM logics l
+    CROSS JOIN LATERAL (
+        SELECT DISTINCT ON (s.id)
+            s.id AS security_id,
+            COALESCE(sp.prefix, s.name) AS sort_key
+        FROM securities s
+        JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'futures'
+        ORDER BY s.id, sp.prefix
+    ) q
+    WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+      AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
+    ON CONFLICT (logic_id, security_id) DO NOTHING;
 
     SELECT COUNT(*) INTO v_opt_count
     FROM logics

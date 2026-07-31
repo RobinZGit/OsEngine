@@ -158,6 +158,8 @@ export interface LogicIndicatorSignalRow {
   position_event: 'open' | 'close';
   position_side: 'long' | 'short';
   signal_kind: 'trend' | 'counter';
+  /** security = торгуемая бумага; base_asset = базовый актив фьючерса */
+  signal_acts_on?: 'security' | 'base_asset';
   formula: string;
   /** Боевой рейтинг сигнала на логике (не справочник indicators). */
   rating: number;
@@ -202,6 +204,9 @@ export interface LogicSecurityRow {
   security_type: string;
   prefix: string | null;
   instrument_market: string | null;
+  underlying_security_id?: number | null;
+  underlying_security_name?: string | null;
+  underlying_prefix?: string | null;
   exchange_id: number | null;
   exchange_name: string | null;
   real_trading_paused?: boolean;

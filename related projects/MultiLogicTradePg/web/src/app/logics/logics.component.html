@@ -1250,6 +1250,8 @@
                         Тип сигнала: <strong>по течению</strong> (follow / пробой / импульс) или
                         <strong>против</strong> (fade / возврат от края). Не смешивайте в одном AND
                         пробой и mean-reversion — сделок почти не будет.
+                        Колонка <strong>Действует на</strong>: «Бумага» — торгуемый инструмент;
+                        «Базовый актив» — underlying фьючерса (Price Channel / LINREG на споте или вечном).
                         «Рейтинг» — сумма боевых оценок сигнала по всем бумагам логики
                         (не зависит от сделок; не тестовый рейтинг). Разверните строку сигнала —
                         список бумаг и график.
@@ -1398,6 +1400,8 @@
 
                             <th>Индикатор</th>
 
+                            <th title="На какой цене/индикаторе считается сигнал">Действует на</th>
+
                             <th
                               title="Сумма боевых рейтингов сигнала по всем бумагам логики"
                             >Рейтинг</th>
@@ -1481,6 +1485,19 @@
 
                                 <span class="sig-ind-name">{{ sig.indicator_name }}</span>
 
+                              </td>
+
+                              <td class="col-sig-acts-on">
+                                <select
+                                  class="sig-acts-select"
+                                  [ngModel]="sig.signal_acts_on || 'security'"
+                                  [disabled]="isFormulaSaving(sig.id)"
+                                  (ngModelChange)="onSignalActsOnChange(sig, $event)"
+                                  title="Бумага = торгуемый инструмент; Базовый актив = underlying фьючерса"
+                                >
+                                  <option value="security">Бумага</option>
+                                  <option value="base_asset">Базовый актив</option>
+                                </select>
                               </td>
 
                               <td
@@ -2258,6 +2275,7 @@
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [tbankTokenAlert]="tbankTokenAlert"
                         [pinnedPaper]="cashFundPinnedPaper(row)"
+                        [logicSecurities]="securitiesFor(row.id)"
                         (toggleBlock)="toggleTradesBlock(row.id)"
                         (closeAll)="closeAllPositionsAtMarket(row.id)"
                         (exportTrades)="exportLogicTrades(row.id, false)"
@@ -2283,6 +2301,7 @@
                         [timeframeId]="timeframeIdForLogic(row)"
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [pinnedPaper]="cashFundPinnedPaper(row)"
+                        [logicSecurities]="securitiesFor(row.id)"
                         [signalFormulas]="signalFormulasFor(row.id)"
                         (toggleBlock)="toggleTestTradesBlock(row.id)"
                         (startBacktest)="startBacktestRun(row.id, $event)"

@@ -2752,6 +2752,38 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return parsed.errors[0] ?? 'Неверный формат';
   }
 
+  onSignalActsOnChange(
+    signal: LogicIndicatorSignalRow,
+    next: 'security' | 'base_asset' | string
+  ): void {
+    const actsOn = next === 'base_asset' ? 'base_asset' : 'security';
+    if ((signal.signal_acts_on || 'security') === actsOn || this.savingFormulaIds.has(signal.id)) {
+      return;
+    }
+    this.savingFormulaIds.add(signal.id);
+    this.logicsService
+      .updateLogicIndicatorSignal(signal.id, {
+        formula: this.formulaDraft(signal).trim() || signal.formula,
+        signal_acts_on: actsOn,
+      })
+      .subscribe({
+        next: (updated) => {
+          const list = this.logicSignals.get(signal.logic_id) ?? [];
+          this.logicSignals.set(
+            signal.logic_id,
+            list.map((s) => (s.id === updated.id ? updated : s))
+          );
+          this.formulaDrafts.set(updated.id, updated.formula);
+          this.savingFormulaIds.delete(signal.id);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.savingFormulaIds.delete(signal.id);
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
   saveSignalFormula(signal: LogicIndicatorSignalRow): void {
     const draft = this.formulaDraft(signal).trim();
     if (!draft || draft === signal.formula || this.savingFormulaIds.has(signal.id)) {
