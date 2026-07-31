@@ -125,7 +125,7 @@
 - Убран целевой `DELETE` имён Futures Price Channel / Fuge из `01` + `ensure_seed_logics`.
 - Seed этих логик **по-прежнему не ставится** (нет в INSERT); уже существующие в БД инсталлятор **не трогает**.
 - Contango / base_asset / DONCHIAN без изменений.
-- Схема **v61**. Installers **v1.0.115**.
+- Схема **v61**. Installers **v1.0.116**.
 
 ### 2026-07-31 (убран seed Futures Price Channel)
 
