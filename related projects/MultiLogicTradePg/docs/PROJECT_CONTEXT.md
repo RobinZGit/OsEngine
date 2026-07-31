@@ -1029,7 +1029,7 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-07-31 | Drop intentional DELETE of Futures Price Channel seeds; v61 / v1.0.115 |
+| 2026-07-31 | Drop intentional DELETE of Futures Price Channel seeds; v61 / v1.0.116 |
 | 2026-07-31 | Remove seed Futures Price Channel; keep contango/base_asset; v60 / v1.0.114 |
 | 2026-07-31 | signal_acts_on=contango (fut−und price series); v59 / v1.0.113 |
 | 2026-07-31 | Backtest price tips: chunked ~30d load + full phase_detail; v1.0.112 |
