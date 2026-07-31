@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+803. You don't need to remove the contango, you just need to remove the logic, and leave all calculations with indicators, all the possibilities that are in the contango, and so on.
+
+802. Remove the last feature logic, it showed a bad result. Remove it from the installers, well, from everywhere, from the logic by default, so that it is not there. And put everything in the repository. (уточнение: убрать seed-логику, contango и расчёты оставить)
+
 801. Add one more type to the new type of signal on the logic of paper and the basic asset. Contango of paper and the basic asset. And, accordingly, it should react, it should make a difference, and this difference is used as a mass of prices, this indicator, and work according to its standard logic. Immediately put out the repositories.
 
 800. He writes in the tips, natural gas, for a long time, for a long time, probably no longer refers to this, the current period, look, maybe somehow the tips are more fragmented, more broken

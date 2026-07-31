@@ -1,10 +1,10 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v59 (идемпотентный запуск)
+-- Версия: v60 (идемпотентный запуск)
+-- v60: убран seed «Futures Price Channel and LNREG Base Asset» (contango/base_asset/DONCHIAN остаются)
 -- v59: signal_acts_on += contango (синтет. ряд fut−und); таблица contango_securities
 -- v58: rename seed «Futures Price Channel…» (было Fuge); sell_futures_before_expiry / days
--- v57: signal_acts_on (security|base_asset); underlying_security_id у futures;
---      DONCHIAN = Price Channel calc; seed Futures Price Channel + LNREG Base Asset
+-- v57: signal_acts_on (security|base_asset); underlying_security_id у futures; DONCHIAN
 -- v56: seed «LinReg Fade Twice Optimized» — OPT(std_dev,10)+OPT(period,10)
 -- v54: install-on-top ensure всех seed-логик (в т.ч. LinReg Fade Optimized); бумаги Optimized после назначения LinReg Fade
 --      + sql/ensure_seed_logics.sql (post-01, installer проверяет наличие LinReg Fade Optimized)
@@ -2848,90 +2848,13 @@ ON CONFLICT (logic_id, security_id) DO UPDATE SET
     display_order = EXCLUDED.display_order;
 
 -- =====================================================================
--- v57/v58: Price Channel (DONCHIAN) on futures + LINREG Fade on base asset
+-- v60: убрать seed Futures Price Channel… (инфраструктура DONCHIAN/base_asset/contango остаётся)
 -- =====================================================================
--- Upgrade: опечатка Fuge → Futures (уже установленные БД после v57)
-UPDATE logics
-SET name = 'Futures Price Channel and LNREG Base Asset',
-    note = 'Фьючерсы: Price Channel (DONCHIAN) counter на самом фьючерсе + LINREG Fade counter на базовом активе (AND).'
-WHERE name = 'Price Channel Fuge and LNREG Base Asset';
-
-INSERT INTO logics (name, account_id, is_enabled, note)
-SELECT
+DELETE FROM logics
+WHERE name IN (
     'Futures Price Channel and LNREG Base Asset',
-    a.id,
-    FALSE,
-    'Фьючерсы: Price Channel (DONCHIAN) counter на самом фьючерсе + LINREG Fade counter на базовом активе (AND).'
-FROM accounts a
-JOIN brokers b ON b.id = a.broker_id
-WHERE b.code = 'T-BANK'
-  AND (a.account_code = 'FAKE-EFF-001' OR lower(a.account_type::text) = 'fake')
-  AND NOT EXISTS (
-      SELECT 1 FROM logics z WHERE z.name = 'Futures Price Channel and LNREG Base Asset'
-  )
-ORDER BY CASE WHEN a.account_code = 'FAKE-EFF-001' THEN 0 ELSE 1 END, a.id
-LIMIT 1;
-
-INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
-SELECT l.id, v.param_key, v.param_value, v.value_type
-FROM logics l
-CROSS JOIN (VALUES
-    ('timeframe', 'M15', 'text'),
-    ('position_size_pct', '10', 'number'),
-    ('max_open_positions', '3', 'integer'),
-    ('initial_balance', '1000000', 'money'),
-    ('current_balance', '1000000', 'money'),
-    ('commission_pct', '0.03', 'number'),
-    ('cost_method', 'FIFO', 'text'),
-    ('sell_futures_before_expiry', 'true', 'boolean'),
-    ('sell_futures_days_before_expiry', '3', 'integer')
-) AS v(param_key, param_value, value_type)
-WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
-  AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
-ON CONFLICT (logic_id, param_key) DO NOTHING;
-
-INSERT INTO logic_indicator_signals (
-    logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, display_order
-)
-SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.signal_acts_on, v.formula, v.display_order
-FROM logics l
-CROSS JOIN (VALUES
-    ('DONCHIAN', 'open',  'long',  'counter', 'security',   '@DONCHIAN(period=20,series=LOWER) pp <= VALUE', 0),
-    ('LINREG',   'open',  'long',  'counter', 'base_asset', '@LINREG(period=20,std_dev=2,series=LOWER) pp <= VALUE', 1),
-    ('DONCHIAN', 'close', 'long',  'trend',   'security',   '@DONCHIAN(period=20,series=MIDDLE) pp >= VALUE', 2),
-    ('LINREG',   'close', 'long',  'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp >= VALUE', 3),
-    ('DONCHIAN', 'open',  'short', 'counter', 'security',   '@DONCHIAN(period=20,series=UPPER) pp >= VALUE', 4),
-    ('LINREG',   'open',  'short', 'counter', 'base_asset', '@LINREG(period=20,std_dev=2,series=UPPER) pp >= VALUE', 5),
-    ('DONCHIAN', 'close', 'short', 'trend',   'security',   '@DONCHIAN(period=20,series=MIDDLE) pp <= VALUE', 6),
-    ('LINREG',   'close', 'short', 'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 7)
-) AS v(ind_code, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
-JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
-  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
-
-INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
-SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1, TRUE
-FROM logics l
-CROSS JOIN LATERAL (
-    SELECT DISTINCT ON (s.id)
-        s.id AS security_id,
-        COALESCE(sp.prefix, s.name) AS sort_key
-    FROM securities s
-    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'futures'
-    ORDER BY s.id, sp.prefix
-) q
-WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
-ON CONFLICT (logic_id, security_id) DO NOTHING;
-
-INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
-SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
-FROM logics l
-CROSS JOIN (VALUES
-    ('stop_loss',   'security_resume', 1.0, 'percent', 0),
-    ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
-) AS v(rule_kind, scope_type, value, value_unit, display_order)
-WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
-  AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
+    'Price Channel Fuge and LNREG Base Asset'
+);
 
 -- Стопы seed: insert only if empty
 
