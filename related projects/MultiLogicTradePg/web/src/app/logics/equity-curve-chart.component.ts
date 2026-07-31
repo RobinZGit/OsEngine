@@ -211,7 +211,8 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
     const seriesMax = values.length ? Math.max(0, ...values) : 0;
     const seriesMin = values.length ? Math.min(0, ...values) : 0;
     const span = Math.max(seriesMax - seriesMin, 1);
-    // Не раздувать шкалу «целью 2680», если shadow ещё у нуля — иначе кривая прилипает к низу.
+    // Не раздувать шкалу далёкой целью — иначе кривая прилипает к низу.
+    // Но всегда оставляем запас сверху, чтобы пик серии не совпадал с «целью ↑» на кромке.
     let resumeOutOfScale = false;
     let vMin = seriesMin;
     let vMax = seriesMax;
@@ -233,6 +234,9 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
       vMax += 1;
       vMin -= 1;
     }
+    const padSpan = Math.max(vMax - vMin, 1);
+    vMax += Math.max(padSpan * 0.12, 8);
+    vMin -= Math.max(padSpan * 0.06, 4);
     const padL = 48;
     const padR = 10;
     const padT = 10;
@@ -278,7 +282,8 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
         this.shadowTotal.length > 0
           ? Number(this.shadowTotal[this.shadowTotal.length - 1].value)
           : 0;
-      const yDraw = resumeOutOfScale ? padT + 1 : yOf(resumeY);
+      // Вне шкалы — у верхней кромки, но с зазором (не вплотную к padT).
+      const yDraw = resumeOutOfScale ? padT + Math.max(14, plotH * 0.08) : yOf(resumeY);
       ctx.strokeStyle = '#d97706';
       ctx.lineWidth = 1.75;
       ctx.setLineDash([10, 5]);

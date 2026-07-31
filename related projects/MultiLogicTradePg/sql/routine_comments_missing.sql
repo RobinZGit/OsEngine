@@ -132,7 +132,7 @@ COMMENT ON FUNCTION logic_portfolio_drawdown_pct IS
   'Просадка портфеля логики, %.';
 
 COMMENT ON FUNCTION logic_portfolio_equity IS
-  'Эквити портфеля логики (баланс ± позиции).';
+  'Эквити портфеля логики (бой): cash + long×price − short×price (как в бэктесте).';
 
 COMMENT ON FUNCTION logic_security_drawdown_pct IS
   'Просадка по бумаге в боевом режиме, %.';

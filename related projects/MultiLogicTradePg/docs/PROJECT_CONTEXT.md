@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-30 — Crypt v1.21 + fix Pages deploy (CSS budget); Pages main
+**Последнее обновление:** 2026-07-31 — Equity resume goal (short MTM + chart headroom); Crypt v1.21 on Pages
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,16 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-30)
+## Что сделано (актуально на 2026-07-31)
+
+### 2026-07-31 (Equity: цель 26801 / «пик прилип к бару» — short MTM + headroom)
+
+- Проблема (логика 1720, export): цель возобновления прыгала до **~26801** при реальном провале ~сотни; shadow не догоняет; пик пунктира визуально «упирается» в оранжевую линию на самой верхней кромке.
+- Причина SQL: `logic_portfolio_equity` считал только **cash + long×price**, без **− short×price**. При открытых шортах cash раздут выручкой; после mass-close `track_before − track_after` ≈ нотионал шортов → завышенная `portfolio_stop_resume_*`.
+- Фикс SQL: `logic_portfolio_equity` = cash + long×price − short×price (как `logic_backtest_portfolio_equity`); `sql/logic_stop_runner.sql` + `02` + COMMENT.
+- UI: запас по Y над/под серией; цель вне шкалы не на самом padT; `portfolioShadowResumeTarget` не трактует `null` baseline как 0 (`Number(null)`).
+- Уже записанная «цель 26801» в БД сама не исправится — нужна **новая пауза** после применения SQL (или сброс `portfolio_stop_resume_*`).
+- Installers: bump к **v1.0.109** при выкладке.
 
 ### 2026-07-30 (Crypt v1.21 — decrypt на холст + перо/ластик)
 
@@ -967,6 +976,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-31 | Equity: portfolio equity − short MTM; chart headroom; resume target null-safe; (цель 26801) |
 | 2026-07-30 | Crypt v1.21: decrypt note onto edit canvas + pen/eraser; merge main → Pages |
 | 2026-07-30 | Equity: resume target no scale crush; shadow PnL since pause; installers 107 |
 | 2026-07-30 | Equity: horizontal resume target line while portfolio in shadow; installers 106 |
@@ -1209,4 +1219,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **787** — short Key blocks Refresh; **786** — Refresh decrypt-only; **785** — RU/EN brand row.
+Последние (см. USER_INSTRUCTIONS): **795** — resume goal jumps / equity stuck on bar; **794** — Crypt V20; **793** — decrypt onto canvas + eraser.

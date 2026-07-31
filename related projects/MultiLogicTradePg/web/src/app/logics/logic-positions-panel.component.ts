@@ -579,8 +579,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
   private portfolioShadowResumeTarget(): number | null {
     if (this.isTest) return null;
     if (!this.logicRow?.portfolio_trading_paused) return null;
-    const target = Number(this.logicRow.portfolio_stop_resume_equity);
-    const baseline = Number(this.logicRow.portfolio_stop_resume_baseline);
+    const rawT = this.logicRow.portfolio_stop_resume_equity;
+    const rawB = this.logicRow.portfolio_stop_resume_baseline;
+    // Number(null) === 0 — иначе «цель» = абсолютный resume_equity без baseline.
+    if (rawT == null || rawB == null) return null;
+    const target = Number(rawT);
+    const baseline = Number(rawB);
     if (!Number.isFinite(target) || !Number.isFinite(baseline)) return null;
     return target - baseline;
   }

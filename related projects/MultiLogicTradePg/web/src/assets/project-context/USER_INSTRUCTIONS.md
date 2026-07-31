@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+795. Look why the goal of reaching the briefcase seems to move up and down Last time there was some other goal Everything can't reach this goal And the highest point of equity for some reason rests on this bar And it can't step over it And also, for some reason, this top bar is located at the very top It can make some kind of access from above, but not to the very end To.. + export multilogic-trades-export logic 1720 (цель 26801 · сейчас 45.7).
+
 794. The version remains V20, you did not put it out? Look why it, it somehow did not update.
 
 793. In the encryptor, make such an amendment. First, when we decrypt the picture, it should not be placed in the new area below, but directly to the area where the editing is, so that you can edit right away and encrypt again. This is the first. And secondly, in the same mode, next to this picture, you need to make a choice of an eraser or a pen. By default, a pen, as it is now. We draw, it can draw. So that you can erase what is written. That is, the eraser too. Immediately put it in the main.

@@ -515,8 +515,12 @@ DECLARE
     v_sec RECORD;
     v_price NUMERIC;
     v_long_qty NUMERIC;
+    v_short_qty NUMERIC;
     v_total NUMERIC := 0;
 BEGIN
+    -- Как logic_backtest_portfolio_equity: cash + long×price − short×price.
+    -- Без short MTM при открытых шортах cash раздут (выручка), а после mass-close
+    -- track_before−track_after взлетает до нотионала (~«цель 26801»).
     v_cash := logic_ensure_balance(p_logic_id);
     v_total := COALESCE(v_cash, 0);
 
@@ -526,12 +530,13 @@ BEGIN
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
     LOOP
         v_long_qty := logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE);
-        IF v_long_qty <= 0 THEN
+        v_short_qty := logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE);
+        IF v_long_qty <= 0 AND v_short_qty <= 0 THEN
             CONTINUE;
         END IF;
         v_price := logic_ensure_security_market_price(p_logic_id, v_sec.security_id, p_timeframe_id);
         IF v_price IS NOT NULL AND v_price > 0 THEN
-            v_total := v_total + v_long_qty * v_price;
+            v_total := v_total + v_long_qty * v_price - v_short_qty * v_price;
         END IF;
     END LOOP;
 
