@@ -316,6 +316,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold: string;
       use_non_trading_periods: boolean;
       close_positions_eod: boolean;
+      sell_futures_before_expiry: boolean;
+      sell_futures_days_before_expiry: string;
       order_execution: 'market' | 'limit';
       opt_eval_candles: string;
       reset_balance: boolean;
@@ -990,6 +992,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsSellFuturesBeforeExpiryChange(logicId: number, value: boolean): void {
+    this.getParamsDraft(logicId).sell_futures_before_expiry = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
+  onParamsSellFuturesDaysBeforeExpiryChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).sell_futures_days_before_expiry = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   onParamsOrderExecutionChange(logicId: number, value: string): void {
     this.getParamsDraft(logicId).order_execution =
       value === 'limit' ? 'limit' : 'market';
@@ -1286,6 +1300,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold?: number;
       use_non_trading_periods?: boolean;
       close_positions_eod?: boolean;
+      sell_futures_before_expiry?: boolean;
+      sell_futures_days_before_expiry?: number;
       order_execution?: 'market' | 'limit';
       opt_eval_candles?: number;
     }
@@ -1316,6 +1332,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     cash_fund_threshold?: number;
     use_non_trading_periods?: boolean;
     close_positions_eod?: boolean;
+    sell_futures_before_expiry?: boolean;
+    sell_futures_days_before_expiry?: number;
     order_execution?: 'market' | 'limit';
     opt_eval_candles?: number;
   }): {
@@ -1338,6 +1356,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     cash_fund_threshold: string;
     use_non_trading_periods: boolean;
     close_positions_eod: boolean;
+    sell_futures_before_expiry: boolean;
+    sell_futures_days_before_expiry: string;
     order_execution: 'market' | 'limit';
     opt_eval_candles: string;
     reset_balance: boolean;
@@ -1374,6 +1394,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
       ),
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       close_positions_eod: trading.close_positions_eod === true,
+      sell_futures_before_expiry: trading.sell_futures_before_expiry === true,
+      sell_futures_days_before_expiry: this.formatIntParam(
+        trading.sell_futures_days_before_expiry ?? 3,
+        3
+      ),
       order_execution: trading.order_execution === 'limit' ? 'limit' : 'market',
       opt_eval_candles: this.formatIntParam(trading.opt_eval_candles ?? 200, 200),
       reset_balance: false,
@@ -1421,6 +1446,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold: row.cash_fund_threshold,
       use_non_trading_periods: row.use_non_trading_periods,
       close_positions_eod: row.close_positions_eod,
+      sell_futures_before_expiry: row.sell_futures_before_expiry,
+      sell_futures_days_before_expiry: row.sell_futures_days_before_expiry,
       order_execution: row.order_execution,
       opt_eval_candles: row.opt_eval_candles,
     });
@@ -1502,6 +1529,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.paramsSaveErrors.set(row.id, 'Свечей окна OPT: целое от 1 до 500');
       return;
     }
+    const sell_futures_days_before_expiry = Math.round(
+      this.parseDecimalInput(draft.sell_futures_days_before_expiry)
+    );
+    if (
+      !Number.isInteger(sell_futures_days_before_expiry) ||
+      sell_futures_days_before_expiry < 0 ||
+      sell_futures_days_before_expiry > 365
+    ) {
+      this.paramsSaveErrors.set(row.id, 'Дней до экспирации: целое от 0 до 365');
+      return;
+    }
 
     const cash_fund_threshold = this.parseDecimalInput(draft.cash_fund_threshold);
     if (!Number.isFinite(cash_fund_threshold) || cash_fund_threshold < 0) {
@@ -1551,6 +1589,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
         cash_fund_threshold,
         use_non_trading_periods: draft.use_non_trading_periods,
         close_positions_eod: draft.close_positions_eod,
+        sell_futures_before_expiry: draft.sell_futures_before_expiry,
+        sell_futures_days_before_expiry,
         order_execution: draft.order_execution,
         opt_eval_candles,
         reset_balance: draft.reset_balance,

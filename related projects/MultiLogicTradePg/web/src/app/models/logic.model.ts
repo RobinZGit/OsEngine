@@ -48,6 +48,10 @@ export interface LogicRow {
   use_non_trading_periods?: boolean;
   /** Закрывать позиции в конце дня (кроме денежных фондов). */
   close_positions_eod?: boolean;
+  /** Продавать фьючерсы за N дней до экспирации (EOD). */
+  sell_futures_before_expiry?: boolean;
+  /** Порог дней до экспирации для принудительной продажи. */
+  sell_futures_days_before_expiry?: number;
   /** Тип исполнения боевых заявок: market (по умолчанию) | limit. */
   order_execution?: 'market' | 'limit';
   /** Окно promote OPT: число закрытых свечей TF (по умолчанию 200). */
@@ -80,6 +84,8 @@ export interface LogicTradingParamsPayload {
   cash_fund_threshold?: number;
   use_non_trading_periods?: boolean;
   close_positions_eod?: boolean;
+  sell_futures_before_expiry?: boolean;
+  sell_futures_days_before_expiry?: number;
   order_execution?: 'market' | 'limit';
   opt_eval_candles?: number;
 }
@@ -104,6 +110,8 @@ export interface LogicTradingParamsResponse {
   cash_fund_threshold: number;
   use_non_trading_periods: boolean;
   close_positions_eod: boolean;
+  sell_futures_before_expiry: boolean;
+  sell_futures_days_before_expiry: number;
   order_execution: 'market' | 'limit';
   opt_eval_candles: number;
 }

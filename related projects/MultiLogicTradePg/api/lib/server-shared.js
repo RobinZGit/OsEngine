@@ -620,6 +620,20 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.sell_futures_before_expiry !== undefined) {
+    out.sell_futures_before_expiry = Boolean(body.sell_futures_before_expiry);
+    hasField = true;
+  }
+
+  if (body?.sell_futures_days_before_expiry !== undefined) {
+    const v = Math.round(Number(body.sell_futures_days_before_expiry));
+    if (!Number.isInteger(v) || v < 0 || v > 365) {
+      return { error: 'Дней до экспирации: целое от 0 до 365' };
+    }
+    out.sell_futures_days_before_expiry = v;
+    hasField = true;
+  }
+
   if (body?.order_execution !== undefined) {
     const raw = String(body.order_execution ?? '')
       .trim()

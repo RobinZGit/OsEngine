@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+799. Change the name of this new logic, not PriceChannelFuge, but FuturesPriceChannel I mean Futures, not Fuge This is the first And the second Add a new parameter to the logic Sell Futures for the number of days of the whole And how many days are there, days before expiration In general, sell Futures for the number of days before their expiration And, accordingly, you need to check I think in the cycle where the sales are at the end of the day, and if the checkbox is turned on or not In any case, if there are 3 days before the expiration on the next day, then sell them Immediately we put everything in the repository.
+
 798. The Futures itself should act on the signal of the Price Channel indicator. Price Channel. Tun-Chan, I don't know what it is.
 
 797. Now we will make an update to the MultiLogic3.png in the part of the work with the Futures You need to make a signal for the Futures Of course, the same indicators will act on them as for ordinary papers But also for them you need to add such a bit of a signal as the same indicators, but not for the Futures itself, but for its asset Accordingly, in the signals of logic, you probably need to add another column The signal acts on If it is not filled in, then it acts on this asset itself… Price Channel Fuge and LNREG Base Asset… all Futures prefixes.

@@ -2623,6 +2623,73 @@ $$;
 COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
+-- Тест: закрыть фьючерсы с days_to_expiry ≤ N (sell_futures_*).
+CREATE OR REPLACE FUNCTION logic_backtest_close_futures_near_expiry(
+    p_run_id BIGINT,
+    p_logic_id INTEGER,
+    p_account_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_balance NUMERIC := COALESCE(p_balance, 0);
+    v_threshold INTEGER;
+    v_sec RECORD;
+    v_days_left INTEGER;
+    v_closed INTEGER;
+    v_new NUMERIC;
+BEGIN
+    IF NOT get_logic_param_boolean(p_logic_id, 'sell_futures_before_expiry', FALSE) THEN
+        RETURN v_balance;
+    END IF;
+
+    v_threshold := GREATEST(
+        0,
+        ROUND(COALESCE(
+            get_logic_param_numeric(p_logic_id, 'sell_futures_days_before_expiry', 3),
+            3
+        ))::INTEGER
+    );
+
+    FOR v_sec IN
+        SELECT DISTINCT lt.security_id
+        FROM logic_trades lt
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.status IN ('filled', 'submitted')
+          AND logic_security_is_futures(lt.security_id)
+    LOOP
+        v_days_left := logic_futures_days_to_expiry(v_sec.security_id, p_bar_dt::DATE);
+        IF v_days_left IS NULL OR v_days_left > v_threshold THEN
+            CONTINUE;
+        END IF;
+
+        SELECT o_closed, o_new_balance
+        INTO v_closed, v_new
+        FROM logic_backtest_close_security(
+            p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_timeframe_id,
+            p_bar_dt, FALSE, 'futures_expiry:close', v_balance
+        );
+        v_balance := v_new;
+        SELECT o_closed, o_new_balance
+        INTO v_closed, v_new
+        FROM logic_backtest_close_security(
+            p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_timeframe_id,
+            p_bar_dt, TRUE, 'futures_expiry:close', v_balance
+        );
+        v_balance := v_new;
+    END LOOP;
+
+    RETURN v_balance;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_close_futures_near_expiry(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
+'EOD/тест: закрыть фьючерсы с days_to_expiry ≤ sell_futures_days_before_expiry';
+
 -- Один бар теста (Node + SQL path): меньше round-trip, чем 5 отдельных CALL.
 CREATE OR REPLACE FUNCTION logic_backtest_process_bar(
     p_run_id BIGINT,
@@ -2644,8 +2711,13 @@ BEGIN
         p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
     );
 
-    IF logic_is_eod_close_bar(p_logic_id, p_bar_dt, p_prev_bar, p_next_bar) THEN
-        v_balance := logic_backtest_close_all_except_funds(
+    IF logic_is_eod_session_bar(p_logic_id, p_bar_dt, p_prev_bar, p_next_bar) THEN
+        IF get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
+            v_balance := logic_backtest_close_all_except_funds(
+                p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
+            );
+        END IF;
+        v_balance := logic_backtest_close_futures_near_expiry(
             p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
         );
     END IF;

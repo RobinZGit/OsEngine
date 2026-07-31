@@ -21,6 +21,8 @@ const PARAM_KEYS = {
   CASH_FUND_THRESHOLD: 'cash_fund_threshold',
   USE_NON_TRADING_PERIODS: 'use_non_trading_periods',
   CLOSE_POSITIONS_EOD: 'close_positions_eod',
+  SELL_FUTURES_BEFORE_EXPIRY: 'sell_futures_before_expiry',
+  SELL_FUTURES_DAYS_BEFORE_EXPIRY: 'sell_futures_days_before_expiry',
   ORDER_EXECUTION: 'order_execution',
   OPT_EVAL_CANDLES: 'opt_eval_candles',
 };
@@ -47,6 +49,8 @@ const DEFAULTS = {
   [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '1000000', type: 'money' },
   [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
   [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
+  [PARAM_KEYS.SELL_FUTURES_BEFORE_EXPIRY]: { value: 'false', type: 'boolean' },
+  [PARAM_KEYS.SELL_FUTURES_DAYS_BEFORE_EXPIRY]: { value: '3', type: 'integer' },
   [PARAM_KEYS.ORDER_EXECUTION]: { value: 'market', type: 'text' },
   [PARAM_KEYS.OPT_EVAL_CANDLES]: { value: '200', type: 'integer' },
 };
@@ -151,6 +155,12 @@ function rowsToTradingParams(rows) {
         : 1000000,
     use_non_trading_periods: map[PARAM_KEYS.USE_NON_TRADING_PERIODS] !== false,
     close_positions_eod: map[PARAM_KEYS.CLOSE_POSITIONS_EOD] === true,
+    sell_futures_before_expiry: map[PARAM_KEYS.SELL_FUTURES_BEFORE_EXPIRY] === true,
+    sell_futures_days_before_expiry: (() => {
+      const n = map[PARAM_KEYS.SELL_FUTURES_DAYS_BEFORE_EXPIRY];
+      const v = n != null ? Number(n) : 3;
+      return Number.isInteger(v) && v >= 0 ? v : 3;
+    })(),
     order_execution: (() => {
       const raw =
         map[PARAM_KEYS.ORDER_EXECUTION] != null
@@ -496,6 +506,30 @@ async function saveTradingParams(pool, logicId, payload) {
       PARAM_KEYS.CLOSE_POSITIONS_EOD,
       payload.close_positions_eod ? 'true' : 'false',
       'boolean'
+    );
+  }
+
+  if (payload.sell_futures_before_expiry !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.SELL_FUTURES_BEFORE_EXPIRY,
+      payload.sell_futures_before_expiry ? 'true' : 'false',
+      'boolean'
+    );
+  }
+
+  if (payload.sell_futures_days_before_expiry !== undefined) {
+    const v = Math.round(Number(payload.sell_futures_days_before_expiry));
+    if (!Number.isInteger(v) || v < 0 || v > 365) {
+      throw new Error('Дней до экспирации: целое от 0 до 365');
+    }
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.SELL_FUTURES_DAYS_BEFORE_EXPIRY,
+      v,
+      'integer'
     );
   }
 

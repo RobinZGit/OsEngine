@@ -1129,6 +1129,40 @@
 
                                 </label>
 
+                                <label
+                                  class="params-reset"
+                                  title="В конце сессии закрыть открытые фьючерсы, если до экспирации осталось не больше указанного числа календарных дней. Вечные фьючерсы не трогает."
+                                  (click)="$event.stopPropagation()"
+                                >
+
+                                  <input
+                                    type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).sell_futures_before_expiry"
+                                    (ngModelChange)="onParamsSellFuturesBeforeExpiryChange(row.id, $event)"
+                                  />
+
+                                  Продавать фьючерсы за N дней до экспирации
+
+                                </label>
+
+                                <label
+                                  class="params-reset"
+                                  title="Порог: (дата экспирации − дата бара) ≤ N. По умолчанию 3."
+                                  (click)="$event.stopPropagation()"
+                                >
+
+                                  Дней до экспирации
+
+                                  <input
+                                    type="text"
+                                    class="params-input params-input-short"
+                                    [ngModel]="getParamsDraft(row.id).sell_futures_days_before_expiry"
+                                    (ngModelChange)="onParamsSellFuturesDaysBeforeExpiryChange(row.id, $event)"
+                                    (click)="$event.stopPropagation()"
+                                  />
+
+                                </label>
+
                                 @if (row.account_type === 'fake') {
 
                                   <label class="params-reset" (click)="$event.stopPropagation()">

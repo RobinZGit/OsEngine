@@ -1537,14 +1537,17 @@ BEGIN
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
 
-    -- EOD: закрыть позиции (кроме фондов) на первой свече вечернего окна / последней свече дня
-    IF logic_is_eod_close_bar(
+    -- EOD-сессия: close_positions_eod и/или продажа фьючерсов до экспирации
+    IF logic_is_eod_session_bar(
         p_logic_id,
         v_closed_bar_dt,
         v_last_bar_dt,
         v_closed_bar_dt + make_interval(secs => v_tf_sec)
     ) THEN
-        PERFORM logic_close_positions_eod_except_funds(p_logic_id);
+        IF get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
+            PERFORM logic_close_positions_eod_except_funds(p_logic_id);
+        END IF;
+        PERFORM logic_close_futures_near_expiry(p_logic_id, v_closed_bar_dt::DATE);
         v_balance := logic_ensure_balance(p_logic_id);
         v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
         v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);

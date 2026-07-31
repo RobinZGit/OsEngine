@@ -5026,6 +5026,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9588,6 +9589,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -15947,14 +15976,17 @@ BEGIN
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
 
-    -- EOD: закрыть позиции (кроме фондов) на первой свече вечернего окна / последней свече дня
-    IF logic_is_eod_close_bar(
+    -- EOD-сессия: close_positions_eod и/или продажа фьючерсов до экспирации
+    IF logic_is_eod_session_bar(
         p_logic_id,
         v_closed_bar_dt,
         v_last_bar_dt,
         v_closed_bar_dt + make_interval(secs => v_tf_sec)
     ) THEN
-        PERFORM logic_close_positions_eod_except_funds(p_logic_id);
+        IF get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
+            PERFORM logic_close_positions_eod_except_funds(p_logic_id);
+        END IF;
+        PERFORM logic_close_futures_near_expiry(p_logic_id, v_closed_bar_dt::DATE);
         v_balance := logic_ensure_balance(p_logic_id);
         v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
         v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
@@ -16786,8 +16818,8 @@ $$;
 COMMENT ON FUNCTION logic_eod_session_end_dt(INTEGER, TIMESTAMP) IS
 'Начало вечернего неторгового окна (после основной сессии MOEX)';
 
--- p_prev_bar_dt / p_next_bar_dt — соседние бары прогона (могут быть NULL).
-CREATE OR REPLACE FUNCTION logic_is_eod_close_bar(
+-- Момент EOD-сессии (вечернее окно / последняя свеча дня) — без чекбоксов закрытия.
+CREATE OR REPLACE FUNCTION logic_is_eod_session_bar(
     p_logic_id INTEGER,
     p_bar_dt TIMESTAMP,
     p_prev_bar_dt TIMESTAMP,
@@ -16798,10 +16830,6 @@ LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_trigger TIMESTAMP;
 BEGIN
-    IF NOT get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
-        RETURN FALSE;
-    END IF;
-
     IF get_logic_param_boolean(p_logic_id, 'use_non_trading_periods', TRUE) THEN
         v_trigger := logic_eod_session_end_dt(p_logic_id, p_bar_dt);
         IF v_trigger IS NULL THEN
@@ -16813,7 +16841,6 @@ BEGIN
     END IF;
 
     -- Без неторговых периодов — последняя свеча календарного дня
-    -- (нужен следующий бар / теоретический следующий; NULL = неизвестно → не закрывать)
     IF p_next_bar_dt IS NULL THEN
         RETURN FALSE;
     END IF;
@@ -16821,8 +16848,148 @@ BEGIN
 END;
 $$;
 
+COMMENT ON FUNCTION logic_is_eod_session_bar(INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP) IS
+'True: бар конца торговой сессии (вечернее неторговое окно или последняя свеча дня)';
+
+-- p_prev_bar_dt / p_next_bar_dt — соседние бары прогона (могут быть NULL).
+CREATE OR REPLACE FUNCTION logic_is_eod_close_bar(
+    p_logic_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_prev_bar_dt TIMESTAMP,
+    p_next_bar_dt TIMESTAMP
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF NOT get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
+        RETURN FALSE;
+    END IF;
+    RETURN logic_is_eod_session_bar(p_logic_id, p_bar_dt, p_prev_bar_dt, p_next_bar_dt);
+END;
+$$;
+
 COMMENT ON FUNCTION logic_is_eod_close_bar(INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP) IS
-'True: закрыть позиции (кроме фондов) на этом баре — конец сессии или последняя свеча дня';
+'True: закрыть позиции (кроме фондов) на этом баре — конец сессии и close_positions_eod';
+
+-- Календарных дней до экспирации активного контракта; NULL = не фьючерс / вечный / нет даты.
+CREATE OR REPLACE FUNCTION logic_futures_days_to_expiry(
+    p_security_id INTEGER,
+    p_date DATE
+)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_prefix VARCHAR(50);
+    v_note TEXT;
+    v_exp DATE;
+BEGIN
+    IF p_security_id IS NULL OR p_date IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    IF NOT logic_security_is_futures(p_security_id) THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT sp.prefix, sp.note
+    INTO v_prefix, v_note
+    FROM security_prefixes sp
+    WHERE sp.security_id = p_security_id
+      AND sp.instrument_market = 'futures'
+    ORDER BY sp.exchange_id
+    LIMIT 1;
+
+    IF is_perpetual_future_group(v_prefix, v_note) THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT c.expiration_date
+    INTO v_exp
+    FROM get_future_contract_for_date(p_security_id, p_date) c
+    LIMIT 1;
+
+    IF v_exp IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    RETURN (v_exp - p_date)::INTEGER;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_futures_days_to_expiry(INTEGER, DATE) IS
+'Дней до экспирации ближайшего контракта (expiration_date − date); NULL для вечных/не-фьючерсов';
+
+-- Живой бой: закрыть фьючерсы с days_to_expiry ≤ N (параметр sell_futures_*).
+CREATE OR REPLACE FUNCTION logic_close_futures_near_expiry(
+    p_logic_id INTEGER,
+    p_as_of_date DATE DEFAULT CURRENT_DATE
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_threshold INTEGER;
+    v_sec RECORD;
+    v_days_left INTEGER;
+    v_n INTEGER;
+    v_closed INTEGER := 0;
+    v_checked INTEGER := 0;
+BEGIN
+    IF NOT get_logic_param_boolean(p_logic_id, 'sell_futures_before_expiry', FALSE) THEN
+        RETURN jsonb_build_object('ok', TRUE, 'closed', 0, 'checked', 0, 'reason', 'disabled');
+    END IF;
+
+    v_threshold := GREATEST(
+        0,
+        ROUND(COALESCE(
+            get_logic_param_numeric(p_logic_id, 'sell_futures_days_before_expiry', 3),
+            3
+        ))::INTEGER
+    );
+
+    FOR v_sec IN
+        SELECT DISTINCT lt.security_id
+        FROM logic_trades lt
+        WHERE lt.logic_id = p_logic_id
+          AND COALESCE(lt.is_test, FALSE) = FALSE
+          AND lt.status IN ('filled', 'submitted')
+          AND logic_security_is_futures(lt.security_id)
+    LOOP
+        IF COALESCE(logic_long_position_qty(p_logic_id, v_sec.security_id, FALSE), 0) <= 0
+           AND COALESCE(logic_short_position_qty(p_logic_id, v_sec.security_id, FALSE), 0) <= 0
+           AND COALESCE(logic_long_position_qty(p_logic_id, v_sec.security_id, TRUE), 0) <= 0
+           AND COALESCE(logic_short_position_qty(p_logic_id, v_sec.security_id, TRUE), 0) <= 0
+        THEN
+            CONTINUE;
+        END IF;
+
+        v_checked := v_checked + 1;
+        v_days_left := logic_futures_days_to_expiry(v_sec.security_id, p_as_of_date);
+        IF v_days_left IS NULL OR v_days_left > v_threshold THEN
+            CONTINUE;
+        END IF;
+
+        v_n := logic_close_security_positions_market(
+            p_logic_id, v_sec.security_id, FALSE, 'futures_expiry:close'
+        );
+        v_closed := v_closed + COALESCE(v_n, 0);
+        v_n := logic_close_security_positions_market(
+            p_logic_id, v_sec.security_id, TRUE, 'futures_expiry:close'
+        );
+        v_closed := v_closed + COALESCE(v_n, 0);
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'closed', v_closed,
+        'checked', v_checked,
+        'days_threshold', v_threshold,
+        'as_of_date', p_as_of_date
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_close_futures_near_expiry(INTEGER, DATE) IS
+'Бой: на EOD закрыть открытые фьючерсы с days_to_expiry ≤ sell_futures_days_before_expiry';
 
 -- Живой бой: закрыть все позиции кроме TMON/LQDT/SBMM.
 CREATE OR REPLACE FUNCTION logic_close_positions_eod_except_funds(p_logic_id INTEGER)
@@ -19465,6 +19632,73 @@ $$;
 COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
 'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
+-- Тест: закрыть фьючерсы с days_to_expiry ≤ N (sell_futures_*).
+CREATE OR REPLACE FUNCTION logic_backtest_close_futures_near_expiry(
+    p_run_id BIGINT,
+    p_logic_id INTEGER,
+    p_account_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_balance NUMERIC := COALESCE(p_balance, 0);
+    v_threshold INTEGER;
+    v_sec RECORD;
+    v_days_left INTEGER;
+    v_closed INTEGER;
+    v_new NUMERIC;
+BEGIN
+    IF NOT get_logic_param_boolean(p_logic_id, 'sell_futures_before_expiry', FALSE) THEN
+        RETURN v_balance;
+    END IF;
+
+    v_threshold := GREATEST(
+        0,
+        ROUND(COALESCE(
+            get_logic_param_numeric(p_logic_id, 'sell_futures_days_before_expiry', 3),
+            3
+        ))::INTEGER
+    );
+
+    FOR v_sec IN
+        SELECT DISTINCT lt.security_id
+        FROM logic_trades lt
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.status IN ('filled', 'submitted')
+          AND logic_security_is_futures(lt.security_id)
+    LOOP
+        v_days_left := logic_futures_days_to_expiry(v_sec.security_id, p_bar_dt::DATE);
+        IF v_days_left IS NULL OR v_days_left > v_threshold THEN
+            CONTINUE;
+        END IF;
+
+        SELECT o_closed, o_new_balance
+        INTO v_closed, v_new
+        FROM logic_backtest_close_security(
+            p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_timeframe_id,
+            p_bar_dt, FALSE, 'futures_expiry:close', v_balance
+        );
+        v_balance := v_new;
+        SELECT o_closed, o_new_balance
+        INTO v_closed, v_new
+        FROM logic_backtest_close_security(
+            p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_timeframe_id,
+            p_bar_dt, TRUE, 'futures_expiry:close', v_balance
+        );
+        v_balance := v_new;
+    END LOOP;
+
+    RETURN v_balance;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_close_futures_near_expiry(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
+'EOD/тест: закрыть фьючерсы с days_to_expiry ≤ sell_futures_days_before_expiry';
+
 -- Один бар теста (Node + SQL path): меньше round-trip, чем 5 отдельных CALL.
 CREATE OR REPLACE FUNCTION logic_backtest_process_bar(
     p_run_id BIGINT,
@@ -19486,8 +19720,13 @@ BEGIN
         p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
     );
 
-    IF logic_is_eod_close_bar(p_logic_id, p_bar_dt, p_prev_bar, p_next_bar) THEN
-        v_balance := logic_backtest_close_all_except_funds(
+    IF logic_is_eod_session_bar(p_logic_id, p_bar_dt, p_prev_bar, p_next_bar) THEN
+        IF get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
+            v_balance := logic_backtest_close_all_except_funds(
+                p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
+            );
+        END IF;
+        v_balance := logic_backtest_close_futures_near_expiry(
             p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
         );
     END IF;
@@ -20852,6 +21091,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

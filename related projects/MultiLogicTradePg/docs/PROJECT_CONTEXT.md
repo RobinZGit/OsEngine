@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — Futures signal_acts_on + DONCHIAN Price Channel; seed Price Channel Fuge and LNREG Base Asset
+**Последнее обновление:** 2026-07-31 — Futures Price Channel rename + sell N days before expiry (EOD)
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -28,7 +28,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v54**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v58**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -120,6 +120,15 @@
 
 ## Что сделано (актуально на 2026-07-31)
 
+### 2026-07-31 (Futures Price Channel: rename + продажа до экспирации)
+
+- Rename seed: **Futures Price Channel and LNREG Base Asset** (было «…Fuge…»); upgrade `UPDATE` в `01` + `ensure_seed_logics`.
+- Параметры: `sell_futures_before_expiry` (checkbox) + `sell_futures_days_before_expiry` (integer, default 3).
+- EOD: `logic_is_eod_session_bar` (тайминг) отдельно от `close_positions_eod`; на том же баре — `logic_close_futures_near_expiry` / backtest-аналог.
+- Порог: `(expiration_date − date) ≤ N`; вечные фьючерсы пропускаются.
+- Seed этой логики: checkbox **on**, N=**3**.
+- Схема **v58**. Installers: bump к **v1.0.111**.
+
 ### 2026-07-31 (Futures: сигнал «Действует на» + Price Channel / DONCHIAN)
 
 - Колонка `logic_indicator_signals.signal_acts_on`: `security` (по умолчанию) | `base_asset`.
@@ -127,7 +136,7 @@
 - **DONCHIAN** = Price Channel (Tun-Chan/Дончиан): calc UPPER/MIDDLE/LOWER; UI name «Price Channel (Donchian)».
 - Оценка/sync/backtest: индикаторы и цены для `base_asset` берутся с underlying.
 - UI: колонка «Действует на»; график бумаги + график базового актива (бой и тест).
-- Seed-логика **Price Channel Fuge and LNREG Base Asset**: DONCHIAN counter на фьючерсе + LINREG Fade на базе; все futures-префиксы.
+- Seed-логика **Futures Price Channel and LNREG Base Asset**: DONCHIAN counter на фьючерсе + LINREG Fade на базе; все futures-префиксы.
 - Схема **v57**.
 - Installers: bump к **v1.0.110** при выкладке.
 
@@ -992,7 +1001,8 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-07-31 | Futures signal_acts_on + DONCHIAN Price Channel; seed Price Channel Fuge + LNREG Base |
+| 2026-07-31 | Futures Price Channel rename + sell N days before expiry (EOD); v58 / v1.0.111 |
+| 2026-07-31 | Futures signal_acts_on + DONCHIAN Price Channel; seed Futures Price Channel + LNREG Base |
 | 2026-07-31 | Crypt v1.22: thinner pen/eraser in Note (picture) mode for tablet stylus |
 | 2026-07-31 | Equity: portfolio equity − short MTM; chart headroom; resume target null-safe; (цель 26801) |
 | 2026-07-30 | Crypt v1.21: decrypt note onto edit canvas + pen/eraser; merge main → Pages |
@@ -1237,4 +1247,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **795** — resume goal jumps / equity stuck on bar; **794** — Crypt V20; **793** — decrypt onto canvas + eraser.
+Последние (см. USER_INSTRUCTIONS): **799** — Futures rename + sell N days before expiry; **798** — Price Channel on futures; **797** — signal acts on base asset.

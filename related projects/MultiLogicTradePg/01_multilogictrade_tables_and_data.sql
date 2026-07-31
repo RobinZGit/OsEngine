@@ -1,8 +1,9 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v57 (идемпотентный запуск)
+-- Версия: v58 (идемпотентный запуск)
+-- v58: rename seed «Futures Price Channel…» (было Fuge); sell_futures_before_expiry / days
 -- v57: signal_acts_on (security|base_asset); underlying_security_id у futures;
---      DONCHIAN = Price Channel calc; seed «Price Channel Fuge and LNREG Base Asset»
+--      DONCHIAN = Price Channel calc; seed Futures Price Channel + LNREG Base Asset
 -- v56: seed «LinReg Fade Twice Optimized» — OPT(std_dev,10)+OPT(period,10)
 -- v54: install-on-top ensure всех seed-логик (в т.ч. LinReg Fade Optimized); бумаги Optimized после назначения LinReg Fade
 --      + sql/ensure_seed_logics.sql (post-01, installer проверяет наличие LinReg Fade Optimized)
@@ -1370,6 +1371,10 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'Не открывать сделки в интервалах из блока «Торговые периоды» (шаблон MOEX TQBR по умолчанию)', 16),
     ('close_positions_eod', 'Закрывать позиции в конце дня (кроме фондов)', 'boolean', 'false',
      'В конце торговой сессии (или на последней свече дня) закрыть все позиции, кроме денежного фонда TMON/LQDT/SBMM', 17),
+    ('sell_futures_before_expiry', 'Продавать фьючерсы до экспирации', 'boolean', 'false',
+     'В конце сессии закрыть открытые фьючерсы, если до экспирации осталось не больше N календарных дней (параметр ниже). Вечные фьючерсы не трогает', 21),
+    ('sell_futures_days_before_expiry', 'Дней до экспирации (продажа)', 'integer', '3',
+     'Порог в календарных днях: при sell_futures_before_expiry закрыть фьючерс, если (дата экспирации − дата бара) ≤ N. По умолчанию 3', 22),
     ('order_execution', 'Тип исполнения заявок', 'text', 'market',
      'market — рыночная заявка (сразу в сессию); limit — лимитная по цене сигнала (может висеть в стакане). По умолчанию market', 18),
     ('opt_eval_candles', 'Свечей окна OPT', 'integer', '200',
@@ -2827,11 +2832,17 @@ ON CONFLICT (logic_id, security_id) DO UPDATE SET
     display_order = EXCLUDED.display_order;
 
 -- =====================================================================
--- v57: Price Channel (DONCHIAN) on futures + LINREG Fade on base asset
+-- v57/v58: Price Channel (DONCHIAN) on futures + LINREG Fade on base asset
 -- =====================================================================
+-- Upgrade: опечатка Fuge → Futures (уже установленные БД после v57)
+UPDATE logics
+SET name = 'Futures Price Channel and LNREG Base Asset',
+    note = 'Фьючерсы: Price Channel (DONCHIAN) counter на самом фьючерсе + LINREG Fade counter на базовом активе (AND).'
+WHERE name = 'Price Channel Fuge and LNREG Base Asset';
+
 INSERT INTO logics (name, account_id, is_enabled, note)
 SELECT
-    'Price Channel Fuge and LNREG Base Asset',
+    'Futures Price Channel and LNREG Base Asset',
     a.id,
     FALSE,
     'Фьючерсы: Price Channel (DONCHIAN) counter на самом фьючерсе + LINREG Fade counter на базовом активе (AND).'
@@ -2840,7 +2851,7 @@ JOIN brokers b ON b.id = a.broker_id
 WHERE b.code = 'T-BANK'
   AND (a.account_code = 'FAKE-EFF-001' OR lower(a.account_type::text) = 'fake')
   AND NOT EXISTS (
-      SELECT 1 FROM logics z WHERE z.name = 'Price Channel Fuge and LNREG Base Asset'
+      SELECT 1 FROM logics z WHERE z.name = 'Futures Price Channel and LNREG Base Asset'
   )
 ORDER BY CASE WHEN a.account_code = 'FAKE-EFF-001' THEN 0 ELSE 1 END, a.id
 LIMIT 1;
@@ -2855,9 +2866,11 @@ CROSS JOIN (VALUES
     ('initial_balance', '1000000', 'money'),
     ('current_balance', '1000000', 'money'),
     ('commission_pct', '0.03', 'number'),
-    ('cost_method', 'FIFO', 'text')
+    ('cost_method', 'FIFO', 'text'),
+    ('sell_futures_before_expiry', 'true', 'boolean'),
+    ('sell_futures_days_before_expiry', '3', 'integer')
 ) AS v(param_key, param_value, value_type)
-WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
   AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -2877,7 +2890,7 @@ CROSS JOIN (VALUES
     ('LINREG',   'close', 'short', 'trend',   'base_asset', '@LINREG(period=20,std_dev=2,series=MIDDLE) pp <= VALUE', 7)
 ) AS v(ind_code, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
-WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
   AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
 INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
@@ -2891,7 +2904,7 @@ CROSS JOIN LATERAL (
     JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'futures'
     ORDER BY s.id, sp.prefix
 ) q
-WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
 ON CONFLICT (logic_id, security_id) DO NOTHING;
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
@@ -2901,7 +2914,7 @@ CROSS JOIN (VALUES
     ('stop_loss',   'security_resume', 1.0, 'percent', 0),
     ('take_profit', 'portfolio_ltp_renew', 5.0, 'percent', 1)
 ) AS v(rule_kind, scope_type, value, value_unit, display_order)
-WHERE l.name = 'Price Channel Fuge and LNREG Base Asset'
+WHERE l.name = 'Futures Price Channel and LNREG Base Asset'
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
 -- Стопы seed: insert only if empty
