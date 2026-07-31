@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+800. He writes in the tips, natural gas, for a long time, for a long time, probably no longer refers to this, the current period, look, maybe somehow the tips are more fragmented, more broken
+
 799. Change the name of this new logic, not PriceChannelFuge, but FuturesPriceChannel I mean Futures, not Fuge This is the first And the second Add a new parameter to the logic Sell Futures for the number of days of the whole And how many days are there, days before expiration In general, sell Futures for the number of days before their expiration And, accordingly, you need to check I think in the cycle where the sales are at the end of the day, and if the checkbox is turned on or not In any case, if there are 3 days before the expiration on the next day, then sell them Immediately we put everything in the repository.
 
 798. The Futures itself should act on the signal of the Price Channel indicator. Price Channel. Tun-Chan, I don't know what it is.

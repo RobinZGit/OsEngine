@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — Futures Price Channel rename + sell N days before expiry (EOD)
+**Последнее обновление:** 2026-07-31 — Backtest price tips: chunked load (~30d) + full phase_detail
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-07-31)
+
+### 2026-07-31 (Backtest: дробные tip при загрузке цен)
+
+- Проблема: tip «Natural Gas» (и др. фьючерсы) долго не менялся — один `CALL load_prices` на весь период; в `phase_detail` писалось только имя бумаги.
+- Фикс Node `api/logic-backtest.js`: загрузка кусками **~30 дней** (`BACKTEST_PRICE_CHUNK_DAYS`); tip `Цены Name: from–to (i/n)`; в прогресс идёт полный detail.
+- Дополнительно: загрузка цен **базового актива** (`signal_acts_on=base_asset`) с отдельными tip.
+- Installers: bump к **v1.0.112**.
 
 ### 2026-07-31 (Futures Price Channel: rename + продажа до экспирации)
 
@@ -1001,6 +1008,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-31 | Backtest price tips: chunked ~30d load + full phase_detail; v1.0.112 |
 | 2026-07-31 | Futures Price Channel rename + sell N days before expiry (EOD); v58 / v1.0.111 |
 | 2026-07-31 | Futures signal_acts_on + DONCHIAN Price Channel; seed Futures Price Channel + LNREG Base |
 | 2026-07-31 | Crypt v1.22: thinner pen/eraser in Note (picture) mode for tablet stylus |
@@ -1247,4 +1255,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **799** — Futures rename + sell N days before expiry; **798** — Price Channel on futures; **797** — signal acts on base asset.
+Последние (см. USER_INSTRUCTIONS): **800** — backtest tips stuck on Natural Gas; **799** — Futures rename + expiry sell; **798** — Price Channel on futures.

@@ -19,6 +19,12 @@ const BACKTEST_PRICE_CONCURRENCY = Math.max(
   Math.min(8, Number(process.env.BACKTEST_PRICE_CONCURRENCY) || 3)
 );
 
+/** Куски HTTP-загрузки цен (дни), чтобы UI tip не залипал на одной бумаге месяцами истории. */
+const BACKTEST_PRICE_CHUNK_DAYS = Math.max(
+  7,
+  Math.min(90, Number(process.env.BACKTEST_PRICE_CHUNK_DAYS) || 30)
+);
+
 /** @type {Map<string, Promise<object>>} */
 const priceLoadFlights = new Map();
 
@@ -29,8 +35,35 @@ function priceLoadKey(secId, tfId, dateFrom, dateTo) {
   return `${Number(secId)}|${Number(tfId)}|${String(dateFrom)}|${String(dateTo)}`;
 }
 
+/** Разбить [from,to] на окна по chunkDays (включительно, YYYY-MM-DD). */
+function splitDateRangeChunks(dateFrom, dateTo, chunkDays = BACKTEST_PRICE_CHUNK_DAYS) {
+  const from = String(dateFrom || '').slice(0, 10);
+  const to = String(dateTo || '').slice(0, 10);
+  if (!from || !to || from > to) return [];
+  const days = Math.max(1, Number(chunkDays) || 30);
+  const spanDays =
+    Math.round(
+      (new Date(`${to}T12:00:00`).getTime() - new Date(`${from}T12:00:00`).getTime()) /
+        86400000
+    ) + 1;
+  if (spanDays <= days) {
+    return [{ from, to, index: 0, total: 1 }];
+  }
+  const chunks = [];
+  let cur = from;
+  while (cur <= to) {
+    let end = shiftDate(cur, days - 1);
+    if (end > to) end = to;
+    chunks.push({ from: cur, to: end, index: chunks.length, total: 0 });
+    cur = shiftDate(end, 1);
+  }
+  for (const c of chunks) c.total = chunks.length;
+  return chunks;
+}
+
 /**
  * Single-flight загрузка цен в общую таблицу `prices`.
+ * Длинный период режется на окна — onChunk обновляет tip в UI.
  * @returns {Promise<{
  *   status: 'cached'|'loaded'|'partial'|'empty'|'error',
  *   waited: boolean,
@@ -39,7 +72,7 @@ function priceLoadKey(secId, tfId, dateFrom, dateTo) {
  *   error?: Error
  * }>}
  */
-async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, dateTo) {
+async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, dateTo, onChunk = null) {
   const key = priceLoadKey(secId, tfId, loadDateFrom, dateTo);
 
   if (await pricesCached(pool, secId, tfId, loadDateFrom, dateFrom, dateTo)) {
@@ -64,12 +97,18 @@ async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, date
             inPeriod: await countPricesForSecurity(pool, secId, tfId, dateFrom, dateTo),
           };
         }
-        await pool.query('CALL load_prices($1, $2, $3, $4)', [
-          secId,
-          tfId,
-          loadDateFrom,
-          dateTo,
-        ]);
+        const chunks = splitDateRangeChunks(loadDateFrom, dateTo, BACKTEST_PRICE_CHUNK_DAYS);
+        for (const chunk of chunks) {
+          if (typeof onChunk === 'function') {
+            await onChunk(chunk);
+          }
+          await pool.query('CALL load_prices($1, $2, $3, $4)', [
+            secId,
+            tfId,
+            chunk.from,
+            chunk.to,
+          ]);
+        }
         const okAfterLoad = await pricesCached(
           pool,
           secId,
@@ -93,6 +132,15 @@ async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, date
       }
     })();
     priceLoadFlights.set(key, flight);
+  } else if (typeof onChunk === 'function') {
+    // Follower: пока лидер грузит — подсказка, что ждём shared load.
+    await onChunk({
+      from: String(loadDateFrom).slice(0, 10),
+      to: String(dateTo).slice(0, 10),
+      index: 0,
+      total: 1,
+      waiting: true,
+    });
   }
 
   const result = await flight;
@@ -509,7 +557,18 @@ async function ensureSecurityData(
     tfId,
     loadDateFrom,
     dateFrom,
-    dateTo
+    dateTo,
+    async (chunk) => {
+      const n = Math.max(1, Number(chunk.total) || 1);
+      const i = Math.min(n, (Number(chunk.index) || 0) + 1);
+      const wait = chunk.waiting ? 'ожидание shared · ' : '';
+      const frac = 0.12 + 0.4 * ((Number(chunk.index) || 0) / n);
+      await phase(
+        'prices_http_chunk',
+        `${wait}Цены ${secName || secId}: ${chunk.from}–${chunk.to} (${i}/${n})`,
+        frac
+      );
+    }
   );
   const pricesReloaded = Boolean(priceResult.pricesReloaded);
 
@@ -596,6 +655,61 @@ async function ensureSecurityData(
   if (priceResult.status === 'empty') {
     stats.pricesErr += 1;
     return;
+  }
+
+  // Цены базовых активов (signal_acts_on=base_asset) — отдельными кусками в tip.
+  try {
+    const { rows: undRows } = await pool.query(
+      `
+      SELECT DISTINCT
+        u.id AS security_id,
+        COALESCE(sp.prefix, u.name) AS name
+      FROM logic_indicator_signals lis
+      CROSS JOIN LATERAL (
+        SELECT logic_future_underlying_security_id($2) AS und_id
+      ) x
+      JOIN securities u ON u.id = x.und_id
+      LEFT JOIN security_prefixes sp ON sp.security_id = u.id
+      WHERE lis.logic_id = $1
+        AND lis.is_active = TRUE
+        AND COALESCE(lis.signal_acts_on, 'security') = 'base_asset'
+        AND x.und_id IS NOT NULL
+        AND x.und_id <> $2
+      `,
+      [logicId, secId]
+    );
+    for (const und of undRows) {
+      const undLabel = und.name || String(und.security_id);
+      await ensurePricesReady(
+        pool,
+        und.security_id,
+        tfId,
+        loadDateFrom,
+        dateFrom,
+        dateTo,
+        async (chunk) => {
+          const n = Math.max(1, Number(chunk.total) || 1);
+          const i = Math.min(n, (Number(chunk.index) || 0) + 1);
+          const wait = chunk.waiting ? 'ожидание shared · ' : '';
+          await phase(
+            'prices_http_chunk_base',
+            `${wait}База для ${secName || secId} → ${undLabel}: ${chunk.from}–${chunk.to} (${i}/${n})`,
+            0.5
+          );
+        }
+      );
+    }
+  } catch (undErr) {
+    await backtestLog(
+      pool,
+      runId,
+      logicId,
+      'backtest.prices.underlying_error',
+      undErr?.message || String(undErr),
+      { security_id: secId, name: secName },
+      secId,
+      tfId
+    );
   }
 
   // (2) Indicators: apply @CODE(...period/std_dev...) from logic signals onto
@@ -764,9 +878,12 @@ async function syncActiveSecurities(
 
   const progressDetail = () => {
     const total = Math.max(1, secRows.length);
-    const active = [...inFlight.values()].filter(Boolean).slice(0, 4);
-    const activePart = active.length ? ` · сейчас: ${active.join(', ')}` : '';
-    return `Подготовка ${completed} / ${total}${activePart}`;
+    // Одна активная строка целиком (с куском дат) — иначе tip «Natural Gas» без периода.
+    const active = [...inFlight.values()].filter(Boolean);
+    const activePart = active.length
+      ? ` · ${active.length > 1 ? `[${active.length}] ` : ''}${active[0]}`
+      : '';
+    return `Подготовка ${completed}/${total}${activePart}`;
   };
 
   const bumpPrepProgress = async (force = false) => {
@@ -820,7 +937,8 @@ async function syncActiveSecurities(
         async ({ detail, frac }) => {
           paperFrac.set(secId, Math.max(0.05, Math.min(0.99, Number(frac) || 0.05)));
           if (detail) {
-            inFlight.set(secId, `${label}`);
+            // Полный detail (бумага + окно дат куска), не только имя.
+            inFlight.set(secId, String(detail));
           }
           await bumpPrepProgress();
         }
