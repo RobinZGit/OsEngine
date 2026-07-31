@@ -562,7 +562,7 @@ canvas {
           <label><input type="checkbox" id="langRu" checked /> Русский</label>
           <label><input type="checkbox" id="langEn" /> English</label>
         </div>
-        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.21</span>
+        <span id="appVersion" class="version-badge" title="Crypt build on GitHub Pages">Crypt v1.22</span>
       </div>
       <div class="strip-left">
         <div class="mode-switch" role="group" aria-label="Mode" id="modeSwitch">
@@ -583,7 +583,7 @@ canvas {
       </div>
     </header>
 
-    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.21</p>
+    <p id="versionBar" class="version-bar" aria-live="polite">Сборка: Crypt v1.22</p>
 
     <main class="workspace">
       <section id="panelText" class="panel is-visible">
@@ -655,7 +655,7 @@ canvas {
   const LENGTH_BITS = 32; // message length in bytes (uint32)
   const MIN_KEY_LEN = 3;
   /** Bump this when publishing Crypt to GitHub Pages so the tablet UI shows the new build. */
-  const APP_VERSION = "Crypt v1.21";
+  const APP_VERSION = "Crypt v1.22";
 
   const I18N = {
     ru: {
@@ -956,8 +956,8 @@ canvas {
     updateNoteSizeLabel();
   }
 
-  const INK_LINE_WIDTH = 22; // thick finger-friendly stroke (was 3 — too thin on tablet)
-  const ERASER_LINE_WIDTH = 28;
+  const INK_LINE_WIDTH = 6; // stylus / finger on tablet (22 was too thick; 3 too thin)
+  const ERASER_LINE_WIDTH = 14;
 
   function setDrawTool(next) {
     drawTool = next === "eraser" ? "eraser" : "pen";

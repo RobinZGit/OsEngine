@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — Equity resume goal (short MTM + chart headroom); Crypt v1.21 on Pages
+**Последнее обновление:** 2026-07-31 — Crypt v1.22 thinner pen in Note mode; Equity resume short MTM
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,11 @@
 ---
 
 ## Что сделано (актуально на 2026-07-31)
+
+### 2026-07-31 (Crypt v1.22 — тоньше перо в режиме Заметка)
+
+- Перо на холсте заметки: `INK_LINE_WIDTH` **22 → 6** (на планшете палец/стилус давал слишком толстую линию); ластик **28 → 14**.
+- `tools/parity-stego.html` + assets; push **main** → GitHub Pages.
 
 ### 2026-07-31 (Equity: цель 26801 / «пик прилип к бару» — short MTM + headroom)
 
@@ -976,6 +981,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-31 | Crypt v1.22: thinner pen/eraser in Note (picture) mode for tablet stylus |
 | 2026-07-31 | Equity: portfolio equity − short MTM; chart headroom; resume target null-safe; (цель 26801) |
 | 2026-07-30 | Crypt v1.21: decrypt note onto edit canvas + pen/eraser; merge main → Pages |
 | 2026-07-30 | Equity: resume target no scale crush; shadow PnL since pause; installers 107 |

@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+796. In the decoder, make a thinner stylus in the picture mode, a thinner line. There is a very thick line on the tablet, which I draw with my finger, that is, with a stylus, and immediately put it in the main.
+
 795. Look why the goal of reaching the briefcase seems to move up and down Last time there was some other goal Everything can't reach this goal And the highest point of equity for some reason rests on this bar And it can't step over it And also, for some reason, this top bar is located at the very top It can make some kind of access from above, but not to the very end To.. + export multilogic-trades-export logic 1720 (цель 26801 · сейчас 45.7).
 
 794. The version remains V20, you did not put it out? Look why it, it somehow did not update.
