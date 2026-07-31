@@ -39,13 +39,6 @@ BEGIN
 
     RAISE NOTICE 'ensure_seed_logics: using account_id=%', v_account_id;
 
-    -- v60: seed Futures Price Channel убран (contango/base_asset остаются в схеме)
-    DELETE FROM logics
-    WHERE name IN (
-        'Futures Price Channel and LNREG Base Asset',
-        'Price Channel Fuge and LNREG Base Asset'
-    );
-
     INSERT INTO logics (name, account_id, is_enabled, note)
     SELECT v.name, v_account_id, FALSE, v.note
     FROM (VALUES

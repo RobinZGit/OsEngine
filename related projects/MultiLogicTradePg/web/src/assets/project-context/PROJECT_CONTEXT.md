@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — убран seed Futures Price Channel; contango/base_asset остаются
+**Последнее обновление:** 2026-07-31 — убран целевой DELETE Futures Price Channel из SQL; seed не ставится
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -28,7 +28,7 @@
 | Файл | Назначение |
 |------|------------|
 | `00_create_database.sql` | **DROP + CREATE** базы `multilogictrade` (полное пересоздание) |
-| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v60**) |
+| `01_multilogictrade_tables_and_data.sql` | Таблицы, индексы, справочники (идемпотентно, **v61**) |
 | `02_multilogictrade_functions_and_procedures.sql` | Функции и процедуры (идемпотентно) |
 | `03_multilogictrade_examples.sql` | Примеры SELECT (необязательно) |
 
@@ -120,9 +120,16 @@
 
 ## Что сделано (актуально на 2026-07-31)
 
+### 2026-07-31 (без DELETE Futures Price Channel в installer)
+
+- Убран целевой `DELETE` имён Futures Price Channel / Fuge из `01` + `ensure_seed_logics`.
+- Seed этих логик **по-прежнему не ставится** (нет в INSERT); уже существующие в БД инсталлятор **не трогает**.
+- Contango / base_asset / DONCHIAN без изменений.
+- Схема **v61**. Installers **v1.0.115**.
+
 ### 2026-07-31 (убран seed Futures Price Channel)
 
-- Удалена seed-логика **Futures Price Channel and LNREG Base Asset** (и старое имя Fuge) из `01` + `ensure_seed_logics`; на upgrade — `DELETE`.
+- Удалена seed-логика **Futures Price Channel and LNREG Base Asset** (и старое имя Fuge) из INSERT в `01` + `ensure_seed_logics` (v60 имел ещё `DELETE` — снят в v61).
 - **Остаются:** DONCHIAN, `signal_acts_on` security|base_asset|**contango**, `contango_securities` / sync, sell-before-expiry params, UI.
 - Схема **v60**. Installers **v1.0.114**.
 
@@ -157,8 +164,8 @@
 - **DONCHIAN** = Price Channel (Tun-Chan/Дончиан): calc UPPER/MIDDLE/LOWER; UI name «Price Channel (Donchian)».
 - Оценка/sync/backtest: индикаторы и цены для `base_asset` берутся с underlying.
 - UI: колонка «Действует на»; график бумаги + график базового актива (бой и тест).
-- Seed-логика Futures Price Channel… — **снята в v60** (инфраструктура осталась).
-- Схема **v57** (+contango v59; seed убран v60).
+- Seed-логика Futures Price Channel… — не в INSERT (v60+); целевой DELETE снят в **v61**.
+- Схема **v57** (+contango v59; seed убран v60; DELETE убран v61).
 - Installers: bump к **v1.0.110** при выкладке.
 
 ### 2026-07-31 (Crypt v1.22 — тоньше перо в режиме Заметка)
@@ -1022,6 +1029,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-07-31 | Drop intentional DELETE of Futures Price Channel seeds; v61 / v1.0.115 |
 | 2026-07-31 | Remove seed Futures Price Channel; keep contango/base_asset; v60 / v1.0.114 |
 | 2026-07-31 | signal_acts_on=contango (fut−und price series); v59 / v1.0.113 |
 | 2026-07-31 | Backtest price tips: chunked ~30d load + full phase_detail; v1.0.112 |
@@ -1271,4 +1279,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **802** — remove Futures Price Channel seed, keep contango; **801** — contango; **800** — tips.
+Последние (см. USER_INSTRUCTIONS): **804** — no intentional DELETE of those seeds; **803** — keep contango; **802** — remove seed.

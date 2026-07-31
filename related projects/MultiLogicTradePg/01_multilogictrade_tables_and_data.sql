@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v60 (идемпотентный запуск)
+-- Версия: v61 (идемпотентный запуск)
+-- v61: убран целевой DELETE Futures Price Channel / Fuge (seed и так не ставится; локальные копии не трогаем)
 -- v60: убран seed «Futures Price Channel and LNREG Base Asset» (contango/base_asset/DONCHIAN остаются)
 -- v59: signal_acts_on += contango (синтет. ряд fut−und); таблица contango_securities
 -- v58: rename seed «Futures Price Channel…» (было Fuge); sell_futures_before_expiry / days
@@ -2846,15 +2847,6 @@ WHERE src.name = 'LinReg Fade'
 ON CONFLICT (logic_id, security_id) DO UPDATE SET
     is_active = EXCLUDED.is_active,
     display_order = EXCLUDED.display_order;
-
--- =====================================================================
--- v60: убрать seed Futures Price Channel… (инфраструктура DONCHIAN/base_asset/contango остаётся)
--- =====================================================================
-DELETE FROM logics
-WHERE name IN (
-    'Futures Price Channel and LNREG Base Asset',
-    'Price Channel Fuge and LNREG Base Asset'
-);
 
 -- Стопы seed: insert only if empty
 
