@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-07-31 — убран целевой DELETE Futures Price Channel из SQL; seed не ставится
+**Последнее обновление:** 2026-08-01 — live `GET /api/logic-trades` не включает `rejected` в LIMIT; installers **v1.0.117**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,13 @@
 
 ---
 
-## Что сделано (актуально на 2026-07-31)
+## Что сделано (актуально на 2026-08-01)
+
+### 2026-08-01 (rejected не съедают LIMIT live-сделок)
+
+- Проблема: панель боя (логика 1720 и др.) показывала FinRes 0 / Positions 0/0 / пустую equity при полном export с filled — ночные `rejected` (T-Bank overnight) заполняли `ORDER BY executed_at DESC LIMIT N`.
+- Фикс: `GET /api/logic-trades` — `lt.status IS DISTINCT FROM 'rejected'`; LIMIT считается только по остальным статусам. Полный дамп с rejected — по-прежнему `/api/logic-trades/export`.
+- Installers **v1.0.117**.
 
 ### 2026-07-31 (без DELETE Futures Price Channel в installer)
 
@@ -1029,6 +1035,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-01 | Live logic-trades: exclude rejected from LIMIT; installers v1.0.117 |
 | 2026-07-31 | Drop intentional DELETE of Futures Price Channel seeds; v61 / v1.0.116 |
 | 2026-07-31 | Remove seed Futures Price Channel; keep contango/base_asset; v60 / v1.0.114 |
 | 2026-07-31 | signal_acts_on=contango (fut−und price series); v59 / v1.0.113 |
@@ -1279,4 +1286,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **804** — no intentional DELETE of those seeds; **803** — keep contango; **802** — remove seed.
+Последние (см. USER_INSTRUCTIONS): **805** — rejected не в LIMIT live-сделок; **804** — no intentional DELETE of those seeds; **803** — keep contango.

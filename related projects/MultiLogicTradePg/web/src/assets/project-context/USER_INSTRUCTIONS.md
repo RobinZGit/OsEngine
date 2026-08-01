@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+805. Rejected deals, of course, do not need to be considered in the limit, not in what, they seem to be not.
+
 804. You probably don't need to remove these last two lines on purpose I deleted them locally and don't install them anywhere else So, probably, remove them from the SQL installer Reassemble everything and put it in the repository
 
 803. You don't need to remove the contango, you just need to remove the logic, and leave all calculations with indicators, all the possibilities that are in the contango, and so on.

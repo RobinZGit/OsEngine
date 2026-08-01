@@ -106,7 +106,10 @@ app.get('/api/logic-trades', async (req, res) => {
   );
   try {
     const params = [logicId];
-    let where = 'WHERE lt.logic_id = $1';
+    // Rejected rows must not consume LIMIT — overnight reject spam would otherwise
+    // starve live FinRes / equity / open positions (panel loads newest N only).
+    // Full dump including rejected: GET /api/logic-trades/export.
+    let where = `WHERE lt.logic_id = $1 AND lt.status IS DISTINCT FROM 'rejected'`;
     if (isTest === true) {
       where += ' AND lt.is_test = TRUE';
     } else if (isTest === false) {
