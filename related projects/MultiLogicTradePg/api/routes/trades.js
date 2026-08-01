@@ -135,6 +135,110 @@ app.get('/api/logic-trades', async (req, res) => {
 });
 
 /**
+ * Live UI banner: warn when rejected orders form a burst/period (not 1–2 stray rejects).
+ * Query: logic_id, optional is_test=0|1 (default live).
+ *
+ * Criteria (last 24h):
+ *  - rejected >= 8, or
+ *  - rejected >= 5 and first→last reject span >= 30 minutes.
+ */
+app.get('/api/logic-trades/reject-alert', async (req, res) => {
+  const logicId = Number(req.query.logic_id);
+  if (!Number.isInteger(logicId) || logicId <= 0) {
+    res.status(400).json({ error: 'logic_id required' });
+    return;
+  }
+  const isTestRaw = req.query.is_test;
+  const isTest =
+    isTestRaw === '1' || isTestRaw === 'true'
+      ? true
+      : isTestRaw === '0' || isTestRaw === 'false'
+        ? false
+        : false;
+  const windowHours = 24;
+  const minAlways = 8;
+  const minPeriod = 5;
+  const periodMinutes = 30;
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         COUNT(*)::int AS rejected_count,
+         MIN(lt.executed_at) AS first_rejected_at,
+         MAX(lt.executed_at) AS last_rejected_at,
+         EXTRACT(EPOCH FROM (MAX(lt.executed_at) - MIN(lt.executed_at))) / 60.0 AS span_minutes,
+         (
+           SELECT LEFT(NULLIF(TRIM(r.note), ''), 180)
+           FROM logic_trades r
+           WHERE r.logic_id = $1
+             AND r.is_test = $2
+             AND r.status = 'rejected'
+             AND r.executed_at >= NOW() - make_interval(hours => $3)
+           ORDER BY r.executed_at DESC, r.id DESC
+           LIMIT 1
+         ) AS sample_note,
+         (
+           SELECT COUNT(*)::int
+           FROM logic_trades f
+           WHERE f.logic_id = $1
+             AND f.is_test = $2
+             AND f.status IN ('filled', 'submitted')
+             AND f.executed_at >= NOW() - make_interval(hours => $3)
+         ) AS filled_count
+       FROM logic_trades lt
+       WHERE lt.logic_id = $1
+         AND lt.is_test = $2
+         AND lt.status = 'rejected'
+         AND lt.executed_at >= NOW() - make_interval(hours => $3)`,
+      [logicId, isTest, windowHours]
+    );
+    const row = rows[0] || {};
+    const rejectedCount = Number(row.rejected_count) || 0;
+    const filledCount = Number(row.filled_count) || 0;
+    const spanMinutes =
+      row.span_minutes != null && Number.isFinite(Number(row.span_minutes))
+        ? Number(row.span_minutes)
+        : null;
+    const warn =
+      rejectedCount >= minAlways ||
+      (rejectedCount >= minPeriod && spanMinutes != null && spanMinutes >= periodMinutes);
+    let message = null;
+    if (warn) {
+      const spanPart =
+        spanMinutes != null && spanMinutes >= 1
+          ? `, период ~${Math.round(spanMinutes)} мин`
+          : '';
+      const sample = row.sample_note ? String(row.sample_note).trim() : '';
+      message =
+        `Много отказов биржи: ${rejectedCount} за ${windowHours} ч${spanPart}` +
+        (filledCount > 0 ? ` (исполнено ${filledCount})` : '') +
+        '. Проверьте расписание и доступность инструмента.' +
+        (sample ? ` Пример: ${sample}` : '');
+    }
+    res.json({
+      logic_id: logicId,
+      is_test: isTest,
+      warn,
+      rejected_count: rejectedCount,
+      filled_count: filledCount,
+      window_hours: windowHours,
+      first_rejected_at: row.first_rejected_at ?? null,
+      last_rejected_at: row.last_rejected_at ?? null,
+      span_minutes: spanMinutes,
+      sample_note: row.sample_note ?? null,
+      message,
+      criteria: {
+        min_always: minAlways,
+        min_period: minPeriod,
+        period_minutes: periodMinutes,
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/logic-trades/reject-alert', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Full trade dump for analysis (open/close/shadow/rejected/etc. + lots).
  * Query: logic_id, is_test=0|1, optional run_id (test: omit = latest run if any).
  */

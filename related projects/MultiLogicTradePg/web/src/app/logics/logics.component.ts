@@ -139,6 +139,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
   logicStops = new Map<number, LogicStopRow[]>();
   logicSecurities = new Map<number, LogicSecurityRow[]>();
   logicTrades = new Map<number, LogicTradeRow[]>();
+  /** Live reject burst banner (from /logic-trades/reject-alert). */
+  logicRejectAlerts = new Map<
+    number,
+    { warn: boolean; rejected_count: number; message: string | null }
+  >();
   logicTradesTest = new Map<number, LogicTradeRow[]>();
   /**
    * Live champion equity from /equity-curve while test panel is open
@@ -2232,6 +2237,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.logicTradesTest.get(Number(logicId)) ?? [];
   }
 
+  rejectAlertFor(logicId: number): {
+    warn: boolean;
+    rejected_count: number;
+    message: string | null;
+  } | null {
+    const row = this.logicRejectAlerts.get(Number(logicId));
+    return row?.warn ? row : null;
+  }
+
   onPeriodDialogOpen(open: boolean): void {
     this.uiInteractionPause = open;
   }
@@ -3590,6 +3604,41 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.tradesLoading.delete(logicId);
       },
     });
+    this.loadRejectAlertForLogic(logicId);
+  }
+
+  private loadRejectAlertForLogic(logicId: number): void {
+    const id = Number(logicId);
+    this.logicsService
+      .getLogicTradesRejectAlert(id, false)
+      .pipe(
+        takeUntil(this.destroy$),
+        catchError(() => of(null))
+      )
+      .subscribe((alert) => {
+        if (!alert?.warn) {
+          if (this.logicRejectAlerts.has(id)) {
+            this.logicRejectAlerts.delete(id);
+            this.cdr.markForCheck();
+          }
+          return;
+        }
+        const next = {
+          warn: true,
+          rejected_count: Number(alert.rejected_count) || 0,
+          message: alert.message ?? null,
+        };
+        const prev = this.logicRejectAlerts.get(id);
+        if (
+          prev &&
+          prev.rejected_count === next.rejected_count &&
+          prev.message === next.message
+        ) {
+          return;
+        }
+        this.logicRejectAlerts.set(id, next);
+        this.cdr.markForCheck();
+      });
   }
 
   private loadTestTradesForLogic(logicId: number, _silent = false): void {

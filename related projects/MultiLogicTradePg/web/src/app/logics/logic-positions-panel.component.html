@@ -253,6 +253,15 @@
             </button>
           }
 
+          @if (rejectAlert?.warn) {
+            <span
+              class="trades-reject-alert"
+              [title]="rejectAlert?.message || 'Много отказов биржи'"
+            >
+              <span aria-hidden="true">⚠</span>
+              <span>отказы ×{{ rejectAlert?.rejected_count }}</span>
+            </span>
+          }
           @if (logicRow.is_enabled && tbankTokenAlert) {
             <button
               type="button"
@@ -297,6 +306,13 @@
         <span aria-hidden="true">⚠</span>
         <span>{{ tbankTokenAlert.message }}</span>
       </button>
+    }
+
+    @if (!isTest && rejectAlert?.warn && rejectAlert?.message) {
+      <div class="trades-reject-banner" role="status">
+        <span aria-hidden="true">⚠</span>
+        <span>{{ rejectAlert.message }}</span>
+      </div>
     }
 
     <details class="signals-block positions-sub-block portfolio-equity-block" [open]="expandedPortfolioEquity">

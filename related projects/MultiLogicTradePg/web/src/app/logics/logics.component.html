@@ -2310,6 +2310,7 @@
                         [timeframeId]="timeframeIdForLogic(row)"
                         [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
                         [tbankTokenAlert]="tbankTokenAlert"
+                        [rejectAlert]="rejectAlertFor(row.id)"
                         [pinnedPaper]="cashFundPinnedPaper(row)"
                         [logicSecurities]="securitiesFor(row.id)"
                         (toggleBlock)="toggleTradesBlock(row.id)"

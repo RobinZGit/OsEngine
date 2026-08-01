@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+806. Make some kind of warning in the trade, if there are a lot of rejected transactions. Put an extra banner on it. But if there are not many of them, one or two, it's okay. If there is a whole period, then you need to warn. Choose the criteria yourself.
+
 805. Rejected deals, of course, do not need to be considered in the limit, not in what, they seem to be not.
 
 804. You probably don't need to remove these last two lines on purpose I deleted them locally and don't install them anywhere else So, probably, remove them from the SQL installer Reassemble everything and put it in the repository

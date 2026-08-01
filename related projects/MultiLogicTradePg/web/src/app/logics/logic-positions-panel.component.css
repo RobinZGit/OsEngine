@@ -437,6 +437,36 @@
   line-height: 1.35;
 }
 
+.positions-panel-outer .trades-reject-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: min(100%, 14rem);
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.positions-panel-outer .trades-reject-banner {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 0.65rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #d97706;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .positions-panel-outer .trade-shadow-badge {
   display: inline-block;
   margin-left: 0.35rem;

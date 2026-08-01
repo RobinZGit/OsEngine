@@ -491,6 +491,43 @@ export class LogicsService {
     });
   }
 
+  /** Live banner: burst/period of rejected broker orders (not 1–2 strays). */
+  getLogicTradesRejectAlert(
+    logicId: number,
+    isTest = false
+  ): Observable<{
+    logic_id: number;
+    is_test: boolean;
+    warn: boolean;
+    rejected_count: number;
+    filled_count: number;
+    window_hours: number;
+    first_rejected_at: string | null;
+    last_rejected_at: string | null;
+    span_minutes: number | null;
+    sample_note: string | null;
+    message: string | null;
+  }> {
+    return this.http.get<{
+      logic_id: number;
+      is_test: boolean;
+      warn: boolean;
+      rejected_count: number;
+      filled_count: number;
+      window_hours: number;
+      first_rejected_at: string | null;
+      last_rejected_at: string | null;
+      span_minutes: number | null;
+      sample_note: string | null;
+      message: string | null;
+    }>(`${this.appConfig.apiUrl}/logic-trades/reject-alert`, {
+      params: {
+        logic_id: String(logicId),
+        is_test: isTest ? '1' : '0',
+      },
+    });
+  }
+
   /** Full dump for analysis: open/close/shadow/all statuses + lots. */
   exportLogicTrades(
     logicId: number,

@@ -174,6 +174,13 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   @Input() tbankTokenAlert: { message: string } | null = null;
 
+  /** Массовые rejected за окно (бой); 1–2 отказа без баннера. */
+  @Input() rejectAlert: {
+    warn: boolean;
+    rejected_count: number;
+    message: string | null;
+  } | null = null;
+
   /** Таймфрейм логики для графиков теста. */
   @Input() timeframeId: number | null = null;
 
