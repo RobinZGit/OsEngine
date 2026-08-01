@@ -308,11 +308,13 @@
       </button>
     }
 
-    @if (!isTest && rejectAlert?.warn && rejectAlert?.message) {
-      <div class="trades-reject-banner" role="status">
-        <span aria-hidden="true">⚠</span>
-        <span>{{ rejectAlert.message }}</span>
-      </div>
+    @if (!isTest && rejectAlert; as alert) {
+      @if (alert.warn && alert.message) {
+        <div class="trades-reject-banner" role="status">
+          <span aria-hidden="true">⚠</span>
+          <span>{{ alert.message }}</span>
+        </div>
+      }
     }
 
     <details class="signals-block positions-sub-block portfolio-equity-block" [open]="expandedPortfolioEquity">
