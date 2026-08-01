@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+807. And why is the trade stopped now, the red checkmark, but at the same time such an equity as if in a green zone?
+
 806. Make some kind of warning in the trade, if there are a lot of rejected transactions. Put an extra banner on it. But if there are not many of them, one or two, it's okay. If there is a whole period, then you need to warn. Choose the criteria yourself.
 
 805. Rejected deals, of course, do not need to be considered in the limit, not in what, they seem to be not.

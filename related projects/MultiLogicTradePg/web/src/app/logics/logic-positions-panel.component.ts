@@ -40,7 +40,13 @@ import {
   LogicBacktestPapersComponent,
 } from './logic-backtest-papers.component';
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
-import { buildEquityPoints, buildPortfolioStopMarkers, buildShadowEquityPoints, buildShadedDisabledRanges } from './backtest-chart-overlays';
+import {
+  buildEquityPoints,
+  buildPortfolioStopMarkers,
+  buildShadowEquityPoints,
+  buildShadedDisabledRanges,
+  forceLivePortfolioShadowShading,
+} from './backtest-chart-overlays';
 import { ChartEquityPoint, ChartShadedRange, ChartStopMarker } from '../models/market.model';
 import {
   asDateOnly,
@@ -561,21 +567,13 @@ export class LogicPositionsPanelComponent implements OnChanges {
       : null;
     let shaded = buildShadedDisabledRanges(this.trades, periodStart, periodEnd);
     const nowIso = new Date().toISOString();
-    // Портфель ещё в тени — тянем серую зону до «сейчас» (не оставляем белый хвост).
-    if (this.logicRow?.portfolio_trading_paused) {
-      const lastShadow = [...shaded]
-        .reverse()
-        .find((r) => r.kind === 'shadow' || r.kind === 'paused');
-      if (lastShadow) {
-        lastShadow.endDt = nowIso;
-      } else {
-        const from =
-          periodStart ||
-          this.trades[this.trades.length - 1]?.bar_dt ||
-          this.trades[this.trades.length - 1]?.executed_at ||
-          nowIso;
-        shaded = [{ startDt: String(from), endDt: nowIso, kind: 'shadow', label: 'shadow' }];
-      }
+    // Портфель ещё в тени — серая зона до «сейчас»; срезаем зелёный хвост после паузы.
+    if (!this.isTest && this.logicRow?.portfolio_trading_paused) {
+      shaded = forceLivePortfolioShadowShading(shaded, {
+        pauseAt: this.logicRow.portfolio_stop_resume_at || null,
+        periodStart,
+        nowIso,
+      });
     }
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);

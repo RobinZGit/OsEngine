@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-01 — баннер массовых rejected в панели боя; installers **v1.0.118**
+**Последнее обновление:** 2026-08-01 — фикс зелёного хвоста эквити при красной паузе портфеля; installers **v1.0.119**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-08-01)
+
+### 2026-08-01 (зелёная зона при красной паузе портфеля)
+
+- Красный чекбокс = `portfolio_trading_paused` (реал остановлен, тень портфеля) — это не баг.
+- Баг UI: зоны эквити снова становились зелёными («обычная»), если после LTP/SL в истории был реальный Open; серую зону только удлиняли, зелёный хвост рисовался сверху.
+- Фикс: `forceLivePortfolioShadowShading` — с `portfolio_stop_resume_at` до now только shadow; зелёный хвост срезается.
+- Installers **v1.0.119**.
 
 ### 2026-08-01 (баннер массовых rejected в боевых позициях)
 
@@ -1041,6 +1048,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-01 | Equity shade: force gray while portfolio_trading_paused; installers v1.0.119 |
 | 2026-08-01 | Live reject-alert banner (≥8/24h or ≥5 spanning 30m); installers v1.0.118 |
 | 2026-08-01 | Live logic-trades: exclude rejected from LIMIT; installers v1.0.117 |
 | 2026-07-31 | Drop intentional DELETE of Futures Price Channel seeds; v61 / v1.0.116 |
@@ -1293,4 +1301,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **806** — баннер при массовых rejected; **805** — rejected не в LIMIT; **804** — no intentional DELETE seeds.
+Последние (см. USER_INSTRUCTIONS): **807** — красный чек vs зелёная эквити; **806** — баннер rejected; **805** — rejected не в LIMIT.

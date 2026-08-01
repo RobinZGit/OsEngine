@@ -402,6 +402,50 @@ export function buildShadedDisabledRanges(
 }
 
 /**
+ * Пока портфель в live-тени (`portfolio_trading_paused`), зона с момента паузы
+ * до «сейчас» должна быть серой. Иначе реальный Open в истории (кэш-фонд и т.п.)
+ * снова включает зелёную «обычная», хотя чекбокс красный и реал остановлен.
+ */
+export function forceLivePortfolioShadowShading(
+  ranges: ChartShadedRange[],
+  opts: {
+    pauseAt?: string | null;
+    periodStart?: string | null;
+    nowIso: string;
+  }
+): ChartShadedRange[] {
+  const nowIso = opts.nowIso;
+  const fromRaw =
+    (opts.pauseAt && String(opts.pauseAt).trim()) ||
+    [...ranges].reverse().find((r) => r.kind === 'shadow' || r.kind === 'paused')?.startDt ||
+    (opts.periodStart && String(opts.periodStart).trim()) ||
+    nowIso;
+  const from = String(fromRaw);
+  const fromKey = dtKey(from);
+  const kept: ChartShadedRange[] = [];
+  for (const r of ranges) {
+    const startKey = dtKey(r.startDt);
+    const endKey = dtKey(r.endDt);
+    if (endKey <= fromKey) {
+      kept.push(r);
+      continue;
+    }
+    if (startKey < fromKey) {
+      kept.push({ ...r, endDt: from });
+    }
+  }
+  const last = kept[kept.length - 1];
+  if (last && (last.kind === 'shadow' || last.kind === 'paused') && dtKey(last.startDt) <= fromKey) {
+    last.endDt = nowIso;
+    last.kind = 'shadow';
+    last.label = 'shadow';
+    return kept;
+  }
+  kept.push({ startDt: from, endDt: nowIso, kind: 'shadow', label: 'shadow' });
+  return kept;
+}
+
+/**
  * Кумулятивный PnL по закрытиям.
  * @param opts.shadowOnly — только is_shadow (для пунктирной теневой эквити)
  * @param opts.includeShadow — включить shadow в основную серию (редко)

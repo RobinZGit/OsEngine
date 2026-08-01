@@ -5,6 +5,7 @@ import {
   buildStopMarkers,
   buildTradeMarkers,
   clipCandlesForBacktest,
+  forceLivePortfolioShadowShading,
   isDtInsideDisabledShade,
   papersWithTrades,
   tradeDtWindow,
@@ -273,6 +274,38 @@ describe('backtest-chart-overlays', () => {
     expect(markers[0].ruleKind).toBe('stop_loss');
     expect(markers[0].label).toContain('portfolio');
     expect(markers[1].ruleKind).toBe('take_profit');
+  });
+
+  it('forceLivePortfolioShadowShading: drops green tail while portfolio paused', () => {
+    const forced = forceLivePortfolioShadowShading(
+      [
+        {
+          startDt: '2026-07-20 10:00:00',
+          endDt: '2026-07-28 12:00:00',
+          kind: 'normal',
+          label: 'обычная',
+        },
+        {
+          startDt: '2026-07-28 12:00:00',
+          endDt: '2026-07-29 10:00:00',
+          kind: 'shadow',
+          label: 'shadow',
+        },
+        {
+          startDt: '2026-07-29 10:00:00',
+          endDt: '2026-07-30 15:00:00',
+          kind: 'normal',
+          label: 'обычная',
+        },
+      ],
+      {
+        pauseAt: '2026-07-28 12:00:00',
+        nowIso: '2026-08-01T12:00:00.000Z',
+      }
+    );
+    expect(forced.map((r) => r.kind)).toEqual(['normal', 'shadow']);
+    expect(forced[1].startDt).toBe('2026-07-28 12:00:00');
+    expect(forced[1].endDt).toBe('2026-08-01T12:00:00.000Z');
   });
 
   it('buildShadedDisabledRanges: green normal → gray shadow → green again', () => {
