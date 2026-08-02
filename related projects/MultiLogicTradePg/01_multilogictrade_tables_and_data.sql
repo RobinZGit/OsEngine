@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v61 (идемпотентный запуск)
+-- Версия: v62 (идемпотентный запуск)
+-- v62: EOD close (close_positions_eod) не зависит от use_non_trading_periods; last bar до вечернего окна
 -- v61: убран целевой DELETE Futures Price Channel / Fuge (seed и так не ставится; локальные копии не трогаем)
 -- v60: убран seed «Futures Price Channel and LNREG Base Asset» (contango/base_asset/DONCHIAN остаются)
 -- v59: signal_acts_on += contango (синтет. ряд fut−und); таблица contango_securities
@@ -1372,7 +1373,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('use_non_trading_periods', 'Учитывать неторговые периоды', 'boolean', 'true',
      'Не открывать сделки в интервалах из блока «Торговые периоды» (шаблон MOEX TQBR по умолчанию)', 16),
     ('close_positions_eod', 'Закрывать позиции в конце дня (кроме фондов)', 'boolean', 'false',
-     'В конце торговой сессии (или на последней свече дня) закрыть все позиции, кроме денежного фонда TMON/LQDT/SBMM', 17),
+     'В конце каждого торгового дня закрыть все позиции, кроме TMON/LQDT/SBMM. Не зависит от «Учитывать неторговые периоды» (тот чекбокс только блокирует новые входы). Фонды не закрываются', 17),
     ('sell_futures_before_expiry', 'Продавать фьючерсы до экспирации', 'boolean', 'false',
      'В конце сессии закрыть открытые фьючерсы, если до экспирации осталось не больше N календарных дней (параметр ниже). Вечные фьючерсы не трогает', 21),
     ('sell_futures_days_before_expiry', 'Дней до экспирации (продажа)', 'integer', '3',

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-01 — hotfix NG1 rejectAlert.message; installers **v1.0.120**
+**Последнее обновление:** 2026-08-02 — EOD close не зависит от use_non_trading_periods; schema **v62**; installers **v1.0.121**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,14 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-01)
+## Что сделано (актуально на 2026-08-02)
+
+### 2026-08-02 (EOD close ≠ use_non_trading_periods)
+
+- `close_positions_eod`: закрытие в конце каждого торгового дня **не зависит** от чекбокса «Учитывать неторговые периоды» (тот только блокирует новые входы).
+- `logic_is_eod_session_bar`: интервалы — только тайминг; плюс последняя сессионная свеча до вечернего окна (18:30 при окне с 18:40), иначе EOD мог не сработать.
+- Фонды TMON/LQDT/SBMM по-прежнему не закрываются (`logic_close_positions_eod_except_funds`).
+- Схема **v62**. Installers **v1.0.121**.
 
 ### 2026-08-01 (hotfix: NG1 rejectAlert.message)
 
@@ -1053,6 +1060,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-02 | EOD close ignores use_non_trading_periods; last bar before evening window; v62 / v1.0.121 |
 | 2026-08-01 | Hotfix NG1 rejectAlert template null; installers v1.0.120 |
 | 2026-08-01 | Equity shade: force gray while portfolio_trading_paused; installers v1.0.119 |
 | 2026-08-01 | Live reject-alert banner (≥8/24h or ≥5 spanning 30m); installers v1.0.118 |
@@ -1307,4 +1315,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **808** — NG1 rejectAlert null; **807** — красный чек vs зелёная эквити; **806** — баннер rejected.
+Последние (см. USER_INSTRUCTIONS): **810** — EOD close без учёта торговых периодов; **808** — NG1 rejectAlert; **807** — красный чек vs зелёная эквити.

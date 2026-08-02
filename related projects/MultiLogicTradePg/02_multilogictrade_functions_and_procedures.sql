@@ -5028,6 +5028,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9590,6 +9591,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -17088,7 +17117,9 @@ $$;
 COMMENT ON FUNCTION logic_eod_session_end_dt(INTEGER, TIMESTAMP) IS
 'Начало вечернего неторгового окна (после основной сессии MOEX)';
 
--- Момент EOD-сессии (вечернее окно / последняя свеча дня) — без чекбоксов закрытия.
+-- Момент EOD-сессии (вечернее окно / последняя свеча дня).
+-- Не зависит от use_non_trading_periods: расписание окон — только тайминг конца дня;
+-- чекбокс «Учитывать неторговые периоды» режет лишь открытие сигналов.
 CREATE OR REPLACE FUNCTION logic_is_eod_session_bar(
     p_logic_id INTEGER,
     p_bar_dt TIMESTAMP,
@@ -17100,17 +17131,24 @@ LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_trigger TIMESTAMP;
 BEGIN
-    IF get_logic_param_boolean(p_logic_id, 'use_non_trading_periods', TRUE) THEN
-        v_trigger := logic_eod_session_end_dt(p_logic_id, p_bar_dt);
-        IF v_trigger IS NULL THEN
-            RETURN FALSE;
+    -- Интервалы читаем всегда (если есть), даже когда use_non_trading_periods=off.
+    v_trigger := logic_eod_session_end_dt(p_logic_id, p_bar_dt);
+    IF v_trigger IS NOT NULL THEN
+        -- Первая свеча at/after старта вечернего окна (если такие бары есть)
+        IF p_bar_dt >= v_trigger THEN
+            RETURN p_prev_bar_dt IS NULL OR p_prev_bar_dt < v_trigger;
         END IF;
-        -- Первая свеча дня с open >= старта вечернего неторгового окна
-        RETURN p_bar_dt >= v_trigger
-           AND (p_prev_bar_dt IS NULL OR p_prev_bar_dt < v_trigger);
+        -- Последняя сессионная свеча до окна (типично 18:30 при окне с 18:40)
+        IF p_next_bar_dt IS NOT NULL AND p_next_bar_dt >= v_trigger THEN
+            RETURN TRUE;
+        END IF;
+        IF p_next_bar_dt IS NOT NULL AND p_next_bar_dt::DATE > p_bar_dt::DATE THEN
+            RETURN TRUE;
+        END IF;
+        RETURN FALSE;
     END IF;
 
-    -- Без неторговых периодов — последняя свеча календарного дня
+    -- Нет вечернего окна в расписании — последняя свеча календарного дня
     IF p_next_bar_dt IS NULL THEN
         RETURN FALSE;
     END IF;
@@ -17119,7 +17157,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_is_eod_session_bar(INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP) IS
-'True: бар конца торговой сессии (вечернее неторговое окно или последняя свеча дня)';
+'True: бар конца торговой сессии. Не зависит от use_non_trading_periods (окна — только тайминг EOD)';
 
 -- p_prev_bar_dt / p_next_bar_dt — соседние бары прогона (могут быть NULL).
 CREATE OR REPLACE FUNCTION logic_is_eod_close_bar(
@@ -17134,12 +17172,14 @@ BEGIN
     IF NOT get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
         RETURN FALSE;
     END IF;
+    -- close_positions_eod всегда пытается закрыть на EOD-баре, даже если
+    -- «Учитывать неторговые периоды» включён (сигналы в эти окна не открываются).
     RETURN logic_is_eod_session_bar(p_logic_id, p_bar_dt, p_prev_bar_dt, p_next_bar_dt);
 END;
 $$;
 
 COMMENT ON FUNCTION logic_is_eod_close_bar(INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP) IS
-'True: закрыть позиции (кроме фондов) на этом баре — конец сессии и close_positions_eod';
+'True: close_positions_eod на баре конца дня; игнорирует use_non_trading_periods (фонды не закрываются отдельно)';
 
 -- Календарных дней до экспирации активного контракта; NULL = не фьючерс / вечный / нет даты.
 CREATE OR REPLACE FUNCTION logic_futures_days_to_expiry(
@@ -21415,6 +21455,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 
