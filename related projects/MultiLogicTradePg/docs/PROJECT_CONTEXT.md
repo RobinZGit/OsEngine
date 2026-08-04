@@ -1108,7 +1108,7 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA (not undici fetch) |
+| 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
 | 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
 | 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
 | 2026-08-04 | Hotfix preview-connection: pgResolveTbankAccount from ctx; v1.0.126 |
@@ -1370,4 +1370,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **813** — tbank.ru host + CA Госуслуг в installer; **812** — канал postgres|node; **
+Последние (см. USER_INSTRUCTIONS): **813** — tbank.ru host + CA Госуслуг в installer; **812** — канал postgres|node; **811** — SSL checkbox.
