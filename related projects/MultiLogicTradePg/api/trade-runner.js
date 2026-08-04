@@ -57,8 +57,9 @@ async function isUiSessionActiveDb(client) {
 async function touchLastOkDb(poolOrClient, source) {
   try {
     await poolOrClient.query(`CALL touch_trade_runner_last_ok($1)`, [source || 'node']);
-  } catch (_e) {
-    /* 02 not applied yet — in-memory lastOkAtMs still used */
+  } catch (e) {
+    // Still mark in-memory so UI does not stay red while cycles run.
+    console.error('touch_trade_runner_last_ok failed:', e.message || e);
   }
   lastOkAtMs = Date.now();
 }
@@ -279,24 +280,41 @@ async function getTradeRunnerHealth(pool) {
 
   const enabledFromDb = Number(dbHealth?.enabled_count ?? 0);
   const ageMs = lastOkAtMs > 0 ? Date.now() - lastOkAtMs : null;
+  const nodeFresh = lastOkAtMs > 0 && ageMs != null && ageMs <= STALE_MS;
   const nodeStale =
     enabledFromDb > 0 && (lastOkAtMs <= 0 || (ageMs != null && ageMs > STALE_MS));
   const busyAge = running && cycleStartedAt ? Date.now() - cycleStartedAt : 0;
   const busyStuck = running && busyAge > MAX_CYCLE_MS;
+  const requireUi = Boolean(dbHealth?.require_ui);
+  const uiActive = Boolean(dbHealth?.ui_active) || isUiSessionActive();
 
   let status = dbHealth?.status || (enabledFromDb > 0 ? 'stale' : 'idle');
-  if (busyStuck) status = 'stale';
-  else if (!dbHealth && nodeStale) status = 'stale';
-  else if (!dbHealth && enabledFromDb <= 0 && lastOkAtMs > 0) status = 'idle';
-  else if (!dbHealth && !nodeStale && enabledFromDb > 0) status = 'ok';
+  if (busyStuck) {
+    status = 'stale';
+  } else if (running) {
+    // Cycle in progress — do not paint UI red while work is happening.
+    status = 'ok';
+  } else if (status === 'stale' && nodeFresh) {
+    // DB LAST_OK may lag / CALL failed; Node pulse is authoritative.
+    status = 'ok';
+  } else if (status === 'ui_required' && (!requireUi || uiActive) && nodeFresh) {
+    status = 'ok';
+  } else if (!dbHealth && nodeStale) {
+    status = 'stale';
+  } else if (!dbHealth && enabledFromDb <= 0 && lastOkAtMs > 0) {
+    status = 'idle';
+  } else if (!dbHealth && !nodeStale && enabledFromDb > 0) {
+    status = 'ok';
+  }
 
   const logics = Array.isArray(dbHealth?.logics) ? dbHealth.logics : [];
   const logicStates = {};
   for (const row of logics) {
     const id = Number(row.id);
     if (!Number.isFinite(id)) continue;
+    // Keep per-logic stale from DB only — do not force all red when global LAST_OK lags.
     logicStates[id] = {
-      stale: Boolean(row.stale) || status === 'stale' || status === 'ui_required',
+      stale: Boolean(row.stale),
       last_trade_check_at: row.last_trade_check_at || null,
       account_type: row.account_type || null,
       name: row.name || null,
@@ -311,8 +329,8 @@ async function getTradeRunnerHealth(pool) {
     age_sec: dbHealth?.age_sec != null ? Number(dbHealth.age_sec) : ageMs != null ? ageMs / 1000 : null,
     stale_sec: Number(dbHealth?.stale_sec ?? STALE_MS / 1000),
     enabled_count: enabledFromDb,
-    require_ui: Boolean(dbHealth?.require_ui),
-    ui_active: Boolean(dbHealth?.ui_active) || isUiSessionActive(),
+    require_ui: requireUi,
+    ui_active: uiActive,
     node_running: running,
     node_busy_age_ms: busyAge,
     node_last_skip: lastSkipReason || null,

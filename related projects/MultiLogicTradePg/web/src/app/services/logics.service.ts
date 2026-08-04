@@ -68,6 +68,7 @@ export interface TradeRunnerHealth {
   enabled_count?: number;
   require_ui?: boolean;
   ui_active?: boolean;
+  node_running?: boolean;
   logics?: Record<string, TradeRunnerHealthLogic> | Array<TradeRunnerHealthLogic & { id?: number }>;
   at?: string;
 }

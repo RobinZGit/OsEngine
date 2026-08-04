@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — close-all в позициях через Node как sell-all; installers **v1.0.132**
+**Последнее обновление:** 2026-08-04 — фикс красного чекбокса при живой торговле (Node); installers **v1.0.133**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,14 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (fix: красный чекбокс при живых сделках, канал Node)
+
+- UI красил все логики красным, если глобальный `APP_TRADE_RUNNER_LAST_OK` stale — даже когда цикл Node шёл и сделки создавались.
+- Health: свежий Node-pulse / `node_running` → status ok; per-logic `stale` больше не форсируется от глобального.
+- UI: alive если цикл running, свежий `last_trade_check_at` или недавние live fills (не shadow).
+- Тень портфеля (`portfolio_trading_paused`) по-прежнему красный — это отдельный режим.
+- Installers **v1.0.133**.
 
 ### 2026-08-04 (fix: «Закрыть всё по рынку» = путь Node как sell-all)
 
@@ -1130,6 +1138,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Fix red enable-checkbox while live trades run (Node health reconcile); v1.0.133 |
 | 2026-08-04 | Fix close-all via Node like sell-all; drop UI heartbeat gate on Node PostOrder; v1.0.132 |
 | 2026-08-04 | Live block «Сделки отклонённые (rejected)» + reject reason column; API /rejected; v1.0.131 |
 | 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
@@ -1395,4 +1404,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **820** — close-all как sell-all (Node); **819** — блок rejected; **818** — dismissible × баннеров.
+Последние (см. USER_INSTRUCTIONS): **821** — красный чекбокс при живых сделках; **820** — close-all Node; **819** — блок rejected.

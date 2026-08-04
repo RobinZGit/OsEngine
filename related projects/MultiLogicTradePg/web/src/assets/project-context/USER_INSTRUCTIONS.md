@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+821. The trade is stopped, the checkbox is red, but at the same time the transactions took place. This is not a postgres mode. Look, maybe there is some kind of error. It actually goes, but writes that it is stopped.
+
 820. The button to close everything on the market did not sell anything in positions. At the same time, the button to sell everything on the account sold everything normally and successfully. Look at what it can do to close everything on the market and work. And immediately put it in the repository.
 
 819. to the blocks of open positions, closed positions in real trading, adding the block of the transaction rejected, rejected transactions, in brackets, rejected, and turning it around, we must see only those that were rejected and the reason for the rejection, so that it is written somewhere in the line, and put it immediately in the repository

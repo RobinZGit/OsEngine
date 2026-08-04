@@ -807,25 +807,59 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const h = this.tradeRunnerHealth;
     if (!h) return null;
     if (h.status === 'idle') return null;
+    // Cycle currently running — green even if LAST_OK lag briefly.
+    if (h.node_running) return true;
+    const per = this.logicHealthEntry(row);
+    if (this.logicHasRecentLiveActivity(row)) return true;
     if (h.status === 'ok') {
-      const per = this.logicHealthEntry(row);
       if (per && per.stale === true) return false;
       return true;
     }
-    if (h.status === 'stale' || h.status === 'ui_required' || h.stale) {
+    if (h.status === 'ui_required') return false;
+    if (h.status === 'stale' || h.stale) {
+      // Global heartbeat may lag while this logic still cycles (Node channel).
+      if (per && per.stale === false) return true;
       return false;
     }
     return null;
   }
 
-  private logicHealthEntry(row: LogicRow): { stale?: boolean } | null {
+  /** Recent live fills prove the logic is trading even if health heartbeat lagged. */
+  private logicHasRecentLiveActivity(row: LogicRow): boolean {
+    const ttlSec = Number(this.tradeRunnerHealth?.stale_sec ?? 90);
+    const ttlMs = Math.max(30, ttlSec) * 1000;
+    const now = Date.now();
+    const trades = this.logicTrades.get(Number(row.id)) ?? [];
+    for (const t of trades) {
+      if (t.is_test || t.is_shadow) continue;
+      if (t.status !== 'filled' && t.status !== 'submitted') continue;
+      const ms = new Date(t.executed_at || t.bar_dt).getTime();
+      if (Number.isFinite(ms) && now - ms <= ttlMs) return true;
+    }
+    const per = this.logicHealthEntry(row);
+    const checkAt = per?.last_trade_check_at;
+    if (checkAt) {
+      const ms = new Date(checkAt).getTime();
+      if (Number.isFinite(ms) && now - ms <= ttlMs) return true;
+    }
+    return false;
+  }
+
+  private logicHealthEntry(row: LogicRow): {
+    stale?: boolean;
+    last_trade_check_at?: string | null;
+  } | null {
     const logics = this.tradeRunnerHealth?.logics;
     if (!logics) return null;
     if (Array.isArray(logics)) {
       return (
-        (logics as Array<{ id?: number; stale?: boolean }>).find(
-          (x) => Number(x.id) === row.id
-        ) ?? null
+        (
+          logics as Array<{
+            id?: number;
+            stale?: boolean;
+            last_trade_check_at?: string | null;
+          }>
+        ).find((x) => Number(x.id) === row.id) ?? null
       );
     }
     return logics[String(row.id)] ?? null;
