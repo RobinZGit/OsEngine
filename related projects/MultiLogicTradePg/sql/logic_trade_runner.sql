@@ -1505,6 +1505,14 @@ BEGIN
                     NULL,
                     v_tf_id
                 );
+                -- Pulse every cycle while waiting for next TF bar (M15 etc.),
+                -- so per-logic health is not tied to bar frequency.
+                PERFORM logic_upsert_param(
+                    p_logic_id,
+                    'last_trade_check_at',
+                    to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS'),
+                    'text'
+                );
                 RETURN 0;
             END IF;
         EXCEPTION

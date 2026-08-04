@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — фикс красного чекбокса при живой торговле (Node); installers **v1.0.133**
+**Последнее обновление:** 2026-08-04 — чекбокс = heartbeat runner (~15с), не TF/сделки; installers **v1.0.134**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (чекбокс alive = heartbeat runner, не TF)
+
+- На M15 чекбокс зеленел после сделки/баров, через ~90 с краснел: UI смотрел `last_trade_check_at`, а между свечами `bar_skip` его не обновлял.
+- UI: зелёный при `status=ok` / `node_running` — ритм цикла (~15 с), не таймфрейм и не момент сделки.
+- SQL: при `trade.bar_skip` пульсировать `last_trade_check_at` (ожидание следующей свечи ≠ сон).
+- Installers **v1.0.134**. Нужен обновлённый `02` / `sql/logic_trade_runner.sql`.
 
 ### 2026-08-04 (fix: красный чекбокс при живых сделках, канал Node)
 
@@ -1138,6 +1145,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Checkbox green = runner heartbeat (~15s), not TF/trades; bar_skip pulses check_at; v1.0.134 |
 | 2026-08-04 | Fix red enable-checkbox while live trades run (Node health reconcile); v1.0.133 |
 | 2026-08-04 | Fix close-all via Node like sell-all; drop UI heartbeat gate on Node PostOrder; v1.0.132 |
 | 2026-08-04 | Live block «Сделки отклонённые (rejected)» + reject reason column; API /rejected; v1.0.131 |
@@ -1404,4 +1412,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **821** — красный чекбокс при живых сделках; **820** — close-all Node; **819** — блок rejected.
+Последние (см. USER_INSTRUCTIONS): **822** — чекбокс не от TF M15; **821** — красный при живых сделках; **820** — close-all Node.

@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+822. I understand that now, I updated, the checkbox becomes green when you make a transaction, then after a while it becomes red again. Now the time frame is 15 minutes, maybe some waiting checks, there is a period, and this time frame is too rare to color the checkbox green, but in fact, this time frame should not depend on anything, it should somehow check with its own rhythm, alive or not alive, and do not color the checkbox red, when it is not justified, because, as I understand it, when it wants to make a transaction, it will do it calmly, despite the fact that the checkbox is red.
+
 821. The trade is stopped, the checkbox is red, but at the same time the transactions took place. This is not a postgres mode. Look, maybe there is some kind of error. It actually goes, but writes that it is stopped.
 
 820. The button to close everything on the market did not sell anything in positions. At the same time, the button to sell everything on the account sold everything normally and successfully. Look at what it can do to close everything on the market and work. And immediately put it in the repository.

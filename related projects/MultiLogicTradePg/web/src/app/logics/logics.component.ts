@@ -774,7 +774,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const alive = this.isLogicTradeAlive(row);
     const h = this.tradeRunnerHealth;
     if (alive === true) {
-      return `Торговый цикл работает${h?.last_ok_at ? ` (last OK ${h.last_ok_at})` : ''}`;
+      return (
+        `Торговый цикл работает` +
+        `${h?.last_ok_at ? ` (last OK ${h.last_ok_at})` : ''}. ` +
+        `Цвет чекбокса = heartbeat runner (~15 с), не таймфрейм логики и не момент сделки.`
+      );
     }
     if (h?.status === 'ui_required') {
       return 'Торговля остановлена: нужен открытый UI (APP_TRADE_RUNNER_REQUIRE_UI)';
@@ -802,47 +806,25 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return `торговля остановлена (${acc})`;
   }
 
+  /**
+   * Green/red = trade-runner heartbeat (~15s), NOT logic timeframe / last trade.
+   * M15 (and slower TFs) may wait many minutes between bars — that must not paint red.
+   */
   private isLogicTradeAlive(row: LogicRow): boolean | null {
     if (!row.is_enabled) return null;
     const h = this.tradeRunnerHealth;
     if (!h) return null;
     if (h.status === 'idle') return null;
-    // Cycle currently running — green even if LAST_OK lag briefly.
     if (h.node_running) return true;
-    const per = this.logicHealthEntry(row);
-    if (this.logicHasRecentLiveActivity(row)) return true;
-    if (h.status === 'ok') {
-      if (per && per.stale === true) return false;
-      return true;
-    }
+    if (h.status === 'ok') return true;
     if (h.status === 'ui_required') return false;
     if (h.status === 'stale' || h.stale) {
-      // Global heartbeat may lag while this logic still cycles (Node channel).
+      // Fallback only when global LAST_OK lagged: recent cycle touch on this logic.
+      const per = this.logicHealthEntry(row);
       if (per && per.stale === false) return true;
       return false;
     }
     return null;
-  }
-
-  /** Recent live fills prove the logic is trading even if health heartbeat lagged. */
-  private logicHasRecentLiveActivity(row: LogicRow): boolean {
-    const ttlSec = Number(this.tradeRunnerHealth?.stale_sec ?? 90);
-    const ttlMs = Math.max(30, ttlSec) * 1000;
-    const now = Date.now();
-    const trades = this.logicTrades.get(Number(row.id)) ?? [];
-    for (const t of trades) {
-      if (t.is_test || t.is_shadow) continue;
-      if (t.status !== 'filled' && t.status !== 'submitted') continue;
-      const ms = new Date(t.executed_at || t.bar_dt).getTime();
-      if (Number.isFinite(ms) && now - ms <= ttlMs) return true;
-    }
-    const per = this.logicHealthEntry(row);
-    const checkAt = per?.last_trade_check_at;
-    if (checkAt) {
-      const ms = new Date(checkAt).getTime();
-      if (Number.isFinite(ms) && now - ms <= ttlMs) return true;
-    }
-    return false;
   }
 
   private logicHealthEntry(row: LogicRow): {
