@@ -40,6 +40,7 @@ module.exports = function registerTradesRoutes(app, ctx) {
     writeTechLogEvent,
     assertRealTbankAccount,
     sellAllPositions,
+    closeAllLogicPositions,
     planBuyBonds,
     executeBuyBonds,
     listBondFunds,
@@ -993,28 +994,33 @@ app.post('/api/logic-trades/close-all', async (req, res) => {
     return;
   }
   try {
-    // PostOrder inside SQL respects APP_TBANK_ORDER_CHANNEL (node → Express TLS).
-    let channel = 'node';
-    try {
-      const { rows: ch } = await pool.query(`SELECT tbank_order_channel() AS c`);
-      channel = ch[0]?.c === 'postgres' ? 'postgres' : 'node';
-    } catch (_e) {
-      /* default node */
-    }
-    const { rows } = await pool.query(
-      'SELECT logic_close_all_positions_at_market($1::INTEGER) AS result',
-      [logicId]
-    );
-    const result = rows[0]?.result ?? {};
+    // Node channel: in-process PostOrder (same path as account sell-all).
+    // Postgres channel: SQL tbank_post_order via pgsql-http.
+    const result = await closeAllLogicPositions(pool, logicId);
+    const channel = result.channel || 'node';
     await writeTechLogEvent(pool, {
       threadKey: 'trade-runner',
       operation: 'trade.close_all',
       message: `Закрыть всё: logic=${logicId} closed=${result.closed ?? 0} channel=${channel}`,
       source: 'api',
       logicId,
-      payload: { ...result, channel },
+      payload: {
+        closed: result.closed,
+        skipped: result.skipped,
+        channel,
+        broker_sold_count: result.broker_sold_count,
+        broker_error_count: result.broker_error_count,
+        errors: result.errors,
+        broker_errors: result.broker_errors,
+      },
     });
-    res.json({ ok: true, channel, ...result });
+    const closed = Number(result.closed) || 0;
+    const ok = result.ok !== false && (closed > 0 || (Number(result.skipped) || 0) === 0);
+    res.json({
+      ...result,
+      ok: closed > 0 ? true : ok,
+      channel,
+    });
   } catch (err) {
     console.error('POST /api/logic-trades/close-all', err);
     res.status(500).json({ error: err.message });

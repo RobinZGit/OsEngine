@@ -102,11 +102,8 @@ DECLARE
     v_body JSONB;
     v_content JSONB;
 BEGIN
-    IF NOT trade_runner_ui_is_active() THEN
-        RAISE EXCEPTION
-            'Канал заявок Node: откройте MultiLogic Trade в браузере (UI heartbeat) или переключите канал на Postgres';
-    END IF;
-
+    -- Localhost-only Node proxy; UI heartbeat not required (sell-all / close-all
+    -- already post in-process). Keep API process running.
     SELECT btrim(a.token_encrypted), b.api_url, a.account_code
     INTO v_token, v_api_url, v_account_code
     FROM accounts a

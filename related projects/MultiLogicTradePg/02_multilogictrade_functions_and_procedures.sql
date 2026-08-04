@@ -12431,6 +12431,7 @@ DECLARE
     v_close_idx INTEGER := 0;
     v_fill_price NUMERIC;
     v_sold_row JSONB;
+    v_books_skip BOOLEAN;
 BEGIN
     v_reason := COALESCE(
         NULLIF(btrim(p_trade_reason), ''),
@@ -12534,6 +12535,7 @@ BEGIN
             v_note := NULL;
             v_commission := 0;
             v_order := NULL;
+            v_books_skip := FALSE;
 
             IF NOT v_is_simulated AND p_post_broker THEN
                 BEGIN
@@ -12580,28 +12582,42 @@ BEGIN
                         v_note := SQLERRM;
                 END;
             ELSIF NOT v_is_simulated AND NOT p_post_broker THEN
-                -- Счёт уже flat (account sell-all): только книга логики, без второй заявки.
+                -- books-only: account sell-all closes all; Node close-all only sold[].
                 v_sold_row := logic_sold_fill_for_figi(p_sold, v_figi);
-                IF v_sold_row IS NOT NULL THEN
-                    v_order := v_sold_row->'order';
-                    IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
-                        v_price := (v_sold_row->>'price')::NUMERIC;
-                    END IF;
-                    v_fill_price := tbank_order_unit_price(v_order);
-                    IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
-                        v_price := v_fill_price;
-                    END IF;
-                    v_commission := COALESCE(tbank_order_commission(v_order), 0);
-                    v_broker_order_id := COALESCE(
-                        v_order->>'orderId',
-                        v_order->>'order_id',
-                        v_order->'orderState'->>'orderId'
+                IF v_sold_row IS NULL
+                   AND COALESCE(p_trade_reason, '') = 'market:close_all_node' THEN
+                    v_books_skip := TRUE;
+                    v_skipped := v_skipped + 1;
+                    v_errors := v_errors || jsonb_build_array(
+                        jsonb_build_object(
+                            'security_id', v_sec.security_id,
+                            'action', 'Long',
+                            'reason', 'брокер: заявка не исполнена (Node)'
+                        )
                     );
+                ELSE
+                    IF v_sold_row IS NOT NULL THEN
+                        v_order := v_sold_row->'order';
+                        IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
+                            v_price := (v_sold_row->>'price')::NUMERIC;
+                        END IF;
+                        v_fill_price := tbank_order_unit_price(v_order);
+                        IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                            v_price := v_fill_price;
+                        END IF;
+                        v_commission := COALESCE(tbank_order_commission(v_order), 0);
+                        v_broker_order_id := COALESCE(
+                            v_order->>'orderId',
+                            v_order->>'order_id',
+                            v_order->'orderState'->>'orderId'
+                        );
+                    END IF;
+                    v_status := 'filled';
+                    v_note := 'books_only: broker already flat';
                 END IF;
-                v_status := 'filled';
-                v_note := 'books_only: broker already flat';
             END IF;
 
+            IF NOT v_books_skip THEN
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, position_event, signal_kind, signal_formula,
@@ -12653,6 +12669,7 @@ BEGIN
                     )
                 );
             END IF;
+            END IF;
         END IF;
 
         IF v_short_qty > 0 THEN
@@ -12671,6 +12688,7 @@ BEGIN
             v_note := NULL;
             v_commission := 0;
             v_order := NULL;
+            v_books_skip := FALSE;
 
             IF NOT v_is_simulated AND p_post_broker THEN
                 BEGIN
@@ -12718,26 +12736,40 @@ BEGIN
                 END;
             ELSIF NOT v_is_simulated AND NOT p_post_broker THEN
                 v_sold_row := logic_sold_fill_for_figi(p_sold, v_figi);
-                IF v_sold_row IS NOT NULL THEN
-                    v_order := v_sold_row->'order';
-                    IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
-                        v_price := (v_sold_row->>'price')::NUMERIC;
-                    END IF;
-                    v_fill_price := tbank_order_unit_price(v_order);
-                    IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
-                        v_price := v_fill_price;
-                    END IF;
-                    v_commission := COALESCE(tbank_order_commission(v_order), 0);
-                    v_broker_order_id := COALESCE(
-                        v_order->>'orderId',
-                        v_order->>'order_id',
-                        v_order->'orderState'->>'orderId'
+                IF v_sold_row IS NULL
+                   AND COALESCE(p_trade_reason, '') = 'market:close_all_node' THEN
+                    v_books_skip := TRUE;
+                    v_skipped := v_skipped + 1;
+                    v_errors := v_errors || jsonb_build_array(
+                        jsonb_build_object(
+                            'security_id', v_sec.security_id,
+                            'action', 'Short',
+                            'reason', 'брокер: заявка не исполнена (Node)'
+                        )
                     );
+                ELSE
+                    IF v_sold_row IS NOT NULL THEN
+                        v_order := v_sold_row->'order';
+                        IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
+                            v_price := (v_sold_row->>'price')::NUMERIC;
+                        END IF;
+                        v_fill_price := tbank_order_unit_price(v_order);
+                        IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
+                            v_price := v_fill_price;
+                        END IF;
+                        v_commission := COALESCE(tbank_order_commission(v_order), 0);
+                        v_broker_order_id := COALESCE(
+                            v_order->>'orderId',
+                            v_order->>'order_id',
+                            v_order->'orderState'->>'orderId'
+                        );
+                    END IF;
+                    v_status := 'filled';
+                    v_note := 'books_only: broker already flat';
                 END IF;
-                v_status := 'filled';
-                v_note := 'books_only: broker already flat';
             END IF;
 
+            IF NOT v_books_skip THEN
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, position_event, signal_kind, signal_formula,
@@ -12789,6 +12821,7 @@ BEGIN
                     )
                 );
             END IF;
+            END IF;
         END IF;
     END LOOP;
 
@@ -12804,7 +12837,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_close_all_positions_at_market(INTEGER, BOOLEAN, BOOLEAN, TEXT, JSONB) IS
-'Закрытие long/short: p_post_broker=FALSE — только книга (после account sell-all), без второй заявки брокеру';
+'Закрытие long/short: p_post_broker=FALSE — только книга (account sell-all / Node close-all). market:close_all_node закрывает только figi из p_sold.';
 
 -- @include sql/logic_opt.sql
 -- ============================================
@@ -23557,11 +23590,7 @@ DECLARE
     v_body JSONB;
     v_content JSONB;
 BEGIN
-    IF NOT trade_runner_ui_is_active() THEN
-        RAISE EXCEPTION
-            'Канал заявок Node: откройте MultiLogic Trade в браузере (UI heartbeat) или переключите канал на Postgres';
-    END IF;
-
+    -- Localhost Node proxy; UI heartbeat not required (API must be running).
     SELECT btrim(a.token_encrypted), b.api_url, a.account_code
     INTO v_token, v_api_url, v_account_code
     FROM accounts a

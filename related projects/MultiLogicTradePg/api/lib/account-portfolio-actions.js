@@ -238,6 +238,226 @@ async function sellAllPositions(pool, accountId) {
   return { ...(rows[0]?.r ?? { ok: false, error: 'empty_result' }), channel: 'postgres' };
 }
 
+/**
+ * Close all open positions of one logic at market.
+ * Node channel: PostOrder in-process (same as sell-all) — no SQL→HTTP→heartbeat gate.
+ * Postgres channel: SQL logic_close_all_positions_at_market (pgsql-http).
+ */
+async function closeAllLogicPositionsViaNode(pool, logicId) {
+  const { rows: logicRows } = await pool.query(
+    `
+    SELECT
+      l.id,
+      l.account_id,
+      a.account_type,
+      a.account_code,
+      btrim(a.token_encrypted) AS token,
+      COALESCE(NULLIF(btrim(b.api_url), ''), $2) AS api_url
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    JOIN brokers b ON b.id = a.broker_id
+    WHERE l.id = $1
+      AND a.is_active = TRUE
+    `,
+    [logicId, DEFAULT_API]
+  );
+  const logic = logicRows[0];
+  if (!logic) {
+    return {
+      ok: false,
+      error: 'Логика не найдена или счёт неактивен',
+      closed: 0,
+      channel: 'node',
+    };
+  }
+
+  if (String(logic.account_type).toLowerCase() === 'fake') {
+    const { rows } = await pool.query(
+      `SELECT logic_close_all_positions_at_market($1::INTEGER) AS result`,
+      [logicId]
+    );
+    return { ...(rows[0]?.result ?? { ok: false, closed: 0 }), channel: 'node' };
+  }
+
+  if (!logic.token) {
+    return {
+      ok: false,
+      error: 'На счёте нет API-токена T-Bank',
+      closed: 0,
+      channel: 'node',
+    };
+  }
+
+  const { rows: plan } = await pool.query(
+    `
+    WITH secs AS (
+      SELECT DISTINCT lt.security_id
+      FROM logic_trades lt
+      WHERE lt.logic_id = $1
+        AND NOT lt.is_shadow
+        AND NOT lt.is_test
+        AND lt.status IN ('filled', 'submitted')
+    )
+    SELECT
+      s.security_id,
+      (
+        SELECT sp.tbank_figi
+        FROM security_prefixes sp
+        WHERE sp.security_id = s.security_id
+          AND sp.tbank_figi IS NOT NULL
+        ORDER BY sp.exchange_id
+        LIMIT 1
+      ) AS figi,
+      (
+        SELECT sp.prefix
+        FROM security_prefixes sp
+        WHERE sp.security_id = s.security_id
+        ORDER BY sp.exchange_id
+        LIMIT 1
+      ) AS ticker,
+      logic_long_position_qty($1, s.security_id, FALSE) AS long_qty,
+      logic_short_position_qty($1, s.security_id, FALSE) AS short_qty,
+      logic_ensure_security_market_price(
+        $1,
+        s.security_id,
+        logic_resolve_timeframe_id($1)
+      ) AS price
+    FROM secs s
+    `,
+    [logicId]
+  );
+
+  const sold = [];
+  const errors = [];
+
+  for (const row of plan) {
+    const longQty = Math.floor(Number(row.long_qty) || 0);
+    const shortQty = Math.floor(Number(row.short_qty) || 0);
+    if (longQty < 1 && shortQty < 1) continue;
+
+    const figi = String(row.figi || '').trim();
+    const ticker = row.ticker || figi || String(row.security_id);
+    if (!figi) {
+      errors.push({
+        security_id: row.security_id,
+        ticker,
+        error: 'Нет tbank_figi для бумаги',
+      });
+      continue;
+    }
+
+    const price = Number(row.price) > 0 ? Number(row.price) : 1;
+
+    if (longQty >= 1) {
+      try {
+        const order = await postOrder(pool, {
+          api_url: logic.api_url,
+          token: logic.token,
+          account_code: logic.account_code,
+          figi,
+          quantity: longQty,
+          price,
+          direction: 'SELL',
+          order_execution: 'market',
+          quantity_is_lots: false,
+        });
+        sold.push({
+          figi,
+          ticker,
+          security_id: row.security_id,
+          direction: 'SELL',
+          shares: longQty,
+          price,
+          order,
+          channel: 'node',
+        });
+      } catch (e) {
+        errors.push({
+          figi,
+          ticker,
+          security_id: row.security_id,
+          direction: 'SELL',
+          shares: longQty,
+          error: e.message || String(e),
+        });
+      }
+    }
+
+    if (shortQty >= 1) {
+      try {
+        const order = await postOrder(pool, {
+          api_url: logic.api_url,
+          token: logic.token,
+          account_code: logic.account_code,
+          figi,
+          quantity: shortQty,
+          price,
+          direction: 'BUY',
+          order_execution: 'market',
+          quantity_is_lots: false,
+        });
+        sold.push({
+          figi,
+          ticker,
+          security_id: row.security_id,
+          direction: 'BUY',
+          shares: shortQty,
+          price,
+          order,
+          channel: 'node',
+        });
+      } catch (e) {
+        errors.push({
+          figi,
+          ticker,
+          security_id: row.security_id,
+          direction: 'BUY',
+          shares: shortQty,
+          error: e.message || String(e),
+        });
+      }
+    }
+  }
+
+  const { rows } = await pool.query(
+    `SELECT logic_close_all_positions_at_market(
+       $1::INTEGER, FALSE, FALSE, 'market:close_all_node', $2::jsonb
+     ) AS result`,
+    [logicId, JSON.stringify(sold)]
+  );
+  const result = rows[0]?.result ?? { ok: true, closed: 0 };
+  const closed = Number(result.closed) || 0;
+  return {
+    ...result,
+    channel: 'node',
+    broker_sold_count: sold.length,
+    broker_error_count: errors.length,
+    broker_errors: errors,
+    sold,
+    ok: errors.length === 0,
+    error:
+      errors.length > 0
+        ? errors[0].error || 'Не удалось закрыть позиции через Node'
+        : result.error || null,
+    closed,
+  };
+}
+
+async function closeAllLogicPositions(pool, logicId) {
+  const channel = await getOrderChannel(pool);
+  if (channel === 'node') {
+    return closeAllLogicPositionsViaNode(pool, logicId);
+  }
+  const { rows } = await pool.query(
+    `SELECT logic_close_all_positions_at_market($1::INTEGER) AS result`,
+    [logicId]
+  );
+  return {
+    ...(rows[0]?.result ?? { ok: false, error: 'empty_result', closed: 0 }),
+    channel: 'postgres',
+  };
+}
+
 async function getAccountCashViaNode(pool, accountId) {
   const creds = await loadAccountBrokerCreds(pool, accountId);
   const resolved = await resolveTbankAccount(
@@ -531,6 +751,7 @@ async function executeBuyBonds(pool, accountId, opts = {}) {
 module.exports = {
   assertRealTbankAccount,
   sellAllPositions,
+  closeAllLogicPositions,
   planBuyBonds,
   executeBuyBonds,
   listBondFunds,

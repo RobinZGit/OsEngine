@@ -1,7 +1,6 @@
 'use strict';
 
 const { postOrder, tbankHttpPost } = require('../lib/tbank-invest-client');
-const { isUiSessionActive } = require('../lib/trade-runner-session');
 
 function isLocalRequest(req) {
   const ip = String(req.socket?.remoteAddress || req.ip || '');
@@ -11,16 +10,6 @@ function isLocalRequest(req) {
     ip === '::ffff:127.0.0.1' ||
     ip.endsWith('127.0.0.1')
   );
-}
-
-async function uiHeartbeatActive(pool) {
-  if (isUiSessionActive()) return true;
-  try {
-    const { rows } = await pool.query(`SELECT trade_runner_ui_is_active() AS ok`);
-    return Boolean(rows[0]?.ok);
-  } catch (_e) {
-    return false;
-  }
 }
 
 /**
@@ -62,15 +51,7 @@ module.exports = function registerInternalTbankRoutes(app, ctx) {
       return;
     }
     try {
-      if (!(await uiHeartbeatActive(pool))) {
-        res.status(503).json({
-          ok: false,
-          error:
-            'UI heartbeat inactive: откройте MultiLogic Trade в браузере или переключите канал заявок на Postgres',
-        });
-        return;
-      }
-
+      // Localhost-only; no UI heartbeat gate (matches sell-all / close-all in-process).
       const order = await postOrder(pool, {
         api_url: req.body?.api_url,
         token: req.body?.token,

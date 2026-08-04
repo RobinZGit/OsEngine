@@ -2099,18 +2099,30 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.logicsService.closeAllPositionsAtMarket(logicId).subscribe({
       next: (result) => {
         this.closeAllLoading.delete(logicId);
-        if (!result.ok) {
-          alert(result.error ?? 'Не удалось закрыть позиции');
-          return;
+        const closed = Number(result.closed) || 0;
+        const skipped = Number(result.skipped) || 0;
+        const brokerErrs = result.broker_errors ?? [];
+        const detail =
+          result.error ||
+          brokerErrs[0]?.error ||
+          (Array.isArray(result.errors) && result.errors[0]
+            ? String(
+                (result.errors[0] as { reason?: string }).reason ||
+                  JSON.stringify(result.errors[0])
+              )
+            : null);
+        if (closed === 0 && (skipped > 0 || brokerErrs.length > 0 || result.ok === false)) {
+          alert(
+            detail
+              ? `Не удалось закрыть позиции: ${detail}`
+              : 'Не удалось закрыть позиции: нет цен или ошибка брокера'
+          );
         }
         this.logicTradeLots.clear();
         this.expandedTradeRows.clear();
         this.loadTradesForLogic(logicId);
         if (this.isClosedPositionsExpanded(logicId)) {
           this.loadLotsForClosedPositions(logicId);
-        }
-        if ((result.closed ?? 0) === 0 && (result.skipped ?? 0) > 0) {
-          alert('Не удалось закрыть позиции: нет цен или ошибка брокера');
         }
       },
       error: (err) => {

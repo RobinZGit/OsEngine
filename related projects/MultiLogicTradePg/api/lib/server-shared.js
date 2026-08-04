@@ -43,6 +43,7 @@ const { writeTechLogEvent } = require('./tech-log');
 const {
   assertRealTbankAccount,
   sellAllPositions,
+  closeAllLogicPositions,
   planBuyBonds,
   executeBuyBonds,
   listBondFunds,
@@ -1215,6 +1216,7 @@ function createRouteContext(pool) {
     writeTechLogEvent,
     assertRealTbankAccount,
     sellAllPositions,
+    closeAllLogicPositions,
     planBuyBonds,
     executeBuyBonds,
     listBondFunds,

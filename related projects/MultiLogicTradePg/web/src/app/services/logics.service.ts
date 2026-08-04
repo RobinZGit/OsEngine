@@ -667,6 +667,9 @@ export class LogicsService {
     skipped?: number;
     errors?: unknown[];
     error?: string;
+    channel?: string;
+    broker_errors?: Array<{ error?: string; ticker?: string }>;
+    broker_error_count?: number;
   }> {
     return this.http.post<{
       ok: boolean;
@@ -674,6 +677,9 @@ export class LogicsService {
       skipped?: number;
       errors?: unknown[];
       error?: string;
+      channel?: string;
+      broker_errors?: Array<{ error?: string; ticker?: string }>;
+      broker_error_count?: number;
     }>(`${this.appConfig.apiUrl}/logic-trades/close-all`, { logic_id: logicId });
   }
 

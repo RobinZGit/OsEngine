@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — блок «Сделки отклонённые (rejected)» в боевых позициях; installers **v1.0.131**
+**Последнее обновление:** 2026-08-04 — close-all в позициях через Node как sell-all; installers **v1.0.132**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (fix: «Закрыть всё по рынку» = путь Node как sell-all)
+
+- Проблема: close-all шёл SQL → `tbank_post_order_via_node` (HTTP + UI heartbeat), а «Продать всё» на счёте — in-process `postOrder` без heartbeat → close-all молча/с ошибкой не продавал.
+- `closeAllLogicPositions`: при channel=node — PostOrder в Node, затем books-only (`market:close_all_node`, только figi из sold[]).
+- Снят UI-heartbeat gate с internal PostOrder / `tbank_post_order_via_node` (остаётся localhost-only).
+- Installers **v1.0.132**. На рабочей БД нужен обновлённый `02` (или `sql/logic_close_all_positions.sql` + `sql/tbank_order_channel.sql`).
 
 ### 2026-08-04 (блок отклонённых сделок в боевых позициях)
 
@@ -1123,6 +1130,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Fix close-all via Node like sell-all; drop UI heartbeat gate on Node PostOrder; v1.0.132 |
 | 2026-08-04 | Live block «Сделки отклонённые (rejected)» + reject reason column; API /rejected; v1.0.131 |
 | 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
 | 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
@@ -1387,4 +1395,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **819** — блок rejected в боевых позициях; **818** — dismissible × баннеров; **817** — fetch failed.
+Последние (см. USER_INSTRUCTIONS): **820** — close-all как sell-all (Node); **819** — блок rejected; **818** — dismissible × баннеров.
