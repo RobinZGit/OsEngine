@@ -67,6 +67,8 @@ module.exports = function registerReferencesRoutes(app, ctx) {
     buildTokenUpdateClause,
     stripAccountSecrets,
     enrichAccountBalance,
+    pgResolveTbankAccount,
+    pgFetchTbankPortfolioBalance,
     resolveAccountConnection,
     handleDbError,
   } = ctx;

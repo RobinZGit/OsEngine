@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+814. pgResolveTbankAccount is not defined
+
 813. also look at the answer that I will now send you from the technical support and maybe something needs to be changed in the postgres methods, maybe the port should be added to it, which does not indicate, and also if you can, then this installation of certificates, which they say, also try to include certificates in the installer in the checkbox, well, the name is also to expand it. Support: use invest-public-api.tbank.ru:443; certs from gosuslugi.ru/crt or tbank.ru/bank/help/certificates/; network doc developer.tbank.ru/invest/intro/developer/network
 
 812. To avoid this problem, let's add a setting, not a browser, to the project There is a gear in the upper right corner There is only one setting now, let's add another one There will probably be a radio button, a radio selection Make a deal to generate Postgres services or a Postgres library and make a deal to generate, let's say, a browser or, as it is correctly called, a web process, or something else There are two options By default, let Postgres be the choice And if it chooses another option, then let's call through the service while the browser is open, so to speak That is, you need to implement this bypass so that the deals are formed when the browser is open directly through the service

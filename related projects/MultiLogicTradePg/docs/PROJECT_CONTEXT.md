@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — T-Bank API host `invest-public-api.tbank.ru`; installer SSL = Mozilla + Госуслуги/НУЦ; schema **v64**; installers **v1.0.125**
+**Последнее обновление:** 2026-08-04 — hotfix: `pgResolveTbankAccount` из ctx в references.js; installers **v1.0.126**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,11 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (hotfix: pgResolveTbankAccount is not defined)
+
+- `POST /api/accounts/preview-connection` падал: `pgResolveTbankAccount` / `pgFetchTbankPortfolioBalance` не деструктурировались из `ctx` в `api/routes/references.js`.
+- Installers **v1.0.126**.
 
 ### 2026-08-04 (T-Bank support: tbank.ru host + CA Госуслуг в installer)
 
@@ -1084,6 +1089,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Hotfix preview-connection: pgResolveTbankAccount from ctx; v1.0.126 |
 | 2026-08-04 | T-Bank API → invest-public-api.tbank.ru; SSL checkbox + Russian Trusted CA; v64 / v1.0.125 |
 | 2026-08-04 | Order channel postgres|node in gear settings; Node PostOrder proxy; v63 / v1.0.124 |
 | 2026-08-04 | Installer opt-in SSL CA update checkbox (default off); fix_pgsql_http_ssl + configure_http_ssl; v1.0.123 |
