@@ -590,7 +590,7 @@ $$;
 COMMENT ON FUNCTION run_cleanup_if_enabled() IS
 'Если APP_CLEANUP_DISK включён — выполнить cleanup_trading_disk_space и обновить APP_CLEANUP_LAST_AT';
 
--- Канал PostOrder (настройка шестерёнки). Core — без pgsql-http.
+-- Канал T-Bank HTTPS (настройка шестерёнки). Core — без pgsql-http.
 CREATE OR REPLACE FUNCTION tbank_order_channel()
 RETURNS TEXT
 LANGUAGE sql STABLE AS $$
@@ -604,17 +604,17 @@ LANGUAGE sql STABLE AS $$
               AND pt.short_name = 'APP_TBANK_ORDER_CHANNEL'
             LIMIT 1
         ),
-        'postgres'
+        'node'
     )))
-        WHEN 'node' THEN 'node'
-        WHEN 'service' THEN 'node'
-        WHEN 'api' THEN 'node'
-        ELSE 'postgres'
+        WHEN 'postgres' THEN 'postgres'
+        WHEN 'pg' THEN 'postgres'
+        WHEN 'sql' THEN 'postgres'
+        ELSE 'node'
     END;
 $$;
 
 COMMENT ON FUNCTION tbank_order_channel() IS
-'Канал PostOrder: postgres (pgsql-http) или node (прокси через локальный Express при открытом UI).';
+'Канал T-Bank HTTPS: postgres (pgsql-http) или node (прокси Express + CA НУЦ). Default node.';
 
 CREATE OR REPLACE PROCEDURE set_tbank_order_channel(p_channel TEXT)
 LANGUAGE plpgsql AS $$
@@ -623,9 +623,12 @@ DECLARE
     v_type_id INTEGER;
     v_ch TEXT;
 BEGIN
-    v_ch := lower(btrim(COALESCE(p_channel, 'postgres')));
+    v_ch := lower(btrim(COALESCE(p_channel, 'node')));
     IF v_ch IN ('service', 'api', 'web', 'browser') THEN
         v_ch := 'node';
+    END IF;
+    IF v_ch IN ('pg', 'sql') THEN
+        v_ch := 'postgres';
     END IF;
     IF v_ch NOT IN ('postgres', 'node') THEN
         RAISE EXCEPTION 'APP_TBANK_ORDER_CHANNEL: ожидается postgres или node, получено %', p_channel;
@@ -22985,7 +22988,45 @@ DECLARE
     v_headers http_header[];
     v_response http_response;
     v_content JSONB;
+    v_proxy_url TEXT;
+    v_proxy_body JSONB;
 BEGIN
+    -- channel=node: proxy via local Express (Russian CA / system TLS), not libcurl→T-Bank.
+    IF tbank_order_channel() = 'node' THEN
+        v_proxy_url := tbank_order_node_base_url() || '/api/internal/tbank/http-post';
+        v_proxy_body := jsonb_build_object(
+            'api_url', COALESCE(p_api_url, get_tbank_api_url()),
+            'rpc_path', ltrim(p_rpc_path, '/'),
+            'token', p_token,
+            'body', COALESCE(p_body, '{}'::jsonb)
+        );
+        v_headers := ARRAY[
+            http_header('Accept', 'application/json'),
+            http_header('Content-Type', 'application/json')
+        ];
+        SELECT * INTO v_response FROM http((
+            'POST',
+            v_proxy_url,
+            v_headers,
+            'application/json',
+            v_proxy_body::TEXT
+        )::http_request);
+        IF v_response.status IS NULL THEN
+            RAISE EXCEPTION 'Node API недоступен (%). Запустите MultiLogic Trade или канал postgres.', v_proxy_url;
+        END IF;
+        BEGIN
+            v_content := v_response.content::JSONB;
+        EXCEPTION
+            WHEN OTHERS THEN
+                RAISE EXCEPTION 'Node API HTTP %: %', v_response.status, left(COALESCE(v_response.content, ''), 500);
+        END;
+        IF v_response.status != 200 OR COALESCE(v_content->>'ok', 'true') = 'false' THEN
+            RAISE EXCEPTION 'Node→T-Bank: %',
+                COALESCE(v_content->>'error', left(COALESCE(v_response.content, ''), 500));
+        END IF;
+        RETURN COALESCE(v_content->'data', v_content);
+    END IF;
+
     PERFORM configure_http_ssl();
 
     v_url := rtrim(COALESCE(p_api_url, get_tbank_api_url()), '/')
@@ -23018,7 +23059,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION tbank_http_post(TEXT, TEXT, TEXT, JSONB) IS
-'Универсальный POST к T-Bank Invest API через pgsql-http';
+'POST к T-Bank Invest API: postgres=pgsql-http; node=прокси localhost Express (CA НУЦ).';
 
 CREATE OR REPLACE FUNCTION tbank_verify_token()
 RETURNS JSONB
@@ -23353,6 +23394,7 @@ DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VAR
 DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR, VARCHAR, BOOLEAN);
 
 -- Lot size for PostOrder: T-Bank instrument.lot (authoritative), else securities.lot_size.
+-- Uses tbank_http_post so APP_TBANK_ORDER_CHANNEL=node proxies via Node (not raw libcurl).
 CREATE OR REPLACE FUNCTION tbank_figi_lot_size(
     p_api_url TEXT,
     p_token TEXT,
@@ -23361,8 +23403,7 @@ CREATE OR REPLACE FUNCTION tbank_figi_lot_size(
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_response http_response;
-    v_headers http_header[];
+    v_content JSONB;
     v_instrument JSONB;
     v_lot INTEGER;
     v_sec_id INTEGER;
@@ -23372,39 +23413,30 @@ BEGIN
     END IF;
 
     BEGIN
-        PERFORM configure_http_ssl();
-        v_headers := ARRAY[
-            http_header('Authorization', 'Bearer ' || p_token),
-            http_header('Accept', 'application/json')
-        ];
-        SELECT * INTO v_response FROM http((
-            'POST',
-            rtrim(COALESCE(p_api_url, 'https://invest-public-api.tbank.ru/rest'), '/')
-                || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy',
-            v_headers,
-            'application/json',
+        v_content := tbank_http_post(
+            p_api_url,
+            'tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy',
+            p_token,
             jsonb_build_object(
                 'id_type', 'INSTRUMENT_ID_TYPE_FIGI',
                 'id', btrim(p_figi)
-            )::TEXT
-        )::http_request);
-        IF v_response.status = 200 THEN
-            v_instrument := COALESCE(v_response.content::JSONB->'instrument', v_response.content::JSONB);
-            v_lot := NULLIF(regexp_replace(COALESCE(v_instrument->>'lot', ''), '[^0-9]', '', 'g'), '')::INTEGER;
-            IF v_lot IS NOT NULL AND v_lot >= 1 THEN
-                SELECT sp.security_id INTO v_sec_id
-                FROM security_prefixes sp
-                WHERE sp.tbank_figi = btrim(p_figi)
-                ORDER BY sp.exchange_id
-                LIMIT 1;
-                IF v_sec_id IS NOT NULL THEN
-                    UPDATE securities
-                    SET lot_size = v_lot
-                    WHERE id = v_sec_id
-                      AND lot_size IS DISTINCT FROM v_lot;
-                END IF;
-                RETURN v_lot;
+            )
+        );
+        v_instrument := COALESCE(v_content->'instrument', v_content);
+        v_lot := NULLIF(regexp_replace(COALESCE(v_instrument->>'lot', ''), '[^0-9]', '', 'g'), '')::INTEGER;
+        IF v_lot IS NOT NULL AND v_lot >= 1 THEN
+            SELECT sp.security_id INTO v_sec_id
+            FROM security_prefixes sp
+            WHERE sp.tbank_figi = btrim(p_figi)
+            ORDER BY sp.exchange_id
+            LIMIT 1;
+            IF v_sec_id IS NOT NULL THEN
+                UPDATE securities
+                SET lot_size = v_lot
+                WHERE id = v_sec_id
+                  AND lot_size IS DISTINCT FROM v_lot;
             END IF;
+            RETURN v_lot;
         END IF;
     EXCEPTION
         WHEN OTHERS THEN
@@ -23440,17 +23472,17 @@ LANGUAGE sql STABLE AS $$
               AND pt.short_name = 'APP_TBANK_ORDER_CHANNEL'
             LIMIT 1
         ),
-        'postgres'
+        'node'
     )))
-        WHEN 'node' THEN 'node'
-        WHEN 'service' THEN 'node'
-        WHEN 'api' THEN 'node'
-        ELSE 'postgres'
+        WHEN 'postgres' THEN 'postgres'
+        WHEN 'pg' THEN 'postgres'
+        WHEN 'sql' THEN 'postgres'
+        ELSE 'node'
     END;
 $$;
 
 COMMENT ON FUNCTION tbank_order_channel() IS
-'Канал PostOrder: postgres (pgsql-http) или node (прокси через локальный Express при открытом UI).';
+'Канал T-Bank HTTPS: postgres (pgsql-http) или node (прокси Express + CA НУЦ). Default node.';
 
 CREATE OR REPLACE PROCEDURE set_tbank_order_channel(p_channel TEXT)
 LANGUAGE plpgsql AS $$
@@ -23459,9 +23491,12 @@ DECLARE
     v_type_id INTEGER;
     v_ch TEXT;
 BEGIN
-    v_ch := lower(btrim(COALESCE(p_channel, 'postgres')));
+    v_ch := lower(btrim(COALESCE(p_channel, 'node')));
     IF v_ch IN ('service', 'api', 'web', 'browser') THEN
         v_ch := 'node';
+    END IF;
+    IF v_ch IN ('pg', 'sql') THEN
+        v_ch := 'postgres';
     END IF;
     IF v_ch NOT IN ('postgres', 'node') THEN
         RAISE EXCEPTION 'APP_TBANK_ORDER_CHANNEL: ожидается postgres или node, получено %', p_channel;
@@ -24305,8 +24340,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_acc RECORD;
     v_isin TEXT;
-    v_headers http_header[];
-    v_response http_response;
+    v_content JSONB;
     v_instrument JSONB;
     v_figi TEXT;
     v_lot INTEGER;
@@ -24321,41 +24355,35 @@ BEGIN
         RETURN jsonb_build_object('error', 'empty_isin');
     END IF;
 
-    PERFORM configure_http_ssl();
-    v_headers := ARRAY[
-        http_header('Authorization', 'Bearer ' || v_acc.token),
-        http_header('Accept', 'application/json')
-    ];
-
-    -- BondBy by ISIN
-    SELECT * INTO v_response FROM http((
-        'POST',
-        rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
-        v_headers,
-        'application/json',
-        jsonb_build_object(
-            'idType', 'INSTRUMENT_ID_TYPE_ISIN',
-            'id', v_isin
-        )::TEXT
-    )::http_request);
-
-    IF v_response.status = 200 THEN
-        v_instrument := v_response.content::JSONB->'instrument';
-    END IF;
+    -- BondBy by ISIN (via tbank_http_post → respects order channel node|postgres)
+    BEGIN
+        v_content := tbank_http_post(
+            v_acc.api_url,
+            'tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
+            v_acc.token,
+            jsonb_build_object(
+                'idType', 'INSTRUMENT_ID_TYPE_ISIN',
+                'id', v_isin
+            )
+        );
+        v_instrument := v_content->'instrument';
+    EXCEPTION
+        WHEN OTHERS THEN
+            v_instrument := NULL;
+    END;
 
     IF v_instrument IS NULL THEN
-        SELECT * INTO v_response FROM http((
-            'POST',
-            rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument',
-            v_headers,
-            'application/json',
-            jsonb_build_object('query', v_isin)::TEXT
-        )::http_request);
-        IF v_response.status = 200 THEN
+        BEGIN
+            v_content := tbank_http_post(
+                v_acc.api_url,
+                'tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument',
+                v_acc.token,
+                jsonb_build_object('query', v_isin)
+            );
             SELECT elem
             INTO v_instrument
             FROM jsonb_array_elements(
-                COALESCE(v_response.content::JSONB->'instruments', '[]'::JSONB)
+                COALESCE(v_content->'instruments', '[]'::JSONB)
             ) AS elem
             WHERE upper(COALESCE(elem->>'isin', '')) = v_isin
                OR upper(COALESCE(elem->>'ticker', '')) = v_isin
@@ -24364,7 +24392,10 @@ BEGIN
                 ELSE 1
             END
             LIMIT 1;
-        END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_instrument := NULL;
+        END;
     END IF;
 
     IF v_instrument IS NULL THEN
@@ -24377,23 +24408,24 @@ BEGIN
         RETURN jsonb_build_object('error', 'no_figi', 'isin', v_isin);
     END IF;
 
-    SELECT * INTO v_response FROM http((
-        'POST',
-        rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
-        v_headers,
-        'application/json',
-        jsonb_build_object('figi', jsonb_build_array(v_figi))::TEXT
-    )::http_request);
-
-    IF v_response.status = 200 THEN
+    BEGIN
+        v_content := tbank_http_post(
+            v_acc.api_url,
+            'tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+            v_acc.token,
+            jsonb_build_object('figi', jsonb_build_array(v_figi))
+        );
         v_price_resp := COALESCE(
-            v_response.content::JSONB->'lastPrices'->0->'price',
+            v_content->'lastPrices'->0->'price',
             '{}'::JSONB
         );
         v_units := COALESCE((v_price_resp->>'units')::NUMERIC, 0);
         v_nano := COALESCE((v_price_resp->>'nano')::NUMERIC, 0);
         v_price := v_units + v_nano / 1000000000.0;
-    END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            v_price := NULL;
+    END;
 
     -- Облигации T-Bank: last price обычно в % номинала (≈90–110) → ₽ при номинале 1000.
     IF v_price IS NOT NULL AND v_price > 0 AND v_price < 200 THEN

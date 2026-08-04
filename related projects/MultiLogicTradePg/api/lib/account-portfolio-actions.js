@@ -3,6 +3,59 @@
 const { listBondFunds } = require('./bond-tbru-data');
 const { resolveBondFund } = require('./bond-fund-fetch');
 const { computeGreedyBuyLots, bondUnitPriceRub } = require('./bond-tbru-alloc');
+const {
+  DEFAULT_API,
+  tbankHttpPost,
+  resolveTbankAccount,
+  postOrder,
+  figiLotSize,
+  fetchPortfolioBalance,
+} = require('./tbank-invest-client');
+
+async function getOrderChannel(pool) {
+  try {
+    const { rows } = await pool.query(`SELECT tbank_order_channel() AS c`);
+    return rows[0]?.c === 'postgres' ? 'postgres' : 'node';
+  } catch (_e) {
+    return 'node';
+  }
+}
+
+async function loadAccountBrokerCreds(pool, accountId) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      a.id,
+      a.name,
+      a.account_code,
+      btrim(a.token_encrypted) AS token,
+      COALESCE(NULLIF(btrim(b.api_url), ''), $2) AS api_url
+    FROM accounts a
+    JOIN brokers b ON b.id = a.broker_id
+    WHERE a.id = $1
+    `,
+    [accountId, DEFAULT_API]
+  );
+  const acc = rows[0];
+  if (!acc?.token) {
+    const err = new Error('На счёте нет API-токена T-Bank');
+    err.status = 400;
+    throw err;
+  }
+  return acc;
+}
+
+function quotationToNumber(q) {
+  if (q == null) return 0;
+  if (typeof q === 'number') return q;
+  if (typeof q === 'string') {
+    const n = Number(q);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const units = Number(q.units ?? 0);
+  const nano = Number(q.nano ?? 0);
+  return units + nano / 1e9;
+}
 
 async function assertRealTbankAccount(pool, accountId) {
   const id = Number(accountId);
@@ -50,16 +103,164 @@ async function assertRealTbankAccount(pool, accountId) {
   return acc;
 }
 
+async function sellAllPositionsViaNode(pool, accountId) {
+  const creds = await loadAccountBrokerCreds(pool, accountId);
+  const resolved = await resolveTbankAccount(
+    creds.api_url,
+    creds.token,
+    creds.account_code || null
+  );
+  const portfolio = await tbankHttpPost(
+    creds.api_url,
+    'tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+    creds.token,
+    { accountId: resolved.account_id }
+  );
+  const positions = Array.isArray(portfolio?.positions) ? portfolio.positions : [];
+  const cashBefore = quotationToNumber(portfolio?.totalAmountCurrencies);
+  const sold = [];
+  const errors = [];
+  const skipped = [];
+
+  for (const pos of positions) {
+    const type = String(pos.instrumentType || pos.instrument_type || '').toUpperCase();
+    if (type.includes('CURRENCY')) {
+      skipped.push({ figi: pos.figi, reason: 'currency' });
+      continue;
+    }
+    const figi = String(pos.figi || '').trim();
+    const ticker = pos.ticker || figi || '?';
+    if (!figi) {
+      errors.push({ ticker, error: 'no_figi' });
+      continue;
+    }
+    const shares = quotationToNumber(pos.quantity);
+    const blockedLots = quotationToNumber(pos.blockedLots || pos.blocked_lots);
+    const lot = await figiLotSize(creds.api_url, creds.token, figi, pool);
+    let sellShares = shares - blockedLots * lot;
+    if (Math.abs(sellShares) < lot) {
+      let lots =
+        quotationToNumber(pos.quantityLots || pos.quantity_lots) - blockedLots;
+      if (Math.abs(lots) >= 1) sellShares = lots * lot;
+    }
+    if (Math.abs(sellShares) < lot) {
+      skipped.push({
+        figi,
+        ticker,
+        reason: 'zero_lots',
+        shares,
+        blocked_lots: blockedLots,
+        lot,
+      });
+      continue;
+    }
+    let dir = 'SELL';
+    if (sellShares < 0) {
+      dir = 'BUY';
+      sellShares = Math.abs(sellShares);
+    }
+    const lots = Math.floor(sellShares / lot);
+    if (lots < 1) {
+      skipped.push({
+        figi,
+        ticker,
+        reason: 'below_one_lot',
+        sell_shares: sellShares,
+        lot,
+      });
+      continue;
+    }
+    const price =
+      quotationToNumber(pos.currentPrice) ||
+      quotationToNumber(pos.averagePositionPriceFifo) ||
+      quotationToNumber(pos.averagePositionPrice) ||
+      1;
+    try {
+      const order = await postOrder(pool, {
+        api_url: creds.api_url,
+        token: creds.token,
+        account_code: creds.account_code,
+        figi,
+        quantity: lots,
+        price,
+        direction: dir,
+        order_execution: 'market',
+        quantity_is_lots: true,
+      });
+      sold.push({
+        figi,
+        ticker,
+        lots,
+        shares: lots * lot,
+        lot_size: lot,
+        price,
+        direction: dir,
+        instrument_type: type,
+        order,
+        channel: 'node',
+      });
+    } catch (e) {
+      errors.push({
+        figi,
+        ticker,
+        lots,
+        shares: lots * lot,
+        direction: dir,
+        error: e.message || String(e),
+      });
+    }
+  }
+
+  const { rows } = await pool.query(
+    `SELECT account_sell_all_at_market_with_books($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb) AS r`,
+    [
+      accountId,
+      JSON.stringify(sold),
+      JSON.stringify(errors),
+      JSON.stringify(skipped),
+      JSON.stringify(cashBefore),
+    ]
+  );
+  const result = rows[0]?.r ?? {};
+  return { ...result, channel: 'node' };
+}
+
 async function sellAllPositions(pool, accountId) {
   await assertRealTbankAccount(pool, accountId);
+  const channel = await getOrderChannel(pool);
+  if (channel === 'node') {
+    return sellAllPositionsViaNode(pool, accountId);
+  }
   const { rows } = await pool.query(
     `SELECT account_sell_all_at_market($1) AS r`,
     [accountId]
   );
-  return rows[0]?.r ?? { ok: false, error: 'empty_result' };
+  return { ...(rows[0]?.r ?? { ok: false, error: 'empty_result' }), channel: 'postgres' };
+}
+
+async function getAccountCashViaNode(pool, accountId) {
+  const creds = await loadAccountBrokerCreds(pool, accountId);
+  const resolved = await resolveTbankAccount(
+    creds.api_url,
+    creds.token,
+    creds.account_code || null
+  );
+  const bal = await fetchPortfolioBalance(
+    creds.api_url,
+    creds.token,
+    resolved.account_id
+  );
+  return {
+    cash_amount: bal.cash_amount != null ? Number(bal.cash_amount) : 0,
+    portfolio_amount: bal.amount != null ? Number(bal.amount) : null,
+  };
 }
 
 async function getAccountCash(pool, accountId) {
+  const channel = await getOrderChannel(pool);
+  if (channel === 'node') {
+    return getAccountCashViaNode(pool, accountId);
+  }
   const { rows } = await pool.query(
     `SELECT fetch_tbank_portfolio_positions($1) AS r`,
     [accountId]
@@ -71,12 +272,82 @@ async function getAccountCash(pool, accountId) {
   };
 }
 
-async function resolveHolding(pool, accountId, holding) {
-  const { rows } = await pool.query(
-    `SELECT tbank_resolve_bond_by_isin($1, $2) AS r`,
-    [accountId, holding.sec]
-  );
-  const r = rows[0]?.r ?? {};
+async function resolveBondByIsinViaNode(pool, accountId, isin) {
+  const creds = await loadAccountBrokerCreds(pool, accountId);
+  const vIsin = String(isin || '')
+    .trim()
+    .toUpperCase();
+  if (!vIsin) return { error: 'empty_isin' };
+  let instrument = null;
+  try {
+    const data = await tbankHttpPost(
+      creds.api_url,
+      'tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
+      creds.token,
+      { idType: 'INSTRUMENT_ID_TYPE_ISIN', id: vIsin }
+    );
+    instrument = data?.instrument || null;
+  } catch (_e) {
+    instrument = null;
+  }
+  if (!instrument) {
+    try {
+      const data = await tbankHttpPost(
+        creds.api_url,
+        'tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument',
+        creds.token,
+        { query: vIsin }
+      );
+      const list = Array.isArray(data?.instruments) ? data.instruments : [];
+      instrument =
+        list.find(
+          (e) =>
+            String(e.isin || '').toUpperCase() === vIsin ||
+            String(e.ticker || '').toUpperCase() === vIsin
+        ) || null;
+    } catch (_e) {
+      instrument = null;
+    }
+  }
+  if (!instrument) return { error: 'instrument_not_found', isin: vIsin };
+  const figi = instrument.figi || instrument.uid;
+  const lot = Math.max(1, Number(instrument.lot) || 1);
+  if (!figi) return { error: 'no_figi', isin: vIsin };
+  let price = 0;
+  try {
+    const data = await tbankHttpPost(
+      creds.api_url,
+      'tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+      creds.token,
+      { figi: [figi] }
+    );
+    price = quotationToNumber(data?.lastPrices?.[0]?.price);
+  } catch (_e) {
+    price = 0;
+  }
+  if (price > 0 && price < 200) price = (price / 100.0) * 1000.0;
+  if (!(price > 0)) price = 980;
+  return {
+    isin: vIsin,
+    figi,
+    lot,
+    price,
+    ticker: instrument.ticker || vIsin,
+    name: instrument.name || null,
+  };
+}
+
+async function resolveHolding(pool, accountId, holding, channel) {
+  let r;
+  if (channel === 'node') {
+    r = await resolveBondByIsinViaNode(pool, accountId, holding.sec);
+  } else {
+    const { rows } = await pool.query(
+      `SELECT tbank_resolve_bond_by_isin($1, $2) AS r`,
+      [accountId, holding.sec]
+    );
+    r = rows[0]?.r ?? {};
+  }
   if (r.error) {
     return {
       ...holding,
@@ -100,7 +371,7 @@ async function resolveHolding(pool, accountId, holding) {
 /**
  * Resolve prices with limited concurrency (T-Bank rate limits).
  */
-async function resolveHoldings(pool, accountId, holdings, concurrency = 3) {
+async function resolveHoldings(pool, accountId, holdings, concurrency = 3, channel = 'node') {
   const out = new Array(holdings.length);
   let next = 0;
   const workers = Array.from({ length: Math.min(concurrency, holdings.length) }, async () => {
@@ -108,7 +379,7 @@ async function resolveHoldings(pool, accountId, holdings, concurrency = 3) {
       const i = next;
       next += 1;
       if (i >= holdings.length) return;
-      out[i] = await resolveHolding(pool, accountId, holdings[i]);
+      out[i] = await resolveHolding(pool, accountId, holdings[i], channel);
     }
   });
   await Promise.all(workers);
@@ -117,6 +388,7 @@ async function resolveHoldings(pool, accountId, holdings, concurrency = 3) {
 
 async function planBuyBonds(pool, accountId, opts = {}) {
   const acc = await assertRealTbankAccount(pool, accountId);
+  const channel = await getOrderChannel(pool);
   const fundCode = String(opts.fund_code || 'TBRU').toUpperCase();
   const fund = await resolveBondFund(fundCode);
   if (!fund) {
@@ -135,9 +407,8 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     err.status = 400;
     throw err;
   }
-  // Не режем сумму до кэша: пользователь может править поле; брокер отклонит лишнее — в отчёт.
 
-  const resolved = await resolveHoldings(pool, accountId, fund.holdings, 3);
+  const resolved = await resolveHoldings(pool, accountId, fund.holdings, 3, channel);
   const okHoldings = resolved.filter((h) => h.figi && !h.error);
   const failed = resolved.filter((h) => h.error || !h.figi).map((h) => ({
     sec: h.sec,
@@ -159,7 +430,6 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     0
   );
 
-  // attach figi/name from resolved
   const bySec = new Map(okHoldings.map((h) => [h.sec, h]));
   for (const row of rows) {
     const h = bySec.get(row.sec);
@@ -188,6 +458,7 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     buy_count: rows.length,
     buys: rows,
     resolve_failed: failed,
+    channel,
     note:
       'Покупка лимитными заявками по текущей цене: сначала более доходные (часто корп.), затем ОФЗ.',
   };
@@ -197,21 +468,41 @@ async function executeBuyBonds(pool, accountId, opts = {}) {
   const plan = await planBuyBonds(pool, accountId, opts);
   const placed = [];
   const errors = [];
+  const channel = plan.channel || (await getOrderChannel(pool));
+  const creds =
+    channel === 'node' ? await loadAccountBrokerCreds(pool, accountId) : null;
 
   for (const row of plan.buys) {
     if (!row.figi || !row.lots) continue;
     try {
-      const { rows } = await pool.query(
-        `SELECT tbank_post_order($1, $2, $3, $4, 'BUY', 'market', TRUE) AS r`,
-        [accountId, row.figi, row.lots, row.unit_price]
-      );
+      let order;
+      if (channel === 'node') {
+        order = await postOrder(pool, {
+          api_url: creds.api_url,
+          token: creds.token,
+          account_code: creds.account_code,
+          figi: row.figi,
+          quantity: row.lots,
+          price: row.unit_price,
+          direction: 'BUY',
+          order_execution: 'market',
+          quantity_is_lots: true,
+        });
+      } else {
+        const { rows } = await pool.query(
+          `SELECT tbank_post_order($1, $2, $3, $4, 'BUY', 'market', TRUE) AS r`,
+          [accountId, row.figi, row.lots, row.unit_price]
+        );
+        order = rows[0]?.r ?? null;
+      }
       placed.push({
         sec: row.sec,
         ticker: row.ticker,
         figi: row.figi,
         lots: row.lots,
         price: row.unit_price,
-        order: rows[0]?.r ?? null,
+        order,
+        channel,
       });
     } catch (e) {
       errors.push({
@@ -220,6 +511,7 @@ async function executeBuyBonds(pool, accountId, opts = {}) {
         figi: row.figi,
         lots: row.lots,
         error: e.message || String(e),
+        channel,
       });
     }
   }
@@ -232,6 +524,7 @@ async function executeBuyBonds(pool, accountId, opts = {}) {
     placed,
     errors,
     ok: errors.length === 0,
+    channel,
   };
 }
 
@@ -242,5 +535,5 @@ module.exports = {
   executeBuyBonds,
   listBondFunds,
   getAccountCash,
+  getOrderChannel,
 };
-

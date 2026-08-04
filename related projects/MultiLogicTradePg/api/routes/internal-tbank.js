@@ -1,6 +1,6 @@
 'use strict';
 
-const { postOrder } = require('../lib/tbank-invest-client');
+const { postOrder, tbankHttpPost } = require('../lib/tbank-invest-client');
 const { isUiSessionActive } = require('../lib/trade-runner-session');
 
 function isLocalRequest(req) {
@@ -24,10 +24,37 @@ async function uiHeartbeatActive(pool) {
 }
 
 /**
- * Internal localhost-only routes: Postgres pgsql-http → Node → T-Invest (system TLS).
+ * Internal localhost-only routes: Postgres pgsql-http → Node → T-Invest (Russian CA TLS).
  */
 module.exports = function registerInternalTbankRoutes(app, ctx) {
   const { pool } = ctx;
+
+  /** Generic RPC proxy (GetAccounts, GetPortfolio, PostOrder body already built, …). */
+  app.post('/api/internal/tbank/http-post', async (req, res) => {
+    if (!isLocalRequest(req)) {
+      res.status(403).json({ ok: false, error: 'Only localhost may call internal T-Bank proxy' });
+      return;
+    }
+    try {
+      const apiUrl = req.body?.api_url;
+      const rpcPath = req.body?.rpc_path;
+      const token = req.body?.token;
+      const body = req.body?.body ?? {};
+      if (!rpcPath || !token) {
+        res.status(400).json({ ok: false, error: 'rpc_path and token required' });
+        return;
+      }
+      const data = await tbankHttpPost(apiUrl, rpcPath, token, body);
+      res.json({ ok: true, data, channel: 'node' });
+    } catch (err) {
+      console.error('POST /api/internal/tbank/http-post', err.message);
+      const status = Number(err.status) >= 400 && Number(err.status) < 600 ? Number(err.status) : 500;
+      res.status(status >= 500 ? 500 : 400).json({
+        ok: false,
+        error: err.message || String(err),
+      });
+    }
+  });
 
   app.post('/api/internal/tbank/post-order', async (req, res) => {
     if (!isLocalRequest(req)) {

@@ -1,9 +1,11 @@
 'use strict';
 
 /**
- * T-Invest REST client for Node (system TLS / CA store).
- * Used when APP_TBANK_ORDER_CHANNEL = node to bypass pgsql-http SSL issues.
+ * T-Invest REST client for Node (system TLS + Russian Trusted CA).
+ * Used for UI token/account checks and for PostOrder when channel=node.
  */
+
+const { tbankFetchOptions } = require('./tbank-tls');
 
 /** Prod T-Invest REST (support: invest-public-api.tbank.ru:443). */
 const DEFAULT_API = 'https://invest-public-api.tbank.ru/rest';
@@ -13,17 +15,47 @@ function baseUrl(apiUrl) {
   return u || DEFAULT_API;
 }
 
+function quotationToNumber(q) {
+  if (q == null) return null;
+  if (typeof q === 'number') return q;
+  if (typeof q === 'string') {
+    const n = Number(q);
+    return Number.isFinite(n) ? n : null;
+  }
+  const units = Number(q.units ?? 0);
+  const nano = Number(q.nano ?? 0);
+  if (!Number.isFinite(units) && !Number.isFinite(nano)) return null;
+  return units + nano / 1e9;
+}
+
+function formatMoneyRu(amount, currency) {
+  if (amount == null || !Number.isFinite(Number(amount))) return null;
+  const cur = String(currency || 'RUB').toUpperCase();
+  const sym = cur === 'RUB' ? '₽' : cur === 'USD' ? '$' : cur === 'EUR' ? '€' : cur;
+  return (
+    Number(amount).toLocaleString('ru-RU', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) +
+    ' ' +
+    sym
+  );
+}
+
 async function tbankHttpPost(apiUrl, rpcPath, token, body = {}) {
   const url = `${baseUrl(apiUrl)}/${String(rpcPath || '').replace(/^\/+/, '')}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body ?? {}),
-  });
+  const res = await fetch(
+    url,
+    tbankFetchOptions({
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body ?? {}),
+    })
+  );
   const text = await res.text();
   let json = null;
   try {
@@ -68,12 +100,65 @@ async function resolveTbankAccount(apiUrl, token, preferredAccountId) {
   }
   return {
     account_id: picked.id,
+    account_name: picked.name || '',
     accounts: accounts.map((a) => ({
       id: a.id,
       name: a.name,
       status: a.status,
       type: a.type,
     })),
+  };
+}
+
+async function verifyTbankToken(apiUrl, token) {
+  const t = String(token || '').trim();
+  if (!t) {
+    return { has_token: false, valid: false, error_message: 'Токен T-Bank не задан' };
+  }
+  try {
+    await tbankHttpPost(
+      apiUrl,
+      'tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts',
+      t,
+      {}
+    );
+    return { has_token: true, valid: true, error_message: null };
+  } catch (err) {
+    const status = Number(err.status);
+    if (status === 401) {
+      return {
+        has_token: true,
+        valid: false,
+        error_message: 'Токен T-Bank неактивен или просрочен. Введите новый API-токен.',
+      };
+    }
+    return {
+      has_token: true,
+      valid: false,
+      error_message: err.message || String(err),
+    };
+  }
+}
+
+async function fetchPortfolioBalance(apiUrl, token, accountId) {
+  const data = await tbankHttpPost(
+    apiUrl,
+    'tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+    token,
+    { accountId: String(accountId) }
+  );
+  const total = data?.totalAmountPortfolio || data?.totalAmountShares;
+  const amount = quotationToNumber(total);
+  const cash = data?.totalAmountCurrencies;
+  const cashAmount = quotationToNumber(cash);
+  const currency = total?.currency || cash?.currency || 'RUB';
+  const forDisplay =
+    cashAmount != null && cashAmount !== 0 ? cashAmount : amount;
+  return {
+    amount,
+    cash_amount: cashAmount,
+    currency,
+    display: formatMoneyRu(forDisplay, currency),
   };
 }
 
@@ -190,19 +275,20 @@ async function postOrder(pool, params) {
     body.price = { units, nano };
   }
 
-  const order = await tbankHttpPost(
+  return tbankHttpPost(
     apiUrl,
     'tinkoff.public.invest.api.contract.v1.OrdersService/PostOrder',
     token,
     body
   );
-  return order;
 }
 
 module.exports = {
   DEFAULT_API,
   tbankHttpPost,
   resolveTbankAccount,
+  verifyTbankToken,
+  fetchPortfolioBalance,
   figiLotSize,
   postOrder,
 };

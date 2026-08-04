@@ -16,7 +16,7 @@ export class AppSettingsPanelComponent implements OnChanges {
   @Output() closed = new EventEmitter<void>();
 
   cleanupEnabled = false;
-  orderChannel: 'postgres' | 'node' = 'postgres';
+  orderChannel: 'postgres' | 'node' = 'node';
   orderNodeUrl: string | null = null;
   uiActive: boolean | null = null;
   loading = false;

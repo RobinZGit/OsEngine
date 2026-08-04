@@ -1,6 +1,6 @@
 -- ============================================
 -- Канал боевых заявок T-Bank: postgres (pgsql-http) | node (локальный API)
--- Default: postgres. Node — обход SSL libcurl при открытом UI.
+-- Default: node. Node — обход SSL libcurl при открытом UI / Express.
 -- ============================================
 
 CREATE OR REPLACE FUNCTION tbank_order_channel()
@@ -16,17 +16,17 @@ LANGUAGE sql STABLE AS $$
               AND pt.short_name = 'APP_TBANK_ORDER_CHANNEL'
             LIMIT 1
         ),
-        'postgres'
+        'node'
     )))
-        WHEN 'node' THEN 'node'
-        WHEN 'service' THEN 'node'
-        WHEN 'api' THEN 'node'
-        ELSE 'postgres'
+        WHEN 'postgres' THEN 'postgres'
+        WHEN 'pg' THEN 'postgres'
+        WHEN 'sql' THEN 'postgres'
+        ELSE 'node'
     END;
 $$;
 
 COMMENT ON FUNCTION tbank_order_channel() IS
-'Канал PostOrder: postgres (pgsql-http) или node (прокси через локальный Express при открытом UI).';
+'Канал T-Bank HTTPS: postgres (pgsql-http) или node (прокси Express + CA НУЦ). Default node.';
 
 CREATE OR REPLACE PROCEDURE set_tbank_order_channel(p_channel TEXT)
 LANGUAGE plpgsql AS $$
@@ -35,9 +35,12 @@ DECLARE
     v_type_id INTEGER;
     v_ch TEXT;
 BEGIN
-    v_ch := lower(btrim(COALESCE(p_channel, 'postgres')));
+    v_ch := lower(btrim(COALESCE(p_channel, 'node')));
     IF v_ch IN ('service', 'api', 'web', 'browser') THEN
         v_ch := 'node';
+    END IF;
+    IF v_ch IN ('pg', 'sql') THEN
+        v_ch := 'postgres';
     END IF;
     IF v_ch NOT IN ('postgres', 'node') THEN
         RAISE EXCEPTION 'APP_TBANK_ORDER_CHANNEL: ожидается postgres или node, получено %', p_channel;

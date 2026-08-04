@@ -84,10 +84,28 @@ app.get('/api/settings/tbank-token', async (req, res) => {
   const validate = req.query.validate === '1' || req.query.validate === 'true';
   try {
     if (validate) {
-      const { rows } = await pool.query(
-        'SELECT tbank_verify_token() AS status'
+      const { verifyTbankToken, DEFAULT_API } = require('../lib/tbank-invest-client');
+      const { rows: tokRows } = await pool.query(
+        `SELECT btrim(COALESCE(pv.value, '')) AS token
+         FROM parameter_values pv
+         JOIN parameter_types pt ON pt.id = pv.parameter_type_id
+         JOIN parameter_sets ps ON ps.id = pv.parameter_set_id
+         WHERE ps.name = 'Default' AND pt.short_name = 'TBANK_API_TOKEN'
+         LIMIT 1`
       );
-      const status = rows[0]?.status ?? {};
+      const token = tokRows[0]?.token || '';
+      let apiUrl = DEFAULT_API;
+      try {
+        const { rows: u } = await pool.query(
+          `SELECT COALESCE(NULLIF(btrim(api_url), ''), $1) AS api_url
+           FROM brokers WHERE code = 'T-BANK' LIMIT 1`,
+          [DEFAULT_API]
+        );
+        if (u[0]?.api_url) apiUrl = u[0].api_url;
+      } catch (_e) {
+        /* default */
+      }
+      const status = await verifyTbankToken(apiUrl, token);
       res.json({
         has_token: Boolean(status.has_token),
         valid: Boolean(status.valid),
@@ -113,6 +131,7 @@ app.put('/api/settings/tbank-token', async (req, res) => {
     return;
   }
   try {
+    const { verifyTbankToken, DEFAULT_API } = require('../lib/tbank-invest-client');
     // Сохраняем предыдущий токен: verify идёт после UPSERT — при ошибке откатываем
     const { rows: prevRows } = await pool.query(
       `SELECT btrim(COALESCE(pv.value, '')) AS token
@@ -125,8 +144,18 @@ app.put('/api/settings/tbank-token', async (req, res) => {
     const previousToken = prevRows[0]?.token || '';
 
     await pool.query('CALL set_tbank_token($1)', [token]);
-    const { rows } = await pool.query('SELECT tbank_verify_token() AS status');
-    const status = rows[0]?.status ?? {};
+    let apiUrl = DEFAULT_API;
+    try {
+      const { rows: u } = await pool.query(
+        `SELECT COALESCE(NULLIF(btrim(api_url), ''), $1) AS api_url
+         FROM brokers WHERE code = 'T-BANK' LIMIT 1`,
+        [DEFAULT_API]
+      );
+      if (u[0]?.api_url) apiUrl = u[0].api_url;
+    } catch (_e) {
+      /* default */
+    }
+    const status = await verifyTbankToken(apiUrl, token);
     if (!status.valid) {
       if (previousToken && previousToken !== token) {
         await pool.query('CALL set_tbank_token($1)', [previousToken]);

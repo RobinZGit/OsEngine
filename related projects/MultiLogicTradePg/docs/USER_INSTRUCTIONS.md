@@ -6,6 +6,10 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+816. Also, when we sell everything on the market and buy bonds, you also need to consider this checkbox in the settings. And of course, when you sell everything on the market in positions, you also need to do it through the path that is indicated in the settings. When you do it, post it in the repository.
+
+815. installed the update and the problem with the certificate continues with any choice in the settings that through postgres that through the node when checking the account with the token there is such a mistake — SSL certificate problem: self-signed certificate in certificate chain
+
 814. pgResolveTbankAccount is not defined
 
 813. also look at the answer that I will now send you from the technical support and maybe something needs to be changed in the postgres methods, maybe the port should be added to it, which does not indicate, and also if you can, then this installation of certificates, which they say, also try to include certificates in the installer in the checkbox, well, the name is also to expand it. Support: use invest-public-api.tbank.ru:443; certs from gosuslugi.ru/crt or tbank.ru/bank/help/certificates/; network doc developer.tbank.ru/invest/intro/developer/network

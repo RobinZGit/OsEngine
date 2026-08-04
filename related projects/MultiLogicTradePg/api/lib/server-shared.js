@@ -1003,51 +1003,117 @@ async function enrichAccountBalance(row) {
     return base;
   }
   try {
-    const { rows } = await dbPool.query(
-      `SELECT fetch_tbank_account_balance($1) AS bal`,
-      [row.id]
+    // Prefer Node TLS (Russian CA); SQL pgsql-http often fails with self-signed chain.
+    const {
+      resolveTbankAccount,
+      fetchPortfolioBalance,
+      DEFAULT_API,
+    } = require('./tbank-invest-client');
+    const { rows: tokRows } = await dbPool.query(
+      `SELECT btrim(a.token_encrypted) AS token,
+              COALESCE(NULLIF(btrim(b.api_url), ''), $2) AS api_url,
+              a.account_code
+       FROM accounts a
+       JOIN brokers b ON b.id = a.broker_id
+       WHERE a.id = $1`,
+      [row.id, DEFAULT_API]
     );
-    const bal = rows[0]?.bal ?? {};
+    const tok = tokRows[0];
+    if (!tok?.token) {
+      return base;
+    }
+    const resolved = await resolveTbankAccount(
+      tok.api_url,
+      tok.token,
+      tok.account_code || null
+    );
+    const bal = await fetchPortfolioBalance(
+      tok.api_url,
+      tok.token,
+      resolved.account_id
+    );
     base.balance = bal.amount != null ? Number(bal.amount) : null;
     base.cash_amount = bal.cash_amount != null ? Number(bal.cash_amount) : null;
     base.balance_currency = bal.currency ?? null;
-    base.balance_error = bal.error ? String(bal.error) : null;
-    // При ошибке T-Bank SQL кладёт display='ошибка' — оставляем, текст в balance_error
-    base.balance_display = base.balance_error
-      ? bal.display || 'ошибка'
-      : bal.display ?? '—';
+    base.balance_error = null;
+    base.balance_display = bal.display ?? '—';
   } catch (err) {
-    base.balance_error = err.message || String(err);
-    base.balance_display = 'ошибка';
+    try {
+      const { rows } = await dbPool.query(
+        `SELECT fetch_tbank_account_balance($1) AS bal`,
+        [row.id]
+      );
+      const bal = rows[0]?.bal ?? {};
+      base.balance = bal.amount != null ? Number(bal.amount) : null;
+      base.cash_amount = bal.cash_amount != null ? Number(bal.cash_amount) : null;
+      base.balance_currency = bal.currency ?? null;
+      base.balance_error = bal.error ? String(bal.error) : null;
+      base.balance_display = base.balance_error
+        ? bal.display || 'ошибка'
+        : bal.display ?? '—';
+    } catch (_sqlErr) {
+      base.balance_error = err.message || String(err);
+      base.balance_display = 'ошибка';
+    }
   }
   return base;
 }
 
 async function pgResolveTbankAccount(apiUrl, token, preferredAccountId) {
-  const { rows } = await dbPool.query(
-    `SELECT resolve_tbank_account($1, $2, $3) AS r`,
-    [apiUrl, token, preferredAccountId || null]
-  );
-  const r = rows[0]?.r ?? {};
-  const accounts = Array.isArray(r.accounts) ? r.accounts : [];
-  return {
-    accounts,
-    account_id: r.account_id ?? '',
-    account_name: r.account_name ?? '',
-  };
+  // Prefer Node fetch + Russian Trusted CA (pgsql-http/libcurl often fails SSL on Windows).
+  const {
+    resolveTbankAccount,
+    DEFAULT_API,
+  } = require('./tbank-invest-client');
+  try {
+    return await resolveTbankAccount(
+      apiUrl || DEFAULT_API,
+      token,
+      preferredAccountId || null
+    );
+  } catch (nodeErr) {
+    try {
+      const { rows } = await dbPool.query(
+        `SELECT resolve_tbank_account($1, $2, $3) AS r`,
+        [apiUrl, token, preferredAccountId || null]
+      );
+      const r = rows[0]?.r ?? {};
+      const accounts = Array.isArray(r.accounts) ? r.accounts : [];
+      return {
+        accounts,
+        account_id: r.account_id ?? '',
+        account_name: r.account_name ?? '',
+      };
+    } catch (_sqlErr) {
+      throw nodeErr;
+    }
+  }
 }
 
 async function pgFetchTbankPortfolioBalance(apiUrl, token, accountId) {
-  const { rows } = await dbPool.query(
-    `SELECT fetch_tbank_portfolio_balance($1, $2, $3) AS bal`,
-    [apiUrl, token, accountId]
-  );
-  const bal = rows[0]?.bal ?? {};
-  return {
-    amount: bal.amount != null ? Number(bal.amount) : null,
-    currency: bal.currency ?? null,
-    display: bal.display ?? null,
-  };
+  const {
+    fetchPortfolioBalance,
+    DEFAULT_API,
+  } = require('./tbank-invest-client');
+  try {
+    return await fetchPortfolioBalance(apiUrl || DEFAULT_API, token, accountId);
+  } catch (nodeErr) {
+    try {
+      const { rows } = await dbPool.query(
+        `SELECT fetch_tbank_portfolio_balance($1, $2, $3) AS bal`,
+        [apiUrl, token, accountId]
+      );
+      const bal = rows[0]?.bal ?? {};
+      return {
+        amount: bal.amount != null ? Number(bal.amount) : null,
+        cash_amount: bal.cash_amount != null ? Number(bal.cash_amount) : null,
+        currency: bal.currency ?? null,
+        display: bal.display ?? null,
+      };
+    } catch (_sqlErr) {
+      throw nodeErr;
+    }
+  }
 }
 
 async function resolveAccountConnection(body) {

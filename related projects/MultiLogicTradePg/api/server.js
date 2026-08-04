@@ -11,6 +11,10 @@
  * - ops — tech-log, processes, schema
  */
 require('dotenv').config();
+
+// T-Bank Invest needs Russian Trusted CA (gosuslugi.ru/crt); Node ignores Windows store.
+const { ensureTbankTls } = require('./lib/tbank-tls');
+
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -65,13 +69,27 @@ app.use((_req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`MultiLogicTrade API: http://localhost:${port}`);
-  console.log(`CORS origin: ${corsOrigin}`);
-  // Keep SQL→Node PostOrder proxy URL in sync with this process PORT.
-  pool
-    .query(
-      `
+(async () => {
+  try {
+    const tlsInfo = await ensureTbankTls();
+    if (tlsInfo.ok) {
+      console.log(`T-Bank TLS: Russian Trusted CA ready (${tlsInfo.path})`);
+    } else {
+      console.warn(
+        `T-Bank TLS: ${tlsInfo.error || 'CA not loaded'} — install https://www.gosuslugi.ru/crt`
+      );
+    }
+  } catch (err) {
+    console.warn('T-Bank TLS init:', err.message);
+  }
+
+  app.listen(port, () => {
+    console.log(`MultiLogicTrade API: http://localhost:${port}`);
+    console.log(`CORS origin: ${corsOrigin}`);
+    // Keep SQL→Node PostOrder proxy URL in sync with this process PORT.
+    pool
+      .query(
+        `
       INSERT INTO parameter_values (parameter_set_id, parameter_type_id, value)
       SELECT ps.id, pt.id, $1
       FROM parameter_sets ps
@@ -81,53 +99,54 @@ app.listen(port, () => {
       ON CONFLICT (parameter_set_id, parameter_type_id)
       DO UPDATE SET value = EXCLUDED.value
       `,
-      [`http://127.0.0.1:${port}`]
-    )
-    .then(() => console.log(`T-Bank order Node URL: http://127.0.0.1:${port}`))
-    .catch((err) => console.warn('APP_TBANK_ORDER_NODE_URL sync skipped:', err.message));
-  startTradeRunner(pool);
-  startMaintenanceScheduler(pool);
-  pool
-    .query(
-      `
+        [`http://127.0.0.1:${port}`]
+      )
+      .then(() => console.log(`T-Bank order Node URL: http://127.0.0.1:${port}`))
+      .catch((err) => console.warn('APP_TBANK_ORDER_NODE_URL sync skipped:', err.message));
+    startTradeRunner(pool);
+    startMaintenanceScheduler(pool);
+    pool
+      .query(
+        `
       SELECT COUNT(*)::int AS n
       FROM logics l
       JOIN accounts a ON a.id = l.account_id
       WHERE l.is_enabled = TRUE AND a.is_active = TRUE
       `
-    )
-    .then((r) => {
-      const n = r.rows[0]?.n ?? 0;
-      console.log(`Enabled logics for live trading: ${n}`);
-      if (n === 0) {
+      )
+      .then((r) => {
+        const n = r.rows[0]?.n ?? 0;
+        console.log(`Enabled logics for live trading: ${n}`);
+        if (n === 0) {
+          console.log(
+            'No enabled logics — open Angular UI and turn on the logic checkbox, or keep this API running after enable.'
+          );
+        }
+      })
+      .catch((err) => console.error('enabled logics count', err.message));
+    pool
+      .query(`SELECT logic_sync_all_real_account_balances() AS n`)
+      .then((r) => {
+        const n = r.rows[0]?.n;
+        if (n != null) {
+          console.log(`Real account balances synced for ${n} logic(s)`);
+        }
+      })
+      .catch((err) => console.error('logic_sync_all_real_account_balances', err.message));
+    resumeOrphanWarmups(pool)
+      .then((r) => {
         console.log(
-          'No enabled logics — open Angular UI and turn on the logic checkbox, or keep this API running after enable.'
+          `Warm-up resume: watching=${r.watching} finished_enabled=${r.finished}`
         );
-      }
-    })
-    .catch((err) => console.error('enabled logics count', err.message));
-  pool
-    .query(`SELECT logic_sync_all_real_account_balances() AS n`)
-    .then((r) => {
-      const n = r.rows[0]?.n;
-      if (n != null) {
-        console.log(`Real account balances synced for ${n} logic(s)`);
-      }
-    })
-    .catch((err) => console.error('logic_sync_all_real_account_balances', err.message));
-  resumeOrphanWarmups(pool)
-    .then((r) => {
-      console.log(
-        `Warm-up resume: watching=${r.watching} finished_enabled=${r.finished}`
-      );
-    })
-    .catch((err) => console.error('resumeOrphanWarmups', err));
-  resumeOrphanBacktests(pool)
-    .then((r) => {
-      console.log(
-        `Backtest resume: scheduled=${r.scheduled ?? 0} found=${r.found ?? 0}`
-      );
-    })
-    .catch((err) => console.error('resumeOrphanBacktests', err));
-  console.log('API ready — keep this window open. Trade cycles every 15s (see lines below).');
-});
+      })
+      .catch((err) => console.error('resumeOrphanWarmups', err));
+    resumeOrphanBacktests(pool)
+      .then((r) => {
+        console.log(
+          `Backtest resume: scheduled=${r.scheduled ?? 0} found=${r.found ?? 0}`
+        );
+      })
+      .catch((err) => console.error('resumeOrphanBacktests', err));
+    console.log('API ready — keep this window open. Trade cycles every 15s (see lines below).');
+  });
+})();

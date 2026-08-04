@@ -689,7 +689,7 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', ''),
     ('Trade runner требует открытый UI', 'APP_TRADE_RUNNER_REQUIRE_UI', 'boolean', '0'),
     ('Trade runner last OK', 'APP_TRADE_RUNNER_LAST_OK', 'text', ''),
-    ('Канал боевых заявок T-Bank', 'APP_TBANK_ORDER_CHANNEL', 'text', 'postgres'),
+    ('Канал боевых заявок T-Bank', 'APP_TBANK_ORDER_CHANNEL', 'text', 'node'),
     ('URL Node API для заявок T-Bank', 'APP_TBANK_ORDER_NODE_URL', 'text', 'http://127.0.0.1:3000')
 ON CONFLICT (short_name) DO NOTHING;
 

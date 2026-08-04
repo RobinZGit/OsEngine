@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — hotfix: `pgResolveTbankAccount` из ctx в references.js; installers **v1.0.126**
+**Последнее обновление:** 2026-08-04 — sell-all / bonds / close-all через канал настроек; installers **v1.0.128**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,19 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (sell-all / bonds / close-all = канал из шестерёнки)
+
+- «Продать всё», покупка облигаций: при `channel=node` — Node `postOrder` + GetPortfolio/BondBy; при postgres — SQL.
+- «Закрыть всё» в позициях: `tbank_post_order` / `tbank_http_post` по каналу; `tbank_figi_lot_size` и bond resolve без сырого `http()`.
+- Default канала `node`. Installers **v1.0.128**.
+
+### 2026-08-04 (SSL: UI token/account через Node + CA НУЦ)
+
+- Причина: radio postgres|node влиял только на PostOrder; проверка токена/счёта шла через pgsql-http → self-signed chain.
+- Node не берёт Windows store → вшит `api/certs/russiantrustedca.pem` + `NODE_EXTRA_CA_CERTS` / undici Agent.
+- `pgResolveTbankAccount` / verify token / balance / `tbank_http_post` (channel=node) → Node TLS.
+- Default канала → `node`. UI-текст обновлён. Installers **v1.0.127**.
 
 ### 2026-08-04 (hotfix: pgResolveTbankAccount is not defined)
 
@@ -1089,6 +1102,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
+| 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
 | 2026-08-04 | Hotfix preview-connection: pgResolveTbankAccount from ctx; v1.0.126 |
 | 2026-08-04 | T-Bank API → invest-public-api.tbank.ru; SSL checkbox + Russian Trusted CA; v64 / v1.0.125 |
 | 2026-08-04 | Order channel postgres|node in gear settings; Node PostOrder proxy; v63 / v1.0.124 |

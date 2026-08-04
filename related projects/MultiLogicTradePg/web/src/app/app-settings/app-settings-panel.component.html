@@ -14,8 +14,23 @@
         <p class="muted">Загрузка…</p>
       } @else {
         <section class="settings-block">
-          <h3 class="block-title">Канал боевых заявок T-Bank</h3>
+          <h3 class="block-title">Канал HTTPS к T-Bank</h3>
           <div class="radio-group" role="radiogroup" aria-label="Канал заявок">
+            <label class="radio-row">
+              <input
+                type="radio"
+                name="orderChannel"
+                value="node"
+                [ngModel]="orderChannel"
+                (ngModelChange)="onOrderChannelChange($event)"
+                [disabled]="savingChannel"
+              />
+              <span>
+                <strong>Node API (рекомендуется)</strong> — проверка токена, счета и
+                заявки через локальный сервис с CA НУЦ Минцифры (Госуслуги). Обход
+                SSL libcurl в Postgres. Заявки — при открытом UI.
+              </span>
+            </label>
             <label class="radio-row">
               <input
                 type="radio"
@@ -27,29 +42,15 @@
               />
               <span>
                 <strong>PostgreSQL</strong> (pgsql-http / libcurl) —
-                заявки идут из БД напрямую в T‑Invest API. По умолчанию.
-              </span>
-            </label>
-            <label class="radio-row">
-              <input
-                type="radio"
-                name="orderChannel"
-                value="node"
-                [ngModel]="orderChannel"
-                (ngModelChange)="onOrderChannelChange($event)"
-                [disabled]="savingChannel"
-              />
-              <span>
-                <strong>Node API (сервис)</strong> — заявки при открытом UI
-                проксируются через локальный API (системные сертификаты Windows).
-                Обход SSL-ошибок libcurl в Postgres.
+                прямой HTTPS из БД. Нужен актуальный CA-bundle (чекбокс Setup /
+                Госуслуги); иначе частая ошибка self-signed certificate in chain.
               </span>
             </label>
           </div>
           <p class="hint">
-            Режим Node работает только пока открыт браузер с MultiLogic Trade
-            (heartbeat UI) и запущен API. Если UI закрыт — PostOrder будет отклонён
-            с пояснением; переключите обратно на PostgreSQL для торговли без браузера.
+            Проверка токена/счёта в UI всегда идёт через Node (с russiantrustedca.pem),
+            независимо от radio. Режим Node для SQL-торговли: нужен открытый браузер
+            и запущенный API. Хост API: invest-public-api.tbank.ru.
             @if (orderNodeUrl) {
               <br />Прокси: <code>{{ orderNodeUrl }}</code>
             }

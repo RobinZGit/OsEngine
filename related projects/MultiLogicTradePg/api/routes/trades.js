@@ -953,6 +953,14 @@ app.post('/api/logic-trades/close-all', async (req, res) => {
     return;
   }
   try {
+    // PostOrder inside SQL respects APP_TBANK_ORDER_CHANNEL (node → Express TLS).
+    let channel = 'node';
+    try {
+      const { rows: ch } = await pool.query(`SELECT tbank_order_channel() AS c`);
+      channel = ch[0]?.c === 'postgres' ? 'postgres' : 'node';
+    } catch (_e) {
+      /* default node */
+    }
     const { rows } = await pool.query(
       'SELECT logic_close_all_positions_at_market($1::INTEGER) AS result',
       [logicId]
@@ -961,12 +969,12 @@ app.post('/api/logic-trades/close-all', async (req, res) => {
     await writeTechLogEvent(pool, {
       threadKey: 'trade-runner',
       operation: 'trade.close_all',
-      message: `Закрыть всё: logic=${logicId} closed=${result.closed ?? 0}`,
+      message: `Закрыть всё: logic=${logicId} closed=${result.closed ?? 0} channel=${channel}`,
       source: 'api',
       logicId,
-      payload: result,
+      payload: { ...result, channel },
     });
-    res.json({ ok: true, ...result });
+    res.json({ ok: true, channel, ...result });
   } catch (err) {
     console.error('POST /api/logic-trades/close-all', err);
     res.status(500).json({ error: err.message });
