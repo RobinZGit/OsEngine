@@ -53,6 +53,14 @@ english.BeveledLabel=Version {#MyAppVersion}  |  Build {#MyAppBuild}
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
+; Opt-in: refresh CA bundle for pgsql-http / libcurl (T-Bank HTTPS). Default OFF.
+Name: "updatesslcerts"; Description: "{cm:UpdateSslCertsTask}"; GroupDescription: "{cm:SslCertsGroup}"; Flags: unchecked
+
+[CustomMessages]
+russian.UpdateSslCertsTask=Обновить SSL CA-сертификаты PostgreSQL (HTTPS / T-Bank API)
+english.UpdateSslCertsTask=Update PostgreSQL SSL CA certificates (HTTPS / T-Bank API)
+russian.SslCertsGroup=Сертификаты (по умолчанию выкл.):
+english.SslCertsGroup=Certificates (off by default):
 
 [Files]
 Source: "{#SourceRoot}\00_create_database.sql"; DestDir: "{app}"; Flags: ignoreversion
@@ -77,7 +85,7 @@ Name: "{autoprograms}\MultiLogic Trade\Install protocol"; Filename: "{win}\notep
 Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"; Tasks: desktopicon
 
 [Run]
-; DbMode is written to installer\windows\db-mode.txt in PreparePostInstall (read by run_postinstall.cmd).
+; DbMode / UpdateSslCerts written in PreparePostInstall (read by run_postinstall.cmd).
 Filename: "{cmd}"; Parameters: "/C """"{app}\installer\windows\scripts\run_postinstall.cmd"" ""{app}"" ""111"""""; StatusMsg: "Настройка приложения... См. INSTALL_PROTOCOL.txt"; Flags: waituntilterminated runhidden; BeforeInstall: PreparePostInstall; AfterInstall: FinishPostInstall
 ; Always open Angular UI after install unless the user unchecks this box.
 Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Description: "Open MultiLogic Trade UI (API + Angular)"; Flags: postinstall nowait skipifsilent runasoriginaluser
@@ -130,6 +138,8 @@ procedure PreparePostInstall();
 var
   Max: Integer;
   ModePath: String;
+  SslPath: String;
+  SslFlag: String;
 begin
   WizardForm.StatusLabel.Caption := 'Настройка приложения... См. INSTALL_PROTOCOL.txt';
   Max := WizardForm.ProgressGauge.Max;
@@ -139,6 +149,13 @@ begin
   ModePath := ExpandConstant('{app}\installer\windows\db-mode.txt');
   ForceDirectories(ExtractFilePath(ModePath));
   SaveStringToFile(ModePath, GetDbMode('') + #13#10, False);
+
+  SslPath := ExpandConstant('{app}\installer\windows\update-ssl-certs.txt');
+  if WizardIsTaskSelected('updatesslcerts') then
+    SslFlag := '1'
+  else
+    SslFlag := '0';
+  SaveStringToFile(SslPath, SslFlag + #13#10, False);
 end;
 
 procedure FinishPostInstall();

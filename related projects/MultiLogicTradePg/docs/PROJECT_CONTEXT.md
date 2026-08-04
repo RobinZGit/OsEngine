@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-02 — EOD close не зависит от use_non_trading_periods; schema **v62**; installers **v1.0.121**
+**Последнее обновление:** 2026-08-04 — Installer: opt-in чекбокс обновления SSL CA для Postgres/pgsql-http (по умолчанию выкл.); installers **v1.0.123**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,15 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-02)
+## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (Installer: opt-in обновление SSL CA)
+
+- В Windows Setup на странице Tasks — чекбокс **«Обновить SSL CA-сертификаты PostgreSQL»**, по умолчанию **выкл.**
+- Если включить: post-install вызывает `scripts/fix_pgsql_http_ssl.ps1` и `SELECT configure_http_ssl()` (ошибка SSL не валит всю установку).
+- Флаг: `installer/windows/update-ssl-certs.txt` (`1`/`0`); Linux: `--update-ssl-certs`.
+- Нужно при reject’ах T-Bank вида `SSL certificate problem: …` (libcurl/pgsql-http, не браузер).
+- Installers **v1.0.123**.
 
 ### 2026-08-02 (EOD close ≠ use_non_trading_periods)
 
@@ -920,6 +928,7 @@
 97. **Copy logic scroll:** после `alert` и OK — `scrollIntoView` к строке новой логики (`data-logic-id`); разворот копии по-прежнему сразу после копирования.
 98. **Справка UI + комментарии рутин:** панель «Справка» (иконка книги, белая на тёмной шапке) рядом с шестерёнкой — разделы о системе, вкладках, логиках, индикаторах, структуре БД, API, установке. В SQL добавлены COMMENT ON для ~91 функций/процедур без описания (`sql/routine_comments_missing.sql` → блок в `02`); JSDoc у `api/server.js` и ключевых методов `LogicsService`.
 99. **Installer DbMode:** Да → `wipe` (DROP DATABASE); Нет → `upgrade` (без DROP, `sql/drop_public_routines.sql` + `01` + `02`, данные таблиц сохраняются); первая установка → `create`. Режим в `db-mode.txt` / аргумент post-install / `INSTALL_PROTOCOL.txt`.
+99a. **Installer SSL CA (opt-in):** Tasks → `updatesslcerts` (default unchecked) → `update-ssl-certs.txt` + `install.ps1 -UpdateSslCerts` → `fix_pgsql_http_ssl.ps1` + `configure_http_ssl()`. Linux: `--update-ssl-certs`.
 100. **01 CREATE+ALTER:** у каждой таблицы полный `CREATE TABLE IF NOT EXISTS`; сразу после — `ALTER … ADD COLUMN IF NOT EXISTS` для всех колонок кроме PK `id` (с комментарием upgrade); `NOT NULL` в ALTER только вместе с `DEFAULT`. Генератор: `scripts/ensure-01-column-alters.mjs` (игнорирует `--`/`/*` в CREATE; убирает сиротские mid-file ADD COLUMN; `indicators.sig_*` в CREATE).
 101. **Эквити/бумаги бой+тест:** блок «Эквити портфеля» и раскрываемые «Бумаги» (график/эквити, lazy load) в live как в test; вертикали портфельных SL/TP на эквити; период теста запоминается; `/pnl-summary` и панель — один критерий последнего run (`id DESC`) + только filled/submitted.
 102. **Cash-fund + общие настройки очистки:** params `cash_fund_code` / `cash_fund_threshold` / `last_cash_fund_bar_dt`; шапка DB+gear; `APP_CLEANUP_DISK` + manual cleanup API.
@@ -1060,6 +1069,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Installer opt-in SSL CA update checkbox (default off); fix_pgsql_http_ssl + configure_http_ssl; v1.0.123 |
 | 2026-08-02 | EOD close ignores use_non_trading_periods; last bar before evening window; v62 / v1.0.121 |
 | 2026-08-01 | Hotfix NG1 rejectAlert template null; installers v1.0.120 |
 | 2026-08-01 | Equity shade: force gray while portfolio_trading_paused; installers v1.0.119 |
@@ -1315,4 +1325,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **810** — EOD close без учёта торговых периодов; **808** — NG1 rejectAlert; **807** — красный чек vs зелёная эквити.
+Последние (см. USER_INSTRUCTIONS): **811** — installer checkbox обновления SSL CA (default off); **810** — EOD close без NTP; **808** — NG1 rejectAlert.

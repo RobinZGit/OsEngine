@@ -14,6 +14,7 @@ param(
     [string] $PostgresMajor = "15",
     [ValidateSet("wipe", "upgrade", "create")]
     [string] $DbMode = "wipe",
+    [switch] $UpdateSslCerts,
     [switch] $SkipDependencyInstall,
     [switch] $SkipAppProtocol
 )
@@ -38,6 +39,17 @@ if ((-not $PSBoundParameters.ContainsKey("DbMode")) -and (Test-Path $DbModeFile)
     }
 }
 $DbMode = $DbMode.Trim().ToLowerInvariant()
+
+$SslFlagFile = Join-Path $InstallDir "installer\windows\update-ssl-certs.txt"
+if ((-not $UpdateSslCerts) -and (Test-Path $SslFlagFile)) {
+    $sslFromFile = (Get-Content -LiteralPath $SslFlagFile -TotalCount 1 -ErrorAction SilentlyContinue)
+    if ($sslFromFile) {
+        $sslFromFile = $sslFromFile.Trim()
+        if ($sslFromFile -in @("1", "true", "yes", "on")) {
+            $UpdateSslCerts = $true
+        }
+    }
+}
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 Start-Transcript -Path $LogPath | Out-Null
 $script:PostgresHost = "localhost"
@@ -474,6 +486,57 @@ try {
         throw "PostgreSQL did not become ready within 120 seconds."
     }
 
+    function Update-PgsqlHttpSslCerts {
+        param(
+            [string] $Psql,
+            [bool] $HttpExtensionReady
+        )
+        # Opt-in from Setup checkbox (default OFF). Best-effort: never fail the whole install.
+        Write-Step "Updating PostgreSQL SSL CA certificates (opt-in)"
+        try {
+            $fixScript = Join-Path $InstallDir "scripts\fix_pgsql_http_ssl.ps1"
+            if (Test-Path -LiteralPath $fixScript) {
+                Write-Host "    Running scripts\fix_pgsql_http_ssl.ps1 ..." -ForegroundColor Yellow
+                & $fixScript
+                if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+                    Write-Warning "fix_pgsql_http_ssl.ps1 exited with code $LASTEXITCODE"
+                }
+            }
+            else {
+                $pgRoot = Split-Path (Split-Path $Psql -Parent) -Parent
+                $certDir = Join-Path $pgRoot "ssl\certs"
+                $dest = Join-Path $certDir "curl-ca-bundle.crt"
+                New-Item -ItemType Directory -Force -Path $certDir | Out-Null
+                Write-Host "    Downloading cacert.pem from curl.se ..." -ForegroundColor Yellow
+                Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile $dest -UseBasicParsing
+                $serviceName = Get-PostgresServiceName
+                if ($serviceName) {
+                    Restart-Service -Name $serviceName -Force
+                    Start-Sleep -Seconds 3
+                }
+            }
+
+            Wait-PostgresReady $Psql
+
+            if ($HttpExtensionReady) {
+                $fn = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM pg_proc WHERE proname = 'configure_http_ssl';"
+                if ($fn -eq "1") {
+                    Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-c", "SELECT configure_http_ssl();")
+                    Write-Host "    configure_http_ssl() applied." -ForegroundColor Green
+                }
+                else {
+                    Write-Warning "configure_http_ssl() not found yet; CA bundle file was updated on disk."
+                }
+            }
+            else {
+                Write-Warning "pgsql-http not ready; CA bundle updated on disk only."
+            }
+        }
+        catch {
+            Write-Warning "SSL CA update skipped/failed: $($_.Exception.Message)"
+        }
+    }
+
     function Install-PgsqlHttpExtension {
         param([string] $PostgresRoot)
 
@@ -819,6 +882,7 @@ try {
     }
     Write-Host "InstallDir: $InstallDir"
     Write-Host "DbMode:     $DbMode"
+    Write-Host "UpdateSslCerts: $UpdateSslCerts"
     Write-Host "Log:        $LogPath"
     Write-Host "Protocol:   $ProtocolPath"
 
@@ -830,6 +894,9 @@ try {
     $httpReady = Install-PgsqlHttpExtension $pgRoot
     Wait-PostgresReady $psql
     Deploy-Database -Psql $psql -HttpExtensionReady $httpReady -Mode $DbMode
+    if ($UpdateSslCerts) {
+        Update-PgsqlHttpSslCerts -Psql $psql -HttpExtensionReady $httpReady
+    }
     Write-ApiEnv
     Normalize-WindowsTextFiles
     Install-NpmDependencies
@@ -856,6 +923,7 @@ finally {
                 "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
                 "InstallDir: $InstallDir",
                 "DbMode: $DbMode",
+                "UpdateSslCerts: $UpdateSslCerts",
                 "Transcript: $LogPath",
                 "Latest transcript copy: $LatestLogPath",
                 "PostgreSQL target: $($script:PostgresHost):$($script:PostgresPort) / multilogictrade / user postgres",

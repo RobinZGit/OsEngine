@@ -34,6 +34,7 @@ sudo ./installer/linux/install.sh
 |------|---------|
 | `--prefix DIR` | Install directory (`/opt/MultiLogicTradePg` if root, else `~/MultiLogicTradePg`) |
 | `--db-mode wipe\|upgrade\|create` | Same semantics as Windows Setup (default `wipe`) |
+| `--update-ssl-certs` | Opt-in: refresh system CA certs + `configure_http_ssl()` (off by default; Windows Setup checkbox) |
 | `--postgres-password P` | postgres password (default `111`) |
 | `--skip-deps` | Do not auto-install Node / PostgreSQL |
 | `--skip-npm` | Skip `npm ci` |

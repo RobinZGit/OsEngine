@@ -11,6 +11,7 @@ PACKAGE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PREFIX=""
 DB_MODE="wipe"
 DB_MODE_FROM_CLI=0
+UPDATE_SSL_CERTS=0
 POSTGRES_PASSWORD="111"
 POSTGRES_MAJOR="15"
 SKIP_DEPS=0
@@ -23,6 +24,7 @@ MultiLogicTradePg Linux installer
 Options:
   --prefix DIR          Install directory (default: /opt/MultiLogicTradePg if root, else ~/MultiLogicTradePg)
   --db-mode MODE        wipe | upgrade | create  (default: wipe)
+  --update-ssl-certs    Refresh system CA certs + SELECT configure_http_ssl() (off by default)
   --postgres-password P Superuser password (default: 111)
   --skip-deps           Do not try to install Node.js / PostgreSQL via package manager
   --skip-npm            Skip npm ci
@@ -34,6 +36,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --prefix) PREFIX="${2:-}"; shift 2 ;;
     --db-mode) DB_MODE="${2:-}"; DB_MODE_FROM_CLI=1; shift 2 ;;
+    --update-ssl-certs) UPDATE_SSL_CERTS=1; shift ;;
     --postgres-password) POSTGRES_PASSWORD="${2:-}"; shift 2 ;;
     --skip-deps) SKIP_DEPS=1; shift ;;
     --skip-npm) SKIP_NPM=1; shift ;;
@@ -62,6 +65,15 @@ if [[ "$DB_MODE_FROM_CLI" -eq 0 && -f "$DB_MODE_FILE" ]]; then
   from_file="$(tr -d '[:space:]' <"$DB_MODE_FILE" | tr '[:upper:]' '[:lower:]')"
   if [[ "$from_file" == "wipe" || "$from_file" == "upgrade" || "$from_file" == "create" ]]; then
     DB_MODE="$from_file"
+  fi
+fi
+
+# update-ssl-certs.txt (1) written by packaging tools; CLI --update-ssl-certs wins if set
+SSL_FILE="$SCRIPT_DIR/update-ssl-certs.txt"
+if [[ "$UPDATE_SSL_CERTS" -eq 0 && -f "$SSL_FILE" ]]; then
+  ssl_from_file="$(tr -d '[:space:]' <"$SSL_FILE" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$ssl_from_file" == "1" || "$ssl_from_file" == "true" || "$ssl_from_file" == "yes" || "$ssl_from_file" == "on" ]]; then
+    UPDATE_SSL_CERTS=1
   fi
 fi
 
@@ -344,6 +356,36 @@ try_install_pgsql_http() {
   return 1
 }
 
+update_ssl_certs_opt_in() {
+  # Opt-in (default off). Best-effort: do not abort install on failure.
+  step "Updating SSL CA certificates (opt-in)"
+  local mgr
+  mgr="$(detect_pkg_mgr)"
+  case "$mgr" in
+    apt)
+      apt-get install -y ca-certificates 2>/dev/null || true
+      update-ca-certificates 2>/dev/null || true
+      ok "ca-certificates refreshed (apt)"
+      ;;
+    dnf|yum)
+      "$mgr" install -y ca-certificates 2>/dev/null || true
+      ok "ca-certificates package touched ($mgr)"
+      ;;
+    *)
+      warn "Unknown package manager; skipped system CA refresh"
+      ;;
+  esac
+  if psql_scalar multilogictrade "SELECT COUNT(*) FROM pg_proc WHERE proname = 'configure_http_ssl';" 2>/dev/null | grep -qx '1'; then
+    if psql_q multilogictrade -c "SELECT configure_http_ssl();" 2>/dev/null; then
+      ok "configure_http_ssl() applied"
+    else
+      warn "configure_http_ssl() failed (non-fatal)"
+    fi
+  else
+    warn "configure_http_ssl() not found; system CAs updated only"
+  fi
+}
+
 core_sql02() {
   local src="$PREFIX/02_multilogictrade_functions_and_procedures.sql"
   local dest="/tmp/02_multilogictrade_functions_and_procedures.core.$$.sql"
@@ -539,6 +581,7 @@ fi
 ok "Package: $PACKAGE_ROOT"
 ok "Prefix:  $PREFIX"
 ok "DbMode:  $DB_MODE"
+ok "UpdateSslCerts: $UPDATE_SSL_CERTS"
 
 if [[ ! -f "$PACKAGE_ROOT/01_multilogictrade_tables_and_data.sql" ]]; then
   echo "Package root looks incomplete: $PACKAGE_ROOT" >&2
@@ -558,6 +601,9 @@ HTTP_OK=0
 if try_install_pgsql_http; then HTTP_OK=1; fi
 
 deploy_database "$HTTP_OK"
+if [[ "$UPDATE_SSL_CERTS" -eq 1 ]]; then
+  update_ssl_certs_opt_in || warn "SSL CA update failed (non-fatal)"
+fi
 write_api_env
 install_npm
 install_launcher

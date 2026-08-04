@@ -109,6 +109,12 @@ database, installs npm packages, and creates launch shortcuts.
    setup. There is also an optional unchecked checkbox to open the installation
    protocol.
 
+10. On the Tasks page there is an **unchecked** option to refresh PostgreSQL SSL
+    CA certificates for pgsql-http / libcurl (`scripts\fix_pgsql_http_ssl.ps1`
+    + `SELECT configure_http_ssl()`). Default is off; enable only if HTTPS to
+    T-Bank fails with certificate errors. Flag file:
+    `installer\windows\update-ssl-certs.txt` (`1` / `0`).
+
 ## Reinstall behavior
 
 When an existing MultiLogicTradePg installation is detected, setup asks:

@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+811. Turn it on in the installer, so that there is a checkbox to update the certificates, by default it is turned off, and if you turn it on, then it would try to do it.
+
 810. If the checkbox is set to sell at the end of the day, to close the position at the end of the day, then it should not take into account the trading period, that is, even if there is a checkbox to take into account the trading period, it should not look at this matter, it should try to do this at the end of each day, if there are positions, except for the funds, of course, the funds should not be closed at the end of the day Check this moment, if this is not the case, then correct it and immediately post it to the master
 
 809. This means that the type of error, the frozen price does not correspond to the type of application.
