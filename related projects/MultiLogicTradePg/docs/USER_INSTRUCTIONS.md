@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+817. When checking the score, the error is in the mode not in the post-growth, but in the mode of post-growth, too.fetch failed
+
 816. Also, when we sell everything on the market and buy bonds, you also need to consider this checkbox in the settings. And of course, when you sell everything on the market in positions, you also need to do it through the path that is indicated in the settings. When you do it, post it in the repository.
 
 815. installed the update and the problem with the certificate continues with any choice in the settings that through postgres that through the node when checking the account with the token there is such a mistake — SSL certificate problem: self-signed certificate in certificate chain

@@ -5,7 +5,7 @@
  * Used for UI token/account checks and for PostOrder when channel=node.
  */
 
-const { tbankFetchOptions } = require('./tbank-tls');
+const { httpsJsonPost, formatError } = require('./tbank-tls');
 
 /** Prod T-Invest REST (support: invest-public-api.tbank.ru:443). */
 const DEFAULT_API = 'https://invest-public-api.tbank.ru/rest';
@@ -44,37 +44,32 @@ function formatMoneyRu(amount, currency) {
 
 async function tbankHttpPost(apiUrl, rpcPath, token, body = {}) {
   const url = `${baseUrl(apiUrl)}/${String(rpcPath || '').replace(/^\/+/, '')}`;
-  const res = await fetch(
-    url,
-    tbankFetchOptions({
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body ?? {}),
-    })
-  );
-  const text = await res.text();
-  let json = null;
+  let status;
+  let json;
+  let text;
   try {
-    json = text ? JSON.parse(text) : null;
-  } catch (_e) {
-    json = null;
+    ({ status, json, text } = await httpsJsonPost(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      body: body ?? {},
+    }));
+  } catch (err) {
+    const wrapped = new Error(formatError(err));
+    wrapped.cause = err.cause || err;
+    wrapped.code = err.code;
+    throw wrapped;
   }
-  if (!res.ok) {
+  if (status < 200 || status >= 300) {
     const msg =
-      (json && (json.message || json.error)) ||
+      (json && (json.message || json.error || json.description)) ||
       text ||
-      `HTTP ${res.status}`;
-    const err = new Error(`T-Bank API HTTP ${res.status}: ${msg}`);
-    err.status = res.status;
+      `HTTP ${status}`;
+    const err = new Error(`T-Bank API HTTP ${status}: ${msg}`);
+    err.status = status;
     err.body = json || text;
     throw err;
   }
   if (json && json.code != null && String(json.code) !== '' && String(json.code) !== '0') {
-    const err = new Error(`T-Bank API: ${json.message || json.code}`);
+    const err = new Error(`T-Bank API: ${json.message || json.description || json.code}`);
     err.status = 400;
     err.body = json;
     throw err;

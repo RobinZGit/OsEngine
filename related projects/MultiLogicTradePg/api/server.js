@@ -12,6 +12,14 @@
  */
 require('dotenv').config();
 
+// Set before other TLS use when possible (https.Agent in tbank-tls is the real fix).
+const path = require('path');
+const fs = require('fs');
+const _ruPem = path.join(__dirname, 'certs', 'russiantrustedca.pem');
+if (fs.existsSync(_ruPem)) {
+  process.env.NODE_EXTRA_CA_CERTS = _ruPem;
+}
+
 // T-Bank Invest needs Russian Trusted CA (gosuslugi.ru/crt); Node ignores Windows store.
 const { ensureTbankTls } = require('./lib/tbank-tls');
 

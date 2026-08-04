@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — sell-all / bonds / close-all через канал настроек; installers **v1.0.128**
+**Последнее обновление:** 2026-08-04 — hotfix: Node T-Bank через https.Agent + russiantrustedca; installers **v1.0.129**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,12 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (hotfix: fetch failed → https.Agent + CA НУЦ)
+
+- UI «проверка счёта» показывала `fetch failed` (cause: SELF_SIGNED_CERT_IN_CHAIN): `fetch`/undici не применял russiantrustedca.pem.
+- Клиент T-Bank переведён на `https.request` + `https.Agent({ ca: rootCertificates + russiantrustedca.pem })`.
+- Ошибки показывают code/cause, не только «fetch failed». Installers **v1.0.129**.
 
 ### 2026-08-04 (sell-all / bonds / close-all = канал из шестерёнки)
 
@@ -1102,6 +1108,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA (not undici fetch) |
 | 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
 | 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
 | 2026-08-04 | Hotfix preview-connection: pgResolveTbankAccount from ctx; v1.0.126 |
@@ -1363,4 +1370,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **813** — tbank.ru host + CA Госуслуг в installer; **812** — канал postgres|node; **811** — SSL checkbox.
+Последние (см. USER_INSTRUCTIONS): **813** — tbank.ru host + CA Госуслуг в installer; **812** — канал postgres|node; **
