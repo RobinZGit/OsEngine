@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-02 — EOD close не зависит от use_non_trading_periods; schema **v62**; installers **v1.0.121**
+**Последнее обновление:** 2026-08-04 — dismissible × на баннерах отказов/токена; installers **v1.0.130**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,62 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-02)
+## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (dismissible warning banners: отказы / токен)
+
+- Баннер «много отказов биржи» и баннер токена T-Bank: кнопка **×** скрывает баннер (и чип в шапке блока).
+- Скрытие по fingerprint (count+message / reason+message); при новых данных баннер снова показывается.
+- Если алерт пропал (проблема ушла), dismiss сбрасывается — при повторе ситуации баннер появляется снова.
+- Других похожих live-баннеров в позициях нет (error-banner БД — отдельный статус загрузки, не warning burst).
+- Installers **v1.0.130**.
+
+### 2026-08-04 (hotfix: fetch failed → https.Agent + CA НУЦ)
+
+- UI «проверка счёта» показывала `fetch failed` (cause: SELF_SIGNED_CERT_IN_CHAIN): `fetch`/undici не применял russiantrustedca.pem.
+- Клиент T-Bank переведён на `https.request` + `https.Agent({ ca: rootCertificates + russiantrustedca.pem })`.
+- Ошибки показывают code/cause, не только «fetch failed». Installers **v1.0.129**.
+
+### 2026-08-04 (sell-all / bonds / close-all = канал из шестерёнки)
+
+- «Продать всё», покупка облигаций: при `channel=node` — Node `postOrder` + GetPortfolio/BondBy; при postgres — SQL.
+- «Закрыть всё» в позициях: `tbank_post_order` / `tbank_http_post` по каналу; `tbank_figi_lot_size` и bond resolve без сырого `http()`.
+- Default канала `node`. Installers **v1.0.128**.
+
+### 2026-08-04 (SSL: UI token/account через Node + CA НУЦ)
+
+- Причина: radio postgres|node влиял только на PostOrder; проверка токена/счёта шла через pgsql-http → self-signed chain.
+- Node не берёт Windows store → вшит `api/certs/russiantrustedca.pem` + `NODE_EXTRA_CA_CERTS` / undici Agent.
+- `pgResolveTbankAccount` / verify token / balance / `tbank_http_post` (channel=node) → Node TLS.
+- Default канала → `node`. UI-текст обновлён. Installers **v1.0.127**.
+
+### 2026-08-04 (hotfix: pgResolveTbankAccount is not defined)
+
+- `POST /api/accounts/preview-connection` падал: `pgResolveTbankAccount` / `pgFetchTbankPortfolioBalance` не деструктурировались из `ctx` в `api/routes/references.js`.
+- Installers **v1.0.126**.
+
+### 2026-08-04 (T-Bank support: tbank.ru host + CA Госуслуг в installer)
+
+- Prod API: `https://invest-public-api.tbank.ru/rest` (= `invest-public-api.tbank.ru:443`); UPDATE старых `brokers.api_url` с tinkoff.ru.
+- `fix_pgsql_http_ssl.ps1`: Mozilla cacert + append `russiantrustedca.pem` (gu-st.ru / gosuslugi.ru/crt) + import .cer в Windows Root.
+- Чекбокс Setup переименован: «Установить/обновить SSL CA… Mozilla + Госуслуги/НУЦ Минцифры для T-Bank API».
+- Docs: https://developer.tbank.ru/invest/intro/developer/network
+- Схема **v64**. Installers **v1.0.125**.
+
+### 2026-08-04 (Канал заявок T-Bank: Postgres | Node API)
+
+- Шестерёнка → radio **Канал боевых заявок**: `postgres` (default, pgsql-http) / `node` (прокси через локальный Express, системный TLS).
+- `APP_TBANK_ORDER_CHANNEL` + `APP_TBANK_ORDER_NODE_URL`; `tbank_post_order` при `node` → `POST /api/internal/tbank/post-order` (только localhost, нужен UI heartbeat).
+- Обход SSL `self-signed certificate in certificate chain` на libcurl: PostOrder идёт из Node `fetch`.
+- Схема **v63**. Installers **v1.0.124**.
+
+### 2026-08-04 (Installer: opt-in обновление SSL CA)
+
+- В Windows Setup на странице Tasks — чекбокс **«Обновить SSL CA-сертификаты PostgreSQL»**, по умолчанию **выкл.**
+- Если включить: post-install вызывает `scripts/fix_pgsql_http_ssl.ps1` и `SELECT configure_http_ssl()` (ошибка SSL не валит всю установку).
+- Флаг: `installer/windows/update-ssl-certs.txt` (`1`/`0`); Linux: `--update-ssl-certs`.
+- Нужно при reject’ах T-Bank вида `SSL certificate problem: …` (libcurl/pgsql-http, не браузер).
+- Installers **v1.0.123**.
 
 ### 2026-08-02 (EOD close ≠ use_non_trading_periods)
 
@@ -920,6 +975,7 @@
 97. **Copy logic scroll:** после `alert` и OK — `scrollIntoView` к строке новой логики (`data-logic-id`); разворот копии по-прежнему сразу после копирования.
 98. **Справка UI + комментарии рутин:** панель «Справка» (иконка книги, белая на тёмной шапке) рядом с шестерёнкой — разделы о системе, вкладках, логиках, индикаторах, структуре БД, API, установке. В SQL добавлены COMMENT ON для ~91 функций/процедур без описания (`sql/routine_comments_missing.sql` → блок в `02`); JSDoc у `api/server.js` и ключевых методов `LogicsService`.
 99. **Installer DbMode:** Да → `wipe` (DROP DATABASE); Нет → `upgrade` (без DROP, `sql/drop_public_routines.sql` + `01` + `02`, данные таблиц сохраняются); первая установка → `create`. Режим в `db-mode.txt` / аргумент post-install / `INSTALL_PROTOCOL.txt`.
+99a. **Installer SSL CA (opt-in):** Tasks → `updatesslcerts` (default unchecked) → `update-ssl-certs.txt` + `install.ps1 -UpdateSslCerts` → `fix_pgsql_http_ssl.ps1` + `configure_http_ssl()`. Linux: `--update-ssl-certs`.
 100. **01 CREATE+ALTER:** у каждой таблицы полный `CREATE TABLE IF NOT EXISTS`; сразу после — `ALTER … ADD COLUMN IF NOT EXISTS` для всех колонок кроме PK `id` (с комментарием upgrade); `NOT NULL` в ALTER только вместе с `DEFAULT`. Генератор: `scripts/ensure-01-column-alters.mjs` (игнорирует `--`/`/*` в CREATE; убирает сиротские mid-file ADD COLUMN; `indicators.sig_*` в CREATE).
 101. **Эквити/бумаги бой+тест:** блок «Эквити портфеля» и раскрываемые «Бумаги» (график/эквити, lazy load) в live как в test; вертикали портфельных SL/TP на эквити; период теста запоминается; `/pnl-summary` и панель — один критерий последнего run (`id DESC`) + только filled/submitted.
 102. **Cash-fund + общие настройки очистки:** params `cash_fund_code` / `cash_fund_threshold` / `last_cash_fund_bar_dt`; шапка DB+gear; `APP_CLEANUP_DISK` + manual cleanup API.
@@ -1060,6 +1116,14 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
+| 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
+| 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
+| 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
+| 2026-08-04 | Hotfix preview-connection: pgResolveTbankAccount from ctx; v1.0.126 |
+| 2026-08-04 | T-Bank API → invest-public-api.tbank.ru; SSL checkbox + Russian Trusted CA; v64 / v1.0.125 |
+| 2026-08-04 | Order channel postgres|node in gear settings; Node PostOrder proxy; v63 / v1.0.124 |
+| 2026-08-04 | Installer opt-in SSL CA update checkbox (default off); fix_pgsql_http_ssl + configure_http_ssl; v1.0.123 |
 | 2026-08-02 | EOD close ignores use_non_trading_periods; last bar before evening window; v62 / v1.0.121 |
 | 2026-08-01 | Hotfix NG1 rejectAlert template null; installers v1.0.120 |
 | 2026-08-01 | Equity shade: force gray while portfolio_trading_paused; installers v1.0.119 |
@@ -1315,4 +1379,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **810** — EOD close без учёта торговых периодов; **808** — NG1 rejectAlert; **807** — красный чек vs зелёная эквити.
+Последние (см. USER_INSTRUCTIONS): **818** — dismissible × на баннерах отказов/токена; **817** — fetch failed в обоих режимах; **816** — sell-all/bonds/close-all по каналу.

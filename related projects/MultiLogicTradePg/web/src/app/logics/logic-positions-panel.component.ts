@@ -178,7 +178,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Input() testPeriodFrom: string | null = null;
   @Input() testPeriodTo: string | null = null;
 
-  @Input() tbankTokenAlert: { message: string } | null = null;
+  @Input() tbankTokenAlert: {
+    reason?: 'missing' | 'invalid';
+    message: string;
+  } | null = null;
 
   /** Массовые rejected за окно (бой); 1–2 отказа без баннера. */
   @Input() rejectAlert: {
@@ -186,6 +189,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
     rejected_count: number;
     message: string | null;
   } | null = null;
+
+  /** Fingerprint dismissed reject banner; cleared when alert goes away. */
+  private dismissedRejectKey: string | null = null;
+
+  /** Fingerprint dismissed token banner; cleared when alert goes away. */
+  private dismissedTokenKey: string | null = null;
 
   /** Таймфрейм логики для графиков теста. */
   @Input() timeframeId: number | null = null;
@@ -304,6 +313,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
     if (changes['backtestRun'] && !this.isBacktestRunning) {
       this.cancelling = false;
     }
+    if (changes['rejectAlert'] && !this.rejectAlert?.warn) {
+      this.dismissedRejectKey = null;
+    }
+    if (changes['tbankTokenAlert'] && !this.tbankTokenAlert) {
+      this.dismissedTokenKey = null;
+    }
     if (
       changes['trades'] ||
       changes['logicRow'] ||
@@ -329,6 +344,52 @@ export class LogicPositionsPanelComponent implements OnChanges {
       }
       this.prevBacktestRunning = running;
     }
+  }
+
+  /** Full reject banner + summary chip (hidden after × until new data / alert returns). */
+  showRejectWarning(): boolean {
+    const a = this.rejectAlert;
+    if (!a?.warn || !a.message) return false;
+    return this.rejectFingerprint(a) !== this.dismissedRejectKey;
+  }
+
+  /** Full token banner + summary chip. */
+  showTokenWarning(): boolean {
+    const a = this.tbankTokenAlert;
+    if (!a?.message) return false;
+    return this.tokenFingerprint(a) !== this.dismissedTokenKey;
+  }
+
+  dismissRejectBanner(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const a = this.rejectAlert;
+    if (!a?.warn) return;
+    this.dismissedRejectKey = this.rejectFingerprint(a);
+    this.cdr.markForCheck();
+  }
+
+  dismissTokenBanner(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const a = this.tbankTokenAlert;
+    if (!a) return;
+    this.dismissedTokenKey = this.tokenFingerprint(a);
+    this.cdr.markForCheck();
+  }
+
+  private rejectFingerprint(a: {
+    rejected_count: number;
+    message: string | null;
+  }): string {
+    return `${Number(a.rejected_count) || 0}|${a.message ?? ''}`;
+  }
+
+  private tokenFingerprint(a: {
+    reason?: string;
+    message: string;
+  }): string {
+    return `${a.reason ?? ''}|${a.message}`;
   }
 
   /** After test (+ OPT) finishes: open report windows without waiting for button clicks. */

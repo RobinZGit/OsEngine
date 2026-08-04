@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — hotfix: Node T-Bank через https.Agent + russiantrustedca; installers **v1.0.129**
+**Последнее обновление:** 2026-08-04 — dismissible × на баннерах отказов/токена; installers **v1.0.130**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,14 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (dismissible warning banners: отказы / токен)
+
+- Баннер «много отказов биржи» и баннер токена T-Bank: кнопка **×** скрывает баннер (и чип в шапке блока).
+- Скрытие по fingerprint (count+message / reason+message); при новых данных баннер снова показывается.
+- Если алерт пропал (проблема ушла), dismiss сбрасывается — при повторе ситуации баннер появляется снова.
+- Других похожих live-баннеров в позициях нет (error-banner БД — отдельный статус загрузки, не warning burst).
+- Installers **v1.0.130**.
 
 ### 2026-08-04 (hotfix: fetch failed → https.Agent + CA НУЦ)
 
@@ -1108,6 +1116,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
 | 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
 | 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
 | 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
@@ -1370,4 +1379,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **813** — tbank.ru host + CA Госуслуг в installer; **812** — канал postgres|node; **811** — SSL checkbox.
+Последние (см. USER_INSTRUCTIONS): **818** — dismissible × на баннерах отказов/токена; **817** — fetch failed в обоих режимах; **816** — sell-all/bonds/close-all по каналу.

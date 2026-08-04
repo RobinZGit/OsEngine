@@ -6,6 +6,22 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+818. In the warning banner, where there are many refusals, and in other similar banners, make a button to delete the cross. The user presses the cross and the banner is deleted. If suddenly the same situation begins again, then the banner appears again, but according to the new data. Check all these banners, that the token is not the one I saw. And immediately upload it to the repository.
+
+817. When checking the score, the error is in the mode not in the post-growth, but in the mode of post-growth, too.fetch failed
+
+816. Also, when we sell everything on the market and buy bonds, you also need to consider this checkbox in the settings. And of course, when you sell everything on the market in positions, you also need to do it through the path that is indicated in the settings. When you do it, post it in the repository.
+
+815. installed the update and the problem with the certificate continues with any choice in the settings that through postgres that through the node when checking the account with the token there is such a mistake — SSL certificate problem: self-signed certificate in certificate chain
+
+814. pgResolveTbankAccount is not defined
+
+813. also look at the answer that I will now send you from the technical support and maybe something needs to be changed in the postgres methods, maybe the port should be added to it, which does not indicate, and also if you can, then this installation of certificates, which they say, also try to include certificates in the installer in the checkbox, well, the name is also to expand it. Support: use invest-public-api.tbank.ru:443; certs from gosuslugi.ru/crt or tbank.ru/bank/help/certificates/; network doc developer.tbank.ru/invest/intro/developer/network
+
+812. To avoid this problem, let's add a setting, not a browser, to the project There is a gear in the upper right corner There is only one setting now, let's add another one There will probably be a radio button, a radio selection Make a deal to generate Postgres services or a Postgres library and make a deal to generate, let's say, a browser or, as it is correctly called, a web process, or something else There are two options By default, let Postgres be the choice And if it chooses another option, then let's call through the service while the browser is open, so to speak That is, you need to implement this bypass so that the deals are formed when the browser is open directly through the service
+
+811. Turn it on in the installer, so that there is a checkbox to update the certificates, by default it is turned off, and if you turn it on, then it would try to do it.
+
 810. If the checkbox is set to sell at the end of the day, to close the position at the end of the day, then it should not take into account the trading period, that is, even if there is a checkbox to take into account the trading period, it should not look at this matter, it should try to do this at the end of each day, if there are positions, except for the funds, of course, the funds should not be closed at the end of the day Check this moment, if this is not the case, then correct it and immediately post it to the master
 
 809. This means that the type of error, the frozen price does not correspond to the type of application.

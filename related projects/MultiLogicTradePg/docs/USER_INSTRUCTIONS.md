@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+818. In the warning banner, where there are many refusals, and in other similar banners, make a button to delete the cross. The user presses the cross and the banner is deleted. If suddenly the same situation begins again, then the banner appears again, but according to the new data. Check all these banners, that the token is not the one I saw. And immediately upload it to the repository.
+
 817. When checking the score, the error is in the mode not in the post-growth, but in the mode of post-growth, too.fetch failed
 
 816. Also, when we sell everything on the market and buy bonds, you also need to consider this checkbox in the settings. And of course, when you sell everything on the market in positions, you also need to do it through the path that is indicated in the settings. When you do it, post it in the repository.
