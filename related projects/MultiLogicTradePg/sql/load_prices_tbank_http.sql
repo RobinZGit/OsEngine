@@ -131,7 +131,7 @@ BEGIN
         p_security_id, v_prefix, v_tbank_figi, v_is_future, 'TQBR', v_moex_secid
     );
 
-    v_api_url := 'https://invest-public-api.tinkoff.ru/rest/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles';
+    v_api_url := 'https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles';
 
     v_headers := ARRAY[
         http_header('Authorization', 'Bearer ' || v_token),

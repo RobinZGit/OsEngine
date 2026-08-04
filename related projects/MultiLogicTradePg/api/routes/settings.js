@@ -207,6 +207,52 @@ app.put('/api/settings/cleanup', async (req, res) => {
   }
 });
 
+app.get('/api/settings/order-channel', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT tbank_order_channel() AS channel,
+              tbank_order_node_base_url() AS node_url,
+              trade_runner_ui_is_active() AS ui_active`
+    );
+    res.json({
+      channel: rows[0]?.channel || 'postgres',
+      node_url: rows[0]?.node_url || 'http://127.0.0.1:3000',
+      ui_active: Boolean(rows[0]?.ui_active),
+    });
+  } catch (err) {
+    console.error('GET /api/settings/order-channel', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings/order-channel', async (req, res) => {
+  let channel = typeof req.body?.channel === 'string' ? req.body.channel.trim().toLowerCase() : '';
+  if (channel === 'service' || channel === 'api' || channel === 'web' || channel === 'browser') {
+    channel = 'node';
+  }
+  if (channel !== 'postgres' && channel !== 'node') {
+    res.status(400).json({ error: 'channel: postgres или node' });
+    return;
+  }
+  try {
+    await pool.query('CALL set_tbank_order_channel($1)', [channel]);
+    const { rows } = await pool.query(
+      `SELECT tbank_order_channel() AS channel,
+              tbank_order_node_base_url() AS node_url,
+              trade_runner_ui_is_active() AS ui_active`
+    );
+    res.json({
+      ok: true,
+      channel: rows[0]?.channel || channel,
+      node_url: rows[0]?.node_url || 'http://127.0.0.1:3000',
+      ui_active: Boolean(rows[0]?.ui_active),
+    });
+  } catch (err) {
+    console.error('PUT /api/settings/order-channel', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/maintenance/cleanup', async (_req, res) => {
   try {
     const { rows } = await pool.query(

@@ -358,7 +358,8 @@ try_install_pgsql_http() {
 
 update_ssl_certs_opt_in() {
   # Opt-in (default off). Best-effort: do not abort install on failure.
-  step "Updating SSL CA certificates (opt-in)"
+  # T-Bank: invest-public-api.tbank.ru:443 needs Russian Trusted CA (gosuslugi.ru/crt).
+  step "Updating SSL CA certificates (Mozilla + Госуслуги/НУЦ, opt-in)"
   local mgr
   mgr="$(detect_pkg_mgr)"
   case "$mgr" in
@@ -375,6 +376,24 @@ update_ssl_certs_opt_in() {
       warn "Unknown package manager; skipped system CA refresh"
       ;;
   esac
+  # Russian Trusted CA → system trust (curl/OpenSSL used by pgsql-http)
+  local ru_dir="/usr/local/share/ca-certificates/russian-trusted"
+  local ru_pem="/tmp/russiantrustedca.pem"
+  if command -v wget >/dev/null 2>&1 || command -v curl >/dev/null 2>&1; then
+    mkdir -p "$ru_dir" 2>/dev/null || true
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL -o "$ru_pem" "https://gu-st.ru/content/Other/doc/russiantrustedca.pem" 2>/dev/null || true
+    else
+      wget -q -O "$ru_pem" "https://gu-st.ru/content/Other/doc/russiantrustedca.pem" 2>/dev/null || true
+    fi
+    if [[ -s "$ru_pem" ]] && grep -q "BEGIN CERTIFICATE" "$ru_pem"; then
+      cp -f "$ru_pem" "$ru_dir/russiantrustedca.crt" 2>/dev/null || true
+      update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true
+      ok "Russian Trusted CA installed (gosuslugi / gu-st.ru)"
+    else
+      warn "Could not download russiantrustedca.pem — see https://www.gosuslugi.ru/crt"
+    fi
+  fi
   if psql_scalar multilogictrade "SELECT COUNT(*) FROM pg_proc WHERE proname = 'configure_http_ssl';" 2>/dev/null | grep -qx '1'; then
     if psql_q multilogictrade -c "SELECT configure_http_ssl();" 2>/dev/null; then
       ok "configure_http_ssl() applied"

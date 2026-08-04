@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import { SettingsService } from '../services/settings.service';
 
 @Component({
@@ -15,8 +16,12 @@ export class AppSettingsPanelComponent implements OnChanges {
   @Output() closed = new EventEmitter<void>();
 
   cleanupEnabled = false;
+  orderChannel: 'postgres' | 'node' = 'postgres';
+  orderNodeUrl: string | null = null;
+  uiActive: boolean | null = null;
   loading = false;
   saving = false;
+  savingChannel = false;
   cleaning = false;
   error: string | null = null;
   lastResult: Record<string, number> | null = null;
@@ -33,14 +38,41 @@ export class AppSettingsPanelComponent implements OnChanges {
     this.loading = true;
     this.error = null;
     this.lastResult = null;
-    this.settings.getCleanupSetting().subscribe({
-      next: (r) => {
-        this.cleanupEnabled = !!r.enabled;
+    forkJoin({
+      cleanup: this.settings.getCleanupSetting(),
+      channel: this.settings.getOrderChannel(),
+    }).subscribe({
+      next: ({ cleanup, channel }) => {
+        this.cleanupEnabled = !!cleanup.enabled;
+        this.orderChannel = channel.channel === 'node' ? 'node' : 'postgres';
+        this.orderNodeUrl = channel.node_url ?? null;
+        this.uiActive = typeof channel.ui_active === 'boolean' ? channel.ui_active : null;
         this.loading = false;
       },
       error: (err) => {
         this.error = err?.error?.error || err?.message || 'Не удалось загрузить настройки';
         this.loading = false;
+      },
+    });
+  }
+
+  onOrderChannelChange(channel: 'postgres' | 'node'): void {
+    if (channel !== 'postgres' && channel !== 'node') return;
+    if (channel === this.orderChannel) return;
+    this.orderChannel = channel;
+    this.savingChannel = true;
+    this.error = null;
+    this.settings.saveOrderChannel(channel).subscribe({
+      next: (r) => {
+        this.orderChannel = r.channel === 'node' ? 'node' : 'postgres';
+        this.orderNodeUrl = r.node_url ?? this.orderNodeUrl;
+        this.uiActive = typeof r.ui_active === 'boolean' ? r.ui_active : this.uiActive;
+        this.savingChannel = false;
+      },
+      error: (err) => {
+        this.error = err?.error?.error || err?.message || 'Не удалось сохранить канал заявок';
+        this.savingChannel = false;
+        this.load();
       },
     });
   }

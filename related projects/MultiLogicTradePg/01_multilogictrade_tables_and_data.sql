@@ -1,6 +1,8 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v62 (идемпотентный запуск)
+-- Версия: v64 (идемпотентный запуск)
+-- v64: T-Bank API host invest-public-api.tbank.ru (не tinkoff.ru); см. developer.tbank.ru network
+-- v63: APP_TBANK_ORDER_CHANNEL (postgres|node) — канал боевых PostOrder; node = прокси через локальный API
 -- v62: EOD close (close_positions_eod) не зависит от use_non_trading_periods; last bar до вечернего окна
 -- v61: убран целевой DELETE Futures Price Channel / Fuge (seed и так не ставится; локальные копии не трогаем)
 -- v60: убран seed «Futures Price Channel and LNREG Base Asset» (contango/base_asset/DONCHIAN остаются)
@@ -539,8 +541,18 @@ ALTER TABLE brokers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT 
 ALTER TABLE brokers DROP COLUMN IF EXISTS created_at;
 
 INSERT INTO brokers (code, name, api_url) VALUES
-    ('T-BANK', 'T-Bank (Т-Банк)', 'https://invest-public-api.tinkoff.ru/rest')
+    ('T-BANK', 'T-Bank (Т-Банк)', 'https://invest-public-api.tbank.ru/rest')
 ON CONFLICT (code) DO NOTHING;
+
+-- v64 / T-Bank support: prod = invest-public-api.tbank.ru:443 (REST → https://…/rest)
+UPDATE brokers
+SET api_url = 'https://invest-public-api.tbank.ru/rest'
+WHERE code = 'T-BANK'
+  AND (
+      api_url IS NULL
+      OR btrim(api_url) = ''
+      OR api_url ILIKE '%invest-public-api.tinkoff.ru%'
+  );
 
 -- ============================================
 -- Таблица: accounts (счета)
@@ -676,7 +688,9 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('Последняя автоочистка диска', 'APP_CLEANUP_LAST_AT', 'text', ''),
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', ''),
     ('Trade runner требует открытый UI', 'APP_TRADE_RUNNER_REQUIRE_UI', 'boolean', '0'),
-    ('Trade runner last OK', 'APP_TRADE_RUNNER_LAST_OK', 'text', '')
+    ('Trade runner last OK', 'APP_TRADE_RUNNER_LAST_OK', 'text', ''),
+    ('Канал боевых заявок T-Bank', 'APP_TBANK_ORDER_CHANNEL', 'text', 'postgres'),
+    ('URL Node API для заявок T-Bank', 'APP_TBANK_ORDER_NODE_URL', 'text', 'http://127.0.0.1:3000')
 ON CONFLICT (short_name) DO NOTHING;
 
 

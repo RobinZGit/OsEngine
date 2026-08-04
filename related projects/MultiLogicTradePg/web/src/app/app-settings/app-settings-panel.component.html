@@ -4,7 +4,7 @@
     <header class="panel-header">
       <div>
         <h2>Общие настройки</h2>
-        <p class="meta">Диск · очистка данных, не нужных для торговли</p>
+        <p class="meta">Диск · канал заявок T-Bank</p>
       </div>
       <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
     </header>
@@ -14,6 +14,56 @@
         <p class="muted">Загрузка…</p>
       } @else {
         <section class="settings-block">
+          <h3 class="block-title">Канал боевых заявок T-Bank</h3>
+          <div class="radio-group" role="radiogroup" aria-label="Канал заявок">
+            <label class="radio-row">
+              <input
+                type="radio"
+                name="orderChannel"
+                value="postgres"
+                [ngModel]="orderChannel"
+                (ngModelChange)="onOrderChannelChange($event)"
+                [disabled]="savingChannel"
+              />
+              <span>
+                <strong>PostgreSQL</strong> (pgsql-http / libcurl) —
+                заявки идут из БД напрямую в T‑Invest API. По умолчанию.
+              </span>
+            </label>
+            <label class="radio-row">
+              <input
+                type="radio"
+                name="orderChannel"
+                value="node"
+                [ngModel]="orderChannel"
+                (ngModelChange)="onOrderChannelChange($event)"
+                [disabled]="savingChannel"
+              />
+              <span>
+                <strong>Node API (сервис)</strong> — заявки при открытом UI
+                проксируются через локальный API (системные сертификаты Windows).
+                Обход SSL-ошибок libcurl в Postgres.
+              </span>
+            </label>
+          </div>
+          <p class="hint">
+            Режим Node работает только пока открыт браузер с MultiLogic Trade
+            (heartbeat UI) и запущен API. Если UI закрыт — PostOrder будет отклонён
+            с пояснением; переключите обратно на PostgreSQL для торговли без браузера.
+            @if (orderNodeUrl) {
+              <br />Прокси: <code>{{ orderNodeUrl }}</code>
+            }
+            @if (uiActive !== null) {
+              <br />UI сейчас: {{ uiActive ? 'активен' : 'не активен' }}
+            }
+          </p>
+          @if (savingChannel) {
+            <p class="muted">Сохранение канала…</p>
+          }
+        </section>
+
+        <section class="settings-block">
+          <h3 class="block-title">Очистка диска</h3>
           <label class="check-row">
             <input
               type="checkbox"

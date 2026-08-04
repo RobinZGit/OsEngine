@@ -102,7 +102,7 @@ BEGIN
     FROM brokers b
     WHERE b.code = 'T-BANK'
     LIMIT 1;
-    v_api_url := COALESCE(v_api_url, 'https://invest-public-api.tinkoff.ru/rest');
+    v_api_url := COALESCE(v_api_url, 'https://invest-public-api.tbank.ru/rest');
 
     PERFORM configure_http_ssl();
     v_headers := ARRAY[

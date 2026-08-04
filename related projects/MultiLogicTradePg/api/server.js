@@ -20,6 +20,7 @@ const { startMaintenanceScheduler } = require('./maintenance-scheduler');
 const { createRouteContext, resumeOrphanWarmups } = require('./lib/server-shared');
 
 const registerSettingsRoutes = require('./routes/settings');
+const registerInternalTbankRoutes = require('./routes/internal-tbank');
 const registerIndicatorsRoutes = require('./routes/indicators');
 const registerMarketRoutes = require('./routes/market');
 const registerReferencesRoutes = require('./routes/references');
@@ -49,6 +50,7 @@ app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 registerSettingsRoutes(app, ctx);
+registerInternalTbankRoutes(app, ctx);
 registerIndicatorsRoutes(app, ctx);
 registerMarketRoutes(app, ctx);
 registerReferencesRoutes(app, ctx);
@@ -66,6 +68,23 @@ app.use((_req, res) => {
 app.listen(port, () => {
   console.log(`MultiLogicTrade API: http://localhost:${port}`);
   console.log(`CORS origin: ${corsOrigin}`);
+  // Keep SQL→Node PostOrder proxy URL in sync with this process PORT.
+  pool
+    .query(
+      `
+      INSERT INTO parameter_values (parameter_set_id, parameter_type_id, value)
+      SELECT ps.id, pt.id, $1
+      FROM parameter_sets ps
+      CROSS JOIN parameter_types pt
+      WHERE ps.name = 'Default'
+        AND pt.short_name = 'APP_TBANK_ORDER_NODE_URL'
+      ON CONFLICT (parameter_set_id, parameter_type_id)
+      DO UPDATE SET value = EXCLUDED.value
+      `,
+      [`http://127.0.0.1:${port}`]
+    )
+    .then(() => console.log(`T-Bank order Node URL: http://127.0.0.1:${port}`))
+    .catch((err) => console.warn('APP_TBANK_ORDER_NODE_URL sync skipped:', err.message));
   startTradeRunner(pool);
   startMaintenanceScheduler(pool);
   pool

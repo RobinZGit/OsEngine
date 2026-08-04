@@ -116,6 +116,32 @@ export class SettingsService {
     );
   }
 
+  getOrderChannel(): Observable<{
+    channel: 'postgres' | 'node';
+    node_url?: string;
+    ui_active?: boolean;
+  }> {
+    return this.http.get<{
+      channel: 'postgres' | 'node';
+      node_url?: string;
+      ui_active?: boolean;
+    }>(`${this.appConfig.apiUrl}/settings/order-channel`);
+  }
+
+  saveOrderChannel(channel: 'postgres' | 'node'): Observable<{
+    ok: boolean;
+    channel: 'postgres' | 'node';
+    node_url?: string;
+    ui_active?: boolean;
+  }> {
+    return this.http.put<{
+      ok: boolean;
+      channel: 'postgres' | 'node';
+      node_url?: string;
+      ui_active?: boolean;
+    }>(`${this.appConfig.apiUrl}/settings/order-channel`, { channel });
+  }
+
   runMaintenanceCleanup(): Observable<{
     ok: boolean;
     result: Record<string, number>;

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — Installer: opt-in чекбокс обновления SSL CA для Postgres/pgsql-http (по умолчанию выкл.); installers **v1.0.123**
+**Последнее обновление:** 2026-08-04 — T-Bank API host `invest-public-api.tbank.ru`; installer SSL = Mozilla + Госуслуги/НУЦ; schema **v64**; installers **v1.0.125**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,21 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (T-Bank support: tbank.ru host + CA Госуслуг в installer)
+
+- Prod API: `https://invest-public-api.tbank.ru/rest` (= `invest-public-api.tbank.ru:443`); UPDATE старых `brokers.api_url` с tinkoff.ru.
+- `fix_pgsql_http_ssl.ps1`: Mozilla cacert + append `russiantrustedca.pem` (gu-st.ru / gosuslugi.ru/crt) + import .cer в Windows Root.
+- Чекбокс Setup переименован: «Установить/обновить SSL CA… Mozilla + Госуслуги/НУЦ Минцифры для T-Bank API».
+- Docs: https://developer.tbank.ru/invest/intro/developer/network
+- Схема **v64**. Installers **v1.0.125**.
+
+### 2026-08-04 (Канал заявок T-Bank: Postgres | Node API)
+
+- Шестерёнка → radio **Канал боевых заявок**: `postgres` (default, pgsql-http) / `node` (прокси через локальный Express, системный TLS).
+- `APP_TBANK_ORDER_CHANNEL` + `APP_TBANK_ORDER_NODE_URL`; `tbank_post_order` при `node` → `POST /api/internal/tbank/post-order` (только localhost, нужен UI heartbeat).
+- Обход SSL `self-signed certificate in certificate chain` на libcurl: PostOrder идёт из Node `fetch`.
+- Схема **v63**. Installers **v1.0.124**.
 
 ### 2026-08-04 (Installer: opt-in обновление SSL CA)
 
@@ -1069,6 +1084,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | T-Bank API → invest-public-api.tbank.ru; SSL checkbox + Russian Trusted CA; v64 / v1.0.125 |
+| 2026-08-04 | Order channel postgres|node in gear settings; Node PostOrder proxy; v63 / v1.0.124 |
 | 2026-08-04 | Installer opt-in SSL CA update checkbox (default off); fix_pgsql_http_ssl + configure_http_ssl; v1.0.123 |
 | 2026-08-02 | EOD close ignores use_non_trading_periods; last bar before evening window; v62 / v1.0.121 |
 | 2026-08-01 | Hotfix NG1 rejectAlert template null; installers v1.0.120 |
@@ -1325,4 +1342,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **811** — installer checkbox обновления SSL CA (default off); **810** — EOD close без NTP; **808** — NG1 rejectAlert.
+Последние (см. USER_INSTRUCTIONS): **813** — tbank.ru host + CA Госуслуг в installer; **812** — канал postgres|node; **811** — SSL checkbox.

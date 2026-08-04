@@ -109,11 +109,13 @@ database, installs npm packages, and creates launch shortcuts.
    setup. There is also an optional unchecked checkbox to open the installation
    protocol.
 
-10. On the Tasks page there is an **unchecked** option to refresh PostgreSQL SSL
-    CA certificates for pgsql-http / libcurl (`scripts\fix_pgsql_http_ssl.ps1`
-    + `SELECT configure_http_ssl()`). Default is off; enable only if HTTPS to
-    T-Bank fails with certificate errors. Flag file:
-    `installer\windows\update-ssl-certs.txt` (`1` / `0`).
+10. On the Tasks page there is an **unchecked** option to install/update
+    PostgreSQL SSL CA certificates for pgsql-http / libcurl
+    (`scripts\fix_pgsql_http_ssl.ps1` + `SELECT configure_http_ssl()`).
+    The script refreshes Mozilla `cacert.pem` and **appends Russian Trusted CA**
+    from Госуслуги (`gu-st.ru` / https://www.gosuslugi.ru/crt) as required by
+    T-Bank Invest API (`invest-public-api.tbank.ru:443`). Default is off.
+    Flag file: `installer\windows\update-ssl-certs.txt` (`1` / `0`).
 
 ## Reinstall behavior
 

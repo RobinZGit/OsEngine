@@ -19,7 +19,7 @@ BEGIN
     LOOP
         SELECT * INTO v_resp FROM http((
             'POST',
-            'https://invest-public-api.tinkoff.ru/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/FutureBy',
+            'https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/FutureBy',
             v_h,
             'application/json',
             jsonb_build_object(

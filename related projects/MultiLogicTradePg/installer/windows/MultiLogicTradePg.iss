@@ -53,14 +53,14 @@ english.BeveledLabel=Version {#MyAppVersion}  |  Build {#MyAppBuild}
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-; Opt-in: refresh CA bundle for pgsql-http / libcurl (T-Bank HTTPS). Default OFF.
+; Opt-in: Mozilla CA + Russian Trusted CA (Госуслуги/НУЦ) for pgsql-http / T-Bank. Default OFF.
 Name: "updatesslcerts"; Description: "{cm:UpdateSslCertsTask}"; GroupDescription: "{cm:SslCertsGroup}"; Flags: unchecked
 
 [CustomMessages]
-russian.UpdateSslCertsTask=Обновить SSL CA-сертификаты PostgreSQL (HTTPS / T-Bank API)
-english.UpdateSslCertsTask=Update PostgreSQL SSL CA certificates (HTTPS / T-Bank API)
-russian.SslCertsGroup=Сертификаты (по умолчанию выкл.):
-english.SslCertsGroup=Certificates (off by default):
+russian.UpdateSslCertsTask=Установить/обновить SSL CA для Postgres (Mozilla + сертификаты Госуслуг/НУЦ Минцифры для T-Bank API)
+english.UpdateSslCertsTask=Install/update Postgres SSL CAs (Mozilla + Gosuslugi/MinTsifry Russian Trusted CA for T-Bank API)
+russian.SslCertsGroup=Сертификаты T-Bank / Госуслуги (по умолчанию выкл.):
+english.SslCertsGroup=T-Bank / Gosuslugi certificates (off by default):
 
 [Files]
 Source: "{#SourceRoot}\00_create_database.sql"; DestDir: "{app}"; Flags: ignoreversion

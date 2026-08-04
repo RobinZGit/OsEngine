@@ -492,11 +492,11 @@ try {
             [bool] $HttpExtensionReady
         )
         # Opt-in from Setup checkbox (default OFF). Best-effort: never fail the whole install.
-        Write-Step "Updating PostgreSQL SSL CA certificates (opt-in)"
+        Write-Step "Updating PostgreSQL SSL CA (Mozilla + Gosuslugi/Russian Trusted CA, opt-in)"
         try {
             $fixScript = Join-Path $InstallDir "scripts\fix_pgsql_http_ssl.ps1"
             if (Test-Path -LiteralPath $fixScript) {
-                Write-Host "    Running scripts\fix_pgsql_http_ssl.ps1 ..." -ForegroundColor Yellow
+                Write-Host "    Running scripts\fix_pgsql_http_ssl.ps1 (T-Bank / gosuslugi.ru/crt) ..." -ForegroundColor Yellow
                 & $fixScript
                 if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
                     Write-Warning "fix_pgsql_http_ssl.ps1 exited with code $LASTEXITCODE"
@@ -507,8 +507,20 @@ try {
                 $certDir = Join-Path $pgRoot "ssl\certs"
                 $dest = Join-Path $certDir "curl-ca-bundle.crt"
                 New-Item -ItemType Directory -Force -Path $certDir | Out-Null
-                Write-Host "    Downloading cacert.pem from curl.se ..." -ForegroundColor Yellow
+                Write-Host "    Downloading cacert.pem + russiantrustedca.pem ..." -ForegroundColor Yellow
                 Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile $dest -UseBasicParsing
+                $ru = Join-Path $env:TEMP "russiantrustedca.pem"
+                try {
+                    Invoke-WebRequest -Uri "https://gu-st.ru/content/Other/doc/russiantrustedca.pem" -OutFile $ru -UseBasicParsing
+                    $base = Get-Content -LiteralPath $dest -Raw
+                    $extra = Get-Content -LiteralPath $ru -Raw
+                    if ($base -notmatch "Russian Trusted" -and $extra -match "BEGIN CERTIFICATE") {
+                        $utf8 = New-Object System.Text.UTF8Encoding $false
+                        [System.IO.File]::WriteAllText($dest, ($base.TrimEnd() + "`r`n`r`n" + $extra.Trim() + "`r`n"), $utf8)
+                    }
+                } catch {
+                    Write-Warning "Russian Trusted CA download skipped: $($_.Exception.Message)"
+                }
                 $serviceName = Get-PostgresServiceName
                 if ($serviceName) {
                     Restart-Service -Name $serviceName -Force

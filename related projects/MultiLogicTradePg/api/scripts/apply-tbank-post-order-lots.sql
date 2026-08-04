@@ -33,7 +33,7 @@ BEGIN
         ];
         SELECT * INTO v_response FROM http((
             'POST',
-            rtrim(COALESCE(p_api_url, 'https://invest-public-api.tinkoff.ru/rest'), '/')
+            rtrim(COALESCE(p_api_url, 'https://invest-public-api.tbank.ru/rest'), '/')
                 || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy',
             v_headers,
             'application/json',
