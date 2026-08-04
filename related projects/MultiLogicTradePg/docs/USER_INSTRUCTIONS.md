@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+819. to the blocks of open positions, closed positions in real trading, adding the block of the transaction rejected, rejected transactions, in brackets, rejected, and turning it around, we must see only those that were rejected and the reason for the rejection, so that it is written somewhere in the line, and put it immediately in the repository
+
 818. In the warning banner, where there are many refusals, and in other similar banners, make a button to delete the cross. The user presses the cross and the banner is deleted. If suddenly the same situation begins again, then the banner appears again, but according to the new data. Check all these banners, that the token is not the one I saw. And immediately upload it to the repository.
 
 817. When checking the score, the error is in the mode not in the post-growth, but in the mode of post-growth, too.fetch failed

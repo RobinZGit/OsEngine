@@ -139,6 +139,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   logicStops = new Map<number, LogicStopRow[]>();
   logicSecurities = new Map<number, LogicSecurityRow[]>();
   logicTrades = new Map<number, LogicTradeRow[]>();
+  /** Live rejected orders (separate from open/close list). */
+  logicRejectedTrades = new Map<number, LogicTradeRow[]>();
   /** Live reject burst banner (from /logic-trades/reject-alert). */
   logicRejectAlerts = new Map<
     number,
@@ -2246,6 +2248,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return row?.warn ? row : null;
   }
 
+  rejectedTradesFor(logicId: number): LogicTradeRow[] {
+    return this.logicRejectedTrades.get(Number(logicId)) ?? [];
+  }
+
   onPeriodDialogOpen(open: boolean): void {
     this.uiInteractionPause = open;
   }
@@ -3596,6 +3602,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         const prev = this.logicTrades.get(Number(logicId));
         if (!prev || !this.sameTradeListFingerprint(prev, rows)) {
           this.logicTrades.set(Number(logicId), rows);
+          this.cdr.markForCheck();
         }
         this.tradesLoading.delete(logicId);
       },
@@ -3604,7 +3611,38 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.tradesLoading.delete(logicId);
       },
     });
+    this.loadRejectedTradesForLogic(logicId);
     this.loadRejectAlertForLogic(logicId);
+  }
+
+  private loadRejectedTradesForLogic(logicId: number): void {
+    const id = Number(logicId);
+    this.logicsService
+      .getLogicTradesRejected(id, 200, false)
+      .pipe(
+        takeUntil(this.destroy$),
+        catchError(() => of([] as LogicTradeRow[]))
+      )
+      .subscribe((rows) => {
+        const prev = this.logicRejectedTrades.get(id);
+        if (prev && this.sameRejectedListFingerprint(prev, rows)) return;
+        this.logicRejectedTrades.set(id, rows);
+        this.cdr.markForCheck();
+      });
+  }
+
+  private sameRejectedListFingerprint(a: LogicTradeRow[], b: LogicTradeRow[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    if (a.length === 0) return true;
+    const lastA = a[a.length - 1];
+    const lastB = b[b.length - 1];
+    return (
+      a[0].id === b[0].id &&
+      lastA.id === lastB.id &&
+      String(a[0].note ?? '') === String(b[0].note ?? '') &&
+      String(lastA.note ?? '') === String(lastB.note ?? '')
+    );
   }
 
   private loadRejectAlertForLogic(logicId: number): void {

@@ -29,7 +29,11 @@ import {
 
   tradeOperationLabel,
 
+  tradeRejectReason,
+
   tradeStatusDisplay,
+
+  tradeStatusLabel,
 
 } from '../shared/logic-trade';
 
@@ -190,6 +194,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
     message: string | null;
   } | null = null;
 
+  /** Бой: отдельно загруженные status=rejected (не в open/close). */
+  @Input() rejectedTrades: LogicTradeRow[] = [];
+
   /** Fingerprint dismissed reject banner; cleared when alert goes away. */
   private dismissedRejectKey: string | null = null;
 
@@ -250,6 +257,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   expandedClosed = false;
 
+  /** Live-only rejected orders block (collapsed by default). */
+  expandedRejected = false;
+
   /** Default open so upgrade users see the block without hunting. */
   expandedPortfolioEquity = true;
 
@@ -283,6 +293,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
   tradeOperationHint = tradeOperationHint;
 
   tradeStatusDisplay = tradeStatusDisplay;
+
+  tradeStatusLabel = tradeStatusLabel;
+
+  tradeRejectReason = tradeRejectReason;
 
   costMethodLabel = costMethodLabel;
 
@@ -855,6 +869,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return this.cachedCloseTrades;
   }
 
+  rejectedPositionTrades(): LogicTradeRow[] {
+    if (this.isTest) return [];
+    return this.rejectedTrades ?? [];
+  }
+
   openTradeCount(): number {
     return this.cachedOpenTrades.length;
   }
@@ -863,8 +882,16 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return this.cachedCloseTrades.length;
   }
 
+  rejectedTradeCount(): number {
+    return this.rejectedPositionTrades().length;
+  }
+
   totalTradeCount(): number {
-    return this.openTradeCount() + this.closeTradeCount();
+    return this.openTradeCount() + this.closeTradeCount() + this.rejectedTradeCount();
+  }
+
+  rejectReasonText(tr: LogicTradeRow): string {
+    return tradeRejectReason(tr.note) || tr.note?.trim() || '—';
   }
 
   totalFinancialResult(): number {
@@ -1005,6 +1032,12 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
     }
 
+  }
+
+  toggleRejectedBlock(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.expandedRejected = !this.expandedRejected;
   }
 
   togglePortfolioEquityBlock(event: Event): void {

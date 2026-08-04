@@ -610,6 +610,64 @@
       </div>
     </details>
 
+    @if (!isTest) {
+      <details class="signals-block positions-sub-block" [open]="expandedRejected">
+        <summary class="signals-summary">
+          <span class="signals-summary-head" (click)="toggleRejectedBlock($event)">
+            <span class="signals-chevron" [class.open]="expandedRejected" aria-hidden="true">▸</span>
+            <span class="signals-title">Сделки отклонённые (rejected)</span>
+            <span class="positions-sub-hint">×{{ rejectedTradeCount() }}</span>
+          </span>
+        </summary>
+        <div class="signals-body">
+          <div class="trades-scroll">
+            <table class="signals-table trades-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Время</th>
+                  <th>Бумага</th>
+                  <th>Операция</th>
+                  <th>Кол-во</th>
+                  <th>Цена</th>
+                  <th>Причина сигнала</th>
+                  <th>Причина отказа</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (tr of rejectedPositionTrades(); track tr.id) {
+                  <tr class="trade-row trade-rejected">
+                    <td>#{{ tr.id }}</td>
+                    <td>{{ tradeDisplayDt(tr) }}</td>
+                    <td>
+                      <strong>{{ tr.security_prefix || tr.security_name }}</strong>
+                      @if (tr.is_shadow) {
+                        <span class="trade-shadow-badge">теневая</span>
+                      }
+                    </td>
+                    <td [title]="tradeOperationHint(tr)">{{ tradeOperationLabel(tr) }}</td>
+                    <td>{{ tr.quantity }}</td>
+                    <td>{{ tr.price }}</td>
+                    <td class="trade-reason-cell" [title]="tr.trade_reason || ''">{{ tr.trade_reason || '—' }}</td>
+                    <td
+                      class="trade-reject-reason-cell"
+                      [title]="tr.note || rejectReasonText(tr)"
+                    >
+                      {{ rejectReasonText(tr) }}
+                    </td>
+                    <td class="trade-status-cell">{{ tradeStatusLabel(tr.status) }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="9" class="empty">Нет отклонённых сделок</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    }
+
     <app-logic-backtest-papers
       [mode]="isTest ? 'test' : 'live'"
       [logicId]="logicRow.id"
@@ -637,7 +695,8 @@
         (сработал → следующая свеча → % годовых vs базовая ставка → +1/−1).
       } @else {
         <strong>Эквити портфеля</strong> — по боевым закрытиям (как в тесте).
-        <strong>Сделки открытия</strong> — с ненулевым остатком; <strong>закрытия</strong> — раскройте строку для FIFO/средней.
+        <strong>Сделки открытия</strong> — с ненулевым остатком; <strong>закрытия</strong> — раскройте строку для FIFO/средней;
+        <strong>отклонённые (rejected)</strong> — только отказы брокера с причиной в строке.
         Блок <strong>Бумаги</strong> — раскрытие, график/эквити и рейтинги боевых сигналов; загрузка свечей только при развороте бумаги (без блокировки UI).
       }
     </p>

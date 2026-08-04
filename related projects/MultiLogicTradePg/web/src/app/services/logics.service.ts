@@ -491,6 +491,21 @@ export class LogicsService {
     });
   }
 
+  /** Rejected orders only (live panel block); not mixed into open/close LIMIT. */
+  getLogicTradesRejected(
+    logicId: number,
+    limit = 200,
+    isTest = false
+  ): Observable<LogicTradeRow[]> {
+    return this.http.get<LogicTradeRow[]>(`${this.appConfig.apiUrl}/logic-trades/rejected`, {
+      params: {
+        logic_id: String(logicId),
+        limit: String(limit),
+        is_test: isTest ? '1' : '0',
+      },
+    });
+  }
+
   /** Live banner: burst/period of rejected broker orders (not 1–2 strays). */
   getLogicTradesRejectAlert(
     logicId: number,

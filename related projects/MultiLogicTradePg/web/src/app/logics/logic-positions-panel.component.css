@@ -657,6 +657,19 @@
   font-weight: 600;
 }
 
+.positions-panel-outer .trade-reject-reason-cell {
+  max-width: 22rem;
+  min-width: 10rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+  vertical-align: top;
+  font-size: 0.78rem;
+  color: #991b1b;
+  font-weight: 600;
+}
+
 .btn-run-backtest {
   display: inline-flex;
   align-items: center;

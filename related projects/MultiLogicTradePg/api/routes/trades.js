@@ -135,6 +135,46 @@ app.get('/api/logic-trades', async (req, res) => {
 });
 
 /**
+ * Rejected broker orders for the live (or test) positions panel.
+ * Kept separate from GET /logic-trades so rejects never starve open/close LIMIT.
+ * Query: logic_id, optional is_test=0|1 (default live), optional limit (default 200).
+ */
+app.get('/api/logic-trades/rejected', async (req, res) => {
+  const logicId = Number(req.query.logic_id);
+  if (!Number.isInteger(logicId) || logicId <= 0) {
+    res.status(400).json({ error: 'logic_id required' });
+    return;
+  }
+  const isTestRaw = req.query.is_test;
+  const isTest =
+    isTestRaw === '1' || isTestRaw === 'true'
+      ? true
+      : isTestRaw === '0' || isTestRaw === 'false'
+        ? false
+        : false;
+  const limitRaw = Number(req.query.limit);
+  const limit = Math.min(
+    Math.max(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 200, 1),
+    500
+  );
+  try {
+    const { rows } = await pool.query(
+      `${LOGIC_TRADE_SELECT}
+       WHERE lt.logic_id = $1
+         AND lt.is_test = $2
+         AND lt.status = 'rejected'
+       ORDER BY lt.executed_at DESC, lt.id DESC
+       LIMIT $3`,
+      [logicId, isTest, limit]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /api/logic-trades/rejected', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Live UI banner: warn when rejected orders form a burst/period (not 1–2 stray rejects).
  * Query: logic_id, optional is_test=0|1 (default live).
  *

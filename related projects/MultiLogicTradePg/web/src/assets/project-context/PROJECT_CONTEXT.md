@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — dismissible × на баннерах отказов/токена; installers **v1.0.130**
+**Последнее обновление:** 2026-08-04 — блок «Сделки отклонённые (rejected)» в боевых позициях; installers **v1.0.131**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-08-04)
+
+### 2026-08-04 (блок отклонённых сделок в боевых позициях)
+
+- В live-панели после «Сделки закрытия»: **Сделки отклонённые (rejected)** — только `status=rejected`.
+- Колонка **Причина отказа** из `logic_trades.note` (человекочитаемо через `tradeRejectReason`).
+- API `GET /api/logic-trades/rejected` отдельно от open/close (rejects не съедают LIMIT).
+- Installers **v1.0.131**.
 
 ### 2026-08-04 (dismissible warning banners: отказы / токен)
 
@@ -1116,6 +1123,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-04 | Live block «Сделки отклонённые (rejected)» + reject reason column; API /rejected; v1.0.131 |
 | 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
 | 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
 | 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
@@ -1379,4 +1387,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **818** — dismissible × на баннерах отказов/токена; **817** — fetch failed в обоих режимах; **816** — sell-all/bonds/close-all по каналу.
+Последние (см. USER_INSTRUCTIONS): **819** — блок rejected в боевых позициях; **818** — dismissible × баннеров; **817** — fetch failed.
