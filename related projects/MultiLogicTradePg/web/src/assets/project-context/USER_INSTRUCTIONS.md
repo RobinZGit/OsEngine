@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+826. I will fix all these changes in the new release it should have the words TRADE or REAL TRADE something like that or so OPTIMIZE and REAL TRADE something like that I better don't leave the version number in the name of the release because I may have to add it later
+
 825. push
 
 824. Why now on the deleted server, the trade took with the margin, again more than there is on the account, with the first key? This problem has already been, and you have already fixed something. + export logic 1720 (MTLRP ~25k).
