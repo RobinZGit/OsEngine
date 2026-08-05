@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-05 — GitHub release **OPTIMIZE and REAL TRADE** (`optimize-and-real-trade`, без номера в имени)
+**Последнее обновление:** 2026-08-05 — `backtest_indicators_cached`: 3 бара подряд + 2 кластера; installers **v1.0.135**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,13 +119,6 @@
 ---
 
 ## Что сделано (актуально на 2026-08-05)
-
-### 2026-08-05 (GitHub release: OPTIMIZE and REAL TRADE)
-
-- Новый релиз (тег **`optimize-and-real-trade`**): имя **без номера версии**, чтобы при необходимости докладывать assets позже.
-- Title: **OPTIMIZE and REAL TRADE — MultiLogicTradePg** (акцент: OPT + боевая торговля после `real-trade-1`).
-- Assets: `MultiLogicTradePgSetup.exe`, `MultiLogicTradePg-linux.tar.gz` (актуальный build на теге; номер продукта только внутри installer, не в имени релиза).
-- `real-trade-1` не трогаем / не переиздаём.
 
 ### 2026-08-05 (fix: кэш индикаторов бэктеста — дырявый Stoch)
 
@@ -1147,7 +1140,6 @@
 - [ ] Validate real-account logic after equity-cap deploy (qty vs equity, no short-proceeds inflation).
 - [ ] Apply `02` equity-cap fix on remote (logic 359 / **1720 MTLRP 05.08** ~25k на ~33k) and confirm no oversized short/long opens; optionally harden: real `equity=0` → не открывать (не fallback на сырой cash).
 - [x] GitHub release **real-trade-1** — боевая торговля (2026-07-26).
-- [x] GitHub release **optimize-and-real-trade** (OPTIMIZE and REAL TRADE; без номера в имени) (2026-08-05).
 
 ---
 
@@ -1173,7 +1165,6 @@
 | 2026-08-04 | Live block «Сделки отклонённые (rejected)» + reject reason column; API /rejected; v1.0.131 |
 | 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
 | 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
-| 2026-08-05 | GitHub release optimize-and-real-trade (OPTIMIZE and REAL TRADE); no version in name |
 | 2026-08-05 | Indicator cache 3+2 clusters; v1.0.135; diagnose 1720 MTLRP margin (no code) |
 | 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
 | 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
@@ -1436,4 +1427,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **826** — релиз OPTIMIZE/REAL TRADE без номера; **825** — push; **824** — маржа 1720; **823** — кэш индикаторов.
+Последние (см. USER_INSTRUCTIONS): **825** — push; **824** — маржа remote 1720; **823** — кэш индикаторов 3+2; **822** — чекбокс не от TF.
