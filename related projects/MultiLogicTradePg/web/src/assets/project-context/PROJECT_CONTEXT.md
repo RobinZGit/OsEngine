@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-04 — чекбокс = heartbeat runner (~15с), не TF/сделки; installers **v1.0.134**
+**Последнее обновление:** 2026-08-05 — `backtest_indicators_cached`: 3 бара подряд + 2 кластера; installers **v1.0.135**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,21 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-04)
+## Что сделано (актуально на 2026-08-05)
+
+### 2026-08-05 (fix: кэш индикаторов бэктеста — дырявый Stoch)
+
+- **Проблема:** `backtest_indicators_cached` = `EXISTS` одной точки в периоде → Stoch с хвостом с ~28.05 считался закэшированным (`sync=0`), AND open не стрелял на апрель–май; 5634 ~вдвое слабее 2088.
+- **Фикс:** нужны ≥**3 бара подряд** без пропуска шага TF; на периоде ≥10д — **две** такие «тройки» с разносом (~¼ окна, мин. 3д); края у начала цен / `date_to` (как у `backtest_prices_cached`).
+- Файлы: `sql/logic_backtest_runner.sql`, `02_multilogictrade_functions_and_procedures.sql`. На рабочей БД функция применена.
+- Installers **v1.0.135**. На remote нужен обновлённый `02` (иначе снова `EXISTS`-кэш).
+
+### 2026-08-05 (разбор: снова маржа remote logic 1720 / MTLRP)
+
+- Симптом: Short MTLRP `25×995≈24875` и Long `20×994≈19880` при equity ~33k и «плече 1» (10%×10).
+- Причина та же, что у 359: 10% от раздутого T-Bank `cash_amount` (выручка шорта/заём), не от equity; типичный слот до этого был ~800–1100.
+- Фикс в коде уже есть (`logic_exposure_cycle_budget`); на remote, судя по сделкам 05.08, потолок equity **не держит** (старый `02` и/или fallback при `equity=0` → сырой sizing).
+- Код fallback пока не ужесточали в этой выкладке — только диагностика; задача «apply equity-cap on remote» усилена.
 
 ### 2026-08-04 (чекбокс alive = heartbeat runner, не TF)
 
@@ -1124,7 +1138,7 @@
 - [x] Backtest: single-flight `load_prices` by key + per-run indicator SQL (`api/logic-backtest.js`, 2026-07-25).
 - [x] Real account actions: sell-all portfolio + buy TBRU bonds (UI + SQL/API, 2026-07-25).
 - [ ] Validate real-account logic after equity-cap deploy (qty vs equity, no short-proceeds inflation).
-- [ ] Apply `02` equity-cap fix on remote (logic 359 / live T-Bank) and confirm no 30042 from oversized short opens.
+- [ ] Apply `02` equity-cap fix on remote (logic 359 / **1720 MTLRP 05.08** ~25k на ~33k) and confirm no oversized short/long opens; optionally harden: real `equity=0` → не открывать (не fallback на сырой cash).
 - [x] GitHub release **real-trade-1** — боевая торговля (2026-07-26).
 
 ---
@@ -1151,6 +1165,7 @@
 | 2026-08-04 | Live block «Сделки отклонённые (rejected)» + reject reason column; API /rejected; v1.0.131 |
 | 2026-08-04 | Dismissible × on reject/token warning banners; reappear on new data; v1.0.130 |
 | 2026-08-04 | Hotfix fetch failed: T-Bank via https.Agent + Russian CA; v1.0.129 |
+| 2026-08-05 | Indicator cache 3+2 clusters; v1.0.135; diagnose 1720 MTLRP margin (no code) |
 | 2026-08-04 | sell-all/bonds/close-all honor order channel; figi/bond via tbank_http_post; v1.0.128 |
 | 2026-08-04 | Token/account check via Node + russiantrustedca.pem; tbank_http_post node proxy; v1.0.127 |
 | 2026-08-04 | Hotfix preview-connection: pgResolveTbankAccount from ctx; v1.0.126 |
@@ -1412,4 +1427,4 @@
 
 Новые инструкции Sergey добавлять **туда** (в начало списка). В этом файле контекста — краткая отсылка и ссылка, без дублирования всего журнала.
 
-Последние (см. USER_INSTRUCTIONS): **822** — чекбокс не от TF M15; **821** — красный при живых сделках; **820** — close-all Node.
+Последние (см. USER_INSTRUCTIONS): **825** — push; **824** — маржа remote 1720; **823** — кэш индикаторов 3+2; **822** — чекбокс не от TF.
