@@ -22,9 +22,13 @@ function bondCurrentYieldPct(holding, priceRub) {
 }
 
 function normalizedWeights(holdings) {
-  const sum = (holdings || []).reduce((s, h) => s + Math.max(0, +h.weight || 0), 0);
-  if (sum <= 0) return [];
-  return holdings.map((h) => ({
+  const list = holdings || [];
+  const sum = list.reduce((s, h) => s + Math.max(0, +h.weight || 0), 0);
+  // Нет весов (например, режим «Счёт») — равные доли, сортировка только по доходности.
+  if (sum <= 0) {
+    return list.map((h) => ({ ...h, normWeight: 1 / Math.max(1, list.length) }));
+  }
+  return list.map((h) => ({
     ...h,
     normWeight: Math.max(0, +h.weight || 0) / sum,
   }));

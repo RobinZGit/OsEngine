@@ -21,6 +21,7 @@
             [(ngModel)]="fundCode"
             (ngModelChange)="onAmountOrFundChange()"
           >
+            <option value="ACCOUNT">Счёт брокера — имеющиеся облигации</option>
             @for (f of funds; track f.code) {
               <option [value]="f.code">
                 {{ f.name }}@if (f.holdings_count != null) { ({{ f.holdings_count }} выпусков) }

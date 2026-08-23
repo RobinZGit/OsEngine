@@ -606,16 +606,105 @@ async function resolveHoldings(pool, accountId, holdings, concurrency = 3, chann
   return out;
 }
 
+/**
+ * Облигации, уже лежащие на счёте (GetPortfolio), с купоном/номиналом из BondBy.
+ * Сортировка «прибыльные первыми» дальше делает computeGreedyBuyLots
+ * (купон к цене через bondCurrentYieldPct).
+ */
+async function loadAccountBondHoldingsViaNode(pool, accountId) {
+  const creds = await loadAccountBrokerCreds(pool, accountId);
+  const resolved = await resolveTbankAccount(
+    creds.api_url,
+    creds.token,
+    creds.account_code || null
+  );
+  const portfolio = await tbankHttpPost(
+    creds.api_url,
+    'tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+    creds.token,
+    { accountId: resolved.account_id }
+  );
+  const positions = Array.isArray(portfolio?.positions) ? portfolio.positions : [];
+  const cashBefore = quotationToNumber(portfolio?.totalAmountCurrencies);
+
+  const bondPos = positions.filter((p) =>
+    String(p.instrumentType || p.instrument_type || '')
+      .toUpperCase()
+      .includes('BOND')
+  );
+
+  const holdings = [];
+  const skipped = [];
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(3, bondPos.length) },
+    async () => {
+      for (;;) {
+        const i = next;
+        next += 1;
+        if (i >= bondPos.length) return;
+        const p = bondPos[i];
+        const figi = String(p.figi || '').trim();
+        try {
+          if (!figi) throw new Error('no_figi');
+
+          let inst = null;
+          try {
+            const d = await tbankHttpPost(
+              creds.api_url,
+              'tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
+              creds.token,
+              { idType: 'INSTRUMENT_ID_TYPE_FIGI', id: figi }
+            );
+            inst = d?.instrument || null;
+          } catch (_e) {
+            inst = null;
+          }
+
+          const lots =
+            quotationToNumber(p.quantityLots || p.quantity_lots) ||
+            quotationToNumber(p.quantity);
+          if (!(lots >= 1)) {
+            skipped.push({ sec: p.ticker || figi, error: 'zero_lots' });
+            continue;
+          }
+
+          // T-Bank отдаёт цену облигаций в % номинала (<200 ⇒ нормализуем к ₽ за штуку).
+          const nominal = Math.max(1, Number(quotationToNumber(inst?.nominal)) || 1000);
+          let price = quotationToNumber(p.currentPrice);
+          if (price > 0 && price < 200) price = (price / 100.0) * nominal;
+
+          const couponAnnualPct = Math.max(0, Number(inst?.couponRate ?? 0));
+          const ticker = String(inst?.ticker || p.ticker || figi).toUpperCase();
+          const isin = String(inst?.isin || '').toUpperCase();
+
+          holdings.push({
+            sec: isin || ticker,
+            kind: /^SU/.test(ticker) ? 'ofz' : 'corp',
+            weight: 0,
+            couponAnnualPct,
+            nominal,
+            figi,
+            ticker,
+            name: inst?.name || null,
+            lot: Math.max(1, Number(inst?.lot) || 1),
+            priceRub: price > 0 ? price : undefined,
+          });
+        } catch (e) {
+          skipped.push({ sec: p.ticker || figi || '?', error: e.message || String(e) });
+        }
+      }
+    }
+  );
+  await Promise.all(workers);
+
+  return { holdings, skipped, cash_amount: cashBefore };
+}
+
 async function planBuyBonds(pool, accountId, opts = {}) {
   const acc = await assertRealTbankAccount(pool, accountId);
   const channel = await getOrderChannel(pool);
-  const fundCode = String(opts.fund_code || 'TBRU').toUpperCase();
-  const fund = await resolveBondFund(fundCode);
-  if (!fund) {
-    const err = new Error(`Неизвестный фонд облигаций: ${fundCode}`);
-    err.status = 400;
-    throw err;
-  }
+  const mode = String(opts.fund_code || 'TBRU').toUpperCase();
 
   const cashInfo = await getAccountCash(pool, accountId);
   let amount =
@@ -628,18 +717,52 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     throw err;
   }
 
-  const resolved = await resolveHoldings(pool, accountId, fund.holdings, 3, channel);
-  const okHoldings = resolved.filter((h) => h.figi && !h.error);
-  const failed = resolved.filter((h) => h.error || !h.figi).map((h) => ({
-    sec: h.sec,
-    error: h.error || 'no_figi',
-  }));
+  let fundMeta;
+  let okHoldings;
+  let failed;
+
+  if (mode === 'ACCOUNT') {
+    // Режим «Счёт»: докупка облигаций, уже имеющихся на счёте.
+    const src = await loadAccountBondHoldingsViaNode(pool, accountId);
+    okHoldings = src.holdings;
+    failed = src.skipped;
+    fundMeta = {
+      code: 'ACCOUNT',
+      name: 'Счёт брокера',
+      asOf: null,
+      sources: [],
+      source_used: null,
+      holdings_live: true,
+    };
+  } else {
+    const fund = await resolveBondFund(mode);
+    if (!fund) {
+      const err = new Error(`Неизвестный фонд облигаций: ${mode}`);
+      err.status = 400;
+      throw err;
+    }
+    fundMeta = {
+      code: fund.code,
+      name: fund.name,
+      asOf: fund.asOf,
+      sources: fund.sources || [],
+      source_used: fund.source_used || null,
+      holdings_live: !!fund.holdings_live,
+    };
+    const resolved = await resolveHoldings(pool, accountId, fund.holdings, 3, channel);
+    okHoldings = resolved.filter((h) => h.figi && !h.error);
+    failed = resolved.filter((h) => h.error || !h.figi).map((h) => ({
+      sec: h.sec,
+      error: h.error || 'no_figi',
+    }));
+  }
 
   const pricesBySec = {};
   const lotBySec = {};
   for (const h of okHoldings) {
-    pricesBySec[h.sec] = h.price;
-    lotBySec[h.sec] = h.lot;
+    pricesBySec[h.sec] =
+      Number(h.priceRub) > 0 ? Number(h.priceRub) : h.price;
+    lotBySec[h.sec] = Math.max(1, Number(h.lot) || 1);
   }
 
   const { rows, spent, cashLeft } = computeGreedyBuyLots(
@@ -665,12 +788,12 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     ok: true,
     account_id: acc.id,
     account_name: acc.name,
-    fund_code: fund.code,
-    fund_name: fund.name,
-    fund_as_of: fund.asOf,
-    fund_sources: fund.sources || [],
-    fund_source_used: fund.source_used || null,
-    holdings_live: !!fund.holdings_live,
+    fund_code: fundMeta.code,
+    fund_name: fundMeta.name,
+    fund_as_of: fundMeta.asOf,
+    fund_sources: fundMeta.sources,
+    fund_source_used: fundMeta.source_used,
+    holdings_live: fundMeta.holdings_live,
     cash_amount: cashInfo.cash_amount,
     amount_requested: amount,
     amount_planned: spent,
@@ -680,7 +803,9 @@ async function planBuyBonds(pool, accountId, opts = {}) {
     resolve_failed: failed,
     channel,
     note:
-      'Покупка лимитными заявками по текущей цене: сначала более доходные (часто корп.), затем ОФЗ.',
+      mode === 'ACCOUNT'
+        ? 'Докупка уже имеющихся на счёте облигаций: первыми — с наибольшим «купоном к цене», затем остальные.'
+        : 'Покупка лимитными заявками по текущей цене: сначала более доходные (часто корп.), затем ОФЗ.',
   };
 }
 

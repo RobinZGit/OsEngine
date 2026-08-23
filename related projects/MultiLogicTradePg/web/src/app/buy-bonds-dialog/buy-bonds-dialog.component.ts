@@ -93,6 +93,12 @@ export class BuyBondsDialogComponent implements OnChanges {
 
   /** Подсказка по выбранному фонду и зеркалам состава. */
   fundHint(): string {
+    if (this.fundCode === 'ACCOUNT') {
+      return (
+        'Докупка облигаций, уже лежащих на счёте: первыми — с наибольшим «купоном к цене». ' +
+        'Лоты сверху вниз, пока хватает суммы.'
+      );
+    }
     const f = this.selectedFund;
     if (!f) {
       return 'Покупка отдельных выпусков по составу БПИФ, не паёв ETF. Порядок — от более доходных к менее.';
@@ -249,7 +255,8 @@ export class BuyBondsDialogComponent implements OnChanges {
       next: (funds) => {
         if (funds?.length) {
           this.funds = funds;
-          if (!funds.some((f) => f.code === this.fundCode)) {
+          // Режим «Счёт брокера» не подменяем каталогом фондов.
+          if (this.fundCode !== 'ACCOUNT' && !funds.some((f) => f.code === this.fundCode)) {
             this.fundCode = funds[0].code;
           }
         }

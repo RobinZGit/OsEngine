@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-23 — fix боевого FinRes: авто-сверка с брокером + пересборка PnL + детектор аномалий; installers **v1.0.137**
+**Последнее обновление:** 2026-08-23 — Buy bonds «Счёт брокера» (докупка имеющихся по купону/цене) + fix боевого FinRes; installers **v1.0.138**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,16 @@
 ---
 
 ## Что сделано (актуально на 2026-08-23)
+
+### 2026-08-23 (Buy bonds: режим «Счёт брокера» — докупка имеющихся облигаций)
+
+- В диалоге «Купить облигации» новый первый пункт выбора — **«Счёт брокера»** (`fund_code=ACCOUNT`): докупка облигаций, **уже лежащих на счёте**.
+- Источник: T-Bank `GetPortfolio` (позиции BOND) + `BondBy` по FIGI (купон, номинал, лот); цена из `currentPrice` с нормализацией % номинала к ₽ (`<200 → ×номинал/100`). Конкурентность запросов 3 (rate limits).
+- «Прибыльные первыми» = **купон к цене** через существующий `bondCurrentYieldPct`; без купонных данных — в конец списка.
+- Раскладка суммы — прежний greedy `computeGreedyBuyLots`: целыми лотами сверху вниз, пока хватает суммы/кэша. `executeBuyBonds` переиспользован без изменений (BUY market по figi).
+- Фикс `normalizedWeights` (bond-tbru-alloc.js): при нулевой сумме весов — равные доли; раньше возвращался пустой список → план без покупок (ловилось только тестом режима ACCOUNT).
+- Файлы: `api/lib/account-portfolio-actions.js`, `api/lib/bond-tbru-alloc.js`, `web/src/app/buy-bonds-dialog/*`.
+- Installers **v1.0.138**.
 
 ### 2026-08-23 (fix: боевой FinRes — авто-сверка с брокером, пересборка PnL, детектор аномалий)
 
