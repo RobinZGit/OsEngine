@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-05 — `backtest_indicators_cached`: 3 бара подряд + 2 кластера; installers **v1.0.135**
+**Последнее обновление:** 2026-08-23 — переупаковка релиза `optimize-and-real-trade` из текущего main; installers **v1.0.136**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,14 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-05)
+## Что сделано (актуально на 2026-08-23)
+
+### 2026-08-23 (переупаковка релиза optimize-and-real-trade из текущего main)
+
+- Пользователь откатил последний коммит ИИ; в релизе `optimize-and-real-trade` оставались артефакты, собранные **до** `293e261` (кэш индикаторов бэктеста): VERSION указывал сборку от `e835001`.
+- Оба установщика пересобраны из актуального `main` (`d28ed18`): Windows `MultiLogicTradePgSetup.exe` (+ `.ex_` для хостов, блокирующих .exe) и Linux `MultiLogicTradePg-linux.tar.gz`.
+- Ассеты заменены в релизе через `gh release upload --clobber`; имя и описание релиза не менялись (`real-trade-1` не трогали).
+- Installers **v1.0.136**.
 
 ### 2026-08-05 (fix: кэш индикаторов бэктеста — дырявый Stoch)
 

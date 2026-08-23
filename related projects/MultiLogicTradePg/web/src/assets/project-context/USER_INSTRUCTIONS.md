@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+826. Откатил последний коммит от ИИ из-за многих ошибок. Выложить текущую версию в последний релиз репозитория (`optimize-and-real-trade`), т.к. релиз остался с этими ошибками — пересобрать установщики и заменить файлы в релизе.
+
 825. push
 
 824. Why now on the deleted server, the trade took with the margin, again more than there is on the account, with the first key? This problem has already been, and you have already fixed something. + export logic 1720 (MTLRP ~25k).
