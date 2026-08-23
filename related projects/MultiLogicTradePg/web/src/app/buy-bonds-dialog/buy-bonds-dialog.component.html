@@ -21,13 +21,24 @@
             [(ngModel)]="fundCode"
             (ngModelChange)="onAmountOrFundChange()"
           >
-            <option value="ACCOUNT">Счёт брокера — имеющиеся облигации</option>
+            @for (a of accountsWithBonds; track a.id) {
+              <option [value]="'ACCOUNT:' + a.id">
+                Счёт {{ a.account_code }}@if (a.name) { · {{ a.name }} } — облигаций: {{ a.bonds_count }}
+              </option>
+            }
             @for (f of funds; track f.code) {
               <option [value]="f.code">
                 {{ f.name }}@if (f.holdings_count != null) { ({{ f.holdings_count }} выпусков) }
               </option>
             }
           </select>
+          @if (accountsLoading) {
+            <span class="bb-hint">Проверка счетов с облигациями…</span>
+          } @else if (accountsWithBonds.length === 0) {
+            <span class="bb-hint">
+              Реальных счетов с облигациями не найдено — доступны только фонды.
+            </span>
+          }
           @if (fundsLoading) {
             <span class="bb-hint">Обновление списка фондов…</span>
           } @else {

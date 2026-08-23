@@ -42,6 +42,14 @@ export interface BondFundInfo {
   holdings_count?: number;
 }
 
+/** Реальный счёт T-Bank с облигациями в портфеле (выбор «Счёт» в buy-bonds). */
+export interface AccountBondsInfo {
+  id: number;
+  account_code: string;
+  name: string;
+  bonds_count: number;
+}
+
 export interface BuyBondsRow {
   sec: string;
   kind?: string;

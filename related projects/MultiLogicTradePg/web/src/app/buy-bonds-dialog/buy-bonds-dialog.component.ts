@@ -10,7 +10,15 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ReferencesService } from '../services/references.service';
 import { AppConfigService, apiErrorMessage } from '../services/app-config.service';
-import { AccountRow, BondFundInfo, BuyBondsResult } from '../models/lookup.model';
+import {
+  AccountBondsInfo,
+  AccountRow,
+  BondFundInfo,
+  BuyBondsResult,
+} from '../models/lookup.model';
+
+/** Префикс значений селекта для режима «Счёт» (ACCOUNT:<account_id>). */
+const ACCOUNT_PREFIX = 'ACCOUNT:';
 
 /** Локальный fallback — форма доступна сразу, без ожидания API. */
 const DEFAULT_FUNDS: BondFundInfo[] = [
@@ -58,6 +66,8 @@ export class BuyBondsDialogComponent implements OnChanges {
 
   funds: BondFundInfo[] = [...DEFAULT_FUNDS];
   fundCode = 'TBRU';
+  accountsWithBonds: AccountBondsInfo[] = [];
+  accountsLoading = false;
   amountRub = '';
   fundsLoading = false;
   planning = false;
@@ -91,12 +101,54 @@ export class BuyBondsDialogComponent implements OnChanges {
     return this.funds.find((f) => f.code === this.fundCode) ?? null;
   }
 
+  /** Выбран режим «Счёт» (ACCOUNT:<id>)? */
+  isAccountMode(): boolean {
+    return this.fundCode.startsWith(ACCOUNT_PREFIX);
+  }
+
+  selectedAccountId(): number | null {
+    if (!this.isAccountMode()) return null;
+    const id = Number(this.fundCode.slice(ACCOUNT_PREFIX.length));
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+
+  selectedAccountLabel(): string {
+    const id = this.selectedAccountId();
+    if (id == null) return '';
+    const a = this.accountsWithBonds.find((x) => x.id === id);
+    if (!a) return `счёт #${id}`;
+    return a.name
+      ? `${a.account_code} (${a.name})`
+      : a.account_code || `#${a.id}`;
+  }
+
+  /** Куда уйдут заявки: выбранный счёт (режим «Счёт») или счёт из строки. */
+  private targetAccountLabel(): string {
+    return this.isAccountMode() ? this.selectedAccountLabel() : (this.account?.name || '');
+  }
+
+  /** Тело запроса plan/execute. */
+  private requestBody(amount: number | undefined): {
+    fund_code?: string;
+    amount_rub?: number;
+    target_account_id?: number;
+  } {
+    if (this.isAccountMode()) {
+      return {
+        fund_code: 'ACCOUNT',
+        amount_rub: amount,
+        target_account_id: this.selectedAccountId() ?? undefined,
+      };
+    }
+    return { fund_code: this.fundCode, amount_rub: amount };
+  }
+
   /** Подсказка по выбранному фонду и зеркалам состава. */
   fundHint(): string {
-    if (this.fundCode === 'ACCOUNT') {
+    if (this.isAccountMode()) {
       return (
-        'Докупка облигаций, уже лежащих на счёте: первыми — с наибольшим «купоном к цене». ' +
-        'Лоты сверху вниз, пока хватает суммы.'
+        `Докупка облигаций, уже лежащих на счёте ${this.selectedAccountLabel()}: ` +
+        'первыми — с наибольшим «купоном к цене». Лоты сверху вниз, пока хватает суммы.'
       );
     }
     const f = this.selectedFund;
@@ -144,10 +196,7 @@ export class BuyBondsDialogComponent implements OnChanges {
         ? undefined
         : Number(this.amountRub.replace(',', '.'));
     this.refs
-      .planBuyBonds(this.account.id, {
-        fund_code: this.fundCode,
-        amount_rub: amount,
-      })
+      .planBuyBonds(this.account.id, this.requestBody(amount))
       .subscribe({
         next: (plan) => {
           this.plan = plan;
@@ -173,12 +222,13 @@ export class BuyBondsDialogComponent implements OnChanges {
     if (!this.account || this.executing || !this.planReady) return;
     const planned = this.plan?.amount_planned ?? 0;
     const count = this.plan?.buy_count ?? 0;
+    const target = this.targetAccountLabel();
     if (
       !confirm(
         count > 0
           ? `Купить облигации на ~${this.formatMoney(planned)} ₽ ` +
-              `(${count} выпусков) на счёте «${this.account.name}»?`
-          : `План пуст или без лотов. Всё равно попытаться выставить заявки на счёте «${this.account.name}»?`
+              `(${count} выпусков) на счёт «${target}»?`
+          : `План пуст или без лотов. Всё равно попытаться выставить заявки на счёте «${target}»?`
       )
     ) {
       return;
@@ -190,10 +240,7 @@ export class BuyBondsDialogComponent implements OnChanges {
         ? undefined
         : Number(this.amountRub.replace(',', '.'));
     this.refs
-      .executeBuyBonds(this.account.id, {
-        fund_code: this.fundCode,
-        amount_rub: amount,
-      })
+      .executeBuyBonds(this.account.id, this.requestBody(amount))
       .subscribe({
         next: (result) => {
           this.executing = false;
@@ -236,7 +283,9 @@ export class BuyBondsDialogComponent implements OnChanges {
     this.planning = false;
     this.executing = false;
     this.fundsLoading = false;
+    this.accountsLoading = false;
     this.funds = [...DEFAULT_FUNDS];
+    this.accountsWithBonds = [];
   }
 
   private bootstrap(): void {
@@ -249,14 +298,14 @@ export class BuyBondsDialogComponent implements OnChanges {
       this.amountRub = String(Math.floor(Number(cash)));
     }
 
-    // Форма уже интерактивна; фонды подтягиваем в фоне.
+    // Форма уже интерактивна; фонды и счета с облигациями подтягиваем в фоне.
     this.fundsLoading = true;
     this.refs.getBondFunds().subscribe({
       next: (funds) => {
         if (funds?.length) {
           this.funds = funds;
-          // Режим «Счёт брокера» не подменяем каталогом фондов.
-          if (this.fundCode !== 'ACCOUNT' && !funds.some((f) => f.code === this.fundCode)) {
+          // Режим «Счёт» не подменяем каталогом фондов.
+          if (!this.isAccountMode() && !funds.some((f) => f.code === this.fundCode)) {
             this.fundCode = funds[0].code;
           }
         }
@@ -270,6 +319,27 @@ export class BuyBondsDialogComponent implements OnChanges {
           err,
           'Список фондов с API не загрузился — используем локальный каталог (TBRU, SBGB, OBLG)'
         );
+      },
+    });
+
+    // Реальные счета T-Bank с облигациями (для режима «Счёт»).
+    // Достаточно токена с доступом на чтение — используется только GetPortfolio.
+    const currentId = Number(this.account?.id);
+    this.accountsLoading = true;
+    this.refs.getAccountsWithBonds().subscribe({
+      next: (list) => {
+        this.accountsWithBonds = list || [];
+        // Если открытый счёт сам имеет облигации — выбираем его по умолчанию.
+        if (
+          Number.isFinite(currentId) &&
+          this.accountsWithBonds.some((a) => a.id === currentId)
+        ) {
+          this.fundCode = ACCOUNT_PREFIX + currentId;
+        }
+        this.accountsLoading = false;
+      },
+      error: () => {
+        this.accountsLoading = false;
       },
     });
   }

@@ -36,6 +36,7 @@ module.exports = function registerReferencesRoutes(app, ctx) {
     planBuyBonds,
     executeBuyBonds,
     listBondFunds,
+    listRealAccountsWithBonds,
     getAccountCash,
     isScopeValidForRuleKind,
     isScopeChoosableForRuleKind,
@@ -455,9 +456,21 @@ app.get('/api/accounts/:id/cash', async (req, res) => {
   }
 });
 
+/** Реальные счета T-Bank, у которых в портфеле есть облигации (для выбора «Счёт»). */
+app.get('/api/accounts/with-bonds', async (_req, res) => {
+  try {
+    const rows = await listRealAccountsWithBonds(pool);
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /api/accounts/with-bonds', err);
+    res.status(500).json({ error: err.message || 'with-bonds failed' });
+  }
+});
+
 /**
- * План / покупка облигаций по составу фонда (TBRU / SBGB / OBLG):
- * body: { fund_code?, amount_rub?, execute?: boolean }
+ * План / покупка облигаций по составу фонда (TBRU / SBGB / OBLG) или по счёту
+ * (fund_code='ACCOUNT', опционально target_account_id — купить на другом счёте):
+ * body: { fund_code?, amount_rub?, execute?, target_account_id? }
  * Жадно от более доходных (часто корп.) к менее (ОФЗ).
  */
 app.post('/api/accounts/:id/buy-bonds', async (req, res) => {
@@ -470,6 +483,9 @@ app.post('/api/accounts/:id/buy-bonds', async (req, res) => {
   const opts = {
     fund_code: req.body?.fund_code || 'TBRU',
     amount_rub: req.body?.amount_rub,
+    target_account_id: Number(req.body?.target_account_id) > 0
+      ? Number(req.body.target_account_id)
+      : undefined,
   };
   try {
     const result = execute

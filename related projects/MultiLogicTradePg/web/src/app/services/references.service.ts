@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import {
+  AccountBondsInfo,
   AccountConnectionPreview,
   AccountPayload,
   AccountRow,
@@ -128,9 +129,20 @@ export class ReferencesService {
     );
   }
 
+  /** Реальные счета T-Bank, у которых в портфеле есть облигации. */
+  getAccountsWithBonds(): Observable<AccountBondsInfo[]> {
+    return this.http.get<AccountBondsInfo[]>(
+      `${this.appConfig.apiUrl}/accounts/with-bonds`
+    );
+  }
+
   planBuyBonds(
     accountId: number,
-    body: { fund_code?: string; amount_rub?: number }
+    body: {
+      fund_code?: string;
+      amount_rub?: number;
+      target_account_id?: number;
+    }
   ): Observable<BuyBondsResult> {
     return this.http.post<BuyBondsResult>(
       `${this.appConfig.apiUrl}/accounts/${accountId}/buy-bonds`,
@@ -140,7 +152,11 @@ export class ReferencesService {
 
   executeBuyBonds(
     accountId: number,
-    body: { fund_code?: string; amount_rub?: number }
+    body: {
+      fund_code?: string;
+      amount_rub?: number;
+      target_account_id?: number;
+    }
   ): Observable<BuyBondsResult> {
     return this.http.post<BuyBondsResult>(
       `${this.appConfig.apiUrl}/accounts/${accountId}/buy-bonds`,

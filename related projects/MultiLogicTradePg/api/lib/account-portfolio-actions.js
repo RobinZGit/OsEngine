@@ -701,12 +701,87 @@ async function loadAccountBondHoldingsViaNode(pool, accountId) {
   return { holdings, skipped, cash_amount: cashBefore };
 }
 
+/**
+ * Реальные счета T-Bank с облигациями в портфеле (для выбора «Счёт» в диалоге).
+ * Возвращает id/номер/имя и количество BOND-позиций.
+ */
+async function listRealAccountsWithBonds(pool) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      a.id,
+      a.account_code,
+      a.name,
+      btrim(a.token_encrypted) AS token,
+      COALESCE(NULLIF(btrim(b.api_url), ''), $1) AS api_url
+    FROM accounts a
+    JOIN brokers b ON b.id = a.broker_id
+    WHERE lower(COALESCE(a.account_type, '')) = 'real'
+      AND a.is_active = TRUE
+      AND b.code = 'T-BANK'
+      AND a.token_encrypted IS NOT NULL
+      AND btrim(a.token_encrypted) <> ''
+    ORDER BY a.id
+    `,
+    [DEFAULT_API]
+  );
+
+  const out = [];
+  let next = 0;
+  const workers = Array.from({ length: Math.min(3, rows.length) }, async () => {
+    for (;;) {
+      const i = next;
+      next += 1;
+      if (i >= rows.length) return;
+      const acc = rows[i];
+      try {
+        const resolved = await resolveTbankAccount(
+          acc.api_url,
+          acc.token,
+          acc.account_code || null
+        );
+        const portfolio = await tbankHttpPost(
+          acc.api_url,
+          'tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+          acc.token,
+          { accountId: resolved.account_id }
+        );
+        const positions = Array.isArray(portfolio?.positions)
+          ? portfolio.positions
+          : [];
+        const bondsCount = positions.filter((p) =>
+          String(p.instrumentType || p.instrument_type || '')
+            .toUpperCase()
+            .includes('BOND')
+        ).length;
+        if (bondsCount > 0) {
+          out.push({
+            id: Number(acc.id),
+            account_code: String(acc.account_code || ''),
+            name: acc.name ? String(acc.name) : '',
+            bonds_count: bondsCount,
+          });
+        }
+      } catch (_e) {
+        // Счёт недоступен (токен/сеть) — просто не предлагаем в выборе.
+      }
+    }
+  });
+  await Promise.all(workers);
+  out.sort((a, b) => a.id - b.id);
+  return out;
+}
+
 async function planBuyBonds(pool, accountId, opts = {}) {
-  const acc = await assertRealTbankAccount(pool, accountId);
+  const targetId =
+    Number(opts.target_account_id) > 0
+      ? Number(opts.target_account_id)
+      : Number(accountId);
+  const acc = await assertRealTbankAccount(pool, targetId);
   const channel = await getOrderChannel(pool);
   const mode = String(opts.fund_code || 'TBRU').toUpperCase();
 
-  const cashInfo = await getAccountCash(pool, accountId);
+  const cashInfo = await getAccountCash(pool, targetId);
   let amount =
     opts.amount_rub != null && opts.amount_rub !== ''
       ? Number(opts.amount_rub)
@@ -723,7 +798,7 @@ async function planBuyBonds(pool, accountId, opts = {}) {
 
   if (mode === 'ACCOUNT') {
     // Режим «Счёт»: докупка облигаций, уже имеющихся на счёте.
-    const src = await loadAccountBondHoldingsViaNode(pool, accountId);
+    const src = await loadAccountBondHoldingsViaNode(pool, targetId);
     okHoldings = src.holdings;
     failed = src.skipped;
     fundMeta = {
@@ -810,12 +885,16 @@ async function planBuyBonds(pool, accountId, opts = {}) {
 }
 
 async function executeBuyBonds(pool, accountId, opts = {}) {
-  const plan = await planBuyBonds(pool, accountId, opts);
+  const targetId =
+    Number(opts.target_account_id) > 0
+      ? Number(opts.target_account_id)
+      : Number(accountId);
+  const plan = await planBuyBonds(pool, targetId, opts);
   const placed = [];
   const errors = [];
   const channel = plan.channel || (await getOrderChannel(pool));
   const creds =
-    channel === 'node' ? await loadAccountBrokerCreds(pool, accountId) : null;
+    channel === 'node' ? await loadAccountBrokerCreds(pool, targetId) : null;
 
   for (const row of plan.buys) {
     if (!row.figi || !row.lots) continue;
@@ -836,7 +915,7 @@ async function executeBuyBonds(pool, accountId, opts = {}) {
       } else {
         const { rows } = await pool.query(
           `SELECT tbank_post_order($1, $2, $3, $4, 'BUY', 'market', TRUE) AS r`,
-          [accountId, row.figi, row.lots, row.unit_price]
+          [targetId, row.figi, row.lots, row.unit_price]
         );
         order = rows[0]?.r ?? null;
       }
@@ -880,6 +959,7 @@ module.exports = {
   planBuyBonds,
   executeBuyBonds,
   listBondFunds,
+  listRealAccountsWithBonds,
   getAccountCash,
   getOrderChannel,
 };
