@@ -26,21 +26,27 @@ function read(rel) {
 }
 
 function assertSourceGuards() {
+  // После split server.js на роуты (#747) assign/sync живут в routes/indicators.js.
   const server = read('api/server.js');
+  const indicatorsRoute = read('api/routes/indicators.js');
   const panel = read('web/src/app/securities-panel/securities-panel.component.ts');
   const service = read('web/src/app/services/securities.service.ts');
 
-  if (!server.includes("req.body?.async === true")) {
-    fail('server.js must support async sync flag');
+  if (!indicatorsRoute.includes('req.body?.async === true')) {
+    fail('routes/indicators.js must support async sync flag');
   }
-  if (!server.includes('runIndicatorSyncBackground')) {
-    fail('server.js missing runIndicatorSyncBackground');
+  if (!indicatorsRoute.includes('runIndicatorSyncBackground')) {
+    fail('routes/indicators.js missing runIndicatorSyncBackground');
   }
-  if (!/app\.post\('\/api\/security-indicator-series',[\s\S]{0,3000}ensure_security_indicator_series/.test(server)) {
+  if (!/app\.post\('\/api\/security-indicator-series',[\s\S]{0,3000}ensure_security_indicator_series/.test(indicatorsRoute)) {
     fail('POST assign must call ensure_security_indicator_series');
   }
-  if (/app\.post\('\/api\/security-indicator-series',[\s\S]{0,3000}sync_security_indicator_series/.test(server)) {
+  if (/app\.post\('\/api\/security-indicator-series',[\s\S]{0,3000}sync_security_indicator_series/.test(indicatorsRoute)) {
     fail('POST assign must NOT call sync procedures');
+  }
+  // server.js остаётся точкой сборки роутов — не должен дублировать assign.
+  if (/app\.post\('\/api\/security-indicator-series'/.test(server)) {
+    fail('server.js must not duplicate security-indicator-series route (moved to routes/indicators.js)');
   }
 
   if (!panel.includes('runAsyncIndicatorSync')) {

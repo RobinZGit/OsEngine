@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-23 — переупаковка релиза `optimize-and-real-trade` из текущего main; installers **v1.0.136**
+**Последнее обновление:** 2026-08-23 — fix боевого FinRes: авто-сверка с брокером + пересборка PnL + детектор аномалий; installers **v1.0.137**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,20 @@
 ---
 
 ## Что сделано (актуально на 2026-08-23)
+
+### 2026-08-23 (fix: боевой FinRes — авто-сверка с брокером, пересборка PnL, детектор аномалий)
+
+- Разбор экспорта логики 1720 (remote): финрез **+21 209,84** при честном **−171,37**. Виновник — Close MTLRP id 2883 (`stop_loss:security_resume`, 18.08 13:35): записан **+20 737,32** вместо ≈**+5**; значение соответствовало базе цен ДО консолидации Мечела (~35 ₽ vs ~804). Аналогично CHMF +455/+382 (Северсталь тоже прыгнула уровнем) и ещё ~41 мелкое искажение.
+- Причина: finres боевых Close писался сразу после INSERT по предварительной цене (из серии `prices`, до финального fill), а `logic_sync_real_trade_broker_fees` не вызывался никем и никогда — расхождение не лечилось.
+- Фикс:
+  - `logic_sync_real_trade_broker_fees`: при изменении цены закрытия — немедленный `logic_trade_finalize` этой сделки (пересборка пакетов/PnL свежими данными); полный rebuild_pnl в конце под try/exception (`rebuild_error` в результате + WARNING).
+  - Новая **`logic_trades_finres_anomalies(p_logic_id)`**: Close с finres≠0 без пакетов (`finres_without_lots`) или |finres| > qty×GREATEST(price_close, max(price_open))+comms (`finres_out_of_bounds`).
+  - API: **`GET /api/logic-trades/finres-anomalies?logic_id=`**.
+  - Node: maintenance-scheduler каждые **5 мин** (`BROKER_FEE_SYNC_CHECK_MS`; выкл. `APP_BROKER_FEE_SYNC=0`) автоматически вызывает сверку.
+  - `verify-async-sync.mjs`: проверки assign/sync переведены на `api/routes/indicators.js` — после split роутов (#747) проверка ложно падала на server.js.
+- Файлы: `api/scripts/apply-tbank-broker-commission.sql` + зеркально в `02_…`, `api/maintenance-scheduler.js`, `api/routes/trades.js`, `scripts/verify-async-sync.mjs`.
+- Лечение уже испорченной истории на рабочей БД: `SELECT logic_sync_real_trade_broker_fees(1720);` → проверить `SELECT * FROM logic_trades_finres_anomalies(1720);` (финрез логики должен стать ≈ −171). Скрипт точечных UPDATE также сохранён у пользователя (fix_finres_1720.sql).
+- Installers **v1.0.137**.
 
 ### 2026-08-23 (переупаковка релиза optimize-and-real-trade из текущего main)
 

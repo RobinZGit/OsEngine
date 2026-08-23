@@ -154,10 +154,13 @@ DECLARE
     v_comm NUMERIC;
     v_price NUMERIC;
     v_updated INTEGER := 0;
+    v_refinalized INTEGER := 0;
+    v_rebuild_error TEXT := NULL;
     v_errors JSONB := '[]'::JSONB;
 BEGIN
     FOR v_tr IN
-        SELECT lt.id, lt.account_id, lt.broker_order_id, lt.price, lt.commission, lt.logic_id
+        SELECT lt.id, lt.account_id, lt.broker_order_id, lt.price, lt.commission,
+               lt.logic_id, lt.side_id, lt.is_simulated
         FROM logic_trades lt
         JOIN logics l ON l.id = lt.logic_id
         JOIN accounts a ON a.id = l.account_id
@@ -192,6 +195,14 @@ BEGIN
                     END
                 WHERE id = v_tr.id;
                 v_updated := v_updated + 1;
+
+                -- Финальная цена/комиссия изменили входы PnL: пересобрать пакеты
+                -- и financial_result этой сделки СРАЗУ (не ждать полного rebuild).
+                IF v_price IS NOT NULL AND v_price > 0
+                   AND COALESCE(v_price, 0) IS DISTINCT FROM v_tr.price THEN
+                    PERFORM logic_trade_finalize(v_tr.id, NULL);
+                    v_refinalized := v_refinalized + 1;
+                END IF;
             END IF;
         EXCEPTION
             WHEN OTHERS THEN
@@ -203,18 +214,28 @@ BEGIN
         END;
     END LOOP;
 
-    IF p_logic_id IS NOT NULL THEN
-        PERFORM logic_trade_rebuild_pnl(p_logic_id);
-    ELSE
-        PERFORM logic_trade_rebuild_pnl(l.id)
-        FROM logics l
-        JOIN accounts a ON a.id = l.account_id
-        WHERE a.account_type = 'real';
-    END IF;
+    -- Полный ребилд истории: гарантирует согласованность пакетов/PnL.
+    -- Ошибка rebuild не должна теряться молча — попадает в результат и warning.
+    BEGIN
+        IF p_logic_id IS NOT NULL THEN
+            PERFORM logic_trade_rebuild_pnl(p_logic_id);
+        ELSE
+            PERFORM logic_trade_rebuild_pnl(l.id)
+            FROM logics l
+            JOIN accounts a ON a.id = l.account_id
+            WHERE a.account_type = 'real';
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            v_rebuild_error := SQLERRM;
+            RAISE WARNING 'logic_sync_real_trade_broker_fees: rebuild_pnl failed: %', SQLERRM;
+    END;
 
     RETURN jsonb_build_object(
         'ok', TRUE,
         'updated', v_updated,
+        'refinalized', v_refinalized,
+        'rebuild_error', v_rebuild_error,
         'errors', v_errors,
         'logic_id', p_logic_id
     );
@@ -222,4 +243,79 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_sync_real_trade_broker_fees(INTEGER) IS
-'Подтянуть комиссию/цену исполнения с T-Bank GetOrderState и пересчитать PnL боевых сделок';
+'Подтянуть комиссию/цену исполнения с T-Bank GetOrderState; при изменении цены закрытия — сразу пересобрать её пакеты/PnL; в конце полный rebuild_pnl';
+
+-- Детектор испорченного боевого FinRes:
+--  1) finres <> 0 при полном отсутствии пакетов закрытия (значение писалось мимо build_lots
+--     или пакеты потеряны) — как баг MTLRP +20737 (2026-08-18);
+--  2) |finres| математически невозможен для записанных цен:
+--     |finres| > qty × GREATEST(price_close, max(price_open из пакетов)) + комиссии.
+CREATE OR REPLACE FUNCTION logic_trades_finres_anomalies(
+    p_logic_id INTEGER DEFAULT NULL
+)
+RETURNS TABLE(
+    logic_id INTEGER,
+    close_trade_id BIGINT,
+    security_id INTEGER,
+    executed_at TIMESTAMP,
+    quantity NUMERIC,
+    price NUMERIC,
+    financial_result NUMERIC,
+    commission NUMERIC,
+    lots_count BIGINT,
+    reason TEXT
+)
+LANGUAGE sql STABLE AS $$
+    WITH close_side AS (
+        SELECT id FROM sides WHERE name = 'Close' LIMIT 1
+    ),
+    closes AS (
+        SELECT
+            lt.id AS close_trade_id,
+            lt.logic_id,
+            lt.security_id,
+            lt.executed_at,
+            lt.quantity,
+            lt.price,
+            COALESCE(lt.financial_result, 0) AS finres,
+            COALESCE(lt.commission, 0) AS comm,
+            (SELECT COUNT(*) FROM logic_trade_lots l WHERE l.close_trade_id = lt.id) AS lots_count,
+            COALESCE((
+                SELECT MAX(ot.price)
+                FROM logic_trade_lots l
+                JOIN logic_trades ot ON ot.id = l.open_trade_id
+                WHERE l.close_trade_id = lt.id
+            ), lt.price) AS max_open_px
+        FROM logic_trades lt
+        WHERE COALESCE(lt.is_test, FALSE) = FALSE
+          AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND lt.status = 'filled'
+          AND lt.side_id = (SELECT id FROM close_side)
+          AND (p_logic_id IS NULL OR lt.logic_id = p_logic_id)
+    )
+    SELECT
+        c.logic_id,
+        c.close_trade_id,
+        c.security_id,
+        c.executed_at,
+        c.quantity,
+        c.price,
+        c.finres AS financial_result,
+        c.comm AS commission,
+        c.lots_count,
+        CASE
+            WHEN c.finres <> 0 AND c.lots_count = 0
+                THEN 'finres_without_lots'
+            WHEN abs(c.finres) > c.quantity * GREATEST(c.price, c.max_open_px) + c.comm + 0.01
+                THEN 'finres_out_of_bounds'
+        END AS reason
+    FROM closes c
+    WHERE c.finres <> 0
+      AND (
+        c.lots_count = 0
+        OR abs(c.finres) > c.quantity * GREATEST(c.price, c.max_open_px) + c.comm + 0.01
+      )
+$$;
+
+COMMENT ON FUNCTION logic_trades_finres_anomalies(INTEGER) IS
+'Боевые Close-сделки с подозрительным FinRes: без пакетов или вне физически возможного диапазона цен (NULL = все логики)';

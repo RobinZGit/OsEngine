@@ -886,6 +886,36 @@ app.get('/api/logic-trades/pnl-summary', async (req, res) => {
   }
 });
 
+/** Подозрительный боевой FinRes: без пакетов или вне диапазона записанных цен. */
+app.get('/api/logic-trades/finres-anomalies', async (req, res) => {
+  const logicIdRaw = Number(req.query.logic_id);
+  const logicId = Number.isFinite(logicIdRaw) && logicIdRaw > 0 ? logicIdRaw : null;
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM logic_trades_finres_anomalies($1)',
+      [logicId]
+    );
+    res.json({
+      logic_id: logicId,
+      rows: rows.map((r) => ({
+        logic_id: Number(r.logic_id),
+        close_trade_id: Number(r.close_trade_id),
+        security_id: Number(r.security_id),
+        executed_at: r.executed_at != null ? String(r.executed_at) : null,
+        quantity: Number(r.quantity),
+        price: Number(r.price),
+        financial_result: Number(r.financial_result),
+        commission: Number(r.commission),
+        lots_count: Number(r.lots_count),
+        reason: r.reason,
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/logic-trades/finres-anomalies', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/logic-trade-lots', async (req, res) => {
   const tradeId = Number(req.query.trade_id);
   if (!Number.isInteger(tradeId) || tradeId <= 0) {
