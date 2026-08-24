@@ -166,9 +166,11 @@ export interface ChartShadedRange {
    * normal = обычная логика (зелёный);
    * shadow = теневой режим (серый);
    * inverted = инверсия (розовый);
-   * paused — устарело, рисуется как shadow.
+   * paused — устарело, рисуется как shadow;
+   * long = открыта long-позиция (бледно-зелёный, #835);
+   * short = открыта short-позиция (бледно-красный, #835).
    */
-  kind?: 'normal' | 'shadow' | 'inverted' | 'paused';
+  kind?: 'normal' | 'shadow' | 'inverted' | 'paused' | 'long' | 'short';
 }
 
 /** Точка кумулятивного PnL по бумаге (с нуля). */

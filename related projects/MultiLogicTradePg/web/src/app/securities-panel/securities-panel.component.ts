@@ -1965,7 +1965,8 @@ export class SecuritiesPanelComponent implements OnInit {
     if (this.priceScaleOverlayCodes.has(indicatorCode) && lineCode === 'VALUE') {
       return true;
     }
-    if (indicatorCode === 'BB' && ['UPPER', 'MIDDLE', 'LOWER'].includes(lineCode)) {
+    // Канальные индикаторы (BB, LINREG, SQUARE) — линии вокруг цены (#836).
+    if (['UPPER', 'MIDDLE', 'LOWER'].includes(lineCode)) {
       return true;
     }
     return false;

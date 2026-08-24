@@ -5,22 +5,6 @@
       <span class="signals-title">Бумаги</span>
       <span class="papers-count">{{ paperRows.length }}</span>
     </span>
-    <span class="papers-mode-toggle" (click)="$event.stopPropagation()">
-      <button
-        type="button"
-        class="btn-chart-mode"
-        [class.active]="chartMode === 'price'"
-        title="Свечной график"
-        (click)="setChartMode('price', $event)"
-      >График</button>
-      <button
-        type="button"
-        class="btn-chart-mode"
-        [class.active]="chartMode === 'equity'"
-        title="Кривая эквити (портфель / лонги / шорты)"
-        (click)="setChartMode('equity', $event)"
-      >Эквити</button>
-    </span>
   </summary>
 
   @if (expandedPapers) {
@@ -93,19 +77,7 @@
 
               @if (isPaperExpanded(paper.security_id)) {
                 <div class="paper-chart-wrap" [attr.data-chart-tick]="chartTick">
-                  @if (chartMode === 'equity') {
-                    <div class="paper-chart-host paper-equity-host">
-                      <app-equity-curve-chart
-                        [total]="overlays(paper.security_id).equity"
-                        [longs]="overlays(paper.security_id).equityLong"
-                        [shorts]="overlays(paper.security_id).equityShort"
-                        [shadowTotal]="overlays(paper.security_id).equityShadow"
-                        [shadedRanges]="overlays(paper.security_id).shaded"
-                        [showModeLegend]="true"
-                      />
-                    </div>
-                  } @else {
-                    @if (chartState(paper.security_id).status) {
+                  @if (chartState(paper.security_id).status) {
                       <p class="paper-chart-status">{{ chartState(paper.security_id).status }}</p>
                     }
                     @if (chartState(paper.security_id).error) {
@@ -176,7 +148,6 @@
                         />
                       </div>
                     }
-                  }
 
                   @if (logicId) {
                     <app-logic-backtest-ratings

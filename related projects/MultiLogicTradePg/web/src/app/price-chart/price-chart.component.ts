@@ -65,6 +65,17 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
   /** Для app_tech_log (sec:N). */
   @Input() securityId: number | null = null;
 
+  /** Режим отображения цены: свечи или линия по Close (#835). */
+  viewMode: 'candles' | 'line' = 'candles';
+
+  setViewMode(mode: 'candles' | 'line', event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.viewMode === mode) return;
+    this.viewMode = mode;
+    this.scheduleRedraw();
+  }
+
   private readonly techLog = inject(TechLogService);
 
   @Output() loadOlder = new EventEmitter<void>();
@@ -496,7 +507,11 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     for (const series of this.indicatorSeries) {
       const byDt = new Map<string, number>();
       for (const point of series.points) {
-        byDt.set(point.dt, point.value);
+        // #836: ключ — момент времени (epoch ms). /api/prices отдаёт dt строкой
+        // "YYYY-MM-DD HH:MM:SS", /api/indicator-values — ISO с UTC-сдвигом;
+        // точное строковое сравнение не сходится никогда.
+        const t = Date.parse(point.dt);
+        byDt.set(Number.isFinite(t) ? `@${t}` : String(point.dt), point.value);
       }
       this.seriesPointIndex.set(series, byDt);
     }
@@ -598,7 +613,12 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
   }
 
   private valueAtDt(series: ChartIndicatorSeries, dt: string): number | null {
-    const value = this.seriesPointIndex.get(series)?.get(dt);
+    const byDt = this.seriesPointIndex.get(series);
+    if (!byDt) return null;
+    const t = Date.parse(dt);
+    const value =
+      byDt.get(Number.isFinite(t) ? `@${t}` : String(dt)) ??
+      byDt.get(String(dt));
     return value != null ? value : null;
   }
 
@@ -674,6 +694,15 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     let minP = Infinity;
     let maxP = -Infinity;
     for (const c of visible) {
+      if (this.viewMode === 'line') {
+        // Линейный режим строится по Close — шкала по нему же.
+        const v = Number(c.close_price);
+        if (Number.isFinite(v)) {
+          minP = Math.min(minP, v);
+          maxP = Math.max(maxP, v);
+        }
+        continue;
+      }
       minP = Math.min(minP, Number(c.low_price));
       maxP = Math.max(maxP, Number(c.high_price));
     }
@@ -737,29 +766,44 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       cw
     );
 
-    visible.forEach((c, i) => {
-      const x = pad.left + i * cw + cw / 2;
-      const open = Number(c.open_price);
-      const close = Number(c.close_price);
-      const high = Number(c.high_price);
-      const low = Number(c.low_price);
-      const up = close >= open;
-      ctx.strokeStyle = up ? '#16a34a' : '#dc2626';
-      ctx.fillStyle = up ? '#16a34a' : '#dc2626';
-
-      const yHigh = yScale(high);
-      const yLow = yScale(low);
+    if (this.viewMode === 'line') {
+      // Линейный график цены: ломанная по Close каждой свечи (стандарт для
+      // не-свечных графиков). Индикаторы/маркеры/зоны рисуются как обычно.
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = Math.max(1.25, this.px(1.4));
       ctx.beginPath();
-      ctx.moveTo(x, yHigh);
-      ctx.lineTo(x, yLow);
+      visible.forEach((c, i) => {
+        const x = pad.left + i * cw + cw / 2;
+        const y = yScale(Number(c.close_price));
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
       ctx.stroke();
+    } else {
+      visible.forEach((c, i) => {
+        const x = pad.left + i * cw + cw / 2;
+        const open = Number(c.open_price);
+        const close = Number(c.close_price);
+        const high = Number(c.high_price);
+        const low = Number(c.low_price);
+        const up = close >= open;
+        ctx.strokeStyle = up ? '#16a34a' : '#dc2626';
+        ctx.fillStyle = up ? '#16a34a' : '#dc2626';
 
-      const yOpen = yScale(open);
-      const yClose = yScale(close);
-      const top = Math.min(yOpen, yClose);
-      const bodyH = Math.max(1, Math.abs(yClose - yOpen));
-      ctx.fillRect(x - cw * 0.35, top, cw * 0.7, bodyH);
-    });
+        const yHigh = yScale(high);
+        const yLow = yScale(low);
+        ctx.beginPath();
+        ctx.moveTo(x, yHigh);
+        ctx.lineTo(x, yLow);
+        ctx.stroke();
+
+        const yOpen = yScale(open);
+        const yClose = yScale(close);
+        const top = Math.min(yOpen, yClose);
+        const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+        ctx.fillRect(x - cw * 0.35, top, cw * 0.7, bodyH);
+      });
+    }
 
     for (const s of priceSeries) {
       this.drawLineSeries(ctx, visible, s, yScale, pad.left, cw);

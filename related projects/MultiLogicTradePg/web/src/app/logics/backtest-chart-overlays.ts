@@ -528,6 +528,77 @@ export function buildShadowEquityPoints(
   return buildEquityPoints(scoped, sinceDt || periodStartDt, sideFilter, { shadowOnly: true });
 }
 
+/**
+ * Зоны открытых позиций по сторонам для графика эквити (#835):
+ * long = бледно-зелёная зона от Open Long до закрывающего Close Long,
+ * short = бледно-красная от Open Short до Close Short.
+ * Только боевые сделки чемпиона (без shadow и OPT paper).
+ */
+export function buildSideOpenShadedRanges(trades: LogicTradeRow[]): ChartShadedRange[] {
+  const relevant = trades
+    .filter(
+      (t) =>
+        t.side_name != null &&
+        (t.action_name === 'Long' || t.action_name === 'Short') &&
+        !t.is_shadow &&
+        (t.opt_lane ?? '') === '' &&
+        (t.status == null || t.status === 'filled' || t.status === 'submitted')
+    )
+    .sort((a, b) => {
+      const ka = dtKey(a.bar_dt || a.executed_at);
+      const kb = dtKey(b.bar_dt || b.executed_at);
+      if (ka !== kb) return ka.localeCompare(kb);
+      // Open раньше Close на одном баре; затем по id.
+      const ra = (t: LogicTradeRow) => (t.side_name === 'Open' ? 0 : 1);
+      const r = ra(a) - ra(b);
+      if (r !== 0) return r;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+
+  let lastDt = '';
+  for (const t of trades) {
+    const k = dtKey(t.bar_dt || t.executed_at);
+    if (k > lastDt) lastDt = k;
+  }
+
+  const ranges: ChartShadedRange[] = [];
+  const state: Record<'long' | 'short', { open: number; start: string | null }> = {
+    long: { open: 0, start: null },
+    short: { open: 0, start: null },
+  };
+
+  const closeSide = (side: 'long' | 'short', endDt: string): void => {
+    const st = state[side];
+    if (st.open <= 0 || !st.start) return;
+    st.open = Math.max(0, st.open - 1);
+    if (st.open === 0 && st.start <= endDt) {
+      ranges.push({ startDt: st.start, endDt, kind: side });
+    }
+    if (st.open === 0) st.start = null;
+  };
+
+  for (const t of relevant) {
+    const side = t.action_name === 'Long' ? 'long' : 'short';
+    const k = dtKey(t.bar_dt || t.executed_at);
+    if (t.side_name === 'Open') {
+      if (state[side].open === 0) state[side].start = k;
+      state[side].open += 1;
+    } else {
+      closeSide(side, k);
+    }
+  }
+
+  // Всё ещё открыто на конце выборки — тянем зону до последней известной даты.
+  for (const side of ['long', 'short'] as const) {
+    const st = state[side];
+    if (st.open > 0 && st.start && lastDt >= st.start) {
+      ranges.push({ startDt: st.start, endDt: lastDt, kind: side });
+    }
+  }
+
+  return ranges.sort((a, b) => a.startDt.localeCompare(b.startDt));
+}
+
 /** Обрезать свечи под окно теста/сделок, при лимите — приоритет окну сделок. */
 export function clipCandlesForBacktest(
   candles: PriceCandle[],

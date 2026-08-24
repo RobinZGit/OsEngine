@@ -91,6 +91,30 @@
   cursor: not-allowed;
 }
 
+/* Переключатель свечи/линия (#835). */
+.chart-mode-toggle {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.chart-btn-mode {
+  border-radius: 0;
+}
+
+.chart-btn-mode:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.chart-btn-mode:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.chart-btn-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
 .chart-btn-expand {
   color: #1d4ed8;
   gap: 0.25rem;

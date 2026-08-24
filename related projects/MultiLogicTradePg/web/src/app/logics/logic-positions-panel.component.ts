@@ -49,6 +49,7 @@ import {
   buildPortfolioStopMarkers,
   buildShadowEquityPoints,
   buildShadedDisabledRanges,
+  buildSideOpenShadedRanges,
   forceLivePortfolioShadowShading,
 } from './backtest-chart-overlays';
 import { ChartEquityPoint, ChartShadedRange, ChartStopMarker } from '../models/market.model';
@@ -649,6 +650,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
         periodStart,
         nowIso,
       });
+    }
+    // #835: в бою подсветить зоны открытых лонгов (бледно-зелёный) и шортов
+    // (бледно-красный) на графике портфеля; стопы — вертикали SL/TP.
+    if (!this.isTest) {
+      shaded = [...shaded, ...buildSideOpenShadedRanges(this.trades)];
     }
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);

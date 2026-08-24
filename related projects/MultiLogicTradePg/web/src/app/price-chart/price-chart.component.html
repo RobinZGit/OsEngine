@@ -7,8 +7,32 @@
     @if (fullscreen && title) {
       <span class="chart-title">{{ title }}</span>
     }
-    <div class="chart-toolbar-group">
-      @if (showRecalcButton) {
+      <span
+        class="chart-mode-toggle"
+        role="group"
+        aria-label="Вид графика цены"
+      >
+        <button
+          type="button"
+          class="chart-btn chart-btn-mode"
+          [class.chart-btn-active]="viewMode === 'candles'"
+          title="Свечной график"
+          aria-label="Свечной график"
+          [disabled]="candles.length === 0"
+          (click)="setViewMode('candles', $event)"
+        >▮▮</button>
+        <button
+          type="button"
+          class="chart-btn chart-btn-mode"
+          [class.chart-btn-active]="viewMode === 'line'"
+          title="Линейный график (цены закрытия)"
+          aria-label="Линейный график"
+          [disabled]="candles.length === 0"
+          (click)="setViewMode('line', $event)"
+        >∿</button>
+      </span>
+      <div class="chart-toolbar-group">
+        @if (showRecalcButton) {
         <button
           type="button"
           class="chart-btn"

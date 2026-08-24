@@ -12,7 +12,6 @@ import {
 import { Subscription, of } from 'rxjs';
 import { catchError, finalize } from 'rxjs/operators';
 import { PriceChartComponent } from '../price-chart/price-chart.component';
-import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import { LogicBacktestRatingsComponent } from './logic-backtest-ratings.component';
 import {
   ChartEquityPoint,
@@ -112,7 +111,7 @@ const MAX_CANDLES = 400;
 @Component({
   selector: 'app-logic-backtest-papers',
   standalone: true,
-  imports: [CommonModule, PriceChartComponent, EquityCurveChartComponent, LogicBacktestRatingsComponent],
+  imports: [CommonModule, PriceChartComponent, LogicBacktestRatingsComponent],
   templateUrl: './logic-backtest-papers.component.html',
   styleUrl: './logic-backtest-papers.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -149,8 +148,6 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   }
 
   expandedPapers = false;
-  /** Режим разворота: свечной график или эквити. */
-  chartMode: 'price' | 'equity' = 'price';
   expandedSecurityIds = new Set<number>();
   /** Инкремент при готовности графика — чтобы OnPush/@if точно перерисовались. */
   chartTick = 0;
@@ -336,12 +333,9 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     return o;
   }
 
-  setChartMode(mode: 'price' | 'equity', event?: Event): void {
-    event?.preventDefault();
-    event?.stopPropagation();
-    this.chartMode = mode;
-    this.cdr.markForCheck();
-  }
+  // #836: переключатель «График / Эквити» убран — цена всегда свечи/линия
+  // (тумблер в тулбаре графика), PnL бумаги — полосой под ценой.
+
 
   paperPnlPct(pnl: number): number | null {
     const initial = Number(this.initialBalance);
@@ -864,8 +858,8 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
       const sample = rows[0];
       const onPrice =
         (PRICE_SCALE_CODES.has(sample.indicator_code) && sample.line_code === 'VALUE') ||
-        (sample.indicator_code === 'BB' &&
-          ['UPPER', 'MIDDLE', 'LOWER'].includes(sample.line_code));
+        // Канальные индикаторы (BB, LINREG, SQUARE) — линии вокруг цены (#836).
+        ['UPPER', 'MIDDLE', 'LOWER'].includes(sample.line_code);
       series.push({
         indicator_code: sample.indicator_code,
         line_code: sample.line_code,

@@ -61,7 +61,7 @@ export const LOGIC_STOP_SCOPES_STOP_LOSS: LogicStopScopeType[] = [
   'portfolio_resume',
 ];
 
-/** Типы scope для тейк-профита (все видимы; портфельные — недоступны для выбора). */
+/** Типы scope для тейк-профита. Линейный TP по портфелю с возобновлением (#833) — доступен к выбору. */
 export const LOGIC_STOP_SCOPES_TAKE_PROFIT: LogicStopScopeType[] = [
   'security',
   'portfolio',
@@ -73,7 +73,8 @@ export const LOGIC_STOP_SCOPES_TAKE_PROFIT: LogicStopScopeType[] = [
  * Уже сохранённые правила с этими типами остаются в таблице.
  *
  * SL: портфель с обновлением (пока недоступен).
- * TP: любые типы по всему портфелю логики.
+ * TP: «по всему портфелю логики» (без механики) недоступен;
+ *     линейный TP по портфелю с возобновлением — доступен (#833).
  * security_inversion — доступен; один порог «Значение» (%), без отдельного % инверсии.
  */
 export function isStopScopeChoosable(
@@ -84,7 +85,8 @@ export function isStopScopeChoosable(
     return scope !== 'portfolio_resume';
   }
   if (ruleKind === 'take_profit') {
-    return scope === 'security';
+    // #833: линейный TP по портфелю с возобновлением снова доступен к выбору.
+    return scope === 'security' || scope === 'portfolio_ltp_renew';
   }
   return false;
 }

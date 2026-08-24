@@ -120,6 +120,33 @@
 
 ## Что сделано (актуально на 2026-08-24)
 
+### 2026-08-24 (#836: убраны кнопки «График/Эквити» в Бумагах; LINREG/SQUARE вернулись на шкалу цены)
+
+- **Блок «Бумаги» (тест/бой):** старые 2 кнопки «График / Эквити» в шапке удалены вместе с режимом — цена всегда рисуется `app-price-chart` (свечи/линия — тумблером в тулбаре графика #835), эквити бумаги осталась полосой PnL под ценой (`equityPoints`). Из компонента вычищены `chartMode/setChartMode` и `EquityCurveChartComponent`.
+- **Баг с невидимым LINREG:** правило ценовой шкалы требовало `line_code='VALUE'` для overlay-кодов и отдельно разрешало каналы только у BB → серии LINREG/SQUARE (MIDDLE/UPPER/LOWER) падали в нижнюю OSC-панель (не видны), а чип легенды сверху оставался. Теперь **любой** индикатор с линиями UPPER/MIDDLE/LOWER рисуется на шкале цены. Исправлено в двух местах: `logic-backtest-papers.buildChartSeries()` и `securities-panel.isPriceScaleSeries()`.
+- **Вторая причина (главная):** сопоставление точек индикатора со свечами шло по точной строке dt, а `/api/prices` отдаёт dt текстом `"YYYY-MM-DD HH:MM:SS"`, `/api/indicator-values` — ISO-датой с UTC-сдвигом (`…T08:00:00.000Z`) → совпадений ноль, линии индикаторов не рисовались нигде (и на вкладке индикаторов тоже). Фикс: индекс серий строится по моменту времени (`@epochMs`, `price-chart.rebuildSeriesPointIndex/valueAtDt`).
+- Файлы: `logics/logic-backtest-papers.component.{ts,html}`, `securities-panel/securities-panel.component.ts`.
+
+### 2026-08-24 (#835: зоны лонгов/шортов на графике портфеля + свечи/линия на графиках цен)
+
+- **График реального портфеля:** новые зоны `long` (бледно-зелёная) и `short` (бледно-красная) — от Open до закрывающего Close по каждой стороне, поверх обычных/shadow/инверсия зон; легенда «лонги открыты / шорты открыты». Стоп-маркеры SL/TP уже рисовались — остались. Новый билдер `buildSideOpenShadedRanges()` (`backtest-chart-overlays.ts`), подключён в `logic-positions-panel` только для боя. `ChartShadedRange.kind` расширен значениями `long|short`.
+- **Графики цен (все `app-price-chart`):** тумблер в тулбаре **«▮▮ / ∿»** — свечи или линия. Линейный режим — ломанная по **Close** каждой свечи (стандарт не-свечных графиков), шкала подстраивается под Close. Индикаторы/стопы/сделки/PnL рисуются как раньше.
+- Файлы: `models/market.model.ts`, `logics/backtest-chart-overlays.ts`, `logics/logic-positions-panel.component.ts`, `logics/equity-curve-chart.component.ts`, `price-chart/*`. Тесты 76/76, сборка OK.
+
+### 2026-08-24 (#834: cleanup больше не стирает последний тест — результаты тестирования видны всегда)
+
+- **Корень:** `cleanup_trading_disk_space()` (pg_cron 03:30 / Node scheduler, галочка APP_CLEANUP_DISK) удалял **все** завершённые `logic_backtest_runs`, **все** `is_test` сделки и всю тестовую историю рейтингов → после ночной очистки UI выглядел «как будто не тестировали».
+- **Фикс:** перед удалением строится `_cleanup_keep_runs` = активные прогоны (pending/loading/running) + **последний завершённый прогон каждой логики** (`DISTINCT ON (logic_id)` по `COALESCE(finished_at, created_at) DESC`). Удаляются только прогоны вне списка; test-сделки и тестовая история рейтингов — только те, чей `run_id` не в списке. Каскад сохраняет и отчёт последнего прогона (`logic_backtest_reports.run_id ON DELETE CASCADE`).
+- Обновлены обе копии: модуль `sql/cleanup_trading_disk_space.sql` + зеркало в `02_…sql` (+COMMENT).
+- Функциональный тест на verify-БД: 2 прогона + 2 сделки + история → после cleanup остался 1 прогон (новейший), его сделка цела, старое удалено. verify:sql OK.
+- `USER_INSTRUCTIONS.md` №834.
+
+### 2026-08-24 (#833: линейный TP снова доступен к выбору)
+
+- `isStopScopeChoosable` (web `shared/logic-stop.ts`): для take_profit выбор расширен с одного `security` до `security` + **`portfolio_ltp_renew`** («Линейный TP по портфелю с возобновлением») — теперь выбирается и в форме добавления, и при смене типа существующего правила. Простой TP «по всему портфелю логики» остался серым.
+- API не менялся — он уже принимал `portfolio_ltp_renew`; блокировка была только в UI.
+- Help (`app-help-content.ts`, глава «Логики») обновлён; `USER_INSTRUCTIONS.md` №833.
+
 ### 2026-08-24 (правило #832: локальные изменения → пересборка установщиков; пуш только с подтверждения)
 
 - Новое правило проекта (`.cursor/rules/installer-freshness.mdc`, `project-context.mdc`): изменения **только локально** (без пуша) всё равно включаются в установщики — **пересобирать оба** после значимой локальной сессии; **коммит/пуш — только после явного подтверждения Sergey**.
@@ -1216,6 +1243,10 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-24 | Papers: drop График/Эквити buttons; LINREG/SQUARE bands back on price scale (#836) |
+| 2026-08-24 | Portfolio equity: long/short pale zones (#835); price charts: candles/line toggle |
+| 2026-08-24 | Fix #834: disk cleanup keeps each logic's LAST finished backtest run (results always visible) |
+| 2026-08-24 | Linear TP (portfolio_ltp_renew) selectable again in stop-loss/TP blocks (#833) |
 | 2026-08-24 | Rule #832: local-only changes must be packaged — rebuild both installers; push only after explicit confirmation |
 | 2026-08-24 | Drop UNIQUE on logic signals (duplicates allowed, v65); «?» button inside formula field (#831); installers pending |
 | 2026-08-24 | Signal formula editor: arithmetic (+ − * / #, parens) in condition over pp/VALUE; «?» help button with indicator params (#830); installers pending |

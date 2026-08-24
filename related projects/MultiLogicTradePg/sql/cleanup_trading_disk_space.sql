@@ -179,16 +179,51 @@ BEGIN
         END;
         GET DIAGNOSTICS v_prices_deleted = ROW_COUNT;
 
-        DELETE FROM logic_trades
-        WHERE is_test;
+        -- #834: последний завершённый прогон каждой логики (и активные прогоны)
+        -- выживают — результат последнего тестирования виден до нового запуска.
+        CREATE TEMP TABLE IF NOT EXISTS _cleanup_keep_runs (
+            run_id BIGINT PRIMARY KEY
+        ) ON COMMIT DROP;
+        TRUNCATE _cleanup_keep_runs;
+
+        INSERT INTO _cleanup_keep_runs (run_id)
+        SELECT id
+        FROM logic_backtest_runs
+        WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running');
+
+        INSERT INTO _cleanup_keep_runs (run_id)
+        SELECT DISTINCT ON (logic_id) id
+        FROM logic_backtest_runs
+        WHERE status IN ('completed', 'cancelled', 'failed')
+        ORDER BY logic_id, COALESCE(finished_at, created_at) DESC, id DESC;
+
+        ANALYZE _cleanup_keep_runs;
+
+        DELETE FROM logic_trades t
+        WHERE t.is_test
+          AND (
+              t.run_id IS NULL
+              OR NOT EXISTS (
+                  SELECT 1 FROM _cleanup_keep_runs k WHERE k.run_id = t.run_id
+              )
+          );
         GET DIAGNOSTICS v_test_trades_deleted = ROW_COUNT;
 
-        DELETE FROM logic_signal_rating_history
-        WHERE is_test;
+        DELETE FROM logic_signal_rating_history h
+        WHERE h.is_test
+          AND (
+              h.run_id IS NULL
+              OR NOT EXISTS (
+                  SELECT 1 FROM _cleanup_keep_runs k WHERE k.run_id = h.run_id
+              )
+          );
         GET DIAGNOSTICS v_rating_test_deleted = ROW_COUNT;
 
-        DELETE FROM logic_backtest_runs
-        WHERE status IN ('completed', 'cancelled', 'failed');
+        DELETE FROM logic_backtest_runs r
+        WHERE r.status IN ('completed', 'cancelled', 'failed')
+          AND NOT EXISTS (
+              SELECT 1 FROM _cleanup_keep_runs k WHERE k.run_id = r.id
+          );
         GET DIAGNOSTICS v_backtest_runs_deleted = ROW_COUNT;
 
         IF to_regclass('public.app_tech_log') IS NOT NULL THEN
@@ -231,4 +266,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION cleanup_trading_disk_space(INTEGER, INTEGER, INTEGER) IS
-'Удаляет лишние цены/тесты/логи + cleanup_unused_indicator_values; advisory lock; timeouts.';
+'Удаляет лишние цены/тесты/логи + cleanup_unused_indicator_values; advisory lock; timeouts. Последний завершённый прогон каждой логики сохраняется (#834).';

@@ -20,6 +20,8 @@ export const EQUITY_SHADE_COLORS = {
   normal: { fill: 'rgba(187, 247, 208, 0.4)', stroke: 'rgba(74, 222, 128, 0.35)' },
   shadow: { fill: 'rgba(203, 213, 225, 0.55)', stroke: 'rgba(148, 163, 184, 0.55)' },
   inverted: { fill: 'rgba(251, 207, 232, 0.45)', stroke: 'rgba(244, 114, 182, 0.4)' },
+  long: { fill: 'rgba(134, 239, 172, 0.28)', stroke: 'rgba(74, 222, 128, 0.3)' },
+  short: { fill: 'rgba(252, 165, 165, 0.28)', stroke: 'rgba(248, 113, 113, 0.3)' },
 } as const;
 
 /**
@@ -52,6 +54,10 @@ export const EQUITY_SHADE_COLORS = {
           · <span class="leg-normal">▮</span> обычная ·
           <span class="leg-shadow">▮</span> shadow ·
           <span class="leg-inverted">▮</span> инверсия
+        }
+        @if (hasSideRanges) {
+          · <span class="leg-zone-long">▮</span> лонги открыты ·
+          <span class="leg-zone-short">▮</span> шорты открыты
         }
       </p>
     </div>
@@ -116,6 +122,14 @@ export const EQUITY_SHADE_COLORS = {
         color: #f9a8d4;
         opacity: 0.95;
       }
+      .leg-zone-long {
+        color: #86efac;
+        opacity: 0.95;
+      }
+      .leg-zone-short {
+        color: #fca5a5;
+        opacity: 0.95;
+      }
     `,
   ],
 })
@@ -138,6 +152,10 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
   @Input() shadedRanges: ChartShadedRange[] = [];
   /** Показать подписи цветов зон в легенде (для бумаг). */
   @Input() showModeLegend = false;
+
+  get hasSideRanges(): boolean {
+    return this.shadedRanges.some((r) => r.kind === 'long' || r.kind === 'short');
+  }
 
   private resizeObs: ResizeObserver | null = null;
 
@@ -260,9 +278,13 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
       const colors =
         kind === 'inverted'
           ? EQUITY_SHADE_COLORS.inverted
-          : kind === 'shadow' || kind === 'paused'
-            ? EQUITY_SHADE_COLORS.shadow
-            : EQUITY_SHADE_COLORS.normal;
+          : kind === 'long'
+            ? EQUITY_SHADE_COLORS.long
+            : kind === 'short'
+              ? EQUITY_SHADE_COLORS.short
+              : kind === 'shadow' || kind === 'paused'
+                ? EQUITY_SHADE_COLORS.shadow
+                : EQUITY_SHADE_COLORS.normal;
       ctx.fillStyle = colors.fill;
       ctx.fillRect(x0, padT, Math.max(2, x1 - x0), plotH);
     }
