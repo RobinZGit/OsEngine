@@ -367,42 +367,98 @@ RETURNS BOOLEAN
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE
     v_expr TEXT;
-    v_left NUMERIC;
-    v_right NUMERIC;
+    v_left TEXT;
+    v_right TEXT;
     v_op TEXT;
-    v_m TEXT[];
+    v_lv NUMERIC;
+    v_rv NUMERIC;
+    v_i INTEGER;
+    v_ch TEXT;
+    v_next TEXT;
+    v_num_pp TEXT;
+    v_num_value TEXT;
+    v_depth INTEGER := 0;
 BEGIN
     v_expr := btrim(COALESCE(p_condition, ''));
     IF v_expr = '' OR p_pp IS NULL OR p_value IS NULL THEN
         RETURN FALSE;
     END IF;
-    IF p_pp IS NULL OR p_value IS NULL OR p_pp <= 0 THEN
+    IF p_pp <= 0 THEN
         RETURN FALSE;
     END IF;
 
-    v_expr := regexp_replace(v_expr, '\mpp\y', p_pp::TEXT, 'gi');
-    v_expr := regexp_replace(v_expr, '\yVALUE\y', p_value::TEXT, 'gi');
+    -- Подстановка значений как NUMERIC-литералов (с точкой),
+    -- иначе арифметика становится целочисленной: -10/90 = 0 вместо -0.111…
+    v_num_pp := btrim(p_pp::TEXT);
+    IF position('.' IN v_num_pp) = 0 THEN
+        v_num_pp := v_num_pp || '.0';
+    END IF;
+    v_num_value := btrim(p_value::TEXT);
+    IF position('.' IN v_num_value) = 0 THEN
+        v_num_value := v_num_value || '.0';
+    END IF;
+
+    v_expr := regexp_replace(v_expr, '\mpp\y', v_num_pp, 'gi');
+    v_expr := regexp_replace(v_expr, '\yVALUE\y', v_num_value, 'gi');
     IF v_expr ~ '[A-Za-z_]' THEN
         RETURN FALSE;
     END IF;
 
-    v_m := regexp_match(v_expr, '^\s*(-?\d+(?:\.\d+)?)\s*(>=|<=|<>|!=|=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$');
-    IF v_m IS NULL THEN
+    -- Оператор сравнения на верхнем уровне (вне скобок): >= <= <> != > < =
+    v_op := NULL;
+    FOR v_i IN 1..length(v_expr) LOOP
+        v_ch := substr(v_expr, v_i, 1);
+        IF v_ch = '(' THEN
+            v_depth := v_depth + 1;
+        ELSIF v_ch = ')' THEN
+            v_depth := v_depth - 1;
+        ELSIF v_depth = 0 AND (v_ch = '>' OR v_ch = '<' OR v_ch = '=' OR v_ch = '!') THEN
+            v_next := CASE WHEN v_i < length(v_expr) THEN substr(v_expr, v_i + 1, 1) ELSE '' END;
+            IF (v_ch = '>' AND v_next = '=') OR (v_ch = '<' AND (v_next = '=' OR v_next = '>'))
+               OR (v_ch = '!' AND v_next = '=') THEN
+                v_op := substr(v_expr, v_i, 2);
+                v_left := btrim(substr(v_expr, 1, v_i - 1));
+                v_right := btrim(substr(v_expr, v_i + 2));
+            ELSIF v_ch <> '!' THEN
+                v_op := v_ch;
+                v_left := btrim(substr(v_expr, 1, v_i - 1));
+                v_right := btrim(substr(v_expr, v_i + 1));
+            END IF;
+            EXIT WHEN v_op IS NOT NULL;
+        END IF;
+    END LOOP;
+
+    IF v_op IS NULL OR v_left IS NULL OR v_right IS NULL OR v_left = '' OR v_right = '' THEN
         RETURN FALSE;
     END IF;
 
-    v_left := v_m[1]::NUMERIC;
-    v_op := v_m[2];
-    v_right := v_m[3]::NUMERIC;
+    -- Арифметика над рядами: # — покомпонентное произведение (на баре = *),
+    -- * / + - и скобки — числовое выражение; для рядов: свёртка/покомпонентно.
+    v_left := replace(v_left, '#', '*');
+    v_right := replace(v_right, '#', '*');
+    IF v_left ~ '[^0-9+*/().[:space:]-]' OR v_right ~ '[^0-9+*/().[:space:]-]' THEN
+        RETURN FALSE;
+    END IF;
+
+    BEGIN
+        EXECUTE 'SELECT (' || v_left || ')::numeric' INTO v_lv;
+        EXECUTE 'SELECT (' || v_right || ')::numeric' INTO v_rv;
+    EXCEPTION WHEN OTHERS THEN
+        RETURN FALSE;
+    END;
+
+    IF v_lv IS NULL OR v_rv IS NULL THEN
+        RETURN FALSE;
+    END IF;
 
     CASE v_op
-        WHEN '>' THEN RETURN v_left > v_right;
-        WHEN '<' THEN RETURN v_left < v_right;
-        WHEN '>=' THEN RETURN v_left >= v_right;
-        WHEN '<=' THEN RETURN v_left <= v_right;
-        WHEN '=' THEN RETURN v_left = v_right;
-        WHEN '!=' THEN RETURN v_left <> v_right;
-        WHEN '<>' THEN RETURN v_left <> v_right;
+        WHEN '>' THEN RETURN v_lv > v_rv;
+        WHEN '<' THEN RETURN v_lv < v_rv;
+        WHEN '>=' THEN RETURN v_lv >= v_rv;
+        WHEN '<=' THEN RETURN v_lv <= v_rv;
+        WHEN '=' THEN RETURN v_lv = v_rv;
+        WHEN '!=' THEN RETURN v_lv <> v_rv;
+        WHEN '<>' THEN RETURN v_lv <> v_rv;
         ELSE RETURN FALSE;
     END CASE;
 END;

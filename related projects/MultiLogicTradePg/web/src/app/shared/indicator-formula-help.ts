@@ -16,8 +16,8 @@ export const INDICATOR_FORMULA_HELP_BASE = `Многочленная форму�
 
 Операции
   * — свёртка: левый и правый операнды вычисляются как ряды, затем сворачиваются
-  #, /# — покомponentное умножение / деление
-  +, − — покомponentное сложение / вычитание
+  #, /# — покомпонентное умножение / деление
+  +, − — покомпонентное сложение / вычитание
 
 Функции sma / ema / ww (источник — close, pp)
   sma — SMA от close, параметры серии по умолчанию
@@ -103,4 +103,53 @@ export function buildIndicatorCatalogHelp(indicators: IndicatorRow[]): string {
 
 export function buildFullFormulaHelp(indicators: IndicatorRow[]): string {
   return INDICATOR_FORMULA_HELP_BASE + buildIndicatorCatalogHelp(indicators);
+}
+
+/** Краткая подсказка для поля формулы сигнала на логике. */
+export const SIGNAL_FORMULA_HINT =
+  'Редактируйте прямо в поле: @CODE(параметры) условие. Условие понимает + − * / # и скобки. «?» — справка.';
+
+/**
+ * Справка «?» для поля формулы сигнала на логике:
+ * формат, переменные, арифметика над рядами и параметры основных индикаторов.
+ */
+export function buildSignalFormulaHelp(indicators: IndicatorRow[]): string {
+  const lines: string[] = [
+    'ФОРМУЛА СИГНАЛА (редактируется прямо в поле)',
+    '  @КОД_ИНДИКАТОРА(параметры) условие',
+    '  Пример: @LINREG(period=20,std_dev=2,series=MIDDLE) pp > VALUE',
+    '',
+    'УСЛОВИЕ — сравнение выражений',
+    '  Операторы: >  <  >=  <=  =  !=  <>',
+    '  Переменные: pp — Close бара; VALUE — серия индикатора (@CODE)',
+    '',
+    'АРИФМЕТИКА (применительно к рядам/векторам)',
+    '  +  −   покомпонентное сложение / вычитание',
+    '  *      свёртка рядов; для значения бара — умножение',
+    '  #      покомпонентное произведение',
+    '  /      деление',
+    '  ( )    скобки для группировки',
+    '',
+    'ПРИМЕРЫ УСЛОВИЙ',
+    '  pp > VALUE                       цена выше линии индикатора',
+    '  pp - VALUE > 0                   то же через вычитание',
+    '  (pp - VALUE) / pp * 100 < -3     цена ниже линии более чем на 3%',
+    '  pp # VALUE > pp                  покомпонентное произведение больше цены',
+    '  VALUE - 50 > 25                  RSI выше 75 (VALUE > 75)',
+    '',
+    'ПАРАМЕТРЫ ОСНОВНЫХ ИНДИКАТОРОВ (@CODE(...))',
+    '  RSI(period=14,series=VALUE)          MACD(fast=12,slow=26,signal=9,series=MACD)',
+    '  STOCH(k=14,d=3,smooth=3,series=K)    BB(period=20,std_dev=2,series=MIDDLE)',
+    '  LINREG(period=20,std_dev=2,series=MIDDLE)   ATR(period=14,series=VALUE)',
+    '  series: VALUE/MIDDLE/UPPER/LOWER/K/D/MACD… (у каждого индикатора свои)',
+    '  OPT(period,10) — пометить параметр для оптимизации на лету (±10%)',
+    '',
+    'ENTER не отправляет формулу: сохранение — по выходу из поля или Ctrl+Enter.',
+  ];
+
+  const catalog = indicators.length
+    ? buildIndicatorCatalogHelp(indicators)
+    : '\n(каталог индикаторов загрузится после подключения API)';
+
+  return lines.join('\n') + catalog;
 }

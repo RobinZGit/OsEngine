@@ -1121,9 +1121,6 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
       INSERT INTO logic_indicator_signals
         (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on) DO UPDATE SET
-        formula = EXCLUDED.formula,
-        is_active = TRUE
       RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, rating, rating_test, display_order, is_active
     `,
       [logicId, indicatorId, positionEvent, positionSide, signalKind, signalActsOn, formula, displayOrder]

@@ -1467,6 +1467,80 @@ tbody tr.logic-main-row:hover {
   color: #b45309;
 }
 
+.formula-cell-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+/* Поле формулы с кнопкой «?» внутри (правый верхний угол) (#830). */
+.formula-box {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.formula-box .formula-textarea {
+  width: 100%;
+  padding-right: 2.2rem;
+}
+
+.formula-help-btn {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.3rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.formula-help-btn:hover {
+  background: #dbeafe;
+}
+
+.formula-help-btn.open {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+/* «?» в шапке блока «Сигналы на логике» — обычная (не абсолютная) позиция (#831). */
+.signals-summary-help {
+  position: static;
+  flex-shrink: 0;
+  width: 1.3rem;
+  height: 1.3rem;
+  font-size: 0.78rem;
+}
+
+.formula-help-panel {
+  margin: 0.35rem 0 0;
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.signals-help-panel {
+  margin: 0 0 0.6rem;
+}
+
 .sig-badge {
   display: inline-block;
   padding: 0.1rem 0.45rem;

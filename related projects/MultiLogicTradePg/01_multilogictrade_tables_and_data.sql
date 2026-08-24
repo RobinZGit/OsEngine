@@ -1583,8 +1583,9 @@ CREATE TABLE IF NOT EXISTS logic_indicator_signals (
     rating_test INTEGER NOT NULL DEFAULT 0,
     display_order INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on)
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    -- v65 (#831): UNIQUE (logic_id, indicator_id, position_event, position_side,
+    -- signal_kind, signal_acts_on) убран — одинаковых сигналов может быть сколько угодно.
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
@@ -1677,10 +1678,31 @@ ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_si
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_event_position_side_signal_kind_key;
 ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_signals_logic_id_indicator_id_position_event_position_side_signal_kind_signal_acts_on_key;
 
+-- v65 (#831): одинаковые сигналы разрешены — снять ВСЕ unique-индексы/ограничения
+-- (кроме PK) с logic_indicator_signals, как бы они ни назывались в старых БД.
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT i.relname AS indexname
+        FROM pg_index x
+        JOIN pg_class i ON i.oid = x.indexrelid
+        JOIN pg_class t ON t.oid = x.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE t.relname = 'logic_indicator_signals'
+          AND x.indisunique
+          AND NOT x.indisprimary
+          AND n.nspname = current_schema()
+    LOOP
+        EXECUTE format('DROP INDEX %I', r.indexname);
+    END LOOP;
+END $$;
+
 DROP INDEX IF EXISTS logic_indicator_signals_logic_id_indicator_id_signal_kind_key;
 DROP INDEX IF EXISTS idx_logic_indicator_signals_unique;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_logic_indicator_signals_unique
+CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_group
     ON logic_indicator_signals (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on);
 
 CREATE INDEX IF NOT EXISTS idx_logic_indicator_signals_logic_id
@@ -2052,8 +2074,9 @@ CROSS JOIN (VALUES
 ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
 JOIN indicators i ON i.code = v.ind_code
 WHERE l.name = 'SMA Price Cross Demo'
-  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id)
-ON CONFLICT (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on) DO NOTHING;
+  AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+-- v65 (#831): ON CONFLICT (...) DO NOTHING убран вместе с unique-индексом;
+-- идемпотентность seed держится на NOT EXISTS выше.
 
 -- Все акции (stock) в портфель демо-логики (без дублей при нескольких prefix)
 INSERT INTO logic_securities (logic_id, security_id, display_order)

@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-23 — Buy bonds «Счёт брокера» (докупка имеющихся по купону/цене) + fix боевого FinRes; installers **v1.0.138**
+**Последнее обновление:** 2026-08-24 — Редактор формулы сигнала (арифметика + − * / #, «?» в шапке блока сигналов), дубликаты сигналов разрешены (v65), правило #832; installers **v1.0.142**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,32 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-23)
+## Что сделано (актуально на 2026-08-24)
+
+### 2026-08-24 (правило #832: локальные изменения → пересборка установщиков; пуш только с подтверждения)
+
+- Новое правило проекта (`.cursor/rules/installer-freshness.mdc`, `project-context.mdc`): изменения **только локально** (без пуша) всё равно включаются в установщики — **пересобирать оба** после значимой локальной сессии; **коммит/пуш — только после явного подтверждения Sergey**.
+- Оба установщика пересобраны и выложены: **v1.0.142 / build 142** (VERSION.txt).
+
+### 2026-08-24 (v65: дубликаты сигналов логики + «?» внутри поля формулы)
+
+- **UNIQUE сигналов снят** (#831): раньше `(logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on)` был уникален — повторное «открытие long по течению» с тем же индикатором молча апдейтило существующий сигнал. Теперь одинаковых наборов может быть сколько угодно:
+  - `01`: UNIQUE-ограничение убрано из CREATE TABLE; вместо unique-индекса — обычный `idx_logic_indicator_signals_group`; DO-блок снимает **все** non-PK unique-индексы таблицы (upgrade старых БД с любыми именами); seed демо-логики — без ON CONFLICT (идемпотентность на NOT EXISTS);
+  - API `POST /api/logic-indicator-signals`: обычный INSERT без ON CONFLICT;
+  - UI `addSelectedSignals`: клиентский фильтр дублей убран.
+- **«?» внутри поля формулы** (#830→#831): кнопка в textarea (абсолют, правый верхний угол, `.formula-box`); у textarea `padding-right`, чтобы текст не заходил под кнопку. **Уточнение #831:** основная кнопка «?» — в **шапке блока «Сигналы на логике»**, рядом с названием (`.signals-summary-help`); клик раскрывает свёрнутый блок и показывает панель справки сверху (`signalFormulaHelpText()`); повторный клик скрывает.
+- Help: глава «Редактор формулы сигнала» дополнена (кнопка в углу поля; одинаковые сигналы разрешены).
+- Файлы: `01_…sql`, `api/routes/logics.js`, `web/src/app/logics/logics.component.{ts,html,css}`, `web/src/app/app-help/app-help-content.ts`.
+- Установщики включают эти изменения начиная с **v1.0.140**; финальная выкладка — **v1.0.142**.
+
+### 2026-08-24 (редактор формулы сигнала: арифметика в условии + справка «?»)
+
+- **Арифметика в условии сигнала** (#830): `evaluate_signal_condition` теперь считает слева/справа от сравнения произвольные числовые выражения над `pp` и `VALUE`: `+ −` покомпонентно, `*` свёртка/умножение, `#` покомпонентное произведение, `/`, скобки. Сравнения прежние (`> < >= <= = != <>`). Поиск оператора — на верхнем уровне скобок; вычисление через параметризованный `EXECUTE` с whitelist-charset `[0-9+*/(). пробел]` и try/exception (деление на 0 / мусор → FALSE). Примеры: `pp - VALUE > 0`, `(pp - VALUE) / pp * 100 < -3`, `pp # VALUE > pp`.
+- Обновлены обе копии функции: ядро `02_…sql` + зеркало `sql/logic_trade_runner.sql`; COMMENT (в `02` и `routine_comments_missing.sql`). Инверсия сравнения (`logic_invert_comparison_condition`) совместима — меняет только оператор.
+- **Кнопка «?» у поля формулы сигнала** (#830): в блоке «Сигналы на логике» рядом с textarea — круглая кнопка; раскрывает панель со справкой: формат `@CODE(параметры) условие`, переменные, арифметика над рядами, примеры условий и параметры основных индикаторов (RSI/MACD/STOCH/BB/LINREG/ATR + OPT), каталог индикаторов из API. Новый хелпер `buildSignalFormulaHelp` в `web/src/app/shared/indicator-formula-help.ts`.
+- Help приложения: новая глава **«Редактор формулы сигнала»** (после «Формулы сигналов и OPT()»).
+- Файлы: `02_multilogictrade_functions_and_procedures.sql`, `sql/logic_trade_runner.sql`, `sql/routine_comments_missing.sql`, `web/src/app/logics/logics.component.{ts,html,css}`, `web/src/app/shared/indicator-formula-help.ts`, `web/src/app/app-help/app-help-content.ts`.
+- Installers не пересобраны (правка только в SQL/UI — пересборка перед push).
 
 ### 2026-08-23 (Buy bonds: режим «Счёт брокера» — докупка имеющихся облигаций)
 
@@ -1191,6 +1216,9 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-24 | Rule #832: local-only changes must be packaged — rebuild both installers; push only after explicit confirmation |
+| 2026-08-24 | Drop UNIQUE on logic signals (duplicates allowed, v65); «?» button inside formula field (#831); installers pending |
+| 2026-08-24 | Signal formula editor: arithmetic (+ − * / #, parens) in condition over pp/VALUE; «?» help button with indicator params (#830); installers pending |
 | 2026-08-04 | Checkbox green = runner heartbeat (~15s), not TF/trades; bar_skip pulses check_at; v1.0.134 |
 | 2026-08-04 | Fix red enable-checkbox while live trades run (Node health reconcile); v1.0.133 |
 | 2026-08-04 | Fix close-all via Node like sell-all; drop UI heartbeat gate on Node PostOrder; v1.0.132 |

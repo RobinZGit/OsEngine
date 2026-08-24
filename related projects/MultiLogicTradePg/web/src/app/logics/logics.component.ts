@@ -36,6 +36,7 @@ import {
   signalKindLabel,
   SignalKind,
 } from '../shared/signal-formula';
+import { buildSignalFormulaHelp } from '../shared/indicator-formula-help';
 import {
   LOGIC_STOP_UNITS,
   LogicStopRuleKind,
@@ -296,6 +297,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private savingIds = new Set<number>();
   private formulaDrafts = new Map<number, string>();
   private savingFormulaIds = new Set<number>();
+  /** Сигналы с открытой справкой «?» по формуле. */
+  private signalFormulaHelpIds = new Set<number>();
+  /** Логики с открытой справкой «?» в шапке блока «Сигналы на логике» (#831). */
+  private signalsHelpBlocks = new Set<number>();
+  private signalFormulaHelpCache: string | null = null;
   private savingStopIds = new Set<number>();
   private savingParamsIds = new Set<number>();
   private copyingLogicIds = new Set<number>();
@@ -2767,18 +2773,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   addSelectedSignals(): void {
     if (!this.signalPicker || this.pickerSelectedIds.size === 0) return;
+    // #831: одинаковые сигналы разрешены — дубликаты не отфильтровываем.
     const { logicId, positionEvent, positionSide, signalKind } = this.signalPicker;
-    const existing = new Set(
-      this.signalsFor(logicId)
-        .filter(
-          (s) =>
-            s.position_event === positionEvent &&
-            s.position_side === positionSide &&
-            s.signal_kind === signalKind
-        )
-        .map((s) => s.indicator_id)
-    );
-    const toAdd = [...this.pickerSelectedIds].filter((id) => !existing.has(id));
+    const toAdd = [...this.pickerSelectedIds];
     if (toAdd.length === 0) {
       this.closeSignalPicker();
       return;
@@ -2828,6 +2825,49 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   formulaDraft(signal: LogicIndicatorSignalRow): string {
     return this.formulaDrafts.get(signal.id) ?? signal.formula;
+  }
+
+  isSignalFormulaHelpOpen(signal: LogicIndicatorSignalRow): boolean {
+    return this.signalFormulaHelpIds.has(signal.id);
+  }
+
+  toggleSignalFormulaHelp(signal: LogicIndicatorSignalRow, event: Event): void {
+    event.stopPropagation();
+    if (this.signalFormulaHelpIds.has(signal.id)) {
+      this.signalFormulaHelpIds.delete(signal.id);
+    } else {
+      this.signalFormulaHelpIds.add(signal.id);
+    }
+    this.cdr.markForCheck();
+  }
+
+  signalFormulaHelpText(): string {
+    if (this.signalFormulaHelpCache === null) {
+      this.signalFormulaHelpCache = buildSignalFormulaHelp(this.indicatorsCatalog ?? []);
+    }
+    return this.signalFormulaHelpCache;
+  }
+
+  isSignalsFormulaHelpOpen(logicId: number): boolean {
+    return this.signalsHelpBlocks.has(logicId);
+  }
+
+  toggleSignalsFormulaHelp(logicId: number, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.signalsHelpBlocks.has(logicId)) {
+      this.signalsHelpBlocks.delete(logicId);
+      this.cdr.markForCheck();
+      return;
+    }
+    // Блок свёрнут — раскрыть, чтобы справка была видна.
+    if (!this.expandedSignalsBlocks.has(logicId)) {
+      this.expandedSignalsBlocks.add(logicId);
+      this.loadSignalsForLogic(logicId);
+      this.refreshOptGridAvailability(logicId);
+    }
+    this.signalsHelpBlocks.add(logicId);
+    this.cdr.markForCheck();
   }
 
   onFormulaInput(signal: LogicIndicatorSignalRow, value: string): void {

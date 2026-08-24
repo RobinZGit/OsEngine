@@ -54,7 +54,7 @@ COMMENT ON PROCEDURE ensure_security_indicator_series IS
   'Создаёт строки security_indicator_series для индикатора на бумаге.';
 
 COMMENT ON FUNCTION evaluate_signal_condition IS
-  'Проверяет условие сигнала (@CODE …) на закрытом баре.';
+  'Проверяет условие сигнала (@CODE …) на закрытом баре; слева/справа — арифметика (+ − * / #, скобки) над pp и VALUE.';
 
 COMMENT ON FUNCTION get_logic_param_numeric IS
   'Числовой параметр логики из logic_params (EAV).';

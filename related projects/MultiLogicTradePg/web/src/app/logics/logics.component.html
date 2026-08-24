@@ -1226,6 +1226,24 @@
 
                           <span class="signals-title">Сигналы на логике</span>
 
+                          <button
+
+                            type="button"
+
+                            class="formula-help-btn signals-summary-help"
+
+                            [class.open]="isSignalsFormulaHelpOpen(row.id)"
+
+                            [attr.aria-expanded]="isSignalsFormulaHelpOpen(row.id)"
+
+                            title="Как редактировать сигнал: @CODE(параметры) условие; арифметика + − * / # над рядами; параметры основных индикаторов"
+
+                            aria-label="Справка: редактирование формулы сигнала"
+
+                            (click)="toggleSignalsFormulaHelp(row.id, $event)"
+
+                          >?</button>
+
                           @if (isSignalsLoading(row.id)) {
 
                             <span class="signals-loading">загрузка…</span>
@@ -1277,6 +1295,12 @@
                       </summary>
 
                       <div class="signals-body">
+
+                      @if (isSignalsFormulaHelpOpen(row.id)) {
+
+                        <pre class="formula-help-panel signals-help-panel" aria-live="polite">{{ signalFormulaHelpText() }}</pre>
+
+                      }
 
                       <p class="signals-and-hint">
                         Сделка только если <strong>все</strong> активные сигналы той же стороны и
@@ -1545,25 +1569,57 @@
 
                               <td class="col-formula">
 
-                                <textarea
+                                <div class="formula-cell-row">
 
-                                  rows="3"
+                                  <div class="formula-box">
 
-                                  class="formula-input formula-textarea"
+                                    <textarea
 
-                                  [ngModel]="formulaDraft(sig)"
+                                      rows="3"
 
-                                  [disabled]="isFormulaSaving(sig.id)"
+                                      class="formula-input formula-textarea"
 
-                                  (ngModelChange)="onFormulaInput(sig, $event)"
+                                      [ngModel]="formulaDraft(sig)"
 
-                                  (blur)="saveSignalFormula(sig)"
+                                      [disabled]="isFormulaSaving(sig.id)"
 
-                                  (keydown.control.enter)="saveSignalFormula(sig); $any($event.target).blur()"
+                                      (ngModelChange)="onFormulaInput(sig, $event)"
 
-                                  spellcheck="false"
+                                      (blur)="saveSignalFormula(sig)"
 
-                                ></textarea>
+                                      (keydown.control.enter)="saveSignalFormula(sig); $any($event.target).blur()"
+
+                                      spellcheck="false"
+
+                                    ></textarea>
+
+                                    <button
+
+                                      type="button"
+
+                                      class="formula-help-btn"
+
+                                      [class.open]="isSignalFormulaHelpOpen(sig)"
+
+                                      [attr.aria-expanded]="isSignalFormulaHelpOpen(sig)"
+
+                                      title="Справка по формуле сигнала: параметры индикаторов, арифметика + − * / # над рядами"
+
+                                      aria-label="Справка по формуле сигнала"
+
+                                      (click)="toggleSignalFormulaHelp(sig, $event)"
+
+                                    >?</button>
+
+                                  </div>
+
+                                </div>
+
+                                @if (isSignalFormulaHelpOpen(sig)) {
+
+                                  <pre class="formula-help-panel" aria-live="polite">{{ signalFormulaHelpText() }}</pre>
+
+                                }
 
                                 @if (formulaParseHint(sig); as hint) {
 
