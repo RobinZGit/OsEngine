@@ -65,6 +65,72 @@ export function buildLogicSignalFormula(
 }
 
 /**
+ * Мультитаймфрейм-сигналы (#843): параметр tf=<База>[×k] внутри @CODE(...).
+ * База — каталожный ТФ (M1…D1), k — целое ≥1 (M1*7 = семиминутный ТФ).
+ * Пустая база = сигнал наследует ТФ логики.
+ */
+export interface SignalTfParts {
+  base: string;
+  mult: number | null;
+}
+
+export function extractSignalTf(formula: string): SignalTfParts {
+  const parsed = parseSignalFormula(formula ?? '');
+  if (!parsed.valid || !parsed.params) {
+    return { base: '', mult: null };
+  }
+  const part = parsed.params
+    .split(/,(?![^(]*\))/)
+    .map((p) => p.trim())
+    .find((p) => /^tf\s*=/i.test(p));
+  if (!part) {
+    return { base: '', mult: null };
+  }
+  const expr = part.replace(/^tf\s*=/i, '').trim();
+  const m = expr.match(/^([A-Za-z]+[0-9]{0,4})\s*(?:[*x×]\s*([0-9]{1,3}))?$/i);
+  if (!m) {
+    return { base: '', mult: null };
+  }
+  const mult = m[2] ? Math.max(1, parseInt(m[2], 10)) : null;
+  return { base: m[1].toUpperCase(), mult };
+}
+
+/** Записать tf= в формулу (замена/вставка/удаление). base='' → удалить tf=. */
+export function applySignalTf(
+  formula: string,
+  base: string,
+  mult: number | null
+): string {
+  const text = (formula ?? '').trim();
+  if (!text) return text;
+  const head = text.match(/^@([A-Za-z0-9_]+\()/i);
+  if (!head) return text;
+  const openEnd = (head.index ?? 0) + head[0].length;
+  let depth = 1;
+  let closeIdx = -1;
+  for (let i = openEnd; i < text.length; i++) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
+  }
+  if (closeIdx < 0) return text;
+  const inner = text.slice(openEnd, closeIdx);
+  const parts = inner
+    .split(/,(?![^(]*\))/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .filter((p) => !/^tf\s*=/i.test(p));
+  const tfExpr = !base ? null : mult && mult > 1 ? `${base}*${mult}` : base;
+  if (tfExpr) parts.push(`tf=${tfExpr}`);
+  return `@${text.slice(1, openEnd - 1)}(${parts.join(', ')})${text.slice(closeIdx + 1)}`;
+}
+
+/**
  * Предварительный разбор формулы сигнала логики.
  * Формат: @RSI(period=14,series=VALUE) VALUE > 50
  * Параметры могут содержать вложенные скобки: OPT(std_dev,10).

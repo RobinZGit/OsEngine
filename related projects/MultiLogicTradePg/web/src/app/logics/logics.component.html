@@ -1624,6 +1624,39 @@
 
                                 <div class="formula-cell-row">
 
+                                  <div class="sig-tf-row" (click)="$event.stopPropagation()">
+
+                                    <span class="sig-tf-label">ТФ:</span>
+
+                                    <select
+                                      class="sig-tf-select"
+                                      [ngModel]="signalTfBase(formulaDraft(sig))"
+                                      [disabled]="isFormulaSaving(sig.id)"
+                                      (ngModelChange)="onSignalTfBaseChange(sig, $event)"
+                                      title="Таймфрейм сигнала: пусто = ТФ логики. Можно умножить: M1×7 = семиминутный ТФ"
+                                    >
+                                      <option value="">ТФ логики</option>
+                                      @for (b of signalTfBases; track b) {
+                                        <option [value]="b">{{ b }}</option>
+                                      }
+                                    </select>
+
+                                    <span class="sig-tf-x">×</span>
+
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="200"
+                                      class="sig-tf-mult"
+                                      [ngModel]="signalTfMult(formulaDraft(sig))"
+                                      [disabled]="isFormulaSaving(sig.id) || !signalTfBase(formulaDraft(sig))"
+                                      (ngModelChange)="onSignalTfMultChange(sig, $event)"
+                                      title="Множитель базы (целое ≥1): 7 × M1 = M7. Пусто = без множителя"
+                                      placeholder="—"
+                                    />
+
+                                  </div>
+
                                   <div class="formula-box">
 
                                     <textarea
@@ -1740,6 +1773,12 @@
                       <p class="signals-help">
 
                         Формат: <code>&#64;RSI(period=14,series=VALUE) VALUE &gt; 50</code>.
+
+                        Таймфрейм сигнала: <code>tf=M15</code> или производный
+
+                        <code>tf=M1*7</code> (= M7); пусто = ТФ логики. Сигнал считается по
+
+                        последнему закрытому бару своего ТФ до закрытия бара логики.
 
                         Оптимизация на лету: <code>OPT(param,pct%)</code> рядом с базой —
 

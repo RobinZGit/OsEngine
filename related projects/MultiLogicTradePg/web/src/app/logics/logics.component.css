@@ -1513,6 +1513,37 @@ tbody tr.logic-main-row:hover {
   min-width: 0;
 }
 
+/* ТФ сигнала: база × множитель (#843). */
+.sig-tf-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.sig-tf-label {
+  font-size: 0.72rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.sig-tf-select {
+  max-width: 6.5rem;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.78rem;
+}
+
+.sig-tf-x {
+  color: #94a3b8;
+}
+
+.sig-tf-mult {
+  width: 3.2rem;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.78rem;
+}
+
 .formula-box .formula-textarea {
   width: 100%;
   padding-right: 2.2rem;

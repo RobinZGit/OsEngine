@@ -27,7 +27,9 @@ import {
 } from '../logic-editor/logic-editor.component';
 import { TbankTokenDialogComponent } from '../tbank-token-dialog/tbank-token-dialog.component';
 import {
+  applySignalTf,
   buildLogicSignalFormula,
+  extractSignalTf,
   parseSignalFormula,
   positionEventLabel,
   PositionEvent,
@@ -2978,6 +2980,52 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   onFormulaInput(signal: LogicIndicatorSignalRow, value: string): void {
     this.formulaDrafts.set(signal.id, value);
+  }
+
+  /** Каталог базовых ТФ для tf= сигнала (#843). */
+  readonly signalTfBases = [
+    'M1', 'M2', 'M3', 'M5', 'M10', 'M15', 'M20', 'M30',
+    'H1', 'H2', 'H4', 'H6', 'H8', 'H12', 'D1',
+  ] as const;
+
+  signalTfBase(formulaDraft: string): string {
+    return extractSignalTf(formulaDraft).base;
+  }
+
+  signalTfMult(formulaDraft: string): number | null {
+    return extractSignalTf(formulaDraft).mult;
+  }
+
+  private setSignalTf(
+    signal: LogicIndicatorSignalRow,
+    base: string,
+    mult: number | null
+  ): void {
+    const next = applySignalTf(this.formulaDraft(signal), base, mult);
+    if (next === this.formulaDraft(signal)) {
+      return;
+    }
+    this.formulaDrafts.set(signal.id, next);
+    this.saveSignalFormula(signal);
+  }
+
+  onSignalTfBaseChange(signal: LogicIndicatorSignalRow, base: string): void {
+    const mult = this.signalTfMult(this.formulaDraft(signal));
+    this.setSignalTf(signal, base, base ? (mult ?? 1) : null);
+  }
+
+  onSignalTfMultChange(signal: LogicIndicatorSignalRow, raw: number | string | null): void {
+    const draft = this.formulaDraft(signal);
+    const base = this.signalTfBase(draft);
+    if (!base) {
+      return; // множитель имеет смысл только с выбранной базой
+    }
+    if (raw === null || raw === '' || Number(raw) <= 1) {
+      this.setSignalTf(signal, base, null);
+      return;
+    }
+    const n = Math.round(Number(raw));
+    this.setSignalTf(signal, base, Number.isFinite(n) && n >= 2 ? n : null);
   }
 
   formulaParseHint(signal: LogicIndicatorSignalRow): string | null {

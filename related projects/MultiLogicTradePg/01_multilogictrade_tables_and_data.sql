@@ -1,6 +1,8 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v64 (идемпотентный запуск)
+-- Версия: v65 (идемпотентный запуск)
+-- v65: мультитаймфрейм-сигналы tf=<База>[×k] (#843): уникальность timeframes(tf/sec)
+--      для автосоздания производных ТФ (M7 и т.п.); сами ТФ создаёт signal_tf_id_for_sec
 -- v64: T-Bank API host invest-public-api.tbank.ru (не tinkoff.ru); см. developer.tbank.ru network
 -- v63: APP_TBANK_ORDER_CHANNEL (postgres|node) — канал боевых PostOrder; node = прокси через локальный API
 -- v62: EOD close (close_positions_eod) не зависит от use_non_trading_periods; last bar до вечернего окна
@@ -493,6 +495,8 @@ ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS tf VARCHAR(20);
 ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS full_name VARCHAR(50);
 ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS sec INTEGER CHECK (sec > 0);
 ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+-- v65: для ON CONFLICT (tf) при автосоздании производных ТФ (tf=M1*7 → M7) на старых БД
+CREATE UNIQUE INDEX IF NOT EXISTS uq_timeframes_tf ON timeframes(tf);
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 

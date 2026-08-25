@@ -5144,6 +5144,9 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -11387,6 +11390,90 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -14233,6 +14320,7 @@ DECLARE
     v_grp RECORD;
     v_sig RECORD;
     v_eval RECORD;
+    v_pt RECORD;
     v_created INTEGER := 0;
     v_all_ok BOOLEAN;
     v_formulas TEXT;
@@ -14457,10 +14545,18 @@ BEGIN
                       AND lis.position_side = v_grp.position_side
                     ORDER BY lis.display_order, lis.id
                 LOOP
+                    -- ТФ сигнала (tf=) и его закрытый бар до close бара логики.
+                    SELECT * INTO v_pt
+                    FROM logic_signal_eval_point(v_sig.formula, p_tf_id, p_closed_bar_dt);
+                    IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                        v_all_ok := FALSE;
+                        CONTINUE;
+                    END IF;
+
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
                         -- Inversion flips sides only; keep original band/SMA conditions.
-                        v_sig.id, v_sec.security_id, p_tf_id, p_closed_bar_dt,
+                        v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
                         FALSE, v_arm.values_json
                     );
                     IF v_eval.close_price IS NULL THEN
@@ -16115,7 +16211,241 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION prices_have_closed_bar(INTEGER, INTEGER, TIMESTAMP) IS
-'True если в prices уже есть свеча ровно на closed bar — load_prices можно пропустить';
+'True если в prices уже есть свеча ровно на закрытой свече — load_prices можно пропустить';
+
+-- =============================================================
+-- Мультитаймфрейм-сигналы (#843): параметр tf=<База>[×k] в формуле.
+--   tf=M15 — каталожный ТФ; tf=M1*7 (или M1×7) — производный M7 (sec=420),
+--   строка в каталоге timeframes создаётся автоматически при первом использовании.
+-- Сетка баров выровнена к началу эпохи (тот же якорь использует ресемпл из M1).
+-- Правило без заглядывания: сигнал ТФ=X оценивается на последнем баре X,
+-- который ЗАКРЫЛСЯ не позже закрытия текущего бара ТФ логики.
+-- Пустой/неверный tf → сигнал наследует ТФ логики.
+-- =============================================================
+
+CREATE OR REPLACE FUNCTION signal_param_value(p_params TEXT, p_key TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v_chunk TEXT;
+    v_lower TEXT;
+    v_prefix TEXT := lower(p_key) || '=';
+BEGIN
+    IF p_params IS NULL OR p_key IS NULL THEN
+        RETURN NULL;
+    END IF;
+    FOR v_chunk IN
+        SELECT unnest(signal_split_params_top_level(p_params))
+    LOOP
+        v_lower := lower(btrim(v_chunk));
+        IF v_lower LIKE v_prefix || '%' THEN
+            RETURN btrim(substr(v_lower, length(v_prefix) + 1));
+        END IF;
+    END LOOP;
+    RETURN NULL;
+END;
+$$;
+
+COMMENT ON FUNCTION signal_param_value(TEXT, TEXT) IS
+'Значение параметра key=… из строки params формулы сигнала (top-level запятые), NULL если нет';
+
+CREATE OR REPLACE FUNCTION signal_tf_parse_sec(p_tf_expr TEXT)
+RETURNS INTEGER
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v TEXT;
+    v_units TEXT;
+    v_num INTEGER;
+    v_mult INTEGER := 1;
+    v_unit_sec INTEGER;
+BEGIN
+    v := lower(btrim(COALESCE(p_tf_expr, '')));
+    IF v = '' THEN
+        RETURN NULL;
+    END IF;
+    -- Формы: m15 | m15*4 | m15 x 4 | m15×4 ; регистр и пробелы не важны
+    IF v !~ '^([mhdw])[ ]?([0-9]{1,4})([ ]?[*x×][ ]?([0-9]{1,3}))?$' THEN
+        RETURN NULL;
+    END IF;
+    v_units := substring(v from '^([mhdw])');
+    v_num := substring(v from '[ ]?([0-9]{1,4})')::INTEGER;
+    BEGIN
+        v_mult := COALESCE(substring(v from '[*x×][ ]?([0-9]{1,3})$'), '')::INTEGER;
+    EXCEPTION WHEN OTHERS THEN
+        v_mult := 1;
+    END;
+    IF v_mult IS NULL OR v_mult < 1 THEN v_mult := 1; END IF;
+    v_unit_sec := CASE v_units
+        WHEN 'm' THEN 60
+        WHEN 'h' THEN 3600
+        WHEN 'd' THEN 86400
+        WHEN 'w' THEN 604800
+        ELSE NULL
+    END;
+    IF v_unit_sec IS NULL OR v_num < 1 THEN
+        RETURN NULL;
+    END IF;
+    RETURN v_unit_sec * v_num * v_mult;
+END;
+$$;
+
+COMMENT ON FUNCTION signal_tf_parse_sec(TEXT) IS
+'tf-выражение (M15, M1*7, H1×2 …) → секунды ТФ; NULL если пусто/неверно';
+
+CREATE OR REPLACE FUNCTION signal_tf_name_for_sec(p_sec INTEGER)
+RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+    IF p_sec IS NULL OR p_sec < 60 THEN
+        RETURN NULL;
+    END IF;
+    IF p_sec < 3600 THEN
+        RETURN 'M' || (p_sec / 60);
+    ELSIF p_sec < 86400 AND p_sec % 3600 = 0 THEN
+        RETURN 'H' || (p_sec / 3600);
+    ELSIF p_sec < 604800 AND p_sec % 86400 = 0 THEN
+        RETURN 'D' || (p_sec / 86400);
+    ELSIF p_sec % 604800 = 0 THEN
+        RETURN 'W' || (p_sec / 604800);
+    ELSE
+        RETURN 'T' || p_sec;
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION signal_tf_id_for_sec(p_sig_sec INTEGER, p_fallback_tf_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_id INTEGER;
+    v_name TEXT;
+BEGIN
+    IF p_sig_sec IS NULL OR p_sig_sec < 60 THEN
+        RETURN p_fallback_tf_id;
+    END IF;
+    SELECT t.id INTO v_id FROM timeframes t WHERE t.sec = p_sig_sec LIMIT 1;
+    IF v_id IS NOT NULL THEN
+        RETURN v_id;
+    END IF;
+    v_name := signal_tf_name_for_sec(p_sig_sec);
+    INSERT INTO timeframes (tf, full_name, sec, is_active)
+    VALUES (
+        v_name,
+        v_name || ' (авто, tf-параметр сигнала)',
+        p_sig_sec,
+        TRUE
+    )
+    ON CONFLICT (tf) DO NOTHING
+    RETURNING id INTO v_id;
+    IF v_id IS NULL THEN
+        SELECT t.id INTO v_id FROM timeframes t WHERE t.sec = p_sig_sec LIMIT 1;
+    END IF;
+    RETURN COALESCE(v_id, p_fallback_tf_id);
+END;
+$$;
+
+COMMENT ON FUNCTION signal_tf_id_for_sec(INTEGER, INTEGER) IS
+'id каталога timeframes для секунд ТФ; строка M7-style создаётся при первом использовании';
+
+-- Точка оценки сигнала: его собственный tf_id и выровненный закрытый бар
+-- (последний бар sig-TF, закрывшийся не позже close текущего бара логики).
+CREATE OR REPLACE FUNCTION logic_signal_eval_point(
+    p_formula TEXT,
+    p_logic_tf_id INTEGER,
+    p_logic_bar_dt TIMESTAMP
+)
+RETURNS TABLE (tf_id INTEGER, bar_dt TIMESTAMP)
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v_parsed RECORD;
+    v_expr TEXT;
+    v_logic_sec INTEGER;
+    v_sig_sec INTEGER;
+    v_limit_epoch DOUBLE PRECISION;
+    v_n DOUBLE PRECISION;
+BEGIN
+    SELECT t.sec INTO v_logic_sec FROM timeframes t WHERE t.id = p_logic_tf_id;
+    IF v_logic_sec IS NULL OR v_logic_sec < 60 THEN
+        tf_id := p_logic_tf_id;
+        bar_dt := p_logic_bar_dt;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    SELECT * INTO v_parsed FROM parse_signal_formula(p_formula);
+    v_expr := CASE WHEN COALESCE(v_parsed.valid, FALSE)
+        THEN signal_param_value(v_parsed.params, 'tf')
+        ELSE NULL END;
+
+    v_sig_sec := signal_tf_parse_sec(v_expr);
+    IF v_sig_sec IS NULL THEN
+        -- Наследование: ТФ логики, бар как передан
+        tf_id := p_logic_tf_id;
+        bar_dt := p_logic_bar_dt;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    tf_id := signal_tf_id_for_sec(v_sig_sec, p_logic_tf_id);
+
+    v_limit_epoch := EXTRACT(EPOCH FROM (p_logic_bar_dt + make_interval(secs => v_logic_sec)));
+    v_n := floor(v_limit_epoch / v_sig_sec);
+    IF v_n < 1 THEN
+        tf_id := NULL;
+        bar_dt := NULL;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    bar_dt := TIMESTAMP '1970-01-01 00:00:00'
+        + make_interval(secs => ((v_n - 1) * v_sig_sec)::INTEGER);
+    RETURN NEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_signal_eval_point(TEXT, INTEGER, TIMESTAMP) IS
+'Точка оценки сигнала по его tf= параметру: (id ТФ, последний закрытый бар этого ТФ до close бара логики); NULL = данных ещё нет';
+
+-- Различные ТФ всех активных сигналов логики (+ базовый) — для догрузки цен/серий.
+CREATE OR REPLACE FUNCTION logic_signal_extra_tf_ids(
+    p_logic_id INTEGER,
+    p_base_tf_id INTEGER
+)
+RETURNS TABLE (tf_id INTEGER)
+LANGUAGE plpgsql AS $$
+DECLARE
+    r RECORD;
+    v_expr TEXT;
+    v_parsed RECORD;
+    v_sec INTEGER;
+    v_tid INTEGER;
+    v_seen INTEGER[] := ARRAY[p_base_tf_id];
+BEGIN
+    FOR r IN
+        SELECT lis.formula
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+    LOOP
+        SELECT * INTO v_parsed FROM parse_signal_formula(r.formula);
+        IF NOT COALESCE(v_parsed.valid, FALSE) THEN
+            CONTINUE;
+        END IF;
+        v_expr := signal_param_value(v_parsed.params, 'tf');
+        v_sec := signal_tf_parse_sec(v_expr);
+        IF v_sec IS NULL THEN
+            CONTINUE;
+        END IF;
+        v_tid := signal_tf_id_for_sec(v_sec, p_base_tf_id);
+        IF NOT (v_tid = ANY(v_seen)) THEN
+            v_seen := array_append(v_seen, v_tid);
+            tf_id := v_tid;
+            RETURN NEXT;
+        END IF;
+    END LOOP;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_signal_extra_tf_ids(INTEGER, INTEGER) IS
+'Различные дополнительные ТФ активных сигналов логики (кроме базового) — для загрузки цен/серий';
 
 -- Если история уже есть — догружаем только день закрытого бара (1 HTTP), не весь lookback.
 CREATE OR REPLACE FUNCTION prices_topup_date_from(
@@ -16498,6 +16828,11 @@ DECLARE
     v_up NUMERIC;                 -- цена исполнения из ответа/состояния заявки
     v_state JSONB;                -- GetOrderState (комиссия/цена исполнения)
     v_c NUMERIC;                  -- комиссия из состояния заявки
+    v_pt RECORD;                  -- точка оценки сигнала (его ТФ + выровненный бар)
+    v_tf_list INTEGER[];          -- все ТФ сигналов логики (+ базовый) для загрузки
+    v_rtf INTEGER;
+    v_rtf_sec INTEGER;
+    v_rclosed TIMESTAMP;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -16599,7 +16934,27 @@ BEGIN
         RETURN 0;
     END IF;
 
-    CALL logic_refresh_market_data(p_logic_id, v_tf_id, v_closed_bar_dt);
+    -- Загрузка цен/серий по ТФ логики И по всем ТФ сигналов (tf= в формулах).
+    v_tf_list := ARRAY[v_tf_id] || COALESCE(
+        (SELECT array_agg(x.tf_id ORDER BY x.tf_id)
+         FROM logic_signal_extra_tf_ids(p_logic_id, v_tf_id) x),
+        ARRAY[]::INTEGER[]
+    );
+    FOREACH v_rtf IN ARRAY v_tf_list LOOP
+        IF v_rtf IS NULL THEN
+            CONTINUE;
+        END IF;
+        IF v_rtf = v_tf_id THEN
+            CALL logic_refresh_market_data(p_logic_id, v_rtf, v_closed_bar_dt);
+        ELSE
+            SELECT t.sec INTO v_rtf_sec FROM timeframes t WHERE t.id = v_rtf;
+            v_rclosed := COALESCE(
+                logic_last_closed_bar_dt(v_rtf_sec),
+                v_closed_bar_dt
+            );
+            CALL logic_refresh_market_data(p_logic_id, v_rtf, v_rclosed);
+        END IF;
+    END LOOP;
 
     -- Рейтинг сигнала на логике: проверить прошлые срабатывания на следующей свече
     PERFORM logic_signal_rating_resolve_pending(p_logic_id, v_tf_id, v_closed_bar_dt);
@@ -16734,10 +17089,27 @@ BEGIN
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
             LOOP
+                -- ТФ сигнала (tf= в формуле) и его последний закрытый бар
+                -- до закрытия бара логики — без заглядывания в будущее.
+                SELECT * INTO v_pt
+                FROM logic_signal_eval_point(v_sig.formula, v_tf_id, v_closed_bar_dt);
+                IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                    v_all_ok := FALSE;
+                    PERFORM logic_trade_log(
+                        p_logic_id,
+                        'trade.not_ready',
+                        format('Нет истории для tf сигнала: %s', v_sig.formula),
+                        jsonb_build_object('formula', v_sig.formula),
+                        v_sec.security_id,
+                        v_tf_id
+                    );
+                    CONTINUE;
+                END IF;
+
                 SELECT * INTO v_eval
                 FROM logic_signal_evaluate_at(
                     -- Inversion flips sides only (see backtest runner); keep conditions.
-                    v_sig.id, v_sec.security_id, v_tf_id, v_closed_bar_dt, FALSE
+                    v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt, FALSE
                 );
 
                 IF v_eval.close_price IS NULL THEN
@@ -17078,7 +17450,9 @@ BEGIN
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
                 v_side_id, v_action_id, v_grp.position_event, v_signal_kind, v_formulas,
-                v_quantity, v_pp, COALESCE(v_commission, 0), v_ind_dt, v_is_simulated, FALSE, v_is_shadow, FALSE,
+                -- bar_dt сделки = бар ТФ логики (стабильная идемпотентность,
+                -- даже если члены AND-группы на разных tf=)
+                v_quantity, v_pp, COALESCE(v_commission, 0), v_closed_bar_dt, v_is_simulated, FALSE, v_is_shadow, FALSE,
                 '', v_broker_order_id, v_status, v_note
             )
             ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow, opt_lane) DO NOTHING
@@ -18123,6 +18497,8 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_ind RECORD;
     v_need_prices BOOLEAN;
+    v_mtf RECORD;
+    v_mtf_point_count INTEGER;
 BEGIN
     p_prices_loaded := 0;
     p_prices_cached := 0;
@@ -18320,6 +18696,61 @@ BEGIN
                 p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
                 jsonb_build_object('security_id', p_security_id, 'indicator_id', v_ind.indicator_id),
                 p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
+
+    -- Мультитаймфрейм-сигналы (#843): цены + серии на ТФ каждого tf= сигнала.
+    -- Окно точек масштабируется от ТФ логики (M5-сигнал на M15-логике → ×3 баров).
+    FOR v_mtf IN
+        SELECT x.tf_id, GREATEST(t.sec, 60) AS tf_sec
+        FROM logic_signal_extra_tf_ids(p_logic_id, p_tf_id) x
+        JOIN timeframes t ON t.id = x.tf_id
+    LOOP
+        BEGIN
+            v_mtf_point_count := CEIL(
+                p_point_count * GREATEST((SELECT t.sec FROM timeframes t WHERE t.id = p_tf_id), 60)::NUMERIC
+                / v_mtf.tf_sec
+            )::INTEGER + 50;
+
+            BEGIN
+                CALL load_prices(p_security_id, v_mtf.tf_id, p_warmup_from, p_date_to);
+                p_prices_loaded := p_prices_loaded + 1;
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM logic_backtest_log(
+                    p_run_id, p_logic_id, 'backtest.prices.error', SQLERRM,
+                    jsonb_build_object('security_id', p_security_id, 'role', 'signal_tf'),
+                    p_security_id, v_mtf.tf_id
+                );
+            END;
+
+            FOR v_ind IN
+                SELECT DISTINCT lis.indicator_id
+                FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+            LOOP
+                BEGIN
+                    CALL ensure_security_indicator_series(p_security_id, v_ind.indicator_id);
+                    CALL logic_apply_indicator_params_from_signals(p_logic_id, p_security_id);
+                    CALL sync_security_indicator_series_for_indicator(
+                        p_security_id, v_ind.indicator_id, v_mtf.tf_id, p_end_dt, v_mtf_point_count, FALSE
+                    );
+                    p_ind_synced := p_ind_synced + 1;
+                EXCEPTION WHEN OTHERS THEN
+                    p_ind_errors := p_ind_errors + 1;
+                    PERFORM logic_backtest_log(
+                        p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+                        jsonb_build_object('security_id', p_security_id, 'indicator_id', v_ind.indicator_id, 'role', 'signal_tf'),
+                        p_security_id, v_mtf.tf_id
+                    );
+                END;
+            END LOOP;
+        EXCEPTION WHEN OTHERS THEN
+            p_ind_errors := p_ind_errors + 1;
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.signal_tf.error', SQLERRM,
+                jsonb_build_object('security_id', p_security_id, 'tf_id', v_mtf.tf_id),
+                p_security_id, v_mtf.tf_id
             );
         END;
     END LOOP;
@@ -19834,6 +20265,7 @@ DECLARE
     v_grp RECORD;
     v_sig RECORD;
     v_eval RECORD;
+    v_pt RECORD;
     v_is_shadow BOOLEAN;
     v_held_long NUMERIC;
     v_held_short NUMERIC;
@@ -19987,16 +20419,24 @@ BEGIN
                 -- Inversion = ReverseSides only (Long↔Short). Do NOT invert
                 -- comparison ops: for band fades (pp<=LOWER) that would become
                 -- pp>=LOWER (almost always true) → trade spam, no equity mirror.
+                -- ТФ сигнала (tf=) и его закрытый бар до close бара логики.
+                SELECT * INTO v_pt
+                FROM logic_signal_eval_point(v_sig.formula, p_tf_id, p_bar_dt);
+                IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                    v_all_ok := FALSE;
+                    CONTINUE;
+                END IF;
+
                 IF v_use_opt THEN
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
-                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt,
+                        v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
                         FALSE, NULL
                     );
                 ELSE
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at(
-                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
+                        v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt, FALSE
                     );
                 END IF;
 
@@ -22031,6 +22471,9 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
+
 
 
 

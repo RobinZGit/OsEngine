@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-25 — #842: откат сид-логики LinReg Fade Trend (плохо показала себя на реальном использовании; не пушилась) вместе с сопутствующим окном синка 800→200/150; остаются ресайз колонок и полное копирование логики #841; installers **v1.0.154**
+**Последнее обновление:** 2026-08-25 — #843: **мультитаймфрейм-сигналы** — параметр `tf=<База>[×k]` в формуле (M1*7 = M7, автосоздание в каталоге), оценка по последнему закрытому бару своего ТФ без заглядывания; runner/backtest/OPT считают сигналы на своих ТФ и сами догружают цены/серии; UI: выбор ТФ × множителя у каждого сигнала; installers **v1.0.155**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,17 @@
 ---
 
 ## Что сделано (актуально на 2026-08-25)
+
+### 2026-08-25 (#843: мультитаймфрейм-сигналы — tf= в формуле каждого сигнала)
+
+- **Синтаксис (подтверждён Sergey):** `tf=<База>[×|*|x]<целое>` внутри `@CODE(...)`: `tf=M15`, `tf=M1*7` (= M7), `tf=M1×7`. База — каталог M1…D1. Пусто/нет параметра → сигнал наследует ТФ логики → **все существующие логики работают как раньше**.
+- **Семантика:** сигнал оценивается на последнем закрытом баре своего ТФ, который закрылся **не позже** закрытия текущего бара ТФ логики (без заглядывания). Сетка выровнена к началу эпохи — тот же якорь использует ресемпл из M1. Сделка по-прежнему пишется на баре ТФ логики (идемпотентность стабильна при смешанных AND-группах).
+- **SQL-хелперы** (`sql/logic_trade_runner.sql` + sync в `02`): `signal_param_value`, `signal_tf_parse_sec`, `signal_tf_name_for_sec`, `signal_tf_id_for_sec` (автосоздание `M7`-строк в `timeframes`; уникальный индекс `uq_timeframes_tf` в 01 v65), `logic_signal_eval_point`, `logic_signal_extra_tf_ids`.
+- **Runner:** перед циклом догружает цены/серии по всем ТФ активных сигналов (`logic_refresh_market_data` на каждый); каждый сигнал оценивается через eval-point; OPT-ветки аналогично.
+- **Backtest:** `logic_backtest_ensure_security_data` грузит цены и синкает серии каждого доп. ТФ (окно точек масштабируется от сек ТФ логики); обе ветки оценки (обычная/OPT) идут через eval-point.
+- **UI:** у каждого сигнала контролы «ТФ: [база▾] × [множитель]» над формулой; изменение перезаписывает `tf=` в формуле и автосейвит; helpers `extractSignalTf`/`applySignalTf` в shared.
+- **Ограничения (задокументированы):** производные интервалы строятся ресемплом из M1 — глубина минутки у T-Bank ограничена, история накапливается со временем; стопы/денежный фонд/EOD остаются на простых ТФ каталога.
+- Проверено: verify:sql OK (core+full), тесты 78/78, прод-сборка OK; функциональные тесты хелперов на verify-БД (парсер, автосоздание M7, выравнивание бара).
 
 ### 2026-08-25 (#842: откат LinReg Fade Trend; остаются #841-правки)
 
@@ -1281,7 +1292,7 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-08-25 | #841: resizable logic-list columns (localStorage + dblclick reset); full logic copy — signal_acts_on, stop inversion_value, per-paper pause/invert, OPT grid |
+| 2026-08-25 | #843: per-signal timeframes — tf=BASE[×k] in formula, M7-style auto-catalog, no-lookahead aligned bars; runner/backtest/OPT multi-TF load+eval; UI TF base×mult controls |
 | 2026-08-25 | #842: revert LinReg Fade Trend seed (#840, never pushed) + sync window back to 200/150; keep #841 |
 | 2026-08-25 | #838: no-borrow audit long+short; gap guards order_gap_buffer_pct/max_open_gap_pct + fresh-price check (stop TF); exact fill price into exposure; park excludes short proceeds; installers v1.0.151 |
 | 2026-08-25 | #837: installer No=upgrade verified; SHIPPED local-only sizing fix into 02 (no portfolio fallback + order pause); push-permission rule; installers v1.0.149 |

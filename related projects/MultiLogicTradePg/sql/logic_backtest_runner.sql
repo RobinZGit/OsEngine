@@ -385,6 +385,8 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_ind RECORD;
     v_need_prices BOOLEAN;
+    v_mtf RECORD;
+    v_mtf_point_count INTEGER;
 BEGIN
     p_prices_loaded := 0;
     p_prices_cached := 0;
@@ -582,6 +584,61 @@ BEGIN
                 p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
                 jsonb_build_object('security_id', p_security_id, 'indicator_id', v_ind.indicator_id),
                 p_security_id, p_tf_id
+            );
+        END;
+    END LOOP;
+
+    -- Мультитаймфрейм-сигналы (#843): цены + серии на ТФ каждого tf= сигнала.
+    -- Окно точек масштабируется от ТФ логики (M5-сигнал на M15-логике → ×3 баров).
+    FOR v_mtf IN
+        SELECT x.tf_id, GREATEST(t.sec, 60) AS tf_sec
+        FROM logic_signal_extra_tf_ids(p_logic_id, p_tf_id) x
+        JOIN timeframes t ON t.id = x.tf_id
+    LOOP
+        BEGIN
+            v_mtf_point_count := CEIL(
+                p_point_count * GREATEST((SELECT t.sec FROM timeframes t WHERE t.id = p_tf_id), 60)::NUMERIC
+                / v_mtf.tf_sec
+            )::INTEGER + 50;
+
+            BEGIN
+                CALL load_prices(p_security_id, v_mtf.tf_id, p_warmup_from, p_date_to);
+                p_prices_loaded := p_prices_loaded + 1;
+            EXCEPTION WHEN OTHERS THEN
+                PERFORM logic_backtest_log(
+                    p_run_id, p_logic_id, 'backtest.prices.error', SQLERRM,
+                    jsonb_build_object('security_id', p_security_id, 'role', 'signal_tf'),
+                    p_security_id, v_mtf.tf_id
+                );
+            END;
+
+            FOR v_ind IN
+                SELECT DISTINCT lis.indicator_id
+                FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+            LOOP
+                BEGIN
+                    CALL ensure_security_indicator_series(p_security_id, v_ind.indicator_id);
+                    CALL logic_apply_indicator_params_from_signals(p_logic_id, p_security_id);
+                    CALL sync_security_indicator_series_for_indicator(
+                        p_security_id, v_ind.indicator_id, v_mtf.tf_id, p_end_dt, v_mtf_point_count, FALSE
+                    );
+                    p_ind_synced := p_ind_synced + 1;
+                EXCEPTION WHEN OTHERS THEN
+                    p_ind_errors := p_ind_errors + 1;
+                    PERFORM logic_backtest_log(
+                        p_run_id, p_logic_id, 'backtest.indicator.error', SQLERRM,
+                        jsonb_build_object('security_id', p_security_id, 'indicator_id', v_ind.indicator_id, 'role', 'signal_tf'),
+                        p_security_id, v_mtf.tf_id
+                    );
+                END;
+            END LOOP;
+        EXCEPTION WHEN OTHERS THEN
+            p_ind_errors := p_ind_errors + 1;
+            PERFORM logic_backtest_log(
+                p_run_id, p_logic_id, 'backtest.signal_tf.error', SQLERRM,
+                jsonb_build_object('security_id', p_security_id, 'tf_id', v_mtf.tf_id),
+                p_security_id, v_mtf.tf_id
             );
         END;
     END LOOP;
@@ -2096,6 +2153,7 @@ DECLARE
     v_grp RECORD;
     v_sig RECORD;
     v_eval RECORD;
+    v_pt RECORD;
     v_is_shadow BOOLEAN;
     v_held_long NUMERIC;
     v_held_short NUMERIC;
@@ -2249,16 +2307,24 @@ BEGIN
                 -- Inversion = ReverseSides only (Long↔Short). Do NOT invert
                 -- comparison ops: for band fades (pp<=LOWER) that would become
                 -- pp>=LOWER (almost always true) → trade spam, no equity mirror.
+                -- ТФ сигнала (tf=) и его закрытый бар до close бара логики.
+                SELECT * INTO v_pt
+                FROM logic_signal_eval_point(v_sig.formula, p_tf_id, p_bar_dt);
+                IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                    v_all_ok := FALSE;
+                    CONTINUE;
+                END IF;
+
                 IF v_use_opt THEN
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
-                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt,
+                        v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
                         FALSE, NULL
                     );
                 ELSE
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at(
-                        v_sig.id, v_sec.security_id, p_tf_id, p_bar_dt, FALSE
+                        v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt, FALSE
                     );
                 END IF;
 

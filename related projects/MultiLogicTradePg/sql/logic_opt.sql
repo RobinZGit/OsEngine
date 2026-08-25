@@ -1190,6 +1190,7 @@ DECLARE
     v_grp RECORD;
     v_sig RECORD;
     v_eval RECORD;
+    v_pt RECORD;
     v_created INTEGER := 0;
     v_all_ok BOOLEAN;
     v_formulas TEXT;
@@ -1414,10 +1415,18 @@ BEGIN
                       AND lis.position_side = v_grp.position_side
                     ORDER BY lis.display_order, lis.id
                 LOOP
+                    -- ТФ сигнала (tf=) и его закрытый бар до close бара логики.
+                    SELECT * INTO v_pt
+                    FROM logic_signal_eval_point(v_sig.formula, p_tf_id, p_closed_bar_dt);
+                    IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                        v_all_ok := FALSE;
+                        CONTINUE;
+                    END IF;
+
                     SELECT * INTO v_eval
                     FROM logic_signal_evaluate_at_opt(
                         -- Inversion flips sides only; keep original band/SMA conditions.
-                        v_sig.id, v_sec.security_id, p_tf_id, p_closed_bar_dt,
+                        v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
                         FALSE, v_arm.values_json
                     );
                     IF v_eval.close_price IS NULL THEN
