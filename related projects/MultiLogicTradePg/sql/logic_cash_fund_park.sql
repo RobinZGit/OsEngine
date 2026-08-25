@@ -234,6 +234,7 @@ DECLARE
     v_fund_qty NUMERIC;
     v_fund_mtm NUMERIC;
     v_excess NUMERIC;
+    v_short_notional NUMERIC := 0;
 BEGIN
     SELECT l.id, l.account_id, a.account_type, a.is_active
     INTO v_logic
@@ -339,7 +340,32 @@ BEGIN
     END IF;
 
     -- Избыток = equity − порог; докупаем min(кэш, избыток − уже_в_фонде); фонд не продаём.
+    -- Кэш реального счёта раздут выручкой шортов — вычитаем номинал открытых шортов,
+    -- иначе парковка тратит «заёмные» деньги и углубляет позицию по займам.
     v_equity := COALESCE(logic_portfolio_equity(p_logic_id, v_tf_id), v_balance);
+    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
+    INTO v_short_notional
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                WHERE l.open_trade_id = lt.id
+            ), 0),
+            0
+        ) AS qty
+    ) rem
+    WHERE lt.logic_id = p_logic_id
+      AND NOT lt.is_shadow
+      AND lt.is_test = FALSE
+      AND COALESCE(lt.opt_lane, '') = ''
+      AND lt.status IN ('filled', 'submitted')
+      AND s.name = 'Open'
+      AND a.name = 'Short'
+      AND rem.qty > 0;
     v_fund_qty := CASE
         WHEN v_security_id IS NOT NULL
             THEN logic_long_position_qty(p_logic_id, v_security_id, FALSE, FALSE)
@@ -347,13 +373,18 @@ BEGIN
     END;
     v_fund_mtm := COALESCE(v_fund_qty, 0) * v_price;
     v_excess := v_equity - v_threshold;
-    v_park_amount := LEAST(v_balance, GREATEST(0, v_excess - v_fund_mtm));
+    v_park_amount := LEAST(
+        GREATEST(0, v_balance - v_short_notional),
+        GREATEST(0, v_excess - v_fund_mtm)
+    );
 
     IF v_park_amount <= 0 THEN
         RETURN jsonb_build_object(
             'skipped', TRUE,
             'reason', 'below_threshold',
             'balance', v_balance,
+            'balance_net', GREATEST(0, v_balance - v_short_notional),
+            'short_notional', v_short_notional,
             'equity', v_equity,
             'fund_mtm', v_fund_mtm,
             'excess', v_excess,

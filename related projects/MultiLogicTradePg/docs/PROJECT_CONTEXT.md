@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-25 — #837: инсталлятор «Нет» (upgrade) переписывает все функции БД; выложен локальный фикс сайзинга («нет cash_amount → 0, не весь портфель» + пауза заявок) в `02`; безусловное правило «пуш только с разрешения Sergey»; installers **v1.0.149**
+**Последнее обновление:** 2026-08-25 — #838: полный аудит «без займа» (лонг+шорт) и защита от резкого движения цены: новые параметры `order_gap_buffer_pct` / `max_open_gap_pct`, точная цена исполнения в exposure, парковка фонда без шорт-выручки; installers **v1.0.150**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,17 @@
 ---
 
 ## Что сделано (актуально на 2026-08-25)
+
+### 2026-08-25 (#838: аудит «без займа» long+short; защита от гэпа исполнения)
+
+- **Аудит истории (итог):** цепочка защит «плечо ≤ 1» собрана из коммитов `fc225de`/`c37bf50` (25.07: free_cash база, real-остатки только с брокера) → `1d4b955` (26.07: потолок номинала %×макс.позиций, long+short одним номиналом) → `219fa20` (27.07: `logic_exposure_cycle_budget` = LEAST(база, net equity); fake-equity = cash − short notional + long MTM) → локальный фикс 28.07, выложенный в #837-пуше («нет cash_amount → 0», пауза заявок). Инциденты #359/#824/#837 на remote — старый `02`/fallback при equity=0.
+- **Проверено — деньги в долг НЕ берутся:** лонг: qty = floor(%×LEAST(free_cash,equity)/цена) вниз до лота + room ≤ потолка; шорт: тот же потолок номинала, деньги на открытие не тратятся (заём бумаг — разрешён), кэш после шорта раздут, но база режется LEAST с net equity; закрытия/стопы уменьшают exposure; rejections не занимают потолок.
+- **Найденные дыры закрыты:**
+  1. **Гэп цена сигнала → исполнение** (market): фактическая покупка дороже расчётной = заём сверх остатка. Теперь параметр **`order_gap_buffer_pct`** — qty считается по цене × (1+буфер), и **`max_open_gap_pct`** — перед Open свежая цена (стоп-ТФ, догрузка при необходимости через новую `logic_fresh_order_price`) сравнивается с ценой сигнала; отклонение > порога → `trade.gap_skip`, вход пропущен до следующей свечи. Оба — для long и short, пусто/0 = выкл (поведение как раньше).
+  2. **Цена записи сделки**: если PostOrder не дал цену исполнения — добирается из GetOrderState (`averagePositionPrice→initialSecurityPrice→stages→executed`); точный номинал в потолке и FinRes.
+  3. **Парковка фонда** (`logic_park_excess_cash`): из кэша вычитается номинал открытых шортов — парк больше не тратит шорт-выручку (заёмные деньги).
+- Файлы: `sql/logic_trade_runner.sql`, `sql/logic_cash_fund_park.sql` (+sync в `02`), `01_…sql` (defs v66: два новых параметра), `api/lib/logic-params.js`, `api/lib/server-shared.js`, UI форм параметров + Help. verify:sql OK, тесты 76/76, schema-offline регенерирована (327 routines).
+- **Ограничение (документировано):** шорт-закрытие BUY при гэпе против позиции может временно потребовать кэш сверху выручки — это убыток позиции, а не новый сайзинг; покрывается equity-капом следующих циклов. Фьючерсы: force-1-лот по-прежнему капится room.
 
 ### 2026-08-25 (#837: инсталлятор «Нет» переписывает функции — проверено; безусловное правило пуша)
 
@@ -1251,6 +1262,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-25 | #838: no-borrow audit long+short; gap guards order_gap_buffer_pct/max_open_gap_pct + fresh-price check (stop TF); exact fill price into exposure; park excludes short proceeds; installers v1.0.150 |
 | 2026-08-25 | #837: installer No=upgrade verified; SHIPPED local-only sizing fix into 02 (no portfolio fallback + order pause); push-permission rule; installers v1.0.149 |
 | 2026-08-24 | Papers: drop График/Эквити buttons; LINREG/SQUARE bands back on price scale (#836) |
 | 2026-08-24 | Portfolio equity: long/short pale zones (#835); price charts: candles/line toggle |

@@ -7,6 +7,8 @@ const PARAM_KEYS = {
   POSITION_SIZE_PCT: 'position_size_pct',
   MAX_OPEN_POSITIONS: 'max_open_positions',
   MAX_ORDER_AMOUNT: 'max_order_amount',
+  ORDER_GAP_BUFFER_PCT: 'order_gap_buffer_pct',
+  MAX_OPEN_GAP_PCT: 'max_open_gap_pct',
   INITIAL_BALANCE: 'initial_balance',
   CURRENT_BALANCE: 'current_balance',
   COMMISSION_PCT: 'commission_pct',
@@ -35,6 +37,8 @@ const DEFAULTS = {
   [PARAM_KEYS.POSITION_SIZE_PCT]: { value: '10', type: 'number' },
   [PARAM_KEYS.MAX_OPEN_POSITIONS]: { value: '5', type: 'integer' },
   [PARAM_KEYS.MAX_ORDER_AMOUNT]: { value: '', type: 'money' },
+  [PARAM_KEYS.ORDER_GAP_BUFFER_PCT]: { value: '', type: 'number' },
+  [PARAM_KEYS.MAX_OPEN_GAP_PCT]: { value: '', type: 'number' },
   [PARAM_KEYS.INITIAL_BALANCE]: { value: '', type: 'money' },
   [PARAM_KEYS.CURRENT_BALANCE]: { value: '', type: 'money' },
   [PARAM_KEYS.COMMISSION_PCT]: { value: '0.03', type: 'number' },
@@ -115,6 +119,8 @@ function rowsToTradingParams(rows) {
         ? Number(map[PARAM_KEYS.MAX_OPEN_POSITIONS])
         : 5,
     max_order_amount: map[PARAM_KEYS.MAX_ORDER_AMOUNT],
+    order_gap_buffer_pct: map[PARAM_KEYS.ORDER_GAP_BUFFER_PCT],
+    max_open_gap_pct: map[PARAM_KEYS.MAX_OPEN_GAP_PCT],
     initial_balance: map[PARAM_KEYS.INITIAL_BALANCE],
     current_balance: map[PARAM_KEYS.CURRENT_BALANCE],
     commission_pct:
@@ -360,6 +366,25 @@ async function saveTradingParams(pool, logicId, payload) {
       payload.max_order_amount,
       'money'
     );
+  }
+  // Защита от займа при резком движении: буфер цены исполнения и гэп-фильтр входа.
+  // Пусто/0 = выключено. Допустимый диапазон 0–50%.
+  for (const [key, paramKey] of [
+    ['order_gap_buffer_pct', PARAM_KEYS.ORDER_GAP_BUFFER_PCT],
+    ['max_open_gap_pct', PARAM_KEYS.MAX_OPEN_GAP_PCT],
+  ]) {
+    if (payload[key] !== undefined) {
+      const raw = payload[key];
+      if (raw === null || raw === '') {
+        await upsertParam(pool, logicId, paramKey, null, 'number');
+        continue;
+      }
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v < 0 || v > 50) {
+        throw new Error(`${key}: число от 0 до 50 или пусто`);
+      }
+      await upsertParam(pool, logicId, paramKey, v, 'number');
+    }
   }
   // Fake/test: начальный/сброс текущего — из параметров формы.
   // Real: остатки только с брокера (ниже sync), форму не принимаем.

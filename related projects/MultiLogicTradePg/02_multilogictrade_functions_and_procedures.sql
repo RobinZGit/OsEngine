@@ -5143,6 +5143,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -11358,6 +11359,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -11687,6 +11716,53 @@ $$;
 
 COMMENT ON FUNCTION logic_exposure_cycle_budget(INTEGER, INTEGER) IS
 'База цикла для % лота и потолка %×макс.позиций: LEAST(sizing_base, equity) — плечо ≤ 1 от equity.';
+
+-- Свежая цена бумаги на момент постановки Open-заявки: стоп-ТФ (обычно M5) свежее ТФ сигнала.
+-- Догружает цены при отсутствии (один HTTP на сигнал), возвращает последнюю цену + её бар.
+CREATE OR REPLACE FUNCTION logic_fresh_order_price(
+    p_logic_id INTEGER,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER
+)
+RETURNS TABLE (price NUMERIC, bar_dt TIMESTAMP)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_stop_tf_text TEXT;
+    v_tf_id INTEGER;
+    v_res NUMERIC;
+BEGIN
+    v_stop_tf_text := upper(btrim(COALESCE(get_logic_param_text(p_logic_id, 'stop_loss_timeframe'), '')));
+    IF v_stop_tf_text <> '' THEN
+        SELECT t.id INTO v_tf_id FROM timeframes t WHERE upper(t.tf) = v_stop_tf_text LIMIT 1;
+    END IF;
+    IF v_tf_id IS NULL THEN
+        v_tf_id := p_timeframe_id;
+    END IF;
+
+    v_res := logic_security_latest_price(p_security_id, v_tf_id);
+    IF v_res IS NULL OR v_res <= 0 THEN
+        BEGIN
+            PERFORM logic_ensure_security_market_price(p_logic_id, p_security_id, v_tf_id);
+            v_res := logic_security_latest_price(p_security_id, v_tf_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_res := NULL;
+        END;
+    END IF;
+
+    RETURN QUERY
+    SELECT v_res, p.dt
+    FROM prices p
+    WHERE p.security_id = p_security_id
+      AND p.timeframe_id = v_tf_id
+      AND v_res IS NOT NULL AND v_res > 0
+    ORDER BY p.dt DESC
+    LIMIT 1;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_fresh_order_price(INTEGER, INTEGER, INTEGER) IS
+'Свежая цена+бар для гэп-проверки входа: стоп-ТФ (fallback TF), догрузка при необходимости';
 
 -- Номинал уже открытых long+short (чемпион / бой или test; opt_lane отделяет paper OPT).
 -- Drop 3-arg overload so callers use the 4-arg form (p_run_id DEFAULT NULL).
@@ -16415,6 +16491,13 @@ DECLARE
     v_spent_notional NUMERIC := 0; -- уже занятый номинал Open (старые + этот прогон)
     v_room NUMERIC;
     v_order_notional NUMERIC;
+    v_gap_buffer_pct NUMERIC;     -- order_gap_buffer_pct: расчёт qty по цене pp×(1+буфер)
+    v_max_open_gap_pct NUMERIC;   -- max_open_gap_pct: пропуск входа при резком движении
+    v_fresh RECORD;               -- свежая цена (стоп-ТФ) для гэп-проверки
+    v_q2 INTEGER;                 -- количество после буфера
+    v_up NUMERIC;                 -- цена исполнения из ответа/состояния заявки
+    v_state JSONB;                -- GetOrderState (комиссия/цена исполнения)
+    v_c NUMERIC;                  -- комиссия из состояния заявки
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -16489,6 +16572,10 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_balance := logic_ensure_balance(p_logic_id);
     v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+    -- Защита от займа при резком движении цены между сигналом и исполнением:
+    -- буфер увеличивает расчётную цену (qty меньше), гэп-порог пропускает вход.
+    v_gap_buffer_pct := GREATEST(0, COALESCE(get_logic_param_numeric(p_logic_id, 'order_gap_buffer_pct', 0), 0));
+    v_max_open_gap_pct := GREATEST(0, COALESCE(get_logic_param_numeric(p_logic_id, 'max_open_gap_pct', 0), 0));
     -- База цикла ≤ equity: free_cash/cash_amount растёт от short-выручки / займа;
     -- mid-cycle freeze alone does not stop that. LEAST(sizing, equity) = плечо ≤ 1.
     -- После Close базу обновляем (свитч: кэш +/- для следующего Open).
@@ -16753,10 +16840,37 @@ BEGIN
             END;
             v_is_open_event := COALESCE(v_grp.position_event, 'open') = 'open';
 
-            IF v_eff_side = 'long' THEN
+                IF v_eff_side = 'long' THEN
                 IF v_is_open_event THEN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
+                    END IF;
+                    -- Гэп-фильтр входа: свежая цена ушла от цены сигнала больше порога — пропуск.
+                    IF NOT v_is_shadow AND v_max_open_gap_pct > 0 THEN
+                        SELECT * INTO v_fresh FROM logic_fresh_order_price(p_logic_id, v_sec.security_id, v_tf_id);
+                        IF v_fresh.price IS NOT NULL AND v_fresh.bar_dt IS NOT NULL
+                           AND v_fresh.bar_dt >= v_closed_bar_dt AND COALESCE(v_pp, 0) > 0
+                           AND ABS(v_fresh.price - v_pp) / v_pp * 100.0 > v_max_open_gap_pct THEN
+                            PERFORM logic_trade_log(
+                                p_logic_id,
+                                'trade.gap_skip',
+                                format(
+                                    'Гэп %s%% > %s%%: цена сигнала %s → рынок %s — вход пропущен',
+                                    round(ABS(v_fresh.price - v_pp) / v_pp * 100.0, 2),
+                                    v_max_open_gap_pct, v_pp, v_fresh.price
+                                ),
+                                jsonb_build_object(
+                                    'security_id', v_sec.security_id,
+                                    'pp', v_pp,
+                                    'fresh_price', v_fresh.price,
+                                    'fresh_bar_dt', v_fresh.bar_dt,
+                                    'max_open_gap_pct', v_max_open_gap_pct
+                                ),
+                                v_sec.security_id,
+                                v_tf_id
+                            );
+                            CONTINUE;
+                        END IF;
                     END IF;
                     -- Остаток под потолком %×макс.позиций (не весь баланс целиком).
                     v_room := GREATEST(0, v_max_exposure - v_spent_notional);
@@ -16766,6 +16880,16 @@ BEGIN
                     v_quantity := logic_calc_open_quantity(
                         v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
+                    -- Буфер цены исполнения: qty по худшей цене pp×(1+буфер) — меньше шанс займа.
+                    IF v_quantity >= v_lot_size AND v_gap_buffer_pct > 0 THEN
+                        v_q2 := logic_calc_open_quantity(
+                            v_cycle_budget, v_position_size_pct,
+                            v_pp * (1.0 + v_gap_buffer_pct / 100.0), v_lot_size, v_room
+                        );
+                        IF v_q2 < v_quantity THEN
+                            v_quantity := v_q2;
+                        END IF;
+                    END IF;
                     IF v_quantity < v_lot_size THEN
                         -- Фьючерсы: % депозита / цена контракта часто даёт 0 → 1 лот
                         -- (только при известной базе; акции — без force 1 лот)
@@ -16796,6 +16920,33 @@ BEGIN
                 IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                     CONTINUE;
                 END IF;
+                -- Гэп-фильтр входа (шорт): свежая цена ушла от цены сигнала больше порога — пропуск.
+                IF NOT v_is_shadow AND v_max_open_gap_pct > 0 THEN
+                    SELECT * INTO v_fresh FROM logic_fresh_order_price(p_logic_id, v_sec.security_id, v_tf_id);
+                    IF v_fresh.price IS NOT NULL AND v_fresh.bar_dt IS NOT NULL
+                       AND v_fresh.bar_dt >= v_closed_bar_dt AND COALESCE(v_pp, 0) > 0
+                       AND ABS(v_fresh.price - v_pp) / v_pp * 100.0 > v_max_open_gap_pct THEN
+                        PERFORM logic_trade_log(
+                            p_logic_id,
+                            'trade.gap_skip',
+                            format(
+                                'Гэп %s%% > %s%%: цена сигнала %s → рынок %s — вход пропущен',
+                                round(ABS(v_fresh.price - v_pp) / v_pp * 100.0, 2),
+                                v_max_open_gap_pct, v_pp, v_fresh.price
+                            ),
+                            jsonb_build_object(
+                                'security_id', v_sec.security_id,
+                                'pp', v_pp,
+                                'fresh_price', v_fresh.price,
+                                'fresh_bar_dt', v_fresh.bar_dt,
+                                'max_open_gap_pct', v_max_open_gap_pct
+                            ),
+                            v_sec.security_id,
+                            v_tf_id
+                        );
+                        CONTINUE;
+                    END IF;
+                END IF;
                 -- Short: тот же потолок, что и long (10×10% = 100% базы и т.д.).
                 v_room := GREATEST(0, v_max_exposure - v_spent_notional);
                 IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
@@ -16804,6 +16955,16 @@ BEGIN
                 v_quantity := logic_calc_open_quantity(
                     v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                 );
+                -- Буфер цены исполнения (шорт): qty по цене pp×(1+буфер) — номинал под контролем.
+                IF v_quantity >= v_lot_size AND v_gap_buffer_pct > 0 THEN
+                    v_q2 := logic_calc_open_quantity(
+                        v_cycle_budget, v_position_size_pct,
+                        v_pp * (1.0 + v_gap_buffer_pct / 100.0), v_lot_size, v_room
+                    );
+                    IF v_q2 < v_quantity THEN
+                        v_quantity := v_q2;
+                    END IF;
+                END IF;
                 IF v_quantity < v_lot_size THEN
                     IF v_is_futures AND v_cycle_budget IS NOT NULL AND v_cycle_budget > 0
                        AND v_lot_size * v_pp <= v_room THEN
@@ -16863,25 +17024,36 @@ BEGIN
                             v_order->'orderState'->>'orderId'
                         );
                         v_status := tbank_trade_status_from_post_order(v_order);
-                        v_commission := tbank_order_commission(v_order);
-                        IF v_commission <= 0 AND v_broker_order_id IS NOT NULL THEN
+                        -- Точная цена исполнения важна для потолка exposure:
+                        -- если PostOrder не дал цену/комиссию — добираем из GetOrderState.
+                        v_c := tbank_order_commission(v_order);
+                        IF v_c > 0 THEN
+                            v_commission := v_c;
+                        END IF;
+                        v_up := tbank_order_unit_price(v_order);
+                        IF (v_commission <= 0 OR v_up IS NULL) AND v_broker_order_id IS NOT NULL THEN
                             BEGIN
-                                v_order := tbank_get_order_state(
+                                v_state := tbank_get_order_state(
                                     v_logic.account_id, v_broker_order_id
                                 );
-                                v_commission := tbank_order_commission(v_order);
+                                v_c := tbank_order_commission(v_state);
+                                IF v_c > 0 THEN
+                                    v_commission := v_c;
+                                END IF;
                                 v_status := COALESCE(
-                                    NULLIF(tbank_trade_status_from_post_order(v_order), 'rejected'),
+                                    NULLIF(tbank_trade_status_from_post_order(v_state), 'rejected'),
                                     v_status
                                 );
+                                IF v_up IS NULL THEN
+                                    v_up := tbank_order_unit_price(v_state);
+                                END IF;
                             EXCEPTION
                                 WHEN OTHERS THEN
                                     NULL;
                             END;
                         END IF;
-                        IF tbank_order_unit_price(v_order) IS NOT NULL
-                           AND tbank_order_unit_price(v_order) > 0 THEN
-                            v_pp := tbank_order_unit_price(v_order);
+                        IF v_up IS NOT NULL AND v_up > 0 THEN
+                            v_pp := v_up;
                         END IF;
                         IF v_status = 'rejected' THEN
                             v_note := v_order::TEXT;
@@ -21541,6 +21713,7 @@ DECLARE
     v_fund_qty NUMERIC;
     v_fund_mtm NUMERIC;
     v_excess NUMERIC;
+    v_short_notional NUMERIC := 0;
 BEGIN
     SELECT l.id, l.account_id, a.account_type, a.is_active
     INTO v_logic
@@ -21646,7 +21819,32 @@ BEGIN
     END IF;
 
     -- Избыток = equity − порог; докупаем min(кэш, избыток − уже_в_фонде); фонд не продаём.
+    -- Кэш реального счёта раздут выручкой шортов — вычитаем номинал открытых шортов,
+    -- иначе парковка тратит «заёмные» деньги и углубляет позицию по займам.
     v_equity := COALESCE(logic_portfolio_equity(p_logic_id, v_tf_id), v_balance);
+    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
+    INTO v_short_notional
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                WHERE l.open_trade_id = lt.id
+            ), 0),
+            0
+        ) AS qty
+    ) rem
+    WHERE lt.logic_id = p_logic_id
+      AND NOT lt.is_shadow
+      AND lt.is_test = FALSE
+      AND COALESCE(lt.opt_lane, '') = ''
+      AND lt.status IN ('filled', 'submitted')
+      AND s.name = 'Open'
+      AND a.name = 'Short'
+      AND rem.qty > 0;
     v_fund_qty := CASE
         WHEN v_security_id IS NOT NULL
             THEN logic_long_position_qty(p_logic_id, v_security_id, FALSE, FALSE)
@@ -21654,13 +21852,18 @@ BEGIN
     END;
     v_fund_mtm := COALESCE(v_fund_qty, 0) * v_price;
     v_excess := v_equity - v_threshold;
-    v_park_amount := LEAST(v_balance, GREATEST(0, v_excess - v_fund_mtm));
+    v_park_amount := LEAST(
+        GREATEST(0, v_balance - v_short_notional),
+        GREATEST(0, v_excess - v_fund_mtm)
+    );
 
     IF v_park_amount <= 0 THEN
         RETURN jsonb_build_object(
             'skipped', TRUE,
             'reason', 'below_threshold',
             'balance', v_balance,
+            'balance_net', GREATEST(0, v_balance - v_short_notional),
+            'short_notional', v_short_notional,
             'equity', v_equity,
             'fund_mtm', v_fund_mtm,
             'excess', v_excess,
@@ -21828,6 +22031,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

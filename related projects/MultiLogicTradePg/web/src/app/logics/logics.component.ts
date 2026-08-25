@@ -316,6 +316,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       position_size_pct: string;
       max_open_positions: string;
       max_order_amount: string;
+      order_gap_buffer_pct: string;
+      max_open_gap_pct: string;
       initial_balance: string;
       commission_pct: string;
       cost_method: 'FIFO' | 'AVERAGE';
@@ -922,6 +924,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsGapBufferChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).order_gap_buffer_pct = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
+  onParamsMaxGapChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).max_open_gap_pct = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   /** Плечо (ед.) = макс. позиций × (% депозита / 100). 1 = весь портфель при полном наборе. */
   lotLeverageUnits(logicId: number): number | null {
     const d = this.paramsDrafts.get(logicId);
@@ -1372,6 +1386,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     position_size_pct: string;
     max_open_positions: string;
     max_order_amount: string;
+    order_gap_buffer_pct: string;
+    max_open_gap_pct: string;
     initial_balance: string;
     commission_pct: string;
     cost_method: 'FIFO' | 'AVERAGE';
@@ -1408,6 +1424,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       max_order_amount: this.formatBalanceDraft(
         trading.max_order_amount != null ? trading.max_order_amount : null
       ),
+      order_gap_buffer_pct: this.formatBalanceDraft(trading.order_gap_buffer_pct),
+      max_open_gap_pct: this.formatBalanceDraft(trading.max_open_gap_pct),
       initial_balance: this.formatBalanceDraft(trading.initial_balance),
       commission_pct: this.formatPctParam(trading.commission_pct ?? 0.03),
       cost_method: method,
@@ -1499,6 +1517,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const maxOrderRaw = draft.max_order_amount.trim();
     const max_order_amount =
       maxOrderRaw === '' ? null : this.parseDecimalInput(maxOrderRaw.replace(',', '.'));
+    const gapBufferRaw = draft.order_gap_buffer_pct.trim();
+    const order_gap_buffer_pct =
+      gapBufferRaw === '' ? null : this.parseDecimalInput(gapBufferRaw.replace(',', '.'));
+    const maxGapRaw = draft.max_open_gap_pct.trim();
+    const max_open_gap_pct =
+      maxGapRaw === '' ? null : this.parseDecimalInput(maxGapRaw.replace(',', '.'));
     const initialRaw = draft.initial_balance.trim();
     const initial_balance =
       initialRaw === '' ? null : this.parseDecimalInput(initialRaw.replace(',', '.'));
@@ -1524,6 +1548,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     if (max_order_amount != null && (!Number.isFinite(max_order_amount) || max_order_amount < 0)) {
       this.paramsSaveErrors.set(row.id, 'Макс. сумма на сделку: число ≥ 0 или пусто');
+      return;
+    }
+    if (order_gap_buffer_pct != null && (!Number.isFinite(order_gap_buffer_pct) || order_gap_buffer_pct < 0 || order_gap_buffer_pct > 50)) {
+      this.paramsSaveErrors.set(row.id, 'Буфер цены исполнения: число от 0 до 50 или пусто');
+      return;
+    }
+    if (max_open_gap_pct != null && (!Number.isFinite(max_open_gap_pct) || max_open_gap_pct < 0 || max_open_gap_pct > 50)) {
+      this.paramsSaveErrors.set(row.id, 'Макс. гэп входа: число от 0 до 50 или пусто');
       return;
     }
     if (initial_balance != null && (!Number.isFinite(initial_balance) || initial_balance < 0)) {
@@ -1605,6 +1637,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
         position_size_pct,
         max_open_positions,
         max_order_amount,
+        order_gap_buffer_pct,
+        max_open_gap_pct,
         initial_balance,
         commission_pct,
         cost_method: draft.cost_method,

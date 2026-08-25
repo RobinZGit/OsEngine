@@ -518,6 +518,22 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  // Защита от займа при резком движении: буфер цены и гэп-фильтр входа (0–50 или пусто).
+  for (const key of ['order_gap_buffer_pct', 'max_open_gap_pct']) {
+    if (body?.[key] !== undefined) {
+      if (body[key] === null || body[key] === '') {
+        out[key] = null;
+      } else {
+        const v = Number(body[key]);
+        if (!Number.isFinite(v) || v < 0 || v > 50) {
+          return { error: `${key}: число от 0 до 50 или пусто` };
+        }
+        out[key] = v;
+      }
+      hasField = true;
+    }
+  }
+
   if (body?.initial_balance !== undefined) {
     if (body.initial_balance === null || body.initial_balance === '') {
       out.initial_balance = null;

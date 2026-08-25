@@ -70,6 +70,8 @@ export interface LogicTradingParamsPayload {
   position_size_pct?: number;
   max_open_positions?: number;
   max_order_amount?: number | null;
+  order_gap_buffer_pct?: number | null;
+  max_open_gap_pct?: number | null;
   initial_balance?: number | null;
   reset_balance?: boolean;
   commission_pct?: number;
@@ -96,6 +98,8 @@ export interface LogicTradingParamsResponse {
   position_size_pct: number;
   max_open_positions: number;
   max_order_amount: number | null;
+  order_gap_buffer_pct: number | null;
+  max_open_gap_pct: number | null;
   initial_balance: number | null;
   current_balance: number | null;
   commission_pct: number;

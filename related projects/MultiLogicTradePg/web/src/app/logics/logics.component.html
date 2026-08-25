@@ -767,6 +767,56 @@
 
                             <tr class="params-band-b">
 
+                              <td>Буфер цены исполнения</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).order_gap_buffer_pct"
+                                  (ngModelChange)="onParamsGapBufferChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="выкл"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                % запаса на гэп: количество Open считается по цене × (1 + буфер).
+                                Пример: 1 и цена 100 ₽ — лимит считают как по 101 ₽. Пусто = выкл
+                              </td>
+
+                            </tr>
+
+                            <tr class="params-band-b">
+
+                              <td>Макс. гэп входа</td>
+
+                              <td>
+
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).max_open_gap_pct"
+                                  (ngModelChange)="onParamsMaxGapChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="выкл"
+                                />
+
+                              </td>
+
+                              <td class="params-hint">
+                                %: если свежая цена (стоп-ТФ) ушла от цены сигнала сильнее — вход
+                                пропускается до следующей свечи. Пусто = выкл. Long и short одинаково
+                              </td>
+
+                            </tr>
+
+                            <tr class="params-band-b">
+
                               <td>Плечо (расчёт)</td>
 
                               <td><strong>{{ formatLotLeverage(row.id) }}</strong></td>
