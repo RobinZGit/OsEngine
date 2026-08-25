@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-24 — Редактор формулы сигнала (арифметика + − * / #, «?» в шапке блока сигналов), дубликаты сигналов разрешены (v65), правило #832; installers **v1.0.142**
+**Последнее обновление:** 2026-08-25 — #837: инсталлятор «Нет» (upgrade) переписывает все функции БД; выложен локальный фикс сайзинга («нет cash_amount → 0, не весь портфель» + пауза заявок) в `02`; безусловное правило «пуш только с разрешения Sergey»; installers **v1.0.149**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,15 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-24)
+## Что сделано (актуально на 2026-08-25)
+
+### 2026-08-25 (#837: инсталлятор «Нет» переписывает функции — проверено; безусловное правило пуша)
+
+- **Проверка #837 (вопрос Sergey):** подтверждено по коду — при выборе **«Нет»** (установка поверх, база сохраняется) установщик пересоздаёт **все** функции/процедуры: `InitializeSetup` → `DbMode=upgrade` (`MultiLogicTradePg.iss`) → `run_postinstall.cmd` → `install.ps1 -DropRoutinesFirst $true`: `sql/drop_public_routines.sql` сносит все public routines → `01` → `ensure_seed` → `02`. Работает с коммита `9217765` (2026-07-18). Нюанс: функции будут версии из упакованного Setup.exe — обновлять сервер только свежим exe.
+- **Контекст проблемы маржи (#824/#837):** на удалённом сервере логика снова открыла MTLRP Long 20×755 = 15 100 ₽ при остатке ~10 000 ₽ (`position_size_pct=10`). Обратный расчёт: база сайзинга ≈ весь портфель (~151k), а не свободный кэш.
+- **Найден и выложен главный фикс:** правки «нет `cash_amount` → база **0** (не весь портфель)» + пауза `pg_sleep(0.30)` между реальными заявками (лечит пачки HTTP 429) лежали **только локально** в `sql/logic_trade_runner.sql` и не были закоммичены/синхронизированы в `02` → удалённый сервер работал на старом коде с fallback на весь портфель. Теперь: модуль синхронизирован в `02_…sql` (`sync-sql-modules-to-02`), `verify:sql` OK, offline-схема регенерирована. Серверу после обновления — переустановка свежим exe (режим «Нет») или перевыполнение `01`/`02`.
+- **Правило усилено** (`.cursor/rules/project-context.mdc`): явный безусловный запрет — любой `git push` только после явного запроса/разрешения Sergey (#829/#832/#837); локальные коммиты допустимы.
+- Файлы: `.cursor/rules/project-context.mdc`, `docs/USER_INSTRUCTIONS.md` (№837), web-ассеты контекта (sync). Установщики пересобраны — **v1.0.149 / build 149** (docs внутри пакета).
 
 ### 2026-08-24 (#836: убраны кнопки «График/Эквити» в Бумагах; LINREG/SQUARE вернулись на шкалу цены)
 
@@ -1243,6 +1251,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-25 | #837: installer No=upgrade verified; SHIPPED local-only sizing fix into 02 (no portfolio fallback + order pause); push-permission rule; installers v1.0.149 |
 | 2026-08-24 | Papers: drop График/Эквити buttons; LINREG/SQUARE bands back on price scale (#836) |
 | 2026-08-24 | Portfolio equity: long/short pale zones (#835); price charts: candles/line toggle |
 | 2026-08-24 | Fix #834: disk cleanup keeps each logic's LAST finished backtest run (results always visible) |

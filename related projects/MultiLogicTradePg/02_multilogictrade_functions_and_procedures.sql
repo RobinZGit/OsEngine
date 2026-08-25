@@ -5142,6 +5142,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -11329,6 +11330,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -11486,10 +11515,13 @@ BEGIN
                 END IF;
                 RETURN v_portfolio;
             END IF;
+            -- free_cash: только кэш (totalAmountCurrencies). Если брокер не отдал
+            -- cash_amount (пропуск поля / частичный ответ при лимитах API) —
+            -- НЕ подменяем базу всем портфелем: это покупало сверх остатка счёта.
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 RETURN GREATEST(0, COALESCE((v_bal->>'cash_amount')::NUMERIC, 0));
             END IF;
-            RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+            RETURN 0;
         EXCEPTION
             WHEN OTHERS THEN
                 RETURN 0;
@@ -11752,10 +11784,12 @@ BEGIN
     BEGIN
         v_bal := fetch_tbank_account_balance(v_account_id);
         IF v_bal IS NOT NULL AND (v_bal->>'error') IS NULL THEN
+            -- Только кэш брокера. Фолбэк на весь портфель запрещён:
+            -- он завышал current_balance и размер позиции сверх остатка.
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 v_amount := COALESCE((v_bal->>'cash_amount')::NUMERIC, 0);
             ELSE
-                v_amount := COALESCE((v_bal->>'amount')::NUMERIC, 0);
+                v_amount := 0;
             END IF;
             IF v_amount < 0 THEN
                 v_amount := 0;
@@ -16816,6 +16850,9 @@ BEGIN
                         v_status := 'rejected';
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
+                        -- Пауза между реальными заявками: без неё пачка сигналов
+                        -- упирается в лимиты T-Bank API (HTTP 429) и отклоняется.
+                        PERFORM pg_sleep(0.30);
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_pp, v_direction,
                             logic_order_execution(p_logic_id)
@@ -21869,6 +21906,7 @@ COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 
 
 
+
 -- instrumentId для GetCandles: ShareBy по тикеру (исправляет устаревший tbank_figi)
 CREATE OR REPLACE FUNCTION resolve_tbank_instrument_id(
     p_security_id INTEGER,
@@ -24688,7 +24726,8 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_acc RECORD;
     v_isin TEXT;
-    v_content JSONB;
+    v_headers http_header[];
+    v_response http_response;
     v_instrument JSONB;
     v_figi TEXT;
     v_lot INTEGER;
@@ -24703,35 +24742,41 @@ BEGIN
         RETURN jsonb_build_object('error', 'empty_isin');
     END IF;
 
-    -- BondBy by ISIN (via tbank_http_post → respects order channel node|postgres)
-    BEGIN
-        v_content := tbank_http_post(
-            v_acc.api_url,
-            'tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
-            v_acc.token,
-            jsonb_build_object(
-                'idType', 'INSTRUMENT_ID_TYPE_ISIN',
-                'id', v_isin
-            )
-        );
-        v_instrument := v_content->'instrument';
-    EXCEPTION
-        WHEN OTHERS THEN
-            v_instrument := NULL;
-    END;
+    PERFORM configure_http_ssl();
+    v_headers := ARRAY[
+        http_header('Authorization', 'Bearer ' || v_acc.token),
+        http_header('Accept', 'application/json')
+    ];
+
+    -- BondBy by ISIN
+    SELECT * INTO v_response FROM http((
+        'POST',
+        rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/BondBy',
+        v_headers,
+        'application/json',
+        jsonb_build_object(
+            'idType', 'INSTRUMENT_ID_TYPE_ISIN',
+            'id', v_isin
+        )::TEXT
+    )::http_request);
+
+    IF v_response.status = 200 THEN
+        v_instrument := v_response.content::JSONB->'instrument';
+    END IF;
 
     IF v_instrument IS NULL THEN
-        BEGIN
-            v_content := tbank_http_post(
-                v_acc.api_url,
-                'tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument',
-                v_acc.token,
-                jsonb_build_object('query', v_isin)
-            );
+        SELECT * INTO v_response FROM http((
+            'POST',
+            rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument',
+            v_headers,
+            'application/json',
+            jsonb_build_object('query', v_isin)::TEXT
+        )::http_request);
+        IF v_response.status = 200 THEN
             SELECT elem
             INTO v_instrument
             FROM jsonb_array_elements(
-                COALESCE(v_content->'instruments', '[]'::JSONB)
+                COALESCE(v_response.content::JSONB->'instruments', '[]'::JSONB)
             ) AS elem
             WHERE upper(COALESCE(elem->>'isin', '')) = v_isin
                OR upper(COALESCE(elem->>'ticker', '')) = v_isin
@@ -24740,10 +24785,7 @@ BEGIN
                 ELSE 1
             END
             LIMIT 1;
-        EXCEPTION
-            WHEN OTHERS THEN
-                v_instrument := NULL;
-        END;
+        END IF;
     END IF;
 
     IF v_instrument IS NULL THEN
@@ -24756,24 +24798,23 @@ BEGIN
         RETURN jsonb_build_object('error', 'no_figi', 'isin', v_isin);
     END IF;
 
-    BEGIN
-        v_content := tbank_http_post(
-            v_acc.api_url,
-            'tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
-            v_acc.token,
-            jsonb_build_object('figi', jsonb_build_array(v_figi))
-        );
+    SELECT * INTO v_response FROM http((
+        'POST',
+        rtrim(v_acc.api_url, '/') || '/tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+        v_headers,
+        'application/json',
+        jsonb_build_object('figi', jsonb_build_array(v_figi))::TEXT
+    )::http_request);
+
+    IF v_response.status = 200 THEN
         v_price_resp := COALESCE(
-            v_content->'lastPrices'->0->'price',
+            v_response.content::JSONB->'lastPrices'->0->'price',
             '{}'::JSONB
         );
         v_units := COALESCE((v_price_resp->>'units')::NUMERIC, 0);
         v_nano := COALESCE((v_price_resp->>'nano')::NUMERIC, 0);
         v_price := v_units + v_nano / 1000000000.0;
-    EXCEPTION
-        WHEN OTHERS THEN
-            v_price := NULL;
-    END;
+    END IF;
 
     -- Облигации T-Bank: last price обычно в % номинала (≈90–110) → ₽ при номинале 1000.
     IF v_price IS NOT NULL AND v_price > 0 AND v_price < 200 THEN

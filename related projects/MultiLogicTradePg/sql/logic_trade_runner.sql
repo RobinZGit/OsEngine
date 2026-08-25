@@ -717,10 +717,13 @@ BEGIN
                 END IF;
                 RETURN v_portfolio;
             END IF;
+            -- free_cash: только кэш (totalAmountCurrencies). Если брокер не отдал
+            -- cash_amount (пропуск поля / частичный ответ при лимитах API) —
+            -- НЕ подменяем базу всем портфелем: это покупало сверх остатка счёта.
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 RETURN GREATEST(0, COALESCE((v_bal->>'cash_amount')::NUMERIC, 0));
             END IF;
-            RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+            RETURN 0;
         EXCEPTION
             WHEN OTHERS THEN
                 RETURN 0;
@@ -984,10 +987,12 @@ BEGIN
     BEGIN
         v_bal := fetch_tbank_account_balance(v_account_id);
         IF v_bal IS NOT NULL AND (v_bal->>'error') IS NULL THEN
+            -- Только кэш брокера. Фолбэк на весь портфель запрещён:
+            -- он завышал current_balance и размер позиции сверх остатка.
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 v_amount := COALESCE((v_bal->>'cash_amount')::NUMERIC, 0);
             ELSE
-                v_amount := COALESCE((v_bal->>'amount')::NUMERIC, 0);
+                v_amount := 0;
             END IF;
             IF v_amount < 0 THEN
                 v_amount := 0;
@@ -1954,6 +1959,9 @@ BEGIN
                         v_status := 'rejected';
                         v_note := 'Нет tbank_figi для бумаги';
                     ELSE
+                        -- Пауза между реальными заявками: без неё пачка сигналов
+                        -- упирается в лимиты T-Bank API (HTTP 429) и отклоняется.
+                        PERFORM pg_sleep(0.30);
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_pp, v_direction,
                             logic_order_execution(p_logic_id)
