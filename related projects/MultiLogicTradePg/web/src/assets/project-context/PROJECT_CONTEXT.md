@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-25 — #838: полный аудит «без займа» (лонг+шорт) и защита от резкого движения цены: новые параметры `order_gap_buffer_pct` / `max_open_gap_pct`, точная цена исполнения в exposure, парковка фонда без шорт-выручки; installers **v1.0.150**
+**Последнее обновление:** 2026-08-25 — #838: полный аудит «без займа» (лонг+шорт) и защита от резкого движения цены: новые параметры `order_gap_buffer_pct` / `max_open_gap_pct`, точная цена исполнения в exposure, парковка фонда без шорт-выручки; installers **v1.0.151**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -129,6 +129,7 @@
   2. **Цена записи сделки**: если PostOrder не дал цену исполнения — добирается из GetOrderState (`averagePositionPrice→initialSecurityPrice→stages→executed`); точный номинал в потолке и FinRes.
   3. **Парковка фонда** (`logic_park_excess_cash`): из кэша вычитается номинал открытых шортов — парк больше не тратит шорт-выручку (заёмные деньги).
 - Файлы: `sql/logic_trade_runner.sql`, `sql/logic_cash_fund_park.sql` (+sync в `02`), `01_…sql` (defs v66: два новых параметра), `api/lib/logic-params.js`, `api/lib/server-shared.js`, UI форм параметров + Help. verify:sql OK, тесты 76/76, schema-offline регенерирована (327 routines).
+- **Hotfix Pages CI (#839):** прод-сборка падала TS2339 — инлайн-тип параметра `draftFromTrading` без двух новых полей; тип дополнен, прод-сборка локально OK. Урок: перед пушем UI-правок гонять `ng build --configuration production`, не только karma.
 - **Ограничение (документировано):** шорт-закрытие BUY при гэпе против позиции может временно потребовать кэш сверху выручки — это убыток позиции, а не новый сайзинг; покрывается equity-капом следующих циклов. Фьючерсы: force-1-лот по-прежнему капится room.
 
 ### 2026-08-25 (#837: инсталлятор «Нет» переписывает функции — проверено; безусловное правило пуша)
@@ -1262,7 +1263,7 @@
 
 | Дата | Суть |
 |------|------|
-| 2026-08-25 | #838: no-borrow audit long+short; gap guards order_gap_buffer_pct/max_open_gap_pct + fresh-price check (stop TF); exact fill price into exposure; park excludes short proceeds; installers v1.0.150 |
+| 2026-08-25 | #838: no-borrow audit long+short; gap guards order_gap_buffer_pct/max_open_gap_pct + fresh-price check (stop TF); exact fill price into exposure; park excludes short proceeds; installers v1.0.151 |
 | 2026-08-25 | #837: installer No=upgrade verified; SHIPPED local-only sizing fix into 02 (no portfolio fallback + order pause); push-permission rule; installers v1.0.149 |
 | 2026-08-24 | Papers: drop График/Эквити buttons; LINREG/SQUARE bands back on price scale (#836) |
 | 2026-08-24 | Portfolio equity: long/short pale zones (#835); price charts: candles/line toggle |
