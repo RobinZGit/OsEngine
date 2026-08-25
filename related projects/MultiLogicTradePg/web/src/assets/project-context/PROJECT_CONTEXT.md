@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-25 — #843: **мультитаймфрейм-сигналы** — параметр `tf=<База>[×k]` в формуле (M1*7 = M7, автосоздание в каталоге), оценка по последнему закрытому бару своего ТФ без заглядывания; runner/backtest/OPT считают сигналы на своих ТФ и сами догружают цены/серии; UI: выбор ТФ × множителя у каждого сигнала; installers **v1.0.155**
+**Последнее обновление:** 2026-08-25 — #844: **маржа на remote снова** — закрыты обе дыры: equity<=0 → не торгуем (раньше откат на сырой кэш при 429-шторме); реальное эквити = amount − номинал открытых шортов; installers **v1.0.156**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,14 @@
 ---
 
 ## Что сделано (актуально на 2026-08-25)
+
+### 2026-08-25 (#844: маржа на remote снова — закрыты обе дыры)
+
+- **Факт (111.txt, логика 5585):** MTLRP Short 27×774 = **20 898 ₽** одной сделкой при своих <10k; всего открытых шортов 25 085 ₽; гросс шорт-открытий за день 94 363 ₽; 18 заявок отбито HTTP 429.
+- **Причина 1:** в шторм 429 запрос портфеля падал → `equity=0` → `logic_exposure_cycle_budget` возвращал **сырой sizing** (раздутый кэш) → потолок исчез. Дыра известна с 05.08 («fallback при equity=0»), теперь закрыта: **equity<=0 → бюджет 0 — не торгуем вслепую**.
+- **Причина 2:** T-Bank `cash_amount`/`amount` не чистили шорт-выручку → эквити завышалось. Теперь реальное эквити = **amount − номинал открытых шортов по входу** (новый хелпер `logic_open_short_entry_notional`; консервативно чинит оба варианта поведения брокера).
+- Файлы: `sql/logic_trade_runner.sql` (+sync в `02`). verify:sql OK.
+- **Для remote:** обязательно обновить установщиком ≥ этой версии (режим «Нет») — без нового `02` потолок продолжит отваливаться при каждом 429-шторме.
 
 ### 2026-08-25 (#843: мультитаймфрейм-сигналы — tf= в формуле каждого сигнала)
 
@@ -1292,6 +1300,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-25 | #844: remote margin again — equity<=0 now stops trading (was raw-sizing fallback); real net equity subtracts open-short notional |
 | 2026-08-25 | #843: per-signal timeframes — tf=BASE[×k] in formula, M7-style auto-catalog, no-lookahead aligned bars; runner/backtest/OPT multi-TF load+eval; UI TF base×mult controls |
 | 2026-08-25 | #842: revert LinReg Fade Trend seed (#840, never pushed) + sync window back to 200/150; keep #841 |
 | 2026-08-25 | #838: no-borrow audit long+short; gap guards order_gap_buffer_pct/max_open_gap_pct + fresh-price check (stop TF); exact fill price into exposure; park excludes short proceeds; installers v1.0.151 |

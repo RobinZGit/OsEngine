@@ -770,10 +770,52 @@ $$;
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
 'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
+-- Номинал открытых шортов по входной цене (remaining qty, без shadow/test/opt_lane).
+-- Общий хелпер для fake-equity и защитного неттинга реального счёта (#844).
+CREATE OR REPLACE FUNCTION logic_open_short_entry_notional(
+    p_logic_id INTEGER,
+    p_is_test BOOLEAN DEFAULT FALSE
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_notional NUMERIC;
+BEGIN
+    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
+    INTO v_notional
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(
+            lt.quantity - COALESCE((
+                SELECT SUM(l.quantity)
+                FROM logic_trade_lots l
+                WHERE l.open_trade_id = lt.id
+            ), 0),
+            0
+        ) AS qty
+    ) rem
+    WHERE lt.logic_id = p_logic_id
+      AND NOT lt.is_shadow
+      AND lt.is_test = COALESCE(p_is_test, FALSE)
+      AND COALESCE(lt.opt_lane, '') = ''
+      AND lt.status IN ('filled', 'submitted')
+      AND s.name = 'Open'
+      AND a.name = 'Short'
+      AND rem.qty > 0;
+    RETURN COALESCE(v_notional, 0);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_open_short_entry_notional(INTEGER, BOOLEAN) IS
+'Номинал открытых шортов логики по входной цене (remaining); 0 если нет';
+
 -- Чистая стоимость счёта для потолка риска (плечо 1):
--- real → portfolio amount брокера; fake → cash − short_notional + long_mtm.
--- Нужно потому, что free_cash / cash_amount растёт от short-выручки и иначе
--- потолок %×макс.позиций раздувается выше equity.
+-- real → amount брокера МИНУС номинал открытых шортов (#844): T-Bank cash_amount /
+-- totalAmountPortfolio могут не чистить шорт-выручку и заём → без вычитания потолок
+-- раздувается выше собственных средств; вычитание консервативно и чинит оба случая.
+-- fake → cash − short_notional + long_mtm.
 CREATE OR REPLACE FUNCTION logic_account_net_equity(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -802,14 +844,20 @@ BEGIN
         RETURN 0;
     END IF;
 
+    v_short_notional := logic_open_short_entry_notional(p_logic_id, FALSE);
+
     IF v_account_type <> 'fake' THEN
         BEGIN
             v_bal := fetch_tbank_account_balance(v_account_id);
             IF v_bal IS NULL OR (v_bal->>'error') IS NOT NULL THEN
                 RETURN 0;
             END IF;
-            -- amount = собственный капитал (без «раздутого» cash от шорта/займа).
-            RETURN GREATEST(0, COALESCE((v_bal->>'amount')::NUMERIC, 0));
+            -- Защитный неттинг: даже если брокер вернул «грязный» amount
+            -- (с шорт-выручкой/заёмом), вычитаем наши открытые шорты.
+            RETURN GREATEST(
+                0,
+                COALESCE((v_bal->>'amount')::NUMERIC, 0) - COALESCE(v_short_notional, 0)
+            );
         EXCEPTION
             WHEN OTHERS THEN
                 RETURN 0;
@@ -818,29 +866,6 @@ BEGIN
 
     -- Fake: current_balance includes short proceeds — subtract short entry notional.
     v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
-    SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
-    INTO v_short_notional
-    FROM logic_trades lt
-    JOIN sides s ON s.id = lt.side_id
-    JOIN actions a ON a.id = lt.action_id
-    CROSS JOIN LATERAL (
-        SELECT GREATEST(
-            lt.quantity - COALESCE((
-                SELECT SUM(l.quantity)
-                FROM logic_trade_lots l
-                WHERE l.open_trade_id = lt.id
-            ), 0),
-            0
-        ) AS qty
-    ) rem
-    WHERE lt.logic_id = p_logic_id
-      AND NOT lt.is_shadow
-      AND lt.is_test = FALSE
-      AND COALESCE(lt.opt_lane, '') = ''
-      AND lt.status IN ('filled', 'submitted')
-      AND s.name = 'Open'
-      AND a.name = 'Short'
-      AND rem.qty > 0;
 
     FOR v_sec IN
         SELECT ls.security_id
@@ -865,9 +890,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_account_net_equity(INTEGER, INTEGER) IS
-'Equity для потолка Open (плечо 1): real=amount брокера; fake=cash−short+long_mtm. Режет раздутый free_cash после шортов.';
+'Equity для потолка Open (плечо 1): real=amount−открытые шорты (#844); fake=cash−short+long_mtm.';
 
--- База цикла / потолка: min(база лота, equity), чтобы short-выручка / заём не поднимали плечо.
+-- База цикла / потолка: min(база лота, equity).
+-- #844: equity неизвестен или равен 0 (брокер не ответил / лимиты API) → бюджет 0 —
+-- НЕ торгуем. Прежний fallback на сырой sizing при equity=0 открывал маржу сверх счёта.
 CREATE OR REPLACE FUNCTION logic_exposure_cycle_budget(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -880,15 +907,15 @@ DECLARE
 BEGIN
     v_sizing := GREATEST(0, COALESCE(logic_position_sizing_base(p_logic_id, p_timeframe_id), 0));
     v_equity := GREATEST(0, COALESCE(logic_account_net_equity(p_logic_id, p_timeframe_id), 0));
-    IF v_equity > 0 AND v_sizing > 0 THEN
-        RETURN LEAST(v_sizing, v_equity);
+    IF v_sizing <= 0 OR v_equity <= 0 THEN
+        RETURN 0;
     END IF;
-    RETURN v_sizing;
+    RETURN LEAST(v_sizing, v_equity);
 END;
 $$;
 
 COMMENT ON FUNCTION logic_exposure_cycle_budget(INTEGER, INTEGER) IS
-'База цикла для % лота и потолка %×макс.позиций: LEAST(sizing_base, equity) — плечо ≤ 1 от equity.';
+'База цикла: LEAST(sizing_base, net equity); equity<=0 → 0 (не торгуем вслепую, #844).';
 
 -- Свежая цена бумаги на момент постановки Open-заявки: стоп-ТФ (обычно M5) свежее ТФ сигнала.
 -- Догружает цены при отсутствии (один HTTP на сигнал), возвращает последнюю цену + её бар.
