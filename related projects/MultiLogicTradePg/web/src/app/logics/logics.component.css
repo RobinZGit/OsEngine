@@ -741,6 +741,39 @@ th {
   font-weight: 600;
 }
 
+/* Изменяемая ширина колонок списка логик: тянуть за правый край заголовка */
+.table-wrap th {
+  position: relative;
+}
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.col-resizer::after {
+  content: '';
+  position: absolute;
+  right: 3.5px;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 1px;
+  background: #94a3b8;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+th:hover .col-resizer::after,
+.col-resizer:hover::after {
+  opacity: 1;
+}
+
 tbody tr.logic-main-row:hover {
   filter: brightness(0.98);
 }

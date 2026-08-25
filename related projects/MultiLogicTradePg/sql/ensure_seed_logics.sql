@@ -1,4 +1,4 @@
--- ============================================
+﻿-- ============================================
 -- Ensure default seed logics (install-on-top / upgrade).
 -- Run after 01_multilogictrade_tables_and_data.sql.
 -- Does not overwrite user copies or edits (INSERT … ON CONFLICT DO NOTHING).

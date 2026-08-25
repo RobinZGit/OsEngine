@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-25 — #838: полный аудит «без займа» (лонг+шорт) и защита от резкого движения цены: новые параметры `order_gap_buffer_pct` / `max_open_gap_pct`, точная цена исполнения в exposure, парковка фонда без шорт-выручки; installers **v1.0.151**
+**Последнее обновление:** 2026-08-25 — #842: откат сид-логики LinReg Fade Trend (плохо показала себя на реальном использовании; не пушилась) вместе с сопутствующим окном синка 800→200/150; остаются ресайз колонок и полное копирование логики #841; installers **v1.0.154**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,24 @@
 ---
 
 ## Что сделано (актуально на 2026-08-25)
+
+### 2026-08-25 (#842: откат LinReg Fade Trend; остаются #841-правки)
+
+- **Удалено до пуша** (никогда не попадало в origin): сид-логика `LinReg Fade Trend` (#840) — плохо показала себя; вместе с ней откатено увеличение sync-окна M15..H1 (800 → прежние 200/150), т.к. оно нужно было только под SLOPE(500).
+- Запросы #840/#842 сохранены в `USER_INSTRUCTIONS.md`; попытка задокументирована здесь и в «Истории сессий».
+- Если тренд-фильтр понадобится снова: синтаксис `@LINREG(period=N,std_dev=2,series=SLOPE) VALUE > 0` работает, но требует окно синка ≥ периода (см. `logic_trade_sync_point_count`).
+
+### 2026-08-25 (#841: ресайз колонок логик; полное копирование логики)
+
+- **Колонки списка логик:** ширина меняется перетаскиванием за правый край заголовка (ручка `.col-resizer`, подсветка на hover); ширины хранятся в `localStorage` (`logics.columnWidths.v1`), двойной клик по ручке — сброс колонки. Диапазон 36–900 px; `th` получают инлайн-width (auto-layout трактирует как целевую ширину, содержимое режется ellipsis как раньше).
+- **Копирование логики (`POST /api/logics/:id/copy`) — дополнено:**
+  - сигналы: **`signal_acts_on`** (раньше терялся → копии contango/base_asset-логик молча ломались);
+  - стопы: **`inversion_value`** (правило security_inversion с % инверсии);
+  - бумаги: настройки боя **`real_trading_paused(_long/_short)`, `real_trading_inverted`**;
+  - **OPT-сетка** источника: `last_opt_grid_results/run_id/at`.
+  - Торговые периоды (`logic_non_trading_intervals`) копировались и раньше — проверено.
+  - Намеренно НЕ копируются: сделки/лоты/эквити (по требованию), runtime-состояние — `portfolio_trading_paused`, equity peak, `stop_resume_*`, `linear_tp_*`, рейтинги сигналов (сбрасываются в 0). Копия создаётся выключенной.
+- Файлы: `api/routes/logics.js`, `web/src/app/logics/logics.component.{ts,html,css}`. Прод-сборка OK, тесты 76/76.
 
 ### 2026-08-25 (#838: аудит «без займа» long+short; защита от гэпа исполнения)
 
@@ -1263,6 +1281,8 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-25 | #841: resizable logic-list columns (localStorage + dblclick reset); full logic copy — signal_acts_on, stop inversion_value, per-paper pause/invert, OPT grid |
+| 2026-08-25 | #842: revert LinReg Fade Trend seed (#840, never pushed) + sync window back to 200/150; keep #841 |
 | 2026-08-25 | #838: no-borrow audit long+short; gap guards order_gap_buffer_pct/max_open_gap_pct + fresh-price check (stop TF); exact fill price into exposure; park excludes short proceeds; installers v1.0.151 |
 | 2026-08-25 | #837: installer No=upgrade verified; SHIPPED local-only sizing fix into 02 (no portfolio fallback + order pause); push-permission rule; installers v1.0.149 |
 | 2026-08-24 | Papers: drop График/Эквити buttons; LINREG/SQUARE bands back on price scale (#836) |

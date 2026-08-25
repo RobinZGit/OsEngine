@@ -254,7 +254,11 @@ app.post('/api/logics/:id/copy', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows: sourceRows } = await client.query(
-      'SELECT id, name, account_id, note FROM logics WHERE id = $1',
+      `
+      SELECT id, name, account_id, note,
+             last_opt_grid_results, last_opt_grid_run_id, last_opt_grid_at
+      FROM logics WHERE id = $1
+      `,
       [id]
     );
     if (sourceRows.length === 0) {
@@ -284,6 +288,25 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     );
     const copy = inserted[0];
 
+    // Сохранённая OPT-сетка («Применить лучшие OPT») — настройка, копируем.
+    // Runtime-состояние (portfolio_trading_paused, equity peak, stop-resume/linear-tp)
+    // намеренно НЕ копируется — копия стартует «чистой» и выключенной.
+    await client.query(
+      `
+      UPDATE logics SET
+        last_opt_grid_results = $2,
+        last_opt_grid_run_id  = $3,
+        last_opt_grid_at      = $4
+      WHERE id = $1
+      `,
+      [
+        copy.id,
+        source.last_opt_grid_results ?? null,
+        source.last_opt_grid_run_id ?? null,
+        source.last_opt_grid_at ?? null,
+      ]
+    );
+
     await client.query(
       `
       INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
@@ -302,11 +325,11 @@ app.post('/api/logics/:id/copy', async (req, res) => {
       `
       INSERT INTO logic_indicator_signals (
         logic_id, indicator_id, position_event, position_side, signal_kind,
-        formula, rating, rating_test, display_order, is_active
+        signal_acts_on, formula, rating, rating_test, display_order, is_active
       )
       SELECT
         $1, indicator_id, position_event, position_side, signal_kind,
-        formula, 0, 0, display_order, is_active
+        signal_acts_on, formula, 0, 0, display_order, is_active
       FROM logic_indicator_signals
       WHERE logic_id = $2
       ORDER BY display_order, id
@@ -317,9 +340,11 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     await client.query(
       `
       INSERT INTO logic_stops (
-        logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active
+        logic_id, rule_kind, scope_type, value, value_unit,
+        inversion_value, display_order, is_active
       )
-      SELECT $1, rule_kind, scope_type, value, value_unit, display_order, is_active
+      SELECT $1, rule_kind, scope_type, value, value_unit,
+             inversion_value, display_order, is_active
       FROM logic_stops
       WHERE logic_id = $2
       ORDER BY display_order, id
@@ -327,10 +352,18 @@ app.post('/api/logics/:id/copy', async (req, res) => {
       [copy.id, id]
     );
 
+    // Бумаги + настройки боя по бумаге (пауза/инверсия).
+    // stop_resume_* / linear_tp_* — runtime-состояние стопов, не копируем.
     await client.query(
       `
-      INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
-      SELECT $1, security_id, display_order, is_active
+      INSERT INTO logic_securities (
+        logic_id, security_id, display_order, is_active,
+        real_trading_paused, real_trading_paused_long, real_trading_paused_short,
+        real_trading_inverted
+      )
+      SELECT $1, security_id, display_order, is_active,
+             real_trading_paused, real_trading_paused_long, real_trading_paused_short,
+             real_trading_inverted
       FROM logic_securities
       WHERE logic_id = $2
       ORDER BY display_order, id

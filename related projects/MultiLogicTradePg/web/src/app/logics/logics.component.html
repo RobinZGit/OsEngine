@@ -235,33 +235,35 @@
 
             <th class="col-expand"></th>
 
-            <th class="col-check">Вкл.</th>
+            <th class="col-check" [style.width.px]="thWidth('col-check')">Вкл.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-check')" (dblclick)="resetColumnWidth('col-check')"></span></th>
 
-            <th class="col-id">ID</th>
+            <th class="col-id" [style.width.px]="thWidth('col-id')">ID<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-id')" (dblclick)="resetColumnWidth('col-id')"></span></th>
 
-            <th class="col-logic">Логика</th>
+            <th class="col-logic" [style.width.px]="thWidth('col-logic')">Логика<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-logic')" (dblclick)="resetColumnWidth('col-logic')"></span></th>
 
-            <th class="col-account-id">acc_id</th>
+            <th class="col-account-id" [style.width.px]="thWidth('col-account-id')">acc_id<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account-id')" (dblclick)="resetColumnWidth('col-account-id')"></span></th>
 
-            <th class="col-account">Счёт</th>
+            <th class="col-account" [style.width.px]="thWidth('col-account')">Счёт<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account')" (dblclick)="resetColumnWidth('col-account')"></span></th>
 
-            <th class="col-account-type">Тип</th>
+            <th class="col-account-type" [style.width.px]="thWidth('col-account-type')">Тип<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account-type')" (dblclick)="resetColumnWidth('col-account-type')"></span></th>
 
-            <th class="col-broker">Брокер</th>
+            <th class="col-broker" [style.width.px]="thWidth('col-broker')">Брокер<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-broker')" (dblclick)="resetColumnWidth('col-broker')"></span></th>
 
-            <th class="col-active">Актив.</th>
+            <th class="col-active" [style.width.px]="thWidth('col-active')">Актив.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-active')" (dblclick)="resetColumnWidth('col-active')"></span></th>
 
             <th
               class="col-combat-pnl"
               title="Сумма фин. результата боевых (реальных) сделок (онлайн, не хранится отдельно)"
-            >Финрез</th>
+              [style.width.px]="thWidth('col-combat-pnl')"
+            >Финрез<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-combat-pnl')" (dblclick)="resetColumnWidth('col-combat-pnl')"></span></th>
 
             <th
               class="col-test-pnl"
               title="Сумма фин. результата тестовых сделок (онлайн, не хранится отдельно)"
-            >Финрез теста</th>
+              [style.width.px]="thWidth('col-test-pnl')"
+            >Финрез теста<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-test-pnl')" (dblclick)="resetColumnWidth('col-test-pnl')"></span></th>
 
-            <th class="col-export" title="Отметить для экспорта">
+            <th class="col-export" title="Отметить для экспорта" [style.width.px]="thWidth('col-export')">
               <label class="export-check-all" (click)="$event.stopPropagation()">
                 <input
                   type="checkbox"
@@ -269,6 +271,7 @@
                   (change)="toggleAllExport($any($event.target).checked)"
                 />
               </label>
+              <span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-export')" (dblclick)="resetColumnWidth('col-export')"></span>
             </th>
 
             <th class="col-actions"></th>

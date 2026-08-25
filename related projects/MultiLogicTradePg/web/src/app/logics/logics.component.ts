@@ -341,6 +341,76 @@ export class LogicsComponent implements OnInit, OnDestroy {
   paramsSaveErrors = new Map<number, string>();
   paramsLoading = new Set<number>();
   timeframesCatalog: { id: number; tf: string; full_name: string }[] = [];
+
+  /** Изменяемая ширина колонок списка логик (тянуть за правый край заголовка). */
+  readonly columnWidthsStorageKey = 'logics.columnWidths.v1';
+  readonly columnMinWidthPx = 36;
+  readonly columnMaxWidthPx = 900;
+  columnWidths: Record<string, number> = this.loadColumnWidths();
+  private columnResizeState: { key: string; startX: number; startWidth: number } | null =
+    null;
+
+  private loadColumnWidths(): Record<string, number> {
+    try {
+      const raw = localStorage.getItem('logics.columnWidths.v1');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveColumnWidths(): void {
+    try {
+      localStorage.setItem(this.columnWidthsStorageKey, JSON.stringify(this.columnWidths));
+    } catch {
+      /* приватный режим / нет места — ширины просто не сохранятся */
+    }
+  }
+
+  thWidth(col: string): number | null {
+    return this.columnWidths[col] ?? null;
+  }
+
+  startColumnResize(event: MouseEvent, col: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const th = (event.target as HTMLElement).closest('th') as HTMLTableCellElement | null;
+    if (!th) return;
+    this.columnResizeState = {
+      key: col,
+      startX: event.clientX,
+      startWidth: th.getBoundingClientRect().width,
+    };
+    const onMove = (e: MouseEvent): void => this.onColumnResizeMove(e);
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      this.columnResizeState = null;
+      this.saveColumnWidths();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  private onColumnResizeMove(e: MouseEvent): void {
+    const st = this.columnResizeState;
+    if (!st) return;
+    const width = Math.min(
+      this.columnMaxWidthPx,
+      Math.max(this.columnMinWidthPx, Math.round(st.startWidth + (e.clientX - st.startX)))
+    );
+    this.columnWidths = { ...this.columnWidths, [st.key]: width };
+  }
+
+  resetColumnWidth(col: string): void {
+    if (!(col in this.columnWidths)) return;
+    const next = { ...this.columnWidths };
+    delete next[col];
+    this.columnWidths = next;
+    this.saveColumnWidths();
+  }
+
   readonly orderExecutionOptions: { value: 'market' | 'limit'; label: string }[] = [
     { value: 'market', label: 'По рынку' },
     { value: 'limit', label: 'Лимитная' },
