@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-25 — #844: **маржа на remote снова** — закрыты обе дыры: equity<=0 → не торгуем (раньше откат на сырой кэш при 429-шторме); реальное эквити = amount − номинал открытых шортов; installers **v1.0.156**
+**Последнее обновление:** 2026-08-26 — #845: **LinReg Fade Trend в seed** — логика 7252 добавлена в `ensure_seed_logics.sql` (двухтаймфреймовая H2+M15, 6 сигналов, SL 1% + TP 5%, результат теста +45k); installers **v1.0.157**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,17 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-25)
+## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-26 (#845: LinReg Fade Trend в seed)
+
+- **Логика 7252 "LinReg Fade Trend"** добавлена в `sql/ensure_seed_logics.sql` (ON CONFLICT DO NOTHING):
+  - Двухтаймфреймовая: H2 (период=100, std_dev=2) + M15 (период=20, std_dev=1.6)
+  - 6 сигналов: 3 open (counter+trend long, counter+trend short) + 3 close (trend long, trend short)
+  - Параметры: timeframe=M15, stop_loss_timeframe=M5, opt_eval_candles=200, position_size_pct=10, max_open_positions=3
+  - Стопы: SL 1% (security_resume) + TP 5% (portfolio_ltp_renew)
+  - Тест: **+45 069 ₽** (run 277, 215 сделок, profit_factor 2.46)
+- verify:sql OK, установщики пересобраны.
 
 ### 2026-08-25 (#844: маржа на remote снова — закрыты обе дыры)
 

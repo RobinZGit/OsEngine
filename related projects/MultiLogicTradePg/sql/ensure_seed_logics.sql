@@ -87,7 +87,8 @@ BEGIN
         ('SuperTrend CMO Fade', NULL),
         ('Force Index Fade', NULL),
         ('BB StdDev Fade', NULL),
-        ('BB Volume Fade', NULL)
+        ('BB Volume Fade', NULL),
+        ('LinReg Fade Trend', 'Двухтаймфреймовая fade по LinReg. TF=H2 + M15, оптимизированная.')
     ) AS v(name, note)
     ON CONFLICT (name) DO NOTHING;
 
@@ -123,8 +124,29 @@ BEGIN
     INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
     SELECT l.id, 'opt_eval_candles', '200', 'integer'
     FROM logics l
-    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized')
+    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'LinReg Fade Trend')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
+    ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+    INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+    SELECT l.id, v.param_key, v.param_value, v.value_type
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('stop_loss_timeframe', 'M5', 'text'),
+        ('use_non_trading_periods', 'true', 'boolean'),
+        ('warmup_pretest', 'true', 'boolean'),
+        ('close_positions_eod', 'false', 'boolean'),
+        ('inversion', 'false', 'boolean'),
+        ('resume_sl_no_reduce', 'false', 'boolean'),
+        ('sell_futures_before_expiry', 'false', 'boolean'),
+        ('sell_futures_days_before_expiry', '3', 'integer'),
+        ('position_size_base', 'free_cash', 'text'),
+        ('rating_lookback_days', '7', 'integer'),
+        ('order_execution', 'market', 'text'),
+        ('base_annual_rate_pct', '20', 'number')
+    ) AS v(param_key, param_value, value_type)
+    WHERE l.name = 'LinReg Fade Trend'
+      AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
     UPDATE logic_params
@@ -147,6 +169,23 @@ BEGIN
     ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
     JOIN indicators i ON i.code = v.ind_code
     WHERE l.name = 'LinReg Fade Optimized'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('LINREG', 'open',  'long',  'counter', '@LINREG(period=20,std_dev=1.6,series=LOWER) pp <= VALUE', 0),
+        ('LINREG', 'open',  'long',  'trend',   '@LINREG(tf=H2,period=100,std_dev=2,series=MIDDLE) pp >= VALUE', 1),
+        ('LINREG', 'close', 'long',  'trend',   '@LINREG(period=20,std_dev=1.6,series=MIDDLE) pp >= VALUE', 2),
+        ('LINREG', 'open',  'short', 'counter', '@LINREG(period=20,std_dev=1.6,series=UPPER) pp >= VALUE', 3),
+        ('LINREG', 'open',  'short', 'trend',   '@LINREG(tf=H2,period=100,std_dev=2,series=MIDDLE) pp <= VALUE', 4),
+        ('LINREG', 'close', 'short', 'trend',   '@LINREG(period=20,std_dev=1.6,series=MIDDLE) pp <= VALUE', 5)
+    ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'LinReg Fade Trend'
       AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
     INSERT INTO logic_indicator_signals (
@@ -196,7 +235,8 @@ BEGIN
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
-        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
+        'LinReg Fade Trend'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
     ON CONFLICT (logic_id, security_id) DO NOTHING;
@@ -220,7 +260,8 @@ BEGIN
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
-        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
+        'LinReg Fade Trend'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
