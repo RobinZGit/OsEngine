@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-26 — #845: **LinReg Fade Trend в seed** — логика 7252 добавлена в `ensure_seed_logics.sql` (двухтаймфреймовая H2+M15, 6 сигналов, SL 1% + TP 5%, результат теста +45k); installers **v1.0.157**
+**Последнее обновление:** 2026-08-26 — #846: **фикс upgrade на старых БД** — DROP INDEX unique в 01 падал если индекс привязан к constraint; теперь сначала DROP CONSTRAINT; installers **v1.0.158**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-26 (#846: фикс upgrade на старых БД — DROP INDEX unique падал)
+
+- **Проблема:** на удалённом сервере с upgrade установщиком `01` падал на строке 1708: `DROP INDEX` unique index `logic_indicator_signals_logic_id_indicator_id_position_even_key` — индекс привязан к UNIQUE constraint, прямой DROP INDEX запрещён PostgreSQL.
+- **Следствие:** `ensure_seed` не выполнялся → LinReg Fade Trend не создавалась; `02` всё равно применялся (restore routines), но логика отсутствовала.
+- **Фикс:** DO-блок в 01 теперь сначала ищет и снимает все UNIQUE-constraints таблицы (`ALTER TABLE ... DROP CONSTRAINT IF EXISTS`), и только потом `DROP INDEX IF EXISTS`. Идемпотентно — для новых БД без constraints просто пропускается.
+- **Выкладка:** пересобраны установщики **v1.0.158** (build 158). На удалённом сервере — переустановить «Нет» этим exe.
 
 ### 2026-08-26 (#845: LinReg Fade Trend в seed)
 

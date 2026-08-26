@@ -1688,10 +1688,23 @@ ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_si
 
 -- v65 (#831): одинаковые сигналы разрешены — снять ВСЕ unique-индексы/ограничения
 -- (кроме PK) с logic_indicator_signals, как бы они ни назывались в старых БД.
+-- Сначала снимаем UNIQUE-constraints, которые опираются на эти индексы (иначе DROP INDEX падает).
 DO $$
 DECLARE
     r RECORD;
 BEGIN
+    FOR r IN
+        SELECT con.conname AS constraint_name
+        FROM pg_constraint con
+        JOIN pg_class t ON t.oid = con.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE t.relname = 'logic_indicator_signals'
+          AND con.contype = 'u'
+          AND n.nspname = current_schema()
+    LOOP
+        EXECUTE format('ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS %I', r.constraint_name);
+    END LOOP;
+
     FOR r IN
         SELECT i.relname AS indexname
         FROM pg_index x
@@ -1703,7 +1716,7 @@ BEGIN
           AND NOT x.indisprimary
           AND n.nspname = current_schema()
     LOOP
-        EXECUTE format('DROP INDEX %I', r.indexname);
+        EXECUTE format('DROP INDEX IF EXISTS %I', r.indexname);
     END LOOP;
 END $$;
 
