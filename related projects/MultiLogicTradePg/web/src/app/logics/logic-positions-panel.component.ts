@@ -45,6 +45,7 @@ import {
 } from './logic-backtest-papers.component';
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import {
+  buildActiveSecuritiesPoints,
   buildEquityPoints,
   buildPortfolioStopMarkers,
   buildShadowEquityPoints,
@@ -250,6 +251,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   cachedPortfolioStopMarkers: ChartStopMarker[] = [];
   /** Горизонталь цели возобновления (shadow PnL), пока портфель в тени. */
   cachedPortfolioResumeTarget: number | null = null;
+  /** Количество активных бумаг по времени. */
+  cachedActiveSecurities: ChartEquityPoint[] = [];
 
 
 
@@ -659,6 +662,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
     this.cachedPortfolioResumeTarget = this.portfolioShadowResumeTarget();
+    this.cachedActiveSecurities = buildActiveSecuritiesPoints(this.trades);
   }
 
   /**

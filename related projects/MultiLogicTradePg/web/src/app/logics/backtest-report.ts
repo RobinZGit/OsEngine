@@ -207,6 +207,7 @@ export function collectClosedDeals(
   for (const t of closes) {
     const lots = tradeLots?.get(t.id) ?? [];
     let openDt: string | null = null;
+    let openBarDt: string | null = null;
     let openPrice: number | null = null;
     if (lots.length > 0) {
       const times = lots
@@ -214,12 +215,28 @@ export function collectClosedDeals(
         .filter((x): x is string => !!x)
         .sort();
       openDt = times[0] ?? null;
+      const barTimes = lots
+        .map((l) => l.open_bar_dt)
+        .filter((x): x is string => !!x)
+        .sort();
+      openBarDt = barTimes[0] ?? null;
       const withPrice = lots.find((l) => l.open_price != null);
       openPrice = withPrice?.open_price ?? null;
     }
     const closeDt = t.bar_dt || t.executed_at;
+    const closeBarDt = t.bar_dt || null;
     const openMs = parseDt(openDt);
     const closeMs = parseDt(closeDt);
+    let holdMs: number | null = null;
+    if (openMs != null && closeMs != null && closeMs >= openMs) {
+      holdMs = closeMs - openMs;
+    } else if (openBarDt && closeBarDt) {
+      const openBarMs = parseDt(openBarDt);
+      const closeBarMs = parseDt(closeBarDt);
+      if (openBarMs != null && closeBarMs != null && closeBarMs >= openBarMs) {
+        holdMs = closeBarMs - openBarMs;
+      }
+    }
     out.push({
       pnl: Number(t.financial_result),
       commission: num(t.commission),
@@ -228,10 +245,7 @@ export function collectClosedDeals(
       securityPrefix: t.security_prefix ?? null,
       openDt,
       closeDt,
-      holdMs:
-        openMs != null && closeMs != null && closeMs >= openMs
-          ? closeMs - openMs
-          : null,
+      holdMs,
       quantity: num(t.quantity),
       openPrice,
       closePrice: num(t.price),

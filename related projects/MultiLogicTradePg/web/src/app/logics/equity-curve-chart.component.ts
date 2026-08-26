@@ -36,6 +36,9 @@ export const EQUITY_SHADE_COLORS = {
   template: `
     <div class="equity-curve-wrap">
       <canvas #canvas class="equity-curve-canvas"></canvas>
+      @if (activeSecurities.length > 1) {
+        <canvas #secCanvas class="active-sec-canvas"></canvas>
+      }
       <p class="equity-curve-legend">
         <span class="leg-total">━━</span> общая ·
         <span class="leg-long">──</span> лонги ·
@@ -75,6 +78,15 @@ export const EQUITY_SHADE_COLORS = {
         background: #fafbfc;
         border: 1px solid #e2e8f0;
         border-radius: 4px;
+      }
+      .active-sec-canvas {
+        display: block;
+        width: 100%;
+        height: 72px;
+        background: #fafbfc;
+        border: 1px solid #e2e8f0;
+        border-top: none;
+        border-radius: 0 0 4px 4px;
       }
       .equity-curve-legend {
         margin: 4px 0 0;
@@ -135,12 +147,15 @@ export const EQUITY_SHADE_COLORS = {
 })
 export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('secCanvas', { static: false }) secCanvasRef?: ElementRef<HTMLCanvasElement>;
 
   @Input() total: ChartEquityPoint[] = [];
   @Input() longs: ChartEquityPoint[] = [];
   @Input() shorts: ChartEquityPoint[] = [];
   /** Теневая эквити (пунктир). */
   @Input() shadowTotal: ChartEquityPoint[] = [];
+  /** Количество активных бумаг (тонкая коричневая линия, правая ось). */
+  @Input() activeSecurities: ChartEquityPoint[] = [];
   /**
    * Горизонталь: сколько shadow-PnL нужно набрать до возобновления реала
    * (portfolio_stop_resume_equity − baseline). Только пока портфель в тени.
@@ -158,6 +173,7 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
   }
 
   private resizeObs: ResizeObserver | null = null;
+  private sharedTimeRange: { t0: number; t1: number } | null = null;
 
   ngAfterViewInit(): void {
     this.resizeObs = new ResizeObserver(() => this.draw());
@@ -382,6 +398,80 @@ export class EquityCurveChartComponent implements AfterViewInit, OnChanges, OnDe
       const text = `${tag} ${m.label || ''}`.trim();
       ctx.fillText(text, Math.min(x + 4, cssW - padR - 72), padT + 12);
     }
+
+    this.sharedTimeRange = { t0, t1 };
+    this.drawSecurities();
+  }
+
+  private drawSecurities(): void {
+    const canvas = this.secCanvasRef?.nativeElement;
+    if (!canvas || this.activeSecurities.length < 2) return;
+    const tr = this.sharedTimeRange;
+    if (!tr) return;
+    const { t0, t1 } = tr;
+    const parent = canvas.parentElement;
+    const cssW = Math.max(200, parent?.clientWidth || canvas.clientWidth || 400);
+    const cssH = 72;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(cssW * dpr);
+    canvas.height = Math.floor(cssH * dpr);
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const secPts = this.activeSecurities
+      .map((p) => ({ t: Date.parse(p.dt), v: p.value }))
+      .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v))
+      .sort((a, b) => a.t - b.t);
+    if (secPts.length < 2) return;
+
+    const secMin = Math.min(...secPts.map((p) => p.v));
+    const secMax = Math.max(...secPts.map((p) => p.v));
+    const secSpan = Math.max(secMax - secMin, 1);
+    const padL = 48;
+    const padR = 10;
+    const padT = 6;
+    const padB = 14;
+    const plotW = cssW - padL - padR;
+    const plotH = cssH - padT - padB;
+    const xOf = (t: number) => padL + ((t - t0) / (t1 - t0)) * plotW;
+    const yOf = (v: number) => padT + (1 - (v - secMin) / secSpan) * plotH;
+
+    // Grid lines
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 0.5;
+    const gridSteps = Math.min(4, secMax - secMin);
+    for (let i = 0; i <= gridSteps; i++) {
+      const v = secMin + (secSpan * i) / gridSteps;
+      const y = yOf(v);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(cssW - padR, y);
+      ctx.stroke();
+    }
+
+    // Line
+    ctx.strokeStyle = '#92400e';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    secPts.forEach((p, i) => {
+      const x = xOf(p.t);
+      const y = yOf(p.v);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Y-axis labels
+    ctx.fillStyle = '#92400e';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(secMax), padL - 4, padT + 8);
+    ctx.fillText(String(secMin), padL - 4, cssH - padB + 2);
   }
 
   private fmt(n: number): string {

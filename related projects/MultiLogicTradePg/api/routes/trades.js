@@ -406,6 +406,7 @@ app.get('/api/logic-trades/export', async (req, res) => {
           to_char(l.created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
           ac.name AS action_name,
           to_char(ot.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS open_executed_at,
+          to_char(ot.bar_dt, 'YYYY-MM-DD HH24:MI:SS') AS open_bar_dt,
           ot.price AS open_price,
           to_char(ct.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS close_executed_at,
           ct.price AS close_price
@@ -940,9 +941,10 @@ app.get('/api/logic-trade-lots', async (req, res) => {
         l.financial_result,
         l.created_at,
         ac.name AS action_name,
-        ot.executed_at AS open_executed_at,
+        to_char(ot.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS open_executed_at,
+        to_char(ot.bar_dt, 'YYYY-MM-DD HH24:MI:SS') AS open_bar_dt,
         ot.price AS open_price,
-        ct.executed_at AS close_executed_at,
+        to_char(ct.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS close_executed_at,
         ct.price AS close_price
       FROM logic_trade_lots l
       JOIN actions ac ON ac.id = l.action_id

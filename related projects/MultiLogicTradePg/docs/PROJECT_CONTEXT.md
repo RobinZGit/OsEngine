@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-26 — #849: **среднее время удержания по свечам** — holdMs считается по bar_dt если executed_at пустой; installers **v1.0.161**
+**Последнее обновление:** 2026-08-26 — #850: **holding time fix + active securities chart** — to_char для open_bar_dt, фронтенд fallback, отдельный мини-график активных бумаг; installers **v1.0.165**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,18 @@
 ---
 
 ## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-26 (#850: holding time fix + active securities chart)
+
+- Исправлен `to_char(ot.bar_dt)` в `backtest-report-persist.js` — без `to_char` node-postgres возвращал Date-объект, `parseDt` не парсил.
+- Фронтенд `collectClosedDeals` (backtest-report.ts) — добавлен fallback на `open_bar_dt`.
+- API `/api/logic-trade-lots` — добавлен `open_bar_dt`.
+- Интерфейс `LogicTradeLotRow` — добавлено поле `open_bar_dt`.
+- **Отдельный мини-график активных бумаг** (72px) под эквити портфеля:
+  - Общая ось X (время), своя ось Y (количество бумаг).
+  - Коричневая линия, горизонтальная сетка.
+  - Логика: считает по Close-сделкам для бумаг без текущего Open (remaining_qty>0) — корректно работает с test-panel API.
+- Пересобраны установщики **v1.0.165**.
 
 ### 2026-08-26 (#849: среднее время удержания по свечам)
 

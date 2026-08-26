@@ -529,6 +529,66 @@ export function buildShadowEquityPoints(
 }
 
 /**
+ * Количество активных бумаг (с открытыми позициями) по времени.
+ * Работает с неполными данными test-panel: Open (remaining_qty>0) + Close.
+ * Close для бумаг без текущего Open = историческая позиция, была открыта до окна данных.
+ */
+export function buildActiveSecuritiesPoints(
+  trades: LogicTradeRow[]
+): ChartEquityPoint[] {
+  const sorted = [...trades]
+    .filter((t) => !t.is_shadow && (t.opt_lane ?? '') === '')
+    .sort((a, b) =>
+      dtKey(a.bar_dt || a.executed_at).localeCompare(dtKey(b.bar_dt || b.executed_at))
+    );
+  if (sorted.length === 0) return [];
+
+  const currentlyActive = new Set<number>();
+  for (const t of sorted) {
+    if (t.side_name === 'Open' && (t.remaining_qty ?? 0) > 0) {
+      currentlyActive.add(paperSecurityId(t.security_id));
+    }
+  }
+
+  const historicalClosed = new Set<number>();
+  for (const t of sorted) {
+    if (t.side_name === 'Close') {
+      const secId = paperSecurityId(t.security_id);
+      if (!currentlyActive.has(secId)) {
+        historicalClosed.add(secId);
+      }
+    }
+  }
+
+  const totalCount = currentlyActive.size + historicalClosed.size;
+  let count = totalCount;
+  const closedSeen = new Set<number>();
+  const points: ChartEquityPoint[] = [];
+  let lastDt = '';
+
+  for (const t of sorted) {
+    const dt = t.bar_dt || t.executed_at;
+    const secId = paperSecurityId(t.security_id);
+    if (t.side_name === 'Close' && historicalClosed.has(secId) && !closedSeen.has(secId)) {
+      closedSeen.add(secId);
+      count--;
+    }
+    const dtK = dtKey(dt);
+    if (dtK !== lastDt) {
+      points.push({ dt, value: Math.max(0, count) });
+      lastDt = dtK;
+    } else if (points.length > 0) {
+      points[points.length - 1] = { dt, value: Math.max(0, count) };
+    }
+  }
+  if (points.length === 0 && totalCount > 0) {
+    const dt = sorted[0].bar_dt || sorted[0].executed_at;
+    points.push({ dt, value: totalCount });
+  }
+  return points;
+}
+
+/**
  * Зоны открытых позиций по сторонам для графика эквити (#835):
  * long = бледно-зелёная зона от Open Long до закрывающего Close Long,
  * short = бледно-красная от Open Short до Close Short.

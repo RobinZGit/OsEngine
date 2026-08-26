@@ -58,6 +58,7 @@ export interface LogicTradeLotRow {
   created_at?: string;
   action_name: string;
   open_executed_at: string | null;
+  open_bar_dt: string | null;
   open_price: number | null;
   close_executed_at: string;
   close_price: number;
