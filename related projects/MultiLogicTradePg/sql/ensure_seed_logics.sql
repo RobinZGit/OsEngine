@@ -265,6 +265,26 @@ BEGIN
     )
       AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
+    INSERT INTO logic_non_trading_intervals (logic_id, day_of_week, time_from, time_to, is_active, display_order)
+    SELECT l.id, v.day_of_week, v.time_from, v.time_to, TRUE, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        (1, '00:00:00'::time, '09:59:59'::time, 0),
+        (1, '18:40:00'::time, '23:59:59'::time, 1),
+        (2, '00:00:00'::time, '09:59:59'::time, 2),
+        (2, '18:40:00'::time, '23:59:59'::time, 3),
+        (3, '00:00:00'::time, '09:59:59'::time, 4),
+        (3, '18:40:00'::time, '23:59:59'::time, 5),
+        (4, '00:00:00'::time, '09:59:59'::time, 6),
+        (4, '18:40:00'::time, '23:59:59'::time, 7),
+        (5, '00:00:00'::time, '09:59:59'::time, 8),
+        (5, '18:40:00'::time, '23:59:59'::time, 9),
+        (6, '00:00:00'::time, '23:59:59'::time, 10),
+        (7, '00:00:00'::time, '23:59:59'::time, 11)
+    ) AS v(day_of_week, time_from, time_to, display_order)
+    WHERE l.name = 'LinReg Fade Trend'
+      AND NOT EXISTS (SELECT 1 FROM logic_non_trading_intervals z WHERE z.logic_id = l.id);
+
     SELECT COUNT(*) INTO v_opt_count
     FROM logics
     WHERE name = 'LinReg Fade Optimized';

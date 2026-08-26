@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-26 — #846: **фикс upgrade на старых БД** — DROP INDEX unique в 01 падал если индекс привязан к constraint; теперь сначала DROP CONSTRAINT; installers **v1.0.158**
+**Последнее обновление:** 2026-08-26 — #847: **торговые периоды в seed** — LinReg Fade Trend получила MOEX-интервалы (пн-пт 10:00-18:40, сб/вс выходные) из ensure_seed; installers **v1.0.159**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,14 @@
 ---
 
 ## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-26 (#847: торговые периоды в seed — LinReg Fade Trend)
+
+- **LinReg Fade Trend** в `ensure_seed_logics.sql` теперь создаётся с торговыми интервалами MOEX:
+  - Пн-Пт: 10:00–18:40 (торгуем), 00:00–10:00 и 18:40–24:00 (не торгуем)
+  - Сб/Вс: весь день (не торгуем)
+- `logic_non_trading_intervals` — 12 записей на логику, ON CONFLICT DO NOTHING (идемпотентно).
+- Пересобраны установщики **v1.0.159**.
 
 ### 2026-08-26 (#846: фикс upgrade на старых БД — DROP INDEX unique падал)
 
