@@ -1985,6 +1985,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
           this.applyTradingParamsToLogic(logicId, resp.trading);
           this.getParamsDraft(logicId).use_non_trading_periods =
             resp.trading.use_non_trading_periods !== false;
+          if (value && (!cached || !cached.intervals || cached.intervals.length === 0)) {
+            this.applyMoexNonTradingPeriods(logicId, new Event('click'));
+          }
         },
         error: (err) => {
           console.error('use_non_trading_periods save', err);

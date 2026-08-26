@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-26 — #847: **торговые периоды в seed** — LinReg Fade Trend получила MOEX-интервалы (пн-пт 10:00-18:40, сб/вс выходные) из ensure_seed; installers **v1.0.159**
+**Последнее обновление:** 2026-08-26 — #848: **автозагрузка MOEX при включении галочки** — при включении use_non_trading_periods если периодов нет, автоматически подгружаются MOEX; installers **v1.0.160**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,12 @@
 ---
 
 ## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-26 (#848: автозагрузка MOEX при включении галочки)
+
+- При включении галочки **use_non_trading_periods** — если периодов нет, автоматически подгружаются MOEX по умолчанию.
+- Если периоды уже есть — просто включаются/выключаются, без изменений.
+- Пересобраны установщики **v1.0.160**.
 
 ### 2026-08-26 (#847: торговые периоды в seed — LinReg Fade Trend)
 
