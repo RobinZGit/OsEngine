@@ -1300,6 +1300,7 @@
 
 | Дата | Суть |
 |------|------|
+| 2026-08-25 | Release **optimize-and-real-trade-safe** published (v1.0.156: Setup.exe/.ex_ + linux tar.gz) |
 | 2026-08-25 | #844: remote margin again — equity<=0 now stops trading (was raw-sizing fallback); real net equity subtracts open-short notional |
 | 2026-08-25 | #843: per-signal timeframes — tf=BASE[×k] in formula, M7-style auto-catalog, no-lookahead aligned bars; runner/backtest/OPT multi-TF load+eval; UI TF base×mult controls |
 | 2026-08-25 | #842: revert LinReg Fade Trend seed (#840, never pushed) + sync window back to 200/150; keep #841 |
