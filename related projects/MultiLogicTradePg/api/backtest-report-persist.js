@@ -158,6 +158,7 @@ async function persistBacktestReport(pool, runId, opts = {}) {
       SELECT
         l.close_trade_id,
         to_char(ot.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS open_executed_at,
+        ot.bar_dt AS open_bar_dt,
         ot.price::float8 AS open_price
       FROM logic_trade_lots l
       LEFT JOIN logic_trades ot ON ot.id = l.open_trade_id

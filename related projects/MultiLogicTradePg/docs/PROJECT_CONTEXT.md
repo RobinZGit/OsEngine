@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-26 — #848: **автозагрузка MOEX при включении галочки** — при включении use_non_trading_periods если периодов нет, автоматически подгружаются MOEX; installers **v1.0.160**
+**Последнее обновление:** 2026-08-26 — #849: **среднее время удержания по свечам** — holdMs считается по bar_dt если executed_at пустой; installers **v1.0.161**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,12 @@
 ---
 
 ## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-26 (#849: среднее время удержания по свечам)
+
+- Среднее время удержания теперь считается по `bar_dt` свечей, если `executed_at` пустой.
+- Запрос tradeLots дополнен `open_bar_dt` для fallback-расчёта.
+- Пересобраны установщики **v1.0.161**.
 
 ### 2026-08-26 (#848: автозагрузка MOEX при включении галочки)
 

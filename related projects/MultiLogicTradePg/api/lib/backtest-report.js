@@ -110,6 +110,7 @@ function collectClosedDeals(trades, tradeLots) {
   for (const t of closes) {
     const lots = tradeLots?.get(Number(t.id)) ?? [];
     let openDt = null;
+    let openBarDt = null;
     let openPrice = null;
     if (lots.length > 0) {
       const times = lots
@@ -117,12 +118,28 @@ function collectClosedDeals(trades, tradeLots) {
         .filter((x) => !!x)
         .sort();
       openDt = times[0] ?? null;
+      const barTimes = lots
+        .map((l) => l.open_bar_dt)
+        .filter((x) => !!x)
+        .sort();
+      openBarDt = barTimes[0] ?? null;
       const withPrice = lots.find((l) => l.open_price != null);
       openPrice = withPrice?.open_price ?? null;
     }
     const closeDt = t.bar_dt || t.executed_at;
+    const closeBarDt = t.bar_dt || null;
     const openMs = parseDt(openDt);
     const closeMs = parseDt(closeDt);
+    let holdMs = null;
+    if (openMs != null && closeMs != null && closeMs >= openMs) {
+      holdMs = closeMs - openMs;
+    } else if (openBarDt && closeBarDt) {
+      const openBarMs = parseDt(openBarDt);
+      const closeBarMs = parseDt(closeBarDt);
+      if (openBarMs != null && closeBarMs != null && closeBarMs >= openBarMs) {
+        holdMs = closeBarMs - openBarMs;
+      }
+    }
     out.push({
       pnl: Number(t.financial_result),
       commission: num(t.commission),
@@ -131,10 +148,7 @@ function collectClosedDeals(trades, tradeLots) {
       securityPrefix: t.security_prefix ?? null,
       openDt,
       closeDt,
-      holdMs:
-        openMs != null && closeMs != null && closeMs >= openMs
-          ? closeMs - openMs
-          : null,
+      holdMs,
       quantity: num(t.quantity),
       openPrice,
       closePrice: num(t.price),
