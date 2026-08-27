@@ -193,15 +193,47 @@ export function collectClosedDeals(
   trades: LogicTradeRow[],
   tradeLots?: Map<number, LogicTradeLotRow[]>
 ): ClosedDeal[] {
-  const closes = trades.filter(
-    (t) =>
-      !t.is_shadow &&
-      !t.opt_lane &&
-      t.side_name === 'Close' &&
-      (t.status === 'filled' || t.status === 'submitted') &&
-      t.financial_result != null &&
-      Number.isFinite(Number(t.financial_result))
-  );
+  const closes = trades
+    .filter(
+      (t) =>
+        !t.is_shadow &&
+        !t.opt_lane &&
+        t.side_name === 'Close' &&
+        (t.status === 'filled' || t.status === 'submitted') &&
+        t.financial_result != null &&
+        Number.isFinite(Number(t.financial_result))
+    )
+    .sort((a, b) =>
+      String(a.bar_dt || a.executed_at).localeCompare(String(b.bar_dt || b.executed_at))
+    );
+
+  // FIFO fallback: когда lots не загружены, сопоставляем продажи с покупками
+  // той же бумаги/направления по количеству (очередь открытий). Время удержания
+  // берём по свечам: усредняем по объёму, если закрытие из нескольких покупок.
+  const queueKey = (t: Pick<LogicTradeRow, 'security_id' | 'action_name'>) =>
+    `${t.security_id}:${t.action_name}`;
+  const openQueue = new Map<string, Array<{ row: LogicTradeRow; rem: number }>>();
+  const openById = new Map<number, { row: LogicTradeRow; rem: number }>();
+  const opens = trades
+    .filter(
+      (t) =>
+        !t.is_shadow &&
+        !t.opt_lane &&
+        t.side_name === 'Open' &&
+        (t.status === 'filled' || t.status === 'submitted') &&
+        Number(t.quantity) > 0
+    )
+    .sort((a, b) =>
+      String(a.bar_dt || a.executed_at).localeCompare(String(b.bar_dt || b.executed_at))
+    );
+  for (const o of opens) {
+    const k = queueKey(o);
+    const q = openQueue.get(k);
+    const item = { row: o, rem: Number(o.quantity) };
+    if (q) q.push(item);
+    else openQueue.set(k, [item]);
+    openById.set(Number(o.id), item);
+  }
 
   const out: ClosedDeal[] = [];
   for (const t of closes) {
@@ -222,6 +254,40 @@ export function collectClosedDeals(
       openBarDt = barTimes[0] ?? null;
       const withPrice = lots.find((l) => l.open_price != null);
       openPrice = withPrice?.open_price ?? null;
+      // Списываем те же открытия из FIFO-очереди, чтобы не учитывались дважды.
+      for (const l of lots) {
+        const oid = Number(l.open_trade_id);
+        const item = openById.get(oid);
+        if (item && item.rem > 1e-9) {
+          item.rem = Math.max(0, item.rem - Number(l.quantity));
+        }
+      }
+    } else {
+      // FIFO: списываем нужный объём с самой ранней открытой позиции.
+      const q = openQueue.get(queueKey(t)) ?? [];
+      let need = Number(t.quantity) || 0;
+      const matched: Array<{ row: LogicTradeRow; qty: number }> = [];
+      for (let i = 0; i < q.length && need > 1e-9; i++) {
+        const item = q[i];
+        const take = Math.min(item.rem, need);
+        if (take > 1e-9) matched.push({ row: item.row, qty: take });
+        item.rem -= take;
+        need -= take;
+      }
+      if (matched.length > 0) {
+        const barTimes = matched
+          .map((m) => m.row.bar_dt || m.row.executed_at)
+          .filter((x): x is string => !!x)
+          .sort();
+        openBarDt = barTimes[0] ?? null;
+        openDt = openBarDt;
+        const totalQty = matched.reduce((s, m) => s + m.qty, 0);
+        if (totalQty > 1e-9) {
+          openPrice =
+            matched.reduce((s, m) => s + m.qty * (Number(m.row.price) || 0), 0) /
+            totalQty;
+        }
+      }
     }
     const closeDt = t.bar_dt || t.executed_at;
     const closeBarDt = t.bar_dt || null;

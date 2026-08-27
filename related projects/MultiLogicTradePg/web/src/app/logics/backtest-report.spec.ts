@@ -126,4 +126,36 @@ describe('backtest-report metrics', () => {
     expect(deals.length).toBe(1);
     expect(deals[0].pnl).toBe(10);
   });
+
+  it('collectClosedDeals FIFO fallback computes holding from candles', () => {
+    const openLong = (id: number, dt: string): LogicTradeRow => ({
+      ...closeTrade({ id, financial_result: 0, action_name: 'Long' }),
+      side_name: 'Open',
+      financial_result: null,
+      bar_dt: dt,
+      executed_at: dt,
+      quantity: 10,
+    });
+    const trades: LogicTradeRow[] = [
+      openLong(101, '2026-01-10 10:00:00'),
+      openLong(102, '2026-01-10 10:30:00'),
+      {
+        ...closeTrade({
+          id: 202,
+          financial_result: 50,
+          action_name: 'Long',
+          bar_dt: '2026-01-10 11:30:00',
+          executed_at: '2026-01-10 11:30:00',
+        }),
+        quantity: 15,
+      },
+    ];
+    const deals = collectClosedDeals(trades);
+    expect(deals.length).toBe(1);
+    // Закрытие 15 = 10 из покупки 101 + 5 из покупки 102.
+    // Берём самую раннюю покупку (максимально скорее): 10:00 → 11:30 = 5400000мс.
+    expect(deals[0].holdMs).toBe(5400000);
+    expect(deals[0].openDt).toBe('2026-01-10 10:00:00');
+    expect(deals[0].openPrice).not.toBeNull();
+  });
 });
