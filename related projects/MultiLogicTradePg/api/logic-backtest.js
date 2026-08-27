@@ -732,6 +732,85 @@ async function ensureSecurityData(
     );
   }
 
+  // (1c) Дополнительные timeframe из формул сигналов (например H2). Если для них
+  // нет цен в периоде — резэмплим из основного tf, чтобы сигналы вида
+  // @LINREG(tf=H2,...) могли быть оценены. Реальные биржевые свечи не трогаем.
+  const extraTfIds = [];
+  try {
+    const { rows: extraRows } = await pool.query(
+      `SELECT logic_signal_extra_tf_ids($1, $2) AS tf_id`,
+      [logicId, tfId]
+    );
+    for (const r of extraRows) {
+      const id = Number(r.tf_id);
+      if (
+        Number.isInteger(id) &&
+        id > 0 &&
+        id !== Number(tfId) &&
+        !extraTfIds.includes(id)
+      ) {
+        extraTfIds.push(id);
+      }
+    }
+  } catch (e) {
+    await backtestLog(
+      pool,
+      runId,
+      logicId,
+      'backtest.extra_tf.error',
+      e?.message || String(e),
+      { security_id: secId, name: secName },
+      secId,
+      tfId
+    );
+  }
+
+  for (const extraTfId of extraTfIds) {
+    try {
+      const { rows: cntRows } = await pool.query(
+        `SELECT COUNT(*)::int AS cnt
+         FROM prices
+         WHERE security_id = $1 AND timeframe_id = $2
+           AND dt::date BETWEEN $3::date AND $4::date`,
+        [secId, extraTfId, dateFrom, dateTo]
+      );
+      if (Number(cntRows[0]?.cnt ?? 0) === 0) {
+        await phase(
+          'prices_resample',
+          `Резэмпл ${secName || secId}: M15 → tf ${extraTfId}`,
+          0.58
+        );
+        await pool.query(
+          'CALL resample_prices_to_timeframe($1, $2, $3, $4::date, $5::date)',
+          [secId, tfId, extraTfId, loadDateFrom, dateTo]
+        );
+        stats.pricesResampled += 1;
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.prices.resampled',
+          `Резэмпл ${secName || secId}: tf ${tfId} → tf ${extraTfId} (${loadDateFrom} — ${dateTo})`,
+          { security_id: secId, name: secName, src_tf: tfId, dst_tf: extraTfId },
+          secId,
+          extraTfId
+        );
+      }
+    } catch (e) {
+      stats.pricesErr += 1;
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.prices.resample_error',
+        e?.message || String(e),
+        { security_id: secId, name: secName, src_tf: tfId, dst_tf: extraTfId },
+        secId,
+        extraTfId
+      );
+    }
+  }
+
   // (2) Indicators: apply @CODE(...period/std_dev...) from logic signals onto
   // security_indicator_series, then sync. Skip cache only if params unchanged.
   const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
@@ -830,6 +909,40 @@ async function ensureSecurityData(
       `Индикаторы ${secName || secId}: ${indDone}/${indicatorIds.length}`,
       0.6 + 0.35 * (indDone / indTotal)
     );
+  }
+
+  // (2b) Синк индикаторов на дополнительных timeframe (например H2) —
+  // их требуют сигналы вида @LINREG(tf=H2,...), цены уже могли быть резэмплены.
+  for (const extraTfId of extraTfIds) {
+    for (const indicatorId of indicatorIds) {
+      if (
+        !pricesReloaded &&
+        (await indicatorsCached(pool, secId, extraTfId, indicatorId, dateFrom, dateTo))
+      ) {
+        stats.indCached += 1;
+        continue;
+      }
+      try {
+        await pool.query(
+          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
+          [secId, indicatorId, extraTfId, endDt, pointCount, false]
+        );
+        stats.indSynced += 1;
+      } catch (e) {
+        stats.indErr += 1;
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.indicator.error',
+          e.message,
+          { security_id: secId, indicator_id: indicatorId, name: secName, timeframe_id: extraTfId },
+          secId,
+          extraTfId
+        );
+      }
+    }
+    await phase('indicator_xtf', `Индикаторы tf ${extraTfId}: ${secName || secId}`, 0.99);
   }
 
   // Индикаторы на base_asset / contango (eval security ≠ trade security)
@@ -1080,6 +1193,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
     pricesCached: 0,
     pricesShared: 0,
     pricesErr: 0,
+    pricesResampled: 0,
     indSynced: 0,
     indCached: 0,
     indErr: 0,
