@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-27 — #851: **fix holding time in live report window** — FIFO fallback по свечам когда lots не загружены; installers **v1.0.166**
+**Последнее обновление:** 2026-08-27 — #852: **fix zero trades in backtest for old periods** — резэмпл extra timeframe (H2) из основного tf когда данных нет; installers **v1.0.167**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -118,7 +118,17 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-26)
+## Что сделано (актуально на 2026-08-27)
+
+### 2026-08-27 (#852: бэктест не открывал сделки за старые периоды)
+
+- Сигналы вида `@LINREG(tf=H2,...)` (open long/short логики LinReg Fade Trend) требуют данных на **другом timeframe**. Бэктест загружал цены и индикаторы **только для основного tf** (M15): для периодов, где H2 никогда не грузился (например, 2023), сигналы открытия не могли вычислиться → `v_all_ok=false` → 0 сделок. В 2026 работало лишь потому, что H2 уже был в БД.
+- `api/logic-backtest.js` (`ensureSecurityData`):
+  - **блок (1c)** — через `logic_signal_extra_tf_ids(logicId, tfId)` собираются все дополнительные tf из формул сигналов; если для них нет цен в периоде — `resample_prices_to_timeframe(secId, tfId, extraTfId, ...)` резэмплит из основного tf;
+  - **блок (2b)** — синк индикаторов на extra tf (`sync_security_indicator_series_for_indicator`);
+  - счётчик `stats.pricesResampled`.
+- Проверка: run 286 (7905, 2023-06-24..2023-08-26) — 1180 сделок в `logic_trades` (было 0), отчёт `deal_count=544`, `net_pnl=-53782` (-5.38%).
+- Пересобраны установщики **v1.0.167**.
 
 ### 2026-08-27 (#851: время удержания в живом окне отчёта)
 
