@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-26 — #850: **holding time fix + active securities chart** — to_char для open_bar_dt, фронтенд fallback, отдельный мини-график активных бумаг; installers **v1.0.165**
+**Последнее обновление:** 2026-08-27 — #851: **fix holding time in live report window** — FIFO fallback по свечам когда lots не загружены; installers **v1.0.166**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 ---
@@ -119,6 +119,13 @@
 ---
 
 ## Что сделано (актуально на 2026-08-26)
+
+### 2026-08-27 (#851: время удержания в живом окне отчёта)
+
+- Живое окно отчёта из панели использовало `this.tradeLots` (заполняется только по клику на сделку) — для массовых прогонов Map пустой, время удержания пустое. Серверный отчёт и БД были корректны.
+- `collectClosedDeals` (backtest-report.ts) — добавлен **FIFO fallback**: продажа сопоставляется с покупками той же бумаги/направления по количеству (очередь открытий). Время удержания по свечам (bar_dt); при нескольких покупках берётся самая ранняя (максимально скорее). Если lots загружены — используются они (точнее), открытия списываются из очереди, чтобы не учитывались дважды.
+- Юнит-тест `collectClosedDeals FIFO fallback computes holding from candles`.
+- Пересобраны установщики **v1.0.166**.
 
 ### 2026-08-26 (#850: holding time fix + active securities chart)
 
