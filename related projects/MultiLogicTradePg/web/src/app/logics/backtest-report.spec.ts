@@ -1,12 +1,13 @@
 import {
   buildBacktestReportDownloadName,
+  buildPaperReportCloseRows,
   collectClosedDeals,
   computeSideStats,
   sanitizeReportFilenamePart,
   type BacktestReportModel,
   type ClosedDeal,
 } from './backtest-report';
-import type { LogicTradeRow } from '../shared/logic-trade';
+import type { LogicTradeLotRow, LogicTradeRow } from '../shared/logic-trade';
 
 function closeTrade(
   partial: Partial<LogicTradeRow> & { financial_result: number; action_name: string }
@@ -157,5 +158,102 @@ describe('backtest-report metrics', () => {
     expect(deals[0].holdMs).toBe(5400000);
     expect(deals[0].openDt).toBe('2026-01-10 10:00:00');
     expect(deals[0].openPrice).not.toBeNull();
+  });
+
+  it('buildPaperReportCloseRows maps a sell to its source buys (FIFO fallback)', () => {
+    const openLong = (id: number, dt: string, quantity: number, price: number): LogicTradeRow => ({
+      ...closeTrade({ id, financial_result: 0, action_name: 'Long' }),
+      side_name: 'Open',
+      financial_result: null,
+      bar_dt: dt,
+      executed_at: dt,
+      quantity,
+      price,
+    });
+    const trades: LogicTradeRow[] = [
+      openLong(101, '2026-01-10 10:00:00', 10, 100),
+      openLong(102, '2026-01-10 10:30:00', 10, 105),
+      {
+        ...closeTrade({
+          id: 202,
+          financial_result: 125,
+          action_name: 'Long',
+          bar_dt: '2026-01-10 11:30:00',
+          executed_at: '2026-01-10 11:30:00',
+        }),
+        quantity: 15,
+        price: 110,
+      },
+    ];
+    const rows = buildPaperReportCloseRows(trades);
+    expect(rows.length).toBe(1);
+    const sell = rows[0];
+    expect(sell.side).toBe('Long');
+    expect(sell.totalPnl).toBe(125);
+    expect(sell.sources.length).toBe(2);
+    expect(sell.sources[0].openTradeId).toBe(101);
+    expect(sell.sources[0].quantity).toBe(10);
+    expect(sell.sources[1].openTradeId).toBe(102);
+    expect(sell.sources[1].quantity).toBe(5);
+    // FIFO-оценка: П/У 125 распределён пропорционально объёму 15.
+    expect(sell.sources[0].pnl).toBeCloseTo(125 * (10 / 15), 2);
+    expect(sell.sources[1].pnl).toBeCloseTo(125 * (5 / 15), 2);
+    expect(sell.sources[0].estimated).toBe(true);
+  });
+
+  it('buildPaperReportCloseRows uses real lots when provided', () => {
+    const openLong = (id: number, dt: string, quantity: number, price: number): LogicTradeRow => ({
+      ...closeTrade({ id, financial_result: 0, action_name: 'Long' }),
+      side_name: 'Open',
+      financial_result: null,
+      bar_dt: dt,
+      executed_at: dt,
+      quantity,
+      price,
+    });
+    const close = {
+      ...closeTrade({
+        id: 202,
+        financial_result: 50,
+        action_name: 'Long',
+        bar_dt: '2026-01-10 11:30:00',
+        executed_at: '2026-01-10 11:30:00',
+      }),
+      quantity: 10,
+      price: 110,
+    };
+    const trades: LogicTradeRow[] = [openLong(101, '2026-01-10 10:00:00', 10, 100), close];
+    const lots = new Map<number, LogicTradeLotRow[]>([
+      [
+        202,
+        [
+          {
+            id: 1,
+            logic_id: 1,
+            close_trade_id: 202,
+            open_trade_id: 101,
+            action_id: 1,
+            cost_method: 'FIFO',
+            quantity: 10,
+            close_amount: 1100,
+            open_amount: 1000,
+            close_commission: 0,
+            open_commission: 0,
+            financial_result: 50,
+            action_name: 'Long',
+            open_executed_at: '2026-01-10 10:00:00',
+            open_bar_dt: '2026-01-10 10:00:00',
+            open_price: 100,
+            close_executed_at: '2026-01-10 11:30:00',
+            close_price: 110,
+          },
+        ],
+      ],
+    ]);
+    const rows = buildPaperReportCloseRows(trades, lots);
+    expect(rows[0].sources.length).toBe(1);
+    expect(rows[0].sources[0].openTradeId).toBe(101);
+    expect(rows[0].sources[0].pnl).toBe(50);
+    expect(rows[0].sources[0].estimated).toBe(false);
   });
 });

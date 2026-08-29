@@ -5,6 +5,9 @@
  * Mirrors web/src/app/logics/backtest-report.ts for archive persistence.
  */
 
+const paperChartsModule = require('./backtest-report-papers');
+const overlays = require('./backtest-chart-overlays');
+
 function num(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
@@ -445,6 +448,7 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
       accountName: logic.account_name || logic.account_code || '—',
     },
     paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
+    paperCharts: Array.isArray(opts.paperCharts) ? opts.paperCharts : [],
     all: computeSideStats(allDeals, initial, rate, true),
     long: computeSideStats(longDeals, initial, rate, false),
     short: computeSideStats(shortDeals, initial, rate, false),
@@ -623,6 +627,42 @@ function renderBacktestReportHtml(model) {
     table.param-hist td.formulas { font-family:ui-monospace,Consolas,monospace; font-size:.72rem; word-break:break-all; }
     .muted { color:var(--muted); }
     .foot { margin-top:1.25rem; font-size:.78rem; color:var(--muted); text-align:center; }
+    .report-tools { display:flex; justify-content:flex-end; margin-bottom:1rem; gap:.5rem; }
+    .btn { display:inline-flex; align-items:center; gap:.45rem; padding:.5rem 1rem; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--ink); font:inherit; font-size:.85rem; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(15,23,42,.05); }
+    .btn:hover { border-color:#94a3b8; }
+    .btn.primary { background:#0f766e; border-color:#0f766e; color:#fff; }
+    .btn.primary:hover { background:#115e59; }
+    .papers-report { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem 1.15rem; margin-bottom:1rem; }
+    .papers-report>h2 { margin:0 0 .75rem; font-size:1rem; font-weight:700; }
+    .paper-report { border:1px solid var(--line); border-radius:10px; margin-bottom:.85rem; overflow:hidden; background:#fff; }
+    .paper-report[open] .paper-head { border-bottom:1px solid var(--line); }
+    .paper-head { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem 1rem; padding:.7rem .9rem; cursor:pointer; list-style:none; background:#f8fafc; }
+    .paper-head::-webkit-details-marker { display:none; }
+    .paper-head::before { content:"▸"; color:var(--muted); transition:transform .15s ease; }
+    .paper-report[open] .paper-head::before { transform:rotate(90deg); }
+    .paper-head-name { font-weight:700; font-size:.92rem; }
+    .paper-tf { color:var(--muted); font-weight:500; font-size:.78rem; }
+    .paper-meta { margin-left:auto; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .paper-meta .pos { color:var(--pos); font-weight:600; } .paper-meta .neg { color:var(--neg); font-weight:600; }
+    .paper-body { padding:.85rem .9rem; }
+    .paper-body h3 { margin:.9rem 0 .5rem; font-size:.88rem; font-weight:700; }
+    .paper-hint { margin:.4rem 0 0; font-size:.78rem; }
+    .pchart-toolbar { display:flex; align-items:center; justify-content:flex-end; margin-bottom:.45rem; }
+    .pchart-toggle { display:inline-flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--muted); cursor:pointer; user-select:none; }
+    .pchart-legend { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem 1rem; margin-top:.5rem; font-size:.76rem; color:#334155; }
+    .pl-swatch { display:inline-block; width:.7rem; height:.55rem; border-radius:2px; margin-right:.28rem; vertical-align:baseline; }
+    .pl-swatch.thr { background-size:4px 4px; }
+    .pl-sep { width:1px; height:.9rem; background:var(--line); }
+    table.paper-fifo { width:100%; border-collapse:collapse; font-size:.8rem; }
+    table.paper-fifo th, table.paper-fifo td { padding:.42rem .6rem; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    table.paper-fifo th { color:var(--muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.02em; }
+    table.paper-fifo td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    table.paper-fifo tr.pf-close td { background:#f8fafc; }
+    table.paper-fifo tr.pf-src td { color:#475569; padding-top:.15rem; padding-bottom:.15rem; font-size:.76rem; }
+    table.paper-fifo .pf-arrow { color:#94a3b8; }
+    table.paper-fifo .pos { color:var(--pos); font-weight:600; } table.paper-fifo .neg { color:var(--neg); font-weight:600; }
+    .paper-svg { display:block; }
+    @media print { .no-print, .report-tools, .pchart-toolbar { display:none !important; } .paper-report { break-inside:auto; } }
   </style>
 </head>
 <body>
@@ -632,6 +672,9 @@ function renderBacktestReportHtml(model) {
     <div class="sub">Сформирован ${esc(model.generatedAt)} · архив PostgreSQL · метрики как OsEngine Journal → Статистика</div>
   </header>
   <div class="wrap">
+    <div class="report-tools no-print">
+      <button type="button" class="btn primary" onclick="downloadBacktestReport()" title="Скачать этот отчёт HTML-файлом">Скачать отчёт</button>
+    </div>
     <div class="cards">
       <div class="card"><div class="lbl">Чистый П\\У</div><div class="val ${a.netPnl >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(a.netPnl))}</div></div>
       <div class="card"><div class="lbl">П\\У %</div><div class="val ${a.netPnlPct >= 0 ? 'pos' : 'neg'}">${esc(fmtPct(a.netPnlPct))}</div></div>
@@ -662,6 +705,7 @@ function renderBacktestReportHtml(model) {
       <h2>Эквити (кумулятивный П\\У)</h2>
       <div class="chart">${model.equitySvg}</div>
     </section>
+    ${paperChartsModule.paperChartsSectionHtml(model.paperCharts)}
     <section>
       <h2>Статистика (Все / Лонг / Шорт)</h2>
       <table class="stats">
@@ -685,6 +729,30 @@ function renderBacktestReportHtml(model) {
     </section>
     <p class="foot">MultiLogic Trade · архив отчёта теста · PostgreSQL</p>
   </div>
+  <script>
+    function swapReportChart(chartId, lineId, toggleId) {
+      var c = document.getElementById(chartId);
+      var l = document.getElementById(lineId);
+      var t = document.getElementById(toggleId);
+      if (!c || !l || !t) return;
+      var showCandle = t.checked;
+      if (showCandle) { c.style.display = ''; l.style.display = 'none'; }
+      else { c.style.display = 'none'; l.style.display = ''; }
+    }
+    function downloadBacktestReport() {
+      var name = document.documentElement.getAttribute('data-download-name') || 'MLT-report.html';
+      var html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+      var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+  </script>
 </body>
 </html>`;
 }

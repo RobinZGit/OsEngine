@@ -5,6 +5,8 @@ const {
   renderBacktestReportHtml,
   buildBacktestReportDownloadName,
 } = require('./lib/backtest-report');
+const { buildPaperChartsForRun } = require('./lib/backtest-paper-charts');
+const { LOGIC_TRADE_SELECT_TEST_PANEL } = require('./lib/logic-trade-sql');
 
 /** Prevent overlapping persist for the same run_id. */
 const persistInFlight = new Map();
@@ -119,34 +121,22 @@ async function persistBacktestReport(pool, runId, opts = {}) {
   if (!logic) return null;
 
   const { rows: trades } = await pool.query(
-    `
-    SELECT
-      lt.id, lt.logic_id, lt.security_id, lt.quantity, lt.price,
-      to_char(lt.bar_dt, 'YYYY-MM-DD HH24:MI:SS') AS bar_dt,
-      to_char(lt.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at,
-      lt.is_shadow, lt.is_test, lt.run_id, lt.status,
-      COALESCE(lt.opt_lane, '') AS opt_lane,
-      lt.commission::float8 AS commission,
-      lt.financial_result::float8 AS financial_result,
-      s.name AS security_name,
-      sp.prefix AS security_prefix,
-      sd.name AS side_name,
-      ac.name AS action_name
-    FROM logic_trades lt
-    JOIN securities s ON s.id = lt.security_id
-    LEFT JOIN LATERAL (
-      SELECT prefix FROM security_prefixes WHERE security_id = s.id ORDER BY exchange_id LIMIT 1
-    ) sp ON TRUE
-    JOIN sides sd ON sd.id = lt.side_id
-    JOIN actions ac ON ac.id = lt.action_id
-    WHERE lt.logic_id = $1
+    `${LOGIC_TRADE_SELECT_TEST_PANEL}
+    WHERE lt.logic_id = $2
       AND lt.is_test = TRUE
-      AND lt.run_id = $2
       AND COALESCE(lt.opt_lane, '') = ''
+      AND (
+        lt.run_id = $3
+        OR NOT EXISTS (
+          -- #856: сделки ряда прогонов переиспользуют один финальный run_id логики
+          -- (champion book), отдельного набора под собственным run_id нет.
+          SELECT 1 FROM logic_trades l2
+          WHERE l2.logic_id = lt.logic_id AND l2.run_id = $3
+        )
+      )
     ORDER BY lt.bar_dt ASC NULLS LAST, lt.executed_at ASC, lt.id ASC
-    LIMIT 50000
-    `,
-    [run.logic_id, runId]
+    LIMIT 50000`,
+    [run.logic_id, run.logic_id, runId]
   );
 
   const tradeIds = trades.map((t) => Number(t.id)).filter((id) => id > 0);
@@ -187,10 +177,51 @@ async function persistBacktestReport(pool, runId, opts = {}) {
     console.warn('opt param history for report', err?.message || err);
   }
 
+  let signalIndicatorIds = [];
+  if (!isSnapshot) {
+    try {
+      const { rows: sigs } = await pool.query(
+        `SELECT DISTINCT indicator_id FROM logic_indicator_signals WHERE logic_id = $1`,
+        [run.logic_id]
+      );
+      signalIndicatorIds = sigs
+        .map((s) => Number(s.indicator_id))
+        .filter((n) => n > 0);
+    } catch (err) {
+      console.warn('signal indicators for report', err?.message || err);
+    }
+  }
+
+  let paperCharts = [];
+  if (!isSnapshot) {
+    try {
+      // #856: если сделки прогона — из champion book другого run_id, окно блоков берём из сделок.
+      let chartFrom = run.date_from;
+      let chartTo = run.date_to;
+      const usesChampionBook =
+        trades.length > 0 &&
+        trades.some((t) => Number(t.run_id) !== Number(runId));
+      if (usesChampionBook) {
+        chartFrom = trades[0].bar_dt || trades[0].executed_at;
+        chartTo =
+          trades[trades.length - 1].bar_dt || trades[trades.length - 1].executed_at;
+      }
+      paperCharts = await buildPaperChartsForRun(pool, {
+        run: { ...run, date_from: chartFrom, date_to: chartTo },
+        trades,
+        tradeLots,
+        signalIndicatorIds,
+      });
+    } catch (err) {
+      console.warn('paper charts for report', runId, err?.message || err);
+    }
+  }
+
   const model = buildBacktestReportModel(logic, trades, {
     backtestRun: run,
     tradeLots,
     paramHistory,
+    paperCharts,
   });
   const html = renderBacktestReportHtml(model);
   const downloadName = buildBacktestReportDownloadName(model);

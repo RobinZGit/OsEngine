@@ -7,7 +7,7 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-29 — правило про папку репозитория и локальную папку установки (`.cursor/rules/project-context.mdc`); фиксация путей; installers **v1.0.168**
+**Последнее обновление:** 2026-08-29 — отчёт теста открывается всегда (#855) + пер-бумажные блоки и в живом отчёте (#848/#853), и в архиве «Отчёты тестов» с перегенерацией всех завершённых прогонов (#856); бюджеты web подняты; installers — текущая версия в `VERSION.txt` (выставляется автоматически при каждом запуске `installer\build-all-installers.ps1`)
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
 
 > **Папка репозитория (источник правок, git):** `C:\Users\Сергей\VsCodeProjects\OsEngine\related projects\MultiLogicTradePg` (git-repo `C:\Users\Сергей\VsCodeProjects\OsEngine`, remote `github.com/RobinZGit/OsEngine`, ветка main).  
@@ -122,7 +122,39 @@
 
 ---
 
-## Что сделано (актуально на 2026-08-27)
+## Что сделано (актуально на 2026-08-29)
+
+### 2026-08-29 (#856: архив отчётов тестов — блоки по бумагам «по-новому» + перегенерация)
+
+- По запросу (#856 в USER_INSTRUCTIONS) серверный архив «Отчёты тестов» (`api/backtest-report-persist.js` → `api/lib/backtest-report.js`) теперь строит **те же пер-бумажные блоки**, что и живое окно «Отчёт»: график свечи/линия (`swapReportChart`), индикаторы (`buildPaperIndicatorSeries`), сделки/стопы, фиолетовая эквити-линия + shadow-пунктир, зоны shadow/inverted/long/short, FIFO-таблица «из какой позиции закрыто» (`logic_trade_lots`, иначе оценка с пометкой `~`).
+- Новое на сервере: `api/lib/backtest-chart-overlays.js` (порт `backtest-chart-overlays.ts`: `papersWithTrades`, `buildEquityPoints`, `buildShadowEquityPoints`, `buildTradeMarkers`, `buildStopMarkers`, `buildShadedDisabledRanges`, `buildSideOpenShadedRanges`), `api/lib/backtest-report-papers.js` (порт SVG-рендереров + `paperChartsSectionHtml`), `api/lib/backtest-paper-charts.js` (загрузка свечей/индикаторов/лот + сборка `paperCharts`). В `backtest-report.js` — поле `paperCharts` в модели, CSS `.papers-report`, JS `swapReportChart`/`downloadBacktestReport`, кнопка «Скачать отчёт».
+- Загрузка индикаторов в persist **не использует** `indicator_value_types.display_order` (JOIN `indicator_value_types` по `indicator_value_type_id`, сортировка `ivt.code`) — работает и на старой развёрнутой БД, где `/api/indicator-values` отдаёт 500 (живой отчёт всё равно опционален).
+- Сделки persist — через `LOGIC_TRADE_SELECT_TEST_PANEL` (даёт `remaining_qty`, `timeframe_tf`, `trade_reason`, `timeframe_id` — нужны для блоков). Снапшоты (`is_snapshot`) остаются лёгкими — блоков не строят.
+- **Champion book (#856 bug):** сделки ряда прогонов хранятся под одним финальным run_id логики (в логике за раз только одна книга; проверил — у логики не бывает нескольких run_id со сделками). Если у run нет собственных сделок, persist берёт книги логики целиком (fallback `NOT EXISTS(run_id)`) и строит блоки по окну сделок; если сделок у логики нет совсем — блоков нет (честно).
+- **Backfill выполнен:** все 25 отчётов `logic_backtest_reports` перегенерированы с блоками (12 бумаг/блок, FIFO-таблицы, индикаторы). Проверено на реальных run: 323 (8513), 317/319 (8512), 306/307/316 (8511), 286 (7905) и др.
+- Тесты 84/84 SUCCESS, `ng build` OK — установщики пересобраны.
+
+### 2026-08-29 (#855: отчёт теста не открывается / открывается не всегда)
+
+- Диагностика на реальных данных **логики 8513, run 323** (359 сделок, 33 бумаги, ФР по лотам 176): и пайплайн пер-бумажных блоков, и старый рендер отчёта в изоляции работают — падение было в поведении открытия окна на фронте.
+- `autoOpenFinishedReports()` (панель логик): автооткрытие отчёта теперь **ждёт появления сделок** — сделки могут прийти в панель poll'ом позже, чем сменится статус run на `completed`, и прежняя попытка через 500 мс молча выходила (отчёт не открывался). Повторы с нарастающей задержкой (`AUTO_REPORT_RETRIES=8`, шаг 2 с) + `.catch()` без unhandled rejection.
+- `openTestReportWindow()`: пер-бумажные блоки стали **опциональными** — `loadReportPaperCharts()` обёрнут в try/catch, при ошибке отчёт всё равно открывается (console.warn), как и история параметров; общий catch по клику показывает `alert` с текстом ошибки вместо «ничего».
+- При установке на старую БД `indicator_value_types` без `display_order` `GET /api/indicator-values` возвращал 500 — теперь это не блокирует ни отчёт, ни блоки бумаг (индикаторы пропускаются). Расхождение схемы закрывается штатными upgrade-скриптами установщика.
+
+### 2026-08-29 (#853: пер-бумажные блоки в HTML-отчёте теста)
+
+- По запросу (#848 в USER_INSTRUCTIONS) в окно «Отчёт» (панель логик) добавлены крупные блоки по каждой бумаге из теста:
+  - график бумаги: свечной график **или** линия закрытий (переключатель сверху, по умолчанию свечи; JS `swapReportChart`);
+  - эквити-кривая бумаги жирной фиолетовой линией `#7c3aed` (w=3) + пунктирная shadow-эквити `#a78bfa` на отдельной мини-панели;
+  - линии всех индикаторов логики по ценам бумаги (`buildPaperIndicatorSeries`, палитра `PAPER_SERIES_COLORS`);
+  - сделки: вход/выход треугольниками (long `#16a34a`/`#15803d`, short `#dc2626`/`#b91c1c`, shadow `#94a3b8`), стопы/TP кружками с подписями `SL…`/`TP…`;
+  - раскраска теневых/реальных зон (normal/shadow/inverted/long/short) — зеркально развёрнутой бумаге;
+  - таблица «закрытие из позиций» (тумблер «из какой позиции», FIFO): реальные лоты логики `logic_trade_lots`, иначе пропорциональная оценка П/У по объёмам покупок с пометкой `*`;
+  - заголовок блока: бумага, timeframe, количество сделок, открытый объём, последняя цена, PnL; при ошибке загрузки котировок — плашка «Не удалось загрузить котировки (API цен)».
+- `backtest-report.ts`: типы `PaperReportChart/CloseRow/LotLink/IndicatorSeries`, билдеры `buildPaperReportCloseRows`, `buildPaperIndicatorSeries`, SVG-рендер (`paperChartSvgPair` — свечи и линия через sentinel, `paperChartsSectionHtml` и др.), CSS `.papers-report`, JS `swapReportChart`, поле модели `paperCharts`.
+- `logic-positions-panel.component.ts`: формирование отчёта стало async — загрузка с сервера цен (пагинация назад по 500, до 2000 свечей в окне сделок) и индикаторов (до 4000 точек) через `SecuritiesService`; лимиты `REPORT_MAX_PAPERS=12`, `REPORT_MAX_CANDLES=2000`, `REPORT_PRICE_PAGES=40`; кнопка «Отчёт» показывает «Формирую…» и заблокирована во время загрузки.
+- Юнит-тесты `buildPaperReportCloseRows` (FIFO без лотов + с реальными лотами) — все 84 SUCCESS.
+- `web/angular.json`: бюджеты initial подняты до 1.2mb (main.js вырос из-за SVG-рендереров).
 
 ### 2026-08-27 (#852: бэктест не открывал сделки за старые периоды)
 

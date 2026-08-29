@@ -51,9 +51,15 @@ import {
   buildShadowEquityPoints,
   buildShadedDisabledRanges,
   buildSideOpenShadedRanges,
+  buildStopMarkers,
+  buildTradeMarkers,
+  dtKey,
   forceLivePortfolioShadowShading,
+  papersWithTrades,
+  tradeDtWindow,
+  tradesForSecurity,
 } from './backtest-chart-overlays';
-import { ChartEquityPoint, ChartShadedRange, ChartStopMarker } from '../models/market.model';
+import { ChartEquityPoint, ChartShadedRange, ChartStopMarker, PriceCandle } from '../models/market.model';
 import {
   asDateOnly,
   formatDateRangeLabel,
@@ -61,7 +67,10 @@ import {
 } from '../shared/date-format';
 import {
   buildBacktestReportModel,
+  buildPaperIndicatorSeries,
+  buildPaperReportCloseRows,
   openBacktestReportWindow,
+  PaperReportChart,
   renderBacktestReportHtml,
 } from './backtest-report';
 import {
@@ -73,6 +82,8 @@ import {
   countOptGridCombos,
 } from './opt-grid';
 import { renderOptGridReportHtml } from './opt-grid-report';
+import { SecuritiesService } from '../services/securities.service';
+import { lastValueFrom } from 'rxjs';
 
 
 
@@ -138,7 +149,11 @@ export interface BacktestRunStatus {
 
 export class LogicPositionsPanelComponent implements OnChanges {
   private readonly logicsService = inject(LogicsService);
+  private readonly securitiesApi = inject(SecuritiesService);
   private readonly cdr = inject(ChangeDetectorRef);
+
+  /** Флаг построения отчёта (догрузка цен и индикаторов по бумагам, #848). */
+  reportLoading = false;
 
   @Input({ required: true }) logicRow!: LogicRow;
 
@@ -423,14 +438,25 @@ export class LogicPositionsPanelComponent implements OnChanges {
     window.setTimeout(() => this.autoOpenFinishedReports(), 500);
   }
 
-  private autoOpenFinishedReports(): void {
+  private autoOpenFinishedReports(attempt = 0): void {
     if (!this.isTest) return;
-    this.openTestReportWindow(true);
+    if (!this.hasReportableTrades()) {
+      // Results may land one poll after status=completed.
+      if (attempt < AUTO_REPORT_RETRIES) {
+        window.setTimeout(
+          () => this.autoOpenFinishedReports(attempt + 1),
+          AUTO_REPORT_RETRY_DELAY_MS * (attempt + 1)
+        );
+      }
+      return;
+    }
+    void this.openTestReportWindow(true).catch((err: unknown) => {
+      console.warn('Автооткрытие отчёта теста не выполнено: %O', err);
+    });
     if (this.hasOptGridResults()) {
       this.openOptGridReportWindow(true);
       return;
     }
-    // Results may land one poll after status=completed.
     if (this.backtestRun?.opt_grid_enabled) {
       window.setTimeout(() => {
         if (this.hasOptGridResults()) {
@@ -1126,7 +1152,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.openTestReportWindow(false);
   }
 
-  private openTestReportWindow(silent: boolean): void {
+  private async openTestReportWindow(silent: boolean): Promise<void> {
     if (!this.isTest) return;
     if (!this.hasReportableTrades()) {
       if (!silent) {
@@ -1134,12 +1160,32 @@ export class LogicPositionsPanelComponent implements OnChanges {
       }
       return;
     }
+    if (this.reportLoading) return;
     const runId = this.backtestRun?.id ?? null;
-    const openWith = (paramHistory: ParamHistoryEvent[]) => {
+    this.reportLoading = true;
+    this.cdr.markForCheck();
+    try {
+      let paramHistory: ParamHistoryEvent[] = [];
+      try {
+        const res = await lastValueFrom(
+          this.logicsService.getOptParamHistory(this.logicRow.id, runId)
+        );
+        paramHistory = (res.rows || []) as ParamHistoryEvent[];
+      } catch {
+        /* опциональный параметр — без него не блокируем отчёт */
+      }
+      let paperCharts: PaperReportChart[] = [];
+      try {
+        paperCharts = await this.loadReportPaperCharts();
+      } catch (err) {
+        // Блоки по бумагам опциональны — отчёт обязателен к открытию (#855).
+        console.warn('Пер-бумажные блоки отчёта не загружены: %O', err);
+      }
       const model = buildBacktestReportModel(this.logicRow, this.trades, {
         backtestRun: this.backtestRun,
         tradeLots: this.tradeLots,
         paramHistory,
+        paperCharts,
       });
       const html = renderBacktestReportHtml(model);
       const title = `Отчёт теста — ${model.logicName}`;
@@ -1150,11 +1196,131 @@ export class LogicPositionsPanelComponent implements OnChanges {
           );
         }
       }
+    } catch (err) {
+      console.error('Ошибка формирования отчёта теста: %O', err);
+      if (!silent) {
+        const msg =
+          err instanceof Error ? err.message : String(err);
+        alert(`Не удалось сформировать отчёт: ${msg}`);
+      }
+    } finally {
+      this.reportLoading = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Пер-бумажные блоки отчёта: цены, индикаторы, сделки, FIFO-лоты (#848). */
+  private async loadReportPaperCharts(): Promise<PaperReportChart[]> {
+    const from = this.backtestRun?.date_from ?? this.testPeriodFrom ?? null;
+    const to = this.backtestRun?.date_to ?? this.testPeriodTo ?? null;
+    const tf = this.reportChartTimeframe();
+    if (tf == null) return [];
+    const papers = papersWithTrades(this.trades, from, to, this.pinnedPaper);
+    const charts: PaperReportChart[] = [];
+    for (const p of papers.slice(0, REPORT_MAX_PAPERS)) {
+      charts.push(await this.loadReportPaperChart(Number(p.security_id), p, tf, from, to));
+    }
+    return charts;
+  }
+
+  private reportChartTimeframe(): number | null {
+    if (this.timeframeId != null && Number.isFinite(Number(this.timeframeId))) {
+      return Number(this.timeframeId);
+    }
+    const t = this.trades.find((tr) => tr.timeframe_id != null);
+    return t ? Number(t.timeframe_id) : null;
+  }
+
+  private async loadReportPaperChart(
+    secId: number,
+    paper: ReturnType<typeof papersWithTrades>[number],
+    tf: number,
+    from: string | null,
+    to: string | null
+  ): Promise<PaperReportChart> {
+    const secTrades = tradesForSecurity(this.trades, secId, from, to);
+    const win = tradeDtWindow(secTrades);
+    let candles: PriceCandle[] = [];
+    let loadError: string | null = null;
+    try {
+      candles = await this.loadReportCandles(secId, tf, win, from, to);
+    } catch {
+      loadError = 'Не удалось загрузить котировки (API цен).';
+    }
+
+    let indicators: ReturnType<typeof buildPaperIndicatorSeries> = [];
+    if (loadError === null && this.signalIndicatorIds.length > 0 && win) {
+      try {
+        const values = await lastValueFrom(
+          this.securitiesApi.getIndicatorValues(
+            secId,
+            tf,
+            this.signalIndicatorIds,
+            win.from,
+            win.to,
+            4000
+          )
+        );
+        indicators = buildPaperIndicatorSeries(values);
+      } catch {
+        /* индикаторы опциональны */
+      }
+    }
+
+    const paperTrades = this.trades.filter((t) => Number(t.security_id) === secId);
+    const equity = buildEquityPoints(secTrades, from);
+    const equityShadow = buildShadowEquityPoints(secTrades, from);
+    const shaded = [
+      ...buildShadedDisabledRanges(secTrades, from, to),
+      ...buildSideOpenShadedRanges(secTrades),
+    ].sort((a, b) => dtKey(a.startDt).localeCompare(dtKey(b.startDt)));
+
+    return {
+      securityId: secId,
+      securityName: paper.security_name,
+      securityPrefix: paper.security_prefix,
+      timeframeLabel: secTrades[0]?.timeframe_tf || String(tf),
+      candles,
+      indicators,
+      trades: secTrades,
+      markers: buildTradeMarkers(secTrades),
+      stops: buildStopMarkers(secTrades),
+      shaded,
+      equity,
+      equityShadow,
+      closes: buildPaperReportCloseRows(paperTrades, this.tradeLots),
+      pnl: paper.pnl,
+      dealCount: paper.trade_count,
+      openQty: paper.open_qty,
+      lastPrice: paper.last_price,
+      loadError,
     };
-    this.logicsService.getOptParamHistory(this.logicRow.id, runId).subscribe({
-      next: (res) => openWith((res.rows || []) as ParamHistoryEvent[]),
-      error: () => openWith([]),
-    });
+  }
+
+  /** Свечи по окну сделок бумаги (пагинация назад из конца периода, cap на объём). */
+  private async loadReportCandles(
+    secId: number,
+    tf: number,
+    win: { from: string; to: string } | null,
+    from: string | null,
+    _to: string | null
+  ): Promise<PriceCandle[]> {
+    const targetFirst = win?.from ?? (from ? `${from} 00:00:00` : null);
+    const firstKey = targetFirst ? dtKey(targetFirst) : null;
+    const batches: PriceCandle[][] = [];
+    let before: string | undefined;
+    for (let i = 0; i < REPORT_PRICE_PAGES; i++) {
+      const rows = await lastValueFrom(this.securitiesApi.getPrices(secId, tf, 500, before));
+      if (!rows || rows.length === 0) break;
+      batches.push(rows);
+      if (firstKey && dtKey(rows[0].dt) <= firstKey) break;
+      if (rows.length < 500) break;
+      const total = batches.reduce((s, b) => s + b.length, 0);
+      if (total >= REPORT_MAX_CANDLES) break;
+      before = rows[0].dt;
+    }
+    const out = batches.reverse().flat();
+    return out.length > REPORT_MAX_CANDLES ? out.slice(-REPORT_MAX_CANDLES) : out;
   }
 
   onOpenTokenDialog(event: Event): void {
@@ -1256,6 +1422,15 @@ export class LogicPositionsPanelComponent implements OnChanges {
 }
 
 
+
+/** Лимиты пер-бумажных блоков отчёта (#848). */
+const REPORT_MAX_PAPERS = 12;
+const REPORT_MAX_CANDLES = 2000;
+const REPORT_PRICE_PAGES = 40;
+
+/** Автооткрытие отчёта: сделки могут прийти через poll позже, чем сменился status (#855). */
+const AUTO_REPORT_RETRIES = 8;
+const AUTO_REPORT_RETRY_DELAY_MS = 2000;
 
 function defaultBacktestWeek(): { from: string; to: string } {
   const now = new Date();
