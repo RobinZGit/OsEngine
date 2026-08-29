@@ -7,8 +7,12 @@
 **Единственная рабочая копия:** `related projects/MultiLogicTradePg` в https://github.com/RobinZGit/OsEngine  
 **GitHub Pages:** https://robinzgit.github.io/OsEngine/ (workflow `.github/workflows/pages.yml` в OsEngine, `base-href=/OsEngine/`)  
 **Старый репозиторий:** https://github.com/RobinZGit/MultiLogicTradePg — **archived** (read-only), не пушить; Pages с него больше не деплоятся.  
-**Последнее обновление:** 2026-08-27 — #852: **fix zero trades in backtest for old periods** — резэмпл extra timeframe (H2) из основного tf когда данных нет; installers **v1.0.167**
+**Последнее обновление:** 2026-08-29 — правило про папку репозитория и локальную папку установки (`.cursor/rules/project-context.mdc`); фиксация путей; installers **v1.0.168**
 > **Важно для агентов:** вся разработка и push — только в **OsEngine**. Отдельный `RobinZGit/MultiLogicTradePg` архивирован. Не синхронизировать туда код и не ждать Pages с того репо.
+
+> **Папка репозитория (источник правок, git):** `C:\Users\Сергей\VsCodeProjects\OsEngine\related projects\MultiLogicTradePg` (git-repo `C:\Users\Сергей\VsCodeProjects\OsEngine`, remote `github.com/RobinZGit/OsEngine`, ветка main).  
+> **Локальная рабочая папка установки (запущенные ng serve / API):** `C:\Program Files\MultiLogicTradePg` (НЕ git).  
+> Правило: всегда сохранять контекст этой папки репозитория и соответствующей локальной папки и перечитывать, где они находятся, перед каждым исполнением инструкций.
 
 ---
 
