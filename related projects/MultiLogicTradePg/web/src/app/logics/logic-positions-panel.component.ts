@@ -425,7 +425,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return `${a.reason ?? ''}|${a.message}`;
   }
 
-  /** After test (+ OPT) finishes: open report windows without waiting for button clicks. */
+  /** После теста (+ OPT) сформировать всплывающие OPT-окна; сам отчёт открывает родитель (#856). */
   private scheduleAutoOpenReports(): void {
     const runId = this.backtestRun?.id ?? null;
     if (runId == null || this.autoReportOpenedForRunId === runId) return;
@@ -434,25 +434,13 @@ export class LogicPositionsPanelComponent implements OnChanges {
       .toLowerCase();
     if (st !== 'completed' && st !== 'cancelled') return;
     this.autoReportOpenedForRunId = runId;
-    // Let parent finish loading trades for this run.
-    window.setTimeout(() => this.autoOpenFinishedReports(), 500);
+    // Parent LogicsComponent открывает серверный архив отчёта этого run_id в модале
+    // (onBacktestJustFinished → openReportsAutoForRun), не завися от локальных сделок/popup.
+    this.autoOpenFinishedReports();
   }
 
-  private autoOpenFinishedReports(attempt = 0): void {
+  private autoOpenFinishedReports(): void {
     if (!this.isTest) return;
-    if (!this.hasReportableTrades()) {
-      // Results may land one poll after status=completed.
-      if (attempt < AUTO_REPORT_RETRIES) {
-        window.setTimeout(
-          () => this.autoOpenFinishedReports(attempt + 1),
-          AUTO_REPORT_RETRY_DELAY_MS * (attempt + 1)
-        );
-      }
-      return;
-    }
-    void this.openTestReportWindow(true).catch((err: unknown) => {
-      console.warn('Автооткрытие отчёта теста не выполнено: %O', err);
-    });
     if (this.hasOptGridResults()) {
       this.openOptGridReportWindow(true);
       return;
@@ -1427,10 +1415,6 @@ export class LogicPositionsPanelComponent implements OnChanges {
 const REPORT_MAX_PAPERS = 12;
 const REPORT_MAX_CANDLES = 2000;
 const REPORT_PRICE_PAGES = 40;
-
-/** Автооткрытие отчёта: сделки могут прийти через poll позже, чем сменился status (#855). */
-const AUTO_REPORT_RETRIES = 8;
-const AUTO_REPORT_RETRY_DELAY_MS = 2000;
 
 function defaultBacktestWeek(): { from: string; to: string } {
   const now = new Date();

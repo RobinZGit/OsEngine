@@ -69,6 +69,10 @@ import type { ProcessStatusItem, SignalRatingPrecalcStatus } from '../services/l
 
 const POLL_INTERVAL_MS = 2000;
 
+/** Сколько ждать готовности отчёта прогона при автооткрытии после теста. */
+const AUTO_REPORT_ARCHIVE_RETRIES = 10;
+const AUTO_REPORT_ARCHIVE_RETRY_DELAY_MS = 1500;
+
 type SignalPickerState = {
   logicId: number;
   positionEvent: PositionEvent;
@@ -1233,7 +1237,70 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.refreshOptGridAvailability(logicId);
     this.expandedTestTradesBlocks.add(logicId);
     this.loadTestTradesForLogic(logicId, true);
+    this.scheduleAutoOpenRunReport(logicId);
     this.cdr.markForCheck();
+  }
+
+  /** Закоммиченный run_id, для которого автооткрытие архива отчёта уже выполнено. */
+  private autoOpenedReportRunIds = new Set<number>();
+
+  /** После теста открыть готовый серверный отчёт прогона во встроенном модале (#855/#856). */
+  private scheduleAutoOpenRunReport(logicId: number): void {
+    const run = this.backtestFor(logicId);
+    const runId = run?.id != null ? Number(run.id) : null;
+    if (runId == null || !Number.isFinite(runId) || runId <= 0) return;
+    if (this.autoOpenedReportRunIds.has(runId)) return;
+    const st = String(run?.status ?? '').trim().toLowerCase();
+    if (st !== 'completed' && st !== 'cancelled') return;
+    this.autoOpenedReportRunIds.add(runId);
+    this.openReportsAutoForRun(runId);
+  }
+
+  private openReportsAutoForRun(runId: number, attempt = 0): void {
+    if (Number.isNaN(Number(runId)) || Number(runId) <= 0) return;
+    this.reportsOpen = true;
+    this.reportsLoading = true;
+    this.reportsError = null;
+    this.logicsService
+      .listBacktestReports({ limit: 100 })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.reportList = res.rows ?? [];
+          this.reportsLoading = false;
+          if (this.reportList.length === 0) {
+            this.reportsError =
+              'Пока нет сохранённых отчётов. Завершите тест — отчёт появится здесь.';
+            this.cdr.markForCheck();
+            return;
+          }
+          const found = this.reportList.find(
+            (r) => Number(r.run_id) === Number(runId)
+          );
+          if (found) {
+            this.loadReportById(found.id);
+            this.cdr.markForCheck();
+            return;
+          }
+          // Отчёт прогона пишется почти одновременно со статусом completed —
+          // подождём пару попыток, затем покажем самый свежий.
+          if (attempt < AUTO_REPORT_ARCHIVE_RETRIES) {
+            window.setTimeout(
+              () => this.openReportsAutoForRun(runId, attempt + 1),
+              AUTO_REPORT_ARCHIVE_RETRY_DELAY_MS * (attempt + 1)
+            );
+            return;
+          }
+          this.loadReportById(this.reportList[0].id);
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.reportsLoading = false;
+          this.reportsError =
+            err?.error?.error ?? err?.message ?? 'Не удалось загрузить список отчётов';
+          this.cdr.markForCheck();
+        },
+      });
   }
 
   resetOptParameters(logicId: number): void {
