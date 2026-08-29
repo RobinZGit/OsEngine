@@ -205,6 +205,98 @@ function paperDtMs(raw) {
   return Number.isFinite(t) ? t : null;
 }
 
+function round4(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 0;
+}
+
+function round6(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 1e6) / 1e6 : null;
+}
+
+/** Компактные данные графика бумаги для интерактивного рендерера отчёта (зум/пана). */
+function paperChartJson(chart) {
+  const candles = (chart.candles || [])
+    .map((c) => {
+      const t = paperDtMs(c.dt);
+      if (t == null) return null;
+      return [
+        t,
+        round4(c.open_price),
+        round4(c.high_price),
+        round4(c.low_price),
+        round4(c.close_price),
+      ];
+    })
+    .filter(Boolean);
+  const indicators = (chart.indicators || []).map((s) => ({
+    code: s.indicator_code || '',
+    line: s.line_code || '',
+    name: s.line_name || '',
+    color: s.color || '#2563eb',
+    on: !!s.on_price_scale,
+    thr: !!s.is_threshold,
+    pts: (s.points || [])
+      .map((p) => {
+        const t = paperDtMs(p.dt);
+        const v = round6(p.value);
+        if (t == null || v == null) return null;
+        return [t, v];
+      })
+      .filter(Boolean),
+  }));
+  const markers = (chart.markers || [])
+    .map((m) => {
+      const t = paperDtMs(m.dt);
+      if (t == null || !Number.isFinite(Number(m.price))) return null;
+      return [
+        t,
+        m.kind === 'open' ? 'open' : 'close',
+        round6(m.price),
+        m.side === 'short' ? 'short' : 'long',
+        !!m.isShadow ? 1 : 0,
+      ];
+    })
+    .filter(Boolean);
+  const stops = (chart.stops || [])
+    .map((m) => {
+      const t = paperDtMs(m.dt);
+      if (t == null || !Number.isFinite(Number(m.price))) return null;
+      return [t, round6(m.price), m.ruleKind === 'take_profit' ? 'TP' : 'SL', m.label || ''];
+    })
+    .filter(Boolean);
+  const shaded = (chart.shaded || [])
+    .map((r) => {
+      const a = paperDtMs(r.startDt);
+      const b = paperDtMs(r.endDt);
+      if (a == null || b == null) return null;
+      return [a, b, r.kind || 'normal', r.label || ''];
+    })
+    .filter(Boolean);
+  const pt = (list) =>
+    (list || [])
+      .map((p) => {
+        const t = paperDtMs(p.dt);
+        const v = round6(p.value);
+        if (t == null || v == null) return null;
+        return [t, v];
+      })
+      .filter(Boolean);
+  return JSON.stringify({
+    c: candles,
+    ind: indicators,
+    mk: markers,
+    st: stops,
+    sh: shaded,
+    eq: pt(chart.equity),
+    esh: pt(chart.equityShadow),
+  })
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+}
+
 function fmtAxisNum(v) {
   if (Math.abs(v) >= 1000) return fmtNum(v, 0);
   if (Math.abs(v) >= 100) return fmtNum(v, 1);
@@ -650,7 +742,6 @@ function paperFifoRows(closes) {
 
 /** HTML-блок одной бумаги: header со сводкой, график (свечи/линия), FIFO-таблица. */
 function paperChartBlockHtml(chart, index) {
-  const pair = paperChartSvgPair(chart);
   const prefix = chart.securityPrefix && chart.securityPrefix.trim()
     ? chart.securityPrefix.trim()
     : chart.securityName;
@@ -668,19 +759,46 @@ function paperChartBlockHtml(chart, index) {
     `П/У: <span class="${pnlCls}">${fmtMoney(chart.pnl)}</span>`,
   ];
   if (chart.lastPrice != null) metaBits.push(`цена: ${fmtAxisNum(chart.lastPrice)}`);
+  const hasTrades = Array.isArray(chart.markers) && chart.markers.length > 0;
+  const json = paperChartJson(chart);
+  const tradeNav = hasTrades
+    ? `<span class="pchart-sep"></span><span class="pchart-group">
+        <button type="button" class="pp-btn pp-btn-trade" data-pp="tp" onclick="ppc(${index},'tp')" title="Предыдущая сделка (открытие или закрытие)">⟸сд.</button>
+        <button type="button" class="pp-btn pp-btn-trade" data-pp="tn" onclick="ppc(${index},'tn')" title="Следующая сделка (открытие или закрытие)">сд.⟹</button>
+      </span>`
+    : '';
   const body = hasData
-    ? `<div class="pchart-toolbar no-print">
-        <label class="pchart-toggle" title="Свечной график или линия закрытий">
-          <input type="checkbox" id="ppt-${index}" checked onchange="swapReportChart('ppc-${index}','ppl-${index}','ppt-${index}')"/>
-          Свечной график
-        </label>
+    ? `<div class="pp-fs-host" id="ppfs-${index}">
+      <div class="pchart-toolbar no-print" role="toolbar" aria-label="Управление графиком">
+        <span class="pchart-group" title="Вид графика цены">
+          <button type="button" class="pp-btn pp-btn-mode" data-pp="mode1" onclick="ppc(${index},'mode1')" title="Свечной график">▮▮</button>
+          <button type="button" class="pp-btn pp-btn-mode" data-pp="mode0" onclick="ppc(${index},'mode0')" title="Линейный график (цены закрытия)">∿</button>
+        </span>
+        <span class="pchart-sep"></span>
+        <span class="pchart-group">
+          <button type="button" class="pp-btn" data-pp="zo" onclick="ppc(${index},'zo')" title="Уменьшить масштаб">−</button>
+          <button type="button" class="pp-btn" data-pp="zi" onclick="ppc(${index},'zi')" title="Увеличить масштаб">+</button>
+          <button type="button" class="pp-btn" data-pp="pl" onclick="ppc(${index},'pl')" title="Сдвинуть назад">◀</button>
+          <button type="button" class="pp-btn" data-pp="pr" onclick="ppc(${index},'pr')" title="Сдвинуть вперёд">▶</button>
+        </span>
+        ${tradeNav}
+        <span class="pchart-sep"></span>
+        <span class="pchart-group">
+          <button type="button" class="pp-btn" data-pp="reset" onclick="ppc(${index},'reset')" title="К исходному масштабу">↺</button>
+          <button type="button" class="pp-btn" data-pp="fs" onclick="ppc(${index},'fs')" title="Полный экран">⛶</button>
+          <button type="button" class="pp-btn" data-pp="fsx" onclick="ppc(${index},'fs')" title="Выйти из полного экрана" style="display:none">✕</button>
+        </span>
       </div>
       <div class="chart paper-chart">
-        ${pair.candle.replace('<svg ', `<svg id="ppc-${index}" `)}
-        ${pair.line.replace('<svg ', `<svg id="ppl-${index}" style="display:none" `)}
+        <div class="pp-chart-plot" id="ppc-${index}"></div>
         ${paperChartLegend(chart)}
-      </div>`
+      </div>
+      <p class="pp-hint no-print">Колёсико / «−» «+» — масштаб · «◀» «▶» — история · «⟸сд.сд.⟹» — сделки · «⛶» — полный экран</p>
+    </div>`
     : `<p class="muted">Нет данных для графика.</p>`;
+  const chartDataScript = hasData
+    ? `<script type="application/json" id="ppd-${index}">${json}</script>`
+    : '';
 
   const priceErr = chart.loadError
     ? `<p class="muted paper-hint">⚠ ${esc(chart.loadError)}</p>`
@@ -696,6 +814,7 @@ function paperChartBlockHtml(chart, index) {
     <span class="paper-meta">${metaBits.join(' · ')}</span>
   </summary>
   <div class="paper-body">
+    ${chartDataScript}
     ${body}
     ${priceErr}
     <h3>Сделки бумаги · из какой позиции закрыта (FIFO)</h3>
@@ -722,6 +841,8 @@ module.exports = {
   buildPaperReportCloseRows,
   buildPaperIndicatorSeries,
   paperChartsSectionHtml,
+  paperChartJson,
+  paperDtMs,
   fmtAxisNum,
   fmtMoney,
 };

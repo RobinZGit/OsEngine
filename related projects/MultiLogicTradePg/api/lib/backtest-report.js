@@ -583,6 +583,8 @@ function renderBacktestReportHtml(model) {
       }</span>`
     : '';
   const downloadName = buildBacktestReportDownloadName(model);
+  const hasPapers = Array.isArray(model.paperCharts) && model.paperCharts.length > 0;
+  const papersModule = require('./backtest-report-papers-ui');
   const periodTitle =
     model.periodLabel && model.periodLabel !== '—'
       ? ` — ${model.periodLabel}`
@@ -663,6 +665,7 @@ function renderBacktestReportHtml(model) {
     table.paper-fifo .pos { color:var(--pos); font-weight:600; } table.paper-fifo .neg { color:var(--neg); font-weight:600; }
     .paper-svg { display:block; }
     @media print { .no-print, .report-tools, .pchart-toolbar { display:none !important; } .paper-report { break-inside:auto; } }
+  ${hasPapers ? papersModule.css : ''}
   </style>
 </head>
 <body>
@@ -752,6 +755,7 @@ function renderBacktestReportHtml(model) {
       document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }
+${hasPapers ? papersModule.script : ''}
   </script>
 </body>
 </html>`;

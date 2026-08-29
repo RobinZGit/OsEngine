@@ -84,7 +84,8 @@ async function loadReportIndicatorValues(pool, securityId, timeframeId, indicato
   const { rows } = await pool.query(
     `SELECT * FROM (
        SELECT iv.indicator_id, i.code AS indicator_code, ivt.code AS line_code,
-              ivt.name AS line_name, iv.dt, iv.value
+              ivt.name AS line_name, to_char(iv.dt, 'YYYY-MM-DD HH24:MI:SS') AS dt,
+              iv.value, ivt.is_threshold
        FROM indicator_values iv
        JOIN indicators i ON i.id = iv.indicator_id
        JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
