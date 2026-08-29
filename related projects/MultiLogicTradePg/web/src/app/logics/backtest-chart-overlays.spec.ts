@@ -1,4 +1,5 @@
 import {
+  buildActiveSecuritiesPoints,
   buildEquityPoints,
   buildPortfolioStopMarkers,
   buildShadedDisabledRanges,
@@ -591,21 +592,59 @@ describe('backtest-chart-overlays', () => {
     expect(pts[pts.length - 1].value).toBe(100);
   });
 
-  it('buildEquityPoints skips cancelled closes (matches pnl-summary status filter)', () => {
-    const pts = buildEquityPoints([
-      trade({
-        side_name: 'Close',
-        bar_dt: '2026-04-10 11:00:00',
-        financial_result: 100,
-      }),
+  it('buildActiveSecuritiesPoints grows on Open and shrinks on Close', () => {
+    const pts = buildActiveSecuritiesPoints([
+      trade({ security_id: 1, side_name: 'Open', bar_dt: '2026-04-10 10:00:00', remaining_qty: 5 }),
+      trade({ security_id: 2, side_name: 'Open', bar_dt: '2026-04-10 11:00:00', remaining_qty: 3 }),
       trade({
         id: 2,
+        security_id: 1,
         side_name: 'Close',
         bar_dt: '2026-04-10 12:00:00',
-        financial_result: 999,
-        status: 'cancelled',
+        remaining_qty: 0,
       }),
     ]);
-    expect(pts[pts.length - 1].value).toBe(100);
+    const values = pts.map((p) => p.value);
+    expect(values[0]).toBe(1); // первая бумага открыта
+    expect(values[values.length - 1]).toBe(1); // вторая осталась открытой
+    expect(Math.max(...values)).toBe(2); // пик — обе открыты
+  });
+
+  it('buildActiveSecuritiesPoints does not start at all-papers count on partial run', () => {
+    // Завершённый тест: по бумаге есть и Open (закрыт) и Close — активность не
+    // должна стартовать с фиктивной константы (всех бумаг состава).
+    const pts = buildActiveSecuritiesPoints([
+      trade({ security_id: 3, side_name: 'Open', bar_dt: '2026-04-10 10:00:00', remaining_qty: 1 }),
+      trade({
+        id: 2,
+        security_id: 3,
+        side_name: 'Close',
+        bar_dt: '2026-04-10 11:00:00',
+        remaining_qty: 0,
+      }),
+    ]);
+    const values = pts.map((p) => p.value);
+    // Начинается с 1 (открыта), не с 34 и не падает от 0.
+    expect(values[0]).toBe(1);
+    expect(values[values.length - 1]).toBe(0);
+  });
+
+  it('buildActiveSecuritiesPoints aligns start to periodStartDt (matches equity zero anchor)', () => {
+    const pts = buildActiveSecuritiesPoints(
+      [
+        trade({ security_id: 4, side_name: 'Open', bar_dt: '2026-04-10 10:00:00', remaining_qty: 1 }),
+        trade({
+          id: 2,
+          security_id: 4,
+          side_name: 'Close',
+          bar_dt: '2026-04-10 11:00:00',
+          remaining_qty: 0,
+        }),
+      ],
+      '2026-03-24'
+    );
+    // Первая точка — ноль на date_from, как у кривой эквити (горизонтальное выравнивание).
+    expect(pts[0].dt).toBe('2026-03-24');
+    expect(pts[0].value).toBe(0);
   });
 });

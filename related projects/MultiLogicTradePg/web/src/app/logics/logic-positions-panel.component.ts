@@ -662,7 +662,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
     this.cachedPortfolioResumeTarget = this.portfolioShadowResumeTarget();
-    this.cachedActiveSecurities = buildActiveSecuritiesPoints(this.trades);
+    this.cachedActiveSecurities = buildActiveSecuritiesPoints(this.trades, periodStart);
   }
 
   /**

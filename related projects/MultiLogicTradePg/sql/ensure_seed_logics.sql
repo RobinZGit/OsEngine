@@ -11,6 +11,7 @@ DECLARE
     v_account_id INTEGER;
     v_opt_count INTEGER;
     v_twice_count INTEGER;
+    v_cci_count INTEGER;
 BEGIN
     SELECT acc.id INTO v_account_id
     FROM accounts acc
@@ -88,7 +89,8 @@ BEGIN
         ('Force Index Fade', NULL),
         ('BB StdDev Fade', NULL),
         ('BB Volume Fade', NULL),
-        ('LinReg Fade Trend', 'Двухтаймфреймовая fade по LinReg. TF=H2 + M15, оптимизированная.')
+        ('LinReg Fade Trend', 'Двухтаймфреймовая fade по LinReg. TF=H2 + M15, оптимизированная.'),
+        ('CCI Fade Trend 2023', 'Fade по CCI20 на M15 + trend-фильтр H2 LinReg100. Как боевая логика 8511.')
     ) AS v(name, note)
     ON CONFLICT (name) DO NOTHING;
 
@@ -116,7 +118,8 @@ BEGIN
         'RSI Extreme 20/80', 'Stoch D Fade', 'CCI Extreme 200', 'MACD Signal Fade', 'ADX Exhaustion Fade',
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
-        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
+        'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
+        'CCI Fade Trend 2023'
     )
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
@@ -124,7 +127,7 @@ BEGIN
     INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
     SELECT l.id, 'opt_eval_candles', '200', 'integer'
     FROM logics l
-    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'LinReg Fade Trend')
+    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'LinReg Fade Trend', 'CCI Fade Trend 2023')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -145,9 +148,17 @@ BEGIN
         ('order_execution', 'market', 'text'),
         ('base_annual_rate_pct', '20', 'number')
     ) AS v(param_key, param_value, value_type)
-    WHERE l.name = 'LinReg Fade Trend'
+    WHERE l.name IN ('LinReg Fade Trend', 'CCI Fade Trend 2023')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+    -- CCI Fade Trend 2023: как боевая 8511 — до 15 одновременно открытых позций.
+    UPDATE logic_params lp
+    SET param_value = '15', value_type = 'integer', updated_at = CURRENT_TIMESTAMP
+    FROM logics l
+    WHERE lp.logic_id = l.id
+      AND l.name = 'CCI Fade Trend 2023'
+      AND lp.param_key = 'max_open_positions';
 
     UPDATE logic_params
     SET param_value = '200',
@@ -186,6 +197,23 @@ BEGIN
     ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
     JOIN indicators i ON i.code = v.ind_code
     WHERE l.name = 'LinReg Fade Trend'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('CCI',    'open',  'long',  'counter', '@CCI(period=20,series=VALUE) VALUE <= -100', 0),
+        ('LINREG', 'open',  'long',  'trend',   '@LINREG(tf=H2,period=100,std_dev=2,series=MIDDLE) pp >= VALUE', 1),
+        ('CCI',    'close', 'long',  'trend',   '@CCI(period=20,series=VALUE) VALUE >= 0', 2),
+        ('CCI',    'open',  'short', 'counter', '@CCI(period=20,series=VALUE) VALUE >= 100', 3),
+        ('LINREG', 'open',  'short', 'trend',   '@LINREG(tf=H2,period=100,std_dev=2,series=MIDDLE) pp <= VALUE', 4),
+        ('CCI',    'close', 'short', 'trend',   '@CCI(period=20,series=VALUE) VALUE <= 0', 5)
+    ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'CCI Fade Trend 2023'
       AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
     INSERT INTO logic_indicator_signals (
@@ -241,6 +269,28 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
     ON CONFLICT (logic_id, security_id) DO NOTHING;
 
+    -- CCI Fade Trend 2023: точный список бумаг боевой логики 8511 (34 тикера MOEX).
+    INSERT INTO logic_securities (logic_id, security_id, display_order)
+    SELECT l.id, q.security_id, ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY q.sort_key) - 1
+    FROM logics l
+    CROSS JOIN LATERAL (
+        SELECT DISTINCT ON (srt.id)
+            srt.id AS security_id,
+            sprt.prefix AS sort_key
+        FROM securities srt
+        JOIN security_prefixes sprt ON sprt.security_id = srt.id AND sprt.instrument_market = 'stock'
+        WHERE sprt.prefix IN (
+            'SBER','SBERP','GAZP','LKOH','ROSN','NVTK','GMKN','TATN','TATNP',
+            'PLZL','ALRS','CHMF','NLMK','MAGN','MTLR','MTLRP','MGNT','MTSS',
+            'RUAL','HYDR','PHOR','MOEX','TRNFP','UPRO','SNGS','SNGSP','VTBR',
+            'IRAO','FEES','RTKM','YDEX','AFLT','FLOT','AFKS'
+        )
+        ORDER BY srt.id, sprt.prefix
+    ) q
+    WHERE l.name = 'CCI Fade Trend 2023'
+      AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
+    ON CONFLICT (logic_id, security_id) DO NOTHING;
+
     INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
     SELECT l.id, v.rule_kind, v.scope_type, v.value, v.value_unit, v.display_order, TRUE
     FROM logics l
@@ -261,7 +311,8 @@ BEGIN
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
-        'LinReg Fade Trend'
+        'LinReg Fade Trend',
+        'CCI Fade Trend 2023'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
@@ -282,7 +333,7 @@ BEGIN
         (6, '00:00:00'::time, '23:59:59'::time, 10),
         (7, '00:00:00'::time, '23:59:59'::time, 11)
     ) AS v(day_of_week, time_from, time_to, display_order)
-    WHERE l.name = 'LinReg Fade Trend'
+    WHERE l.name IN ('LinReg Fade Trend', 'CCI Fade Trend 2023')
       AND NOT EXISTS (SELECT 1 FROM logic_non_trading_intervals z WHERE z.logic_id = l.id);
 
     SELECT COUNT(*) INTO v_opt_count
@@ -301,6 +352,14 @@ BEGIN
         RAISE EXCEPTION 'ensure_seed_logics: LinReg Fade Twice Optimized still missing after seed (account_id=%)', v_account_id;
     END IF;
 
-    RAISE NOTICE 'ensure_seed_logics: OK — Optimized + Twice Optimized present; logics total=%',
+    SELECT COUNT(*) INTO v_cci_count
+    FROM logics
+    WHERE name = 'CCI Fade Trend 2023';
+
+    IF v_cci_count < 1 THEN
+        RAISE EXCEPTION 'ensure_seed_logics: CCI Fade Trend 2023 still missing after seed (account_id=%)', v_account_id;
+    END IF;
+
+    RAISE NOTICE 'ensure_seed_logics: OK — Optimized + Twice Optimized + CCI Fade Trend 2023 present; logics total=%',
         (SELECT COUNT(*) FROM logics);
 END $$;

@@ -43,6 +43,13 @@ import {
 
 export type BacktestPaperRow = PaperListRow;
 
+/** Сервер отдаёт свечи DESC (новые → старые); графику нужен порядок ASC. */
+function sortCandlesAsc(candles: PriceCandle[]): PriceCandle[] {
+  return [...candles].sort(
+    (a, b) => new Date(a.dt).getTime() - new Date(b.dt).getTime()
+  );
+}
+
 function humanizeChartLoadError(err: unknown): string {
   const e = err as { name?: string; message?: string; error?: { error?: string } };
   if (
@@ -396,7 +403,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
             if (!softFail) st.hasMore = false;
             return;
           }
-          const merged = [...rows, ...st.candles];
+          const merged = sortCandlesAsc([...rows, ...st.candles]);
           st.candles = merged.length > MAX_CANDLES ? merged.slice(-MAX_CANDLES) : merged;
           // Маркеры / PnL / стопы — из кэша overlays, перерисуются со свечами.
           this.cdr.detectChanges();
@@ -753,7 +760,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     win: { from: string; to: string } | null,
     opts: { loadIndicators: boolean } = { loadIndicators: false }
   ): void {
-    const clipped = clipCandlesForBacktest(rows, {
+    const clipped = clipCandlesForBacktest(sortCandlesAsc(rows), {
       coverFrom,
       coverTo,
       tradeFrom: win?.from ?? null,

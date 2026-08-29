@@ -207,4 +207,18 @@ describe('LogicBacktestPapersComponent', () => {
     expect(a).toBe(b);
     expect(a.markers.length).toBeGreaterThan(0);
   });
+
+  it('sorts candles ascending even when server returns DESC (applies sortCandlesAsc)', () => {
+    const st = component.chartState(7);
+    st.hasMore = false;
+    // Сервер отдаёт новые → старые; график должен получить ASC.
+    const desc: Array<{ dt: string; open_price: number; high_price: number; low_price: number; close_price: number; volume: number }> = [
+      { dt: '2026-04-10 12:00:00', open_price: 3, high_price: 3, low_price: 3, close_price: 3, volume: 1 },
+      { dt: '2026-04-10 11:00:00', open_price: 2, high_price: 2, low_price: 2, close_price: 2, volume: 1 },
+      { dt: '2026-04-10 10:00:00', open_price: 1, high_price: 1, low_price: 1, close_price: 1, volume: 1 },
+    ];
+    component['applyCandles'](7, st, desc, null, null, null, { loadIndicators: false });
+    const dts = st.candles.map((c) => c.dt);
+    expect(dts).toEqual(['2026-04-10 10:00:00', '2026-04-10 11:00:00', '2026-04-10 12:00:00']);
+  });
 });

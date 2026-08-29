@@ -534,56 +534,67 @@ export function buildShadowEquityPoints(
  * Close для бумаг без текущего Open = историческая позиция, была открыта до окна данных.
  */
 export function buildActiveSecuritiesPoints(
-  trades: LogicTradeRow[]
+  trades: LogicTradeRow[],
+  periodStartDt?: string | null
 ): ChartEquityPoint[] {
   const sorted = [...trades]
     .filter((t) => !t.is_shadow && (t.opt_lane ?? '') === '')
-    .sort((a, b) =>
-      dtKey(a.bar_dt || a.executed_at).localeCompare(dtKey(b.bar_dt || b.executed_at))
-    );
+    .sort((a, b) => {
+      const ka = dtKey(a.bar_dt || a.executed_at);
+      const kb = dtKey(b.bar_dt || b.executed_at);
+      if (ka !== kb) return ka.localeCompare(kb);
+      // Дата-обработка: Open раньше Close одного бара.
+      const rank = (t: LogicTradeRow) =>
+        t.side_name === 'Open' ? 0 : t.side_name === 'Close' ? 1 : 2;
+      return rank(a) - rank(b);
+    });
   if (sorted.length === 0) return [];
 
-  const currentlyActive = new Set<number>();
-  for (const t of sorted) {
-    if (t.side_name === 'Open' && (t.remaining_qty ?? 0) > 0) {
-      currentlyActive.add(paperSecurityId(t.security_id));
-    }
-  }
-
-  const historicalClosed = new Set<number>();
-  for (const t of sorted) {
-    if (t.side_name === 'Close') {
-      const secId = paperSecurityId(t.security_id);
-      if (!currentlyActive.has(secId)) {
-        historicalClosed.add(secId);
-      }
-    }
-  }
-
-  const totalCount = currentlyActive.size + historicalClosed.size;
-  let count = totalCount;
-  const closedSeen = new Set<number>();
+  // Модель активности по каждой бумаге: Open делает бумагу активной,
+  // Close — неактивной. Частичные Close снимают активность только при
+  // полном закрытии остатка (remaining_qty <= 0).
+  const active = new Map<number, boolean>();
   const points: ChartEquityPoint[] = [];
   let lastDt = '';
+  let count = 0;
+
+  const push = (dt: string, value: number): void => {
+    const dtK = dtKey(dt);
+    if (dtK !== lastDt) {
+      points.push({ dt, value });
+      lastDt = dtK;
+    } else if (points.length > 0) {
+      points[points.length - 1] = { dt, value };
+    }
+  };
+
+  // Выровнять старт по началу периода (как у кривой эквити): ноль на старте,
+  // если первая сделка позже date_from — иначе графики «съезжают» по X.
+  const periodKey = periodStartDt ? dtKey(periodStartDt) : '';
+  const firstDt = sorted[0].bar_dt || sorted[0].executed_at;
+  if (periodKey && firstDt && periodKey < dtKey(firstDt)) {
+    push(periodStartDt!, 0);
+  }
 
   for (const t of sorted) {
     const dt = t.bar_dt || t.executed_at;
     const secId = paperSecurityId(t.security_id);
-    if (t.side_name === 'Close' && historicalClosed.has(secId) && !closedSeen.has(secId)) {
-      closedSeen.add(secId);
-      count--;
+    const was = active.get(secId) ?? false;
+    let now = was;
+
+    if (t.side_name === 'Open') {
+      now = true;
+    } else if (t.side_name === 'Close') {
+      const rem = Number(t.remaining_qty ?? 0);
+      // Полное закрытие остатка (или закрытие без остатка Open) → бумага неактивна.
+      now = rem > 0;
     }
-    const dtK = dtKey(dt);
-    if (dtK !== lastDt) {
-      points.push({ dt, value: Math.max(0, count) });
-      lastDt = dtK;
-    } else if (points.length > 0) {
-      points[points.length - 1] = { dt, value: Math.max(0, count) };
+
+    if (now !== was) {
+      active.set(secId, now);
+      count += now ? 1 : -1;
     }
-  }
-  if (points.length === 0 && totalCount > 0) {
-    const dt = sorted[0].bar_dt || sorted[0].executed_at;
-    points.push({ dt, value: totalCount });
+    push(dt, Math.max(0, count));
   }
   return points;
 }
