@@ -153,6 +153,9 @@ DECLARE
     v_edge_slack INTEGER;
     v_min_bars INTEGER;
     v_date_to DATE;
+    v_sep_days INTEGER;
+    v_streak_cnt INTEGER := 0;
+    v_has_two_clusters BOOLEAN := FALSE;
 BEGIN
     IF p_date_from IS NULL OR p_date_to IS NULL OR p_date_from > p_date_to THEN
         RETURN FALSE;
@@ -168,6 +171,8 @@ BEGIN
     v_tf_sec := COALESCE(v_tf_sec, 86400);
     v_span_days := GREATEST(1, (v_date_to - p_date_from) + 1);
     v_edge_slack := GREATEST(3, LEAST(14, v_span_days / 20));
+    -- Вторую «тройку» требуем, если период >= 10 дней; разное ~ четверть окна, мин. 3 дня.
+    v_sep_days := GREATEST(3, v_span_days / 4);
 
     SELECT COUNT(*)::INTEGER, MIN(p.dt::date), MAX(p.dt::date)
     INTO v_in_period, v_min_date, v_max_date
@@ -210,6 +215,73 @@ BEGIN
 
     IF v_warmup_count < GREATEST(p_min_warmup, 1) THEN
         RETURN FALSE;
+    END IF;
+
+    -- Не доверяем сырому счёту: одиночная «завалявшаяся» свеча не должна делать серию
+    -- «закэшированной» (иначе регул не догрузит историю и тест пойдёт на дырявых ценах).
+    -- Требуем >=1 серию из 3 баров подряд с точным шагом TF (без skip), как у индикаторов
+    -- в backtest_indicators_cached; на длинном периоде — две такие серии с разносом.
+    WITH pts AS (
+        SELECT DISTINCT p.dt AS dt
+        FROM prices p
+        WHERE p.security_id = p_security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt::date BETWEEN p_date_from AND v_date_to
+    ),
+    ordered AS (
+        SELECT
+            dt,
+            LAG(dt, 1) OVER (ORDER BY dt) AS prev1,
+            LAG(dt, 2) OVER (ORDER BY dt) AS prev2
+        FROM pts
+    ),
+    streaks AS (
+        SELECT prev2 AS start_dt, dt AS end_dt
+        FROM ordered
+        WHERE prev1 IS NOT NULL
+          AND prev2 IS NOT NULL
+          AND prev1 = dt - make_interval(secs => v_tf_sec)
+          AND prev2 = dt - make_interval(secs => v_tf_sec * 2)
+    )
+    SELECT COUNT(*)::INTEGER INTO v_streak_cnt FROM streaks;
+
+    IF COALESCE(v_streak_cnt, 0) < 1 THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Длинный период (>=10 дней): нужна вторая «тройка» спустя sep_days (если окно позволяет).
+    IF v_span_days >= 10 THEN
+        WITH pts AS (
+            SELECT DISTINCT p.dt AS dt
+            FROM prices p
+            WHERE p.security_id = p_security_id
+              AND p.timeframe_id = p_timeframe_id
+              AND p.dt::date BETWEEN p_date_from AND v_date_to
+        ),
+        ordered AS (
+            SELECT
+                dt,
+                LAG(dt, 1) OVER (ORDER BY dt) AS prev1,
+                LAG(dt, 2) OVER (ORDER BY dt) AS prev2
+            FROM pts
+        ),
+        streaks AS (
+            SELECT prev2 AS start_dt
+            FROM ordered
+            WHERE prev1 IS NOT NULL
+              AND prev2 IS NOT NULL
+              AND prev1 = dt - make_interval(secs => v_tf_sec)
+              AND prev2 = dt - make_interval(secs => v_tf_sec * 2)
+        )
+        SELECT EXISTS (
+            SELECT 1
+            FROM streaks a
+            JOIN streaks b ON b.start_dt >= a.start_dt + make_interval(days => v_sep_days)
+        ) INTO v_has_two_clusters;
+
+        IF NOT COALESCE(v_has_two_clusters, FALSE) THEN
+            RETURN FALSE;
+        END IF;
     END IF;
 
     RETURN v_in_period >= v_min_bars;
