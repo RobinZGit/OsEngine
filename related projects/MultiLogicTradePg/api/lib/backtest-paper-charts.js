@@ -28,11 +28,15 @@ function dayEnd(raw) {
   return m ? `${m[1]} 23:59:59` : null;
 }
 
-/** Свечи бумаги в окне сделок (пагинация DESC по dt, финал ASC, кап 2000). */
+/** Свечи бумаги в окне сделок (пагинация DESC от конца окна, финал ASC, кап 2000). */
 async function loadReportCandles(pool, securityId, timeframeId, win) {
   const firstKey = win && win.from ? String(win.from).replace('T', ' ').slice(0, 19) : null;
   const batches = [];
-  let before = null;
+  // Якорь «before» — конец окна сделок (win.to), а не самые свежие цены:
+  // иначе на старых периодах (окно далеко в прошлом) пагинация с самых новых
+  // строк не доходит до окна за лимит страниц и свечи приходят не той эпохи,
+  // из-за чего график индикаторов не совпадает по времени со свечами.
+  let before = win && win.to ? String(win.to).replace('T', ' ').slice(0, 19) : null;
   for (let i = 0; i < REPORT_PRICE_PAGES; i++) {
     const params = [securityId, timeframeId, REPORT_CANDLE_BATCH];
     let beforeClause = '';
