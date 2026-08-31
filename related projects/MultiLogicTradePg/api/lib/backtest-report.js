@@ -219,10 +219,25 @@ function sharpeRatio(deals, initialBalance, baseAnnualRatePct) {
   return (mean - rfr) / sd;
 }
 
-function computeSideStats(deals, initialBalance, baseAnnualRatePct, withMaxDrawdown) {
+function computeSideStats(deals, initialBalance, baseAnnualRatePct, withMaxDrawdown, commissionPct = 0) {
   const bal = initialBalance > 0 ? initialBalance : 0;
   const netPnl = deals.reduce((s, d) => s + d.pnl, 0);
   const commission = deals.reduce((s, d) => s + d.commission, 0);
+  // Комиссия пропорциональна объёму сделок (только вариативная, фиксированной нет).
+  // Торговый объём не зависит от размера ставки, поэтому при ставке x итог =
+  // gross - commission*(x/commissionPct), где gross = netPnl + commission.
+  // Безубыток (итог = 0): x_be = commissionPct * gross / commission.
+  const gross = netPnl + commission;
+  let breakevenCommissionPct = null;
+  if (commission > 0) {
+    breakevenCommissionPct = (commissionPct * gross) / commission;
+  } else if (gross > 0) {
+    breakevenCommissionPct = commissionPct + 1; // нет комиссии в тесте — приравниваем к текущей+? (ориентир)
+  } else if (gross < 0) {
+    breakevenCommissionPct = 0; // убыточна даже при нулевой комиссии
+  } else {
+    breakevenCommissionPct = commissionPct;
+  }
   const wins = deals.filter((d) => d.pnl > 0);
   const losses = deals.filter((d) => d.pnl < 0);
   const sumWin = wins.reduce((s, d) => s + d.pnl, 0);
@@ -266,6 +281,7 @@ function computeSideStats(deals, initialBalance, baseAnnualRatePct, withMaxDrawd
     maxLossStreak: maxStreak(deals, false),
     maxDrawdownPct: withMaxDrawdown ? dd.pct : null,
     commission,
+    breakevenCommissionPct,
     payOffRatio,
   };
 }
@@ -435,7 +451,7 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
         ? num(opts.backtestRun.progress_pct)
         : null,
     params: {
-      timeframe: logic.timeframe || 'M15',
+      timeframe: logic.timeframe_label || String(logic.timeframe || ''),
       positionSizePct: num(logic.position_size_pct),
       maxOpenPositions: num(logic.max_open_positions),
       initialBalance: initial,
@@ -449,9 +465,9 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
     },
     paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
     paperCharts: Array.isArray(opts.paperCharts) ? opts.paperCharts : [],
-    all: computeSideStats(allDeals, initial, rate, true),
-    long: computeSideStats(longDeals, initial, rate, false),
-    short: computeSideStats(shortDeals, initial, rate, false),
+    all: computeSideStats(allDeals, initial, rate, true, num(logic.commission_pct)),
+    long: computeSideStats(longDeals, initial, rate, false, num(logic.commission_pct)),
+    short: computeSideStats(shortDeals, initial, rate, false, num(logic.commission_pct)),
     equitySvg: equitySparklineSvg(allDeals),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
@@ -476,6 +492,34 @@ function cellNum(v, digits = 2) {
 
 function cellText(v) {
   return `<td class="num">${esc(v)}</td>`;
+}
+
+function cellBreakeven(v, commissionPct) {
+  if (v == null || !Number.isFinite(v)) return `<td class="num muted">—</td>`;
+  if (v !== 0 && (v < -0.0001 || commissionPct <= 0)) {
+    // Убыточна даже при нулевой (или текущей) комиссии.
+    const cls = v >= 0 ? 'pos' : 'neg';
+    return `<td class="num ${cls}" title="Логика убыточна даже при комиссии 0%">${esc(fmtNum(v, 4))}%</td>`;
+  }
+  const cls = v > commissionPct ? 'pos' : v < commissionPct ? 'neg' : '';
+  return `<td class="num ${cls}" title="Комиссия, при которой финансовый результат = 0%">${esc(fmtNum(v, 4))}%</td>`;
+}
+
+/** Верхняя карточка «Комиссия − безубыток» (безубыточная комиссия в %). */
+function breakevenCardHtml(a, commissionPct) {
+  const v = a.breakevenCommissionPct;
+  let val, cls;
+  if (v == null || !Number.isFinite(v)) {
+    val = '—';
+    cls = '';
+  } else if (v !== 0 && (v < -0.0001 || commissionPct <= 0)) {
+    val = 'убыточна даже при 0%';
+    cls = 'neg';
+  } else {
+    val = `${fmtNum(v, 4)}%`;
+    cls = v > commissionPct ? 'pos' : v < commissionPct ? 'neg' : '';
+  }
+  return `<div class="card" title="Минимальная комиссия, при которой финансовый результат = 0. При комиссии выше — тест уходит в минус."><div class="lbl">Комиссия − безубыток</div><div class="val ${cls}">${esc(val)}</div></div>`;
 }
 
 function metricRow(label, all, long, short) {
@@ -574,6 +618,12 @@ function renderBacktestReportHtml(model) {
       cellMoney(a.commission),
       cellMoney(l.commission),
       cellMoney(s.commission)
+    ),
+    metricRow(
+      'Комиссия − безубыток',
+      cellBreakeven(a.breakevenCommissionPct, model.params.commissionPct),
+      cellBreakeven(l.breakevenCommissionPct, model.params.commissionPct),
+      cellBreakeven(s.breakevenCommissionPct, model.params.commissionPct)
     ),
   ].join('\n');
 
@@ -687,6 +737,7 @@ function renderBacktestReportHtml(model) {
       <div class="card"><div class="lbl">Sharpe</div><div class="val">${esc(fmtNum(a.sharpe, 3))}</div></div>
       <div class="card"><div class="lbl">Recovery</div><div class="val">${esc(fmtNum(a.recovery, 3))}</div></div>
       <div class="card"><div class="lbl">Сделок</div><div class="val">${esc(fmtNum(a.dealCount, 0))}</div></div>
+      ${breakevenCardHtml(a, model.params.commissionPct)}
     </div>
     <section>
       <h2>Параметры логики</h2>

@@ -58,6 +58,7 @@ export interface SideStats {
   maxLossStreak: number;
   maxDrawdownPct: number | null;
   commission: number;
+  breakevenCommissionPct: number | null;
   payOffRatio: number;
 }
 
@@ -400,11 +401,26 @@ export function computeSideStats(
   deals: ClosedDeal[],
   initialBalance: number,
   baseAnnualRatePct: number,
-  withMaxDrawdown: boolean
+  withMaxDrawdown: boolean,
+  commissionPct = 0
 ): SideStats {
   const bal = initialBalance > 0 ? initialBalance : 0;
   const netPnl = deals.reduce((s, d) => s + d.pnl, 0);
   const commission = deals.reduce((s, d) => s + d.commission, 0);
+  // Комиссия пропорциональна объёму сделок (только вариативная). Итог при ставке x:
+  // gross - commission*(x/commissionPct), где gross = netPnl + commission.
+  // Безубыток (итог = 0): x_be = commissionPct * gross / commission.
+  const gross = netPnl + commission;
+  let breakevenCommissionPct: number | null = null;
+  if (commission > 0) {
+    breakevenCommissionPct = (commissionPct * gross) / commission;
+  } else if (gross > 0) {
+    breakevenCommissionPct = commissionPct + 1;
+  } else if (gross < 0) {
+    breakevenCommissionPct = 0;
+  } else {
+    breakevenCommissionPct = commissionPct;
+  }
   const wins = deals.filter((d) => d.pnl > 0);
   const losses = deals.filter((d) => d.pnl < 0);
   const sumWin = wins.reduce((s, d) => s + d.pnl, 0);
@@ -448,6 +464,7 @@ export function computeSideStats(
     maxLossStreak: maxStreak(deals, false),
     maxDrawdownPct: withMaxDrawdown ? dd.pct : null,
     commission,
+    breakevenCommissionPct,
     payOffRatio,
   };
 }
@@ -1511,9 +1528,9 @@ export function buildBacktestReportModel(
     },
     paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
     paperCharts: Array.isArray(opts.paperCharts) ? opts.paperCharts : [],
-    all: computeSideStats(allDeals, initial, rate, true),
-    long: computeSideStats(longDeals, initial, rate, false),
-    short: computeSideStats(shortDeals, initial, rate, false),
+    all: computeSideStats(allDeals, initial, rate, true, num(logic.commission_pct)),
+    long: computeSideStats(longDeals, initial, rate, false, num(logic.commission_pct)),
+    short: computeSideStats(shortDeals, initial, rate, false, num(logic.commission_pct)),
     equitySvg: equitySparklineSvg(trades, opts.backtestRun?.date_from),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
@@ -1538,6 +1555,32 @@ function cellNum(v: number, digits = 2): string {
 
 function cellText(v: string): string {
   return `<td class="num">${esc(v)}</td>`;
+}
+
+function cellBreakeven(v: number | null | undefined, commissionPct: number): string {
+  if (v == null || !Number.isFinite(v)) return `<td class="num muted">—</td>`;
+  const cls = v > commissionPct ? 'pos' : v < commissionPct ? 'neg' : '';
+  return `<td class="num ${cls}" title="Комиссия, при которой финансовый результат = 0%">${esc(
+    fmtNum(v, 4)
+  )}%</td>`;
+}
+
+function breakevenCardHtml(a: SideStats, commissionPct: number): string {
+  const v = a.breakevenCommissionPct;
+  let val: string;
+  let cls = '';
+  if (v == null || !Number.isFinite(v)) {
+    val = '—';
+  } else if (v !== 0 && (v < -0.0001 || commissionPct <= 0)) {
+    val = 'убыточна даже при 0%';
+    cls = 'neg';
+  } else {
+    val = `${fmtNum(v, 4)}%`;
+    cls = v > commissionPct ? 'pos' : v < commissionPct ? 'neg' : '';
+  }
+  return `<div class="card" title="Минимальная комиссия, при которой финансовый результат = 0. При комиссии выше — тест уходит в минус."><div class="lbl">Комиссия − безубыток</div><div class="val ${cls}">${esc(
+    val
+  )}</div></div>`;
 }
 
 function metricRow(
@@ -1693,6 +1736,12 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       cellMoney(a.commission),
       cellMoney(l.commission),
       cellMoney(s.commission)
+    ),
+    metricRow(
+      'Комиссия − безубыток',
+      cellBreakeven(a.breakevenCommissionPct, model.params.commissionPct),
+      cellBreakeven(l.breakevenCommissionPct, model.params.commissionPct),
+      cellBreakeven(s.breakevenCommissionPct, model.params.commissionPct)
     ),
   ].join('\n');
 
@@ -1969,6 +2018,7 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       <div class="card"><div class="lbl">Sharpe</div><div class="val">${esc(fmtNum(a.sharpe, 3))}</div></div>
       <div class="card"><div class="lbl">Recovery</div><div class="val">${esc(fmtNum(a.recovery, 3))}</div></div>
       <div class="card"><div class="lbl">Сделок</div><div class="val">${esc(fmtNum(a.dealCount, 0))}</div></div>
+      ${breakevenCardHtml(a, model.params.commissionPct)}
     </div>
 
     <section>
