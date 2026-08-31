@@ -5212,6 +5212,9 @@ BEGIN
         WHEN 'CCI' THEN
             RETURN QUERY SELECT * FROM calc_ind_cci_array(
                 COALESCE(p_period, 20), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
+        WHEN 'ROC' THEN
+            RETURN QUERY SELECT * FROM calc_ind_roc_array(
+                COALESCE(p_period, 10), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
         WHEN 'ADX' THEN
             RETURN QUERY SELECT * FROM calc_ind_adx_array(
                 COALESCE(p_period, 14), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
@@ -5248,6 +5251,7 @@ BEGIN
         WHEN 'DONCHIAN' THEN 20
         WHEN 'ATR' THEN 14 WHEN 'STOCH' THEN 14 WHEN 'SMAT3' THEN 20
         WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20 WHEN 'SQUARE' THEN 20
+        WHEN 'ROC' THEN 10
         ELSE 14 END;
     BEGIN
         SELECT pv.value::INTEGER INTO param_period
@@ -5710,6 +5714,7 @@ BEGIN
             WHEN 'BB' THEN 20
             WHEN 'ATR' THEN 14
             WHEN 'STOCH' THEN 14
+            WHEN 'ROC' THEN 10
             ELSE 14
         END;
     END;

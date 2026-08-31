@@ -448,6 +448,87 @@ BEGIN
 END;
 $$;
 
+-- ========== ROC (Rate of Change) ==========
+CREATE OR REPLACE FUNCTION calc_ind_roc_array(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    i INTEGER;
+    v_start INTEGER;
+    v_period INTEGER;
+    v_prev NUMERIC;
+BEGIN
+    IF upper(btrim(COALESCE(p_series, 'VALUE'))) NOT IN ('VALUE', 'ROC') THEN
+        RETURN;
+    END IF;
+    v_period := GREATEST(COALESCE(p_period, 14), 1);
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(v_period, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.close_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_closes, v_n
+    FROM (
+        SELECT p.dt, p.close_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    IF v_n IS NULL OR v_n < (v_period + 1) THEN RETURN; END IF;
+
+    v_start := GREATEST(v_period + 1, v_n - p_point_count + 1);
+    FOR i IN (v_period + 1) .. v_n LOOP
+        IF i < v_start THEN CONTINUE; END IF;
+        v_prev := v_closes[i - v_period];
+        IF v_prev = 0 THEN
+            value := 0;
+        ELSE
+            value := (v_closes[i] - v_prev) / v_prev * 100.0;
+        END IF;
+        dt := v_dts[i];
+        RETURN NEXT;
+    END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION calc_ind_roc(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN (
+        SELECT a.value
+        FROM calc_ind_roc_array(
+            p_period, p_series, p_security_id, p_timeframe_id, 1, p_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1
+    );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION calc_ind_adx(
     p_period INTEGER,
     p_series VARCHAR,

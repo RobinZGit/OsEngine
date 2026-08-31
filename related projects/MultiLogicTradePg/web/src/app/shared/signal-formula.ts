@@ -21,11 +21,12 @@ export function defaultIndicatorParams(code: string): string {
     case 'CCI':
     case 'WILLR':
     case 'CMO':
-    case 'ROC':
     case 'TRIX':
     case 'TSI':
     case 'UO':
       return 'period=14,series=VALUE';
+    case 'ROC':
+      return 'period=10,series=VALUE';
     case 'MACD':
       return 'fast=12,slow=26,signal=9,series=MACD';
     case 'STOCH':
