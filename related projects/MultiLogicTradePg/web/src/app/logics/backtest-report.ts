@@ -1583,6 +1583,28 @@ function breakevenCardHtml(a: SideStats, commissionPct: number): string {
   )}</div></div>`;
 }
 
+/** % годовых: простая аннуализация общего П\\У % на календарные дни периода. */
+export function annualPctCardHtml(
+  returnPct: number,
+  dateFrom: string,
+  dateTo: string
+): string {
+  if (!Number.isFinite(returnPct) || !dateFrom || !dateTo) {
+    return `<div class="card" title="% годовых (простая аннуализация за период теста)"><div class="lbl">% годовых</div><div class="val muted">—</div></div>`;
+  }
+  const fromMs = Date.parse(`${dateFrom}T00:00:00Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return `<div class="card" title="% годовых (простая аннуализация за период теста)"><div class="lbl">% годовых</div><div class="val muted">—</div></div>`;
+  }
+  const days = Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
+  const annual = returnPct * (365 / days);
+  const cls = annual >= 0 ? 'pos' : 'neg';
+  return `<div class="card" title="П\\У за весь период, приведённый к % годовых (простая аннуализация: return% × 365/дни периода)"><div class="lbl">% годовых</div><div class="val ${cls}">${esc(
+    fmtPct(annual)
+  )}</div></div>`;
+}
+
 function metricRow(
   label: string,
   all: string,
@@ -2012,6 +2034,7 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     <div class="cards">
       <div class="card"><div class="lbl">Чистый П\\У</div><div class="val ${a.netPnl >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(a.netPnl))}</div></div>
       <div class="card"><div class="lbl">П\\У %</div><div class="val ${a.netPnlPct >= 0 ? 'pos' : 'neg'}">${esc(fmtPct(a.netPnlPct))}</div></div>
+      ${annualPctCardHtml(a.netPnlPct, model.dateFrom, model.dateTo)}
       <div class="card"><div class="lbl">Profit Factor</div><div class="val">${esc(pf(a))}</div></div>
       <div class="card"><div class="lbl">Макс. просадка</div><div class="val neg">${esc(a.maxDrawdownPct != null ? fmtPct(a.maxDrawdownPct) : '—')}</div></div>
       <div class="card"><div class="lbl">Прибыльных %</div><div class="val">${esc(fmtPct(a.winPct))}</div></div>

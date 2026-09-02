@@ -1,4 +1,5 @@
 import {
+  annualPctCardHtml,
   buildBacktestReportDownloadName,
   buildPaperReportCloseRows,
   collectClosedDeals,
@@ -107,6 +108,20 @@ describe('backtest-report metrics', () => {
     } as BacktestReportModel;
     expect(buildBacktestReportDownloadName(model)).toBe(
       'MLT-report_My_Logic_v2_2020-01-01_2025-12-31_M15_PnL+12.3pct_42deals.html'
+    );
+  });
+
+  it('annualPctCardHtml annualizes returnPct over calendar days of the period', () => {
+    // One non-leap year (2023 = 365 days inclusive) → annual == returnPct exactly.
+    const annual = annualPctCardHtml(12.3, '2023-01-01', '2023-12-31');
+    expect(annual).toContain('lbl">% годовых</div>');
+    expect(annual).toContain('val pos');
+    expect(annual).toContain('12,30%'); // ru-RU locale
+    // Without a valid window → em dash.
+    expect(annualPctCardHtml(12.3, '', '')).toContain('val muted">—</div>');
+    // Negative annualized return → neg tone.
+    expect(annualPctCardHtml(-5, '2023-01-01', '2023-12-31')).toContain(
+      'val neg'
     );
   });
 
