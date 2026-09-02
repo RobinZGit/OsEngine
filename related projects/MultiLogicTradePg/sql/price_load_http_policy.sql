@@ -144,18 +144,14 @@ BEGIN
                 END IF;
         END;
 
-        IF COALESCE(v_moex_records, 0) = 0 THEN
-            SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
-            IF COALESCE(v_tf_sec, 0) > 60 AND COALESCE(v_tf_sec, 0) < 86400 THEN
-                BEGIN
-                    CALL load_prices_moex_via_m1_resample(
-                        p_security_id, p_timeframe_id, p_date_from, p_date_to
-                    );
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        RAISE NOTICE 'MOEX M1 resample не удался: %', SQLERRM;
-                END;
-            END IF;
+        -- Интрадей-TF: даже если T-Bank/MOEX что-то дали, но в `prices` мало баров
+        -- целевого TF — докачиваем M10→M15 чанками по дням (MOEX не отдаёт 15/30 напрямую,
+        -- а большой диапазон в один вызов не успевает в statement_timeout).
+        SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
+        IF COALESCE(v_tf_sec, 0) > 60 AND COALESCE(v_tf_sec, 0) < 86400 THEN
+            PERFORM load_prices_moex_resample_chunked(
+                p_security_id, p_timeframe_id, p_date_from, p_date_to
+            );
         END IF;
     END IF;
 END;

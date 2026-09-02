@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+859. Fix ROC Snapback (logic 8937): phantom notional exposure. Корень бага — `logic_trade_build_lots` в `sql/logic_trade_pnl.sql` не фильтровал `is_shadow` → реальный Close поглощал Shadow Open → phantom spend ~302K₽ → v_room ~15₽ → все новые Open отклонялись. Исправление: `COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)` в 3 SELECT build_lots + `is_test`, `opt_lane`, cash-fund guard. Live fix: `psql -f sql/logic_trade_pnl.sql`. Бэктест: run 345 — 367 сделок (Jan 47, Feb 36, Mar 129, Apr 89, May 66), FinRes −22,354₽. 02-инсталлятор: `load_prices_moex_resample_chunked` + is_shadow фильтры встроены.
+
 858. Сохрани контекст инструкции пользователя локально и выложи репозиторий (пуш). Никаких изменений, кроме контекста инструкций, в этом коммите/выкладывании быть не должно (по согласованию дополнительно включены уже сделанные фиксы ROC/backtest: развёрнуты в live и в корневой `02_...sql` функции `calc_ind_roc_array` / `calc_ind_roc` и ветка ROC в `calc_indicator_series_array`, плюс chunked-загрузчик M15 `load_prices_moex_resample_chunked` и `scripts/backfill-m15.js`). Правило: перед каждым push обновлять `PROJECT_CONTEXT.md` и `USER_INSTRUCTIONS.md`.
 
 857. После теста отчёт не открывался вообще (автооткрытие молча не срабатывало: зависело от загрузки сделок на клиенте и от window.open). Теперь по завершении прогона открывается встроенный модал «Отчёты тестов» прямо с серверным отчётом этого run_id (HTML уже готов с пер-бумажными блоками) — без popup-окна и без ожидания локальных сделок.

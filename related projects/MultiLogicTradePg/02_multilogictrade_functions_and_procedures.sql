@@ -4558,6 +4558,87 @@ BEGIN
 END;
 $$;
 
+-- ========== ROC (Rate of Change) ==========
+CREATE OR REPLACE FUNCTION calc_ind_roc_array(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    i INTEGER;
+    v_start INTEGER;
+    v_period INTEGER;
+    v_prev NUMERIC;
+BEGIN
+    IF upper(btrim(COALESCE(p_series, 'VALUE'))) NOT IN ('VALUE', 'ROC') THEN
+        RETURN;
+    END IF;
+    v_period := GREATEST(COALESCE(p_period, 14), 1);
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(v_period, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.close_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_closes, v_n
+    FROM (
+        SELECT p.dt, p.close_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    IF v_n IS NULL OR v_n < (v_period + 1) THEN RETURN; END IF;
+
+    v_start := GREATEST(v_period + 1, v_n - p_point_count + 1);
+    FOR i IN (v_period + 1) .. v_n LOOP
+        IF i < v_start THEN CONTINUE; END IF;
+        v_prev := v_closes[i - v_period];
+        IF v_prev = 0 THEN
+            value := 0;
+        ELSE
+            value := (v_closes[i] - v_prev) / v_prev * 100.0;
+        END IF;
+        dt := v_dts[i];
+        RETURN NEXT;
+    END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION calc_ind_roc(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN (
+        SELECT a.value
+        FROM calc_ind_roc_array(
+            p_period, p_series, p_security_id, p_timeframe_id, 1, p_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1
+    );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION calc_ind_adx(
     p_period INTEGER,
     p_series VARCHAR,
@@ -5047,6 +5128,7 @@ $$;
 COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER) IS
 'Проставляет param_* серий бумаги из formula сигналов логики перед sync.';
 -- @end calc_ind_extra
+
 
 
 
@@ -11537,6 +11619,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -12408,6 +12518,7 @@ BEGIN
           AND ac.name = v_close.action_name
           AND lt.status IN ('filled', 'submitted')
           AND lt.executed_at <= v_close.executed_at
+          AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
           AND logic_trade_open_remaining_qty(lt.id) > 0;
 
         IF v_total_open_qty <= 0 THEN
@@ -12427,6 +12538,7 @@ BEGIN
               AND ac.name = v_close.action_name
               AND lt.status IN ('filled', 'submitted')
               AND lt.executed_at <= v_close.executed_at
+              AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
             ORDER BY lt.executed_at ASC, lt.id ASC
         LOOP
             EXIT WHEN v_remaining <= 0;
@@ -12475,6 +12587,7 @@ BEGIN
               AND ac.name = v_close.action_name
               AND lt.status IN ('filled', 'submitted')
               AND lt.executed_at <= v_close.executed_at
+              AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
             ORDER BY lt.executed_at ASC, lt.id ASC
         LOOP
             EXIT WHEN v_remaining <= 0;
@@ -22718,6 +22831,7 @@ COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 
 
 
+
 -- instrumentId для GetCandles: ShareBy по тикеру (исправляет устаревший tbank_figi)
 CREATE OR REPLACE FUNCTION resolve_tbank_instrument_id(
     p_security_id INTEGER,
@@ -23548,6 +23662,45 @@ $$;
 
 COMMENT ON PROCEDURE load_prices_moex_via_m1_resample(INTEGER, INTEGER, DATE, DATE, VARCHAR) IS
 'Fallback: FORTS base interval (M10 для M15) + resample в целевой TF';
+
+-- ============================================
+-- Чанкованный M10→M15 resample по дням.
+-- MOEX ISS не отдаёт интрадей-интервалы вроде 15/30 напрямую (0 свечей),
+-- а большой диапазон в один вызов не успевает в statement_timeout (таймаут),
+-- поэтому идём по дням — каждый дневной вызов мал и успевает.
+CREATE OR REPLACE PROCEDURE load_prices_moex_resample_chunked(
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_date_from DATE,
+    p_date_to DATE
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_day DATE;
+    v_tf_sec INTEGER;
+BEGIN
+    SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
+    IF COALESCE(v_tf_sec, 0) <= 60 OR COALESCE(v_tf_sec, 0) >= 86400 THEN
+        RAISE EXCEPTION 'chunked resample: поддерживаются только интрадей-TF (60<sec<86400), tf_id=%', p_timeframe_id;
+    END IF;
+
+    v_day := p_date_from;
+    WHILE v_day <= p_date_to LOOP
+        BEGIN
+            CALL load_prices_moex_via_m1_resample(
+                p_security_id, p_timeframe_id, v_day, v_day
+            );
+        EXCEPTION
+            WHEN OTHERS THEN
+                RAISE NOTICE 'chunked resample: день % не удался: %', v_day, SQLERRM;
+        END;
+        v_day := v_day + 1;
+    END LOOP;
+END;
+$$;
+
+COMMENT ON PROCEDURE load_prices_moex_resample_chunked(INTEGER, INTEGER, DATE, DATE) IS
+'Чанкованный M10→M15 resample по дням (для интрадей-TF с недоступным прямым interval)';
 
 -- MOEX ASSETCODE для группового префикса (CR → CNY, GD → GOLD, …)
 CREATE OR REPLACE FUNCTION moex_future_asset_code(p_group_prefix VARCHAR)

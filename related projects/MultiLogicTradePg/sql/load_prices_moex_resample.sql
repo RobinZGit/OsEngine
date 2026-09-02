@@ -244,3 +244,42 @@ $$;
 
 COMMENT ON PROCEDURE load_prices_moex_via_m1_resample(INTEGER, INTEGER, DATE, DATE, VARCHAR) IS
 'Fallback: FORTS base interval (M10 для M15) + resample в целевой TF';
+
+-- ============================================
+-- Чанкованный M10→M15 resample по дням.
+-- MOEX ISS не отдаёт интрадей-интервалы вроде 15/30 напрямую (0 свечей),
+-- а большой диапазон в один вызов не успевает в statement_timeout (таймаут),
+-- поэтому идём по дням — каждый дневной вызов мал и успевает.
+CREATE OR REPLACE PROCEDURE load_prices_moex_resample_chunked(
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_date_from DATE,
+    p_date_to DATE
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_day DATE;
+    v_tf_sec INTEGER;
+BEGIN
+    SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
+    IF COALESCE(v_tf_sec, 0) <= 60 OR COALESCE(v_tf_sec, 0) >= 86400 THEN
+        RAISE EXCEPTION 'chunked resample: поддерживаются только интрадей-TF (60<sec<86400), tf_id=%', p_timeframe_id;
+    END IF;
+
+    v_day := p_date_from;
+    WHILE v_day <= p_date_to LOOP
+        BEGIN
+            CALL load_prices_moex_via_m1_resample(
+                p_security_id, p_timeframe_id, v_day, v_day
+            );
+        EXCEPTION
+            WHEN OTHERS THEN
+                RAISE NOTICE 'chunked resample: день % не удался: %', v_day, SQLERRM;
+        END;
+        v_day := v_day + 1;
+    END LOOP;
+END;
+$$;
+
+COMMENT ON PROCEDURE load_prices_moex_resample_chunked(INTEGER, INTEGER, DATE, DATE) IS
+'Чанкованный M10→M15 resample по дням (для интрадей-TF с недоступным прямым interval)';
