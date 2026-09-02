@@ -472,6 +472,16 @@ export class LogicsService {
     );
   }
 
+  updateLogicSecurity(
+    id: number,
+    body: { is_active: boolean }
+  ): Observable<LogicSecurityRow> {
+    return this.http.put<LogicSecurityRow>(
+      `${this.appConfig.apiUrl}/logic-securities/${id}`,
+      body
+    );
+  }
+
   getLogicTrades(
     logicId: number,
     limit = 100,

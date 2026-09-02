@@ -1504,6 +1504,8 @@
 
                             <th class="col-sig-expand"></th>
 
+                            <th class="col-sig-active" title="Активный сигнал участвует во входах/выходах">Активен</th>
+
                             <th>Действие</th>
 
                             <th>Сторона</th>
@@ -1550,6 +1552,19 @@
                                     aria-hidden="true"
                                   >▸</span>
                                 </button>
+
+                              </td>
+
+                              <td class="col-sig-active">
+
+                                <label class="sig-active-toggle" title="Активен — участвует во входах/выходах">
+                                  <input
+                                    type="checkbox"
+                                    [checked]="sig.is_active"
+                                    [disabled]="isFormulaSaving(sig.id)"
+                                    (change)="toggleSignalActive(sig, $event)"
+                                  />
+                                </label>
 
                               </td>
 
@@ -1741,7 +1756,7 @@
 
                             @if (isCombatSignalExpanded(row.id, sig.id)) {
                               <tr class="sig-combat-detail-row">
-                                <td colspan="8">
+                                <td colspan="10">
                                   <app-logic-combat-signal-detail
                                     [logicId]="row.id"
                                     [signalId]="sig.id"
@@ -1754,15 +1769,15 @@
 
                           } @empty {
 
-                            <tr>
+<tr>
 
-                              <td colspan="8" class="empty">
+                            <td colspan="10" class="empty">
 
-                                Нет сигналов — добавьте трендовый или контртрендовый
+                              Нет сигналов — добавьте трендовый или контртрендовый
 
-                              </td>
+                            </td>
 
-                            </tr>
+                          </tr>
 
                           }
 
@@ -1925,6 +1940,8 @@
 
                               <th>Единица</th>
 
+                              <th class="col-sig-active" title="Активное правило применяется">Активен</th>
+
                               <th class="col-sig-actions"></th>
 
                             </tr>
@@ -1994,6 +2011,19 @@
                                       <option [ngValue]="u">{{ valueUnitLabel(u) }}</option>
                                     }
                                   </select>
+
+                                </td>
+
+                                <td class="col-sig-active">
+
+                                  <label class="sig-active-toggle" title="Активное правило применяется к закрытию">
+                                    <input
+                                      type="checkbox"
+                                      [checked]="stop.is_active"
+                                      [disabled]="isStopSaving(stop.id)"
+                                      (change)="toggleStopActive(stop, $event)"
+                                    />
+                                  </label>
 
                                 </td>
 
@@ -2160,288 +2190,302 @@
 
                     <details class="signals-block securities-block" [open]="isSecuritiesBlockExpanded(row.id)">
 
-                      <summary class="signals-summary">
+                                      <summary class="signals-summary">
 
-                        <span
-                          class="signals-summary-head"
-                          (click)="toggleSecuritiesBlock(row.id, $event)"
-                        >
+                                        <span
+                                          class="signals-summary-head"
+                                          (click)="toggleSecuritiesBlock(row.id, $event)"
+                                        >
 
-                          <span
-                            class="signals-chevron"
-                            [class.open]="isSecuritiesBlockExpanded(row.id)"
-                            aria-hidden="true"
-                          >▸</span>
+                                          <span
+                                            class="signals-chevron"
+                                            [class.open]="isSecuritiesBlockExpanded(row.id)"
+                                            aria-hidden="true"
+                                          >▸</span>
 
-                          <span class="signals-title">Ценные бумаги</span>
+                                          <span class="signals-title">Ценные бумаги</span>
 
-                          @if (isSecuritiesLoading(row.id)) {
+                                          @if (isSecuritiesLoading(row.id)) {
 
-                            <span class="signals-loading">загрузка…</span>
+                                            <span class="signals-loading">загрузка…</span>
 
-                          }
+                                          }
 
-                        </span>
+                                        </span>
 
-                        <span class="signals-summary-actions">
+                                        <span class="signals-summary-actions">
 
-                          <button
-                            type="button"
-                            class="btn btn-sm btn-securities"
-                            (click)="openSecurityPicker(row.id, $event)"
-                          >
-                            + Добавить
-                          </button>
+                                          <button
+                                            type="button"
+                                            class="btn btn-sm btn-securities"
+                                            (click)="openSecurityPicker(row.id, $event)"
+                                          >
+                                            + Добавить
+                                          </button>
 
-                        </span>
+                                        </span>
 
-                      </summary>
+                                      </summary>
 
-                      <div class="signals-body">
+                                      <div class="signals-body">
 
-                        @if (isSecurityPickerOpen(row.id)) {
+                                        @if (isSecurityPickerOpen(row.id)) {
 
-                          <div class="indicator-picker securities-picker">
+                                          <div class="indicator-picker securities-picker">
 
-                            <p class="picker-title">
-                              Выберите бумаги — галочки по строкам или «выбрать все» у группы
-                            </p>
+                                            <p class="picker-title">
+                                              Выберите бумаги — галочки по строкам или «выбрать все» у группы
+                                            </p>
 
-                            @if (securitiesCatalogLoading || !securitiesCatalogLoaded) {
+                                            @if (securitiesCatalogLoading || !securitiesCatalogLoaded) {
 
-                              <p class="picker-empty">Загрузка списка бумаг…</p>
+                                              <p class="picker-empty">Загрузка списка бумаг…</p>
 
-                            } @else {
+                                            } @else {
 
-                              <details class="sec-picker-group">
+                                              <details class="sec-picker-group">
 
-                                <summary class="sec-picker-group-head">
+                                                <summary class="sec-picker-group-head">
 
-                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
+                                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
 
-                                    <input
-                                      type="checkbox"
-                                      [checked]="allStocksPickerSelected(row.id)"
-                                      (change)="toggleAllStocksPicker(row.id, $any($event.target).checked)"
-                                    />
+                                                    <input
+                                                      type="checkbox"
+                                                      [checked]="allStocksPickerSelected(row.id)"
+                                                      (change)="toggleAllStocksPicker(row.id, $any($event.target).checked)"
+                                                    />
 
-                                    <span class="sec-picker-group-title">Акции</span>
+                                                    <span class="sec-picker-group-title">Акции</span>
 
-                                    <span class="sec-picker-count">({{ pickerStocksAvailable(row.id).length }})</span>
+                                                    <span class="sec-picker-count">({{ pickerStocksAvailable(row.id).length }})</span>
 
-                                  </label>
+                                                  </label>
 
-                                </summary>
+                                                </summary>
 
-                                @if (pickerStocksAvailable(row.id).length === 0) {
+                                                @if (pickerStocksAvailable(row.id).length === 0) {
 
-                                  <p class="picker-empty picker-empty-nested">Все акции уже добавлены</p>
+                                                  <p class="picker-empty picker-empty-nested">Все акции уже добавлены</p>
 
-                                } @else {
+                                                } @else {
 
-                                  <ul class="picker-list">
+                                                  <ul class="picker-list">
 
-                                    @for (sec of pickerStocksAvailable(row.id); track sec.id) {
+                                                    @for (sec of pickerStocksAvailable(row.id); track sec.id) {
 
-                                      <li
-                                        class="picker-item"
-                                        [class.selected]="isSecurityPickerSelected(sec.id)"
-                                      >
+                                                      <li
+                                                        class="picker-item"
+                                                        [class.selected]="isSecurityPickerSelected(sec.id)"
+                                                      >
 
-                                        <label>
+                                                        <label>
 
-                                          <input
-                                            type="checkbox"
-                                            [checked]="isSecurityPickerSelected(sec.id)"
-                                            (change)="toggleSecurityPickerSelection(sec.id)"
-                                          />
+                                                          <input
+                                                            type="checkbox"
+                                                            [checked]="isSecurityPickerSelected(sec.id)"
+                                                            (change)="toggleSecurityPickerSelection(sec.id)"
+                                                          />
 
-                                          <span class="picker-code">{{ sec.prefix }}</span>
+                                                          <span class="picker-code">{{ sec.prefix }}</span>
 
-                                          <span class="picker-name">{{ sec.name }}</span>
+                                                          <span class="picker-name">{{ sec.name }}</span>
 
-                                        </label>
+                                                        </label>
 
-                                      </li>
+                                                      </li>
 
-                                    }
+                                                    }
 
-                                  </ul>
+                                                  </ul>
 
-                                }
+                                                }
 
-                              </details>
+                                              </details>
 
-                              <details class="sec-picker-group">
+                                              <details class="sec-picker-group">
 
-                                <summary class="sec-picker-group-head">
+                                                <summary class="sec-picker-group-head">
 
-                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
+                                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
 
-                                    <input
-                                      type="checkbox"
-                                      [checked]="allFuturesPickerSelected(row.id)"
-                                      (change)="toggleAllFuturesPicker(row.id, $any($event.target).checked)"
-                                    />
+                                                    <input
+                                                      type="checkbox"
+                                                      [checked]="allFuturesPickerSelected(row.id)"
+                                                      (change)="toggleAllFuturesPicker(row.id, $any($event.target).checked)"
+                                                    />
 
-                                    <span class="sec-picker-group-title">Фьючерсы</span>
+                                                    <span class="sec-picker-group-title">Фьючерсы</span>
 
-                                    <span class="sec-picker-count">({{ pickerFuturesAvailable(row.id).length }})</span>
+                                                    <span class="sec-picker-count">({{ pickerFuturesAvailable(row.id).length }})</span>
 
-                                  </label>
+                                                  </label>
 
-                                </summary>
+                                                </summary>
 
-                                @if (pickerFuturesAvailable(row.id).length === 0) {
+                                                @if (pickerFuturesAvailable(row.id).length === 0) {
 
-                                  <p class="picker-empty picker-empty-nested">Все фьючерсы уже добавлены</p>
+                                                  <p class="picker-empty picker-empty-nested">Все фьючерсы уже добавлены</p>
 
-                                } @else {
+                                                } @else {
 
-                                  <ul class="picker-list">
+                                                  <ul class="picker-list">
 
-                                    @for (sec of pickerFuturesAvailable(row.id); track sec.id) {
+                                                    @for (sec of pickerFuturesAvailable(row.id); track sec.id) {
 
-                                      <li
-                                        class="picker-item"
-                                        [class.selected]="isSecurityPickerSelected(sec.id)"
-                                      >
+                                                      <li
+                                                        class="picker-item"
+                                                        [class.selected]="isSecurityPickerSelected(sec.id)"
+                                                      >
 
-                                        <label>
+                                                        <label>
 
-                                          <input
-                                            type="checkbox"
-                                            [checked]="isSecurityPickerSelected(sec.id)"
-                                            (change)="toggleSecurityPickerSelection(sec.id)"
-                                          />
+                                                          <input
+                                                            type="checkbox"
+                                                            [checked]="isSecurityPickerSelected(sec.id)"
+                                                            (change)="toggleSecurityPickerSelection(sec.id)"
+                                                          />
 
-                                          <span class="picker-code">{{ sec.prefix }}</span>
+                                                          <span class="picker-code">{{ sec.prefix }}</span>
 
-                                          <span class="picker-name">{{ sec.name }}</span>
+                                                          <span class="picker-name">{{ sec.name }}</span>
 
-                                        </label>
+                                                        </label>
 
-                                      </li>
+                                                      </li>
 
-                                    }
+                                                    }
 
-                                  </ul>
+                                                  </ul>
 
-                                }
+                                                }
 
-                              </details>
+                                              </details>
 
-                            }
+                                            }
 
-                            <div class="picker-actions">
+                                            <div class="picker-actions">
 
-                              <button
-                                type="button"
-                                class="btn btn-sm btn-ok"
-                                [disabled]="pickerSelectedSecurityIds.size === 0"
-                                (click)="addSelectedSecurities()"
-                              >
-                                Добавить ({{ pickerSelectedSecurityIds.size }})
-                              </button>
+                                              <button
+                                                type="button"
+                                                class="btn btn-sm btn-ok"
+                                                [disabled]="pickerSelectedSecurityIds.size === 0"
+                                                (click)="addSelectedSecurities()"
+                                              >
+                                                Добавить ({{ pickerSelectedSecurityIds.size }})
+                                              </button>
 
-                              <button type="button" class="btn btn-sm btn-muted" (click)="closeSecurityPicker()">
-                                Отмена
-                              </button>
+                                              <button type="button" class="btn btn-sm btn-muted" (click)="closeSecurityPicker()">
+                                                Отмена
+                                              </button>
 
-                            </div>
+                                            </div>
 
-                          </div>
+                                          </div>
 
-                        }
+                                        }
 
-                        <table class="signals-table securities-table">
+                                        <table class="signals-table securities-table">
 
-                          <thead>
+                                          <thead>
 
-                            <tr>
+                                            <tr>
 
-                              <th>Тикер</th>
+                                              <th>Тикер</th>
 
-                              <th>Название</th>
+                                              <th>Название</th>
 
-                              <th>Лот</th>
+                                              <th>Лот</th>
 
-                              <th>Тип</th>
+                                              <th>Тип</th>
 
-                              <th>Биржа</th>
+                                              <th>Биржа</th>
 
-                              <th class="col-sig-actions"></th>
+                                              <th class="col-sig-active">Активна</th>
 
-                            </tr>
+                                              <th class="col-sig-actions"></th>
 
-                          </thead>
+                                            </tr>
 
-                          <tbody>
+                                          </thead>
 
-                            @for (sec of securitiesFor(row.id); track sec.id) {
+                                          <tbody>
 
-                              <tr [class.sig-inactive]="!sec.is_active">
+                                            @for (sec of securitiesFor(row.id); track sec.id) {
 
-                                <td><strong>{{ sec.prefix || '—' }}</strong></td>
+                                              <tr [class.sig-inactive]="!sec.is_active">
 
-                                <td>{{ sec.security_name }}
-                                  @if (sec.real_trading_paused) {
-                                    <span
-                                      class="sec-paused-badge"
-                                      title="Только эта бумага: реал на паузе после SL с возобновлением; идут теневые сделки по бумаге. Не весь портфель."
-                                    >бумага: реал→тень (SL с возобновлением)</span>
-                                  }
-                                  @if (sec.real_trading_inverted) {
-                                    <span class="sec-inverted-badge" title="По бумаге включена локальная инверсия после SL">инверсия</span>
-                                  }
-                                </td>
+                                                <td><strong>{{ sec.prefix || '—' }}</strong></td>
 
-                                <td class="col-lot">{{ sec.lot_size ?? 1 }}</td>
+                                                <td>{{ sec.security_name }}
+                                                  @if (sec.real_trading_paused) {
+                                                    <span
+                                                      class="sec-paused-badge"
+                                                      title="Только эта бумага: реал на паузе после SL с возобновлением; идут теневые сделки по бумаге. Не весь портфель."
+                                                    >бумага: реал→тень (SL с возобновлением)</span>
+                                                  }
+                                                  @if (sec.real_trading_inverted) {
+                                                    <span class="sec-inverted-badge" title="По бумаге включена локальная инверсия после SL">инверсия</span>
+                                                  }
+                                                </td>
 
-                                <td>{{ securityKindLabel(sec) }}</td>
+                                                <td class="col-lot">{{ sec.lot_size ?? 1 }}</td>
 
-                                <td>{{ sec.exchange_name || '—' }}</td>
+                                                <td>{{ securityKindLabel(sec) }}</td>
 
-                                <td class="col-sig-actions">
+                                                <td>{{ sec.exchange_name || '—' }}</td>
 
-                                  <button
-                                    type="button"
-                                    class="icon-btn icon-danger"
-                                    title="Удалить"
-                                    aria-label="Удалить"
-                                    (click)="deleteLogicSecurity(sec, $event)"
-                                  >
-                                    ✕
-                                  </button>
+                                                <td class="col-sig-active">
+                                                  <label class="sig-active-toggle" (click)="$event.stopPropagation()">
+                                                    <input
+                                                      type="checkbox"
+                                                      [checked]="!!sec.is_active"
+                                                      [disabled]="isSecurityActiveSaving(sec.id)"
+                                                      (change)="toggleSecurityActive(sec, $event)"
+                                                    />
+                                                  </label>
+                                                </td>
 
-                                </td>
+                                                <td class="col-sig-actions">
 
-                              </tr>
+                                                  <button
+                                                    type="button"
+                                                    class="icon-btn icon-danger"
+                                                    title="Удалить"
+                                                    aria-label="Удалить"
+                                                    (click)="deleteLogicSecurity(sec, $event)"
+                                                  >
+                                                    ✕
+                                                  </button>
 
-                            } @empty {
+                                                </td>
 
-                              <tr>
+                                              </tr>
 
-                                <td colspan="5" class="empty">
-                                  Нет бумаг — нажмите «+ Добавить»
-                                </td>
+                                            } @empty {
 
-                              </tr>
+                                              <tr>
 
-                            }
+                                                <td colspan="6" class="empty">
 
-                          </tbody>
+                                                  Нет бумаг — нажмите «+ Добавить»
 
-                        </table>
+                                                </td>
 
-                        <p class="signals-help">
-                          Портфель бумаг этой торговой логики. Сигналы и стопы применяются к выбранным инструментам.
-                          Денежный фонд (TMON/LQDT/SBMM) из параметров появляется сверху списка и не участвует в сигналах.
-                        </p>
+                                              </tr>
+                                            }
 
-                      </div>
+                                          </tbody>
 
-                    </details>
+                                        </table>
+
+                                        <p class="signals-help">
+                                          Портфель бумаг этой торговой логики. Сигналы и стопы применяются к выбранным инструментам.
+                                          Денежный фонд (TMON/LQDT/SBMM) из параметров появляется сверху списка и не участвует в сигналах.
+                                        </p>
+
+                                      </div>
+
+                </details>
 
                     <div class="logic-trades-stack">
                       <app-logic-positions-panel

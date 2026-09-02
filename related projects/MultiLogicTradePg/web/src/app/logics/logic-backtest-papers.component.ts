@@ -25,6 +25,7 @@ import {
 } from '../models/market.model';
 import { SecuritiesService } from '../services/securities.service';
 import { TechLogService } from '../services/tech-log.service';
+import { LogicsService } from '../services/logics.service';
 import { LogicTradeRow } from '../shared/logic-trade';
 import {
   applyPaperMarkValue,
@@ -127,6 +128,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   private readonly securitiesApi = inject(SecuritiesService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly techLog = inject(TechLogService);
+  private readonly logicsApi = inject(LogicsService);
 
   /** test — бэктест; live — боевые сделки (те же lazy/OnPush ограничения). */
   @Input() mode: 'test' | 'live' = 'test';
@@ -142,9 +144,11 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
   @Input() initialBalance: number | null = null;
   /** Денежный фонд (TMON/LQDT/SBMM) — всегда первой строкой в списке бумаг. */
   @Input() pinnedPaper: BacktestPaperRow | null = null;
-  /** Мета бумаг логики (underlying для фьючерсов → второй график). */
+  /** Мета бумаг логики (underlying для фьючерсов → второй график; активность → чекбокс). */
   @Input() logicSecurities: Array<{
+    id: number;
     security_id: number;
+    is_active: boolean;
     underlying_security_id?: number | null;
     underlying_security_name?: string | null;
     underlying_prefix?: string | null;
@@ -269,6 +273,59 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
         this.ensureChartLoaded(Number(undId));
       }
     }, 0);
+  }
+
+  /** Есть строчка логики (логическая бумага с признаком is_active) — показываем чекбокс. */
+  isPaperToggleable(securityId: number): boolean {
+    return this.logicSecurities.some(
+      (s) => Number(s.security_id) === Number(securityId)
+    );
+  }
+
+  isPaperActive(securityId: number): boolean {
+    return (
+      this.logicSecurities.find(
+        (s) => Number(s.security_id) === Number(securityId)
+      )?.is_active ?? false
+    );
+  }
+
+  private savingPaperIds = new Set<number>();
+
+  isPaperActiveSaving(securityId: number): boolean {
+    return this.savingPaperIds.has(Number(securityId));
+  }
+
+  togglePaperActive(paper: BacktestPaperRow, event: Event): void {
+    event.stopPropagation();
+    const row = this.logicSecurities.find(
+      (s) => Number(s.security_id) === Number(paper.security_id)
+    );
+    if (!row || this.savingPaperIds.has(row.id)) return;
+    const next = !row.is_active;
+    this.savingPaperIds.add(row.id);
+    this.logicsApi.updateLogicSecurity(row.id, { is_active: next }).subscribe({
+      next: (updated) => {
+        this.savingPaperIds.delete(row.id);
+        this.patchLogicSecurity(updated);
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.savingPaperIds.delete(row.id);
+        this.cdr.markForCheck();
+        alert(err?.error?.error || 'Не удалось изменить активность бумаги');
+      },
+    });
+  }
+
+  private patchLogicSecurity(updated: {
+    id: number;
+    is_active: boolean;
+  }): void {
+    const idx = this.logicSecurities.findIndex((s) => s.id === updated.id);
+    if (idx >= 0) {
+      this.logicSecurities[idx] = { ...this.logicSecurities[idx], ...updated };
+    }
   }
 
   /** Есть свечи — для @if (OnPush стабильнее, чем читать Map в шаблоне много раз). */

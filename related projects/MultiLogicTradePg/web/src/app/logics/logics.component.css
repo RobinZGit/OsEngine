@@ -1252,6 +1252,24 @@ tbody tr.logic-main-row:hover {
   padding-right: 0 !important;
 }
 
+.col-sig-active {
+  width: 2.75rem;
+  text-align: center;
+}
+
+.sig-active-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.sig-active-toggle input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
 .sig-expand-btn {
   border: 0;
   background: transparent;

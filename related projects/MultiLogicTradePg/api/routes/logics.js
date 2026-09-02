@@ -1587,6 +1587,37 @@ app.post('/api/logic-securities/bulk', async (req, res) => {
   }
 });
 
+app.put('/api/logic-securities/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const isActive = req.body?.is_active;
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid id' });
+    return;
+  }
+  if (typeof isActive !== 'boolean') {
+    res.status(400).json({ error: 'is_active boolean required' });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `UPDATE logic_securities SET is_active = $2 WHERE id = $1 RETURNING id`,
+      [id, isActive]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Logic security not found' });
+      return;
+    }
+    const { rows: full } = await pool.query(
+      `${LOGIC_SECURITY_SELECT} WHERE ls.id = $1`,
+      [id]
+    );
+    res.json(full[0]);
+  } catch (err) {
+    console.error('PUT /api/logic-securities/:id', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/logic-securities/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {

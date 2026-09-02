@@ -20,7 +20,28 @@
       } @else {
         <div class="scroll-list-panel papers-list">
           @for (paper of paperRows; track paper.security_id) {
-            <div class="paper-item" [class.paper-item-open]="isPaperExpanded(paper.security_id)">
+            <div
+              class="paper-item"
+              [class.paper-item-open]="isPaperExpanded(paper.security_id)"
+              [class.sig-inactive]="!isPaperActive(paper.security_id)"
+            >
+              @if (isPaperToggleable(paper.security_id)) {
+                <label
+                  class="sig-active-toggle paper-active-toggle"
+                  [title]="
+                    isPaperActive(paper.security_id)
+                      ? 'Активная бумага участвует в торговле логики. Снять — исключить из входов/выходов.'
+                      : 'Неактивная бумага исключена из входов/выходов. Поставить — включить обратно.'
+                  "
+                >
+                  <input
+                    type="checkbox"
+                    [checked]="isPaperActive(paper.security_id)"
+                    [disabled]="isPaperActiveSaving(paper.security_id)"
+                    (change)="togglePaperActive(paper, $event)"
+                  />
+                </label>
+              }
               <button
                 type="button"
                 class="paper-item-toggle"

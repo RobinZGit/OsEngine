@@ -2741,7 +2741,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
+deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     event.stopPropagation();
     this.logicsService.deleteLogicSecurity(row.id).subscribe({
       next: () => {
@@ -2749,6 +2749,34 @@ export class LogicsComponent implements OnInit, OnDestroy {
           (s) => s.id !== row.id
         );
         this.logicSecurities.set(row.logic_id, list);
+      },
+    });
+  }
+
+  private savingSecurityIds = new Set<number>();
+
+  isSecurityActiveSaving(securityId: number): boolean {
+    return this.savingSecurityIds.has(Number(securityId));
+  }
+
+  toggleSecurityActive(row: LogicSecurityRow, event: Event): void {
+    event.stopPropagation();
+    if (this.savingSecurityIds.has(row.id)) return;
+    const next = !row.is_active;
+    this.savingSecurityIds.add(row.id);
+    this.logicsService.updateLogicSecurity(row.id, { is_active: next }).subscribe({
+      next: (updated) => {
+        this.savingSecurityIds.delete(row.id);
+        const list = this.logicSecurities.get(row.logic_id) ?? [];
+        const idx = list.findIndex((s) => s.id === updated.id);
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], ...updated };
+          this.logicSecurities.set(row.logic_id, [...list]);
+        }
+      },
+      error: (err) => {
+        this.savingSecurityIds.delete(row.id);
+        alert(err?.error?.error || 'Не удалось изменить активность бумаги');
       },
     });
   }
@@ -2848,6 +2876,29 @@ export class LogicsComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.savingStopIds.delete(stop.id);
         alert(err?.error?.error || 'Не удалось сохранить правило стопа');
+      },
+    });
+  }
+
+  toggleStopActive(stop: LogicStopRow, event: Event): void {
+    event.stopPropagation();
+    if (this.savingStopIds.has(stop.id)) return;
+    const next = !stop.is_active;
+    this.savingStopIds.add(stop.id);
+    this.logicsService.updateLogicStop(stop.id, { is_active: next }).subscribe({
+      next: (updated) => {
+        const list = this.logicStops.get(stop.logic_id) ?? [];
+        this.logicStops.set(
+          stop.logic_id,
+          list.map((s) => (s.id === updated.id ? updated : s))
+        );
+        this.savingStopIds.delete(stop.id);
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.savingStopIds.delete(stop.id);
+        this.cdr.markForCheck();
+        alert(err?.error?.error || 'Не удалось изменить активность стопа');
       },
     });
   }
@@ -3158,6 +3209,35 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.savingFormulaIds.delete(signal.id);
       },
     });
+  }
+
+  toggleSignalActive(signal: LogicIndicatorSignalRow, event: Event): void {
+    event.stopPropagation();
+    if (this.savingFormulaIds.has(signal.id)) return;
+    const next = !signal.is_active;
+    this.savingFormulaIds.add(signal.id);
+    this.logicsService
+      .updateLogicIndicatorSignal(signal.id, {
+        formula: this.formulaDraft(signal).trim() || signal.formula,
+        is_active: next,
+      })
+      .subscribe({
+        next: (updated) => {
+          const list = this.logicSignals.get(signal.logic_id) ?? [];
+          this.logicSignals.set(
+            signal.logic_id,
+            list.map((s) => (s.id === updated.id ? updated : s))
+          );
+          this.formulaDrafts.set(updated.id, updated.formula);
+          this.savingFormulaIds.delete(signal.id);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.formulaDrafts.set(signal.id, signal.formula);
+          this.savingFormulaIds.delete(signal.id);
+          this.cdr.markForCheck();
+        },
+      });
   }
 
   deleteSignal(signal: LogicIndicatorSignalRow, event: Event): void {

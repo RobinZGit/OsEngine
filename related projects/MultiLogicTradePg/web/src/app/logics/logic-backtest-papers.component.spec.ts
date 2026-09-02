@@ -1,8 +1,10 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { LogicBacktestPapersComponent } from './logic-backtest-papers.component';
 import { SecuritiesService } from '../services/securities.service';
 import { TechLogService } from '../services/tech-log.service';
+import { LogicsService } from '../services/logics.service';
 import { LogicTradeRow } from '../shared/logic-trade';
 
 describe('LogicBacktestPapersComponent', () => {
@@ -65,6 +67,7 @@ describe('LogicBacktestPapersComponent', () => {
     await TestBed.configureTestingModule({
       imports: [LogicBacktestPapersComponent],
       providers: [
+        provideHttpClient(),
         { provide: SecuritiesService, useValue: api },
         {
           provide: TechLogService,
