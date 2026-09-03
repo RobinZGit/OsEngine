@@ -31,7 +31,7 @@ export class SecuritiesService {
 
   getSecurities(
     exchangeId: number,
-    kind: 'stock' | 'futures'
+    kind: 'stock' | 'futures' | 'other'
   ): Observable<SecurityRow[]> {
     const params = new HttpParams()
       .set('exchange_id', String(exchangeId))

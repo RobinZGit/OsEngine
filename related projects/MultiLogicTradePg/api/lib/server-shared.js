@@ -547,6 +547,22 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.test_initial_balance !== undefined) {
+    if (
+      body.test_initial_balance === null ||
+      body.test_initial_balance === ''
+    ) {
+      out.test_initial_balance = null;
+    } else {
+      const v = Number(body.test_initial_balance);
+      if (!Number.isFinite(v) || v < 0) {
+        return { error: 'Старт теста: число ≥ 0 или пусто' };
+      }
+      out.test_initial_balance = v;
+    }
+    hasField = true;
+  }
+
   if (body?.commission_pct !== undefined) {
     const v = Number(body.commission_pct);
     if (!Number.isFinite(v) || v < 0 || v > 100) {

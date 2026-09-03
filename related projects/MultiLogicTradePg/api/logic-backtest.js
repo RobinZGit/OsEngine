@@ -589,7 +589,38 @@ async function ensureSecurityData(
       secId,
       tfId
     );
-    return;
+    // Если загрузка источников недоступна (напр. облигационный фонд,
+    // instrument_market='other', где провайдер даёт SSL timeout), но в периоде
+    // уже есть исторические цены — не роняем подготовку целиком, а продолжаем
+    // синк индикаторов по имеющимся барам (фонды тогда торгуются на покрытом
+    // участке вместо полного молчания). Если данных в периоде нет — выходим.
+    const existingInPeriod = await countPricesForSecurity(
+      pool,
+      secId,
+      tfId,
+      dateFrom,
+      dateTo
+    );
+    if (existingInPeriod > 0) {
+      priceResult.status = 'partial';
+      priceResult.inPeriod = existingInPeriod;
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.prices.partial_after_error',
+        `Источники недоступны, но есть ${existingInPeriod} свечей — синкаем по имеющимся: ${secName || secId}`,
+        {
+          security_id: secId,
+          name: secName,
+          prices_in_period: existingInPeriod,
+        },
+        secId,
+        tfId
+      );
+    } else {
+      return;
+    }
   }
 
   if (priceResult.status === 'cached') {
@@ -1239,8 +1270,10 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
     }
 
     // Empty/0 initial_balance must not become cash=0 (no opens). Default 1_000_000.
+    // Отдельный test_initial_balance (если задан) — старт теста; иначе live-state initial_balance.
     const { rows: balRows } = await pool.query(
       `SELECT COALESCE(
+         NULLIF(get_logic_param_numeric($1, 'test_initial_balance', NULL), 0),
          NULLIF(get_logic_param_numeric($1, 'initial_balance', NULL), 0),
          1000000
        )::float8 AS bal`,

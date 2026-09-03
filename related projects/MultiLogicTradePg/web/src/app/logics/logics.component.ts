@@ -262,6 +262,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   pickerSelectedSecurityIds = new Set<number>();
   stocksCatalog: SecurityRow[] = [];
   futuresCatalog: SecurityRow[] = [];
+  fundsCatalog: SecurityRow[] = [];
   securitiesCatalogLoaded = false;
   securitiesCatalogLoading = false;
   moexExchangeId: number | null = null;
@@ -325,6 +326,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       order_gap_buffer_pct: string;
       max_open_gap_pct: string;
       initial_balance: string;
+      test_initial_balance: string;
       commission_pct: string;
       cost_method: 'FIFO' | 'AVERAGE';
       stop_loss_timeframe: string;
@@ -1055,6 +1057,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsTestInitialBalanceChange(logicId: number, value: string): void {
+    this.getParamsDraft(logicId).test_initial_balance = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   onParamsCommissionPctChange(logicId: number, value: string): void {
     this.getParamsDraft(logicId).commission_pct = value;
     this.paramsDirtyIds.add(logicId);
@@ -1504,6 +1512,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     max_open_gap_pct?: number | null;
     initial_balance: number | null;
     current_balance: number | null;
+    test_initial_balance?: number | null;
     commission_pct?: number;
     cost_method?: 'FIFO' | 'AVERAGE';
     stop_loss_timeframe?: string;
@@ -1530,6 +1539,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     order_gap_buffer_pct: string;
     max_open_gap_pct: string;
     initial_balance: string;
+    test_initial_balance: string;
     commission_pct: string;
     cost_method: 'FIFO' | 'AVERAGE';
     stop_loss_timeframe: string;
@@ -1568,6 +1578,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       order_gap_buffer_pct: this.formatBalanceDraft(trading.order_gap_buffer_pct),
       max_open_gap_pct: this.formatBalanceDraft(trading.max_open_gap_pct),
       initial_balance: this.formatBalanceDraft(trading.initial_balance),
+      test_initial_balance: this.formatBalanceDraft(trading.test_initial_balance),
       commission_pct: this.formatPctParam(trading.commission_pct ?? 0.03),
       cost_method: method,
       stop_loss_timeframe: (trading.stop_loss_timeframe ?? 'M5').toUpperCase(),
@@ -1622,6 +1633,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       max_order_amount: row.max_order_amount,
       initial_balance: row.initial_balance,
       current_balance: row.current_balance,
+      test_initial_balance: row.test_initial_balance,
       commission_pct: row.commission_pct,
       cost_method: row.cost_method,
       stop_loss_timeframe: row.stop_loss_timeframe,
@@ -1667,6 +1679,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const initialRaw = draft.initial_balance.trim();
     const initial_balance =
       initialRaw === '' ? null : this.parseDecimalInput(initialRaw.replace(',', '.'));
+    const testStartRaw = (draft.test_initial_balance ?? '').trim();
+    const test_start_balance =
+      testStartRaw === '' ? null : this.parseDecimalInput(testStartRaw.replace(',', '.'));
     const commission_pct = this.parseDecimalInput(draft.commission_pct);
     const base_annual_rate_pct = this.parseDecimalInput(draft.base_annual_rate_pct);
     const rating_lookback_days = Math.round(
@@ -1701,6 +1716,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     if (initial_balance != null && (!Number.isFinite(initial_balance) || initial_balance < 0)) {
       this.paramsSaveErrors.set(row.id, 'Начальный остаток (старт): число ≥ 0 или пусто');
+      return;
+    }
+    if (
+      test_start_balance != null &&
+      (!Number.isFinite(test_start_balance) || test_start_balance < 0)
+    ) {
+      this.paramsSaveErrors.set(row.id, 'Старт теста (отдельный): число ≥ 0 или пусто');
       return;
     }
     if (!Number.isFinite(commission_pct) || commission_pct < 0 || commission_pct > 100) {
@@ -1781,6 +1803,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         order_gap_buffer_pct,
         max_open_gap_pct,
         initial_balance,
+        test_initial_balance: test_start_balance,
         commission_pct,
         cost_method: draft.cost_method,
         stop_loss_timeframe: draft.stop_loss_timeframe,
@@ -2707,6 +2730,34 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   toggleAllFuturesPicker(logicId: number, checked: boolean): void {
     for (const s of this.pickerFuturesAvailable(logicId)) {
+      if (checked) {
+        this.pickerSelectedSecurityIds.add(s.id);
+      } else {
+        this.pickerSelectedSecurityIds.delete(s.id);
+      }
+    }
+  }
+
+  pickerFundsAvailable(logicId: number): SecurityRow[] {
+    const assigned = new Set(
+      this.securitiesFor(logicId).map((s) => s.security_id)
+    );
+    return this.fundsCatalog.filter((s) => !assigned.has(s.id));
+  }
+
+  allFundsPickerSelected(logicId: number): boolean {
+    const list = this.pickerFundsAvailable(logicId);
+    return list.length > 0 && list.every((s) => this.pickerSelectedSecurityIds.has(s.id));
+  }
+
+  someFundsPickerSelected(logicId: number): boolean {
+    const list = this.pickerFundsAvailable(logicId);
+    const n = list.filter((s) => this.pickerSelectedSecurityIds.has(s.id)).length;
+    return n > 0 && n < list.length;
+  }
+
+  toggleAllFundsPicker(logicId: number, checked: boolean): void {
+    for (const s of this.pickerFundsAvailable(logicId)) {
       if (checked) {
         this.pickerSelectedSecurityIds.add(s.id);
       } else {
@@ -4373,10 +4424,12 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     forkJoin({
       stocks: this.securitiesService.getSecurities(exchangeId, 'stock'),
       futures: this.securitiesService.getSecurities(exchangeId, 'futures'),
+      funds: this.securitiesService.getSecurities(exchangeId, 'other'),
     }).subscribe({
-      next: ({ stocks, futures }) => {
+      next: ({ stocks, futures, funds }) => {
         this.stocksCatalog = stocks;
         this.futuresCatalog = futures;
+        this.fundsCatalog = funds;
         this.securitiesCatalogLoaded = true;
         this.securitiesCatalogLoading = false;
       },

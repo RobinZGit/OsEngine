@@ -18,7 +18,7 @@ Committed installer artifacts must always match the current repository state.
 | Windows (download-safe twin) | `installer/windows/dist/MultiLogicTradePgSetup.ex_` (same file; last letter `_`) |
 | Linux (incl. MacBook running Linux) | `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` |
 
-**Default for agents:** if the change touches SQL, API, Angular/`web`, scripts, docs shipped in the installers, or installer sources — **rebuild and commit both artifacts in the same push**. Do not ship source-only and leave either installer stale. If unsure whether a file is packaged — treat it as packaged and rebuild both.
+**Default for agents:** если изменение затрагивает SQL, API, Angular/`web`, скрипты, документацию или исходники установщиков — **немедленно пересобрать оба установщика** сразу после правки кода, не откладывая до коммита/пуша. Артефакты установщиков (`*.exe`, `*.ex_`, `*.tar.gz`) должны **всегда** соответствовать текущему состоянию исходников в папке репозитория — в любой момент времени, до коммита, до пуша, после пуша. Не оставлять установщики устаревшими ни на один шаг. Если не уверен, входит ли файл в установщик — считать, что входит, и пересобирать оба.
 
 ## Local-only changes (Sergey, #832)
 
@@ -28,26 +28,7 @@ Committed installer artifacts must always match the current repository state.
 2. **Пуш при этом НЕ делать без явного подтверждения Sergey** (#829/#832): коммит, push, релиз — только после явного «да». Пересборка установщиков разрешена и ожидается по умолчанию.
 3. Когда Sergey позже разрешит пуш — проверить, что артефакты новее исходников; если после последней пересборки исходники менялись — пересобрать снова перед коммитом.
 
-Before every push that changes anything shipped by the installers, rebuild:
-
-```powershell
-.\installer\build-all-installers.ps1
-```
-
-or separately:
-
-```powershell
-.\installer\windows\build-installer.ps1
-.\installer\linux\build-installer.ps1
-```
-
-and commit the updated:
-
-```text
-installer/windows/dist/MultiLogicTradePgSetup.exe
-installer/windows/dist/MultiLogicTradePgSetup.ex_
-installer/linux/dist/MultiLogicTradePg-linux.tar.gz
-```
+Пересборка установщиков — **немедленно после правки**, не только перед пуш. Если по какой-то причине не была сделана сразу — пересобрать перед коммитом/пушем (проверить `date` файлов vs исходников).
 
 ## Rebuild the installers after changes to
 
@@ -61,17 +42,17 @@ installer/linux/dist/MultiLogicTradePg-linux.tar.gz
 
 ## Database structure changes
 
-If the database structure changes:
+Если меняется структура БД:
 
-1. Update the source SQL scripts first (`00`-`02`, and `03` if examples change).
-2. Run SQL verification where available (`npm run verify:sql` or `.\scripts\verify_sql_scripts.ps1`).
-3. Rebuild **both** installers so a fresh installation deploys the new schema.
-4. Update `docs/PROJECT_CONTEXT.md`.
-5. Commit code, SQL, both installer artifacts, and context together before pushing.
+1. Сначала обновить SQL-скрипты (`00`–`02`, и `03` если меняются примеры).
+2. Прогнать проверку (`npm run verify:sql` или `.\scripts\verify_sql_scripts.ps1`).
+3. **Немедленно** пересобрать оба установщика, чтобы новая схема была доступна при установке.
+4. Обновить `docs/PROJECT_CONTEXT.md`.
+5. Коммитить код, SQL, оба установщика и контекст вместе перед пушем.
 
 ## Do not
 
-- Do not push UI/API/SQL changes that should be installed without rebuilding **both** installers.
-- Do not rely on users running repository source files manually after installer changes.
-- Do not leave `MultiLogicTradePgSetup.exe` or `MultiLogicTradePg-linux.tar.gz` older than the shipped source tree — **including the local (unpushed) source tree**.
-- Do not commit or push anything without explicit confirmation from Sergey (#829/#832).
+- Не оставлять установщики устаревшими после изменений SQL/API/UI/scripts/installer — пересобирать **сразу**.
+- Не ждать коммита/пуша для пересборки установщиков.
+- Не полагаться на то, что пользователь запустит файлы из репозитория вручную вместо установщика.
+- Не коммитить/пушить без явного подтверждения Sergey (#829/#832), но пересборка установщиков — делать всегда сразу.

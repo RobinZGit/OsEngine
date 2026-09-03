@@ -12169,17 +12169,15 @@ BEGIN
         v_amount := 0;
     END IF;
 
-    -- Real: и начальный, и текущий — только с брокера (или 0). Не из параметров теста.
-    -- p_force_initial: совместимость сигнатуры; для real оба поля всегда с брокера.
+    -- Real: текущий — с брокера; начальный — редактируется вручную, не затирается sync.
     PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_amount::TEXT, 'money');
-    PERFORM logic_upsert_param(p_logic_id, 'initial_balance', v_amount::TEXT, 'money');
 
     RETURN v_amount;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_apply_real_account_balances(INTEGER, BOOLEAN) IS
-'Real: initial+current = T-Bank cash или 0. Fake: no-op (остатки из параметров).';
+'Real: current = T-Bank cash или 0; initial_balance редактируется вручную. Fake: no-op.';
 
 CREATE OR REPLACE FUNCTION logic_sync_all_real_account_balances()
 RETURNS INTEGER

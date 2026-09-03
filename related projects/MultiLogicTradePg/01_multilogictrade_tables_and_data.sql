@@ -461,6 +461,40 @@ ON CONFLICT (security_id, exchange_id) DO UPDATE SET
     instrument_market = EXCLUDED.instrument_market,
     note = EXCLUDED.note;
 
+-- ============================================
+-- Облигационные фонды (БПИФ/ETF): Т-Капитал + другие провайдеры
+-- Все активны по умолчанию (is_active TRUE при добавлении в логики).
+-- Денежные фонды (TMON/LQDT/SBMM) НЕ включаем — это парковка кэша, не портфельные бумаги.
+-- ============================================
+INSERT INTO securities (name, security_type_id, lot_size)
+SELECT v.name, st.id, 1
+FROM (VALUES
+    ('Т-Капитал Валютные облигации (TLCB)', 'ETF'),
+    ('Т-Капитал ОФЗ (TOFZ)', 'ETF'),
+    ('Т-Капитал Облигации (TBRU)', 'ETF'),
+    ('Первая Корпоративные облигации (SBRB)', 'ETF'),
+    ('Первая Государственные облигации (SBGB)', 'ETF')
+) AS v(name, type_name)
+JOIN security_types st ON st.name = v.type_name
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO security_prefixes (security_id, exchange_id, prefix, instrument_market, tbank_figi, note)
+SELECT s.id, e.id, v.prefix, 'other', NULL, v.note
+FROM exchanges e
+CROSS JOIN (VALUES
+    ('Т-Капитал Валютные облигации (TLCB)', 'TLCB', 'БПИФ облигаций; валютные (локальные валютные) облигации'),
+    ('Т-Капитал ОФЗ (TOFZ)', 'TOFZ', 'БПИФ облигаций; государственные облигации (ОФЗ)'),
+    ('Т-Капитал Облигации (TBRU)', 'TBRU', 'БПИФ облигаций; рублёвые корпоративные облигации'),
+    ('Первая Корпоративные облигации (SBRB)', 'SBRB', 'БПИФ облигаций; корпоративные облигации'),
+    ('Первая Государственные облигации (SBGB)', 'SBGB', 'БПИФ облигаций; государственные облигации')
+) AS v(security_name, prefix, note)
+JOIN securities s ON s.name = v.security_name
+WHERE e.name = 'MOEX'
+ON CONFLICT (security_id, exchange_id) DO UPDATE SET
+    prefix = EXCLUDED.prefix,
+    instrument_market = EXCLUDED.instrument_market,
+    note = EXCLUDED.note;
+
 -- Лотность акций MOEX TQBR (штук в лоте; актуальные LOTSIZE на 2026-07-28; фьючерсы — 1 контракт)
 UPDATE securities s
 SET lot_size = v.lot
@@ -474,7 +508,8 @@ JOIN (VALUES
     ('HYDR', 1000), ('PHOR', 1), ('MOEX', 10), ('TRNFP', 1), ('UPRO', 1000),
     ('SNGS', 100), ('SNGSP', 10), ('VTBR', 1), ('IRAO', 100), ('FEES', 10000),
     ('RTKM', 10), ('YDEX', 1), ('AFLT', 10), ('FLOT', 10), ('AFKS', 100),
-    ('TMON', 1), ('LQDT', 1), ('SBMM', 1)
+    ('TMON', 1), ('LQDT', 1), ('SBMM', 1),
+    ('TLCB', 1), ('TOFZ', 1), ('TBRU', 1), ('SBRB', 1), ('SBGB', 1)
 ) AS v(prefix, lot) ON sp.prefix = v.prefix
 WHERE s.id = sp.security_id
   AND e.name = 'MOEX'
@@ -1369,9 +1404,11 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
     ('max_open_gap_pct', 'Макс. гэп входа, %', 'number', '',
      'Перед Open сверяется свежая цена (стоп-ТФ): отклонение от цены сигнала больше порога → вход пропускается до следующей свечи. Пусто/0 = выкл', 24),
     ('initial_balance', 'Начальный остаток', 'money', '',
-     'Тест (fake): значение из параметров. Real: всегда с брокера (или 0), не из формы/теста', 5),
+     'Базовая линия боя. Старт исторического теста — из отдельного test_initial_balance (если задан), иначе из этого поля (или 1 000 000). Тест (fake): значение из параметров. Real: всегда с брокера (или 0), не из формы/теста', 5),
     ('current_balance', 'Текущий остаток', 'money', '',
      'Тест (fake): свободный кэш. Real: свободный кэш T-Bank (или 0). Не база лота при режиме portfolio', 6),
+    ('test_initial_balance', 'Начальный остаток (старт теста)', 'money', '1000000',
+     'Отдельный старт ТОЛЬКО для исторического теста (не трогает живую базовую линию initial_balance). Дефолт 1 000 000; задайте своё число — тест начнёт с него', 5),
     ('commission_pct', '% комиссии от сделки', 'number', '0.03',
      'Только фейковый счёт/тест: комиссия = цена × количество × % / 100. Real: комиссия с T-Bank (executedCommission), этот % не используется', 7),
     ('cost_method', 'Метод расчёта PnL', 'text', 'FIFO',
@@ -3692,6 +3729,28 @@ WHERE l.name IN (
     'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade'
 )
   AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
+ON CONFLICT (logic_id, security_id) DO NOTHING;
+
+-- Облигационные фонды (TLCB/TOFZ/TBRU/SBRB/SBGB): добавить во все логики, у которых уже есть хотя бы одна бумага.
+-- Все активны по умолчанию (is_active TRUE). Денежные фонды (TMON/LQDT/SBMM) не включаются.
+INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+SELECT l.id, f.security_id,
+       COALESCE(mx.max_order, -1) + ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY f.sort_key) AS display_order,
+       TRUE
+FROM logics l
+JOIN (
+    SELECT DISTINCT s.id AS security_id, sp.prefix AS sort_key
+    FROM securities s
+    JOIN security_prefixes sp ON sp.security_id = s.id AND sp.instrument_market = 'other'
+    WHERE sp.prefix IN ('TLCB', 'TOFZ', 'TBRU', 'SBRB', 'SBGB')
+) f ON TRUE
+LEFT JOIN (
+    SELECT logic_id, MAX(display_order) AS max_order
+    FROM logic_securities
+    GROUP BY logic_id
+) mx ON mx.logic_id = l.id
+WHERE EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
+  AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id AND z.security_id = f.security_id)
 ON CONFLICT (logic_id, security_id) DO NOTHING;
 
 INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)

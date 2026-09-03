@@ -894,39 +894,46 @@
 
                               <td>
 
-                                @if (row.account_type === 'fake') {
-
-                                  <input
-                                    type="text"
-                                    inputmode="decimal"
-                                    class="params-input"
-                                    [ngModel]="getParamsDraft(row.id).initial_balance"
-                                    (ngModelChange)="onParamsInitialBalanceChange(row.id, $event)"
-                                    (click)="$event.stopPropagation()"
-                                    placeholder="1000000"
-                                  />
-
-                                } @else {
-
-                                  <strong>{{ formatMoney(row.initial_balance) }}</strong>
-
-                                }
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).initial_balance"
+                                  (ngModelChange)="onParamsInitialBalanceChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="1000000"
+                                />
 
                               </td>
 
                               <td class="params-hint">
+                                Базовая линия боя (живой остаток). Для real-счёта опорный остаток с брокера; можно задать вручную.
+                                Старт исторического теста — отдельное поле «Начальный остаток (старт теста)».
+                              </td>
 
-                                @if (row.account_type === 'fake') {
+                            </tr>
 
-                                  Стартовый депозит: точка отсчёта для боя на фейке и для старта исторического теста.
-                                  Само поле во время прогона не «ездит» по сделкам теста.
+                            <tr class="params-band-b">
 
-                                } @else {
+                              <td>Начальный остаток (старт теста)</td>
 
-                                  Реальный счёт: опорный остаток с брокера (не редактируется как параметр теста).
+                              <td>
 
-                                }
+                                <input
+                                  type="text"
+                                  inputmode="decimal"
+                                  class="params-input"
+                                  [ngModel]="getParamsDraft(row.id).test_initial_balance"
+                                  (ngModelChange)="onParamsTestInitialBalanceChange(row.id, $event)"
+                                  (click)="$event.stopPropagation()"
+                                  placeholder="1000000"
+                                />
 
+                              </td>
+
+                              <td class="params-hint">
+                                Старт исторического теста. По умолчанию 1 000 000; задайте своё число — тест начнёт с него.
+                                Не трогает живую базовую линию «Начальный остаток (старт)». Пусто/0 = бэктест берёт «Начальный остаток (старт)» (или 1 000 000).
                               </td>
 
                             </tr>
@@ -2331,6 +2338,65 @@
                                                   <ul class="picker-list">
 
                                                     @for (sec of pickerFuturesAvailable(row.id); track sec.id) {
+
+                                                      <li
+                                                        class="picker-item"
+                                                        [class.selected]="isSecurityPickerSelected(sec.id)"
+                                                      >
+
+                                                        <label>
+
+                                                          <input
+                                                            type="checkbox"
+                                                            [checked]="isSecurityPickerSelected(sec.id)"
+                                                            (change)="toggleSecurityPickerSelection(sec.id)"
+                                                          />
+
+                                                          <span class="picker-code">{{ sec.prefix }}</span>
+
+                                                          <span class="picker-name">{{ sec.name }}</span>
+
+                                                        </label>
+
+                                                      </li>
+
+                                                    }
+
+                                                  </ul>
+
+                                                }
+
+                                              </details>
+
+                                              <details class="sec-picker-group">
+
+                                                <summary class="sec-picker-group-head">
+
+                                                  <label class="sec-picker-all" (click)="$event.stopPropagation()">
+
+                                                    <input
+                                                      type="checkbox"
+                                                      [checked]="allFundsPickerSelected(row.id)"
+                                                      (change)="toggleAllFundsPicker(row.id, $any($event.target).checked)"
+                                                    />
+
+                                                    <span class="sec-picker-group-title">Фонды</span>
+
+                                                    <span class="sec-picker-count">({{ pickerFundsAvailable(row.id).length }})</span>
+
+                                                  </label>
+
+                                                </summary>
+
+                                                @if (pickerFundsAvailable(row.id).length === 0) {
+
+                                                  <p class="picker-empty picker-empty-nested">Все фонды уже добавлены</p>
+
+                                                } @else {
+
+                                                  <ul class="picker-list">
+
+                                                    @for (sec of pickerFundsAvailable(row.id); track sec.id) {
 
                                                       <li
                                                         class="picker-item"

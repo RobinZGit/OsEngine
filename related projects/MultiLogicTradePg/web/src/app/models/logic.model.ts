@@ -14,6 +14,8 @@ export interface LogicRow {
   max_order_amount?: number | null;
   initial_balance: number | null;
   current_balance: number | null;
+  /** Стартовый остаток ТОЛЬКО для бэктеста; null = не задан (берётся initial_balance). */
+  test_initial_balance?: number | null;
   commission_pct?: number;
   cost_method?: 'FIFO' | 'AVERAGE';
   stop_loss_timeframe?: string;
@@ -73,6 +75,7 @@ export interface LogicTradingParamsPayload {
   order_gap_buffer_pct?: number | null;
   max_open_gap_pct?: number | null;
   initial_balance?: number | null;
+  test_initial_balance?: number | null;
   reset_balance?: boolean;
   commission_pct?: number;
   cost_method?: 'FIFO' | 'AVERAGE';

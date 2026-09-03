@@ -11,6 +11,7 @@ const PARAM_KEYS = {
   MAX_OPEN_GAP_PCT: 'max_open_gap_pct',
   INITIAL_BALANCE: 'initial_balance',
   CURRENT_BALANCE: 'current_balance',
+  TEST_INITIAL_BALANCE: 'test_initial_balance',
   COMMISSION_PCT: 'commission_pct',
   COST_METHOD: 'cost_method',
   STOP_LOSS_TIMEFRAME: 'stop_loss_timeframe',
@@ -41,6 +42,7 @@ const DEFAULTS = {
   [PARAM_KEYS.MAX_OPEN_GAP_PCT]: { value: '', type: 'number' },
   [PARAM_KEYS.INITIAL_BALANCE]: { value: '', type: 'money' },
   [PARAM_KEYS.CURRENT_BALANCE]: { value: '', type: 'money' },
+  [PARAM_KEYS.TEST_INITIAL_BALANCE]: { value: '', type: 'money' },
   [PARAM_KEYS.COMMISSION_PCT]: { value: '0.03', type: 'number' },
   [PARAM_KEYS.COST_METHOD]: { value: 'FIFO', type: 'text' },
   [PARAM_KEYS.STOP_LOSS_TIMEFRAME]: { value: 'M5', type: 'text' },
@@ -65,6 +67,7 @@ function parseParamValue(paramKey, raw, valueType) {
     if (
       paramKey === PARAM_KEYS.INITIAL_BALANCE ||
       paramKey === PARAM_KEYS.CURRENT_BALANCE ||
+      paramKey === PARAM_KEYS.TEST_INITIAL_BALANCE ||
       paramKey === PARAM_KEYS.MAX_ORDER_AMOUNT
     ) {
       return null;
@@ -123,6 +126,7 @@ function rowsToTradingParams(rows) {
     max_open_gap_pct: map[PARAM_KEYS.MAX_OPEN_GAP_PCT],
     initial_balance: map[PARAM_KEYS.INITIAL_BALANCE],
     current_balance: map[PARAM_KEYS.CURRENT_BALANCE],
+    test_initial_balance: map[PARAM_KEYS.TEST_INITIAL_BALANCE],
     commission_pct:
       map[PARAM_KEYS.COMMISSION_PCT] != null
         ? Number(map[PARAM_KEYS.COMMISSION_PCT])
@@ -386,9 +390,8 @@ async function saveTradingParams(pool, logicId, payload) {
       await upsertParam(pool, logicId, paramKey, v, 'number');
     }
   }
-  // Fake/test: начальный/сброс текущего — из параметров формы.
-  // Real: остатки только с брокера (ниже sync), форму не принимаем.
-  if (!onReal && payload.initial_balance !== undefined) {
+  // Начальный остаток — редактируется из формы для любого типа счёта (fake и real).
+  if (payload.initial_balance !== undefined) {
     await upsertParam(
       pool,
       logicId,
@@ -405,6 +408,27 @@ async function saveTradingParams(pool, logicId, payload) {
         'money'
       );
     }
+  }
+
+  // Отдельный старт ТОЛЬКО для теста (не трогает живую базовую линию initial_balance).
+  // Пусто/0 = не задан → бэктест берёт initial_balance (или 1 000 000).
+  if (payload.test_initial_balance !== undefined) {
+    const raw = payload.test_initial_balance;
+    let val = null;
+    if (raw !== null && raw !== '') {
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v < 0) {
+        throw new Error('Старт теста: число ≥ 0 или пусто');
+      }
+      val = v;
+    }
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.TEST_INITIAL_BALANCE,
+      val,
+      'money'
+    );
   }
 
   if (payload.commission_pct !== undefined) {

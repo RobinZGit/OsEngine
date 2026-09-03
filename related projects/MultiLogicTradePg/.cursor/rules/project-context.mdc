@@ -54,7 +54,7 @@ alwaysApply: true
    - `installer/windows/dist/MultiLogicTradePgSetup.exe`
    - `installer/linux/dist/MultiLogicTradePg-linux.tar.gz`
    (см. `.cursor/rules/installer-freshness.mdc`, удобно: `.\installer\build-all-installers.ps1`).
-5. **Локальные изменения без пуша** (#832): даже если выкладка НЕ планируется — пересобрать оба установщика, чтобы локальные артефакты соответствовали локальному коду; **коммит/пуш — только после явного подтверждения Sergey**.
+5. **Локальные изменения без пуша** (#832): даже если выкладка НЕ планируется — **немедленно** пересобрать оба установщика после правок (не откладывая до коммита/пуша), чтобы локальные артефакты соответствовали локальному коду; **коммит/пуш — только после явного подтверждения Sergey**.
 6. **Затем** закоммитить код, installer artifacts (если пересобирались) **и** контекст/инструкции/Help **в одном push**.
 7. **Не пушить** код/SQL/installer changes без актуального `PROJECT_CONTEXT.md`, `USER_INSTRUCTIONS.md` и актуальных **обоих** installer artifacts в `origin`.
 8. Если забыли контекст, инструкции, Help или installer rebuild — сразу follow-up commit до того, как считать выкладку завершённой.

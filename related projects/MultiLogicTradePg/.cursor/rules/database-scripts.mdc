@@ -19,7 +19,7 @@ alwaysApply: true
 6. **После правок SQL** — **прогнать проверку** (`npm run verify:sql` или `.\scripts\verify_sql_scripts.ps1`).
 7. **Перед сборкой и деплоем** — скрипты **обязаны проходить проверку** без ошибок; в них должны быть **все** изменения БД до последнего коммита.
 8. **Не оставлять** локальную БД и репозиторий в расхождении.
-9. **Если SQL входит в installers** — после любых изменений `00`–`03` / `sql/*` / installer scripts обязательно пересобрать **оба**: `installer/windows/dist/MultiLogicTradePgSetup.exe` и `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` (см. `.cursor/rules/installer-freshness.mdc`).
+9. **Если SQL входит в installers** — **немедленно** после любых изменений `00`–`03` / `sql/*` / installer scripts пересобрать **оба**: `installer/windows/dist/MultiLogicTradePgSetup.exe` и `installer/linux/dist/MultiLogicTradePg-linux.tar.gz` (см. `.cursor/rules/installer-freshness.mdc`). Не откладывать до коммита/пуша.
 
 ## Wipe vs upgrade (Windows installer)
 

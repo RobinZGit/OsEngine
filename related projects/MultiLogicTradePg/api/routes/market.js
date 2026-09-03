@@ -88,7 +88,10 @@ app.get('/api/timeframes', async (_req, res) => {
 
 app.get('/api/securities', async (req, res) => {
   const exchangeId = parseId(req.query.exchange_id);
-  const kind = req.query.kind === 'futures' ? 'futures' : req.query.kind === 'stock' ? 'stock' : null;
+  const kind =
+    req.query.kind === 'stock' ? 'stock' :
+    req.query.kind === 'futures' ? 'futures' :
+    req.query.kind === 'other' ? 'other' : null;
   if (!exchangeId) {
     res.status(400).json({ error: 'Укажите exchange_id' });
     return;
@@ -99,6 +102,8 @@ app.get('/api/securities', async (req, res) => {
       typeFilter = `AND st.name IN ('Stock', 'PreferredStock') AND sp.instrument_market = 'stock'`;
     } else if (kind === 'futures') {
       typeFilter = `AND st.name = 'Futures' AND sp.instrument_market = 'futures'`;
+    } else if (kind === 'other') {
+      typeFilter = `AND sp.instrument_market = 'other'`;
     }
     const { rows } = await pool.query(
       `
