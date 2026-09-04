@@ -423,7 +423,11 @@ function paramHistorySectionHtml(history) {
 }
 
 function buildBacktestReportModel(logic, trades, opts = {}) {
-  const initial = num(logic.initial_balance, 1_000_000);
+  // Старт бэктеста — test_initial_balance (если задан >0), иначе initial_balance, иначе 1_000_000.
+  const testStart = num(logic.test_initial_balance, 0);
+  const liveStart = num(logic.initial_balance, 0);
+  const initial =
+    testStart > 0 ? testStart : liveStart > 0 ? liveStart : 1_000_000;
   const rate = num(logic.base_annual_rate_pct, 7);
   const deals = collectClosedDeals(trades, opts.tradeLots);
   const allDeals = filterSide(deals, 'all');
@@ -526,6 +530,31 @@ function metricRow(label, all, long, short) {
   return `<tr><th scope="row">${esc(label)}</th>${all}${long}${short}</tr>`;
 }
 
+/** Простая аннуализация % на календарные дни периода теста; null при невалидном окне. */
+function annualizedPct(returnPct, dateFrom, dateTo) {
+  const r = Number(returnPct);
+  if (!Number.isFinite(r) || !dateFrom || !dateTo) return null;
+  const fromMs = Date.parse(`${dateFrom}T00:00:00Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return null;
+  }
+  const days = Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
+  return r * (365 / days);
+}
+
+/** % годовых: простая аннуализация общего П\\У % на календарные дни периода. */
+function annualPctCardHtml(returnPct, dateFrom, dateTo) {
+  const annual = annualizedPct(returnPct, dateFrom, dateTo);
+  if (annual == null) {
+    return `<div class="card" title="% годовых (простая аннуализация за период теста)"><div class="lbl">% годовых</div><div class="val muted">—</div></div>`;
+  }
+  const cls = annual >= 0 ? 'pos' : 'neg';
+  return `<div class="card" title="П\\У за весь период, приведённый к % годовых (простая аннуализация: return% × 365/дни периода)"><div class="lbl">% годовых</div><div class="val ${cls}">${esc(
+    fmtPct(annual)
+  )}</div></div>`;
+}
+
 function dealRows(deals) {
   if (deals.length === 0) {
     return `<tr><td colspan="6" class="muted">Нет сделок</td></tr>`;
@@ -553,6 +582,12 @@ function renderBacktestReportHtml(model) {
   const rows = [
     metricRow('Чистый П\\У', cellMoney(a.netPnl), cellMoney(l.netPnl), cellMoney(s.netPnl)),
     metricRow('Чистый П\\У %', cellPct(a.netPnlPct), cellPct(l.netPnlPct), cellPct(s.netPnlPct)),
+    metricRow(
+      '% годовых',
+      cellPct(annualizedPct(a.netPnlPct, model.dateFrom, model.dateTo)),
+      cellPct(annualizedPct(l.netPnlPct, model.dateFrom, model.dateTo)),
+      cellPct(annualizedPct(s.netPnlPct, model.dateFrom, model.dateTo))
+    ),
     metricRow(
       'Количество сделок',
       cellNum(a.dealCount, 0),
@@ -731,6 +766,7 @@ function renderBacktestReportHtml(model) {
     <div class="cards">
       <div class="card"><div class="lbl">Чистый П\\У</div><div class="val ${a.netPnl >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(a.netPnl))}</div></div>
       <div class="card"><div class="lbl">П\\У %</div><div class="val ${a.netPnlPct >= 0 ? 'pos' : 'neg'}">${esc(fmtPct(a.netPnlPct))}</div></div>
+      ${annualPctCardHtml(a.netPnlPct, model.dateFrom, model.dateTo)}
       <div class="card"><div class="lbl">Profit Factor</div><div class="val">${esc(pf(a))}</div></div>
       <div class="card"><div class="lbl">Макс. просадка</div><div class="val neg">${esc(a.maxDrawdownPct != null ? fmtPct(a.maxDrawdownPct) : '—')}</div></div>
       <div class="card"><div class="lbl">Прибыльных %</div><div class="val">${esc(fmtPct(a.winPct))}</div></div>

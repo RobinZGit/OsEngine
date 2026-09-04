@@ -69,6 +69,12 @@ async function persistBacktestReport(pool, runId, opts = {}) {
       ), 1000000)::float8 AS initial_balance,
       COALESCE((
         SELECT NULLIF(replace(btrim(p.param_value), ',', '.'), '')::float8
+        FROM logic_params p WHERE p.logic_id = l.id AND p.param_key = 'test_initial_balance'
+          AND btrim(p.param_value) ~ '^-?[0-9]+([.,][0-9]+)?$'
+        LIMIT 1
+      ), NULL)::float8 AS test_initial_balance,
+      COALESCE((
+        SELECT NULLIF(replace(btrim(p.param_value), ',', '.'), '')::float8
         FROM logic_params p WHERE p.logic_id = l.id AND p.param_key = 'base_annual_rate_pct'
           AND btrim(p.param_value) ~ '^-?[0-9]+([.,][0-9]+)?$'
         LIMIT 1

@@ -1474,6 +1474,15 @@ function paramHistorySectionHtml(history: ParamHistoryEvent[]): string {
     </section>`;
 }
 
+/** Стартовый баланс бэктеста: test_initial_balance (если >0), иначе initial_balance, иначе 1_000_000. Совпадает с API logic-backtest.js. */
+export function backtestStartBalance(logic: LogicRow): number {
+  const test = num(logic.test_initial_balance, 0);
+  if (test > 0) return test;
+  const live = num(logic.initial_balance, 0);
+  if (live > 0) return live;
+  return 1_000_000;
+}
+
 export function buildBacktestReportModel(
   logic: LogicRow,
   trades: LogicTradeRow[],
@@ -1485,7 +1494,7 @@ export function buildBacktestReportModel(
     paperCharts?: PaperReportChart[];
   } = {}
 ): BacktestReportModel {
-  const initial = num(logic.initial_balance, 1_000_000);
+  const initial = backtestStartBalance(logic);
   const rate = num(logic.base_annual_rate_pct, 7);
   const deals = collectClosedDeals(trades, opts.tradeLots);
   const allDeals = filterSide(deals, 'all');
@@ -1583,22 +1592,32 @@ function breakevenCardHtml(a: SideStats, commissionPct: number): string {
   )}</div></div>`;
 }
 
+/** Простая аннуализация % на календарные дни периода теста; null при невалидном окне. */
+export function annualizedPct(
+  returnPct: number,
+  dateFrom: string,
+  dateTo: string
+): number | null {
+  if (!Number.isFinite(returnPct) || !dateFrom || !dateTo) return null;
+  const fromMs = Date.parse(`${dateFrom}T00:00:00Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return null;
+  }
+  const days = Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
+  return returnPct * (365 / days);
+}
+
 /** % годовых: простая аннуализация общего П\\У % на календарные дни периода. */
 export function annualPctCardHtml(
   returnPct: number,
   dateFrom: string,
   dateTo: string
 ): string {
-  if (!Number.isFinite(returnPct) || !dateFrom || !dateTo) {
+  const annual = annualizedPct(returnPct, dateFrom, dateTo);
+  if (annual == null) {
     return `<div class="card" title="% годовых (простая аннуализация за период теста)"><div class="lbl">% годовых</div><div class="val muted">—</div></div>`;
   }
-  const fromMs = Date.parse(`${dateFrom}T00:00:00Z`);
-  const toMs = Date.parse(`${dateTo}T00:00:00Z`);
-  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
-    return `<div class="card" title="% годовых (простая аннуализация за период теста)"><div class="lbl">% годовых</div><div class="val muted">—</div></div>`;
-  }
-  const days = Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
-  const annual = returnPct * (365 / days);
   const cls = annual >= 0 ? 'pos' : 'neg';
   return `<div class="card" title="П\\У за весь период, приведённый к % годовых (простая аннуализация: return% × 365/дни периода)"><div class="lbl">% годовых</div><div class="val ${cls}">${esc(
     fmtPct(annual)
@@ -1652,6 +1671,12 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       cellPct(a.netPnlPct),
       cellPct(l.netPnlPct),
       cellPct(s.netPnlPct)
+    ),
+    metricRow(
+      '% годовых',
+      cellPct(annualizedPct(a.netPnlPct, model.dateFrom, model.dateTo)),
+      cellPct(annualizedPct(l.netPnlPct, model.dateFrom, model.dateTo)),
+      cellPct(annualizedPct(s.netPnlPct, model.dateFrom, model.dateTo))
     ),
     metricRow(
       'Количество сделок',

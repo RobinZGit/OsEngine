@@ -2444,7 +2444,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   testFinancialResultPct(logicId: number, initialBalance: number | null | undefined): number | null {
-    return this.pnlDepositPct(this.testFinancialResult(logicId), initialBalance);
+    // Старт теста — из test_initial_balance (если задан >0), иначе initial_balance,
+    // иначе 1_000_000 — как в API бэктеста.
+    let base = Number(initialBalance);
+    const row = this.logics.find((l) => l.id === logicId);
+    const testRaw = row ? Number(row.test_initial_balance) : 0;
+    if (Number.isFinite(testRaw) && testRaw > 0) base = testRaw;
+    if (!Number.isFinite(base) || base <= 0) base = 1_000_000;
+    return this.pnlDepositPct(this.testFinancialResult(logicId), base);
   }
 
   requestTradeLots(tradeId: number): void {

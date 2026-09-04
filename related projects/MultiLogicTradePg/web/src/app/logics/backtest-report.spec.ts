@@ -1,5 +1,7 @@
 import {
+  annualizedPct,
   annualPctCardHtml,
+  backtestStartBalance,
   buildBacktestReportDownloadName,
   buildPaperReportCloseRows,
   collectClosedDeals,
@@ -96,6 +98,16 @@ describe('backtest-report metrics', () => {
     expect(stats.winPct).toBeCloseTo(66.666, 2);
   });
 
+  it('backtestStartBalance uses test_initial_balance when set, else initial_balance, else 1M', () => {
+    expect(
+      backtestStartBalance({ id: 1, test_initial_balance: 10000, initial_balance: 1000000 } as never)
+    ).toBe(10000);
+    expect(backtestStartBalance({ id: 1, initial_balance: 500000 } as never)).toBe(
+      500000
+    );
+    expect(backtestStartBalance({ id: 1 } as never)).toBe(1000000);
+  });
+
   it('builds download filename with logic, period, tf, pnl, deals', () => {
     expect(sanitizeReportFilenamePart('A/B:C*')).toBe('ABC');
     const model = {
@@ -123,6 +135,16 @@ describe('backtest-report metrics', () => {
     expect(annualPctCardHtml(-5, '2023-01-01', '2023-12-31')).toContain(
       'val neg'
     );
+  });
+
+  it('annualizedPct returns null for invalid window and annualizes over inclusive days', () => {
+    expect(annualizedPct(12.3, '2023-01-01', '2023-12-31')).toBeCloseTo(12.3, 5);
+    expect(annualizedPct(10, '2026-01-01', '2026-01-10')).toBeCloseTo(
+      (10 * 365) / 10,
+      5
+    );
+    expect(annualizedPct(5, '2026-02-01', '2026-01-01')).toBeNull();
+    expect(annualizedPct(5, '', '2026-01-01')).toBeNull();
   });
 
   it('collectClosedDeals skips shadow and open sides', () => {

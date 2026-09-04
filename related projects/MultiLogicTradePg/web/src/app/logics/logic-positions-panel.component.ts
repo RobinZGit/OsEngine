@@ -854,12 +854,19 @@ export class LogicPositionsPanelComponent implements OnChanges {
     return Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
   }
 
+  /** Стартовый баланс: для теста test_initial_balance (если >0) иначе initial_balance; для live — initial_balance. Пусто/0 → 1_000_000. */
+  startBalance(): number {
+    const raw = this.isTest
+      ? Number(this.logicRow.test_initial_balance) > 0
+        ? Number(this.logicRow.test_initial_balance)
+        : Number(this.logicRow.initial_balance)
+      : Number(this.logicRow.initial_balance);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1_000_000;
+  }
+
   /** Фин. результат в % от начального остатка (Позиции и Тестирование). */
   returnPct(): number | null {
-    const raw = Number(this.logicRow.initial_balance);
-    // Как в бэктесте: пустой/0 initial → 1_000_000, иначе «год.» = «—»
-    const initial =
-      Number.isFinite(raw) && raw > 0 ? raw : 1_000_000;
+    const initial = this.startBalance();
     return (this.displayFinancialResult() / initial) * 100;
   }
 
