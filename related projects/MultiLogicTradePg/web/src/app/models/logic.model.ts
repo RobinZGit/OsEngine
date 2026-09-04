@@ -61,6 +61,8 @@ export interface LogicRow {
   account_code: string;
   account_name: string;
   account_type: 'real' | 'fake';
+  /** Дата последнего прогона теста (logic_backtest_runs.created_at) — для сортировки списка. */
+  last_test_at?: string | null;
   account_is_active: boolean;
   broker_code: string;
   broker_name: string;

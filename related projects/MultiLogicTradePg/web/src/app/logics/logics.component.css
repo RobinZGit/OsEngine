@@ -713,6 +713,26 @@
   border-radius: 8px;
 }
 
+.logic-show-all-row {
+  display: flex;
+  justify-content: center;
+  padding: 0.6rem 0 0.2rem;
+}
+
+.logic-show-all.btn {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  color: #1e3a8a;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.logic-show-all.btn:hover {
+  background: #e2e8f0;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -739,6 +759,24 @@ td {
 th {
   background: #f9fafb;
   font-weight: 600;
+}
+
+/* Сортируемые колонки */
+.sortable-col {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.sortable-col:hover {
+  background: #eef2f7;
+}
+.sort-indicator {
+  display: inline-block;
+  min-width: 0.9em;
+  font-size: 0.7em;
+  vertical-align: middle;
+  color: #64748b;
+  margin-left: 2px;
 }
 
 /* Изменяемая ширина колонок списка логик: тянуть за правый край заголовка */

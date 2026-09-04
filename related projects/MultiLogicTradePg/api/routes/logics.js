@@ -106,7 +106,12 @@ app.get('/api/logics', async (_req, res) => {
         a.broker_id,
         a.is_active AS account_is_active,
         b.code AS broker_code,
-        b.name AS broker_name
+        b.name AS broker_name,
+        (
+          SELECT MAX(r.created_at)
+          FROM logic_backtest_runs r
+          WHERE r.logic_id = l.id
+        ) AS last_test_at
       FROM logics l
       JOIN accounts a ON a.id = l.account_id
       JOIN brokers b ON b.id = a.broker_id

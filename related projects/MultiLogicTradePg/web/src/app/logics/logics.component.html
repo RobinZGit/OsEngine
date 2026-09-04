@@ -237,9 +237,9 @@
 
             <th class="col-check" [style.width.px]="thWidth('col-check')">Вкл.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-check')" (dblclick)="resetColumnWidth('col-check')"></span></th>
 
-            <th class="col-id" [style.width.px]="thWidth('col-id')">ID<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-id')" (dblclick)="resetColumnWidth('col-id')"></span></th>
+            <th class="col-id sortable-col" [style.width.px]="thWidth('col-id')" title="Нажмите — сортировка по ID" (click)="toggleSort('id')">ID <span class="sort-indicator">{{ sortIndicator('id') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-id')" (dblclick)="resetColumnWidth('col-id')"></span></th>
 
-            <th class="col-logic" [style.width.px]="thWidth('col-logic')">Логика<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-logic')" (dblclick)="resetColumnWidth('col-logic')"></span></th>
+            <th class="col-logic sortable-col" [style.width.px]="thWidth('col-logic')" title="Нажмите — сортировка по названию логики" (click)="toggleSort('name')">Логика <span class="sort-indicator">{{ sortIndicator('name') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-logic')" (dblclick)="resetColumnWidth('col-logic')"></span></th>
 
             <th class="col-account-id" [style.width.px]="thWidth('col-account-id')">acc_id<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account-id')" (dblclick)="resetColumnWidth('col-account-id')"></span></th>
 
@@ -252,16 +252,18 @@
             <th class="col-active" [style.width.px]="thWidth('col-active')">Актив.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-active')" (dblclick)="resetColumnWidth('col-active')"></span></th>
 
             <th
-              class="col-combat-pnl"
-              title="Сумма фин. результата боевых (реальных) сделок (онлайн, не хранится отдельно)"
+              class="col-combat-pnl sortable-col"
+              title="Сумма фин. результата боевых сделок — нажмите для сортировки"
               [style.width.px]="thWidth('col-combat-pnl')"
-            >Финрез<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-combat-pnl')" (dblclick)="resetColumnWidth('col-combat-pnl')"></span></th>
+              (click)="toggleSort('combat_pnl')"
+            >Финрез <span class="sort-indicator">{{ sortIndicator('combat_pnl') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-combat-pnl')" (dblclick)="resetColumnWidth('col-combat-pnl')"></span></th>
 
             <th
-              class="col-test-pnl"
-              title="Сумма фин. результата тестовых сделок (онлайн, не хранится отдельно)"
+              class="col-test-pnl sortable-col"
+              title="Сумма фин. результата тестовых сделок — нажмите для сортировки"
               [style.width.px]="thWidth('col-test-pnl')"
-            >Финрез теста<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-test-pnl')" (dblclick)="resetColumnWidth('col-test-pnl')"></span></th>
+              (click)="toggleSort('test_pnl')"
+            >Финрез теста <span class="sort-indicator">{{ sortIndicator('test_pnl') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-test-pnl')" (dblclick)="resetColumnWidth('col-test-pnl')"></span></th>
 
             <th class="col-export" title="Отметить для экспорта" [style.width.px]="thWidth('col-export')">
               <label class="export-check-all" (click)="$event.stopPropagation()">
@@ -282,7 +284,7 @@
 
         <tbody>
 
-          @for (row of logics; track row.id) {
+          @for (row of displayedLogics(); track row.id) {
 
             <tr
 
@@ -2633,6 +2635,23 @@
         </tbody>
 
       </table>
+
+      @if (hiddenLogicsCount() > 0 || showAllLogics) {
+        <div class="logic-show-all-row">
+          <button
+            type="button"
+            class="btn logic-show-all"
+            (click)="toggleShowAllLogics()"
+            [attr.title]="showAllLogics ? 'Показать только реальные и последние тестовые' : 'Показать все логики, включая старые тестовые и без теста'"
+          >
+            @if (showAllLogics) {
+              Свернуть до основных
+            } @else {
+              Показать все логики ({{ hiddenLogicsCount() }} скрыто)
+            }
+          </button>
+        </div>
+      }
 
     </div>
     </div>

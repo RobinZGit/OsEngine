@@ -109,6 +109,17 @@ export class LogicsComponent implements OnInit, OnDestroy {
   @ViewChild('logicImportFile') logicImportFile?: ElementRef<HTMLInputElement>;
 
   logics: LogicRow[] = [];
+
+  /** По умолчанию показываем все реальные + N последних протестированных; остальные скрыты до «Показать все». */
+  showAllLogics = false;
+  /** Сколько последних по дате теста тестовых логик показывать в свёрнутом виде. */
+  readonly defaultTestLogicsVisible = 3;
+
+  /** Активная колонка сортировки списка логик (null = сортировка по умолчанию). */
+  sortColumn: 'id' | 'name' | 'combat_pnl' | 'test_pnl' | null = null;
+  /** Направление сортировки активной колонки. */
+  sortDir: 'asc' | 'desc' = 'asc';
+
   loading = true;
   error: string | null = null;
   pollIntervalMs = POLL_INTERVAL_MS;
@@ -763,6 +774,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     this.expandedLogics.add(row.id);
     this.ensureParamsDraft(row.id);
+    // Раскрыть все подблоки при первом раскрытии логики.
+    this.expandedParamsBlocks.add(row.id);
+    this.expandedSignalsBlocks.add(row.id);
+    this.expandedStopsBlocks.add(row.id);
+    this.expandedPeriodsBlocks.add(row.id);
+    this.expandedSecuritiesBlocks.add(row.id);
+    this.expandedTradesBlocks.add(row.id);
+    this.expandedTestTradesBlocks.add(row.id);
     // Прогреть сигналы/стопы сразу — не ждать открытия блоков.
     this.loadSignalsForLogic(row.id);
     this.loadStopsForLogic(row.id);
@@ -4463,5 +4482,115 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
         }
       },
     });
+  }
+
+  /**
+   * Строки таблицы списка логик в порядке отображения:
+   * 1) реальные счета; 2) тестовые (fake) — по дате последнего теста (свежие выше);
+   * 3) тестовые, у которых теста никогда не было — в самом низу.
+   * Если `showAllLogics` выключен — оставляем все реальные + N последних протестированных.
+   */
+  displayedLogics(): LogicRow[] {
+    // Если пользователь отсортировал по колонке — раскрываем весь список и сортируем по ней.
+    if (this.sortColumn) {
+      const all = [...this.logics];
+      const dir = this.sortDir === 'asc' ? 1 : -1;
+      const val = (r: LogicRow): number | string | null => {
+        switch (this.sortColumn) {
+          case 'id': return r.id;
+          case 'name': return r.name;
+          case 'combat_pnl': return this.combatFinancialResult(r.id);
+          case 'test_pnl': return this.testFinancialResult(r.id);
+          default: return 0;
+        }
+      };
+      const isEmpty = (v: number | string | null): boolean =>
+        v == null || v === '' || (typeof v === 'number' && !Number.isFinite(v));
+      all.sort((a, b) => {
+        const av = val(a);
+        const bv = val(b);
+        const aNull = isEmpty(av);
+        const bNull = isEmpty(bv);
+        if (aNull && bNull) return 0;
+        if (aNull) return 1;
+        if (bNull) return -1;
+        if (typeof av === 'string' && typeof bv === 'string') {
+          return av.localeCompare(bv, 'ru') * dir;
+        }
+        return ((av as number) - (bv as number)) * dir;
+      });
+      return all;
+    }
+
+    const parsed = new Map<number, number>();
+    const lastTestMs = (r: LogicRow): number => {
+      if (parsed.has(r.id)) return parsed.get(r.id)!;
+      let ms = -1;
+      if (r.last_test_at) {
+        const t = Date.parse(`${r.last_test_at}`.replace(' ', 'T'));
+        if (Number.isFinite(t)) ms = t;
+      }
+      parsed.set(r.id, ms);
+      return ms;
+    };
+
+    const real: LogicRow[] = [];
+    const tested: LogicRow[] = [];
+    const untested: LogicRow[] = [];
+    for (const r of this.logics) {
+      if (r.account_type === 'real') {
+        real.push(r);
+      } else if (lastTestMs(r) >= 0) {
+        tested.push(r);
+      } else {
+        untested.push(r);
+      }
+    }
+    tested.sort((a, b) => lastTestMs(b) - lastTestMs(a));
+    untested.sort((a, b) => a.id - b.id);
+
+    if (this.showAllLogics) {
+      return [...real, ...tested, ...untested];
+    }
+    return [
+      ...real,
+      ...tested.slice(0, Math.max(0, this.defaultTestLogicsVisible)),
+    ];
+  }
+
+  /** Сколько логик скрыто в свёрнутом виде (нужно для подписи кнопки). */
+  hiddenLogicsCount(): number {
+    if (this.showAllLogics) return 0;
+    return this.logics.length - this.displayedLogics().length;
+  }
+
+  toggleShowAllLogics(): void {
+    this.showAllLogics = !this.showAllLogics;
+    // При сворачивании возвращаем порядок по умолчанию: реальные + последние тестовые.
+    if (!this.showAllLogics) {
+      this.sortColumn = null;
+      this.sortDir = 'asc';
+    }
+  }
+
+  /** Сортировка по колонке (повторный клик — переключение направления). Раскрывает весь список. */
+  toggleSort(col: 'id' | 'name' | 'combat_pnl' | 'test_pnl'): void {
+    if (this.sortColumn === col) {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = col;
+      this.sortDir = 'asc';
+    }
+    this.showAllLogics = true;
+  }
+
+  isColumnSorted(col: 'id' | 'name' | 'combat_pnl' | 'test_pnl'): boolean {
+    return this.sortColumn === col;
+  }
+
+  /** Значок направления сортировки (▲/▼) для активной колонки. */
+  sortIndicator(col: 'id' | 'name' | 'combat_pnl' | 'test_pnl'): string {
+    if (this.sortColumn !== col) return '';
+    return this.sortDir === 'asc' ? '▲' : '▼';
   }
 }
