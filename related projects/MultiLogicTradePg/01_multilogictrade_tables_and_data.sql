@@ -912,6 +912,7 @@ UPDATE indicators SET script = 'SELECT calc_ind_atr(:period, :series, :security_
 UPDATE indicators SET name = 'Price Channel (Donchian)', description = 'Канал цен / Дончиан (max high / min low)' WHERE code = 'DONCHIAN';
 UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code = 'DONCHIAN';
 UPDATE indicators SET script = 'SELECT calc_ind_stoch(:k_period, :d_period, :smooth, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'STOCH';
+UPDATE indicators SET script = 'SELECT calc_ind_cmo(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'CMO';
 UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'CCI';
 UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
 UPDATE indicators SET script = 'SELECT calc_ind_linreg(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREG';
@@ -1138,6 +1139,9 @@ JOIN (VALUES
     ('STOCH', 'D', '%D линия', 'float', FALSE, NULL, 'Медленная линия', 2),
     ('STOCH', 'OVERBOUGHT', 'Перекупленность', 'float', TRUE, 80, 'Порог 80', 3),
     ('STOCH', 'OVERSOLD', 'Перепроданность', 'float', TRUE, 20, 'Порог 20', 4),
+    ('CMO', 'VALUE', 'Значение CMO', 'float', FALSE, NULL, 'Моментум Чанде (−100..100)', 1),
+    ('CMO', 'OVERBOUGHT', 'Перекупленность', 'float', TRUE, 50, 'Порог 50', 2),
+    ('CMO', 'OVERSOLD', 'Перепроданность', 'float', TRUE, -50, 'Порог −50', 3),
     ('BB', 'UPPER', 'Верхняя полоса', 'float', FALSE, NULL, 'Upper band', 1),
     ('BB', 'MIDDLE', 'Средняя полоса', 'float', FALSE, NULL, 'Middle band', 2),
     ('BB', 'LOWER', 'Нижняя полоса', 'float', FALSE, NULL, 'Lower band', 3),

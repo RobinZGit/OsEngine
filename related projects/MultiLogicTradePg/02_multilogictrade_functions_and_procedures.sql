@@ -4531,6 +4531,120 @@ COMMENT ON FUNCTION calc_ind_linreg_array(INTEGER, NUMERIC, VARCHAR, INTEGER, IN
 DROP FUNCTION IF EXISTS calc_ind_linregv(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER);
 DROP FUNCTION IF EXISTS calc_ind_linregv_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP);
 
+-- ========== CMO (Chande Momentum Oscillator) ==========
+-- Моментум Чанде: CMO = 100 * (Σ+ − Σ−) / (Σ+ + Σ−) по приростам close за период,
+-- где Σ+ = сумма положительных приростов, Σ− = сумма абсолютных отрицательных.
+-- Диапазон −100..100: >0 — бычий моментум, <0 — медвежий.
+CREATE OR REPLACE FUNCTION calc_ind_cmo_array(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    i INTEGER;
+    v_start INTEGER;
+    v_period INTEGER;
+    v_delta NUMERIC;
+    v_sum_up NUMERIC;
+    v_sum_down NUMERIC;
+BEGIN
+    IF upper(btrim(COALESCE(p_series, 'VALUE'))) NOT IN ('VALUE', 'CMO') THEN
+        RETURN;
+    END IF;
+    v_period := GREATEST(COALESCE(p_period, 14), 1);
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(v_period, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.close_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_closes, v_n
+    FROM (
+        SELECT p.dt, p.close_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    -- Для CMO нужно period приростов + начальная цена → period + 1 баров минимум.
+    IF v_n IS NULL OR v_n < (v_period + 1) THEN RETURN; END IF;
+
+    v_start := GREATEST(v_period + 1, v_n - p_point_count + 1);
+    FOR i IN (v_period + 1) .. v_n LOOP
+        IF i < v_start THEN CONTINUE; END IF;
+        v_sum_up := 0;
+        v_sum_down := 0;
+        FOR j IN (i - v_period) .. i LOOP
+            v_delta := v_closes[j] - v_closes[j - 1];
+            IF v_delta > 0 THEN
+                v_sum_up := v_sum_up + v_delta;
+            ELSE
+                v_sum_down := v_sum_down + abs(v_delta);
+            END IF;
+        END LOOP;
+        IF v_sum_down = 0 AND v_sum_up = 0 THEN
+            value := 0;
+        ELSE
+            value := (v_sum_up - v_sum_down) / (v_sum_up + v_sum_down) * 100.0;
+        END IF;
+        dt := v_dts[i];
+        RETURN NEXT;
+    END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION calc_ind_cmo(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    v_thr NUMERIC;
+BEGIN
+    IF p_indicator_id IS NOT NULL AND p_series IS NOT NULL
+       AND upper(btrim(p_series)) IN ('OVERBOUGHT', 'OVERSOLD') THEN
+        v_thr := get_ind_series_threshold(p_indicator_id, p_series);
+        IF v_thr IS NOT NULL THEN
+            RETURN v_thr;
+        END IF;
+        RETURN NULL;
+    END IF;
+    IF upper(btrim(COALESCE(p_series, 'VALUE'))) NOT IN ('VALUE', 'CMO') THEN
+        RETURN NULL;
+    END IF;
+    RETURN (
+        SELECT a.value
+        FROM calc_ind_cmo_array(
+            p_period, p_series, p_security_id, p_timeframe_id, 1, p_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION calc_ind_cmo_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
+'CMO (Chande Momentum Oscillator), серия VALUE (−100..100), период приростов close';
+COMMENT ON FUNCTION calc_ind_cmo(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
+'CMO (Chande Momentum Oscillator): 100×(Σ+−Σ−)/(Σ++Σ−) — моментум по приростам close';
+
 -- =====================================================================
 -- Скалярные calc_ind_* (тот же контракт, что у SMA/STOCH: script → calc_ind_*)
 -- =====================================================================
@@ -5231,6 +5345,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -5291,6 +5407,9 @@ BEGIN
             RETURN QUERY SELECT * FROM calc_ind_stoch_array(
                 COALESCE(p_k_period, 14), COALESCE(p_d_period, 3), COALESCE(p_smooth, 3),
                 p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
+        WHEN 'CMO' THEN
+            RETURN QUERY SELECT * FROM calc_ind_cmo_array(
+                COALESCE(p_period, 14), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
         WHEN 'CCI' THEN
             RETURN QUERY SELECT * FROM calc_ind_cci_array(
                 COALESCE(p_period, 20), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
@@ -9854,6 +9973,62 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -22744,6 +22919,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
 
 
 

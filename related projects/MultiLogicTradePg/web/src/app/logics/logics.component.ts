@@ -774,14 +774,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     }
     this.expandedLogics.add(row.id);
     this.ensureParamsDraft(row.id);
-    // Раскрыть все подблоки при первом раскрытии логики.
-    this.expandedParamsBlocks.add(row.id);
-    this.expandedSignalsBlocks.add(row.id);
-    this.expandedStopsBlocks.add(row.id);
-    this.expandedPeriodsBlocks.add(row.id);
-    this.expandedSecuritiesBlocks.add(row.id);
-    this.expandedTradesBlocks.add(row.id);
-    this.expandedTestTradesBlocks.add(row.id);
+    // Подблоки при раскрытии логики НЕ раскрываем — начинают свёрнутыми,
+    // и их ручное раскрытие не сохраняется между сворачиванием/раскрытием логики.
     // Прогреть сигналы/стопы сразу — не ждать открытия блоков.
     this.loadSignalsForLogic(row.id);
     this.loadStopsForLogic(row.id);
@@ -798,8 +792,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.expandedSignalsBlocks.delete(logicId);
     this.expandedStopsBlocks.delete(logicId);
     this.expandedSecuritiesBlocks.delete(logicId);
+    this.expandedPeriodsBlocks.delete(logicId);
     this.expandedTradesBlocks.delete(logicId);
+    this.expandedOpenPositionsBlocks.delete(logicId);
+    this.expandedClosedPositionsBlocks.delete(logicId);
     this.expandedTestTradesBlocks.delete(logicId);
+    for (const tr of this.tradesFor(logicId)) {
+      this.expandedTradeRows.delete(tr.id);
+    }
     this.closeSignalPicker();
     this.closeStopForm();
     this.closeSecurityPicker();

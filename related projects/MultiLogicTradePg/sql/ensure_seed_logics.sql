@@ -90,7 +90,9 @@ BEGIN
         ('BB StdDev Fade', NULL),
         ('BB Volume Fade', NULL),
         ('LinReg Fade Trend', 'Двухтаймфреймовая fade по LinReg. TF=H2 + M15, оптимизированная.'),
-        ('CCI Fade Trend 2023', 'Fade по CCI20 на M15 + trend-фильтр H2 LinReg100. Как боевая логика 8511.')
+        ('CCI Fade Trend 2023', 'Fade по CCI20 на M15 + trend-фильтр H2 LinReg100. Как боевая логика 8511.'),
+        ('CMO Stoch Trend', 'Трендовая CMO(14)+Стохастик %K(14,3,3). Лонг CMO>0 и K>50, шорт CMO<0 и K<50. СПЯЩАЯ: бэктест #367 ≈ −384 528₽.'),
+        ('CMO Stoch Counter', 'Контр-тренд CMO(14)+Стохастик %K(14,3,3). Лонг CMO<0 и K<50, шорт CMO>0 и K>50. Версия по умолчанию: бэктест #368 ≈ +93 441₽.')
     ) AS v(name, note)
     ON CONFLICT (name) DO NOTHING;
 
@@ -119,7 +121,8 @@ BEGIN
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
-        'CCI Fade Trend 2023'
+        'CCI Fade Trend 2023',
+        'CMO Stoch Trend', 'CMO Stoch Counter'
     )
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
@@ -127,7 +130,7 @@ BEGIN
     INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
     SELECT l.id, 'opt_eval_candles', '200', 'integer'
     FROM logics l
-    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'LinReg Fade Trend', 'CCI Fade Trend 2023')
+    WHERE l.name IN ('LinReg Fade Optimized', 'LinReg Fade Twice Optimized', 'LinReg Fade Trend', 'CCI Fade Trend 2023', 'CMO Stoch Trend', 'CMO Stoch Counter')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = 'opt_eval_candles')
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -148,7 +151,7 @@ BEGIN
         ('order_execution', 'market', 'text'),
         ('base_annual_rate_pct', '20', 'number')
     ) AS v(param_key, param_value, value_type)
-    WHERE l.name IN ('LinReg Fade Trend', 'CCI Fade Trend 2023')
+    WHERE l.name IN ('LinReg Fade Trend', 'CCI Fade Trend 2023', 'CMO Stoch Trend', 'CMO Stoch Counter')
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
 
@@ -312,7 +315,8 @@ BEGIN
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
         'LinReg Fade Trend',
-        'CCI Fade Trend 2023'
+        'CCI Fade Trend 2023',
+        'CMO Stoch Trend', 'CMO Stoch Counter'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
@@ -333,8 +337,67 @@ BEGIN
         (6, '00:00:00'::time, '23:59:59'::time, 10),
         (7, '00:00:00'::time, '23:59:59'::time, 11)
     ) AS v(day_of_week, time_from, time_to, display_order)
-    WHERE l.name IN ('LinReg Fade Trend', 'CCI Fade Trend 2023')
+    WHERE l.name IN ('LinReg Fade Trend', 'CCI Fade Trend 2023', 'CMO Stoch Trend', 'CMO Stoch Counter')
       AND NOT EXISTS (SELECT 1 FROM logic_non_trading_intervals z WHERE z.logic_id = l.id);
+
+    -- CMO Stoch Trend (спящая) и CMO Stoch Counter (по умолчанию): до 15 позиций.
+    UPDATE logic_params lp
+    SET param_value = '15', value_type = 'integer', updated_at = CURRENT_TIMESTAMP
+    FROM logics l
+    WHERE lp.logic_id = l.id
+      AND l.name IN ('CMO Stoch Trend', 'CMO Stoch Counter')
+      AND lp.param_key = 'max_open_positions';
+
+    -- Версия по умолчанию — CMO Stoch Counter (хорошо отработала); Trend — спящая, не активна.
+    UPDATE logics SET is_enabled = TRUE WHERE name = 'CMO Stoch Counter';
+    UPDATE logics SET is_enabled = FALSE WHERE name = 'CMO Stoch Trend';
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('CMO',   'open',  'long',  'trend', '@CMO(period=14,series=VALUE) VALUE > 0',                       0),
+        ('STOCH', 'open',  'long',  'trend', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE > 50',  1),
+        ('CMO',   'close', 'long',  'trend', '@CMO(period=14,series=VALUE) VALUE < 0',                       2),
+        ('STOCH', 'close', 'long',  'trend', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE < 50',  3),
+        ('CMO',   'open',  'short', 'trend', '@CMO(period=14,series=VALUE) VALUE < 0',                       4),
+        ('STOCH', 'open',  'short', 'trend', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE < 50',  5),
+        ('CMO',   'close', 'short', 'trend', '@CMO(period=14,series=VALUE) VALUE > 0',                       6),
+        ('STOCH', 'close', 'short', 'trend', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE > 50',  7)
+    ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'CMO Stoch Trend'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, v.signal_kind, v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('CMO',   'open',  'long',  'counter', '@CMO(period=14,series=VALUE) VALUE < 0',                       0),
+        ('STOCH', 'open',  'long',  'counter', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE < 50',  1),
+        ('CMO',   'close', 'long',  'counter', '@CMO(period=14,series=VALUE) VALUE > 0',                       2),
+        ('STOCH', 'close', 'long',  'counter', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE > 50',  3),
+        ('CMO',   'open',  'short', 'counter', '@CMO(period=14,series=VALUE) VALUE > 0',                       4),
+        ('STOCH', 'open',  'short', 'counter', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE > 50',  5),
+        ('CMO',   'close', 'short', 'counter', '@CMO(period=14,series=VALUE) VALUE < 0',                       6),
+        ('STOCH', 'close', 'short', 'counter', '@STOCH(k_period=14,d_period=3,smooth=3,series=K) VALUE < 50',  7)
+    ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'CMO Stoch Counter'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)
+    SELECT dst.id, ls.security_id, ls.display_order, ls.is_active
+    FROM logics src
+    JOIN logic_securities ls ON ls.logic_id = src.id
+    JOIN logics dst ON dst.name IN ('CMO Stoch Trend', 'CMO Stoch Counter')
+    WHERE src.name = 'LinReg Fade Trend'
+      AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = dst.id)
+    ON CONFLICT (logic_id, security_id) DO NOTHING;
 
     SELECT COUNT(*) INTO v_opt_count
     FROM logics
