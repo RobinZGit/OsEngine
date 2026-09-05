@@ -71,6 +71,68 @@ module.exports = function registerLogicsRoutes(app, ctx) {
     handleDbError,
   } = ctx;
 
+/** Короткая формальная запись сигнала: '@CODE(params) EXPR' → 'CMO(14)<0', 'STOCH(K,14)<50' и т.п.
+ * Индикаторы — своими латинскими аббревиатурами (код из indicators.code), серии латинскими буквами. */
+const SIGNAL_SERIES_ABBR = {
+  K: 'K',
+  D: 'D',
+  UPPER: 'U',
+  LOWER: 'L',
+  MIDDLE: 'M',
+};
+function shortSignalToken(s) {
+  const formula = String(s.formula || '');
+  const code = s.indicator_code || (formula.match(/^@([A-Za-z0-9_]+)/i) || [])[1] || '';
+  const series = (formula.match(/series=([A-Za-z0-9_]+)/i) || [])[1] || 'VALUE';
+  const num = (formula.match(/(?:\b|_)period=(\d+)/i) || [])[1];
+  let label = code;
+  const sUp = series.toUpperCase();
+  if (sUp !== 'VALUE') {
+    const slet = SIGNAL_SERIES_ABBR[sUp] || series;
+    label = num ? `${code}(${slet},${num})` : `${code}(${slet})`;
+  } else if (num) {
+    label = `${code}(${num})`;
+  }
+  let expr = formula;
+  const close = formula.lastIndexOf(')');
+  if (close >= 0) expr = formula.slice(close + 1);
+  expr = expr
+    .replace(/\bVALUE\b/g, label)
+    .replace(/\bpp\b/g, 'Цена')
+    .replace(/\s*([<>=]+)\s*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return expr || label;
+}
+
+/**
+ * Короткая формальная запись включённых сигналов логики (active only, из БД).
+ * Группируется по стороне и событию: «Л: вх …∧…, вых …∧… | Ш: вх …, вых …».
+ */
+function buildSignalSummary(rows) {
+  const groups = {
+    long: { open: [], close: [] },
+    short: { open: [], close: [] },
+  };
+  for (const s of rows) {
+    const side = Object.prototype.hasOwnProperty.call(groups, s.position_side)
+      ? s.position_side
+      : 'long';
+    const ev = s.position_event === 'close' ? 'close' : 'open';
+    groups[side][ev].push(shortSignalToken(s));
+  }
+  const parts = [];
+  for (const [side, label] of [['long', 'Л'], ['short', 'Ш']]) {
+    const g = groups[side];
+    if (g.open.length === 0 && g.close.length === 0) continue;
+    const seg = [];
+    if (g.open.length > 0) seg.push(`вх ${g.open.join('∧')}`);
+    if (g.close.length > 0) seg.push(`вых ${g.close.join('∧')}`);
+    parts.push(`${label}: ${seg.join(', ')}`);
+  }
+  return parts.join(' | ');
+}
+
 app.get('/api/logics', async (_req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -126,6 +188,28 @@ app.get('/api/logics', async (_req, res) => {
       ...r,
       ...(paramsByLogic.get(r.id) || {}),
     }));
+    // Короткая формальная запись ВКЛЮЧЁННЫХ (is_active) сигналов логики — всегда по фактическому
+    // состоянию БД: при сохранении логики/сигналов пересчитывается при следующей загрузке списка.
+    if (result.length > 0) {
+      const { rows: sigRows } = await pool.query(
+        `
+        SELECT lis.logic_id, lis.position_event, lis.position_side,
+               i.code AS indicator_code, lis.formula
+        FROM logic_indicator_signals lis
+        JOIN indicators i ON i.id = lis.indicator_id
+        WHERE lis.is_active = TRUE
+        ORDER BY lis.logic_id, lis.display_order, lis.id
+        `
+      );
+      const byLogic = new Map();
+      for (const s of sigRows) {
+        if (!byLogic.has(s.logic_id)) byLogic.set(s.logic_id, []);
+        byLogic.get(s.logic_id).push(s);
+      }
+      for (const r of result) {
+        r.signals_summary = buildSignalSummary(byLogic.get(r.id) || []);
+      }
+    }
     res.json(result);
   } catch (err) {
     console.error('GET /api/logics', err);

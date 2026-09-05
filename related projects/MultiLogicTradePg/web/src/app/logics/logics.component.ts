@@ -3348,7 +3348,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     this.editorLogic = null;
   }
 
-  onEditorSaved(): void {
+  onEditorSaved(created: LogicRow | null = null): void {
     const editedId = this.editorLogic?.id;
     if (editedId != null) {
       // После смены счёта API чистит боевые сделки — сбросить кэш панели.
@@ -3357,6 +3357,18 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       if (this.expandedTradesBlocks.has(editedId)) {
         this.loadTradesForLogic(editedId, true);
       }
+    }
+    // Новая логика: добавить в список сразу (без перезагрузки), раскрыть все логики,
+    // развернуть новую строку и доскроллить до неё — как при копировании.
+    if (created != null && !this.logics.some((l) => l.id === created.id)) {
+      this.logics = [...this.logics, created].sort((a, b) => a.id - b.id);
+      this.showAllLogics = true;
+      this.sortColumn = null;
+      this.expandedLogics.add(created.id);
+      this.ensureParamsDraft(created.id, true);
+      this.loadParamsForLogic(created.id);
+      setTimeout(() => this.scrollLogicIntoView(created.id), 0);
+      return;
     }
     this.loadLogicsOnce();
   }
@@ -3391,6 +3403,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       next: (created) => {
         this.copyingLogicIds.delete(row.id);
         this.logics = [...this.logics, created].sort((a, b) => a.id - b.id);
+        this.showAllLogics = true;
+        this.sortColumn = null;
         this.expandedLogics.add(created.id);
         this.ensureParamsDraft(created.id, true);
         this.loadSignalsForLogic(created.id, true);

@@ -5,6 +5,8 @@ export interface LogicRow {
   broker_id: number;
   is_enabled: boolean;
   note?: string | null;
+  /** Короткая формальная запись включённых сигналов логики (вычисляется API при загрузке списка). */
+  signals_summary?: string | null;
   timeframe?: string;
   /** free_cash | portfolio | portfolio_incl_fund — база % для расчёта лота */
   position_size_base?: 'free_cash' | 'portfolio' | 'portfolio_incl_fund';

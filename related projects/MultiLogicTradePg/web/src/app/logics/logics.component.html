@@ -386,6 +386,9 @@
                   @if (row.note) {
                     <span class="logic-note-inline" [title]="row.note">{{ row.note }}</span>
                   }
+                  @if (row.signals_summary) {
+                    <span class="logic-signals-summary" [title]="row.signals_summary">{{ row.signals_summary }}</span>
+                  }
                 </span>
               </td>
 
@@ -2670,7 +2673,7 @@
 
     (closed)="closeEditor()"
 
-    (saved)="onEditorSaved()"
+    (saved)="onEditorSaved($event)"
 
   />
 

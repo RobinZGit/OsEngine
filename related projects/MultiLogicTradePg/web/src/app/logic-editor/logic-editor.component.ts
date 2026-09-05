@@ -30,7 +30,7 @@ export class LogicEditorComponent implements OnChanges {
   @Input() logic: LogicRow | null = null;
 
   @Output() closed = new EventEmitter<void>();
-  @Output() saved = new EventEmitter<void>();
+  @Output() saved = new EventEmitter<LogicRow | null>();
 
   brokers: BrokerRow[] = [];
   accounts: AccountRow[] = [];
@@ -133,9 +133,9 @@ export class LogicEditorComponent implements OnChanges {
         : this.logicsService.updateLogic(this.logic!.id, payload);
 
     req.subscribe({
-      next: () => {
+      next: (row) => {
         this.saving = false;
-        this.saved.emit();
+        this.saved.emit(row);
         this.closed.emit();
       },
       error: (err) => {

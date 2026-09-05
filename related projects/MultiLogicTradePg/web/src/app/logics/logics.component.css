@@ -906,6 +906,19 @@ tbody tr.logic-main-row:hover {
   max-width: 100%;
 }
 
+.logic-signals-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: #0f766e;
+  font-weight: 700;
+  font-style: normal;
+  max-width: 100%;
+}
+
 .logic-test-progress-wrap {
   display: inline-flex;
   align-items: center;
