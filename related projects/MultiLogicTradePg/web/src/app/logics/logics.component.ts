@@ -4486,9 +4486,10 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   /**
    * Строки таблицы списка логик в порядке отображения:
-   * 1) реальные счета; 2) тестовые (fake) — по дате последнего теста (свежие выше);
-   * 3) тестовые, у которых теста никогда не было — в самом низу.
-   * Если `showAllLogics` выключен — оставляем все реальные + N последних протестированных.
+   * 1) реальные счета; 2) включённые логики (независимо от счёта);
+   * 3) тестовые (fake) — по дате последнего теста (свежие выше);
+   * 4) тестовые, у которых теста никогда не было — в самом низу.
+   * Если `showAllLogics` выключен — оставляем все реальные + все включённые + N последних протестированных.
    */
   displayedLogics(): LogicRow[] {
     // Если пользователь отсортировал по колонке — раскрываем весь список и сортируем по ней.
@@ -4535,11 +4536,14 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     };
 
     const real: LogicRow[] = [];
+    const enabled: LogicRow[] = [];
     const tested: LogicRow[] = [];
     const untested: LogicRow[] = [];
     for (const r of this.logics) {
       if (r.account_type === 'real') {
         real.push(r);
+      } else if (r.is_enabled) {
+        enabled.push(r);
       } else if (lastTestMs(r) >= 0) {
         tested.push(r);
       } else {
@@ -4550,10 +4554,11 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     untested.sort((a, b) => a.id - b.id);
 
     if (this.showAllLogics) {
-      return [...real, ...tested, ...untested];
+      return [...real, ...enabled, ...tested, ...untested];
     }
     return [
       ...real,
+      ...enabled,
       ...tested.slice(0, Math.max(0, this.defaultTestLogicsVisible)),
     ];
   }
@@ -4566,7 +4571,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   toggleShowAllLogics(): void {
     this.showAllLogics = !this.showAllLogics;
-    // При сворачивании возвращаем порядок по умолчанию: реальные + последние тестовые.
+    // При сворачивании возвращаем порядок по умолчанию: реальные + включённые + последние тестовые.
     if (!this.showAllLogics) {
       this.sortColumn = null;
       this.sortDir = 'asc';
