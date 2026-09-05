@@ -348,9 +348,12 @@ BEGIN
       AND l.name IN ('CMO Stoch Trend', 'CMO Stoch Counter')
       AND lp.param_key = 'max_open_positions';
 
-    -- CMO-логики по умолчанию ВЫКЛЮЧЕНЫ (is_enabled=FALSE — см. INSERT выше; запуская обе логики
-    -- из установщика включёнными не делаем). Включение — явный шаг: переключатель в UI либо
-    -- повторный прогон api/scripts/seed-cmo-stoch-counter.sql (это и есть «включение из установщика»).
+    -- CMO-логики по умолчанию ВЫКЛЮЧЕНЫ (is_enabled=FALSE). Принудительно на каждом прогоне:
+    -- это «install-on-top», и существующие (в т.ч. включённые прошлой версией) строки INSERT не
+    -- затронет — только явный UPDATE гарантирует спящее состояние на свежей И уже существующей БД.
+    -- Включение — явный шаг: переключатель в UI либо run api/scripts/seed-cmo-stoch-counter.sql
+    -- («включение из установщика»). ВНИМАНИЕ: повторный прогон ensure_seed снова выключит обе.
+    UPDATE logics SET is_enabled = FALSE WHERE name IN ('CMO Stoch Trend', 'CMO Stoch Counter');
 
     INSERT INTO logic_indicator_signals (
         logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
