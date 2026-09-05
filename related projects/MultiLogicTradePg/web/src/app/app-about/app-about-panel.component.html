@@ -1,0 +1,86 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <aside class="panel" aria-label="О системе">
+    <header class="panel-header">
+      <div>
+        <h2>О системе</h2>
+        <p class="meta">MultiLogic Trade — PostgreSQL-first</p>
+      </div>
+      <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
+    </header>
+
+    <div class="panel-body scroll-list-panel">
+      @if (loading) {
+        <p class="muted">Загрузка информации о версии…</p>
+      } @else {
+        <section class="about-block">
+          <h3 class="block-title">Программа</h3>
+          <table class="info-table">
+            <tbody>
+              <tr><th>Имя</th><td>{{ info.title || '—' }}</td></tr>
+              <tr><th>Продукт</th><td>{{ info.product || '—' }}</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="about-block">
+          <h3 class="block-title">Версия</h3>
+          <table class="info-table">
+            <tbody>
+              <tr><th>Версия</th><td>{{ info.version || '—' }}</td></tr>
+              <tr><th>Сборка</th><td>{{ info.build != null ? info.build : '—' }}</td></tr>
+              <tr><th>Дата сборки</th><td>{{ info.built || '—' }}</td></tr>
+              @if (info.git) {
+                <tr><th>Коммит</th><td><code>{{ info.git }}</code></td></tr>
+              }
+            </tbody>
+          </table>
+        </section>
+
+        <section class="about-block">
+          <h3 class="block-title">Технологии</h3>
+          <ul class="about-list">
+            <li><strong>PostgreSQL</strong> — данные (цены, индикаторы, сделки)</li>
+            <li><strong>Node.js + Express</strong> — API-сервер (:3000)</li>
+            <li><strong>Angular</strong> — веб-интерфейс (:4200)</li>
+          </ul>
+        </section>
+
+        <section class="about-block">
+          <h3 class="block-title">Ссылки</h3>
+          <ul class="about-list">
+            <li>
+              Репозиторий:
+              <a href="https://github.com/RobinZGit/OsEngine" target="_blank" rel="noopener noreferrer">
+                github.com/RobinZGit/OsEngine
+              </a>
+            </li>
+            <li>
+              Релизы:
+              <a href="https://github.com/RobinZGit/OsEngine/releases" target="_blank" rel="noopener noreferrer">
+                github.com/RobinZGit/OsEngine/releases
+              </a>
+            </li>
+            <li>
+              Публикация (UI только):
+              <a href="https://robinzgit.github.io/OsEngine/" target="_blank" rel="noopener noreferrer">
+                robinzgit.github.io/OsEngine
+              </a>
+            </li>
+          </ul>
+        </section>
+
+        @if (raw) {
+          <details class="raw-block">
+            <summary>Исходные данные</summary>
+            <pre>{{ raw }}</pre>
+          </details>
+        }
+      }
+
+      @if (error) {
+        <p class="error">{{ error }}</p>
+      }
+    </div>
+  </aside>
+}

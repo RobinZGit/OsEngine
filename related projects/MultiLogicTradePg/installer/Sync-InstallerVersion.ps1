@@ -14,6 +14,7 @@ $ProjectRoot = Split-Path -Parent $InstallerDir
 $BuildFile = Join-Path $InstallerDir "BUILD_NUMBER"
 $VersionTxt = Join-Path $ProjectRoot "VERSION.txt"
 $VersionInc = Join-Path $InstallerDir "windows\version.inc.iss"
+$VersionJson = Join-Path $ProjectRoot "web\src\assets\version.json"
 
 if (-not (Test-Path $BuildFile)) {
     Set-Content -LiteralPath $BuildFile -Value "1" -Encoding ascii
@@ -60,9 +61,20 @@ $inc = @(
 )
 Set-Content -LiteralPath $VersionInc -Value ($inc -join [Environment]::NewLine) -Encoding ascii
 
+$versionJsonBody = [ordered]@{
+    product = "MultiLogicTradePg"
+    title   = "MultiLogic Trade"
+    version = $version
+    build   = $build
+    built   = $builtAt
+}
+if ($gitSha) { $versionJsonBody.git = $gitSha }
+$versionJsonBody | ConvertTo-Json | Set-Content -LiteralPath $VersionJson -Encoding utf8
+
 Write-Host "Installer version: $version (build $build)" -ForegroundColor Cyan
 Write-Host "  $VersionTxt"
 Write-Host "  $VersionInc"
+Write-Host "  $VersionJson"
 
 return [pscustomobject]@{
     Build   = $build

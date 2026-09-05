@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { DbSchemaPanelComponent } from './db-schema/db-schema-panel.component';
 import { AppHelpPanelComponent } from './app-help/app-help-panel.component';
 import { AppSettingsPanelComponent } from './app-settings/app-settings-panel.component';
+import { AppAboutPanelComponent } from './app-about/app-about-panel.component';
 import { TechLogService } from './services/tech-log.service';
 import { TradeRunnerSessionService } from './services/trade-runner-session.service';
 import { assetUrl } from './shared/asset-url';
@@ -18,6 +19,7 @@ import { assetUrl } from './shared/asset-url';
     DbSchemaPanelComponent,
     AppHelpPanelComponent,
     AppSettingsPanelComponent,
+    AppAboutPanelComponent,
     FormsModule,
   ],
   template: `
@@ -101,6 +103,23 @@ import { assetUrl } from './shared/asset-url';
             <circle cx="12" cy="12" r="3.6" fill="#111827" />
           </svg>
         </button>
+        <button
+          type="button"
+          class="bar-icon-btn"
+          title="О системе: версия, сборка, дата"
+          aria-label="О системе"
+          (click)="openAbout()"
+        >
+          <!-- Info icon -->
+          <svg class="bar-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
+            <path
+              fill="#ffffff"
+              d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z"
+            />
+            <path fill="#ffffff" d="M11 10h2v7h-2z" />
+            <circle cx="12" cy="7" r="1.3" fill="#ffffff" />
+          </svg>
+        </button>
       </div>
     </header>
     <nav class="app-tabs">
@@ -120,6 +139,7 @@ import { assetUrl } from './shared/asset-url';
     <app-help-panel [open]="helpOpen" (closed)="helpOpen = false" />
     <app-db-schema-panel [open]="schemaOpen" (closed)="schemaOpen = false" />
     <app-settings-panel [open]="settingsOpen" (closed)="settingsOpen = false" />
+    <app-about-panel [open]="aboutOpen" (closed)="aboutOpen = false" />
   `,
   styles: [
     `
@@ -231,6 +251,7 @@ export class AppComponent implements OnInit, OnDestroy {
   schemaOpen = false;
   helpOpen = false;
   settingsOpen = false;
+  aboutOpen = false;
   techLoggingEnabled = false;
   /** Standalone Crypt tool (GitHub Pages + local assets). */
   readonly cryptToolUrl = assetUrl('assets/tools/parity-stego.html');
@@ -276,5 +297,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   openSettings(): void {
     this.settingsOpen = true;
+  }
+
+  openAbout(): void {
+    this.aboutOpen = true;
   }
 }
