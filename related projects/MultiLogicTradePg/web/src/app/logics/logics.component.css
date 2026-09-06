@@ -857,16 +857,27 @@ tbody tr.logic-main-row:hover {
   background: #c4b5fd !important;
 }
 
-.row-inversion {
-  outline: 2px solid #ef4444;
-  outline-offset: -2px;
-  box-shadow: inset 4px 0 0 #dc2626;
-}
-
 .row-portfolio-paused {
   outline: 2px solid #0f766e;
   outline-offset: -2px;
   box-shadow: inset 4px 0 0 #0f766e;
+}
+
+.logic-inversion-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #dc2626;
+  line-height: 1;
+}
+
+.logic-inversion-arrow {
+  font-size: 0.6rem;
+  color: #dc2626;
 }
 
 .logic-name-cell {

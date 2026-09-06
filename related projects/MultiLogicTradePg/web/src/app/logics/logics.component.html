@@ -301,7 +301,6 @@
 
               [class.row-testing]="isBacktestPlainRunning(row.id)"
               [class.row-testing-opt]="isBacktestOptRunning(row.id)"
-              [class.row-inversion]="row.inversion"
               [class.row-portfolio-paused]="row.portfolio_trading_paused"
 
               (click)="toggleLogicExpand(row, $event)"
@@ -383,6 +382,9 @@
                       </span>
                     }
                   </span>
+                  @if (row.inversion) {
+                    <span class="logic-inversion-label" title="Инверсия включена — стороны сделок развёрнуты"><span class="logic-inversion-arrow">▲▼</span> INVERSION IS ON</span>
+                  }
                   @if (row.note) {
                     <span class="logic-note-inline" [title]="row.note">{{ row.note }}</span>
                   }
