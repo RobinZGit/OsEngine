@@ -317,7 +317,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private savingFormulaIds = new Set<number>();
   /** Сигналы с открытой справкой «?» по формуле. */
   private signalFormulaHelpIds = new Set<number>();
-  /** Логики с открытой справкой «?» в шапке блока «Сигналы на логике» (#831). */
+  /** Логики с открытой справкой «?» в шапке блока «Сигналы логики и стоп-лосс и тейк-профит» (#831). */
   private signalsHelpBlocks = new Set<number>();
   private signalFormulaHelpCache: string | null = null;
   private savingStopIds = new Set<number>();

@@ -528,6 +528,36 @@
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 
+                    <div class="logic-trades-stack">
+                      <app-logic-positions-panel
+                        [logicRow]="row"
+                        mode="test"
+                        [trades]="tradesFor(row.id, true)"
+                        [summaryFinancialResult]="testFinancialResult(row.id)"
+                        [summaryCommission]="testCommission(row.id)"
+                        [summaryEquityTotal]="testEquityTotal(row.id)"
+                        [summaryEquityLong]="testEquityLong(row.id)"
+                        [summaryEquityShort]="testEquityShort(row.id)"
+                        [tradeLots]="logicTradeLots"
+                        [lotsLoading]="tradeLotsLoading"
+                        [blockExpanded]="isTestTradesBlockExpanded(row.id)"
+                        [backtestRun]="backtestFor(row.id)"
+                        [testPeriodFrom]="testPeriodFrom(row.id)"
+                        [testPeriodTo]="testPeriodTo(row.id)"
+                        [timeframeId]="timeframeIdForLogic(row)"
+                        [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
+                        [pinnedPaper]="cashFundPinnedPaper(row)"
+                        [logicSecurities]="securitiesFor(row.id)"
+                        [signalFormulas]="signalFormulasFor(row.id)"
+                        (toggleBlock)="toggleTestTradesBlock(row.id)"
+                        (startBacktest)="startBacktestRun(row.id, $event)"
+                        (periodDialogOpen)="onPeriodDialogOpen($event)"
+                        (cancelBacktest)="cancelBacktestRun(row.id)"
+                        (exportTrades)="exportLogicTrades(row.id, true)"
+                        (requestLots)="requestTradeLots($event)"
+                      />
+                    </div>
+
                     <details class="signals-block params-block" [open]="isParamsBlockExpanded(row.id)">
 
                       <summary class="signals-summary">
@@ -1291,7 +1321,7 @@
                             aria-hidden="true"
                           >▸</span>
 
-                          <span class="signals-title">Сигналы на логике</span>
+                          <span class="signals-title">Сигналы логики и стоп-лосс и тейк-профит</span>
 
                           <button
 
@@ -1823,11 +1853,7 @@
 
                       </p>
 
-                      </div>
-
-                    </details>
-
-                    <details class="signals-block stops-block" [open]="isStopsBlockExpanded(row.id)">
+                      <details class="signals-block stops-block" [open]="isStopsBlockExpanded(row.id)">
 
                       <summary class="signals-summary">
 
@@ -2078,6 +2104,10 @@
                           тейк — <strong>линейный TP по портфелю с возобновлением (5%)</strong>.
                           Единица: <strong>%</strong> или <strong>ATR</strong>.
                         </p>
+
+                      </div>
+
+                    </details>
 
                       </div>
 
@@ -2583,34 +2613,6 @@
                         (closeAll)="closeAllPositionsAtMarket(row.id)"
                         (exportTrades)="exportLogicTrades(row.id, false)"
                         (openTokenDialog)="openTbankTokenDialogFromAlert()"
-                        (requestLots)="requestTradeLots($event)"
-                      />
-
-                      <app-logic-positions-panel
-                        [logicRow]="row"
-                        mode="test"
-                        [trades]="tradesFor(row.id, true)"
-                        [summaryFinancialResult]="testFinancialResult(row.id)"
-                        [summaryCommission]="testCommission(row.id)"
-                        [summaryEquityTotal]="testEquityTotal(row.id)"
-                        [summaryEquityLong]="testEquityLong(row.id)"
-                        [summaryEquityShort]="testEquityShort(row.id)"
-                        [tradeLots]="logicTradeLots"
-                        [lotsLoading]="tradeLotsLoading"
-                        [blockExpanded]="isTestTradesBlockExpanded(row.id)"
-                        [backtestRun]="backtestFor(row.id)"
-                        [testPeriodFrom]="testPeriodFrom(row.id)"
-                        [testPeriodTo]="testPeriodTo(row.id)"
-                        [timeframeId]="timeframeIdForLogic(row)"
-                        [signalIndicatorIds]="signalIndicatorIdsFor(row.id)"
-                        [pinnedPaper]="cashFundPinnedPaper(row)"
-                        [logicSecurities]="securitiesFor(row.id)"
-                        [signalFormulas]="signalFormulasFor(row.id)"
-                        (toggleBlock)="toggleTestTradesBlock(row.id)"
-                        (startBacktest)="startBacktestRun(row.id, $event)"
-                        (periodDialogOpen)="onPeriodDialogOpen($event)"
-                        (cancelBacktest)="cancelBacktestRun(row.id)"
-                        (exportTrades)="exportLogicTrades(row.id, true)"
                         (requestLots)="requestTradeLots($event)"
                       />
                     </div>
