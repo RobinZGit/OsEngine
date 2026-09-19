@@ -246,6 +246,7 @@ app.get('/api/accounts', async (req, res) => {
         a.account_type,
         a.is_efficient,
         a.is_active,
+        a.terminal_cash,
         (a.token_encrypted IS NOT NULL AND btrim(a.token_encrypted) <> '') AS has_token,
         b.code AS broker_code,
         b.name AS broker_name,

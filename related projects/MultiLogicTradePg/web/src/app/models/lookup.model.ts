@@ -29,6 +29,8 @@ export interface AccountRow {
   balance_currency?: string | null;
   balance_display?: string | null;
   balance_error?: string | null;
+  /** Демо-кэш фейкового счёта терминала (стартует с 0, может быть отрицательным). */
+  terminal_cash?: number | null;
 }
 
 export interface BondFundInfo {

@@ -91,7 +91,8 @@ app.get('/api/securities', async (req, res) => {
   const kind =
     req.query.kind === 'stock' ? 'stock' :
     req.query.kind === 'futures' ? 'futures' :
-    req.query.kind === 'other' ? 'other' : null;
+    req.query.kind === 'other' ? 'other' :
+    req.query.kind === 'bond' ? 'bond' : null;
   if (!exchangeId) {
     res.status(400).json({ error: 'Укажите exchange_id' });
     return;
@@ -104,6 +105,8 @@ app.get('/api/securities', async (req, res) => {
       typeFilter = `AND st.name = 'Futures' AND sp.instrument_market = 'futures'`;
     } else if (kind === 'other') {
       typeFilter = `AND sp.instrument_market = 'other'`;
+    } else if (kind === 'bond') {
+      typeFilter = `AND st.name = 'Bond' AND sp.instrument_market = 'bonds'`;
     }
     const { rows } = await pool.query(
       `
@@ -115,6 +118,7 @@ app.get('/api/securities', async (req, res) => {
         sp.prefix,
         sp.instrument_market,
         sp.exchange_id,
+        sp.underlying_security_id,
         e.name AS exchange_name
       FROM securities s
       JOIN security_types st ON st.id = s.security_type_id

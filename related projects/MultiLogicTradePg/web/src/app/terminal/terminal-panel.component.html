@@ -1,0 +1,239 @@
+<div class="tpanel">
+  <div class="tpanel-head">
+    <div class="tpanel-title">
+      <span class="tpanel-prefix">{{ security.prefix }}</span>
+      <span class="tpanel-name">{{ security.name }}</span>
+      @if (isFutures()) {
+        <span class="tpanel-kind">фьючерс</span>
+      }
+    </div>
+    <label class="tpanel-field">
+      <span>Таймфрейм</span>
+      <select
+        [(ngModel)]="timeframeId"
+        (ngModelChange)="onTimeframeChange()"
+        [title]="selectedTimeframe?.full_name ?? ''"
+      >
+        @for (tf of timeframes; track tf.id) {
+          <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }}</option>
+        }
+      </select>
+    </label>
+    <div class="tpanel-controls" role="group" aria-label="Управление графиками">
+      <button
+        type="button"
+        class="tpanel-ctl"
+        title="Уменьшить масштаб"
+        aria-label="Уменьшить масштаб"
+        [disabled]="chartState.candles.length === 0"
+        (click)="onZoomOut($event)"
+      >−</button>
+      <button
+        type="button"
+        class="tpanel-ctl"
+        title="Увеличить масштаб"
+        aria-label="Увеличить масштаб"
+        [disabled]="chartState.candles.length === 0"
+        (click)="onZoomIn($event)"
+      >+</button>
+      <button
+        type="button"
+        class="tpanel-ctl"
+        title="Сдвинуть назад"
+        aria-label="Сдвинуть назад"
+        [disabled]="chartState.candles.length === 0"
+        (click)="onPanLeft($event)"
+      >◀</button>
+      <button
+        type="button"
+        class="tpanel-ctl"
+        title="Сдвинуть вперёд"
+        aria-label="Сдвинуть вперёд"
+        [disabled]="chartState.candles.length === 0"
+        (click)="onPanRight($event)"
+      >▶</button>
+      <button
+        type="button"
+        class="tpanel-ctl"
+        title="Полный экран"
+        aria-label="Полный экран"
+        (click)="onExpand($event)"
+      >⛶</button>
+    </div>
+    <button
+      type="button"
+      class="tpanel-remove"
+      title="Убрать полосу"
+      aria-label="Убрать полосу"
+      (click)="remove.emit()"
+    >✕</button>
+  </div>
+
+  <div class="tpanel-body">
+    <div class="tpanel-charts" [style.height.px]="chartHeight">
+      <div class="tpanel-chart">
+        <app-price-chart
+          #mainChart
+          [compact]="true"
+          [followLast]="true"
+          [candles]="chartState.candles"
+          [loading]="chartState.loading"
+          [loadingOlder]="chartState.loadingOlder"
+          [error]="chartState.error"
+          [title]="displayTitle"
+          [showRecalcButton]="false"
+          (loadOlder)="loadOlder()"
+        />
+      </div>
+
+      @if (hasContango && underlying) {
+        <div class="tpanel-ctg-caption">
+          <span class="tpanel-ctg-title">Контанго — разность фьючерса и базового актива, %</span>
+          <button
+            type="button"
+            class="tpanel-ctl"
+            title="График контанго на весь экран"
+            aria-label="График контанго на весь экран"
+            (click)="onExpandContango($event)"
+          >⛶</button>
+        </div>
+        <div class="tpanel-chart">
+          <app-price-chart
+            #ctgChart
+            [compact]="true"
+            [followLast]="true"
+            [candles]="contangoChartState.candles"
+            [loading]="contangoChartState.loading"
+            [loadingOlder]="contangoChartState.loadingOlder"
+            [error]="contangoChartState.error"
+            [title]="contangoTitle"
+            [showRecalcButton]="false"
+            (loadOlder)="loadOlder()"
+          />
+        </div>
+      }
+    </div>
+
+    <div class="tpanel-trade">
+      <div class="tpanel-trade-head">
+        Сделки
+        @if (accountIsFake) {
+          <span class="trade-demo-tag" title="Фейковый счёт — сделки записываются как демо">демо</span>
+        }
+      </div>
+
+      <div class="trade-max">
+        <label class="trade-max-label" for="trade-max-input">
+          Максимальная сумма сделки
+        </label>
+        <span class="trade-max-input-wrap">
+          <input
+            id="trade-max-input"
+            type="number"
+            class="trade-max-input"
+            min="0"
+            step="100"
+            [(ngModel)]="tradeMaxInput"
+            (ngModelChange)="onTradeMaxEdit()"
+            [disabled]="tradingBusy"
+            aria-label="Максимальная сумма сделки"
+          />
+          <span class="trade-max-currency">₽</span>
+        </span>
+      </div>
+
+      <input
+        type="range"
+        class="trade-slider"
+        min="0"
+        [max]="effectiveMaxSum"
+        step="100"
+        [(ngModel)]="tradeAmount"
+        (ngModelChange)="onTradeAmountChange()"
+        [disabled]="tradingBusy"
+        aria-label="Сумма сделки"
+      />
+
+      <div class="trade-qty-row">
+        <div class="trade-qty-item">
+          <span class="trade-qty-label">Количество</span>
+          <input
+            type="number"
+            class="trade-qty"
+            [ngModel]="tradeQuantity"
+            readonly
+            aria-readonly="true"
+            aria-label="Количество"
+          />
+        </div>
+        <div class="trade-qty-item">
+          <span class="trade-qty-label" title="Сумма сделки (без комиссии): количество × цена">
+            Сумма (без комиссии)
+          </span>
+          <input
+            type="number"
+            class="trade-qty"
+            [ngModel]="tradeSum"
+            readonly
+            aria-readonly="true"
+            aria-label="Сумма сделки (без комиссии)"
+          />
+        </div>
+      </div>
+
+      <div class="trade-switch" role="group" aria-label="Тип заявки">
+        <span class="trade-switch-label" [class.active]="tradeType === 'market'">Маркет</span>
+        <button
+          type="button"
+          class="trade-switch-track"
+          role="switch"
+          [attr.aria-checked]="tradeType === 'limit'"
+          [class.on]="tradeType === 'limit'"
+          [disabled]="tradingBusy"
+          (click)="onToggleTradeType()"
+          aria-label="Тумблер типа заявки"
+        >
+          <span class="trade-switch-thumb"></span>
+        </button>
+        <span class="trade-switch-label" [class.active]="tradeType === 'limit'">Лимит</span>
+      </div>
+
+      @if (priceMissing) {
+        <div class="trade-note">
+          Нет цены для расчёта количества — дождитесь загрузки графика.
+        </div>
+      }
+
+      <div class="trade-buttons">
+        <button
+          type="button"
+          class="trade-buy"
+          [disabled]="tradingBusy || priceMissing"
+          (click)="placeTrade('buy')"
+        >Купить</button>
+        <button
+          type="button"
+          class="trade-sell"
+          [disabled]="tradingBusy || priceMissing"
+          (click)="placeTrade('sell')"
+        >Продать</button>
+      </div>
+
+      @if (tradeError) {
+        <div class="trade-error">{{ tradeError }}</div>
+      }
+      @if (tradeMessage) {
+        <div class="trade-message">{{ tradeMessage }}</div>
+      }
+    </div>
+  </div>
+
+  <div
+    class="tpanel-resize"
+    title="Потянуть, чтобы изменить высоту блока"
+    aria-label="Изменить высоту блока"
+    (pointerdown)="onResizeStart($event)"
+  >
+    <span class="tpanel-resize-grip" aria-hidden="true">⋯</span>
+  </div>
+</div>

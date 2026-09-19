@@ -40,6 +40,7 @@ const registerLogicsRoutes = require('./routes/logics');
 const registerTradesRoutes = require('./routes/trades');
 const registerBacktestRoutes = require('./routes/backtest');
 const registerOpsRoutes = require('./routes/ops');
+const registerTerminalRoutes = require('./routes/terminal');
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -70,6 +71,7 @@ registerLogicsRoutes(app, ctx);
 registerTradesRoutes(app, ctx);
 registerBacktestRoutes(app, ctx);
 registerOpsRoutes(app, ctx);
+registerTerminalRoutes(app, ctx);
 
 app.use((_req, res) => {
   res.status(404).json({

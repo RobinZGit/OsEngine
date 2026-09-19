@@ -1,0 +1,488 @@
+.tpanel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tpanel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0.5rem 0.15rem 0.4rem;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tpanel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.tpanel-prefix {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tpanel-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tpanel-kind {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0 0.35rem;
+  flex-shrink: 0;
+}
+
+.tpanel-field {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.tpanel-field select {
+  min-width: 62px;
+  padding: 0.1rem 0.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  background: #fff;
+}
+
+.tpanel-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.tpanel-ctl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.3rem;
+  min-width: 1.3rem;
+  padding: 0 0.2rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.tpanel-ctl:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.tpanel-ctl:disabled {
+  color: #d1d5db;
+  background: #f9fafb;
+  cursor: default;
+}
+
+.tpanel-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  background: #fff;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.tpanel-remove:hover {
+  background: #fef2f2;
+}
+
+/* Тело полосы: слева графики (фьючерс + контанго), справа прямоугольник под сделки. */
+.tpanel-body {
+  display: flex;
+  align-items: stretch;
+  padding: 0.15rem;
+  gap: 0.15rem;
+}
+
+.tpanel-charts {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  /* Высота управляется перетаскиванием ручки внизу панели. */
+  height: 340px;
+}
+
+.tpanel-chart {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.1rem;
+}
+
+.tpanel-ctg-caption {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.25rem;
+  flex-shrink: 0;
+}
+
+.tpanel-ctg-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #7c3aed;
+  margin-right: auto;
+}
+
+.tpanel-trade {
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+  padding: 0.5rem;
+  background: #fafbff;
+  border: 1px dashed #c7d2fe;
+  border-radius: 6px;
+}
+
+.tpanel-trade-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.trade-demo-tag {
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-transform: none;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 0 0.35rem;
+}
+
+.trade-max {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.trade-max-label {
+  font-size: 0.68rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.trade-max-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  padding: 0.15rem 0.4rem;
+}
+
+.trade-max-input-wrap:focus-within {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.trade-max-input {
+  width: 110px;
+  border: none;
+  outline: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #111827;
+  background: transparent;
+  text-align: right;
+}
+
+.trade-max-currency {
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
+.trade-max-input:disabled {
+  color: #9ca3af;
+}
+
+/* Толстый ползунок с крупным бегунком — удобно захватывать мышкой. */
+.trade-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.trade-slider:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.trade-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.trade-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+}
+
+.trade-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+}
+
+.trade-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.trade-slider::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+}
+
+.trade-slider::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #bfdbfe;
+}
+
+.trade-qty-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.trade-qty-item {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.trade-qty-label {
+  font-size: 0.68rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.trade-qty {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #111827;
+  background: #f3f4f6;
+  text-align: right;
+}
+
+/* Тумблер Маркет ⇄ Лимит. */
+.trade-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trade-switch-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.trade-switch-label.active {
+  color: #2563eb;
+}
+
+.trade-switch-track {
+  position: relative;
+  width: 56px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #e5e7eb;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.trade-switch-track.on {
+  background: #2563eb;
+}
+
+.trade-switch-track:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.trade-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: left 0.15s;
+}
+
+.trade-switch-track.on .trade-switch-thumb {
+  left: 31px;
+}
+
+.trade-note {
+  margin: 0;
+  font-size: 0.68rem;
+  color: #b45309;
+}
+
+.trade-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.trade-buy,
+.trade-sell {
+  flex: 1 1 0;
+  padding: 0.4rem 0;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.trade-buy {
+  background: #16a34a;
+}
+
+.trade-buy:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.trade-sell {
+  background: #dc2626;
+}
+
+.trade-sell:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.trade-buy:disabled,
+.trade-sell:disabled {
+  background: #d1d5db;
+  color: #f9fafb;
+  cursor: default;
+}
+
+.trade-error {
+  font-size: 0.68rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+}
+
+.trade-message {
+  font-size: 0.68rem;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+}
+
+/* Ручка растягивания панели по вертикали. */
+.tpanel-resize {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  background: #f3f4f6;
+  border-top: 1px solid #e5e7eb;
+  color: #9ca3af;
+  user-select: none;
+  touch-action: none;
+}
+
+.tpanel-resize:hover {
+  background: #e5f0ff;
+  color: #2563eb;
+}
+
+.tpanel-resize-grip {
+  font-size: 0.8rem;
+  letter-spacing: 4px;
+  line-height: 1;
+}
+
+:host ::ng-deep .tpanel-chart .chart-shell {
+  height: 100%;
+}

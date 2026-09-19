@@ -166,6 +166,17 @@
   height: calc(100vh - 96px - 2rem);
 }
 
+/* Компактный режим (терминал): собственная панель кнопок скрыта —
+   управление вынесено в шапку полосы терминала. В полном экране всегда полный тулбар. */
+.chart-shell--compact .chart-toolbar {
+  display: none;
+}
+
+.chart-shell--compact .chart-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .chart-canvas {
   display: block;
   width: 100%;

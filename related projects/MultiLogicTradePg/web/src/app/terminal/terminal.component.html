@@ -1,0 +1,247 @@
+<section class="page page-scroll">
+  <header class="page-header">
+    <h1>Терминал</h1>
+    <p class="subtitle">Ручная торговля: графики и ввод сделок</p>
+  </header>
+
+  @if (loading) {
+    <p class="status">Загрузка…</p>
+  }
+
+  @if (error) {
+    <div class="error-banner" role="alert">
+      <strong>Ошибка загрузки</strong>
+      <p>{{ error }}</p>
+    </div>
+  }
+
+  @if (!loading && !error) {
+    <div class="term-bar">
+      <label class="term-field">
+        <span>Счёт</span>
+        @if (accounts.length) {
+          <select
+            [(ngModel)]="accountId"
+            (ngModelChange)="onAccountChange()"
+          >
+            @for (a of accounts; track a.id) {
+              <option [ngValue]="a.id">{{ a.name }} ({{ a.account_code }})</option>
+            }
+          </select>
+        } @else {
+          <span class="term-empty">Счета не найдены</span>
+        }
+      </label>
+      <label class="term-field term-field-num">
+        <span>Купить по умолч.</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          [(ngModel)]="settings.buyQty"
+          (ngModelChange)="onSettingsChange()"
+        />
+      </label>
+      <label class="term-field term-field-num">
+        <span>Продать по умолч.</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          [(ngModel)]="settings.sellQty"
+          (ngModelChange)="onSettingsChange()"
+        />
+      </label>
+      <button
+        type="button"
+        class="term-add-btn"
+        [class.term-add-btn-active]="pickerOpen"
+        (click)="togglePicker()"
+      >{{ pickerOpen ? 'Скрыть выбор' : '+ Добавить бумагу' }}</button>
+    </div>
+
+    <div class="term-account-card">
+      <details class="term-account-details" open>
+        <summary class="term-account-summary">
+          <span class="term-account-caret" aria-hidden="true"></span>
+          <span class="term-account-title">Счёт</span>
+          <span class="term-account-toggle" role="button"></span>
+          <button
+            type="button"
+            class="term-account-clear"
+            [disabled]="tradesDeleting || !selectedAccount"
+            (click)="$event.stopPropagation(); clearTrades()"
+          >{{ tradesDeleting ? 'Удаление…' : 'Удалить все сделки' }}</button>
+          <span class="term-account-name">
+            {{ selectedAccount?.name || '—' }}
+            <span class="term-account-code">({{ selectedAccount?.account_code || '—' }})</span>
+          </span>
+          @if (selectedAccountIsFake) {
+            <span class="term-account-tag">демо</span>
+          }
+          <span class="term-account-cash">
+            Остаток:
+            <strong [class.neg]="(selectedAccountCash ?? 0) < 0">
+              {{ selectedAccountCash ?? 0 | number: '1.0-0' }} ₽
+            </strong>
+          </span>
+          <span class="term-account-hint">сделки терминала · {{ trades.length }}</span>
+        </summary>
+        <div class="term-trades-body">
+          @if (tradesLoading) {
+            <p class="term-trades-msg">Загрузка сделок…</p>
+          } @else if (tradesError) {
+            <p class="term-trades-err">{{ tradesError }}</p>
+          } @else if (trades.length === 0) {
+            <p class="term-trades-msg">Сделок по этому счёту ещё нет.</p>
+          } @else {
+            <div class="trades-scroll">
+              <table class="signals-table trades-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Время</th>
+                    <th>Бумага</th>
+                    <th>Операция</th>
+                    <th>Кол-во</th>
+                    <th>Цена</th>
+                    <th>Сумма</th>
+                    <th>Причина</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (tr of trades; track tr.id) {
+                    <tr
+                      class="trade-row"
+                      [class.trade-rejected]="tr.status === 'rejected'"
+                    >
+                      <td>#{{ tr.id }}</td>
+                      <td>{{ formatTradeTime(tr.executed_at) }}</td>
+                      <td>
+                        <strong>{{ tr.security_prefix || tr.security_name }}</strong>
+                      </td>
+                      <td
+                        [class.term-trade-sell]="tr.direction === 'SELL'"
+                      >{{ tradeOpLabel(tr.direction) }}</td>
+                      <td>{{ tr.quantity }}</td>
+                      <td>{{ tr.price }}</td>
+                      <td>{{ tr.amount | number: '1.0-2' }}</td>
+                      <td
+                        class="trade-reject-reason-cell"
+                        [title]="tr.note || ''"
+                      >{{ tradeNote(tr) }}</td>
+                      <td
+                        class="trade-status-cell"
+                        [title]="tr.note || tradeStatusText(tr)"
+                      >{{ tradeStatusText(tr) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </details>
+    </div>
+
+    @if (pickerOpen) {
+      <div class="term-picker">
+        <label class="term-field">
+          <span>Бумага</span>
+          <select
+            [(ngModel)]="pendingSecurityId"
+            (ngModelChange)="onSecurityPicked()"
+          >
+            <option [ngValue]="null">— выберите бумагу —</option>
+            <optgroup label="Акции">
+              @for (s of stocks; track s.id) {
+                <option [ngValue]="s.id">{{ s.prefix }} — {{ s.name }}</option>
+              }
+            </optgroup>
+            <optgroup label="Фьючерсы">
+              @for (s of futures; track s.id) {
+                <option [ngValue]="s.id">{{ s.prefix }} — {{ s.name }}</option>
+              }
+            </optgroup>
+          </select>
+        </label>
+        <span class="term-picker-hint">У фьючерса под графиком появится второй график — контанго.</span>
+
+        <div class="term-bond-block">
+          <div class="term-bond-title">Облигации из фондов</div>
+          <div class="term-bond-row">
+            <label class="term-field">
+              <span>Фонд</span>
+              <select [(ngModel)]="bondFundCode" (ngModelChange)="loadBondPlan($event)">
+                @for (f of bondFunds; track f.code) {
+                  <option [ngValue]="f.code">{{ f.name }}</option>
+                }
+              </select>
+            </label>
+            @if (bondLoading) {
+              <span class="term-bond-msg">Загрузка состава…</span>
+            } @else if (bondError) {
+              <span class="term-bond-error">{{ bondError }}</span>
+            } @else {
+              <label class="term-field">
+                <span>Выпуск (откроет график цен)</span>
+                <select
+                  [(ngModel)]="pendingBondSec"
+                  (ngModelChange)="onBondPicked()"
+                  [disabled]="registeringBond != null"
+                >
+                  <option [ngValue]="null">— выберите выпуск —</option>
+                  <optgroup label="Корпоративные">
+                    @for (h of bondHoldings; track h.sec) {
+                      @if (h.kind === 'corp') {
+                        <option [ngValue]="h.sec">
+                          {{ h.sec }} — {{ h.weight }}%
+                        </option>
+                      }
+                    }
+                  </optgroup>
+                  <optgroup label="ОФЗ">
+                    @for (h of bondHoldings; track h.sec) {
+                      @if (h.kind === 'ofz') {
+                        <option [ngValue]="h.sec">
+                          {{ h.sec }} — {{ h.weight }}%
+                        </option>
+                      }
+                    }
+                  </optgroup>
+                </select>
+              </label>
+            }
+          </div>
+          @if (registeringBond) {
+            <span class="term-bond-msg">Регистрация {{ registeringBond }} и загрузка цен…</span>
+          }
+        </div>
+      </div>
+    }
+
+    @if (panels.length === 0) {
+      <p class="term-empty-state">Полос с графиками нет. Нажмите «Добавить бумагу».</p>
+    }
+
+    <div class="term-panels">
+      @for (panel of panels; track panel.uid) {
+        <app-terminal-panel
+          [security]="panel.security"
+          [contango]="panel.contango"
+          [underlying]="panel.underlying"
+          [timeframes]="timeframes"
+          [initialTimeframeId]="panel.timeframe_id"
+          [initialHeight]="panel.chart_height"
+          [accountId]="accountId"
+          [accountIsFake]="selectedAccountIsFake"
+          [tradeMaxSum]="tradeMaxSum"
+          (remove)="removePanel(panel.uid)"
+          (stateChange)="onPanelStateChange($event, panel.uid)"
+          (tradeExecuted)="onTradeExecuted()"
+        />
+      }
+    </div>
+  }
+</section>

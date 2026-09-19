@@ -4473,6 +4473,68 @@ COMMENT ON COLUMN app_tech_log.logic_id IS 'Торговая логика (trade
 COMMENT ON COLUMN app_tech_log.phase IS 'start | end | event';
 
 -- ============================================
+-- Таблица: terminal_state (состояние закладки «Терминал»)
+-- Выбранные бумаги (полосы) и прочие настройки UI в одном JSONB.
+-- ============================================
+CREATE TABLE IF NOT EXISTS terminal_state (
+    id BIGSERIAL PRIMARY KEY,
+    account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    payload JSONB NOT NULL DEFAULT '{"panels": [], "settings": {}}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE terminal_state ADD COLUMN IF NOT EXISTS account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE;
+ALTER TABLE terminal_state ADD COLUMN IF NOT EXISTS payload JSONB NOT NULL DEFAULT '{"panels": [], "settings": {}}'::jsonb;
+ALTER TABLE terminal_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terminal_state_account ON terminal_state(account_id);
+
+COMMENT ON TABLE terminal_state IS
+'Состояние закладки «Терминал»: выбранные бумаги (полосы) и прочие настройки для счёта';
+COMMENT ON COLUMN terminal_state.account_id IS 'Счёт, для которого хранится состояние (0/пусто — для всех)';
+COMMENT ON COLUMN terminal_state.payload IS 'JSON: { "panels": [{ "security_id", "timeframe_id", "chart_height" }], "settings": { ... } }';
+COMMENT ON COLUMN terminal_state.updated_at IS 'Время последнего сохранения';
+
+-- Остаток (демо-кэш) фейкового счёта в терминале; у реального — не используется
+-- (там источник — живой баланс брокера).
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS terminal_cash NUMERIC(20,6) NOT NULL DEFAULT 0;
+
+-- Сделки, размещённые из закладки «Терминал» (фейк — демо; реальные — ордера T-Bank).
+-- По структуре повторяют logic_trades (для отображения блоком «Сделки»).
+CREATE TABLE IF NOT EXISTS terminal_trades (
+    id              BIGSERIAL PRIMARY KEY,
+    account_id      INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    security_id     INTEGER NOT NULL REFERENCES securities(id) ON DELETE RESTRICT,
+    direction       VARCHAR(4) NOT NULL CHECK (direction IN ('BUY','SELL')),
+    execution       VARCHAR(10) NOT NULL DEFAULT 'market' CHECK (execution IN ('market','limit')),
+    quantity        NUMERIC(20,6) NOT NULL CHECK (quantity > 0),
+    price           NUMERIC(18,6) NOT NULL CHECK (price > 0),
+    amount          NUMERIC(20,6) NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'filled'
+        CHECK (status IN ('pending','submitted','filled','rejected','cancelled')),
+    broker_order_id VARCHAR(100),
+    note            TEXT,
+    executed_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_terminal_trades_account_executed
+    ON terminal_trades (account_id, executed_at DESC);
+
+COMMENT ON TABLE terminal_trades IS
+'Сделки терминала: account_id, бумага, направление, количество, цена, сумма, статус';
+COMMENT ON COLUMN terminal_trades.broker_order_id IS 'ID заявки T-Bank для реального счёта';
+COMMENT ON COLUMN terminal_trades.note IS 'Сообщение/причина отклонения';
+
+-- Глобальный выбор счёта закладки «Терминал» (сохраняется при перезапуске).
+CREATE TABLE IF NOT EXISTS terminal_ui_state (
+    id                  SMALLINT PRIMARY KEY CHECK (id = 1),
+    selected_account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE terminal_ui_state IS
+'Глобальное состояние UI терминала: запомненный выбранный счёт';
+
+-- ============================================
 -- Дополнительные индексы
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_security_types_name ON security_types(name);

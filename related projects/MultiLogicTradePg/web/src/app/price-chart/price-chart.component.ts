@@ -64,6 +64,17 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
   @Input() showRecalcButton = true;
   /** Для app_tech_log (sec:N). */
   @Input() securityId: number | null = null;
+  /**
+   * Компактный режим (терминал): узкая панель кнопок (только «полный экран»),
+   * маленькие поля и подписи, без легенды/футера. Полноэкранный режим всегда полный.
+   */
+  @Input() compact = false;
+
+  /**
+   * Терминал: после первой загрузки и после полной перезагрузки графика
+   * показывать последнюю свечу (двигаться к концу истории), а не от самого начала.
+   */
+  @Input() followLast = false;
 
   /** Режим отображения цены: свечи или линия по Close (#835). */
   viewMode: 'candles' | 'line' = 'candles';
@@ -111,16 +122,19 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
 
   /** Масштаб подписей осей, легенды и даты в полноэкранном режиме */
   private get labelScale(): number {
-    return this.fullscreen ? 1.55 : 1;
+    return this.fullscreen ? 1.55 : this.compact ? 0.85 : 1;
   }
 
   private chartPadding(): { top: number; right: number; bottom: number; left: number } {
+    if (this.compact && !this.fullscreen) {
+      return { top: 4, right: 6, bottom: 16, left: 60 };
+    }
     const s = this.labelScale;
     return {
       top: Math.round(28 * s),
       right: 10,
       bottom: Math.round(22 * s),
-      left: Math.round(52 * s),
+      left: Math.round(60 * s),
     };
   }
 
@@ -166,7 +180,10 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     }
     if (changes['candles']) {
       const added = this.candles.length - this.prevCandlesLen;
-      if (added > 0 && this.prevCandlesLen > 0 && this.viewStart > 0) {
+      if (this.followLast && (this.prevCandlesLen === 0 || added < 0)) {
+        // Первая загрузка / полная перезагрузка: показать последнюю свечу.
+        this.viewStart = Math.max(0, this.candles.length - this.viewCount());
+      } else if (added > 0 && this.prevCandlesLen > 0 && this.viewStart > 0) {
         this.viewStart += added;
       }
       this.prevCandlesLen = this.candles.length;
@@ -607,8 +624,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     ctx.moveTo(left, y);
     ctx.lineTo(right, y);
     ctx.stroke();
-    ctx.fillStyle = '#9ca3af';
-    ctx.font = `${axisSize}px system-ui, sans-serif`;
+    ctx.fillStyle = '#4b5563';
+    ctx.font = `800 ${axisSize}px system-ui, sans-serif`;
     ctx.fillText(label, 4, y + Math.round(axisSize * 0.35));
   }
 
@@ -740,8 +757,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       ctx.moveTo(pad.left, y);
       ctx.lineTo(cssW - pad.right, y);
       ctx.stroke();
-      ctx.fillStyle = '#9ca3af';
-      ctx.font = `${axisSize}px system-ui, sans-serif`;
+      ctx.fillStyle = '#374151';
+      ctx.font = `800 ${this.px(11)}px system-ui, sans-serif`;
       ctx.fillText(p.toFixed(2), 4, y + Math.round(axisSize * 0.35));
     }
 
@@ -880,21 +897,21 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     this.drawLegend(ctx, cssW, pad);
 
     const last = visible[visible.length - 1];
-    ctx.fillStyle = '#6b7280';
-    const footerSize = this.px(10);
-    ctx.font = `${footerSize}px system-ui, sans-serif`;
-    const dtLabel = new Date(last.dt).toLocaleString('ru-RU', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
-    let footer = dtLabel;
-    if (last.contract_prefix) {
-      footer += ` · ${last.contract_prefix}`;
-      if (last.group_prefix && last.group_prefix !== last.contract_prefix) {
-        footer += ` (гр. ${last.group_prefix})`;
+      ctx.fillStyle = '#111827';
+      const footerSize = this.px(11);
+      ctx.font = `800 ${footerSize}px system-ui, sans-serif`;
+      const dtLabel = new Date(last.dt).toLocaleString('ru-RU', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      });
+      let footer = dtLabel;
+      if (last.contract_prefix) {
+        footer += ` · ${last.contract_prefix}`;
+        if (last.group_prefix && last.group_prefix !== last.contract_prefix) {
+          footer += ` (гр. ${last.group_prefix})`;
+        }
       }
-    }
-    ctx.fillText(footer, pad.left, cssH - Math.round(pad.bottom * 0.25));
+      ctx.fillText(footer, pad.left, cssH - Math.round(pad.bottom * 0.25));
 
     if (this.loading && this.candles.length === 0) {
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -1179,8 +1196,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     ctx.fillStyle = '#7c3aed';
     ctx.font = `600 ${this.px(10)}px system-ui, sans-serif`;
     ctx.fillText('PnL', 4, top + this.px(12));
-    ctx.font = `${axisSize}px system-ui, sans-serif`;
-    ctx.fillStyle = '#6d28d9';
+    ctx.font = `800 ${this.px(10)}px system-ui, sans-serif`;
+    ctx.fillStyle = '#5b21b6';
     ctx.fillText(this.formatPnlAxis(maxE), 4, top + this.px(22));
     ctx.fillText(this.formatPnlAxis(minE), 4, bottom - 2);
     const lastV = samples[samples.length - 1].v;
@@ -1368,6 +1385,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     cssW: number,
     pad: { left: number }
   ): void {
+    if (this.compact && !this.fullscreen) return;
     const drawn = this.indicatorSeries.filter((s) => !s.is_threshold);
     let x = pad.left;
     const y = this.px(18);

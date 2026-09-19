@@ -1023,6 +1023,7 @@ async function enrichAccountBalance(row) {
     balance_currency: null,
     balance_display: '—',
     balance_error: null,
+    terminal_cash: row.terminal_cash != null ? Number(row.terminal_cash) : null,
   };
   if (row.account_type === 'fake') {
     base.balance_display = 'демо';

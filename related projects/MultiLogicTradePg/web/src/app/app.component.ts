@@ -132,6 +132,9 @@ import { assetUrl } from './shared/asset-url';
       <a routerLink="/references" routerLinkActive="active">
         Справочники
       </a>
+      <a routerLink="/terminal" routerLinkActive="active">
+        Терминал
+      </a>
     </nav>
     <main>
       <router-outlet />

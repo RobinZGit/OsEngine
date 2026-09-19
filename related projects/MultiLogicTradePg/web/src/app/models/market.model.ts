@@ -15,6 +15,8 @@ export interface SecurityRow {
   instrument_market: string;
   exchange_id: number;
   exchange_name: string;
+  /** Базовый актив (для фьючерсов) — из контанго считается разность цен. */
+  underlying_security_id?: number | null;
 }
 
 export interface SecurityPayload {

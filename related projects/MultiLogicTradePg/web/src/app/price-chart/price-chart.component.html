@@ -2,11 +2,12 @@
   <div class="chart-backdrop" (click)="closeFullscreen()" role="presentation"></div>
 }
 
-<div class="chart-shell" [class.chart-shell--fullscreen]="fullscreen">
+<div class="chart-shell" [class.chart-shell--fullscreen]="fullscreen" [class.chart-shell--compact]="compact && !fullscreen">
   <div class="chart-toolbar" role="toolbar" aria-label="Управление графиком">
     @if (fullscreen && title) {
       <span class="chart-title">{{ title }}</span>
     }
+    @if (!compact || fullscreen) {
       <span
         class="chart-mode-toggle"
         role="group"
@@ -121,6 +122,7 @@
         >✕</button>
       }
     </div>
+    }
   </div>
 
   <div
@@ -141,8 +143,10 @@
       (pointerleave)="onPointerLeave($event)"
       (wheel)="onWheel($event)"
     ></canvas>
-    <p class="chart-hint" [class.chart-hint--fullscreen]="fullscreen">
-      Колёсико / pinch — масштаб · перетаскивание — история
-    </p>
+    @if (!compact) {
+      <p class="chart-hint" [class.chart-hint--fullscreen]="fullscreen">
+        Колёсико / pinch — масштаб · перетаскивание — история
+      </p>
+    }
   </div>
 </div>

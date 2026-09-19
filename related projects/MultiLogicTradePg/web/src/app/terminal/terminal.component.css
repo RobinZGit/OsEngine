@@ -1,0 +1,418 @@
+.page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0.9rem 1.5rem;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.page-header {
+  margin-bottom: 0.6rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.subtitle {
+  margin: 0.15rem 0 0;
+  color: #555;
+  font-size: 0.78rem;
+}
+
+.status {
+  color: #555;
+}
+
+.error-banner {
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #dc2626;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+}
+
+.error-banner strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.error-banner p {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+/* Общий бар: выбор счёта + «Добавить бумагу»/«Скрыть выбор» в одну строку. */
+.term-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.term-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.term-field select {
+  min-width: 240px;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+.term-field-num input {
+  width: 90px;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+.term-empty {
+  color: #9ca3af;
+  font-size: 0.85rem;
+}
+
+.term-add-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.term-add-btn:hover {
+  background: #dbeafe;
+}
+
+.term-add-btn-active {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
+.term-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: #eff6ff;
+  border: 1px dashed #93c5fd;
+  border-radius: 8px;
+}
+
+.term-picker .term-field select {
+  min-width: 240px;
+}
+
+.term-picker-hint {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+/* Блок выбора облигаций из фондов. */
+.term-bond-block {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #bfdbfe;
+}
+
+.term-bond-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+
+.term-bond-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.term-bond-row .term-field select {
+  min-width: 220px;
+}
+
+.term-bond-msg {
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.term-bond-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  max-width: 560px;
+}
+
+.term-empty-state {
+  color: #6b7280;
+  font-size: 0.82rem;
+  margin: 0.5rem 0;
+}
+
+.term-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Карточка «Счёт + история сделок терминала». */
+.term-account-card {
+  margin-bottom: 0.55rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.term-account-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.85rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.82rem;
+  user-select: none;
+}
+
+.term-account-summary::-webkit-details-marker {
+  display: none;
+}
+
+.term-account-caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid #1e3a5f;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.term-account-details[open] .term-account-caret {
+  transform: rotate(90deg);
+}
+
+.term-account-toggle {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1e3a5f;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.term-account-toggle::after {
+  content: 'Показать сделки';
+}
+
+.term-account-details[open] .term-account-toggle::after {
+  content: 'Скрыть сделки';
+}
+
+.term-account-clear {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  font-family: inherit;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.term-account-clear:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.term-account-clear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.term-account-title {
+  font-weight: 700;
+  color: #1e3a5f;
+}
+
+.term-account-name {
+  color: #222;
+  font-weight: 500;
+}
+
+.term-account-code {
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 0.76rem;
+}
+
+.term-account-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6d28d9;
+  background: #ede9fe;
+  border: 1px solid #c4b5fd;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.term-account-cash {
+  margin-left: auto;
+  color: #374151;
+}
+
+.term-account-cash strong.neg {
+  color: #b91c1c;
+}
+
+.term-account-hint {
+  color: #9ca3af;
+  font-size: 0.72rem;
+}
+
+.term-trades-body {
+  border-top: 1px solid #eef2f6;
+  padding: 0.4rem 0.5rem;
+}
+
+.term-trades-msg {
+  color: #6b7280;
+  font-size: 0.8rem;
+  margin: 0.35rem 0;
+}
+
+.term-trades-err {
+  color: #b91c1c;
+  font-size: 0.8rem;
+  margin: 0.35rem 0;
+}
+
+.term-trades-scroll {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.term-trades-scroll .trades-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.term-trades-scroll .trades-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.term-trades-scroll .trades-table th,
+.term-trades-scroll .trades-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  white-space: nowrap;
+}
+
+.term-trades-scroll .trades-table th {
+  font-weight: 600;
+  color: #475569;
+  font-size: 0.78rem;
+}
+
+.term-trades-scroll .trades-table tbody tr {
+  border-top: 1px solid #f1f5f9;
+}
+
+.term-trades-scroll .trades-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.trade-row {
+  cursor: default;
+}
+
+.trade-rejected {
+  background: #fef2f2;
+}
+
+.term-trade-sell {
+  color: #b91c1c;
+}
+
+.trade-reject-reason-cell {
+  max-width: 22rem;
+  min-width: 10rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+  vertical-align: top;
+  font-size: 0.78rem;
+  color: #991b1b;
+  font-weight: 600;
+}
+
+.trade-status-cell {
+  max-width: 16rem;
+  min-width: 7rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+  vertical-align: top;
+  font-size: 0.78rem;
+  color: #15803d;
+}
+
+.trade-rejected .trade-status-cell {
+  color: #991b1b;
+  font-weight: 600;
+}
