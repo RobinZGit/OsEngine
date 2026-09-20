@@ -487,16 +487,29 @@
   height: 100%;
 }
 
-/* Индикаторы на графике терминала. */
-.tp-ind-row {
+/* Индикаторы на графике терминала: видимый блок под графиком с кнопкой
+   «+ Добавить индикатор»; добавленные индикаторы — чипы внутри блока. */
+.tp-ind-block {
+  margin-top: 2px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fbfdff;
+  padding: 0.35rem 0.5rem 0.4rem;
+  font-size: 0.7rem;
+}
+
+.tp-ind-block-head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 0.4rem;
-  padding: 0.3rem 0.5rem;
-  background: #f8fafc;
-  border-top: 1px solid #e5e7eb;
-  font-size: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.tp-ind-title {
+  font-weight: 700;
+  color: #374151;
+  flex-shrink: 0;
+  font-size: 0.72rem;
 }
 
 .tp-ind-chips {
@@ -504,8 +517,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.3rem;
-  min-width: 0;
-  flex: 1 1 auto;
+  margin-top: 0.35rem;
+  min-height: 1.25rem;
 }
 
 .tp-ind-chip {
@@ -548,28 +561,30 @@
   padding: 0.1rem 0.35rem;
 }
 
-.tp-ind-add {
+.tp-add-ind {
+  margin-left: auto;
   flex-shrink: 0;
-  background: #f8fafc;
-  color: #2563eb;
-  border: 1px dashed #93c5fd;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  line-height: 1;
-  padding: 0.12rem 0.32rem;
-  cursor: pointer;
-}
-
-.tp-ind-add:hover:not(:disabled) {
   background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  padding: 0.22rem 0.55rem;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.tp-ind-add.on {
+.tp-add-ind:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.tp-add-ind.on {
   background: #dbeafe;
   border-style: solid;
+  box-shadow: 0 0 0 1px #2563eb inset;
 }
 
-.tp-ind-add:disabled {
+.tp-add-ind:disabled {
   opacity: 0.5;
   cursor: default;
 }

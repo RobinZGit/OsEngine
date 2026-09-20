@@ -144,11 +144,13 @@ describe('TerminalPanelComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('по умолчанию индикаторов на панели нет — только кнопка «+»', () => {
+  it('по умолчанию индикаторов на панели нет — только блок с кнопкой «+ Добавить индикатор»', () => {
     expect(component.indicatorRows.length).toBe(0);
+    const block = fixture.debugElement.query(By.css('.tp-ind-block'));
+    expect(block).not.toBeNull();
     const chips = fixture.debugElement.queryAll(By.css('.tp-ind-chip'));
     expect(chips.length).toBe(0);
-    const addBtn = fixture.debugElement.query(By.css('.tp-ind-add'));
+    const addBtn = fixture.debugElement.query(By.css('.tp-add-ind'));
     expect(addBtn).not.toBeNull();
   });
 
