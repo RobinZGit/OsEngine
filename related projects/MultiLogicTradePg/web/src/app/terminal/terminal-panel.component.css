@@ -499,12 +499,6 @@
   font-size: 0.7rem;
 }
 
-.tp-ind-title {
-  font-weight: 600;
-  color: #374151;
-  flex-shrink: 0;
-}
-
 .tp-ind-chips {
   display: flex;
   align-items: center;
@@ -546,10 +540,6 @@
   color: #1e40af;
 }
 
-.tp-ind-empty {
-  color: #9ca3af;
-}
-
 .tp-ind-error {
   color: #b91c1c;
   background: #fef2f2;
@@ -558,22 +548,28 @@
   padding: 0.1rem 0.35rem;
 }
 
-.tp-add-ind {
+.tp-ind-add {
   flex-shrink: 0;
-  background: #eff6ff;
+  background: #f8fafc;
   color: #2563eb;
-  border: 1px solid #bfdbfe;
+  border: 1px dashed #93c5fd;
   border-radius: 4px;
-  font-size: 0.7rem;
-  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.12rem 0.32rem;
   cursor: pointer;
 }
 
-.tp-add-ind:hover:not(:disabled) {
-  background: #dbeafe;
+.tp-ind-add:hover:not(:disabled) {
+  background: #eff6ff;
 }
 
-.tp-add-ind:disabled {
+.tp-ind-add.on {
+  background: #dbeafe;
+  border-style: solid;
+}
+
+.tp-ind-add:disabled {
   opacity: 0.5;
   cursor: default;
 }

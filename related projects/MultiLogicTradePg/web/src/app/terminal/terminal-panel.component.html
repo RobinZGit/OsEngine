@@ -117,7 +117,6 @@
     </div>
 
     <div class="tp-ind-row">
-      <span class="tp-ind-title">Индикаторы</span>
       @if (indicatorBusyMessage) {
         <span
           class="spinner"
@@ -148,16 +147,16 @@
             >✕</button>
           </span>
         }
-        @if (indicatorRows.length === 0 && !indicatorBusyMessage) {
-          <span class="tp-ind-empty">нет индикаторов</span>
-        }
+        <button
+          type="button"
+          class="tp-ind-add"
+          [class.on]="indicatorPickerOpen"
+          [disabled]="indicatorAdding"
+          [title]="indicatorPickerOpen ? 'Скрыть выбор индикаторов' : 'Добавить индикатор'"
+          [attr.aria-label]="indicatorPickerOpen ? 'Скрыть выбор индикаторов' : 'Добавить индикатор'"
+          (click)="openIndicatorPicker()"
+        >+</button>
       </span>
-      <button
-        type="button"
-        class="tp-add-ind"
-        [disabled]="indicatorAdding"
-        (click)="openIndicatorPicker()"
-      >{{ indicatorPickerOpen ? 'Скрыть' : '+ Индикатор' }}</button>
     </div>
 
     @if (indicatorPickerOpen) {
