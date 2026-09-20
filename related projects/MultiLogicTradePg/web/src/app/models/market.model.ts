@@ -119,6 +119,21 @@ export interface SecurityIndicatorSeriesRow {
   is_active: boolean;
 }
 
+/** Частичная правка параметров серий индикатора (PUT security-indicator-series/:id). */
+export type IndicatorSeriesParamPatch = Partial<
+  Pick<
+    SecurityIndicatorSeriesRow,
+    | 'param_period'
+    | 'param_fast_period'
+    | 'param_slow_period'
+    | 'param_signal_period'
+    | 'param_std_dev'
+    | 'param_k_period'
+    | 'param_d_period'
+    | 'param_smooth'
+  >
+>;
+
 export interface IndicatorValueRow {
   indicator_id: number;
   indicator_code: string;

@@ -268,6 +268,7 @@
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"
           [tradeMaxSum]="tradeMaxSum"
+          [trades]="trades"
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"

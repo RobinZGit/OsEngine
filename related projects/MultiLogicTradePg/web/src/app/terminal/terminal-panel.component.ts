@@ -16,14 +16,24 @@ import { FormsModule } from '@angular/forms';
 import { finalize, forkJoin, Observable, Subscription } from 'rxjs';
 import { PriceChartComponent } from '../price-chart/price-chart.component';
 import { SecuritiesService } from '../services/securities.service';
-import { TerminalStateService } from '../services/terminal-state.service';
+import { ReferencesService } from '../services/references.service';
 import {
+  TerminalStateService,
+  TerminalTradeRow,
+} from '../services/terminal-state.service';
+import {
+  ChartIndicatorSeries,
+  ChartTradeMarker,
+  IndicatorSeriesParamPatch,
+  IndicatorValueRow,
   PriceCandle,
   PriceRefreshResult,
   SecurityChartState,
+  SecurityIndicatorSeriesRow,
   SecurityRow,
   TimeframeRow,
 } from '../models/market.model';
+import { IndicatorRow } from '../models/lookup.model';
 
 const EMPTY_STATE: SecurityChartState = {
   candles: [],
@@ -60,6 +70,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Input() accountIsFake = false;
   /** Максимальная сумма сделки (баланс счёта, для фейка/нуля — 10 000). */
   @Input() tradeMaxSum = FAKE_DEFAULT_MAX_SUM;
+  /** История сделок счёта — для маркеров входов на графике. */
+  @Input() trades: TerminalTradeRow[] = [];
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -95,6 +107,57 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   tradeMessage: string | null = null;
   tradeError: string | null = null;
 
+  /** Серии индикаторов, назначенные на бумагу (строки security_indicator_series). */
+  indicatorRows: SecurityIndicatorSeriesRow[] = [];
+  /** Готовые серии для отрисовки на графике цены. */
+  indicatorChartSeries: ChartIndicatorSeries[] = [];
+  /** Каталог индикаторов (справочник, загружается по открытии пикера). */
+  indicatorCatalog: IndicatorRow[] = [];
+  pendingIndicatorId: number | null = null;
+  indicatorPickerOpen = false;
+  indicatorAdding = false;
+  indicatorBusyMessage: string | null = null;
+  indicatorError: string | null = null;
+  private indicatorCatalogLoading = false;
+  private indicatorSyncing = false;
+  private indicatorSyncGen = 0;
+  private indicatorPollTimer?: ReturnType<typeof setTimeout>;
+
+  /** Редактирование параметров выбранного индикатора (модальное окно). */
+  indicatorEditRowId: number | null = null;
+  indicatorEditParams: Record<string, string> = {};
+  indicatorEditSaving = false;
+  indicatorSaveError: string | null = null;
+  readonly indicatorParamFields: { key: string; label: string; step: string }[] = [
+    { key: 'param_period', label: 'Период', step: '1' },
+    { key: 'param_fast_period', label: 'Быстрый период', step: '1' },
+    { key: 'param_slow_period', label: 'Медленный период', step: '1' },
+    { key: 'param_signal_period', label: 'Сигнальный период', step: '1' },
+    { key: 'param_std_dev', label: 'Ст. отклонение', step: '0.1' },
+    { key: 'param_k_period', label: 'K-период', step: '1' },
+    { key: 'param_d_period', label: 'D-период', step: '1' },
+    { key: 'param_smooth', label: 'Сглаживание', step: '1' },
+  ];
+
+  private readonly indicatorSeriesColors = [
+    '#2563eb',
+    '#9333ea',
+    '#ea580c',
+    '#0891b2',
+    '#ca8a04',
+    '#db2777',
+    '#059669',
+    '#4f46e5',
+  ];
+  /** Индикаторы с серией VALUE на шкале цены (SMA, EMA, WMA, PACC, SMAT3). */
+  private readonly priceScaleOverlayCodes = new Set([
+    'SMA',
+    'EMA',
+    'WMA',
+    'PACC',
+    'SMAT3',
+  ]);
+
   private pollTimer?: ReturnType<typeof setInterval>;
   /** Идёт живая догрузка свечей — не запускаем следующую, пока не закончилась. */
   private liveBusy = false;
@@ -105,7 +168,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
 
   constructor(
     private readonly securities: SecuritiesService,
-    private readonly stateSvc: TerminalStateService
+    private readonly stateSvc: TerminalStateService,
+    private readonly refs: ReferencesService
   ) {}
 
   ngOnInit(): void {
@@ -123,6 +187,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       Math.min(this.chartHeightMax, this.initialHeight)
     );
     this.loadChart();
+    this.loadIndicatorSeries();
     this.startPolling();
     this.emitStateChange();
   }
@@ -130,6 +195,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   ngOnDestroy(): void {
     this.destroyed = true;
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.indicatorPollTimer) clearTimeout(this.indicatorPollTimer);
     for (const s of this.subs) s.unsubscribe();
   }
 
@@ -198,6 +264,52 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return this.underlying != null;
   }
 
+  /** Маркеры входов на графике: покупка — зелёный треугольник (long),
+      продажа — красный (short), с вертикальной полосой (см. drawTradeMarkers). */
+  get tradeMarkers(): ChartTradeMarker[] {
+    return this.trades
+      .filter(
+        (t) =>
+          t.security_id === this.security.id &&
+          t.status === 'filled' &&
+          Number.isFinite(Number(t.price)) &&
+          Number(t.price) > 0
+      )
+      .map((t) => ({
+        dt: t.executed_at,
+        price: Number(t.price),
+        kind: 'open' as const,
+        side: t.direction === 'SELL' ? ('short' as const) : ('long' as const),
+      }));
+  }
+
+  get indicatorEditRow(): SecurityIndicatorSeriesRow | null {
+    return this.indicatorRows.find((r) => r.id === this.indicatorEditRowId) ?? null;
+  }
+
+  /** Индикатор уже назначен на бумагу (для блокировки в пикере). */
+  isIndicatorAssigned(indicatorId: number): boolean {
+    return this.indicatorRows.some((r) => r.indicator_id === indicatorId);
+  }
+
+  /** Чипы по индикаторам: одна строка = индикатор (у него может быть несколько линий). */
+  indicatorChips(): { indicator_id: number; label: string; row: SecurityIndicatorSeriesRow }[] {
+    const byInd = new Map<number, SecurityIndicatorSeriesRow[]>();
+    for (const r of this.indicatorRows) {
+      const list = byInd.get(r.indicator_id) ?? [];
+      list.push(r);
+      byInd.set(r.indicator_id, list);
+    }
+    return [...byInd.entries()].map(([indicator_id, rows]) => ({
+      indicator_id,
+      label:
+        rows.length > 1
+          ? `${rows[0].indicator_code} ×${rows.length}`
+          : rows[0].indicator_code,
+      row: rows[0],
+    }));
+  }
+
   isFutures(): boolean {
     return this.security.instrument_market === 'futures';
   }
@@ -244,6 +356,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
         };
         this.computeContango();
         this.maybeDataReady(mainRows);
+        this.refreshIndicatorsForChart();
       },
       error: () => {
         if (this.destroyed) return;
@@ -331,6 +444,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
         this.chartState = s;
       },
       () => {
+        this.refreshIndicatorValues();
         if (this.hasContango) {
           this.appendLatest(
             this.underlying!.id,
@@ -461,12 +575,424 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
             };
             this.computeContango();
           }
+          this.refreshIndicatorValues();
         },
         error: () => {
           this.chartState = { ...this.chartState, loadingOlder: false };
         },
       })
     );
+  }
+
+  /* Индикаторы на графике: назначенные серии бумаги, расчёт по текущему
+     таймфрейму (sync в фоне + опрос значений) и отрисовка на графике цены. */
+
+  /** Назначенные на бумагу серии индикаторов. */
+  private loadIndicatorSeries(): void {
+    if (!this.security) return;
+    this.subs.push(
+      this.securities.getSecurityIndicatorSeries(this.security.id).subscribe({
+        next: (rows) => {
+          this.indicatorRows = rows;
+          if (rows.length) this.refreshIndicatorValues();
+        },
+        error: (err) => {
+          this.indicatorError =
+            err?.error?.error || err?.message || 'Не удалось загрузить индикаторы';
+        },
+      })
+    );
+  }
+
+  /** Свечи поменялись/таймфрейм сменился — пересчитываем значения индикаторов. */
+  private refreshIndicatorsForChart(): void {
+    if (!this.security || !this.timeframeId) return;
+    if (this.indicatorRows.length === 0 || this.chartState.candles.length === 0) {
+      return;
+    }
+    this.syncIndicators(null);
+  }
+
+  /** Перекаталог индикаторов по открытии пикера. */
+  openIndicatorPicker(): void {
+    this.indicatorPickerOpen = !this.indicatorPickerOpen;
+    this.indicatorError = null;
+    if (this.indicatorPickerOpen && this.indicatorCatalog.length === 0) {
+      this.loadIndicatorCatalog();
+    }
+  }
+
+  private loadIndicatorCatalog(): void {
+    if (this.indicatorCatalogLoading) return;
+    this.indicatorCatalogLoading = true;
+    this.subs.push(
+      this.refs.getIndicators(true).subscribe({
+        next: (list) => {
+          this.indicatorCatalog = list;
+          this.indicatorCatalogLoading = false;
+        },
+        error: () => {
+          this.indicatorCatalogLoading = false;
+          this.indicatorError = 'Не удалось загрузить справочник индикаторов';
+        },
+      })
+    );
+  }
+
+  /** Добавить индикатор из пикера: временные строки сразу, серии — по ответу. */
+  onAddIndicator(indicatorId: number | null): void {
+    if (indicatorId == null || this.indicatorAdding) return;
+    const ind = this.indicatorCatalog.find((i) => i.id === indicatorId);
+    if (!ind) return;
+    if (this.indicatorRows.some((r) => r.indicator_id === indicatorId)) {
+      this.indicatorError = `«${ind.code}» уже добавлен на график`;
+      return;
+    }
+    this.indicatorAdding = true;
+    this.indicatorPickerOpen = false;
+    this.pendingIndicatorId = null;
+    this.indicatorError = null;
+    const pending = this.buildPendingIndicatorRows(ind);
+    this.indicatorRows = [...this.indicatorRows, ...pending];
+    this.subs.push(
+      this.securities
+        .assignIndicatorSeries(this.security.id, indicatorId, this.timeframeId ?? undefined)
+        .subscribe({
+          next: (created) => {
+            this.indicatorAdding = false;
+            const pendingIds = new Set(pending.map((p) => p.id));
+            const merged = this.indicatorRows.filter((r) => !pendingIds.has(r.id));
+            for (const s of created) {
+              if (!merged.some((x) => x.id === s.id)) merged.push(s);
+            }
+            merged.sort((a, b) => a.display_order - b.display_order || a.id - b.id);
+            this.indicatorRows = merged;
+            this.syncIndicators(indicatorId);
+          },
+          error: (err) => {
+            this.indicatorAdding = false;
+            const pendingIds = new Set(pending.map((p) => p.id));
+            this.indicatorRows = this.indicatorRows.filter(
+              (r) => !pendingIds.has(r.id)
+            );
+            this.indicatorError =
+              err?.error?.error || err?.message || 'Не удалось добавить индикатор';
+          },
+        })
+    );
+  }
+
+  /** Временные строки (отрицательный id) — сразу в UI до ответа POST. */
+  private buildPendingIndicatorRows(ind: IndicatorRow): SecurityIndicatorSeriesRow[] {
+    const types = (ind.value_types ?? []).filter((t) => !t.is_threshold);
+    const series =
+      types.length > 0
+        ? types
+        : [{ code: 'VALUE', display_order: 1 }];
+    return series.map((vt, idx) => ({
+      id: -(ind.id * 100 + idx + 1),
+      security_id: this.security.id,
+      indicator_id: ind.id,
+      series_code: vt.code,
+      invoke_formula: ind.formula?.trim() || ind.script?.trim() || '',
+      indicator_code: ind.code,
+      indicator_name: ind.name,
+      point_count: 100,
+      display_order: vt.display_order ?? idx + 1,
+      is_active: true,
+    }));
+  }
+
+  /** Удалить индикатор с бумаги. */
+  removeIndicator(rowId: number): void {
+    this.subs.push(
+      this.securities.removeIndicatorSeries(rowId).subscribe({
+        next: () => {
+          this.indicatorRows = this.indicatorRows.filter((r) => r.id !== rowId);
+          if (this.indicatorEditRowId === rowId) this.indicatorEditRowId = null;
+          if (this.indicatorRows.length === 0) {
+            this.indicatorChartSeries = [];
+            return;
+          }
+          this.refreshIndicatorValues();
+        },
+        error: (err) => {
+          this.indicatorError =
+            err?.error?.error || err?.message || 'Не удалось удалить индикатор';
+        },
+      })
+    );
+  }
+
+  /** Открыть модалку параметров индикатора (предзаполнены текущие значения). */
+  openEditParams(row: SecurityIndicatorSeriesRow): void {
+    this.indicatorEditRowId = row.id;
+    this.indicatorEditSaving = false;
+    this.indicatorSaveError = null;
+    this.indicatorEditParams = {};
+    const values = row as unknown as Record<string, unknown>;
+    for (const f of this.indicatorParamFields) {
+      const v = values[f.key];
+      this.indicatorEditParams[f.key] =
+        v == null || v === '' ? '' : String(v);
+    }
+  }
+
+  closeEditParams(): void {
+    if (this.indicatorEditSaving) return;
+    this.indicatorEditRowId = null;
+    this.indicatorEditParams = {};
+    this.indicatorSaveError = null;
+  }
+
+  /** Сохранить параметры: PUT обновляет все серии индикатора на бумаге. */
+  saveEditParams(): void {
+    const rep = this.indicatorEditRow;
+    if (!rep || this.indicatorEditSaving) return;
+    const patch: Record<string, number> = {};
+    let has = false;
+    for (const f of this.indicatorParamFields) {
+      const raw = (this.indicatorEditParams[f.key] ?? '').trim();
+      if (raw === '') continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) {
+        this.indicatorSaveError = `${f.label} — не число`;
+        return;
+      }
+      if (f.key === 'param_std_dev') {
+        if (n < 0) {
+          this.indicatorSaveError = `${f.label} не может быть отрицательным`;
+          return;
+        }
+      } else if (!Number.isInteger(n) || n < 1) {
+        this.indicatorSaveError = `${f.label} — целое число не меньше 1`;
+        return;
+      }
+      patch[f.key] = n;
+      has = true;
+    }
+    if (!has) {
+      this.indicatorEditRowId = null;
+      this.indicatorEditParams = {};
+      return;
+    }
+    this.indicatorEditSaving = true;
+    this.indicatorSaveError = null;
+    this.subs.push(
+      this.securities
+        .updateIndicatorSeriesParams(rep.id, patch as IndicatorSeriesParamPatch)
+        .subscribe({
+          next: (updated) => {
+            this.indicatorEditSaving = false;
+            if (updated.length === 0) {
+              this.indicatorEditRowId = null;
+              this.indicatorEditParams = {};
+              this.indicatorError = 'Индикатор больше не доступен на этой бумаге';
+              return;
+            }
+            const updIndicatorId = updated[0].indicator_id;
+            this.indicatorRows = this.indicatorRows
+              .filter((r) => r.indicator_id !== updIndicatorId)
+              .concat(updated)
+              .sort((a, b) => a.display_order - b.display_order || a.id - b.id);
+            this.indicatorEditRowId = null;
+            this.indicatorEditParams = {};
+            this.syncIndicators(updIndicatorId);
+          },
+          error: (err) => {
+            this.indicatorEditSaving = false;
+            this.indicatorSaveError =
+              err?.error?.error || err?.message || 'Не удалось сохранить параметры';
+          },
+        })
+    );
+  }
+
+  /** Фоновая синхронизация значений индикаторов за видимым окном свечей. */
+  private syncIndicators(indicatorId: number | null): void {
+    if (this.indicatorSyncing || !this.security || !this.timeframeId) return;
+    const candles = this.chartState.candles;
+    if (!candles.length) return;
+    this.indicatorSyncing = true;
+    this.indicatorBusyMessage = 'Пересчёт индикаторов…';
+    const gen = ++this.indicatorSyncGen;
+    const body: Parameters<SecuritiesService['syncIndicatorSeries']>[0] = {
+      security_id: this.security.id,
+      timeframe_id: this.timeframeId,
+      end_dt: candles[candles.length - 1].dt,
+      point_count: Math.min(Math.max(candles.length, 1), 4000),
+      incremental: true,
+    };
+    if (indicatorId != null) body.indicator_id = indicatorId;
+    this.subs.push(
+      this.securities.syncIndicatorSeries(body).subscribe({
+        next: () => this.pollIndicatorValues(gen, indicatorId, 0),
+        error: (err) => {
+          if (gen !== this.indicatorSyncGen) return;
+          this.indicatorSyncing = false;
+          this.indicatorBusyMessage = null;
+          this.indicatorError =
+            err?.error?.error || err?.message || 'Не удалось запустить пересчёт индикатора';
+        },
+      })
+    );
+  }
+
+  /** Ожидание значений: опрашиваем indicator_values до появления точек. */
+  private pollIndicatorValues(
+    gen: number,
+    indicatorId: number | null,
+    attempt: number
+  ): void {
+    if (gen !== this.indicatorSyncGen || this.destroyed || !this.timeframeId) {
+      return;
+    }
+    const candles = this.chartState.candles;
+    if (!candles.length) {
+      this.indicatorSyncing = false;
+      this.indicatorBusyMessage = null;
+      return;
+    }
+    if (this.indicatorPollTimer) clearTimeout(this.indicatorPollTimer);
+    const waitMs = attempt === 0 ? 400 : attempt < 5 ? 700 : 1500;
+    this.indicatorPollTimer = setTimeout(() => {
+      if (this.destroyed || !this.timeframeId) return;
+      const allIds = this.indicatorIds();
+      this.subs.push(
+        this.securities
+          .getIndicatorValues(
+            this.security.id,
+            this.timeframeId,
+            allIds,
+            candles[0].dt,
+            candles[candles.length - 1].dt
+          )
+          .subscribe({
+            next: (values) => {
+              if (gen !== this.indicatorSyncGen) return;
+              if (values.length === 0) {
+                if (attempt < 20) {
+                  this.pollIndicatorValues(gen, indicatorId, attempt + 1);
+                  return;
+                }
+                this.indicatorSyncing = false;
+                this.indicatorBusyMessage = null;
+                this.indicatorError =
+                  indicatorId != null
+                    ? 'Индикатор не рассчитался за отведённое время'
+                    : null;
+                return;
+              }
+              this.indicatorSyncing = false;
+              this.indicatorBusyMessage = null;
+              this.indicatorError = null;
+              this.indicatorChartSeries = this.buildChartSeries(
+                values,
+                this.indicatorRows
+              );
+            },
+            error: () => {
+              if (gen !== this.indicatorSyncGen) return;
+              if (attempt < 20) {
+                this.pollIndicatorValues(gen, indicatorId, attempt + 1);
+                return;
+              }
+              this.indicatorSyncing = false;
+              this.indicatorBusyMessage = null;
+            },
+          })
+      );
+    }, waitMs);
+  }
+
+  /** Все id индикаторов, назначенных на бумагу. */
+  private indicatorIds(): number[] {
+    return [...new Set(this.indicatorRows.map((r) => r.indicator_id))];
+  }
+
+  /** Прямое чтение значений (без пересчёта) для текущего окна свечей. */
+  private refreshIndicatorValues(): void {
+    if (!this.security || !this.timeframeId || this.indicatorRows.length === 0) {
+      return;
+    }
+    const candles = this.chartState.candles;
+    if (!candles.length) return;
+    const ids = this.indicatorIds();
+    this.subs.push(
+      this.securities
+        .getIndicatorValues(
+          this.security.id,
+          this.timeframeId,
+          ids,
+          candles[0].dt,
+          candles[candles.length - 1].dt
+        )
+        .subscribe({
+          next: (values) => {
+            if (values.length) {
+              this.indicatorChartSeries = this.buildChartSeries(
+                values,
+                this.indicatorRows
+              );
+            }
+          },
+          error: () => undefined,
+        })
+    );
+  }
+
+  /** Серии для графика: группировка значений по линиям в порядке назначения. */
+  private buildChartSeries(
+    values: IndicatorValueRow[],
+    assigned: SecurityIndicatorSeriesRow[]
+  ): ChartIndicatorSeries[] {
+    const orderMap = new Map<string, number>();
+    assigned.forEach((a, idx) =>
+      orderMap.set(`${a.indicator_id}:${a.series_code}`, idx)
+    );
+    const groups = new Map<string, IndicatorValueRow[]>();
+    for (const v of values) {
+      const key = `${v.indicator_id}:${v.line_code}`;
+      const list = groups.get(key) ?? [];
+      list.push(v);
+      groups.set(key, list);
+    }
+    const series: ChartIndicatorSeries[] = [];
+    let colorIdx = 0;
+    const sortedKeys = [...groups.keys()].sort(
+      (a, b) => (orderMap.get(a) ?? 0) - (orderMap.get(b) ?? 0)
+    );
+    for (const key of sortedKeys) {
+      const rows = groups.get(key)!;
+      const sample = rows[0];
+      const onPrice = this.isPriceScaleSeries(
+        sample.indicator_code,
+        sample.line_code
+      );
+      series.push({
+        indicator_code: sample.indicator_code,
+        line_code: sample.line_code,
+        line_name: sample.line_name,
+        color: this.indicatorSeriesColors[
+          colorIdx % this.indicatorSeriesColors.length
+        ],
+        on_price_scale: onPrice,
+        is_threshold: sample.is_threshold,
+        points: rows.map((r) => ({ dt: r.dt, value: Number(r.value) })),
+      });
+      if (!sample.is_threshold) {
+        colorIdx += 1;
+      }
+    }
+    return series;
+  }
+
+  /** Серия на шкале цены: наложенные (SMA, EMA, WMA, PACC, SMAT3) и канальные. */
+  private isPriceScaleSeries(indicatorCode: string, lineCode: string): boolean {
+    if (this.priceScaleOverlayCodes.has(indicatorCode) && lineCode === 'VALUE') {
+      return true;
+    }
+    return ['UPPER', 'MIDDLE', 'LOWER'].includes(lineCode);
   }
 
   /* Управление графиками из шапки полосы: масштаб и сдвиг применяются сразу

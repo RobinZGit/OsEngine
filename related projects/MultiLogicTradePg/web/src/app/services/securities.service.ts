@@ -8,6 +8,7 @@ import { Observable, timeout } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 import {
   ChartIndicatorSeries,
+  IndicatorSeriesParamPatch,
   IndicatorValueRow,
   PriceCandle,
   PriceLoadRequest,
@@ -122,6 +123,20 @@ export class SecuritiesService {
     return this.http.delete<{ ok: boolean }>(
       `${this.appConfig.apiUrl}/security-indicator-series/${id}`
     );
+  }
+
+  /** Правка параметров серий индикатора: обновляет все активные серии
+      индикатора на бумаге и возвращает обновлённые строки. */
+  updateIndicatorSeriesParams(
+    id: number,
+    params: IndicatorSeriesParamPatch
+  ): Observable<SecurityIndicatorSeriesRow[]> {
+    return this.http
+      .put<SecurityIndicatorSeriesRow[]>(
+        `${this.appConfig.apiUrl}/security-indicator-series/${id}`,
+        params
+      )
+      .pipe(timeout(15_000));
   }
 
   syncIndicatorSeries(body: {

@@ -486,3 +486,240 @@
 :host ::ng-deep .tpanel-chart .chart-shell {
   height: 100%;
 }
+
+/* Индикаторы на графике терминала. */
+.tp-ind-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: #f8fafc;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.7rem;
+}
+
+.tp-ind-title {
+  font-weight: 600;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+.tp-ind-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tp-ind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 0.05rem 0.25rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.tp-ind-chip-label {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+}
+
+.tp-ind-chip-btn {
+  border: none;
+  background: none;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 0.66rem;
+  padding: 0 0.1rem;
+  line-height: 1;
+}
+
+.tp-ind-chip-btn:hover {
+  color: #1e40af;
+}
+
+.tp-ind-empty {
+  color: #9ca3af;
+}
+
+.tp-ind-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+
+.tp-add-ind {
+  flex-shrink: 0;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+.tp-add-ind:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.tp-add-ind:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tp-ind-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: #f1f5f9;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.7rem;
+}
+
+.tp-ind-picker-field {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tp-ind-picker-field span {
+  color: #6b7280;
+}
+
+.tp-add-ind-small {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+.tp-add-ind-small:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #bfdbfe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  display: inline-block;
+  animation: tp-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Модалка параметров индикатора. */
+.tp-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.tp-modal-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
+  padding: 0.9rem 1rem 1rem;
+  width: min(420px, calc(100vw - 2rem));
+  max-height: calc(100vh - 3rem);
+  overflow: auto;
+}
+
+.tp-modal-title {
+  margin: 0 0 0.15rem;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.tp-modal-sub {
+  margin: 0 0 0.6rem;
+  font-size: 0.68rem;
+  color: #6b7280;
+}
+
+.tp-modal-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.tp-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: #374151;
+}
+
+.tp-modal-field input {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.75rem;
+  width: 100%;
+}
+
+.tp-modal-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.68rem;
+  color: #b91c1c;
+}
+
+.tp-modal-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  margin-top: 0.7rem;
+}
+
+.tp-modal-ok {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.tp-modal-cancel {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.tp-modal-ok:disabled,
+.tp-modal-cancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

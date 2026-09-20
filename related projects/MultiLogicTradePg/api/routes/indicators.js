@@ -325,6 +325,101 @@ app.post('/api/security-indicator-series', async (req, res) => {
   }
 });
 
+app.put('/api/security-indicator-series/:id', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) {
+    res.status(400).json({ error: 'Invalid id' });
+    return;
+  }
+  const p = req.body ?? {};
+  const toNum = (v, isStdDev) => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return NaN;
+    if (!isStdDev && (!Number.isInteger(n) || n < 1)) return NaN;
+    if (isStdDev && n < 0) return NaN;
+    return n;
+  };
+  const paramMap = {
+    param_period: toNum(p.param_period, false),
+    param_fast_period: toNum(p.param_fast_period, false),
+    param_slow_period: toNum(p.param_slow_period, false),
+    param_signal_period: toNum(p.param_signal_period, false),
+    param_std_dev: toNum(p.param_std_dev, true),
+    param_k_period: toNum(p.param_k_period, false),
+    param_d_period: toNum(p.param_d_period, false),
+    param_smooth: toNum(p.param_smooth, false),
+  };
+  const cols = Object.entries(paramMap).filter(
+    ([, v]) => v !== undefined && Number.isFinite(v)
+  );
+  if (cols.length === 0) {
+    res.status(400).json({ error: 'Укажите хотя бы один параметр' });
+    return;
+  }
+  try {
+    const { rows: target } = await pool.query(
+      `SELECT security_id, indicator_id
+       FROM security_indicator_series
+       WHERE id = $1`,
+      [id]
+    );
+    if (target.length === 0) {
+      res.status(404).json({ error: 'Серия индикатора не найдена' });
+      return;
+    }
+    const { security_id, indicator_id } = target[0];
+    const sets = cols.map(([col], i) => `${col} = $${i + 1}`);
+    const values = cols.map(([, v]) => v);
+    // Параметры меняются для всех активных серий индикатора на бумаге —
+    // иначе линии одного индикатора считались бы с разными настройками.
+    const { rows: updatedIds } = await pool.query(
+      `UPDATE security_indicator_series
+       SET ${sets.join(', ')}
+       WHERE security_id = $${values.length + 1}
+         AND indicator_id = $${values.length + 2}
+         AND is_active = TRUE
+       RETURNING id`,
+      [...values, security_id, indicator_id]
+    );
+    if (updatedIds.length === 0) {
+      res.status(404).json({ error: 'Активная серия индикатора не найдена' });
+      return;
+    }
+    const { rows } = await pool.query(
+      `
+      SELECT
+        sis.id,
+        sis.security_id,
+        sis.indicator_id,
+        sis.series_code,
+        sis.invoke_formula,
+        sis.param_period,
+        sis.param_fast_period,
+        sis.param_slow_period,
+        sis.param_signal_period,
+        sis.param_std_dev,
+        sis.param_k_period,
+        sis.param_d_period,
+        sis.param_smooth,
+        sis.point_count,
+        sis.display_order,
+        sis.is_active,
+        i.code AS indicator_code,
+        i.name AS indicator_name
+      FROM security_indicator_series sis
+      JOIN indicators i ON i.id = sis.indicator_id
+      WHERE sis.security_id = $1 AND sis.indicator_id = $2 AND sis.is_active = TRUE
+      ORDER BY sis.display_order, sis.id
+    `,
+      [security_id, indicator_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    handleDbError(res, err, 'PUT /api/security-indicator-series/:id');
+  }
+});
+
 app.delete('/api/security-indicator-series/:id', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) {
