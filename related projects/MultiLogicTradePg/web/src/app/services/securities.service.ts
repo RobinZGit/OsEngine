@@ -12,6 +12,7 @@ import {
   PriceCandle,
   PriceLoadRequest,
   PriceLoadResult,
+  PriceRefreshResult,
   SecurityIndicatorSeriesRow,
   SecurityPayload,
   SecurityRow,
@@ -70,6 +71,19 @@ export class SecuritiesService {
     return this.http
       .post<PriceLoadResult>(`${this.appConfig.apiUrl}/prices/load`, body)
       .pipe(timeout(190_000));
+  }
+
+  /** Живое обновление: догрузка последней закрытой свечи TF (окно подбирает API). */
+  refreshPrices(
+    securityId: number,
+    timeframeId: number
+  ): Observable<PriceRefreshResult> {
+    return this.http
+      .post<PriceRefreshResult>(`${this.appConfig.apiUrl}/prices/refresh`, {
+        security_id: securityId,
+        timeframe_id: timeframeId,
+      })
+      .pipe(timeout(120_000));
   }
 
   getSecurityIndicatorSeries(

@@ -75,6 +75,16 @@ export interface PriceLoadResult {
   moex?: { records: number | null; error: string | null };
 }
 
+/** Ответ живого обновления графика терминала (`POST /api/prices/refresh`). */
+export interface PriceRefreshResult {
+  ok: boolean;
+  loaded?: boolean;
+  throttled?: boolean;
+  date_from?: string;
+  date_to?: string;
+  closed_bar_dt?: string;
+}
+
 export interface PriceLoadUiState {
   active: boolean;
   message: string | null;

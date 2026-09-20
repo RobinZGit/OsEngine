@@ -69,6 +69,23 @@ export class TerminalComponent implements OnInit {
   pickerOpen = false;
   pendingSecurityId: number | null = null;
 
+  /** Ошибка добавления бумаги: показываем причину, почему не добавилась. */
+  pickerError: string | null = null;
+  /** Счётчик изменений полос пользователем — защита от затирания свежих
+      полос запоздавшим ответом сохранённого состояния (см. loadSavedState). */
+  private panelsStamp = 0;
+
+  /** Идёт добавление бумаги (регистрация/рисование графика): блок выбора бледный,
+      страница приглушена с надписью «идёт процесс загрузки — добавление бумаги…»;
+      панели остаются кликабельными. */
+  addingSecInProgress = false;
+  /** Что именно сейчас добавляется — показываем надпись рядом с нужной кнопкой. */
+  addingSecKind: 'stock' | 'bond' | null = null;
+  /** uid новой полосы, после первых свечей которой снимается блокировка выбора. */
+  private addingSecUid: number | null = null;
+  private addingSecTimer?: ReturnType<typeof setTimeout>;
+  private static readonly ADD_SEC_MAX_WAIT_MS = 45_000;
+
   private nextUid = 1;
   panels: PanelModel[] = [];
 
@@ -213,7 +230,10 @@ export class TerminalComponent implements OnInit {
         this.byId = new Map(
           [...futures, ...stocks, ...bonds].map((s) => [s.id, s])
         );
-        this.loadSavedState();
+        // Полосы перечитываем из сохранённого состояния только если они ещё
+        // пустые (на момент первого запроса справочник бумаг мог быть не готов).
+        // Иначе запоздавший ответ затрёт только что добавленную пользователем бумагу.
+        if (this.panels.length === 0) this.loadSavedState();
       },
       error: () => {
         this.futures = [];
@@ -333,11 +353,13 @@ export class TerminalComponent implements OnInit {
     return Number.isFinite(b) && b > 0 ? Math.floor(b) : 10000;
   }
 
-  /** Восстановление сохранённых полос и настроек для текущего счёта. */
+  /** Восстановление сохранённых полос и настроек для текущего счёта.
+      Полосы применяем только если пользователь за время ответа их не менял —
+      иначе запоздавший снимок «съел» бы только что добавленную бумагу. */
   private loadSavedState(): void {
     this.activeAccountId = this.accountId;
-    this.panels = [];
     if (this.accountId == null) return;
+    const stamp = this.panelsStamp;
     this.stateSvc.getState(this.accountId).subscribe({
       next: (r) => {
         const settings = r.payload.settings ?? {};
@@ -346,6 +368,7 @@ export class TerminalComponent implements OnInit {
           buyQty: this.safeQty(settings['buyQty'], 1),
           sellQty: this.safeQty(settings['sellQty'], 1),
         };
+        if (this.panelsStamp !== stamp) return;
         this.panels = (r.payload.panels ?? [])
           .map((st) =>
             this.buildPanel(st.security_id, st.timeframe_id, st.chart_height)
@@ -398,23 +421,64 @@ export class TerminalComponent implements OnInit {
     this.pendingSecurityId = null;
   }
 
-  onSecurityPicked(): void {
+  /** Кнопка «+ Добавить» у селекта бумаг: регистрирует выбранную бумагу
+      даже если значение в селекте не менялось (повторный выбор той же бумаги).
+      Выбранная бумага остаётся в селекте; при ошибке — сообщение и разблокировка. */
+  addSecurityByPicker(): void {
     const id = this.pendingSecurityId;
-    if (id == null) return;
+    if (id == null || this.addingSecInProgress) return;
     const sec =
       this.futures.find((s) => s.id === id) ??
       this.stocks.find((s) => s.id === id);
-    if (!sec) return;
+    if (!sec) {
+      this.pickerError = `Бумага id=${id} не найдена в списке зарегистрированных — обновите справочник`;
+      return;
+    }
     const panel = this.buildPanel(sec.id, null, DEFAULT_CHART_HEIGHT);
-    if (!panel) return;
-    this.panels.push(panel);
-    // Сброс, чтобы можно было выбрать следующую бумагу подряд.
-    this.pendingSecurityId = null;
+    if (this.panels.some((p) => p.security.id === sec.id)) {
+      this.pickerError = `«${sec.name}» (${sec.prefix}) уже добавлена на график`;
+      return;
+    }
+    if (!panel) {
+      this.pickerError = `Не удалось создать панель для «${sec.name}» (${sec.prefix}) — проверьте API`;
+      return;
+    }
+    this.pickerError = null;
+    this.panels = [panel, ...this.panels];
+    this.panelsStamp++;
+    // Блокируем выбор, пока новая полоса не покажет первые свечи (см. dataReady).
+    this.holdAddingSec(panel.uid, 'stock');
     this.scheduleSave();
+  }
+
+  /** Простое изменение выбора — только сбрасываем сообщение об ошибке. */
+  onPickerSelection(): void {
+    this.pickerError = null;
+    this.bondError = null;
+  }
+
+  /** Выбранная в селекте бумага уже есть среди полос — добавлять нечего. */
+  get stockTargetExists(): boolean {
+    return (
+      this.pendingSecurityId != null &&
+      this.panels.some((p) => p.security.id === this.pendingSecurityId)
+    );
+  }
+
+  /** Выбранный в селекте выпуск уже добавлен на график
+      (для облигаций ISIN хранится в prefix, см. register в terminal.js). */
+  get bondTargetExists(): boolean {
+    if (this.pendingBondSec == null) return false;
+    return this.panels.some((p) => {
+      const s = this.byId.get(p.security.id);
+      return s?.prefix != null && s.prefix === this.pendingBondSec;
+    });
   }
 
   removePanel(uid: number): void {
     this.panels = this.panels.filter((p) => p.uid !== uid);
+    this.panelsStamp++;
+    if (this.addingSecUid === uid) this.releaseAddingSec();
     this.scheduleSave();
   }
 
@@ -439,19 +503,25 @@ export class TerminalComponent implements OnInit {
     });
   }
 
-  /** Выбор выпуска: регистрация как security + открытие панели с графиком. */
-  onBondPicked(): void {
+  /** Кнопка «+ Добавить» у селекта выпусков: регистрация как security
+      + открытие панели с графиком (срабатывает и на повторном выборе выпуска). */
+  addBondByPicker(): void {
     const sec = this.pendingBondSec;
-    if (!sec) return;
+    if (!sec || this.addingSecInProgress) return;
     this.registeringBond = sec;
     this.bondError = null;
+    this.pickerError = null;
+    // Цены грузятся в фоне — блокируем выбор до появления первых свечей.
+    this.holdAddingSec(null, 'bond');
     this.stateSvc.registerBond(sec).subscribe({
       next: (r) => {
         this.registeringBond = null;
-        this.pendingBondSec = null;
         const row = r?.security;
         if (!row || row.id == null) {
-          this.bondError = r?.price_error || 'Выпуск не зарегистрирован';
+          this.bondError =
+            r?.price_error || 'Выпуск не зарегистрирован (нет ответа сервера)';
+          this.pickerError = this.bondError;
+          this.releaseAddingSec();
           return;
         }
         if (!this.bonds.some((b) => b.id === row.id)) {
@@ -460,17 +530,69 @@ export class TerminalComponent implements OnInit {
           );
         }
         this.byId.set(row.id, row);
+        if (this.panels.some((p) => p.security.id === row.id)) {
+          this.bondError = `${row.name || sec} уже добавлен на график`;
+          this.pickerError = this.bondError;
+          this.releaseAddingSec();
+          return;
+        }
         const panel = this.buildPanel(row.id, null, DEFAULT_CHART_HEIGHT);
-        if (!panel) return;
-        this.panels.push(panel);
+        if (!panel) {
+          this.bondError = `Выпуск ${sec} зарегистрирован, но панель не создалась`;
+          this.pickerError = this.bondError;
+          this.releaseAddingSec();
+          return;
+        }
+        this.panels = [panel, ...this.panels];
+        this.panelsStamp++;
+        this.holdAddingSec(panel.uid, 'bond');
         this.scheduleSave();
       },
       error: (err) => {
         this.registeringBond = null;
         this.bondError =
           err?.error?.error || err?.message || 'Не удалось зарегистрировать выпуск';
+        this.pickerError = this.bondError;
+        this.releaseAddingSec();
       },
     });
+  }
+
+  /** Держать блокировку выбора, пока идёт добавление (uid — полоса, что «рисуется»). */
+  private holdAddingSec(uid: number | null, kind?: 'stock' | 'bond'): void {
+    this.addingSecUid = uid;
+    this.addingSecKind = kind ?? this.addingSecKind;
+    this.addingSecInProgress = uid != null || this.registeringBond != null;
+    if (this.addingSecTimer) clearTimeout(this.addingSecTimer);
+    this.addingSecTimer = undefined;
+    if (!this.addingSecInProgress) return;
+    this.addingSecTimer = setTimeout(
+      () => this.onAddTimeout(),
+      TerminalComponent.ADD_SEC_MAX_WAIT_MS
+    );
+  }
+
+  /** Страховочный таймаут: панель так и не показала свечи — разблокируем
+      и сообщаем, что данные не загрузились. */
+  private onAddTimeout(): void {
+    this.releaseAddingSec();
+    this.pickerError =
+      'Данные для добавленной бумаги не загрузились за ' +
+      `${TerminalComponent.ADD_SEC_MAX_WAIT_MS / 1000} с — проверьте связь с API. ` +
+      'Если свечи появятся позже, график подтянется вручную (стрелки внизу панели).';
+  }
+
+  private releaseAddingSec(): void {
+    if (this.addingSecTimer) clearTimeout(this.addingSecTimer);
+    this.addingSecTimer = undefined;
+    this.addingSecUid = null;
+    this.addingSecKind = null;
+    this.addingSecInProgress = false;
+  }
+
+  /** Полоса показала первые свечи — выбранная бумага нарисована. */
+  onPanelDataReady(uid: number): void {
+    if (this.addingSecUid === uid) this.releaseAddingSec();
   }
 
   /** Изменение настроек в полосе: таймфрейм и/или высота графиков. */

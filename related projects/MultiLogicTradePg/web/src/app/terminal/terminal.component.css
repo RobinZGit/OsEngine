@@ -113,6 +113,60 @@
   border-color: #60a5fa;
 }
 
+/* Маленькая кнопка «+ Добавить» у селектов бумаг и выпусков. */
+.term-add-btn-small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.term-add-btn-small:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.term-add-btn-small:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Надпись «идёт процесс загрузки…» рядом с нажатой кнопкой добавления. */
+.term-add-busy {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e3a5f;
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+}
+
+/* Надпись «уже добавлена» у селекта с уже добавленной бумагой. */
+.term-add-already {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #854d0e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+}
+
+/* Селект с уже добавленной бумагой — бледный. */
+.term-picker-already {
+  opacity: 0.55;
+}
+
 .term-picker {
   display: flex;
   align-items: center;
@@ -127,6 +181,55 @@
 
 .term-picker .term-field select {
   min-width: 240px;
+}
+
+.term-picker:disabled,
+.term-add-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Ошибка добавления бумаги: причина, почему не добавилась, во весь блок. */
+.term-picker-error {
+  flex: 1 1 100%;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* Блок выбора приглушён, пока добавляется бумага. */
+.term-picker-busy {
+  opacity: 0.55;
+}
+
+/* Лёгкая вуаль по всей странице во время добавления бумаги: всё видно и можно
+   кликать (кнопки Купить/Продать и панели остаются доступными). */
+.term-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  padding-top: 92px;
+}
+
+.term-scrim-label {
+  align-self: flex-start;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e3a5f;
+  background: #fff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(30, 58, 95, 0.18);
+  padding: 0.4rem 1rem;
+  white-space: nowrap;
 }
 
 .term-picker-hint {

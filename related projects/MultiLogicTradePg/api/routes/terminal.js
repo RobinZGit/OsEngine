@@ -5,9 +5,26 @@
  */
 const { resolveBondFund } = require('../lib/bond-fund-fetch');
 const { tbankHttpPost, DEFAULT_API } = require('../lib/tbank-invest-client');
+const { getBondNames } = require('../lib/bond-names');
 
 /** Приоритет торговых площадочных classCode для облигаций (после «10000»/мусора). */
 const BOND_CLASS_PREFERENCE = ['TQCB', 'TQOB', 'TQBR'];
+
+/**
+ * Загрузка цен выпуска в фоне. Регистрация не ждёт долгого HTTP: если T-Bank
+ * не отдаёт свечи, load_prices_http уходит в MOEX-фолбэк по дням (десятки секунд).
+ * Ответ /register возвращаем сразу, а график догонит живой цикл терминала.
+ * Ошибки фоновой загрузки фиксируются в price_load_log.
+ */
+function backgroundPriceLoad(pool, securityId, tfId, days) {
+  const rangeDays = Math.min(Math.max(Number(days) || 45, 1), 120);
+  pool
+    .query(
+      `CALL load_prices_http($1, $2, (CURRENT_DATE - $3::int)::date, CURRENT_DATE)`,
+      [securityId, tfId, rangeDays]
+    )
+    .catch(() => undefined);
+}
 
 /**
  * Выпуск облигации по ISIN.
@@ -168,6 +185,21 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         if (a.kind === b.kind) return b.weight - a.weight;
         return a.kind === 'corp' ? -1 : 1;
       });
+      // Русские наименования выпусков (MOEX ISS + фолбэк на БД) — для селекта.
+      let names = new Map();
+      try {
+        names = await getBondNames(
+          bonds.map((b) => b.sec),
+          pool
+        );
+      } catch (_e) {
+        /* наименования опциональны */
+      }
+      const bondsWithNames = bonds.map((b) => {
+        const isin = String(b.sec || '').trim().toUpperCase();
+        const name = names.get(isin) || null;
+        return name ? { ...b, name } : b;
+      });
       res.json({
         fund: {
           code: fund.code,
@@ -177,7 +209,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
           holdings_live: !!fund.holdings_live,
           holdings_count: bonds.length,
         },
-        bonds,
+        bonds: bondsWithNames,
       });
     } catch (err) {
       handleDbError(res, err, 'terminal bonds plan');
@@ -293,28 +325,25 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       const security = rows[0] || null;
 
       let candlesLoaded = null;
-      let priceError = null;
+      let pricesLoading = false;
       if (securityId) {
-        try {
-          await pool.query(
-            `CALL load_prices_http($1, $2, (CURRENT_DATE - $3::int)::date, CURRENT_DATE)`,
-            [securityId, tfId, days]
-          );
-          const cnt = await pool.query(
-            `SELECT COUNT(*)::int AS c FROM prices
-             WHERE security_id = $1 AND timeframe_id = $2`,
-            [securityId, tfId]
-          );
-          candlesLoaded = cnt.rows[0]?.c ?? 0;
-        } catch (e) {
-          priceError = e?.message || String(e);
+        const cnt = await pool.query(
+          `SELECT COUNT(*)::int AS c FROM prices
+           WHERE security_id = $1 AND timeframe_id = $2`,
+          [securityId, tfId]
+        );
+        candlesLoaded = cnt.rows[0]?.c ?? 0;
+        if (candlesLoaded === 0) {
+          pricesLoading = true;
+          backgroundPriceLoad(pool, securityId, tfId, days);
         }
       }
 
       res.status(201).json({
         security,
         candles_loaded: candlesLoaded,
-        price_error: priceError,
+        prices_loading: pricesLoading,
+        price_error: null,
       });
     } catch (err) {
       handleDbError(res, err, 'terminal bonds register');

@@ -361,4 +361,82 @@ app.post('/api/prices/load', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+  // Живое обновление графика: догружаем недостающую последнюю ЗАКРЫТУЮ свечу
+  // целевого TF (окно как у runner: M1/M2 — только сегодня). Если свеча уже есть
+  // в prices — HTTP к T-Bank/MOEX не делаем. Троттлинг защищает от дублей при
+  // нескольких вкладках; цикл панели терминала сам сериализует запросы.
+  const priceRefreshAt = new Map();
+  app.post('/api/prices/refresh', async (req, res) => {
+    const securityId = parseId(req.body?.security_id);
+    const timeframeId = parseId(req.body?.timeframe_id);
+    if (!securityId || !timeframeId) {
+      res.status(400).json({ error: 'Укажите security_id и timeframe_id' });
+      return;
+    }
+    const key = `${securityId}:${timeframeId}`;
+    const now = Date.now();
+    if (now - (priceRefreshAt.get(key) ?? 0) < 10_000) {
+      res.json({ ok: true, loaded: false, throttled: true });
+      return;
+    }
+    priceRefreshAt.set(key, now);
+    try {
+      const metaRows = await pool.query(
+        `SELECT t.sec AS tf_sec, logic_last_closed_bar_dt(t.sec) AS closed_bar_dt
+         FROM timeframes t WHERE t.id = $1`,
+        [timeframeId]
+      );
+      const meta = metaRows.rows[0];
+      const tfSec = Number(meta?.tf_sec);
+      const closedBar = meta?.closed_bar_dt ?? null;
+      if (!(tfSec > 0) || !closedBar) {
+        res.status(400).json({ error: 'Неизвестный timeframe_id' });
+        return;
+      }
+      const secCheckRows = await pool.query(
+        `SELECT 1 FROM securities WHERE id = $1`,
+        [securityId]
+      );
+      if (secCheckRows.rowCount === 0) {
+        res.status(404).json({ error: 'Бумага не найдена' });
+        return;
+      }
+      const haveRows = await pool.query(
+        `SELECT prices_have_closed_bar($1, $2, $3::timestamp) AS have`,
+        [securityId, timeframeId, closedBar]
+      );
+      if (haveRows.rows[0]?.have) {
+        res.json({ ok: true, loaded: false, closed_bar_dt: closedBar });
+        return;
+      }
+      const winRows = await pool.query(
+        `SELECT logic_trade_load_date_from($1, logic_trade_sync_point_count($1), $2::timestamp) AS date_from,
+                GREATEST($2::timestamp::date, CURRENT_DATE) AS date_to`,
+        [tfSec, closedBar]
+      );
+      const win = winRows.rows[0];
+      const client = await pool.connect();
+      try {
+        await client.query(`SET lock_timeout = '15s'`);
+        await client.query(`SET statement_timeout = '180s'`);
+        await client.query(
+          `CALL load_prices_http($1, $2, $3::date, $4::date)`,
+          [securityId, timeframeId, win.date_from, win.date_to]
+        );
+      } finally {
+        client.release();
+      }
+      res.json({
+        ok: true,
+        loaded: true,
+        date_from: win.date_from,
+        date_to: win.date_to,
+        closed_bar_dt: closedBar,
+      });
+    } catch (err) {
+      console.error('POST /api/prices/refresh', err.message || err);
+      res.status(502).json({ error: err.message });
+    }
+  });
 };

@@ -13,12 +13,13 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin, Observable, Subscription } from 'rxjs';
+import { finalize, forkJoin, Observable, Subscription } from 'rxjs';
 import { PriceChartComponent } from '../price-chart/price-chart.component';
 import { SecuritiesService } from '../services/securities.service';
 import { TerminalStateService } from '../services/terminal-state.service';
 import {
   PriceCandle,
+  PriceRefreshResult,
   SecurityChartState,
   SecurityRow,
   TimeframeRow,
@@ -67,6 +68,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   }>();
   /** Сделка размещена (ок или отклонена) — терминал обновляет остаток и историю. */
   @Output() tradeExecuted = new EventEmitter<void>();
+  /** На графике появились первые свечи (для снятия надписи «идёт выбор бумаги…»). */
+  @Output() dataReady = new EventEmitter<void>();
 
   @ViewChild('mainChart') mainChart?: PriceChartComponent;
   @ViewChildren(PriceChartComponent) allCharts?: QueryList<PriceChartComponent>;
@@ -93,6 +96,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   tradeError: string | null = null;
 
   private pollTimer?: ReturnType<typeof setInterval>;
+  /** Идёт живая догрузка свечей — не запускаем следующую, пока не закончилась. */
+  private liveBusy = false;
+  /** Первые свечи уже сообщены родителю (dataReady эмитится один раз). */
+  private dataReadySent = false;
   private subs: Subscription[] = [];
   private destroyed = false;
 
@@ -195,6 +202,13 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return this.security.instrument_market === 'futures';
   }
 
+  /** Первые свечи появились — сообщаем терминалу (снимаем «идёт выбор бумаги…»). */
+  private maybeDataReady(rows: PriceCandle[]): void {
+    if (this.dataReadySent || rows.length === 0) return;
+    this.dataReadySent = true;
+    this.dataReady.emit();
+  }
+
   onTimeframeChange(): void {
     this.loadChart();
     this.emitStateChange();
@@ -229,6 +243,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
           hasMore: (baseRows?.length ?? 0) > 0,
         };
         this.computeContango();
+        this.maybeDataReady(mainRows);
       },
       error: () => {
         if (this.destroyed) return;
@@ -278,35 +293,76 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     };
   }
 
-  /** Лёгкое обновление вживую: каждые 15 с доливают свежие свечи в конец. */
+  /** Лёгкое обновление вживую: каждые 15 с догружаем свежие свечи в конец. */
   private startPolling(): void {
     this.pollTimer = setInterval(() => this.refreshLatest(), 15_000);
   }
 
+  /** Цикл: сперва догружаем в БД последнюю закрытую свечу (T-Bank/MOEX),
+      затем перечитываем цены и вливаем новые/обновившиеся бары в графики. */
   private refreshLatest(): void {
     if (this.destroyed || !this.security || !this.timeframeId) return;
-    if (this.chartState.loading) return;
-    if (this.chartState.candles.length === 0) return;
-    this.appendLatest(this.security.id, this.chartState, (s) => {
-      this.chartState = s;
-    });
+    if (this.chartState.loading || this.liveBusy) return;
+    this.liveBusy = true;
+    const secId = this.security.id;
+    const tfId = this.timeframeId;
+    const loads: Observable<PriceRefreshResult>[] = [
+      this.securities.refreshPrices(secId, tfId),
+    ];
     if (this.hasContango) {
-      this.appendLatest(this.underlying!.id, this.underlyingState, (s) => {
-        this.underlyingState = s;
-      });
+      loads.push(this.securities.refreshPrices(this.underlying!.id, tfId));
     }
+    forkJoin(loads).subscribe({
+      next: () => this.mergeLatest(),
+      error: () => this.mergeLatest(),
+    });
+  }
+
+  /** Перечитать цены после догрузки и влить их в графики (фьючерс + базовый). */
+  private mergeLatest(): void {
+    if (this.destroyed) {
+      this.liveBusy = false;
+      return;
+    }
+    this.appendLatest(
+      this.security.id,
+      this.chartState,
+      (s) => {
+        this.chartState = s;
+      },
+      () => {
+        if (this.hasContango) {
+          this.appendLatest(
+            this.underlying!.id,
+            this.underlyingState,
+            (s) => {
+              this.underlyingState = s;
+            },
+            () => {
+              this.liveBusy = false;
+            }
+          );
+        } else {
+          this.liveBusy = false;
+        }
+      }
+    );
   }
 
   private appendLatest(
     securityId: number,
     state: SecurityChartState,
-    apply: (next: SecurityChartState) => void
+    apply: (next: SecurityChartState) => void,
+    done?: () => void
   ): void {
     const existing = state.candles;
     this.subs.push(
-      this.securities.getPrices(securityId, this.timeframeId!, 60).subscribe({
-        next: (rows) => {
-          if (this.destroyed || rows.length === 0) return;
+      this.securities
+        .getPrices(securityId, this.timeframeId!, 60)
+        .pipe(finalize(() => done?.()))
+        .subscribe({
+          next: (rows) => {
+            if (this.destroyed || rows.length === 0) return;
           // Обновляем уже известные свечи на месте (текущий бар часто тот же dt,
           // но новая цена) и добавляем новые бары в конец.
           const rowsByDt = new Map(rows.map((r) => [r.dt, r]));
@@ -342,6 +398,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
             hasMore: true,
           });
           this.computeContango();
+          this.maybeDataReady(merged);
         },
         error: () => undefined,
       })

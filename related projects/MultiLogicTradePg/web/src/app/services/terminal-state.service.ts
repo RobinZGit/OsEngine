@@ -22,6 +22,8 @@ export interface TerminalStateResponse {
 /** Выпуск облигации в составе фонда терминала. */
 export interface TerminalBondHolding {
   sec: string;
+  /** Русское наименование выпуска (MOEX ISS / БД), может отсутствовать. */
+  name?: string | null;
   weight: number;
   nominal: number;
   pricePct: number;
@@ -46,6 +48,8 @@ export interface TerminalBondPlan {
 export interface TerminalBondRegisterResult {
   security: SecurityRow | null;
   candles_loaded: number | null;
+  /** Цены грузятся в фоне (ответ не ждал долгой загрузки). */
+  prices_loading?: boolean;
   price_error?: string | null;
 }
 

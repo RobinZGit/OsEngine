@@ -38,6 +38,9 @@ describe('TerminalPanelComponent', () => {
           provide: SecuritiesService,
           useValue: {
             getPrices: jasmine.createSpy('getPrices').and.returnValue(of([])),
+            refreshPrices: jasmine
+              .createSpy('refreshPrices')
+              .and.returnValue(of({ ok: true, loaded: true })),
           },
         },
         {
@@ -150,5 +153,44 @@ describe('TerminalPanelComponent', () => {
     }).appendLatest(8620, base, apply);
 
     expect(called).toBeFalse();
+  });
+
+  it('loads fresh prices then merges new candles on the live cycle', () => {
+    component.timeframeId = 6;
+    component.chartState = {
+      candles: [candle('2026-09-19 10:00:00', 100)],
+      loading: false,
+      loadingOlder: false,
+      hasMore: true,
+      error: null,
+    };
+    const securities = TestBed.inject(SecuritiesService);
+    const getPrices = securities.getPrices as jasmine.Spy;
+    const refreshPrices = securities.refreshPrices as jasmine.Spy;
+    getPrices.and.returnValue(of([candle('2026-09-19 10:01:00', 101)]));
+
+    (component as unknown as { refreshLatest(): void }).refreshLatest();
+
+    expect(refreshPrices).toHaveBeenCalledWith(8620, 6);
+    expect(getPrices).toHaveBeenCalled();
+    expect(component.chartState.candles.length).toBe(2);
+    expect(component.chartState.candles[1].close_price).toBe(101);
+  });
+
+  it('refreshes a newly added paper even when the chart is still empty', () => {
+    component.timeframeId = 6;
+    component.chartState = {
+      candles: [],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    const refreshPrices = TestBed.inject(SecuritiesService)
+      .refreshPrices as jasmine.Spy;
+
+    (component as unknown as { refreshLatest(): void }).refreshLatest();
+
+    expect(refreshPrices).toHaveBeenCalledWith(8620, 6);
   });
 });

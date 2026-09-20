@@ -56,6 +56,7 @@
         type="button"
         class="term-add-btn"
         [class.term-add-btn-active]="pickerOpen"
+        [disabled]="addingSecInProgress"
         (click)="togglePicker()"
       >{{ pickerOpen ? 'Скрыть выбор' : '+ Добавить бумагу' }}</button>
     </div>
@@ -146,12 +147,17 @@
     </div>
 
     @if (pickerOpen) {
-      <div class="term-picker">
+      <div class="term-picker" [class.term-picker-busy]="addingSecInProgress">
+        @if (pickerError) {
+          <div class="term-picker-error" role="alert">{{ pickerError }}</div>
+        }
         <label class="term-field">
           <span>Бумага</span>
           <select
             [(ngModel)]="pendingSecurityId"
-            (ngModelChange)="onSecurityPicked()"
+            (ngModelChange)="onPickerSelection()"
+            [disabled]="addingSecInProgress"
+            [class.term-picker-already]="stockTargetExists"
           >
             <option [ngValue]="null">— выберите бумагу —</option>
             <optgroup label="Акции">
@@ -166,14 +172,26 @@
             </optgroup>
           </select>
         </label>
-        <span class="term-picker-hint">У фьючерса под графиком появится второй график — контанго.</span>
+        <button
+          type="button"
+          class="term-add-btn-small"
+          [disabled]="addingSecInProgress || pendingSecurityId == null || stockTargetExists"
+          (click)="addSecurityByPicker()"
+        >+ Добавить</button>
+        @if (addingSecKind === 'stock') {
+          <span class="term-add-busy">идёт процесс загрузки — добавление бумаги…</span>
+        }
+        @if (stockTargetExists && !addingSecInProgress) {
+          <span class="term-add-already">уже добавлена</span>
+        }
+        <span class="term-picker-hint">У фьючерса под графиком появится второй график — контанго. После выбора нажмите «+ Добавить».</span>
 
         <div class="term-bond-block">
           <div class="term-bond-title">Облигации из фондов</div>
           <div class="term-bond-row">
-            <label class="term-field">
-              <span>Фонд</span>
-              <select [(ngModel)]="bondFundCode" (ngModelChange)="loadBondPlan($event)">
+<label class="term-field">
+                <span>Фонд</span>
+                <select [(ngModel)]="bondFundCode" (ngModelChange)="loadBondPlan($event)" [disabled]="addingSecInProgress">
                 @for (f of bondFunds; track f.code) {
                   <option [ngValue]="f.code">{{ f.name }}</option>
                 }
@@ -185,18 +203,19 @@
               <span class="term-bond-error">{{ bondError }}</span>
             } @else {
               <label class="term-field">
-                <span>Выпуск (откроет график цен)</span>
+                <span>Выпуск (после выбора нажмите «+ Добавить»)</span>
                 <select
                   [(ngModel)]="pendingBondSec"
-                  (ngModelChange)="onBondPicked()"
-                  [disabled]="registeringBond != null"
+                  (ngModelChange)="onPickerSelection()"
+                  [disabled]="addingSecInProgress"
+                  [class.term-picker-already]="bondTargetExists"
                 >
                   <option [ngValue]="null">— выберите выпуск —</option>
                   <optgroup label="Корпоративные">
                     @for (h of bondHoldings; track h.sec) {
                       @if (h.kind === 'corp') {
-                        <option [ngValue]="h.sec">
-                          {{ h.sec }} — {{ h.weight }}%
+                        <option [ngValue]="h.sec" [title]="h.sec + (h.name ? ' · ' + h.name : '')">
+                          {{ (h.name || h.sec) }} — {{ h.weight }}%
                         </option>
                       }
                     }
@@ -204,17 +223,29 @@
                   <optgroup label="ОФЗ">
                     @for (h of bondHoldings; track h.sec) {
                       @if (h.kind === 'ofz') {
-                        <option [ngValue]="h.sec">
-                          {{ h.sec }} — {{ h.weight }}%
+                        <option [ngValue]="h.sec" [title]="h.sec + (h.name ? ' · ' + h.name : '')">
+                          {{ (h.name || h.sec) }} — {{ h.weight }}%
                         </option>
                       }
                     }
                   </optgroup>
                 </select>
               </label>
+              <button
+                type="button"
+                class="term-add-btn-small"
+                [disabled]="addingSecInProgress || pendingBondSec == null || bondTargetExists"
+                (click)="addBondByPicker()"
+              >+ Добавить</button>
+              @if (addingSecKind === 'bond') {
+                <span class="term-add-busy">идёт процесс загрузки — добавление бумаги…</span>
+              }
+              @if (bondTargetExists && !addingSecInProgress) {
+                <span class="term-add-already">уже добавлена</span>
+              }
             }
           </div>
-          @if (registeringBond) {
+          @if (registeringBond && addingSecKind === 'bond') {
             <span class="term-bond-msg">Регистрация {{ registeringBond }} и загрузка цен…</span>
           }
         </div>
@@ -240,8 +271,15 @@
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
+          (dataReady)="onPanelDataReady(panel.uid)"
         />
       }
     </div>
+
+    @if (addingSecInProgress) {
+      <div class="term-scrim" aria-hidden="true">
+        <span class="term-scrim-label">идёт процесс загрузки — добавление бумаги…</span>
+      </div>
+    }
   }
 </section>
