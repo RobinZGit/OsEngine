@@ -187,7 +187,6 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       Math.min(this.chartHeightMax, this.initialHeight)
     );
     this.loadChart();
-    this.loadIndicatorSeries();
     this.startPolling();
     this.emitStateChange();
   }
@@ -584,25 +583,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     );
   }
 
-  /* Индикаторы на графике: назначенные серии бумаги, расчёт по текущему
-     таймфрейму (sync в фоне + опрос значений) и отрисовка на графике цены. */
-
-  /** Назначенные на бумагу серии индикаторов. */
-  private loadIndicatorSeries(): void {
-    if (!this.security) return;
-    this.subs.push(
-      this.securities.getSecurityIndicatorSeries(this.security.id).subscribe({
-        next: (rows) => {
-          this.indicatorRows = rows;
-          if (rows.length) this.refreshIndicatorValues();
-        },
-        error: (err) => {
-          this.indicatorError =
-            err?.error?.error || err?.message || 'Не удалось загрузить индикаторы';
-        },
-      })
-    );
-  }
+  /* Индикаторы на графике: добавленные пользователем в терминале серии,
+     расчёт по текущему таймфрейму (sync в фоне + опрос значений)
+     и отрисовка на графике цены. По умолчанию список пуст — только кнопка
+     «+ Добавить индикатор»; назначенные в «Бумагах» серии в терминал
+     не подгружаются. */
 
   /** Свечи поменялись/таймфрейм сменился — пересчитываем значения индикаторов. */
   private refreshIndicatorsForChart(): void {

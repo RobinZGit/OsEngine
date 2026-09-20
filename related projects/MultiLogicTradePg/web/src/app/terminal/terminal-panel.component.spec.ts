@@ -6,6 +6,7 @@ import {
   discardPeriodicTasks,
 } from '@angular/core/testing';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 import { TerminalPanelComponent } from './terminal-panel.component';
 import { SecuritiesService } from '../services/securities.service';
@@ -88,7 +89,7 @@ describe('TerminalPanelComponent', () => {
       'getIndicatorValues',
     ]);
     securities.getPrices.and.returnValue(of([]));
-    securities.getSecurityIndicatorSeries.and.returnValue(of([smaSeries]));
+    securities.getSecurityIndicatorSeries.and.returnValue(of([]));
     securities.syncIndicatorSeries.and.returnValue(of({ ok: true }));
     securities.assignIndicatorSeries.and.returnValue(of([]));
     securities.removeIndicatorSeries.and.returnValue(of({ ok: true }));
@@ -143,6 +144,14 @@ describe('TerminalPanelComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('по умолчанию индикаторов на панели нет — только кнопка «+»', () => {
+    expect(component.indicatorRows.length).toBe(0);
+    const chips = fixture.debugElement.queryAll(By.css('.tp-ind-chip'));
+    expect(chips.length).toBe(0);
+    const addBtn = fixture.debugElement.query(By.css('.tp-ind-add'));
+    expect(addBtn).not.toBeNull();
+  });
+
   it('превращает заполненные сделки счёта в маркеры входов', () => {
     component.trades = [
       trade(1, { direction: 'BUY' }),
@@ -164,6 +173,7 @@ describe('TerminalPanelComponent', () => {
   });
 
   it('открывает параметры индикатора с текущими значениями', () => {
+    component.indicatorRows = [smaSeries];
     component.openEditParams(smaSeries);
     expect(component.indicatorEditRow?.indicator_name).toBe('SMA');
     expect(component.indicatorEditParams['param_period']).toBe('20');
@@ -172,6 +182,7 @@ describe('TerminalPanelComponent', () => {
   });
 
   it('отклоняет нечисловой параметр без запроса PUT', () => {
+    component.indicatorRows = [smaSeries];
     component.openEditParams(smaSeries);
     component.indicatorEditParams['param_period'] = 'abc';
     component.saveEditParams();
@@ -181,6 +192,7 @@ describe('TerminalPanelComponent', () => {
   });
 
   it('отклоняет период меньше единицы', () => {
+    component.indicatorRows = [smaSeries];
     component.openEditParams(smaSeries);
     component.indicatorEditParams['param_period'] = '0';
     component.saveEditParams();
@@ -189,6 +201,7 @@ describe('TerminalPanelComponent', () => {
   });
 
   it('сохраняет изменённый период и перезапускает расчёт', fakeAsync(() => {
+    component.indicatorRows = [smaSeries];
     component.openEditParams(smaSeries);
     component.indicatorEditParams['param_period'] = '30';
     component.saveEditParams();
@@ -256,6 +269,7 @@ describe('TerminalPanelComponent', () => {
   }));
 
   it('не добавляет уже назначенный индикатор', fakeAsync(() => {
+    component.indicatorRows = [smaSeries];
     refs.getIndicators.and.returnValue(
       of([
         {
@@ -283,6 +297,7 @@ describe('TerminalPanelComponent', () => {
   }));
 
   it('удаляет индикатор с бумаги', () => {
+    component.indicatorRows = [smaSeries];
     component.removeIndicator(smaSeries.id);
     expect(securities.removeIndicatorSeries).toHaveBeenCalledWith(1);
     expect(component.indicatorRows.some((r) => r.id === smaSeries.id)).toBeFalse();
