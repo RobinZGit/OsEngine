@@ -96,6 +96,10 @@ Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; Wor
 [Code]
 var
   GDbMode: String;
+  GInstalled: Boolean;
+  GUninstallString: String;
+  GUpgradePage: TWizardPage;
+  GWipeDataCheck: TNewCheckBox;
 
 function GetDbMode(Param: String): String;
 begin
@@ -105,7 +109,16 @@ begin
     Result := GDbMode;
 end;
 
+function StripQuotes(Value: String): String;
+begin
+  Result := Value;
+  if (Length(Result) >= 2) and (Copy(Result, 1, 1) = '"') and (Copy(Result, Length(Result), 1) = '"') then
+    Result := Copy(Result, 2, Length(Result) - 2);
+end;
+
 procedure InitializeWizard();
+var
+  TextLabel: TNewStaticText;
 begin
   { Bottom strip on every wizard page. }
   if ActiveLanguage = 'russian' then
@@ -131,6 +144,102 @@ begin
       'Build: {#MyAppBuild}'#13#10#13#10 +
       'This will install MultiLogicTradePg on your computer.'#13#10#13#10 +
       'Click Next to continue.';
+  end;
+
+  { Page 2 (only when an older copy is already installed): by default the
+    database is kept (same as the old "No"), wiping happens only if the user
+    ticks the checkbox (same as the old "Yes"). }
+  if ActiveLanguage = 'russian' then
+    GUpgradePage := CreateCustomPage(wpWelcome,
+      'Обновление MultiLogicTradePg',
+      'MultiLogicTradePg уже установлен — данные будут сохранены')
+  else
+    GUpgradePage := CreateCustomPage(wpWelcome,
+      'Update MultiLogicTradePg',
+      'MultiLogicTradePg is already installed - your data will be kept');
+
+  TextLabel := TNewStaticText.Create(GUpgradePage);
+  TextLabel.Parent := GUpgradePage.Surface;
+  TextLabel.Left := 0;
+  TextLabel.Top := 0;
+  TextLabel.Width := GUpgradePage.SurfaceWidth;
+  TextLabel.Height := 110;
+  TextLabel.WordWrap := True;
+  if ActiveLanguage = 'russian' then
+    TextLabel.Caption :=
+      'Новый пакет: версия {#MyAppVersion}, сборка {#MyAppBuild}.'#13#10#13#10 +
+      'По умолчанию установка пройдёт поверх старой версии: существующие'#13#10 +
+      'таблицы и данные (цены, сделки, логики, параметры индикаторов)'#13#10 +
+      'будут сохранены, схема обновится скриптами 01/02.'#13#10#13#10 +
+      'Перед установкой закройте MultiLogic Trade (окна API/Angular),'#13#10 +
+      'если они открыты.'
+  else
+    TextLabel.Caption :=
+      'New package: version {#MyAppVersion}, build {#MyAppBuild}.'#13#10#13#10 +
+      'By default the setup will run over the existing installation: existing'#13#10 +
+      'tables and data (prices, trades, logics, indicator parameters) will be'#13#10 +
+      'kept and the schema will be updated by scripts 01/02.'#13#10#13#10 +
+      'Please close MultiLogic Trade (API/Angular windows) before installing'#13#10 +
+      'if it is running.';
+
+  GWipeDataCheck := TNewCheckBox.Create(GUpgradePage);
+  GWipeDataCheck.Parent := GUpgradePage.Surface;
+  GWipeDataCheck.Left := 0;
+  GWipeDataCheck.Top := TextLabel.Top + TextLabel.Height + 16;
+  GWipeDataCheck.Width := GUpgradePage.SurfaceWidth;
+  GWipeDataCheck.Checked := False;
+  if ActiveLanguage = 'russian' then
+    GWipeDataCheck.Caption := 'Удалить все таблицы и их содержимое и создать всё заново'
+  else
+    GWipeDataCheck.Caption := 'Delete all tables and their contents and recreate everything';
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = GUpgradePage.ID then
+  begin
+    WizardForm.BackButton.Visible := False;
+    if ActiveLanguage = 'russian' then
+      WizardForm.NextButton.Caption := 'Продолжить'
+    else
+      WizardForm.NextButton.Caption := 'Continue';
+  end
+  else
+  begin
+    WizardForm.BackButton.Visible := True;
+    WizardForm.NextButton.Caption := SetupMessage(msgButtonNext);
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = GUpgradePage.ID then
+    Result := not GInstalled;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if CurPageID = GUpgradePage.ID then
+  begin
+    if GWipeDataCheck.Checked then
+    begin
+      GDbMode := 'wipe';
+      if (GUninstallString <> '') and
+         (not Exec(StripQuotes(GUninstallString), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_SHOW, ewWaitUntilTerminated, ResultCode)) then
+      begin
+        if ActiveLanguage = 'russian' then
+          MsgBox('Не удалось запустить деинсталлятор старой версии.', mbError, MB_OK)
+        else
+          MsgBox('Failed to run the old version uninstaller.', mbError, MB_OK);
+        Result := False;
+      end;
+    end
+    else
+      GDbMode := 'upgrade';
   end;
 end;
 
@@ -163,54 +272,19 @@ begin
   WizardForm.ProgressGauge.Position := WizardForm.ProgressGauge.Max;
 end;
 
-function StripQuotes(Value: String): String;
-begin
-  Result := Value;
-  if (Length(Result) >= 2) and (Copy(Result, 1, 1) = '"') and (Copy(Result, Length(Result), 1) = '"') then
-    Result := Copy(Result, 2, Length(Result) - 2);
-end;
-
 function InstallProtocolExists(): Boolean;
 begin
   Result := FileExists(ExpandConstant('{app}\INSTALL_PROTOCOL.txt'));
 end;
 
 function InitializeSetup(): Boolean;
-var
-  UninstallString: String;
-  ResultCode: Integer;
-  Answer: Integer;
 begin
   Result := True;
-  GDbMode := 'create';
+  GDbMode := '';
+  GInstalled := False;
+  GUninstallString := '';
 
-  if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', UninstallString)
-    or RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', UninstallString) then
-  begin
-    Answer := MsgBox(
-      'MultiLogicTradePg уже установлен.'#13#10 +
-      'Новый пакет: версия {#MyAppVersion}, сборка {#MyAppBuild}'#13#10#13#10 +
-      'Да - удалить старую установку и поставить заново (БД пересоздаётся, данные стираются).'#13#10 +
-      'Нет - установить поверх: файлы и npm обновятся; база НЕ удаляется,'#13#10 +
-      'схема обновится скриптами 01/02 (цены, сделки, логики сохраняются).'#13#10 +
-      'Отмена - остановить установку.'#13#10#13#10 +
-      'Перед установкой закройте MultiLogic Trade (окна API/Angular), если они открыты.',
-      mbConfirmation,
-      MB_YESNOCANCEL
-    );
-
-    if Answer = IDYES then
-    begin
-      GDbMode := 'wipe';
-      if not Exec(StripQuotes(UninstallString), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
-      begin
-        MsgBox('Не удалось запустить деинсталлятор старой версии.', mbError, MB_OK);
-        Result := False;
-      end;
-    end
-    else if Answer = IDNO then
-      GDbMode := 'upgrade'
-    else if Answer = IDCANCEL then
-      Result := False;
-  end;
+  if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', GUninstallString)
+    or RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1', 'UninstallString', GUninstallString) then
+    GInstalled := True;
 end;
