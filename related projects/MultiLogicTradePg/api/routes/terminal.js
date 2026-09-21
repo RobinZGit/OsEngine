@@ -503,7 +503,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
              (account_id, security_id, direction, execution, quantity, price, amount,
               status, broker_order_id, note)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-           RETURNING id, executed_at`,
+           RETURNING id, to_char(executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at`,
           [
             accountId,
             securityId,
@@ -540,7 +540,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         status,
         broker_order_id: brokerOrderId,
         note,
-        executed_at: '',
+        executed_at: trRows.rows[0]?.executed_at ?? '',
       };
 
       if (status === 'rejected') {
@@ -599,7 +599,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         `
         SELECT tt.id, tt.account_id, tt.security_id, tt.direction, tt.execution,
                tt.quantity, tt.price, tt.amount, tt.status, tt.broker_order_id,
-               tt.note, tt.executed_at,
+               tt.note, to_char(tt.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at,
                s.name AS security_name,
                sp.prefix AS security_prefix
         FROM terminal_trades tt
