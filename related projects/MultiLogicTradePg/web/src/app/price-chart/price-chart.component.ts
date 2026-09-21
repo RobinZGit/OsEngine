@@ -151,6 +151,26 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       .slice(0, 19);
   }
 
+  /** Epoch (мс) локальной «YYYY-MM-DD HH:MM:SS» — для доли бара (обе стороны в UTC). */
+  private static dtToMs(key: string): number {
+    const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(key);
+    if (!m) return 0;
+    return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  }
+
+  /**
+   * Доля времени сделки внутри бара (0..1) — маркер ставится «в своё время»,
+   * а не в центр бара. За границами — clamp к краю.
+   */
+  private static fxInBar(dtKey: string, barStartKey: string, barEndKey: string): number {
+    const a = PriceChartComponent.dtToMs(barStartKey);
+    const b = PriceChartComponent.dtToMs(barEndKey);
+    const span = b - a;
+    if (!(span > 0)) return 0.5;
+    const t = PriceChartComponent.dtToMs(dtKey);
+    return Math.max(0, Math.min(1, (t - a) / span));
+  }
+
   private px(base: number): number {
     return Math.round(base * this.labelScale);
   }
@@ -1274,7 +1294,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     priceBottom: number
   ): void {
     if (!this.tradeMarkers.length) return;
-    // Несколько сделок на одном баре (open+close) — чуть развести по X, не «одна линия».
+    // Каждая сделка ставится в своё время внутри бара (по секундам исполнения),
+    // а не в центр. Несколько сделок в одну секунду — небольшой разброс по X.
     const slotByKey = new Map<string, number>();
     for (const m of this.tradeMarkers) {
       const i = this.indexInVisible(visible, m.dt);
@@ -1282,8 +1303,24 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       const key = PriceChartComponent.dtKey(m.dt);
       const slot = slotByKey.get(key) ?? 0;
       slotByKey.set(key, slot + 1);
-      const stagger = (slot - 0.5) * Math.max(3, candleWidth * 0.35);
-      const x = left + i * candleWidth + candleWidth / 2 + stagger;
+      // «Своё время»: сделка на реальный момент исполнения внутри бара, а не в центр.
+      const barStart = PriceChartComponent.dtKey(visible[i].dt);
+      const barEnd =
+        i + 1 < visible.length
+          ? PriceChartComponent.dtKey(visible[i + 1].dt)
+          : i - 1 >= 0
+            ? PriceChartComponent.dtKey(visible[i - 1].dt)
+            : null;
+      const frac = barEnd
+        ? PriceChartComponent.fxInBar(key, barStart, barEnd)
+        : 0.5;
+      const offset =
+        slot === 0
+          ? 0
+          : (slot % 2 ? 1 : -1) *
+            Math.ceil((slot + 1) / 2) *
+            Math.max(2, candleWidth * 0.18);
+      const x = left + i * candleWidth + Math.min(1, Math.max(0, frac)) * candleWidth + offset;
       const y = yScale(Number(m.price));
       const isLong = m.side === 'long';
       const isOpen = m.kind === 'open';

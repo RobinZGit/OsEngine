@@ -204,4 +204,18 @@ describe('PriceChartComponent', () => {
     ).indexInVisible(visible, '2026-01-01T10:15:00');
     expect(idxIn).toBe(1);
   });
+
+  it('fxInBar places marker at its own time inside the bar', () => {
+    const fxInBar = (PriceChartComponent as unknown as {
+      fxInBar: (d: string, s: string, e: string) => number;
+    }).fxInBar;
+    // 15:26:04 внутри бара 15:15–15:30 → ~73.8% ширины бара (не центр).
+    expect(fxInBar('2026-09-21 15:26:04', '2026-09-21 15:15:00', '2026-09-21 15:30:00')).toBeCloseTo(
+      0.738,
+      2
+    );
+    // Ровно в начале бара → левый край, ровно за границей → правый (clamp).
+    expect(fxInBar('2026-09-21 15:15:00', '2026-09-21 15:15:00', '2026-09-21 15:30:00')).toBe(0);
+    expect(fxInBar('2026-09-21 15:31:00', '2026-09-21 15:15:00', '2026-09-21 15:30:00')).toBe(1);
+  });
 });
