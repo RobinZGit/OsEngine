@@ -118,7 +118,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   indicatorAdding = false;
   indicatorBusyMessage: string | null = null;
   indicatorError: string | null = null;
-  private indicatorCatalogLoading = false;
+  indicatorCatalogLoading = false;
   private indicatorSyncing = false;
   private indicatorSyncGen = 0;
   private indicatorPollTimer?: ReturnType<typeof setTimeout>;
@@ -598,13 +598,20 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.syncIndicators(null);
   }
 
-  /** Перекаталог индикаторов по открытии пикера. */
+  /** Открыть форму выбора индикатора (отдельная модалка). */
   openIndicatorPicker(): void {
-    this.indicatorPickerOpen = !this.indicatorPickerOpen;
+    this.indicatorPickerOpen = true;
     this.indicatorError = null;
-    if (this.indicatorPickerOpen && this.indicatorCatalog.length === 0) {
+    if (this.indicatorCatalog.length === 0) {
       this.loadIndicatorCatalog();
     }
+  }
+
+  /** Закрыть форму выбора индикатора. */
+  closeIndicatorPicker(): void {
+    this.indicatorPickerOpen = false;
+    this.pendingIndicatorId = null;
+    this.indicatorError = null;
   }
 
   private loadIndicatorCatalog(): void {

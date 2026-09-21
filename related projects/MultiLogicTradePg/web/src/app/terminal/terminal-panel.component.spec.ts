@@ -154,6 +154,38 @@ describe('TerminalPanelComponent', () => {
     expect(addBtn).not.toBeNull();
   });
 
+  it('выбор индикатора открывается отдельной модальной формой и закрывается по «Отмена»', fakeAsync(() => {
+    refs.getIndicators.and.returnValue(
+      of([
+        {
+          id: 8,
+          code: 'RSI',
+          name: 'RSI',
+          script: null,
+          formula: '@RSI',
+          is_custom: false,
+          description: null,
+          category: null,
+          is_active: true,
+          sig_trend_def: null,
+          sig_ct_def: null,
+          value_types: [],
+        },
+      ])
+    );
+    fixture.detectChanges();
+    component.openIndicatorPicker();
+    tick();
+    fixture.detectChanges();
+    const card = fixture.debugElement.query(By.css('.tp-modal-card'));
+    expect(card).not.toBeNull();
+    expect(card.query(By.css('select'))).not.toBeNull();
+    component.closeIndicatorPicker();
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('.tp-modal-card'))).toBeNull();
+    discardPeriodicTasks();
+  }));
+
   it('превращает заполненные сделки счёта в маркеры входов', () => {
     component.trades = [
       trade(1, { direction: 'BUY' }),
