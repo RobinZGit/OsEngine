@@ -487,50 +487,48 @@
   height: 100%;
 }
 
-/* Индикаторы на графике терминала: видимый блок под графиком с кнопкой
-   «+ Добавить индикатор»; добавленные индикаторы — чипы внутри блока. */
+/* Индикаторы на графике терминала: узкая однострочная полоска под графиком —
+   заголовок, чипы добавленных индикаторов и компактная кнопка «+». */
 .tp-ind-block {
-  margin-top: 2px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fbfdff;
-  padding: 0.35rem 0.5rem 0.4rem;
-  font-size: 0.7rem;
-}
-
-.tp-ind-block-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
   flex-wrap: wrap;
+  margin-top: 2px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fbfdff;
+  padding: 0.16rem 0.4rem;
+  font-size: 0.66rem;
+  min-height: 1.35rem;
 }
 
 .tp-ind-title {
-  font-weight: 700;
+  font-weight: 600;
   color: #374151;
   flex-shrink: 0;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
 }
 
 .tp-ind-chips {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-top: 0.35rem;
-  min-height: 1.25rem;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .tp-ind-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.18rem;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   color: #1d4ed8;
   border-radius: 4px;
-  padding: 0.05rem 0.25rem;
-  font-size: 0.68rem;
+  padding: 0.03rem 0.22rem;
+  font-size: 0.64rem;
   white-space: nowrap;
 }
 
@@ -544,8 +542,8 @@
   background: none;
   color: #1d4ed8;
   cursor: pointer;
-  font-size: 0.66rem;
-  padding: 0 0.1rem;
+  font-size: 0.62rem;
+  padding: 0 0.08rem;
   line-height: 1;
 }
 
@@ -562,14 +560,13 @@
 }
 
 .tp-add-ind {
-  margin-left: auto;
   flex-shrink: 0;
   background: #eff6ff;
   color: #2563eb;
   border: 1px solid #93c5fd;
   border-radius: 4px;
-  font-size: 0.72rem;
-  padding: 0.22rem 0.55rem;
+  font-size: 0.62rem;
+  padding: 0.1rem 0.38rem;
   cursor: pointer;
   white-space: nowrap;
 }

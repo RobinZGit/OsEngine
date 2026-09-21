@@ -117,29 +117,18 @@
     </div>
 
     <div class="tp-ind-block">
-      <div class="tp-ind-block-head">
-        <span class="tp-ind-title">Индикаторы</span>
-        @if (indicatorBusyMessage) {
-          <span
-            class="spinner"
-            [title]="indicatorBusyMessage"
-            aria-hidden="true"
-          ></span>
-        }
-        @if (indicatorError) {
-          <span class="tp-ind-error" role="alert">{{ indicatorError }}</span>
-        }
-        <button
-          type="button"
-          class="tp-add-ind"
-          [class.on]="indicatorPickerOpen"
-          [disabled]="indicatorAdding"
-          [title]="indicatorPickerOpen ? 'Скрыть выбор индикаторов' : 'Добавить индикатор'"
-          [attr.aria-label]="indicatorPickerOpen ? 'Скрыть выбор индикаторов' : 'Добавить индикатор'"
-          (click)="openIndicatorPicker()"
-        >{{ indicatorPickerOpen ? '− Скрыть' : '+ Добавить индикатор' }}</button>
-      </div>
-      <div class="tp-ind-chips">
+      <span class="tp-ind-title">Индикаторы</span>
+      @if (indicatorBusyMessage) {
+        <span
+          class="spinner"
+          [title]="indicatorBusyMessage"
+          aria-hidden="true"
+        ></span>
+      }
+      @if (indicatorError) {
+        <span class="tp-ind-error" role="alert">{{ indicatorError }}</span>
+      }
+      <span class="tp-ind-chips">
         @for (chip of indicatorChips(); track chip.indicator_id) {
           <span class="tp-ind-chip" [title]="chip.row.indicator_name">
             <span class="tp-ind-chip-label">{{ chip.label }}</span>
@@ -159,7 +148,16 @@
             >✕</button>
           </span>
         }
-      </div>
+      </span>
+      <button
+        type="button"
+        class="tp-add-ind"
+        [class.on]="indicatorPickerOpen"
+        [disabled]="indicatorAdding"
+        [title]="indicatorPickerOpen ? 'Скрыть выбор индикаторов' : 'Добавить индикатор'"
+        [attr.aria-label]="indicatorPickerOpen ? 'Скрыть выбор индикаторов' : 'Добавить индикатор'"
+        (click)="openIndicatorPicker()"
+      >{{ indicatorPickerOpen ? '− Скрыть' : '+ Добавить индикатор' }}</button>
     </div>
 
     @if (indicatorPickerOpen) {
