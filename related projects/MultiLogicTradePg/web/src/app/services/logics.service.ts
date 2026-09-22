@@ -698,6 +698,7 @@ export class LogicsService {
     logic_id: number;
     date_from: string;
     date_to: string;
+    slippage_pct?: number;
     opt_grid?: {
       config?: unknown;
       arms?: { lane: string; values: Record<string, number> }[];

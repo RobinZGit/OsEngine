@@ -4057,6 +4057,7 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     processed_bars INTEGER NOT NULL DEFAULT 0,
     trades_created INTEGER NOT NULL DEFAULT 0,
     test_balance NUMERIC(20, 6),
+    slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0,
     financial_result NUMERIC(20, 6),
     cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
     error_message TEXT,
@@ -4069,6 +4070,7 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     opt_grid_results JSONB
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS date_from DATE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS date_to DATE;

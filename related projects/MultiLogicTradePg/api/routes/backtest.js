@@ -98,7 +98,18 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       req.body?.opt_grid && typeof req.body.opt_grid === 'object'
         ? req.body.opt_grid
         : null;
-    const runId = await startBacktest(pool, logicId, dateFrom, dateTo, optGrid);
+    const slippagePct = Number(req.body?.slippage_pct);
+    const slippage = Number.isFinite(slippagePct)
+      ? Math.min(100, Math.max(0, slippagePct))
+      : 0;
+    const runId = await startBacktest(
+      pool,
+      logicId,
+      dateFrom,
+      dateTo,
+      optGrid,
+      slippage
+    );
     res.status(202).json({ ok: true, run_id: runId });
   } catch (err) {
     console.error('POST /api/logic-backtest/start', err);

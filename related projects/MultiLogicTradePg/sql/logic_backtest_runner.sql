@@ -2200,6 +2200,63 @@ BEGIN
 END;
 $$;
 
+-- Хелпер: цена следующей свечи для филла при проскальзывании.
+-- Возвращает close_price свечи, следующей сразу за p_bar_dt у (p_security_id, p_timeframe_id);
+-- NULL, если следующей свечи нет (последний бар прогона).
+CREATE OR REPLACE FUNCTION logic_backtest_next_bar_close_at(
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP
+)
+RETURNS NUMERIC
+LANGUAGE sql STABLE AS $$
+    SELECT p.close_price
+    FROM prices p
+    WHERE p.security_id = p_security_id
+      AND p.timeframe_id = p_timeframe_id
+      AND p.dt > p_bar_dt
+    ORDER BY p.dt ASC
+    LIMIT 1;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_next_bar_close_at(INTEGER, INTEGER, TIMESTAMP) IS
+'Close свечи, следующей за p_bar_dt (для проскальзывания: филл по цене следующей свечи); NULL — нет следующей';
+
+-- Хелпер: исполнение сигнального филла с учётом проскальзывания.
+-- С вероятностью p_slippage_pct (%%) цена сделки берётся с закрытия СЛЕДУЮЩЕЙ свечи
+-- вместо текущей; иначе (и если следующей свечи нет) — базовая цена p_base.
+CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
+    p_run_id BIGINT,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_base NUMERIC,
+    p_slippage_pct NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql VOLATILE AS $$
+DECLARE
+    v_slippage NUMERIC;
+    v_next NUMERIC;
+BEGIN
+    IF COALESCE(p_slippage_pct, 0) <= 0 OR p_base IS NULL THEN
+        RETURN p_base;
+    END IF;
+
+    IF random() * 100 < p_slippage_pct THEN
+        v_next := logic_backtest_next_bar_close_at(p_security_id, p_timeframe_id, p_bar_dt);
+        IF v_next IS NOT NULL THEN
+            RETURN v_next;
+        END IF;
+    END IF;
+
+    RETURN p_base;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC) IS
+'Сигнальный филл с проскальзыванием: с вероятностью slippage_pct%% цена = close следующей свечи, иначе p_base';
+
 CREATE OR REPLACE FUNCTION logic_backtest_process_signals(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -2251,7 +2308,12 @@ DECLARE
     v_spent_notional NUMERIC := 0;
     v_room NUMERIC;
     v_order_notional NUMERIC;
+    v_slippage_pct NUMERIC;
 BEGIN
+    -- Проскальзывание прогона (условие на весь батч-запуск, не per-signal).
+    SELECT COALESCE(slippage_pct, 0) INTO v_slippage_pct
+    FROM logic_backtest_runs WHERE id = p_run_id;
+
     SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
     SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
@@ -2407,7 +2469,10 @@ BEGIN
 
                 IF v_signal_kind IS NULL THEN
                     v_signal_kind := v_sig.signal_kind;
-                    v_pp := v_eval.close_price;
+                    v_pp := logic_backtest_fill_at(
+                        p_run_id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
+                        v_eval.close_price, v_slippage_pct
+                    );
                     v_bar_dt := v_eval.bar_dt;
                 END IF;
                 v_formulas := CASE

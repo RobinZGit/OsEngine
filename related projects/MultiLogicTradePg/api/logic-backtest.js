@@ -1992,7 +1992,7 @@ async function finishCancelled(pool, runId, logicId, balance, processed, total) 
   schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
 }
 
-async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null) {
+async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null, slippagePct = 0) {
   const arms =
     optGrid && Array.isArray(optGrid.arms) && optGrid.arms.length > 0
       ? optGrid.arms.map((a) => ({
@@ -2012,12 +2012,14 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null) {
     `
     INSERT INTO logic_backtest_runs (
       logic_id, date_from, date_to, status, progress_pct, phase_message, started_at,
+      slippage_pct,
       opt_grid_config, opt_grid_arms
     )
     VALUES (
       $1, $2, $3, 'pending', 0,
       CASE WHEN $4::jsonb IS NOT NULL THEN 'Старт (тест + оптимизация)' ELSE 'Старт' END,
       CURRENT_TIMESTAMP,
+      $6::numeric,
       $5::jsonb,
       $4::jsonb
     )
@@ -2029,6 +2031,7 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null) {
       dateTo,
       arms ? JSON.stringify(arms) : null,
       config ? JSON.stringify(config) : null,
+      slippagePct ?? 0,
     ]
   );
   const runId = rows[0].id;
@@ -2062,6 +2065,7 @@ async function getBacktestStatus(pool, logicId, runId) {
       test_balance::float8 AS test_balance,
       financial_result::float8 AS financial_result,
       cancel_requested, error_message, started_at, finished_at, created_at,
+      slippage_pct::float8 AS slippage_pct,
       (opt_grid_arms IS NOT NULL AND jsonb_typeof(opt_grid_arms) = 'array'
         AND jsonb_array_length(opt_grid_arms) > 0) AS opt_grid_enabled,
       opt_grid_results

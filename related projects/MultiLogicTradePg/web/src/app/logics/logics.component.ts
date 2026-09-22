@@ -300,6 +300,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     period: {
       date_from: string;
       date_to: string;
+      slippage_pct?: number;
       opt_grid?: {
         config?: unknown;
         arms?: { lane: string; values: Record<string, number> }[];
@@ -3979,6 +3980,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     period: {
       date_from: string;
       date_to: string;
+      slippage_pct?: number;
       opt_grid?: {
         config?: unknown;
         arms?: { lane: string; values: Record<string, number> }[];
@@ -4006,6 +4008,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     period: {
       date_from: string;
       date_to: string;
+      slippage_pct?: number;
       opt_grid?: {
         config?: unknown;
         arms?: { lane: string; values: Record<string, number> }[];
@@ -4017,6 +4020,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
         logic_id: logicId,
         date_from: period.date_from,
         date_to: period.date_to,
+        slippage_pct: period.slippage_pct ?? 0,
         opt_grid: period.opt_grid ?? null,
       })
       .subscribe({

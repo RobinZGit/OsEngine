@@ -116,6 +116,9 @@ export interface BacktestRunStatus {
 
   financial_result: number | null;
 
+  /** % проскальзывания теста: 0 = выкл., иначе сделки могут исполняться по close следующей свечи. */
+  slippage_pct?: number | null;
+
   error_message: string | null;
 
   /** Same test run hosted offline grid (paper opt_lanes). */
@@ -236,6 +239,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Output() startBacktest = new EventEmitter<{
     date_from: string;
     date_to: string;
+    slippage_pct: number;
     opt_grid?: { config: { params: OptGridParamRow[] }; arms: ReturnType<typeof buildOptGridArms> } | null;
   }>();
 
@@ -291,6 +295,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
   periodFrom = '';
 
   periodTo = '';
+
+  /** Проскальзывание выключено по умолчанию; % (50) применяется только когда включено. */
+  slippageEnabled = false;
+
+  slippagePct = 50;
 
   /** Same test run: also trade paper grid lanes. */
   optimizeEnabled = false;
@@ -1385,6 +1394,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.startBacktest.emit({
       date_from: this.periodFrom,
       date_to: this.periodTo,
+      slippage_pct: this.slippageEnabled ? this.slippagePct : 0,
       opt_grid,
     });
   }

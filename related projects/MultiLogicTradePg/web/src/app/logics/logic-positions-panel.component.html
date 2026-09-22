@@ -11,6 +11,29 @@
           <span>По</span>
           <input type="date" [(ngModel)]="periodTo" />
         </label>
+        <label class="slippage-row">
+          <span class="slippage-check">
+            <input
+              type="checkbox"
+              id="slippageEnabled"
+              [(ngModel)]="slippageEnabled"
+            />
+            <span for="slippageEnabled">Проскальзывание</span>
+          </span>
+          <span class="slippage-value">
+            <input
+              type="number"
+              class="slippage-pct-input"
+              [disabled]="!slippageEnabled"
+              min="0"
+              max="100"
+              step="1"
+              [(ngModel)]="slippagePct"
+              title="% сделок с ценой следующей свечи (проскальзывание)."
+            />
+            <span>%</span>
+          </span>
+        </label>
         <div class="backtest-dialog-actions">
           <button type="button" class="btn btn-sm btn-ok" (click)="confirmRunDialog()">OK</button>
           <button type="button" class="btn btn-sm btn-muted" (click)="closeRunDialog()">Отмена</button>
@@ -119,6 +142,15 @@
 
         @if (isTest && periodLabel && !isBacktestRunning) {
           <span class="positions-period-label">{{ periodLabel }}</span>
+        }
+
+        @if (isTest && !isBacktestRunning && (backtestRun?.slippage_pct ?? 0) > 0) {
+          <span
+            class="positions-slippage-chip"
+            [title]="'Сделки теста исполнились с задержкой на следующую свечу с вероятностью ' + backtestRun?.slippage_pct + '% (проскальзывание).'"
+          >
+            проск. {{ backtestRun?.slippage_pct }}%
+          </span>
         }
 
         <span class="positions-summary-pnl">
