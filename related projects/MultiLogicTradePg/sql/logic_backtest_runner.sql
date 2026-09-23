@@ -2200,31 +2200,11 @@ BEGIN
 END;
 $$;
 
--- Хелпер: цена следующей свечи для филла при проскальзывании.
--- Возвращает close_price свечи, следующей сразу за p_bar_dt у (p_security_id, p_timeframe_id);
--- NULL, если следующей свечи нет (последний бар прогона).
-CREATE OR REPLACE FUNCTION logic_backtest_next_bar_close_at(
-    p_security_id INTEGER,
-    p_timeframe_id INTEGER,
-    p_bar_dt TIMESTAMP
-)
-RETURNS NUMERIC
-LANGUAGE sql STABLE AS $$
-    SELECT p.close_price
-    FROM prices p
-    WHERE p.security_id = p_security_id
-      AND p.timeframe_id = p_timeframe_id
-      AND p.dt > p_bar_dt
-    ORDER BY p.dt ASC
-    LIMIT 1;
-$$;
-
-COMMENT ON FUNCTION logic_backtest_next_bar_close_at(INTEGER, INTEGER, TIMESTAMP) IS
-'Close свечи, следующей за p_bar_dt (для проскальзывания: филл по цене следующей свечи); NULL — нет следующей';
-
 -- Хелпер: исполнение сигнального филла с учётом проскальзывания.
--- С вероятностью p_slippage_pct (%%) цена сделки берётся с закрытия СЛЕДУЮЩЕЙ свечи
--- вместо текущей; иначе (и если следующей свечи нет) — базовая цена p_base.
+-- slippage_pct (%) задаёт МАКСИМАЛЬНЫЙ случайный сдвиг цены сделки от базовой:
+-- цена = round(p_base * (1 + uni(-X..+X)/100), 6), где X = p_slippage_pct.
+-- Равномерный сдвиг применяется к КАЖДОМУ филлу и идёт в обе стороны (от -X% до +X%);
+-- 0% / NULL = базовая цена, проскальзывание выключено.
 CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
     p_run_id BIGINT,
     p_security_id INTEGER,
@@ -2236,26 +2216,21 @@ CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
 RETURNS NUMERIC
 LANGUAGE plpgsql VOLATILE AS $$
 DECLARE
-    v_slippage NUMERIC;
-    v_next NUMERIC;
+    v_shift_pct NUMERIC;
 BEGIN
     IF COALESCE(p_slippage_pct, 0) <= 0 OR p_base IS NULL THEN
         RETURN p_base;
     END IF;
 
-    IF random() * 100 < p_slippage_pct THEN
-        v_next := logic_backtest_next_bar_close_at(p_security_id, p_timeframe_id, p_bar_dt);
-        IF v_next IS NOT NULL THEN
-            RETURN v_next;
-        END IF;
-    END IF;
+    -- Равномерный случайный сдвиг цены: от -p_slippage_pct% до +p_slippage_pct%.
+    v_shift_pct := (random() * 2 - 1) * COALESCE(p_slippage_pct, 0);
 
-    RETURN p_base;
+    RETURN round(p_base * (1 + v_shift_pct / 100.0), 6);
 END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC) IS
-'Сигнальный филл с проскальзыванием: с вероятностью slippage_pct%% цена = close следующей свечи, иначе p_base';
+'Филл сигнальной сделки с проскальзыванием: цена случайно сдвигается равномерно от -slippage_pct%% до +slippage_pct%% от базовой (каждый филл, обе стороны)';
 
 CREATE OR REPLACE FUNCTION logic_backtest_process_signals(
     p_run_id BIGINT,
@@ -2310,7 +2285,8 @@ DECLARE
     v_order_notional NUMERIC;
     v_slippage_pct NUMERIC;
 BEGIN
-    -- Проскальзывание прогона (условие на весь батч-запуск, не per-signal).
+    -- Проскальзывание прогона: slippage_pct из logic_backtest_runs применяется
+    -- к каждой сделке (случайный сдвиг цены до ±slippage_pct%).
     SELECT COALESCE(slippage_pct, 0) INTO v_slippage_pct
     FROM logic_backtest_runs WHERE id = p_run_id;
 

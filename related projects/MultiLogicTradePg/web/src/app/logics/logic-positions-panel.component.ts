@@ -116,7 +116,7 @@ export interface BacktestRunStatus {
 
   financial_result: number | null;
 
-  /** % проскальзывания теста: 0 = выкл., иначе сделки могут исполняться по close следующей свечи. */
+  /** Проскальзывание теста (%): 0 = выкл., иначе цена каждой сделки сдвигается случайно от -N% до +N%. */
   slippage_pct?: number | null;
 
   error_message: string | null;
@@ -296,10 +296,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   periodTo = '';
 
-  /** Проскальзывание выключено по умолчанию; % (50) применяется только когда включено. */
-  slippageEnabled = false;
+  /** Проскальзывание включено по умолчанию: 0.2% = случайный сдвиг цены сделки от -0.2% до +0.2%. */
+  slippageEnabled = true;
 
-  slippagePct = 50;
+  slippagePct = 0.2;
 
   /** Same test run: also trade paper grid lanes. */
   optimizeEnabled = false;

@@ -5347,6 +5347,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9973,6 +9974,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -20688,6 +20717,38 @@ BEGIN
 END;
 $$;
 
+-- Хелпер: исполнение сигнального филла с учётом проскальзывания.
+-- slippage_pct (%) задаёт МАКСИМАЛЬНЫЙ случайный сдвиг цены сделки от базовой:
+-- цена = round(p_base * (1 + uni(-X..+X)/100), 6), где X = p_slippage_pct.
+-- Равномерный сдвиг применяется к КАЖДОМУ филлу и идёт в обе стороны (от -X% до +X%);
+-- 0% / NULL = базовая цена, проскальзывание выключено.
+CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
+    p_run_id BIGINT,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_base NUMERIC,
+    p_slippage_pct NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql VOLATILE AS $$
+DECLARE
+    v_shift_pct NUMERIC;
+BEGIN
+    IF COALESCE(p_slippage_pct, 0) <= 0 OR p_base IS NULL THEN
+        RETURN p_base;
+    END IF;
+
+    -- Равномерный случайный сдвиг цены: от -p_slippage_pct% до +p_slippage_pct%.
+    v_shift_pct := (random() * 2 - 1) * COALESCE(p_slippage_pct, 0);
+
+    RETURN round(p_base * (1 + v_shift_pct / 100.0), 6);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC) IS
+'Филл сигнальной сделки с проскальзыванием: цена случайно сдвигается равномерно от -slippage_pct%% до +slippage_pct%% от базовой (каждый филл, обе стороны)';
+
 CREATE OR REPLACE FUNCTION logic_backtest_process_signals(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -20739,7 +20800,13 @@ DECLARE
     v_spent_notional NUMERIC := 0;
     v_room NUMERIC;
     v_order_notional NUMERIC;
+    v_slippage_pct NUMERIC;
 BEGIN
+    -- Проскальзывание прогона: slippage_pct из logic_backtest_runs применяется
+    -- к каждой сделке (случайный сдвиг цены до ±slippage_pct%).
+    SELECT COALESCE(slippage_pct, 0) INTO v_slippage_pct
+    FROM logic_backtest_runs WHERE id = p_run_id;
+
     SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
     SELECT id INTO v_side_close_id FROM sides WHERE name = 'Close' LIMIT 1;
     SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
@@ -20895,7 +20962,10 @@ BEGIN
 
                 IF v_signal_kind IS NULL THEN
                     v_signal_kind := v_sig.signal_kind;
-                    v_pp := v_eval.close_price;
+                    v_pp := logic_backtest_fill_at(
+                        p_run_id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
+                        v_eval.close_price, v_slippage_pct
+                    );
                     v_bar_dt := v_eval.bar_dt;
                 END IF;
                 v_formulas := CASE
@@ -22919,6 +22989,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 
