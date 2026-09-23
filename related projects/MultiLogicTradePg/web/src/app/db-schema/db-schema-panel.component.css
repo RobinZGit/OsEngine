@@ -11,6 +11,9 @@
   right: 0;
   width: min(560px, 96vw);
   height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   background: #f8fafc;
   z-index: 1001;
   display: flex;
@@ -297,8 +300,8 @@
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.4rem 0.45rem;
-  margin: 0.2rem 0;
+  padding: 0.5rem 0.5rem;
+  margin: 0.25rem 0;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -312,19 +315,20 @@
 .routine-name {
   display: block;
   font-family: Consolas, Monaco, monospace;
-  font-size: 0.8rem;
+  font-size: 0.86rem;
   word-break: break-word;
   color: #111827;
 }
 
 .routine-desc {
   display: block;
-  margin-top: 0.25rem;
-  font-size: 0.76rem;
+  margin-top: 0.3rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
   color: #92400e;
   background: #fffbeb;
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
 }
 
 .src-btn {
@@ -333,14 +337,58 @@
   background: #eff6ff;
   color: #1d4ed8;
   border-radius: 6px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.72rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .src-btn:hover {
   background: #dbeafe;
+}
+
+.src-btn.src-btn-open {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.routine-source-row {
+  list-style: none;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+}
+
+.routine-source-status {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.82rem;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.routine-source-status.error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.routine-source {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  max-height: min(60vh, 620px);
+  overflow: auto;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #f3f4f6;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
 }
 
 .ext-row {

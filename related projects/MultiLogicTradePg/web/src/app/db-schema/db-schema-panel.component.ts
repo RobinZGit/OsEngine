@@ -21,6 +21,10 @@ export class DbSchemaPanelComponent implements OnChanges {
   schemaMode: 'live' | 'offline' = 'live';
   expanded = new Set<string>();
   panelWide = false;
+  expandedRoutineOid: number | null = null;
+  routineSources = new Map<number, string>();
+  routineLoading = false;
+  routineError: string | null = null;
   activeTab: 'tree' | 'diagram' = 'tree';
   diagram: SchemaDiagramLayout | null = null;
   hoverTable: string | null = null;
@@ -161,30 +165,38 @@ export class DbSchemaPanelComponent implements OnChanges {
     return `${r.name}(${r.arguments})${ret}`;
   }
 
-  showSource(r: SchemaRoutine, event: Event): void {
+  toggleSource(r: SchemaRoutine, event: Event): void {
     event.stopPropagation();
+    if (this.expandedRoutineOid === r.oid) {
+      this.expandedRoutineOid = null;
+      this.routineError = null;
+      return;
+    }
+    this.expandedRoutineOid = r.oid;
+    this.routineError = null;
+    if (this.routineSources.has(r.oid)) {
+      return;
+    }
+    this.routineLoading = true;
     this.schemaService.getRoutineSource(r.oid).subscribe({
       next: (data) => {
-        const title = `${data.kind === 'p' ? 'PROCEDURE' : 'FUNCTION'} ${data.name}(${data.arguments})`;
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${this.escapeHtml(title)}</title>
-<style>
-body{font-family:Consolas,Monaco,monospace;margin:0;background:#1e1e1e;color:#d4d4d4}
-header{padding:12px 16px;background:#111827;color:#f9fafb;font-family:system-ui,sans-serif}
-pre{margin:0;padding:16px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.45}
-</style></head><body>
-<header>${this.escapeHtml(title)}</header>
-<pre>${this.escapeHtml(data.source)}</pre>
-</body></html>`;
-        const w = window.open('', '_blank', 'width=960,height=720');
-        if (w) {
-          w.document.write(html);
-          w.document.close();
-        }
+        this.routineSources.set(r.oid, data.source);
+        this.routineLoading = false;
       },
       error: (err) => {
-        alert(err?.error?.error || err?.message || 'Не удалось загрузить текст');
+        this.routineError =
+          err?.error?.error || err?.message || 'Не удалось загрузить текст';
+        this.routineLoading = false;
       },
     });
+  }
+
+  isExpandedRoutine(r: SchemaRoutine): boolean {
+    return this.expandedRoutineOid === r.oid;
+  }
+
+  routineSource(r: SchemaRoutine): string {
+    return this.routineSources.get(r.oid) ?? '';
   }
 
   private shouldWidenTree(): boolean {
@@ -213,13 +225,5 @@ pre{margin:0;padding:16px;white-space:pre-wrap;word-break:break-word;font-size:1
 
   private syncPanelWide(): void {
     this.panelWide = this.activeTab === 'diagram' || this.shouldWidenTree();
-  }
-
-  private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
   }
 }

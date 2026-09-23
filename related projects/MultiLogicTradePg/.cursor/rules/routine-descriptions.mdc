@@ -1,0 +1,53 @@
+---
+description: Описания функций/процедур (COMMENT ON) — всегда актуальны и синхронны с кодом
+globs: "**/*.sql,api/**,docs/**,scripts/**,web/**"
+alwaysApply: true
+---
+
+# Описания функций/процедур (MultiLogicTrade)
+
+## Правило (Sergey)
+
+**Описание процедуры/функции — часть кода:** при каждом изменении тела или сигнатуры
+routine (в `02_multilogictrade_functions_and_procedures.sql` или `sql/*.sql`) **в той же
+правке** должно быть обновлено её описание (`COMMENT ON FUNCTION/PROCEDURE … IS '…'`),
+чтобы панель UI «Схема БД» (список Функции/Процедуры → подпись `routine-desc`) всегда
+показывала актуальное назначение, а не устаревший текст.
+
+## Почему это важно
+
+- UI «Структура БД» (`web/src/app/db-schema/`) показывает `description` каждой routine
+  (в live — из PostgreSQL, в offline — из `web/src/assets/schema-offline.json`).
+- Пользователь читает эти описания как документацию: «Схема БД» — это одна из вкладок
+  справки по системе. Устаревшее описание = дезинформация.
+
+## Что делать при изменении routine
+
+1. Изменил тело/сигнатуру функции или процедуры в `02_*.sql` (или её модуле `sql/*.sql`) →
+   **сразу обнови** соседний `COMMENT ON … IS '…'` той же routine (в том же файле/правке).
+2. Новая функция/процедура → добавить `COMMENT ON` в той же правке, где создаётся CREATE.
+3. Если routine была без комментария — добавить описание (генератор поможет поднять только
+   недостающие: `node scripts/generate-missing-routine-comments.mjs`).
+4. После правок описаний пересинхронизировать `02` (вставляет блок из
+   `sql/routine_comments_missing.sql`): `node scripts/append-routine-comments-to-02.mjs`.
+5. Перегенерировать offline-схему (чтобы UI в offline-режиме тоже видел новые описания):
+   `npm run generate:schema` в `web/` (или `node scripts/generate-offline-schema.mjs`).
+6. Прогнать проверку SQL: `npm run verify:sql` в `web/` (см. `.cursor/rules/database-scripts.mdc`).
+
+## Связанные инструменты
+
+- `node scripts/generate-missing-routine-comments.mjs` — собирает `sql/routine_comments_missing.sql`
+  для CREATE в `02`, у которых нет `COMMENT ON` (словарь описаний в самом скрипте).
+- `node scripts/append-routine-comments-to-02.mjs` — вставляет блок `routine_comments_missing`
+  в `02` перед `-- @optional-http-block`.
+- `node scripts/generate-offline-schema.mjs` — парсит `02` (в т.ч. `COMMENT ON`) в
+  `web/src/assets/schema-offline.json`.
+- Панель описаний: `web/src/app/db-schema/db-schema-panel.component.ts/.html/.css`.
+
+## Не делать
+
+- Не менять логику routine и забывать обновить её `COMMENT ON`.
+- Не оставлять новые функции/процедуры без описания.
+- Не редактировать `02` вручную только в части тела, если там же есть старое описание,
+  противоречащее новому поведению.
+- Не забывать про offline-режим: `schema-offline.json` тоже должен содержать новые описания.

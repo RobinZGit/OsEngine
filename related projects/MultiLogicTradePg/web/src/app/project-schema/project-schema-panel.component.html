@@ -1,0 +1,194 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <aside class="panel" aria-label="Схема проекта">
+    <header class="panel-header">
+      <div>
+        <h2>Схема проекта</h2>
+        <p class="meta">MultiLogic Trade · архитектура модулей и связи</p>
+      </div>
+      <button type="button" class="icon-btn" title="Закрыть" (click)="close()">✕</button>
+    </header>
+
+    <div class="panel-body scroll-list-panel">
+      <section>
+        <h3>Модули верхнего уровня</h3>
+        <div class="diagram" role="img" aria-label="Схема: браузер с Angular, Node.js API, PostgreSQL, внешние источники">
+          <div class="diagram-row">
+            <div class="node node-angular">
+              <div class="node-head">
+                <span class="node-dot dot-angular"></span>
+                <strong>Angular SPA</strong>
+              </div>
+              <div class="node-port">браузер · localhost:4200</div>
+              <p class="node-desc">Интерфейс: операции, бумаги и индикаторы, справочники, терминал. Папка <code>web/</code>.</p>
+            </div>
+            <div class="flow-arrow"><span>HTTP / JSON</span></div>
+            <div class="node node-api">
+              <div class="node-head">
+                <span class="node-dot dot-api"></span>
+                <strong>Node.js Express API</strong>
+              </div>
+              <div class="node-port">localhost:3000</div>
+              <p class="node-desc">Мост Angular ↔ PostgreSQL: REST-маршруты, трейд-раннер, бэктест, планировщик. Папка <code>api/</code>.</p>
+            </div>
+            <div class="flow-arrow"><span>SQL</span></div>
+            <div class="node node-pg">
+              <div class="node-head">
+                <span class="node-dot dot-pg"></span>
+                <strong>PostgreSQL</strong>
+              </div>
+              <div class="node-port">localhost:5432 · БД multilogictrade</div>
+              <p class="node-desc">Таблицы, функции и процедуры логик/сигналов/бэктеста. Скрипты <code>00/01/02/03*.sql</code>.</p>
+            </div>
+          </div>
+
+          <div class="diagram-row external-row">
+            <div class="node node-ext">
+              <div class="node-head"><span class="node-dot dot-ext"></span><strong>OsEngine (репозиторий)</strong></div>
+              <p class="node-desc">Родительский репозиторий — здесь живёт проект в <code>related projects/MultiLogicTradePg</code>; стратегии-прототипы и стиль отчётов «как в OsEngine Journal».</p>
+            </div>
+            <div class="flow-arrow dashed"><span>seed / образец</span></div>
+            <div class="node node-tbank">
+              <div class="node-head"><span class="node-dot dot-tbank"></span><strong>T-Bank Invest API</strong></div>
+              <p class="node-desc">Внешний источник: цены, портфель, заявки реальных счетов. Модули <code>api/lib/tbank-*</code>.</p>
+            </div>
+            <div class="flow-arrow dashed"><span>цены</span></div>
+            <div class="node node-moex">
+              <div class="node-head"><span class="node-dot dot-moex"></span><strong>MOEX</strong></div>
+              <p class="node-desc">Внешний источник: цены (в т.ч. фолбэк), облигации. <code>api/lib/bond-*</code>, <code>load_prices_*</code>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Где что работает</h3>
+        <ul class="where-list">
+          <li>
+            <strong>Angular</strong> — исполняется <em>в браузере</em> пользователя. Разработка: <code>web/</code>, <code>ng serve --port 4200</code> (bat-файл <code>MultiLogic_Trade_Progress_Start.bat</code>). Сборка для Pages: <code>ng build</code> → <code>web/dist</code> (base-href <code>/OsEngine/</code>).
+          </li>
+          <li>
+            <strong>Node.js</strong> — исполняется <em>на сервере/ПК</em>, где установлен проект. Точка входа <code>api/server.js</code> (порт 3000). Внутри одного процесса живут: REST-маршруты (<code>api/routes/*</code>), трейд-раннер (<code>api/trade-runner.js</code>, каждые 15 c), возобновление бэктестов (<code>api/logic-backtest.js</code>), планировщик обслуживания (<code>api/maintenance-scheduler.js</code>). Headless-режим: торговля идёт и без открытого браузера (<code>MultiLogic_Trade_Server_Start.bat</code>).
+          </li>
+          <li>
+            <strong>PostgreSQL</strong> — исполняется <em>как локальная служба</em> (<code>postgresql-x64-15</code>) на том же ПК, порт 5432. Вся расчётная логика (сигналы, позиции, стопы, бэктест, проскальзывание) реализована SQL-функциями/процедурами из <code>02_multilogictrade_functions_and_procedures.sql</code> и модулей <code>sql/*.sql</code>.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Перечень модулей</h3>
+
+        <h4 class="group-title">web/ — Angular (UI)</h4>
+        <ul class="module-list">
+          <li><code>web/src/app/logics</code> — логики, тестирование, позиции, бэктест-отчёты</li>
+          <li><code>web/src/app/terminal</code> — терминал: графики, сделки, индикаторы</li>
+          <li><code>web/src/app/securities-panel</code>, <code>web/src/app/indicators-panel</code> — бумаги и индикаторы</li>
+          <li><code>web/src/app/references</code> — справочники (счета, брокеры, биржи; редакторы в <code>*-editor</code>)</li>
+          <li><code>web/src/app/price-chart</code> — свечной график, контанго, маркеры сделок</li>
+          <li><code>web/src/app/db-schema</code> — панель «Схема БД» (дерево/диаграмма FK)</li>
+          <li><code>web/src/app/app-help</code>, <code>web/src/app/app-settings</code>, <code>web/src/app/app-about</code> — справочник, настройки, «О системе»</li>
+          <li><code>web/src/app/services</code> — HTTP-сервисы к API; <code>web/src/app/models</code> — модели; <code>web/src/app/shared</code> — общие утилиты</li>
+        </ul>
+
+        <h4 class="group-title">api/ — Node.js (сервер)</h4>
+        <ul class="module-list">
+          <li><code>api/server.js</code> — точка входа Express (порт из <code>api/.env</code>, по умолчанию 3000)</li>
+          <li><code>api/routes/*.js</code> — REST: <code>settings</code>, <code>market</code>, <code>indicators</code>, <code>references</code>, <code>logics</code>, <code>trades</code>, <code>backtest</code>, <code>ops</code>, <code>terminal</code>, <code>internal-tbank</code></li>
+          <li><code>api/trade-runner.js</code> — живой цикл торговли (15 с) и сторожевой таймер</li>
+          <li><code>api/logic-backtest.js</code>, <code>api/logic-rating-precalc.js</code> — бэктест и рейтинг</li>
+          <li><code>api/lib/*</code> — <code>server-shared</code>, <code>tbank-invest-client</code>, <code>tbank-tls</code>, <code>bond-names</code>, <code>bond-tbru-*</code>, <code>tech-log</code>, <code>logic-bundle</code>, <code>signal-formula</code>, <code>backtest-report*</code></li>
+          <li><code>api/maintenance-scheduler.js</code>, <code>api/backtest-report-persist.js</code> — фоновые задачи</li>
+        </ul>
+
+        <h4 class="group-title">sql/ и корень — PostgreSQL</h4>
+        <ul class="module-list">
+          <li><code>00_create_database.sql</code>, <code>01_multilogictrade_tables_and_data.sql</code>, <code>02_multilogictrade_functions_and_procedures.sql</code>, <code>03_multilogictrade_examples.sql</code></li>
+          <li><code>sql/logic_backtest_runner.sql</code> — бэктест (в т.ч. <code>logic_backtest_fill_at</code> — проскальзывание)</li>
+          <li><code>sql/logic_trade_runner.sql</code>, <code>sql/logic_stop_runner.sql</code>, <code>sql/logic_close_all_positions.sql</code> — торговые циклы</li>
+          <li><code>sql/load_prices_tbank_http.sql</code>, <code>sql/load_prices_moex_resample.sql</code>, <code>sql/price_load_http_policy.sql</code> — загрузка цен</li>
+          <li>прочее: <code>logic_signal_and_rating</code>, <code>logic_opt</code>, <code>logic_linear_tp</code>, <code>tbank_order_channel</code>, <code>trade_runner_watchdog</code>, <code>app_tech_logging</code> и др.</li>
+        </ul>
+
+        <h4 class="group-title">scripts/ и installer/ — автоматизация</h4>
+        <ul class="module-list">
+          <li><code>scripts/sync-sql-modules-to-02.mjs</code> — перенос sql/*.sql в 02; <code>scripts/sync-project-context-to-assets.mjs</code> — docs в assets</li>
+          <li><code>scripts/verify-*.mjs</code> — verify-sql, verify-indicators, verify-chart-sync, verify-async-sync, verify-db-upgrade</li>
+          <li><code>scripts/run_multilogictrade.ps1</code> — развёртывание БД 00→01→02</li>
+          <li><code>installer/build-all-installers.ps1</code> — сборка Windows (Inno Setup) и Linux; номер версии в <code>installer/BUILD_NUMBER</code></li>
+        </ul>
+      </section>
+
+      <section class="routines-section">
+        <h3>Процедуры и функции</h3>
+        <p class="section-hint">
+          Список из PostgreSQL (описания — комментарии из <code>COMMENT ON</code>). Кнопка «Код» раскрывает исходный текст процедуры или функции.
+        </p>
+
+        @if (routinesError) {
+          <p class="routine-status routine-status-error">{{ routinesError }}</p>
+        } @else if (!routines) {
+          <p class="routine-status">Загружаю список процедур и функций…</p>
+        } @else {
+          @if (procedures.length === 0 && functions.length === 0) {
+            <p class="routine-status">Процедур и функций в схеме не найдено.</p>
+          }
+
+          @if (procedures.length) {
+            <h4 class="group-title">Процедуры</h4>
+            <ul class="routine-list">
+              @for (p of procedures; track p.oid) {
+                <li class="routine-item" [class.open]="isExpandedRoutine(p)">
+                  <div class="routine-row">
+                    <button type="button" class="src-btn" [class.src-btn-open]="isExpandedRoutine(p)" (click)="toggleSource(p, $event)">
+                      {{ isExpandedRoutine(p) ? 'Скрыть код' : 'Код' }}
+                    </button>
+                    <code class="routine-name">{{ routineLabel(p) }}</code>
+                  </div>
+                  <p class="routine-desc">{{ p.description || 'Без описания' }}</p>
+                  @if (isExpandedRoutine(p)) {
+                    @if (routineError) {
+                      <p class="routine-status routine-status-error">{{ routineError }}</p>
+                    } @else if (routineLoading && !routineSource(p)) {
+                      <p class="routine-status">Загрузка кода…</p>
+                    }
+                    @if (routineSource(p)) {
+                      <pre class="routine-source">{{ routineSource(p) }}</pre>
+                    }
+                  }
+                </li>
+              }
+            </ul>
+          }
+
+          @if (functions.length) {
+            <h4 class="group-title">Функции</h4>
+            <ul class="routine-list">
+              @for (f of functions; track f.oid) {
+                <li class="routine-item" [class.open]="isExpandedRoutine(f)">
+                  <div class="routine-row">
+                    <button type="button" class="src-btn" [class.src-btn-open]="isExpandedRoutine(f)" (click)="toggleSource(f, $event)">
+                      {{ isExpandedRoutine(f) ? 'Скрыть код' : 'Код' }}
+                    </button>
+                    <code class="routine-name">{{ routineLabel(f) }}</code>
+                  </div>
+                  <p class="routine-desc">{{ f.description || 'Без описания' }}</p>
+                  @if (isExpandedRoutine(f)) {
+                    @if (routineError) {
+                      <p class="routine-status routine-status-error">{{ routineError }}</p>
+                    } @else if (routineLoading && !routineSource(f)) {
+                      <p class="routine-status">Загрузка кода…</p>
+                    }
+                    @if (routineSource(f)) {
+                      <pre class="routine-source">{{ routineSource(f) }}</pre>
+                    }
+                  }
+                </li>
+              }
+            </ul>
+          }
+        }
+      </section>
+    </div>
+  </aside>
+}

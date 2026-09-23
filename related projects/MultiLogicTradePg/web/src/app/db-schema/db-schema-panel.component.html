@@ -187,10 +187,26 @@
                         <span class="routine-desc">{{ fn.description }}</span>
                       }
                     </div>
-                    <button type="button" class="src-btn" title="Текст функции" (click)="showSource(fn, $event)">
-                      SQL
+                    <button
+                      type="button"
+                      class="src-btn"
+                      [class.src-btn-open]="isExpandedRoutine(fn)"
+                      (click)="toggleSource(fn, $event)"
+                    >
+                      {{ isExpandedRoutine(fn) ? 'Скрыть код' : 'Код' }}
                     </button>
                   </li>
+                  @if (isExpandedRoutine(fn)) {
+                    <li class="routine-source-row">
+                      @if (routineLoading) {
+                        <p class="routine-source-status">Загрузка текста…</p>
+                      } @else if (routineError) {
+                        <p class="routine-source-status error">{{ routineError }}</p>
+                      } @else {
+                        <pre class="routine-source">{{ routineSource(fn) }}</pre>
+                      }
+                    </li>
+                  }
                 } @empty {
                   <li class="leaf muted">—</li>
                 }
@@ -214,10 +230,26 @@
                         <span class="routine-desc">{{ proc.description }}</span>
                       }
                     </div>
-                    <button type="button" class="src-btn" title="Текст процедуры" (click)="showSource(proc, $event)">
-                      SQL
+                    <button
+                      type="button"
+                      class="src-btn"
+                      [class.src-btn-open]="isExpandedRoutine(proc)"
+                      (click)="toggleSource(proc, $event)"
+                    >
+                      {{ isExpandedRoutine(proc) ? 'Скрыть код' : 'Код' }}
                     </button>
                   </li>
+                  @if (isExpandedRoutine(proc)) {
+                    <li class="routine-source-row">
+                      @if (routineLoading) {
+                        <p class="routine-source-status">Загрузка текста…</p>
+                      } @else if (routineError) {
+                        <p class="routine-source-status error">{{ routineError }}</p>
+                      } @else {
+                        <pre class="routine-source">{{ routineSource(proc) }}</pre>
+                      }
+                    </li>
+                  }
                 } @empty {
                   <li class="leaf muted">—</li>
                 }

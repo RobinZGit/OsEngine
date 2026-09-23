@@ -5,6 +5,7 @@ import { DbSchemaPanelComponent } from './db-schema/db-schema-panel.component';
 import { AppHelpPanelComponent } from './app-help/app-help-panel.component';
 import { AppSettingsPanelComponent } from './app-settings/app-settings-panel.component';
 import { AppAboutPanelComponent } from './app-about/app-about-panel.component';
+import { ProjectSchemaPanelComponent } from './project-schema/project-schema-panel.component';
 import { TechLogService } from './services/tech-log.service';
 import { TradeRunnerSessionService } from './services/trade-runner-session.service';
 import { assetUrl } from './shared/asset-url';
@@ -20,6 +21,7 @@ import { assetUrl } from './shared/asset-url';
     AppHelpPanelComponent,
     AppSettingsPanelComponent,
     AppAboutPanelComponent,
+    ProjectSchemaPanelComponent,
     FormsModule,
   ],
   template: `
@@ -90,6 +92,26 @@ import { assetUrl } from './shared/asset-url';
         <button
           type="button"
           class="bar-icon-btn"
+          title="Схема проекта: модули, где работают Node.js / PostgreSQL / Angular"
+          aria-label="Схема проекта"
+          (click)="openProjectSchema()"
+        >
+          <!-- Diagram / network icon -->
+          <svg class="bar-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
+            <rect x="3" y="3" width="8" height="8" rx="2" fill="#ffffff" />
+            <rect x="13" y="3" width="8" height="8" rx="2" fill="#ffffff" />
+            <rect x="3" y="13" width="8" height="8" rx="2" fill="#ffffff" />
+            <rect x="13" y="13" width="8" height="8" rx="2" fill="#ffffff" />
+            <path
+              fill="#ffffff"
+              d="M11 7h2v2h-2zM11 15h2v2h-2zM7 11h2v2H7zM15 11h2v2h-2z"
+            />
+            <circle cx="11" cy="12" r="1.4" fill="#111827" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="bar-icon-btn"
           title="Общие настройки"
           aria-label="Общие настройки"
           (click)="openSettings()"
@@ -141,6 +163,7 @@ import { assetUrl } from './shared/asset-url';
     </main>
     <app-help-panel [open]="helpOpen" (closed)="helpOpen = false" />
     <app-db-schema-panel [open]="schemaOpen" (closed)="schemaOpen = false" />
+    <app-project-schema-panel [open]="projectSchemaOpen" (closed)="projectSchemaOpen = false" />
     <app-settings-panel [open]="settingsOpen" (closed)="settingsOpen = false" />
     <app-about-panel [open]="aboutOpen" (closed)="aboutOpen = false" />
   `,
@@ -255,6 +278,7 @@ export class AppComponent implements OnInit, OnDestroy {
   helpOpen = false;
   settingsOpen = false;
   aboutOpen = false;
+  projectSchemaOpen = false;
   techLoggingEnabled = false;
   /** Standalone Crypt tool (GitHub Pages + local assets). */
   readonly cryptToolUrl = assetUrl('assets/tools/parity-stego.html');
@@ -304,5 +328,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   openAbout(): void {
     this.aboutOpen = true;
+  }
+
+  openProjectSchema(): void {
+    this.projectSchemaOpen = true;
   }
 }
