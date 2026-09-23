@@ -60,11 +60,12 @@ export class TerminalComponent implements OnInit {
   pendingBondSec: string | null = null;
   registeringBond: string | null = null;
 
-  /** Прочие настройки терминала в JSON (объёмы по умолчанию и т.п.). */
-  settings: { buyQty: number; sellQty: number; [k: string]: unknown } = {
-    buyQty: 1,
-    sellQty: 1,
-  };
+  /** Прочие настройки терминала в JSON (общий таймфрейм и т.п.). */
+  settings: { [k: string]: unknown } = {};
+
+  /** Общий таймфрейм для всех полос — задаётся на форме терминала, все
+      панели грузят цены/график по нему (единый для всего счёта). */
+  commonTimeframeId: number | null = null;
 
   pickerOpen = false;
   pendingSecurityId: number | null = null;
@@ -363,15 +364,20 @@ export class TerminalComponent implements OnInit {
     this.stateSvc.getState(this.accountId).subscribe({
       next: (r) => {
         const settings = r.payload.settings ?? {};
-        this.settings = {
-          ...settings,
-          buyQty: this.safeQty(settings['buyQty'], 1),
-          sellQty: this.safeQty(settings['sellQty'], 1),
-        };
+        const tf = this.safeTimeframeId(settings['timeframe_id']);
+        // Дефолт M15 — тот же, что у панелей без таймфрейма
+        // (terminal-panel.component.ts ngOnInit), чтобы общий select
+        // не оставался пустым, а цены грузились по видимому таймфрейму.
+        const defTf =
+          this.timeframes.find((t) => t.tf === 'M15')?.id ??
+          this.timeframes[0]?.id ??
+          null;
+        this.commonTimeframeId = tf ?? defTf;
+        this.settings = { ...settings };
         if (this.panelsStamp !== stamp) return;
         this.panels = (r.payload.panels ?? [])
           .map((st) =>
-            this.buildPanel(st.security_id, st.timeframe_id, st.chart_height)
+            this.buildPanel(st.security_id, st.chart_height)
           )
           .filter((p): p is PanelModel => p != null);
       },
@@ -381,6 +387,14 @@ export class TerminalComponent implements OnInit {
 
   private safeQty(v: unknown, fallback: number): number {
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback;
+  }
+
+  /** Таймфрейм из настроек, если он входит в доступные; иначе null. */
+  private safeTimeframeId(v: unknown): number | null {
+    const tf = Number(v);
+    return Number.isInteger(tf) && tf > 0 && this.timeframes.some((t) => t.id === tf)
+      ? tf
+      : null;
   }
 
   /** Пересборка модели полосы из сохранённого состояния (если бумага ещё есть). */
@@ -609,6 +623,13 @@ export class TerminalComponent implements OnInit {
 
   /** Изменение объёмов по умолчанию (и прочих настроек) — сохраняем JSON. */
   onSettingsChange(): void {
+    this.scheduleSave();
+  }
+
+  /** Смена общего таймфрейма на форме терминала: применяем его ко всем
+      панелям (одно общее поле — бумаги смотрят на него при загрузке цен). */
+  onCommonTimeframeChange(): void {
+    for (const p of this.panels) p.timeframe_id = this.commonTimeframeId;
     this.scheduleSave();
   }
 

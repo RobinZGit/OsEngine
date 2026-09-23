@@ -32,25 +32,16 @@
           <span class="term-empty">Счета не найдены</span>
         }
       </label>
-      <label class="term-field term-field-num">
-        <span>Купить по умолч.</span>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          [(ngModel)]="settings.buyQty"
-          (ngModelChange)="onSettingsChange()"
-        />
-      </label>
-      <label class="term-field term-field-num">
-        <span>Продать по умолч.</span>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          [(ngModel)]="settings.sellQty"
-          (ngModelChange)="onSettingsChange()"
-        />
+      <label class="term-field">
+        <span>Таймфрейм</span>
+        <select
+          [(ngModel)]="commonTimeframeId"
+          (ngModelChange)="onCommonTimeframeChange()"
+        >
+          @for (tf of timeframes; track tf.id) {
+            <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }} — {{ tf.full_name }}</option>
+          }
+        </select>
       </label>
       <button
         type="button"
@@ -263,7 +254,7 @@
           [contango]="panel.contango"
           [underlying]="panel.underlying"
           [timeframes]="timeframes"
-          [initialTimeframeId]="panel.timeframe_id"
+          [initialTimeframeId]="commonTimeframeId"
           [initialHeight]="panel.chart_height"
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"

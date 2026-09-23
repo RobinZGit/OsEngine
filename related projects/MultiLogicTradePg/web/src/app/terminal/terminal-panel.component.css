@@ -404,9 +404,17 @@
   gap: 0.4rem;
 }
 
+.trade-btn-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .trade-buy,
 .trade-sell {
-  flex: 1 1 0;
+  width: 100%;
   padding: 0.4rem 0;
   border: none;
   border-radius: 6px;
@@ -439,6 +447,34 @@
   cursor: default;
 }
 
+.trade-remainder-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  user-select: none;
+  padding: 0.08rem 0.2rem;
+}
+
+.trade-remainder-input {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.trade-remainder-text {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .trade-error {
   font-size: 0.68rem;
   color: #b91c1c;
@@ -455,6 +491,52 @@
   border: 1px solid #bbf7d0;
   border-radius: 4px;
   padding: 0.25rem 0.4rem;
+}
+
+/* Сводка по фактическому остатку бумаги (позиция, средняя цена входа,
+   разница с текущей рыночной — зелёная/красная, жирная и заметная). */
+.trade-summary {
+  margin-top: 0.45rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.trade-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trade-summary-label {
+  font-size: 0.66rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.trade-summary-value {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.trade-summary-diff {
+  font-size: 1.05rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.trade-summary-diff.diff-positive {
+  color: #15803d;
+}
+
+.trade-summary-diff.diff-negative {
+  color: #dc2626;
 }
 
 /* Ручка растягивания панели по вертикали. */

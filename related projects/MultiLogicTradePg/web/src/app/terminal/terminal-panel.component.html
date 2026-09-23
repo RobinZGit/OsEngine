@@ -7,18 +7,6 @@
         <span class="tpanel-kind">фьючерс</span>
       }
     </div>
-    <label class="tpanel-field">
-      <span>Таймфрейм</span>
-      <select
-        [(ngModel)]="timeframeId"
-        (ngModelChange)="onTimeframeChange()"
-        [title]="selectedTimeframe?.full_name ?? ''"
-      >
-        @for (tf of timeframes; track tf.id) {
-          <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }}</option>
-        }
-      </select>
-    </label>
     <div class="tpanel-controls" role="group" aria-label="Управление графиками">
       <button
         type="button"
@@ -192,8 +180,8 @@
         min="0"
         [max]="effectiveMaxSum"
         step="100"
-        [(ngModel)]="tradeAmount"
-        (ngModelChange)="onTradeAmountChange()"
+        [ngModel]="tradeAmount"
+        (ngModelChange)="onTradeAmountChange($event)"
         [disabled]="tradingBusy"
         aria-label="Сумма сделки"
       />
@@ -249,19 +237,73 @@
       }
 
       <div class="trade-buttons">
-        <button
-          type="button"
-          class="trade-buy"
-          [disabled]="tradingBusy || priceMissing"
-          (click)="placeTrade('buy')"
-        >Купить</button>
-        <button
-          type="button"
-          class="trade-sell"
-          [disabled]="tradingBusy || priceMissing"
-          (click)="placeTrade('sell')"
-        >Продать</button>
+        <div class="trade-btn-col">
+          <button
+            type="button"
+            class="trade-buy"
+            [disabled]="tradingBusy || priceMissing"
+            (click)="placeTrade('buy')"
+          >Купить</button>
+          <label
+            class="trade-remainder-check"
+            title="Покупка на всю сумму — весь остаток средств счёта"
+          >
+            <input
+              type="checkbox"
+              class="trade-remainder-input"
+              [(ngModel)]="tradeAllSumBuy"
+              (ngModelChange)="onTradeAllSumBuyChange()"
+              [disabled]="tradingBusy || priceMissing"
+              aria-label="На всю сумму"
+            />
+            <span class="trade-remainder-text">на всю сумму</span>
+          </label>
+        </div>
+        <div class="trade-btn-col">
+          <button
+            type="button"
+            class="trade-sell"
+            [disabled]="tradingBusy || priceMissing"
+            (click)="placeTrade('sell')"
+          >Продать</button>
+          <label
+            class="trade-remainder-check"
+            title="Продажа всего остатка — вся позиция по этой бумаге на счёте"
+          >
+            <input
+              type="checkbox"
+              class="trade-remainder-input"
+              [(ngModel)]="tradeAllQtySell"
+              (ngModelChange)="onTradeAllQtySellChange()"
+              [disabled]="tradingBusy || priceMissing"
+              aria-label="Весь остаток"
+            />
+            <span class="trade-remainder-text">весь остаток</span>
+          </label>
+        </div>
       </div>
+
+      @if (remainingPositionQty > 0) {
+        <div class="trade-summary" aria-live="polite" role="region" aria-label="Сводка по позиции">
+          <div class="trade-summary-row">
+            <span class="trade-summary-label">Остаток по ценам покупок</span>
+            <span class="trade-summary-value">{{ remainingPositionCost | number: '1.0-2' }} ₽</span>
+          </div>
+          <div class="trade-summary-row">
+            <span class="trade-summary-label">Разница</span>
+
+                    <span
+              class="trade-summary-diff"
+              [class.diff-positive]="remainingPositionDiff >= 0"
+              [class.diff-negative]="remainingPositionDiff < 0"
+            >
+              {{ remainingPositionDiff >= 0 ? '+' : '' }}{{ remainingPositionDiff | number: '1.0-2' }}
+              ₽
+              ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{ remainingPositionDiffPct | number: '1.0-1' }}%)
+            </span>
+          </div>
+        </div>
+      }
 
       @if (tradeError) {
         <div class="trade-error">{{ tradeError }}</div>

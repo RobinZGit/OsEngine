@@ -206,6 +206,101 @@ describe('TerminalPanelComponent', () => {
     expect(markers[1].price).toBe(260);
   });
 
+  it('слайдер: движение ползунка обновляет количество и сумму', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.tradeMaxInput = 5000;
+    fixture.detectChanges();
+    component.tradeAmount = 1000;
+    fixture.detectChanges();
+    expect(component.tradeQuantity).toBe(4);
+    expect(Math.round(component.tradeSum * 100) / 100).toBe(1000);
+    const slider = fixture.debugElement.query(By.css('.trade-slider'));
+    expect(slider).not.toBeNull();
+    slider.nativeElement.value = '2000';
+    slider.nativeElement.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(component.tradeAmount as unknown).toBe(2000 as unknown);
+    expect(component.tradeQuantity).toBe(8);
+  });
+
+  it('слайдер сбрасывает отмеченный чекбокс и подхватывает количество от ползунка', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, status: 'filled' }),
+      trade(2, { direction: 'SELL', quantity: 3, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.tradeMaxInput = 5000;
+    fixture.detectChanges();
+    component.tradeAllQtySell = true;
+    fixture.detectChanges();
+    expect(component.tradeQuantity).toBe(7);
+    component.onTradeAmountChange();
+    fixture.detectChanges();
+    expect(component.tradeAllQtySell).toBeFalse();
+    expect(component.tradeQuantity).toBe(0);
+  });
+
+  it('чекбоксы направлений: продажа — вся позиция, покупка — на всю сумму', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, status: 'filled' }),
+      trade(2, { direction: 'SELL', quantity: 3, status: 'filled' }),
+      trade(3, { direction: 'BUY', quantity: 50, status: 'rejected' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.tradeMaxInput = 5000;
+    component.tradeAllQtySell = true;
+    component.tradeAllSumBuy = true;
+    expect(component.remainingPositionQty).toBe(7);
+    expect((component as any).resolveTradeQuantity('sell')).toBe(7);
+    expect((component as any).resolveTradeQuantity('buy')).toBe(20);
+    expect(Math.round(component.tradeSum * 100) / 100).toBe(1750);
+  });
+
   it('открывает параметры индикатора с текущими значениями', () => {
     component.indicatorRows = [smaSeries];
     component.openEditParams(smaSeries);

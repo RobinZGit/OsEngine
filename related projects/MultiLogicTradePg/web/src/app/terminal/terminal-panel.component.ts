@@ -103,6 +103,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** Пользователь менял максимум вручную — не затираем при обновлении баланса. */
   private userEditedMax = false;
   tradeType: 'market' | 'limit' = 'market';
+  /** Чекбокс под «Купить»: покупка на всю сумму (весь остаток денег). */
+  tradeAllSumBuy = false;
+  /** Чекбокс под «Продать»: продажа всей позиции бумаги. */
+  tradeAllQtySell = false;
   tradingBusy = false;
   tradeMessage: string | null = null;
   tradeError: string | null = null;
@@ -172,6 +176,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     private readonly refs: ReferencesService
   ) {}
 
+  /** Валидация входного таймфрейма панели: число из списка доступных,
+      иначе null (панель берёт дефолт M15). */
+  private safeInitialTimeframe(v: unknown): number | null {
+    const tf = Number(v);
+    return Number.isInteger(tf) && tf > 0 && this.timeframes.some((t) => t.id === tf)
+      ? tf
+      : null;
+  }
+
   ngOnInit(): void {
     // Восстановленный таймфрейм, иначе дефолт M15: крупнее бара тика,
     // не так шумно, как H1.
@@ -201,6 +214,16 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** При смене счёта сбрасываем максимум на баланс; при живом обновлении
       баланса (без смены счёта) — только пока пользователь не менял вручную. */
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['initialTimeframeId'] != null) {
+      const tf = this.timeframeId;
+      const next = this.safeInitialTimeframe(changes['initialTimeframeId'].currentValue);
+      if (next != null && next !== tf) {
+        this.timeframeId = next;
+        this.loadChart();
+        this.emitStateChange();
+        return;
+      }
+    }
     if (changes['accountId'] != null || changes['accountIsFake'] != null) {
       this.userEditedMax = false;
       this.tradeMaxInput = Math.max(0, Math.floor(this.tradeMaxSum || 0));
@@ -236,8 +259,85 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
 
   get tradeQuantity(): number {
     const p = this.currentPrice;
-    if (!(p > 0) || !(this.tradeAmount > 0)) return 0;
+    if (!(p > 0)) return 0;
+    // Отображение: если включён «весь остаток» и есть позиция — она;
+    // если «на всю сумму» — максимум по деньгам (покупка).
+    if (this.tradeAllQtySell && this.remainingPositionQty > 0) {
+      return this.remainingPositionQty;
+    }
+    if (this.tradeAllSumBuy) {
+      return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
+    }
+    if (!(this.tradeAmount > 0)) return 0;
     return Math.floor(this.tradeAmount / p);
+  }
+
+  /** Остаток позиции по текущей бумаге на счёте (filled покупки − продажи). */
+  get remainingPositionQty(): number {
+    let qty = 0;
+    for (const t of this.trades) {
+      if (t.security_id !== this.security.id || t.status !== 'filled') continue;
+      qty += t.direction === 'BUY' ? Number(t.quantity) : -Number(t.quantity);
+    }
+    return Number.isFinite(qty) && qty > 0 ? qty : 0;
+  }
+
+  /** Фактические деньги, вложенные в текущий остаток: сумма покупок
+      (цена × количество) минус сумма продаж. «По ценам покупок остаток,
+      минус цены продаж» — хранится у нас в сделках, берём оттуда. */
+  get remainingPositionCost(): number {
+    let cost = 0;
+    for (const t of this.trades) {
+      if (t.security_id !== this.security.id || t.status !== 'filled') continue;
+      const p = Number(t.price);
+      const q = Number(t.quantity);
+      if (!(Number.isFinite(p) && p >= 0 && Number.isFinite(q) && q > 0)) continue;
+      cost += t.direction === 'BUY' ? p * q : -p * q;
+    }
+    return Number.isFinite(cost) ? cost : 0;
+  }
+
+  /** Средняя цена входа в остаток: фактические вложенные деньги / остаток. */
+  get remainingPositionAvgPrice(): number {
+    const qty = this.remainingPositionQty;
+    if (!(qty > 0)) return 0;
+    const cost = this.remainingPositionCost;
+    return cost > 0 ? cost / qty : 0;
+  }
+
+  /** Разница в деньгах по всему остатку: текущая рыночная стоимость остатка
+      (рыночная цена × текущее количество) минус фактические деньги по ценам
+      покупок. Положительная — в плюсе (зелёная), отрицательная — в минусе (красная). */
+  get remainingPositionDiff(): number {
+    const marketValue = this.currentPrice * this.remainingPositionQty;
+    const cost = this.remainingPositionCost;
+    if (!(marketValue > 0) || !(cost > 0)) return 0;
+    return Math.round((marketValue - cost) * 100) / 100;
+  }
+
+  /** То же в процентах от фактических денег, вложенных в остаток. */
+  get remainingPositionDiffPct(): number {
+    const cost = this.remainingPositionCost;
+    if (!(cost > 0)) return 0;
+    return Math.round((this.remainingPositionDiff / cost) * 10000) / 100;
+  }
+
+  /** Фактическое количество для заявки: при чекбоксе «на всю сумму» покупка
+      идёт на весь остаток денег, при «весь остаток» продажа — вся позиция. */
+  private resolveTradeQuantity(direction: 'buy' | 'sell'): number {
+    const p = this.currentPrice;
+    if (!(p > 0)) return 0;
+    if (direction === 'sell' && this.tradeAllQtySell) {
+      return this.remainingPositionQty;
+    }
+    if (direction === 'buy' && this.tradeAllSumBuy) {
+      return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
+    }
+    if (this.tradeAllQtySell) return this.remainingPositionQty;
+    if (this.tradeAllSumBuy) {
+      return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
+    }
+    return this.tradeAmount > 0 ? Math.floor(this.tradeAmount / p) : 0;
   }
 
   /** Сумма сделки без комиссии: выбранное количество × текущая цена. */
@@ -1051,7 +1151,42 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     });
   }
 
-  onTradeAmountChange(): void {
+  /** Слайдер имеет приоритет: как только пользователь двигает ползунок —
+      чекбоксы «на всю сумму»/«весь остаток» снимаются, а количество/сумма
+      подстраиваются под выбранную ползунком сумму. */
+  onTradeAmountChange(value?: number): void {
+    this.tradeAmount =
+      value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;
+    this.tradeMessage = null;
+    this.tradeError = null;
+    if (this.tradeAllSumBuy) this.tradeAllSumBuy = false;
+    if (this.tradeAllQtySell) this.tradeAllQtySell = false;
+  }
+
+  /** Чекбокс «на всю сумму»: слайдер перемещается на максимум по деньгам. */
+  onTradeAllSumBuyChange(): void {
+    if (this.tradeAllSumBuy) {
+      this.tradeAllQtySell = false;
+      const max = this.effectiveMaxSum;
+      this.tradeAmount = max;
+      if (max <= 0) this.tradeAllSumBuy = false;
+    }
+    this.tradeMessage = null;
+    this.tradeError = null;
+  }
+
+  /** Чекбокс «весь остаток»: слайдер перемещается на сумму всей позиции. */
+  onTradeAllQtySellChange(): void {
+    if (this.tradeAllQtySell) {
+      this.tradeAllSumBuy = false;
+      const qty = this.remainingPositionQty;
+      const p = this.currentPrice;
+      if (qty < 1 || !(p > 0)) {
+        this.tradeAllQtySell = false;
+      } else {
+        this.tradeAmount = Math.round(qty * p * 100) / 100;
+      }
+    }
     this.tradeMessage = null;
     this.tradeError = null;
   }
@@ -1078,7 +1213,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   placeTrade(direction: 'buy' | 'sell'): void {
     this.tradeMessage = null;
     this.tradeError = null;
-    const qty = this.tradeQuantity;
+    const qty = this.resolveTradeQuantity(direction);
     if (qty < 1) {
       this.tradeError =
         'Количество равно нулю — увеличьте сумму сделки на ползунке';
