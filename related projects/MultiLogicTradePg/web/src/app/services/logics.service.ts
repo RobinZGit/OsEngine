@@ -287,6 +287,19 @@ export class LogicsService {
     }>(`${this.appConfig.apiUrl}/logics/${id}`, { is_enabled });
   }
 
+  /**
+   * Вкл/выкл выдачи сигналов логики в терминал.
+   */
+  updateLogicTerminalSignal(
+    id: number,
+    use_as_terminal_signal: boolean
+  ): Observable<{ id: number; use_as_terminal_signal: boolean }> {
+    return this.http.patch<{ id: number; use_as_terminal_signal: boolean }>(
+      `${this.appConfig.apiUrl}/logics/${id}`,
+      { use_as_terminal_signal }
+    );
+  }
+
   getLogicParams(logicId: number): Observable<LogicParamsResponse> {
     return this.http.get<LogicParamsResponse>(
       `${this.appConfig.apiUrl}/logic-params`,

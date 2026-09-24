@@ -237,6 +237,8 @@
 
             <th class="col-check" [style.width.px]="thWidth('col-check')">Вкл.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-check')" (dblclick)="resetColumnWidth('col-check')"></span></th>
 
+            <th class="col-signal" [style.width.px]="thWidth('col-signal')" title="Выдавать сигналы покупки/продажи в терминал: торговый цикл пишет непрочитанные сигналы, терминал добавляет бумагу в нижнюю часть и рисует индикаторы логики + вертикальную линию"><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-signal')" (dblclick)="resetColumnWidth('col-signal')"></span>Сигнал</th>
+
             <th class="col-id sortable-col" [style.width.px]="thWidth('col-id')" title="Нажмите — сортировка по ID" (click)="toggleSort('id')">ID <span class="sort-indicator">{{ sortIndicator('id') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-id')" (dblclick)="resetColumnWidth('col-id')"></span></th>
 
             <th class="col-logic sortable-col" [style.width.px]="thWidth('col-logic')" title="Нажмите — сортировка по названию логики" (click)="toggleSort('name')">Логика <span class="sort-indicator">{{ sortIndicator('name') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-logic')" (dblclick)="resetColumnWidth('col-logic')"></span></th>
@@ -297,6 +299,8 @@
 
               [class.row-disabled]="!row.is_enabled"
 
+              [class.row-terminal-signal]="!!row.use_as_terminal_signal"
+
               [class.row-expanded]="isLogicExpanded(row.id)"
 
               [class.row-testing]="isBacktestPlainRunning(row.id)"
@@ -341,6 +345,20 @@
                   >↻</span>
                 }
 
+              </td>
+
+              <td class="col-signal" (click)="$event.stopPropagation()">
+                <input
+                  type="checkbox"
+                  class="terminal-signal-check"
+                  [checked]="!!row.use_as_terminal_signal"
+                  [disabled]="savingSignalIds.has(row.id)"
+                  [title]="row.use_as_terminal_signal
+                    ? 'Логика выдаёт сигналы в терминал — выключить?'
+                    : 'Выдавать сигналы покупки/продажи в терминал (бумага добавится в нижнюю часть)'"
+                  (change)="onTerminalSignalChange(row, $any($event.target).checked, $event)"
+                  [attr.aria-label]="'Сигналы в терминал: ' + row.name"
+                />
               </td>
 
               <td class="col-id">{{ row.id }}</td>
@@ -524,7 +542,7 @@
 
               <tr class="logic-detail-row">
 
-                <td colspan="13">
+                <td colspan="14">
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 

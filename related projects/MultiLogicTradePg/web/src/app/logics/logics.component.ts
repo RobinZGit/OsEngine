@@ -314,6 +314,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Logic ids that were mid-backtest — used to detect finish after pollIds drop. */
   private backtestWasRunning = new Set<number>();
   private savingIds = new Set<number>();
+  savingSignalIds = new Set<number>();
   private formulaDrafts = new Map<number, string>();
   private savingFormulaIds = new Set<number>();
   /** Сигналы с открытой справкой «?» по формуле. */
@@ -3771,6 +3772,32 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       error: () => {
         row.is_enabled = previous;
         this.savingIds.delete(row.id);
+      },
+    });
+  }
+
+  onTerminalSignalChange(row: LogicRow, checked: boolean, event: Event): void {
+    event.stopPropagation();
+    if (this.savingSignalIds.has(row.id)) return;
+    const previous = row.use_as_terminal_signal ?? false;
+    row.use_as_terminal_signal = checked;
+    this.savingSignalIds.add(row.id);
+    this.logicsService.updateLogicTerminalSignal(row.id, checked).subscribe({
+      next: (resp) => {
+        this.savingSignalIds.delete(row.id);
+        row.use_as_terminal_signal = resp.use_as_terminal_signal;
+        this.techLog.event(
+          this.techLog.logicThreadKey(row.id, 'control'),
+          checked ? 'logic.terminal_signal.on' : 'logic.terminal_signal.off',
+          checked
+            ? 'Логика выдаёт сигналы в терминал (UI)'
+            : 'Логика больше не выдаёт сигналы в терминал (UI)',
+          { logicId: row.id, payload: resp }
+        );
+      },
+      error: () => {
+        row.use_as_terminal_signal = previous;
+        this.savingSignalIds.delete(row.id);
       },
     });
   }

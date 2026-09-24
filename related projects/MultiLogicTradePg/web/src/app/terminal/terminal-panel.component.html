@@ -6,7 +6,26 @@
       @if (isFutures()) {
         <span class="tpanel-kind">фьючерс</span>
       }
+      @if (signalEvent) {
+        <span
+          class="tpanel-signal-badge"
+          [class.short]="signalEvent.position_side === 'short'"
+          [title]="signalBadgeTitle"
+        >{{ signalLabel }}</span>
+      }
     </div>
+    <label class="tpanel-field">
+      <span>Таймфрейм</span>
+      <select
+        [(ngModel)]="timeframeId"
+        (ngModelChange)="onTimeframeChange()"
+        [title]="selectedTimeframe?.full_name ?? ''"
+      >
+        @for (tf of timeframes; track tf.id) {
+          <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }}</option>
+        }
+      </select>
+    </label>
     <div class="tpanel-controls" role="group" aria-label="Управление графиками">
       <button
         type="button"
@@ -65,8 +84,8 @@
           [compact]="true"
           [followLast]="true"
           [candles]="chartState.candles"
-          [indicatorSeries]="indicatorChartSeries"
-          [tradeMarkers]="tradeMarkers"
+          [indicatorSeries]="displayIndicatorSeries"
+          [tradeMarkers]="allTradeMarkers"
           [loading]="chartState.loading"
           [loadingOlder]="chartState.loadingOlder"
           [error]="chartState.error"

@@ -8,6 +8,47 @@ export interface TerminalPanelState {
   security_id: number;
   timeframe_id?: number | null;
   chart_height?: number | null;
+  /** Сигнал логики, открывший эту полосу (бейдж + вертикальная линия). */
+  signal_event?: TerminalLogicSignalEvent | null;
+  /** Индикаторы логики, чьи значения рисуем на графике полосы. */
+  logic_indicator_ids?: number[];
+}
+
+/** Сигнал логики, показанный в полосе терминала (сохраняемый в состояние). */
+export interface TerminalLogicSignalEvent {
+  logic_id: number;
+  logic_name?: string | null;
+  bar_dt?: string | null;
+  position_side?: 'long' | 'short' | null;
+  label?: string | null;
+  /** Цена бара сигнала — для вертикальной линии на графике. */
+  price?: number | null;
+}
+
+/** Одна строка GET /api/terminal/logic-signals. */
+export interface TerminalLogicSignal {
+  id: number;
+  logic_id: number;
+  logic_name: string;
+  account_id: number | null;
+  security_id: number;
+  security_prefix: string | null;
+  security_name: string;
+  timeframe_id: number;
+  timeframe: string;
+  bar_dt: string | null;
+  position_side: 'long' | 'short' | null;
+  signal_kind: string | null;
+  side_label: string;
+  formula: string | null;
+  price: number | null;
+  indicator_ids: number[];
+  indicators: { id: number; code: string; name: string }[];
+  created_at: string;
+}
+
+export interface TerminalLogicSignalsResponse {
+  signals: TerminalLogicSignal[];
 }
 
 export interface TerminalStatePayload {
@@ -200,6 +241,28 @@ export class TerminalStateService {
     return this.http.put<TerminalUiState>(
       `${this.appConfig.apiUrl}/terminal/ui-state`,
       { selected_account_id: selectedAccountId }
+    );
+  }
+
+  /** Непрочитанные сигналы логик в терминал (по счёту, новые по id). */
+  getLogicSignals(
+    accountId: number,
+    limit = 200
+  ): Observable<TerminalLogicSignalsResponse> {
+    const params = new HttpParams()
+      .set('account_id', String(accountId))
+      .set('limit', String(limit));
+    return this.http.get<TerminalLogicSignalsResponse>(
+      `${this.appConfig.apiUrl}/terminal/logic-signals`,
+      { params }
+    );
+  }
+
+  /** Отметить показанные сигналы логик прочитанными. */
+  markLogicSignalsRead(ids: number[]): Observable<{ ok: boolean; read: number }> {
+    return this.http.post<{ ok: boolean; read: number }>(
+      `${this.appConfig.apiUrl}/terminal/logic-signals/read`,
+      { ids }
     );
   }
 }

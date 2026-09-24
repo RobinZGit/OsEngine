@@ -19,6 +19,7 @@ import { SecuritiesService } from '../services/securities.service';
 import { ReferencesService } from '../services/references.service';
 import {
   TerminalStateService,
+  TerminalLogicSignalEvent,
   TerminalTradeRow,
 } from '../services/terminal-state.service';
 import {
@@ -72,6 +73,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Input() tradeMaxSum = FAKE_DEFAULT_MAX_SUM;
   /** История сделок счёта — для маркеров входов на графике. */
   @Input() trades: TerminalTradeRow[] = [];
+  /** Сигнал логики: бейдж в шапке + вертикальная линия на графике. */
+  @Input() signalEvent: TerminalLogicSignalEvent | null = null;
+  /** Индикаторы логики, значения которых показываем на графике полосы. */
+  @Input() logicIndicatorIds: number[] = [];
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -113,8 +118,12 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
 
   /** Серии индикаторов, назначенные на бумагу (строки security_indicator_series). */
   indicatorRows: SecurityIndicatorSeriesRow[] = [];
-  /** Готовые серии для отрисовки на графике цены. */
+  /** Готовые серии для отрисовки на графике цены (назначенные терминалу). */
   indicatorChartSeries: ChartIndicatorSeries[] = [];
+  /** Серии индикаторов логики (материализованные indicator_values). */
+  signalIndicatorChartSeries: ChartIndicatorSeries[] = [];
+  /** Что отдаём графику: индикаторы логики (под кастомными сериями). */
+  displayIndicatorSeries: ChartIndicatorSeries[] = [];
   /** Каталог индикаторов (справочник, загружается по открытии пикера). */
   indicatorCatalog: IndicatorRow[] = [];
   pendingIndicatorId: number | null = null;
@@ -126,6 +135,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   private indicatorSyncing = false;
   private indicatorSyncGen = 0;
   private indicatorPollTimer?: ReturnType<typeof setTimeout>;
+  /** Загрузка значений индикаторов логики (защита от повторных стартов). */
+  private logicSignalLoading = false;
+  private logicSignalGen = 0;
 
   /** Редактирование параметров выбранного индикатора (модальное окно). */
   indicatorEditRowId: number | null = null;
@@ -214,6 +226,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** При смене счёта сбрасываем максимум на баланс; при живом обновлении
       баланса (без смены счёта) — только пока пользователь не менял вручную. */
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['signalEvent'] != null || changes['logicIndicatorIds'] != null) {
+      this.loadLogicSignalIndicators();
+    }
     if (changes['initialTimeframeId'] != null) {
       const tf = this.timeframeId;
       const next = this.safeInitialTimeframe(changes['initialTimeframeId'].currentValue);
@@ -363,6 +378,48 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return this.underlying != null;
   }
 
+  /** Маркеры сигнала логики: вертикальная полоса + треугольник входа.
+      Дополняются маркерами сделок терминала (см. tradeMarkers). */
+  get signalMarkers(): ChartTradeMarker[] {
+    const ev = this.signalEvent;
+    if (!ev || !ev.bar_dt) return [];
+    const p = Number(ev.price);
+    if (!Number.isFinite(p) || p <= 0) return [];
+    return [
+      {
+        dt: ev.bar_dt,
+        price: p,
+        kind: 'open' as const,
+        side: ev.position_side === 'short' ? ('short' as const) : ('long' as const),
+      },
+    ];
+  }
+
+  /** Все маркеры графика: сперва сигнал логики, затем сделки терминала. */
+  get allTradeMarkers(): ChartTradeMarker[] {
+    return [...this.signalMarkers, ...this.tradeMarkers];
+  }
+
+  /** Текст бейджа сигнала в шапке полосы (покупка/продажа по позиции). */
+  get signalLabel(): string {
+    const ev = this.signalEvent;
+    if (ev?.label) return ev.label;
+    return ev?.position_side === 'short' ? 'продажа' : 'покупка';
+  }
+
+  /** Подпись в подсказке бейджа: логика и бар сигнала. */
+  get signalBadgeTitle(): string {
+    const ev = this.signalEvent;
+    if (!ev) return '';
+    const name = ev.logic_name || `Логика #${ev.logic_id}`;
+    if (!ev.bar_dt) return `Сигнал логики «${name}»`;
+    const d = new Date(ev.bar_dt);
+    const dtLabel = Number.isNaN(d.getTime())
+      ? ev.bar_dt
+      : d.toLocaleString('ru-RU');
+    return `Сигнал логики «${name}» от ${dtLabel}`;
+  }
+
   /** Маркеры входов на графике: покупка — зелёный треугольник (long),
       продажа — красный (short), с вертикальной полосой (см. drawTradeMarkers). */
   get tradeMarkers(): ChartTradeMarker[] {
@@ -456,6 +513,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
         this.computeContango();
         this.maybeDataReady(mainRows);
         this.refreshIndicatorsForChart();
+        this.loadLogicSignalIndicators();
       },
       error: () => {
         if (this.destroyed) return;
@@ -804,6 +862,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
           if (this.indicatorEditRowId === rowId) this.indicatorEditRowId = null;
           if (this.indicatorRows.length === 0) {
             this.indicatorChartSeries = [];
+            this.recomposeIndicatorSeries();
             return;
           }
           this.refreshIndicatorValues();
@@ -982,6 +1041,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
                 values,
                 this.indicatorRows
               );
+              this.recomposeIndicatorSeries();
             },
             error: () => {
               if (gen !== this.indicatorSyncGen) return;
@@ -1026,6 +1086,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
                 values,
                 this.indicatorRows
               );
+              this.recomposeIndicatorSeries();
             }
           },
           error: () => undefined,
@@ -1077,6 +1138,58 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       }
     }
     return series;
+  }
+
+  /** Индикаторы логики, чьи значения уже рассчитаны (материализованы в
+      indicator_values под таймфреймом логики): читаем напрямую без пересчёта. */
+  private loadLogicSignalIndicators(): void {
+    if (
+      !this.security ||
+      !this.timeframeId ||
+      this.logicIndicatorIds.length === 0 ||
+      this.chartState.candles.length === 0 ||
+      this.logicSignalLoading
+    ) {
+      this.recomposeIndicatorSeries();
+      return;
+    }
+    this.logicSignalLoading = true;
+    const candles = this.chartState.candles;
+    const gen = ++this.logicSignalGen;
+    this.subs.push(
+      this.securities
+        .getIndicatorValues(
+          this.security.id,
+          this.timeframeId,
+          this.logicIndicatorIds,
+          candles[0].dt,
+          candles[candles.length - 1].dt
+        )
+        .subscribe({
+          next: (values) => {
+            if (gen !== this.logicSignalGen) return;
+            this.logicSignalLoading = false;
+            this.signalIndicatorChartSeries = values.length
+              ? this.buildChartSeries(values, [])
+              : [];
+            this.recomposeIndicatorSeries();
+          },
+          error: () => {
+            if (gen !== this.logicSignalGen) return;
+            this.logicSignalLoading = false;
+            this.signalIndicatorChartSeries = [];
+            this.recomposeIndicatorSeries();
+          },
+        })
+    );
+  }
+
+  /** Что отдаём графику: индикаторы логики снизу, назначенные терминалу сверху. */
+  private recomposeIndicatorSeries(): void {
+    this.displayIndicatorSeries = [
+      ...this.signalIndicatorChartSeries,
+      ...this.indicatorChartSeries,
+    ];
   }
 
   /** Серия на шкале цены: наложенные (SMA, EMA, WMA, PACC, SMAT3) и канальные. */

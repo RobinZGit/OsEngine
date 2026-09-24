@@ -519,3 +519,22 @@
   color: #991b1b;
   font-weight: 600;
 }
+/* Уведомление о сигнале логики: полоса сверху страницы терминала. */
+.term-toast {
+  position: fixed;
+  top: 0.9rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  max-width: min(42rem, 92vw);
+  background: #fff7ed;
+  color: #7c2d12;
+  border: 1px solid #fdba74;
+  border-left: 4px solid #ea580c;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}

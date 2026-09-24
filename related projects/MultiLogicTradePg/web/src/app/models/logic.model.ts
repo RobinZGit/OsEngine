@@ -4,6 +4,9 @@ export interface LogicRow {
   account_id: number;
   broker_id: number;
   is_enabled: boolean;
+  /** Если true — логика дополнительно выдаёт сигналы покупки/продажи в терминал
+      (при выключенном бое тоже работает как источник сигналов). */
+  use_as_terminal_signal?: boolean;
   note?: string | null;
   /** Короткая формальная запись включённых сигналов логики (вычисляется API при загрузке списка). */
   signals_summary?: string | null;

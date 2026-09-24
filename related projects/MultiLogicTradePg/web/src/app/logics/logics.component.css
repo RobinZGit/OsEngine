@@ -235,6 +235,11 @@
   --logic-row-bg-hover: #c4b5fd;
 }
 
+.logic-main-row.row-terminal-signal {
+  --logic-row-bg: #fbe2e2;
+  --logic-row-bg-hover: #f5cbcb;
+}
+
 .table-wrap > table th.col-expand,
 .table-wrap > table td.col-expand,
 .table-wrap > table th.col-check,
@@ -1003,6 +1008,16 @@ tbody tr.logic-main-row:hover {
   width: 3.1rem;
   text-align: center;
   white-space: nowrap;
+}
+
+.col-signal {
+  width: 5.2rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.terminal-signal-check:checked {
+  accent-color: #dc2626;
 }
 
 .col-id {

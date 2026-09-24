@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
@@ -7,6 +7,8 @@ import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import {
   TerminalBondHolding,
+  TerminalLogicSignal,
+  TerminalLogicSignalEvent,
   TerminalStatePayload,
   TerminalStateService,
   TerminalTradeRow,
@@ -26,6 +28,10 @@ interface PanelModel {
   underlying: SecurityRow | null;
   timeframe_id: number | null;
   chart_height: number;
+  /** Сигнал логики (бейдж в шапке + вертикальная линия на графике). */
+  signal_event: TerminalLogicSignalEvent | null;
+  /** Индикаторы логики, значения которых рисуем на графике полосы. */
+  logic_indicator_ids: number[];
 }
 
 const DEFAULT_CHART_HEIGHT = 340;
@@ -37,7 +43,7 @@ const DEFAULT_CHART_HEIGHT = 340;
   templateUrl: './terminal.component.html',
   styleUrl: './terminal.component.css',
 })
-export class TerminalComponent implements OnInit {
+export class TerminalComponent implements OnInit, OnDestroy {
   accounts: AccountRow[] = [];
   accountId: number | null = null;
   exchanges: ExchangeRow[] = [];
@@ -63,8 +69,9 @@ export class TerminalComponent implements OnInit {
   /** Прочие настройки терминала в JSON (общий таймфрейм и т.п.). */
   settings: { [k: string]: unknown } = {};
 
-  /** Общий таймфрейм для всех полос — задаётся на форме терминала, все
-      панели грузят цены/график по нему (единый для всего счёта). */
+  /** Общий таймфрейм — на форме терминала, по умолчанию для новых
+      добавляемых бумаг. Каждая показанная панель использует собственный
+      таймфрейм (селект в шапке панели, сохраняется в её состоянии). */
   commonTimeframeId: number | null = null;
 
   pickerOpen = false;
@@ -106,6 +113,12 @@ export class TerminalComponent implements OnInit {
   private pendingSaveAccount: number | null = null;
   private pendingSavePayload: TerminalStatePayload | null = null;
 
+  /** Опрос сигналов логик в терминал (каждые 15 с, только активный счёт). */
+  private signalsTimer?: ReturnType<typeof setInterval>;
+  /** Последнее уведомление о сигнале — полоса сверху страницы терминала. */
+  signalsToast: string | null = null;
+  private signalsToastTimer?: ReturnType<typeof setTimeout>;
+
   constructor(
     private readonly refs: ReferencesService,
     private readonly securitiesSvc: SecuritiesService,
@@ -132,12 +145,25 @@ export class TerminalComponent implements OnInit {
         this.selectDefaultAccount(accounts);
         this.loadSecurities();
         this.loadBondPlan();
+        this.startSignalsPolling();
       },
       error: (err) => {
         this.loading = false;
         this.error = logicsLoadErrorMessage(this.appConfig.apiUrl, err);
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.signalsTimer) clearInterval(this.signalsTimer);
+    if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
+  }
+
+  /** Периодический опрос непрочитанных сигналов логик активного счёта. */
+  private startSignalsPolling(): void {
+    if (this.signalsTimer) clearInterval(this.signalsTimer);
+    this.pollLogicSignals();
+    this.signalsTimer = setInterval(() => this.pollLogicSignals(), 15_000);
   }
 
   /** Выбор счёта при старте: по умолчанию — фейковый (демо), если такой есть.
@@ -294,6 +320,89 @@ export class TerminalComponent implements OnInit {
     });
   }
 
+  /** Считать непрочитанные сигналы логик активного счёта и показать их. */
+  private pollLogicSignals(): void {
+    const id = this.accountId;
+    if (id == null) return;
+    this.stateSvc.getLogicSignals(id).subscribe({
+      next: (r) => this.applyLogicSignals(r?.signals ?? []),
+      error: () => undefined,
+    });
+  }
+
+  /** Применить сигналы к панелям: новая бумага — полоса в конец, уже
+      показанная — обновить сигнал и индикаторы. В конце отметить
+      прочитанными и показать уведомление сверху страницы. */
+  private applyLogicSignals(signals: TerminalLogicSignal[]): void {
+    if (!signals.length) return;
+    const applied: number[] = [];
+    for (const s of signals) {
+      if (!this.byId.has(s.security_id)) continue;
+      const sideLabel = (s.side_label || 'покупка').toLowerCase();
+      const logicName = s.logic_name || `логика #${s.logic_id}`;
+      const event: TerminalLogicSignalEvent = {
+        logic_id: s.logic_id,
+        logic_name: logicName,
+        bar_dt: s.bar_dt ?? null,
+        position_side: s.position_side ?? null,
+        label: `${sideLabel} (${logicName})`,
+        price: Number.isFinite(Number(s.price)) ? Number(s.price) : null,
+      };
+      const tf = this.timeframes.some((t) => t.id === s.timeframe_id)
+        ? s.timeframe_id
+        : this.commonTimeframeId;
+      const ids = (s.indicator_ids ?? []).filter((v) => Number.isInteger(v));
+      const existing = this.panels.find((p) => p.security.id === s.security_id);
+      if (existing) {
+        // Таймфрейм подгоняем под логику — её индикаторы рассчитаны на нём.
+        existing.timeframe_id = tf;
+        existing.signal_event = { ...event };
+        if (ids.length) {
+          existing.logic_indicator_ids = [
+            ...new Set([...existing.logic_indicator_ids, ...ids]),
+          ];
+        }
+      } else {
+        const panel = this.buildPanel(
+          s.security_id,
+          tf,
+          DEFAULT_CHART_HEIGHT,
+          event,
+          ids
+        );
+        if (!panel) continue;
+        this.panels = [...this.panels, panel];
+        this.panelsStamp++;
+      }
+      applied.push(s.id);
+      this.showSignalsToast(
+        `«${s.security_prefix || s.security_name}» — сигнал ${sideLabel} ` +
+          `по логике «${logicName}»`
+      );
+    }
+    if (applied.length) {
+      this.scheduleSave();
+      this.markSignalsRead(applied);
+    }
+  }
+
+  /** Полоса появилась/обновилась в результате сигнала — сразу показываем
+      свежий таймфрейм и сигнальную линию (без ожидания 15-сек опроса). */
+  private markSignalsRead(ids: number[]): void {
+    this.stateSvc
+      .markLogicSignalsRead(ids)
+      .subscribe({ error: () => undefined });
+  }
+
+  private showSignalsToast(message: string): void {
+    this.signalsToast = message;
+    if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
+    this.signalsToastTimer = setTimeout(() => {
+      this.signalsToast = null;
+      this.signalsToastTimer = undefined;
+    }, 8000);
+  }
+
   /** Требуется подтверждение; после удаления всех сделок счёта — пересчёт остатка. */
   clearTrades(): void {
     const id = this.accountId;
@@ -367,7 +476,8 @@ export class TerminalComponent implements OnInit {
         const tf = this.safeTimeframeId(settings['timeframe_id']);
         // Дефолт M15 — тот же, что у панелей без таймфрейма
         // (terminal-panel.component.ts ngOnInit), чтобы общий select
-        // не оставался пустым, а цены грузились по видимому таймфрейму.
+        // не оставался пустым, а новые бумаги грузили цены по видимому
+        // таймфрейму по умолчанию. Показанные панели сохраняют свой.
         const defTf =
           this.timeframes.find((t) => t.tf === 'M15')?.id ??
           this.timeframes[0]?.id ??
@@ -377,7 +487,13 @@ export class TerminalComponent implements OnInit {
         if (this.panelsStamp !== stamp) return;
         this.panels = (r.payload.panels ?? [])
           .map((st) =>
-            this.buildPanel(st.security_id, st.chart_height)
+            this.buildPanel(
+              st.security_id,
+              st.timeframe_id,
+              st.chart_height,
+              st.signal_event ?? null,
+              st.logic_indicator_ids ?? []
+            )
           )
           .filter((p): p is PanelModel => p != null);
       },
@@ -401,10 +517,20 @@ export class TerminalComponent implements OnInit {
   private buildPanel(
     securityId: number,
     timeframeId?: number | null,
-    chartHeight?: number | null
+    chartHeight?: number | null,
+    signalEvent?: TerminalLogicSignalEvent | null,
+    logicIndicatorIds?: number[] | null
   ): PanelModel | null {
     const sec = this.byId.get(securityId);
     if (!sec) return null;
+    const tf =
+      timeframeId != null &&
+      this.timeframes.some((t) => t.id === timeframeId)
+        ? timeframeId
+        : null;
+    const ids = (logicIndicatorIds ?? [])
+      .filter((v) => Number.isInteger(v))
+      .filter((v, i, a) => a.indexOf(v) === i);
     return {
       uid: this.nextUid++,
       security: sec,
@@ -416,10 +542,7 @@ export class TerminalComponent implements OnInit {
         sec.instrument_market === 'futures' && sec.underlying_security_id
           ? this.byId.get(sec.underlying_security_id) ?? null
           : null,
-      timeframe_id:
-        timeframeId != null && this.timeframes.some((t) => t.id === timeframeId)
-          ? timeframeId
-          : null,
+      timeframe_id: tf,
       chart_height:
         chartHeight != null &&
         chartHeight >= 100 &&
@@ -427,6 +550,8 @@ export class TerminalComponent implements OnInit {
         Number.isFinite(chartHeight)
           ? chartHeight
           : DEFAULT_CHART_HEIGHT,
+      signal_event: signalEvent ?? null,
+      logic_indicator_ids: ids,
     };
   }
 
@@ -448,7 +573,11 @@ export class TerminalComponent implements OnInit {
       this.pickerError = `Бумага id=${id} не найдена в списке зарегистрированных — обновите справочник`;
       return;
     }
-    const panel = this.buildPanel(sec.id, null, DEFAULT_CHART_HEIGHT);
+    const panel = this.buildPanel(
+      sec.id,
+      this.commonTimeframeId,
+      DEFAULT_CHART_HEIGHT
+    );
     if (this.panels.some((p) => p.security.id === sec.id)) {
       this.pickerError = `«${sec.name}» (${sec.prefix}) уже добавлена на график`;
       return;
@@ -550,7 +679,11 @@ export class TerminalComponent implements OnInit {
           this.releaseAddingSec();
           return;
         }
-        const panel = this.buildPanel(row.id, null, DEFAULT_CHART_HEIGHT);
+        const panel = this.buildPanel(
+          row.id,
+          this.commonTimeframeId,
+          DEFAULT_CHART_HEIGHT
+        );
         if (!panel) {
           this.bondError = `Выпуск ${sec} зарегистрирован, но панель не создалась`;
           this.pickerError = this.bondError;
@@ -626,10 +759,11 @@ export class TerminalComponent implements OnInit {
     this.scheduleSave();
   }
 
-  /** Смена общего таймфрейма на форме терминала: применяем его ко всем
-      панелям (одно общее поле — бумаги смотрят на него при загрузке цен). */
+  /** Смена общего таймфрейма на форме терминала: он становится значением
+      по умолчанию для новых добавляемых бумаг. Показанные панели не
+      перетираются — у каждой бумаги свой таймфрейм (селект в шапке). */
   onCommonTimeframeChange(): void {
-    for (const p of this.panels) p.timeframe_id = this.commonTimeframeId;
+    this.settings = { ...this.settings, timeframe_id: this.commonTimeframeId };
     this.scheduleSave();
   }
 
@@ -657,6 +791,10 @@ export class TerminalComponent implements OnInit {
         security_id: p.security.id,
         timeframe_id: p.timeframe_id,
         chart_height: p.chart_height,
+        signal_event: p.signal_event ?? undefined,
+        logic_indicator_ids: p.logic_indicator_ids.length
+          ? p.logic_indicator_ids
+          : undefined,
       })),
       settings: this.settings,
     };

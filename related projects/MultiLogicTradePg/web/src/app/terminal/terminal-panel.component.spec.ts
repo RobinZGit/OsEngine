@@ -41,6 +41,7 @@ describe('TerminalPanelComponent', () => {
 
   const timeframes: TimeframeRow[] = [
     { id: 6, tf: 'M15', full_name: '15 min', sec: 900, is_active: true },
+    { id: 5, tf: 'H1', full_name: '60 min', sec: 3600, is_active: true },
   ];
 
   const smaSeries: SecurityIndicatorSeriesRow = {
@@ -430,5 +431,26 @@ describe('TerminalPanelComponent', () => {
     component.removeIndicator(smaSeries.id);
     expect(securities.removeIndicatorSeries).toHaveBeenCalledWith(1);
     expect(component.indicatorRows.some((r) => r.id === smaSeries.id)).toBeFalse();
+  });
+
+  it('панель имеет собственный селект таймфрейма и пересчитывает цены по нему', () => {
+    const select = fixture.debugElement.query(By.css('.tpanel-field select'));
+    expect(select).not.toBeNull();
+    const h1 = timeframes.find((t) => t.tf === 'H1')!;
+    securities.getPrices.calls.reset();
+    component.timeframeId = h1.id;
+    component.onTimeframeChange();
+    expect(securities.getPrices).toHaveBeenCalledWith(29, h1.id, 200);
+  });
+
+  it('смена таймфрейма на панели эмитит состояние с новым таймфреймом', () => {
+    const emitSpy = spyOn(component.stateChange, 'emit');
+    const h1 = timeframes.find((t) => t.tf === 'H1')!;
+    component.timeframeId = h1.id;
+    component.onTimeframeChange();
+    expect(emitSpy).toHaveBeenCalledWith({
+      timeframe_id: h1.id,
+      chart_height: component.chartHeight,
+    });
   });
 });

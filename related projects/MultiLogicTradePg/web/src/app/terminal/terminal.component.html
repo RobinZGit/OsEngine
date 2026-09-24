@@ -16,6 +16,9 @@
   }
 
   @if (!loading && !error) {
+    @if (signalsToast) {
+      <div class="term-toast" role="status">{{ signalsToast }}</div>
+    }
     <div class="term-bar">
       <label class="term-field">
         <span>Счёт</span>
@@ -33,10 +36,11 @@
         }
       </label>
       <label class="term-field">
-        <span>Таймфрейм</span>
+        <span>Таймфрейм (для новых)</span>
         <select
           [(ngModel)]="commonTimeframeId"
           (ngModelChange)="onCommonTimeframeChange()"
+          title="Таймфрейм по умолчанию для добавляемых бумаг. У каждой добавленной бумаги таймфрейм меняется отдельно — селектор в шапке панели."
         >
           @for (tf of timeframes; track tf.id) {
             <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }} — {{ tf.full_name }}</option>
@@ -53,7 +57,7 @@
     </div>
 
     <div class="term-account-card">
-      <details class="term-account-details" open>
+      <details class="term-account-details">
         <summary class="term-account-summary">
           <span class="term-account-caret" aria-hidden="true"></span>
           <span class="term-account-title">Счёт</span>
@@ -254,8 +258,10 @@
           [contango]="panel.contango"
           [underlying]="panel.underlying"
           [timeframes]="timeframes"
-          [initialTimeframeId]="commonTimeframeId"
+          [initialTimeframeId]="panel.timeframe_id"
           [initialHeight]="panel.chart_height"
+          [signalEvent]="panel.signal_event"
+          [logicIndicatorIds]="panel.logic_indicator_ids"
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"
           [tradeMaxSum]="tradeMaxSum"

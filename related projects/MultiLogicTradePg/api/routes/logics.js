@@ -141,6 +141,7 @@ app.get('/api/logics', async (_req, res) => {
         l.name,
         l.account_id,
         l.is_enabled,
+        COALESCE(l.use_as_terminal_signal, FALSE) AS use_as_terminal_signal,
         l.note,
         COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
         l.portfolio_stop_resume_equity::float8 AS portfolio_stop_resume_equity,
@@ -278,11 +279,17 @@ app.post('/api/logics', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `
-      INSERT INTO logics (name, account_id, is_enabled, note)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, name, account_id, is_enabled, note
+      INSERT INTO logics (name, account_id, is_enabled, use_as_terminal_signal, note)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, name, account_id, is_enabled, use_as_terminal_signal, note
       `,
-      [parsed.name, parsed.account_id, parsed.is_enabled, parsed.note]
+      [
+        parsed.name,
+        parsed.account_id,
+        parsed.is_enabled,
+        parsed.use_as_terminal_signal ?? false,
+        parsed.note,
+      ]
     );
     const row = rows[0];
     await ensureDefaultParams(pool, row.id);
@@ -345,6 +352,7 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     const { rows: sourceRows } = await client.query(
       `
       SELECT id, name, account_id, note,
+             COALESCE(use_as_terminal_signal, FALSE) AS use_as_terminal_signal,
              last_opt_grid_results, last_opt_grid_run_id, last_opt_grid_at
       FROM logics WHERE id = $1
       `,
@@ -369,11 +377,11 @@ app.post('/api/logics/:id/copy', async (req, res) => {
 
     const { rows: inserted } = await client.query(
       `
-      INSERT INTO logics (name, account_id, is_enabled, note)
-      VALUES ($1, $2, FALSE, $3)
-      RETURNING id, name, account_id, is_enabled, note
+      INSERT INTO logics (name, account_id, is_enabled, use_as_terminal_signal, note)
+      VALUES ($1, $2, FALSE, $3, $4)
+      RETURNING id, name, account_id, is_enabled, use_as_terminal_signal, note
       `,
-      [copyName, source.account_id, source.note]
+      [copyName, source.account_id, source.use_as_terminal_signal, source.note]
     );
     const copy = inserted[0];
 
@@ -484,6 +492,7 @@ app.post('/api/logics/:id/copy', async (req, res) => {
         l.name,
         l.account_id,
         l.is_enabled,
+        COALESCE(l.use_as_terminal_signal, FALSE) AS use_as_terminal_signal,
         l.note,
         a.account_code,
         a.name AS account_name,
@@ -539,14 +548,31 @@ app.put('/api/logics/:id', async (req, res) => {
     }
     const prevAccountId = Number(existing.rows[0].account_id);
     const accountChanged = prevAccountId !== Number(parsed.account_id);
+    const hasSignalFlag = parsed.use_as_terminal_signal !== undefined;
+    const setClause = hasSignalFlag
+      ? 'SET name = $1, account_id = $2, is_enabled = $3, use_as_terminal_signal = $4, note = $5'
+      : 'SET name = $1, account_id = $2, is_enabled = $3, note = $4';
+    const returningClause = hasSignalFlag
+      ? 'RETURNING id, name, account_id, is_enabled, use_as_terminal_signal, note'
+      : 'RETURNING id, name, account_id, is_enabled, note';
+    const updateParams = hasSignalFlag
+      ? [
+          parsed.name,
+          parsed.account_id,
+          parsed.is_enabled,
+          parsed.use_as_terminal_signal,
+          parsed.note,
+          id,
+        ]
+      : [parsed.name, parsed.account_id, parsed.is_enabled, parsed.note, id];
     const { rows } = await client.query(
       `
       UPDATE logics
-      SET name = $1, account_id = $2, is_enabled = $3, note = $4
-      WHERE id = $5
-      RETURNING id, name, account_id, is_enabled, note
+      ${setClause}
+      WHERE id = $${updateParams.length}
+      ${returningClause}
       `,
-      [parsed.name, parsed.account_id, parsed.is_enabled, parsed.note, id]
+      updateParams
     );
 
     let account_change = null;
@@ -638,13 +664,15 @@ app.delete('/api/logics/:id', async (req, res) => {
 
 app.patch('/api/logics/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const { is_enabled } = req.body;
+  const { is_enabled, use_as_terminal_signal } = req.body;
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Invalid logic id' });
     return;
   }
-  if (typeof is_enabled !== 'boolean') {
-    res.status(400).json({ error: 'is_enabled must be boolean' });
+  const hasEnabled = typeof is_enabled === 'boolean';
+  const hasSignal = typeof use_as_terminal_signal === 'boolean';
+  if (!hasEnabled && !hasSignal) {
+    res.status(400).json({ error: 'is_enabled or use_as_terminal_signal must be boolean' });
     return;
   }
   try {
@@ -654,6 +682,26 @@ app.patch('/api/logics/:id', async (req, res) => {
     );
     if (existsRows.length === 0) {
       res.status(404).json({ error: 'Logic not found' });
+      return;
+    }
+    if (hasSignal && !hasEnabled) {
+      const { rows } = await pool.query(
+        `UPDATE logics SET use_as_terminal_signal = $1 WHERE id = $2 RETURNING id, use_as_terminal_signal`,
+        [use_as_terminal_signal, id]
+      );
+      await writeTechLogEvent(pool, {
+        threadKey: `logic:${id}:control`,
+        operation: use_as_terminal_signal
+          ? 'logic.terminal_signal.on'
+          : 'logic.terminal_signal.off',
+        message: use_as_terminal_signal
+          ? 'Логика выдаёт сигналы в терминал'
+          : 'Логика больше не выдаёт сигналы в терминал',
+        source: 'api',
+        logicId: id,
+        payload: { use_as_terminal_signal },
+      });
+      res.json({ ...rows[0] });
       return;
     }
     if (is_enabled) {
@@ -713,9 +761,26 @@ app.patch('/api/logics/:id', async (req, res) => {
       }
     }
     const { rows } = await pool.query(
-      `UPDATE logics SET is_enabled = $1 WHERE id = $2 RETURNING id, is_enabled`,
-      [is_enabled, id]
+      hasSignal
+        ? `UPDATE logics SET is_enabled = $1, use_as_terminal_signal = $3
+           WHERE id = $2 RETURNING id, is_enabled, use_as_terminal_signal`
+        : `UPDATE logics SET is_enabled = $1 WHERE id = $2 RETURNING id, is_enabled`,
+      hasSignal ? [is_enabled, id, use_as_terminal_signal] : [is_enabled, id]
     );
+    if (hasSignal) {
+      await writeTechLogEvent(pool, {
+        threadKey: `logic:${id}:control`,
+        operation: use_as_terminal_signal
+          ? 'logic.terminal_signal.on'
+          : 'logic.terminal_signal.off',
+        message: use_as_terminal_signal
+          ? 'Логика выдаёт сигналы в терминал'
+          : 'Логика больше не выдаёт сигналы в терминал',
+        source: 'api',
+        logicId: id,
+        payload: { use_as_terminal_signal },
+      });
+    }
     await writeTechLogEvent(pool, {
       threadKey: `logic:${id}:control`,
       operation: is_enabled ? 'logic.enabled' : 'logic.disabled',

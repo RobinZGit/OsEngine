@@ -5348,6 +5348,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9974,6 +9975,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -18068,6 +18097,7 @@ DECLARE
     v_logic RECORD;
     v_total_created INTEGER := 0;
     v_total_stops INTEGER := 0;
+    v_total_signals INTEGER := 0;
     v_processed INTEGER := 0;
     v_skipped_bt INTEGER := 0;
     v_got_lock BOOLEAN;
@@ -18092,10 +18122,12 @@ BEGIN
     PERFORM app_tech_log_event('trade-runner', 'cycle.start', 'run_trade_cycle начат', 'postgresql');
 
     FOR v_logic IN
-        SELECT l.id
+        SELECT l.id, l.is_enabled,
+               COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
         FROM logics l
         JOIN accounts a ON a.id = l.account_id
-        WHERE l.is_enabled = TRUE AND a.is_active = TRUE
+        WHERE (l.is_enabled = TRUE OR COALESCE(l.use_as_terminal_signal, FALSE))
+          AND a.is_active = TRUE
         ORDER BY l.id
     LOOP
         -- Не мешать бэктесту той же логики (цены/индикаторы/сделки)
@@ -18110,9 +18142,14 @@ BEGIN
         END IF;
 
         v_processed := v_processed + 1;
-        v_total_stops := v_total_stops + process_logic_stops(v_logic.id);
-        v_total_created := v_total_created + process_logic_trades(v_logic.id);
-        PERFORM logic_park_excess_cash(v_logic.id);
+        IF v_logic.use_sig THEN
+            v_total_signals := v_total_signals + process_logic_terminal_signals(v_logic.id);
+        END IF;
+        IF v_logic.is_enabled THEN
+            v_total_stops := v_total_stops + process_logic_stops(v_logic.id);
+            v_total_created := v_total_created + process_logic_trades(v_logic.id);
+            PERFORM logic_park_excess_cash(v_logic.id);
+        END IF;
     END LOOP;
 
     PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));
@@ -18123,8 +18160,8 @@ BEGIN
         'trade-runner',
         'cycle.end',
         format(
-            'processed=%s stops=%s created=%s skip_bt=%s',
-            v_processed, v_total_stops, v_total_created, v_skipped_bt
+            'processed=%s stops=%s created=%s signals=%s skip_bt=%s',
+            v_processed, v_total_stops, v_total_created, v_total_signals, v_skipped_bt
         ),
         'postgresql',
         'event',
@@ -18135,6 +18172,7 @@ BEGIN
             'processed', v_processed,
             'stops', v_total_stops,
             'created', v_total_created,
+            'signals', v_total_signals,
             'skipped_backtest', v_skipped_bt
         )
     );
@@ -18143,6 +18181,7 @@ BEGIN
         'processed', v_processed,
         'stops', v_total_stops,
         'created', v_total_created,
+        'signals', v_total_signals,
         'skipped_backtest', v_skipped_bt,
         'at', CURRENT_TIMESTAMP
     );
@@ -18156,6 +18195,232 @@ $$;
 COMMENT ON FUNCTION run_trade_cycle() IS
 'Цикл торговли по включённым logics (пропуск логик с активным бэктестом). '
 'Node fallback предпочтителен: по логике отдельно (короткие tx). pg_cron — эта функция.';
+
+-- ============================================================
+-- Сигналы логик в терминал (use_as_terminal_signal): анализирует
+-- только open-сигналы логики на закрытой свече её TF и записывает
+-- logic_terminal_signals (НЕ торгует). Терминал добавляет бумагу+ТФ
+-- для ручного решения пользователя.
+-- ============================================================
+CREATE OR REPLACE FUNCTION process_logic_terminal_signals(p_logic_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic RECORD;
+    v_tf_id INTEGER;
+    v_tf_sec INTEGER;
+    v_closed_bar_dt TIMESTAMP;
+    v_last_bar_raw TEXT;
+    v_last_bar_dt TIMESTAMP;
+    v_grp RECORD;
+    v_sec RECORD;
+    v_sig RECORD;
+    v_pt RECORD;
+    v_eval RECORD;
+    v_all_ok BOOLEAN;
+    v_formulas TEXT;
+    v_signal_kind TEXT;
+    v_pp NUMERIC;
+    v_eff_side TEXT;
+    v_inversion BOOLEAN;
+    v_created INTEGER := 0;
+    v_ids_dedup INTEGER[] := ARRAY[]::INTEGER[];
+    v_ind_ids INTEGER[] := ARRAY[]::INTEGER[];
+    v_eval_sec INTEGER;
+    v_new_id BIGINT;
+BEGIN
+    SELECT l.id, l.account_id, a.account_type,
+           COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
+    INTO v_logic
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id
+      AND a.is_active = TRUE;
+
+    IF NOT FOUND OR NOT COALESCE(v_logic.use_sig, FALSE) THEN
+        RETURN 0;
+    END IF;
+
+    v_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    IF v_tf_id IS NULL THEN
+        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Не задан timeframe в logic_params');
+        RETURN 0;
+    END IF;
+
+    SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
+    v_closed_bar_dt := logic_last_closed_bar_dt(v_tf_sec);
+    IF v_closed_bar_dt IS NULL THEN
+        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Не удалось вычислить закрытую свечу TF', NULL, NULL, v_tf_id);
+        RETURN 0;
+    END IF;
+
+    -- Своя дедуп-ямка свечей: сигналы прогрессируют независимо от торговых last_trade_bar_dt.
+    v_last_bar_raw := btrim(COALESCE(get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), ''));
+    IF v_last_bar_raw <> '' THEN
+        BEGIN
+            v_last_bar_dt := v_last_bar_raw::TIMESTAMP;
+            IF v_closed_bar_dt <= v_last_bar_dt THEN
+                RETURN 0;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+          AND lower(COALESCE(lis.position_event, 'open')) = 'open'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM logic_securities ls
+        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+    ) THEN
+        PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
+            to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
+        RETURN 0;
+    END IF;
+
+    -- Цены + значения индикаторов (как в process_logic_trades): бумаги из logic_securities.
+    CALL logic_refresh_market_data(p_logic_id, v_tf_id, v_closed_bar_dt);
+
+    PERFORM logic_ensure_non_trading_periods(p_logic_id);
+    IF logic_is_non_trading_dt(p_logic_id, v_closed_bar_dt) THEN
+        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Неторговый период (сигнал в терминал не выдаётся)', NULL, NULL, v_tf_id);
+        PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
+            to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
+        RETURN 0;
+    END IF;
+
+    v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
+
+    FOR v_sec IN
+        SELECT ls.security_id,
+               COALESCE(ls.real_trading_inverted, FALSE) AS real_trading_inverted
+        FROM logic_securities ls
+        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+          AND NOT logic_is_cash_fund_security(ls.security_id)
+        ORDER BY ls.display_order NULLS LAST, ls.id
+    LOOP
+        FOR v_grp IN
+            SELECT lis.position_event, lis.position_side
+            FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND lower(COALESCE(lis.position_event, 'open')) = 'open'
+            GROUP BY lis.position_event, lis.position_side
+            ORDER BY lis.position_side
+        LOOP
+            v_all_ok := TRUE;
+            v_formulas := NULL;
+            v_signal_kind := NULL;
+            v_pp := NULL;
+            v_ids_dedup := ARRAY[]::INTEGER[];
+            v_ind_ids := ARRAY[]::INTEGER[];
+
+            FOR v_sig IN
+                SELECT lis.id, lis.position_side, lis.signal_kind, lis.formula, lis.indicator_id
+                FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id
+                  AND lis.is_active = TRUE
+                  AND lis.position_event = v_grp.position_event
+                  AND lis.position_side = v_grp.position_side
+                ORDER BY lis.display_order, lis.id
+            LOOP
+                SELECT * INTO v_pt
+                FROM logic_signal_eval_point(v_sig.formula, v_tf_id, v_closed_bar_dt);
+                IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                    v_all_ok := FALSE;
+                    CONTINUE;
+                END IF;
+
+                SELECT * INTO v_eval
+                FROM logic_signal_evaluate_at(
+                    v_sig.id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt, FALSE
+                );
+
+                IF v_eval.close_price IS NULL THEN
+                    v_all_ok := FALSE;
+                    CONTINUE;
+                END IF;
+
+                -- Индикаторы отрисовки: только те, что оцениваются по ЭТОЙ бумаге
+                -- (base_asset/contango считаются по другим бумагам — их на график не тянем).
+                v_eval_sec := logic_signal_eval_security_id(v_sig.id, v_sec.security_id);
+                IF v_eval_sec IS NOT NULL AND v_eval_sec = v_sec.security_id THEN
+                    IF NOT (v_sig.indicator_id = ANY(v_ids_dedup)) THEN
+                        v_ids_dedup := array_append(v_ids_dedup, v_sig.indicator_id);
+                        v_ind_ids := array_append(v_ind_ids, v_sig.indicator_id);
+                    END IF;
+                END IF;
+
+                IF v_signal_kind IS NULL THEN
+                    v_signal_kind := v_sig.signal_kind;
+                    v_pp := v_eval.close_price;
+                END IF;
+                v_formulas := CASE
+                    WHEN v_formulas IS NULL THEN v_sig.formula
+                    ELSE v_formulas || ' AND ' || v_sig.formula
+                END;
+
+                IF NOT COALESCE(v_eval.ok, FALSE) THEN
+                    v_all_ok := FALSE;
+                END IF;
+            END LOOP;
+
+            IF NOT v_all_ok OR v_pp IS NULL OR v_formulas IS NULL THEN
+                CONTINUE;
+            END IF;
+
+            v_eff_side := lower(COALESCE(v_grp.position_side, 'long'));
+            IF v_inversion <> v_sec.real_trading_inverted THEN
+                v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
+            END IF;
+
+            INSERT INTO logic_terminal_signals (
+                logic_id, security_id, timeframe_id, bar_dt,
+                position_side, signal_kind, formula, price, indicator_ids
+            )
+            VALUES (
+                p_logic_id, v_sec.security_id, v_tf_id, v_closed_bar_dt,
+                v_eff_side, v_signal_kind, v_formulas, v_pp, v_ind_ids
+            )
+            ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_side) DO NOTHING
+            RETURNING id INTO v_new_id;
+
+            IF v_new_id IS NULL THEN
+                CONTINUE;
+            END IF;
+
+            v_created := v_created + 1;
+            PERFORM logic_trade_log(
+                p_logic_id,
+                'signal.terminal',
+                format('Сигнал в терминал: sec=%s side=%s', v_sec.security_id, v_eff_side),
+                jsonb_build_object(
+                    'closed_bar', v_closed_bar_dt,
+                    'timeframe_id', v_tf_id,
+                    'effective_side', v_eff_side,
+                    'signal_kind', v_signal_kind,
+                    'formula', v_formulas,
+                    'price', v_pp,
+                    'indicator_ids', v_ind_ids
+                ),
+                v_sec.security_id,
+                v_tf_id
+            );
+        END LOOP;
+    END LOOP;
+
+    PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
+        to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
+
+    RETURN v_created;
+END;
+$$;
+
+COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
+'Open-сигналы логики для терминала: записывает logic_terminal_signals (сделки НЕ исполняет). '
+'Сторона — эффективная с учётом инверсий: long → покупка, short → продажа. '
+'Работает при use_as_terminal_signal=TRUE независимо от is_enabled (включённая логика торгует как обычно + сигналит в терминал).';
 
 -- @include sql/logic_trading_sessions.sql
 -- ============================================
@@ -22989,6 +23254,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

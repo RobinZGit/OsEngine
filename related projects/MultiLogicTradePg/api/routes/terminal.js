@@ -154,6 +154,36 @@ module.exports = function registerTerminalRoutes(app, ctx) {
             security_id: parseId(p.security_id),
             timeframe_id: p.timeframe_id != null ? parseId(p.timeframe_id) : null,
             chart_height: parseId(p.chart_height),
+            ...(p.signal_event && typeof p.signal_event === 'object'
+              ? {
+                  signal_event: {
+                    logic_id: parseId(p.signal_event.logic_id),
+                    bar_dt:
+                      typeof p.signal_event.bar_dt === 'string'
+                        ? p.signal_event.bar_dt
+                        : null,
+                    position_side: ['long', 'short'].includes(
+                      p.signal_event.position_side
+                    )
+                      ? p.signal_event.position_side
+                      : null,
+                    label:
+                      typeof p.signal_event.label === 'string'
+                        ? p.signal_event.label
+                        : null,
+                    price: Number.isFinite(Number(p.signal_event.price))
+                      ? Number(p.signal_event.price)
+                      : null,
+                  },
+                }
+              : {}),
+            ...(Array.isArray(p.logic_indicator_ids)
+              ? {
+                  logic_indicator_ids: p.logic_indicator_ids
+                    .map(parseId)
+                    .filter((v) => v != null),
+                }
+              : {}),
           }))
           .filter((p) => p && p.security_id != null),
         settings,
@@ -680,24 +710,108 @@ module.exports = function registerTerminalRoutes(app, ctx) {
     }
   });
 
-  app.put('/api/terminal/ui-state', async (req, res) => {
-    const accountId = parseId(req.body?.selected_account_id);
-    if (accountId == null) {
-      res.status(400).json({ error: 'Укажите selected_account_id' });
+  /** Сигналы логик в терминал (непрочитанные, новые сверху по времени записи).
+      Записи создаёт процесс_logic_terminal_signals в торговом цикле (node-runner). */
+  app.get('/api/terminal/logic-signals', async (req, res) => {
+    const accountId = parseId(req.query.account_id);
+    const limitRaw = Number(req.query.limit);
+    const limit = Math.min(
+      Math.max(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 200, 1),
+      500
+    );
+    try {
+      const params = [];
+      const where = ['lts.is_read = FALSE'];
+      if (accountId != null) {
+        params.push(accountId);
+        where.push(`a.id = $${params.length}`);
+      }
+      const { rows } = await pool.query(
+        `
+        SELECT lts.id, lts.logic_id, lts.security_id, lts.timeframe_id,
+               lts.bar_dt, lts.position_side, lts.signal_kind,
+               lts.formula, lts.price, lts.indicator_ids,
+               lts.created_at,
+               l.name AS logic_name,
+               s.name AS security_name,
+               sp.prefix AS security_prefix,
+               t.tf AS timeframe
+        FROM logic_terminal_signals lts
+        JOIN logics l ON l.id = lts.logic_id
+        JOIN accounts a ON a.id = l.account_id
+        JOIN securities s ON s.id = lts.security_id
+        LEFT JOIN security_prefixes sp
+               ON sp.security_id = s.id AND sp.exchange_id = 1
+        JOIN timeframes t ON t.id = lts.timeframe_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY lts.id ASC
+        LIMIT $${params.length + 1}
+        `,
+        [...params, limit]
+      );
+
+      const indicatorIds = [...new Set(
+        rows.flatMap((r) => (Array.isArray(r.indicator_ids) ? r.indicator_ids : []))
+      )];
+      let indicators = [];
+      if (indicatorIds.length > 0) {
+        const indRows = await pool.query(
+          `SELECT id, code, name FROM indicators WHERE id = ANY($1::int[])`,
+          [indicatorIds]
+        );
+        indicators = indRows.rows;
+      }
+      const indicatorsById = new Map(indicators.map((i) => [i.id, i]));
+      const signals = rows.map((r) => ({
+        id: Number(r.id),
+        logic_id: r.logic_id,
+        logic_name: r.logic_name,
+        account_id: accountId != null ? accountId : null,
+        security_id: r.security_id,
+        security_prefix: r.security_prefix,
+        security_name: r.security_name,
+        timeframe_id: r.timeframe_id,
+        timeframe: r.timeframe,
+        bar_dt: r.bar_dt,
+        position_side: r.position_side,
+        signal_kind: r.signal_kind,
+        side_label:
+          r.position_side === 'short' ? 'продажа' : 'покупка',
+        formula: r.formula,
+        price: r.price,
+        indicator_ids: r.indicator_ids,
+        indicators: (Array.isArray(r.indicator_ids) ? r.indicator_ids : [])
+          .map((id) => indicatorsById.get(id))
+          .filter(Boolean),
+        created_at: r.created_at,
+      }));
+      res.json({ signals });
+    } catch (err) {
+      handleDbError(res, err, 'terminal logic signals list');
+    }
+  });
+
+  /** Отметить сигналы логик прочитанными (терминал их показал). */
+  app.post('/api/terminal/logic-signals/read', async (req, res) => {
+    const raw = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const ids = raw
+      .map((v) => Number(v))
+      .filter((v) => Number.isInteger(v) && v > 0);
+    if (ids.length === 0) {
+      res.status(400).json({ error: 'Укажите параметр ids (массив id сигналов)' });
       return;
     }
     try {
-      await pool.query(
-        `INSERT INTO terminal_ui_state (id, selected_account_id, updated_at)
-         VALUES (1, $1, now())
-         ON CONFLICT (id) DO UPDATE SET
-           selected_account_id = EXCLUDED.selected_account_id,
-           updated_at = now()`,
-        [accountId]
+      const { rows } = await pool.query(
+        `UPDATE logic_terminal_signals
+         SET is_read = TRUE
+         WHERE id = ANY($1::bigint[])
+         RETURNING id`,
+        [ids]
       );
-      res.json({ ok: true, selected_account_id: accountId });
+      res.json({ ok: true, read: rows.length });
     } catch (err) {
-      handleDbError(res, err, 'terminal ui-state put');
+      handleDbError(res, err, 'terminal logic signals read');
     }
   });
 };

@@ -121,7 +121,8 @@ app.use((_req, res) => {
       SELECT COUNT(*)::int AS n
       FROM logics l
       JOIN accounts a ON a.id = l.account_id
-      WHERE l.is_enabled = TRUE AND a.is_active = TRUE
+      WHERE (l.is_enabled = TRUE OR COALESCE(l.use_as_terminal_signal, FALSE))
+        AND a.is_active = TRUE
       `
       )
       .then((r) => {

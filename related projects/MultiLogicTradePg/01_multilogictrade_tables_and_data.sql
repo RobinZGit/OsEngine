@@ -1320,6 +1320,9 @@ ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_arm_bar_dt TIMES
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS portfolio_linear_tp_latched BOOLEAN NOT NULL DEFAULT FALSE;
 COMMENT ON COLUMN logics.portfolio_linear_tp_latched IS
 'После срабатывания portfolio_ltp_renew: не взводить снова, пока track% не уйдёт ниже arm% (анти-чоп)';
+ALTER TABLE logics ADD COLUMN IF NOT EXISTS use_as_terminal_signal BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN logics.use_as_terminal_signal IS
+'Выдавать open-сигналы логики в терминал (бумага+ТФ+сторона) как сигнал к покупке/продаже; сделки логика исполняет как обычно (счёт может отличаться от терминала)';
 
 -- Last offline OPT grid (checkbox «Оптимизировать»): survives until explicit «Сброс OPT» / «Параметры по умолчанию».
 ALTER TABLE logics ADD COLUMN IF NOT EXISTS last_opt_grid_results JSONB;
@@ -1346,6 +1349,39 @@ COMMENT ON COLUMN logics.portfolio_stop_resume_baseline IS
 
 
 
+
+-- Сигналы логик для терминала: open-сигнал → бумага+ТФ+сторона (покупка/продажа).
+-- Сделки НЕ исполняются этой записью: терминал добавляет бумагу для ручного решения.
+CREATE TABLE IF NOT EXISTS logic_terminal_signals (
+    id BIGSERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id),
+    bar_dt TIMESTAMP NOT NULL,
+    position_side VARCHAR(10) NOT NULL,
+    signal_kind VARCHAR(20),
+    formula TEXT,
+    price NUMERIC(20, 6),
+    indicator_ids INTEGER[],
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT logic_terminal_signals_dedup
+        UNIQUE (logic_id, security_id, timeframe_id, bar_dt, position_side)
+);
+CREATE INDEX IF NOT EXISTS idx_logic_terminal_signals_unread
+    ON logic_terminal_signals (is_read, created_at);
+CREATE INDEX IF NOT EXISTS idx_logic_terminal_signals_security
+    ON logic_terminal_signals (security_id, timeframe_id);
+COMMENT ON TABLE logic_terminal_signals IS
+'Сработавший open-сигнал логики для терминала (не сделка) — одно значение на (логика, бумага, TF, бар, сторона)';
+COMMENT ON COLUMN logic_terminal_signals.position_side IS
+'Эффективная сторона с учётом инверсий: long → покупка, short → продажа';
+COMMENT ON COLUMN logic_terminal_signals.indicator_ids IS
+'Активные индикаторы сработавшей группы сигналов (для отрисовки на графике терминала)';
+COMMENT ON COLUMN logic_terminal_signals.bar_dt IS
+'Закрытая свеча TF логики, на которой сработал сигнал';
+COMMENT ON COLUMN logic_terminal_signals.is_read IS
+'Прочитан терминалом (бумага уже добавлена/отмечена)';
 
 CREATE INDEX IF NOT EXISTS idx_logics_account_id ON logics(account_id);
 -- Старые БД: CREATE TABLE IF NOT EXISTS не добавит UNIQUE(name) — ON CONFLICT (name) иначе падает.

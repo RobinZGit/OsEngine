@@ -698,6 +698,10 @@ function parseLogicBody(body) {
   const account_id = Number(body?.account_id);
   const is_enabled =
     body?.is_enabled === undefined ? true : Boolean(body.is_enabled);
+  const use_as_terminal_signal =
+    body?.use_as_terminal_signal === undefined
+      ? undefined
+      : Boolean(body.use_as_terminal_signal);
   const note =
     body?.note == null || body.note === '' ? null : String(body.note).trim();
 
@@ -713,7 +717,11 @@ function parseLogicBody(body) {
   if (!Number.isInteger(account_id) || account_id <= 0) {
     return { error: 'Выберите счёт' };
   }
-  return { name, account_id, is_enabled, note };
+  const out = { name, account_id, is_enabled, note };
+  if (use_as_terminal_signal !== undefined) {
+    out.use_as_terminal_signal = use_as_terminal_signal;
+  }
+  return out;
 }
 
 function parseId(value) {

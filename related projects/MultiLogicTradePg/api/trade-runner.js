@@ -146,10 +146,10 @@ async function runTradeCycle(pool, opts = {}) {
 
     const { rows: logics } = await client.query(
       `
-      SELECT l.id
+      SELECT l.id, l.is_enabled, COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
       FROM logics l
       JOIN accounts a ON a.id = l.account_id
-      WHERE l.is_enabled = TRUE
+      WHERE (l.is_enabled = TRUE OR COALESCE(l.use_as_terminal_signal, FALSE))
         AND a.is_active = TRUE
         AND NOT EXISTS (
           SELECT 1
@@ -165,6 +165,7 @@ async function runTradeCycle(pool, opts = {}) {
     let processed = 0;
     let created = 0;
     let stops = 0;
+    let signals = 0;
     let skippedBacktest = 0;
     let logicErrors = 0;
 
@@ -173,7 +174,8 @@ async function runTradeCycle(pool, opts = {}) {
       SELECT COUNT(*)::int AS n
       FROM logics l
       JOIN accounts a ON a.id = l.account_id
-      WHERE l.is_enabled = TRUE AND a.is_active = TRUE
+      WHERE (l.is_enabled = TRUE OR COALESCE(l.use_as_terminal_signal, FALSE))
+        AND a.is_active = TRUE
       `
     );
     const enabledN = enabledCountRows[0]?.n ?? 0;
@@ -184,21 +186,30 @@ async function runTradeCycle(pool, opts = {}) {
         await client.query(`SET statement_timeout = ${Math.max(15000, LOGIC_TIMEOUT_MS)}`);
         await client.query(`SET lock_timeout = '15s'`);
 
-        const { rows: stopRows } = await client.query(
-          `SELECT process_logic_stops($1)::int AS n`,
-          [row.id]
-        );
-        stops += Number(stopRows[0]?.n ?? 0);
+        if (row.is_enabled) {
+          const { rows: stopRows } = await client.query(
+            `SELECT process_logic_stops($1)::int AS n`,
+            [row.id]
+          );
+          stops += Number(stopRows[0]?.n ?? 0);
 
-        const { rows: tradeRows } = await client.query(
-          `SELECT process_logic_trades($1)::int AS n`,
-          [row.id]
-        );
-        created += Number(tradeRows[0]?.n ?? 0);
-        try {
-          await client.query(`SELECT logic_park_excess_cash($1)`, [row.id]);
-        } catch (parkErr) {
-          console.error(`cash fund park logic=${row.id}`, parkErr.message);
+          const { rows: tradeRows } = await client.query(
+            `SELECT process_logic_trades($1)::int AS n`,
+            [row.id]
+          );
+          created += Number(tradeRows[0]?.n ?? 0);
+          try {
+            await client.query(`SELECT logic_park_excess_cash($1)`, [row.id]);
+          } catch (parkErr) {
+            console.error(`cash fund park logic=${row.id}`, parkErr.message);
+          }
+        }
+        if (row.use_sig) {
+          const { rows: signalRows } = await client.query(
+            `SELECT process_logic_terminal_signals($1)::int AS n`,
+            [row.id]
+          );
+          signals += Number(signalRows[0]?.n ?? 0);
         }
         processed += 1;
         // Pulse while long multi-logic cycles run — UI stays green.
@@ -225,6 +236,7 @@ async function runTradeCycle(pool, opts = {}) {
       processed,
       stops,
       created,
+      signals,
       skipped_backtest: skippedBacktest,
       logic_errors: logicErrors,
       at: new Date().toISOString(),
