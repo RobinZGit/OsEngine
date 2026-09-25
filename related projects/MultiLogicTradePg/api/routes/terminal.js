@@ -110,6 +110,89 @@ module.exports = function registerTerminalRoutes(app, ctx) {
 
   const DEFAULT_PAYLOAD = { panels: [], settings: {} };
 
+  /** Дополняет signal_event панелей подстановкой из последнего сигнала по бумаге
+      (logic_terminal_signals): suggested_quantity/suggested_amount, название логики и
+      таймфрейм. Лечит старые снимки, где серверный фильтр вырезал эти поля, —
+      иначе подстановка количества в блок сделок не переживает перезагрузку. */
+  async function enrichSignalSuggestions(payload) {
+    const panels = Array.isArray(payload?.panels) ? payload.panels : [];
+    const ids = panels
+      .filter(
+        (p) =>
+          p &&
+          p.security_id != null &&
+          p.signal_event &&
+          typeof p.signal_event === 'object' &&
+          p.signal_event.logic_id != null
+      )
+      .map((p) => [Number(p.security_id), Number(p.signal_event.logic_id)]);
+    if (ids.length === 0) return payload;
+
+    let rows;
+    try {
+      const r = await pool.query(
+        `SELECT DISTINCT ON (lts.security_id, lts.logic_id)
+                lts.security_id, lts.logic_id, lts.timeframe_id,
+                lts.suggested_quantity, lts.suggested_amount,
+                l.name AS logic_name, tf.tf AS timeframe
+           FROM logic_terminal_signals lts
+           JOIN logics l ON l.id = lts.logic_id
+           JOIN timeframes tf ON tf.id = lts.timeframe_id
+          WHERE (lts.security_id, lts.logic_id) IN (
+                SELECT a, b FROM unnest($1::int[], $2::int[]) AS t(a, b))
+          ORDER BY lts.security_id, lts.logic_id, lts.id DESC`,
+        [ids.map(([a]) => a), ids.map(([, b]) => b)]
+      );
+      rows = r.rows;
+    } catch (err) {
+      console.error('enrichSignalSuggestions failed:', err);
+      return payload;
+    }
+    const latest = new Map(rows.map((r) => [`${r.security_id}:${r.logic_id}`, r]));
+
+    return {
+      ...payload,
+      panels: panels.map((p) => {
+        if (
+          !p ||
+          p.security_id == null ||
+          !p.signal_event ||
+          typeof p.signal_event !== 'object' ||
+          p.signal_event.logic_id == null
+        ) {
+          return p;
+        }
+        const sig = latest.get(
+          `${Number(p.security_id)}:${Number(p.signal_event.logic_id)}`
+        );
+        if (!sig) return p;
+        const ev = { ...p.signal_event };
+        if (
+          !Number.isFinite(Number(ev.suggested_quantity)) ||
+          Number(ev.suggested_quantity) <= 0
+        ) {
+          ev.suggested_quantity = Number.isFinite(Number(sig.suggested_quantity))
+            ? Math.max(0, Math.floor(Number(sig.suggested_quantity)))
+            : null;
+        }
+        if (
+          !Number.isFinite(Number(ev.suggested_amount)) ||
+          Number(ev.suggested_amount) <= 0
+        ) {
+          ev.suggested_amount = Number.isFinite(Number(sig.suggested_amount))
+            ? Math.max(0, Number(sig.suggested_amount))
+            : null;
+        }
+        if (!ev.logic_name && sig.logic_name) ev.logic_name = sig.logic_name;
+        if (!ev.timeframe && sig.timeframe) ev.timeframe = sig.timeframe;
+        if (ev.timeframe_id == null && sig.timeframe_id != null) {
+          ev.timeframe_id = sig.timeframe_id;
+        }
+        return { ...p, signal_event: ev };
+      }),
+    };
+  }
+
   app.get('/api/terminal/state', async (req, res) => {
     try {
       const accountId = parseId(req.query.account_id);
@@ -121,7 +204,9 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         `SELECT payload FROM terminal_state WHERE account_id = $1`,
         [accountId]
       );
-      const payload = rows[0]?.payload ?? DEFAULT_PAYLOAD;
+      const payload = await enrichSignalSuggestions(
+        rows[0]?.payload ?? DEFAULT_PAYLOAD
+      );
       res.json({ payload });
     } catch (err) {
       handleDbError(res, err, 'terminal state get');
@@ -173,6 +258,30 @@ module.exports = function registerTerminalRoutes(app, ctx) {
                         : null,
                     price: Number.isFinite(Number(p.signal_event.price))
                       ? Number(p.signal_event.price)
+                      : null,
+                    // Полный набор полей события — подстановка количества/суммы
+                    // из сигнала (suggested_*) должна переживать сохранение.
+                    logic_name:
+                      typeof p.signal_event.logic_name === 'string'
+                        ? p.signal_event.logic_name
+                        : null,
+                    timeframe:
+                      typeof p.signal_event.timeframe === 'string'
+                        ? p.signal_event.timeframe
+                        : null,
+                    timeframe_id:
+                      p.signal_event.timeframe_id != null
+                        ? parseId(p.signal_event.timeframe_id)
+                        : null,
+                    suggested_quantity: Number.isFinite(
+                      Number(p.signal_event.suggested_quantity)
+                    )
+                      ? Math.max(0, Math.floor(Number(p.signal_event.suggested_quantity)))
+                      : null,
+                    suggested_amount: Number.isFinite(
+                      Number(p.signal_event.suggested_amount)
+                    )
+                      ? Math.max(0, Number(p.signal_event.suggested_amount))
                       : null,
                   },
                 }
@@ -730,7 +839,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         `
         SELECT lts.id, lts.logic_id, lts.security_id, lts.timeframe_id,
                lts.bar_dt, lts.position_side, lts.signal_kind,
-               lts.formula, lts.price, lts.indicator_ids,
+               lts.formula, lts.price, lts.suggested_quantity,
+               lts.suggested_amount, lts.indicator_ids,
                lts.created_at,
                l.name AS logic_name,
                s.name AS security_name,
@@ -779,6 +889,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
           r.position_side === 'short' ? 'продажа' : 'покупка',
         formula: r.formula,
         price: r.price,
+        suggested_quantity: Number(r.suggested_quantity) || 0,
+        suggested_amount: Number(r.suggested_amount) || 0,
         indicator_ids: r.indicator_ids,
         indicators: (Array.isArray(r.indicator_ids) ? r.indicator_ids : [])
           .map((id) => indicatorsById.get(id))

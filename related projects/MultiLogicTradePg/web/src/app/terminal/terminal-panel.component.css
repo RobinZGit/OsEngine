@@ -6,6 +6,34 @@
   flex-shrink: 0;
 }
 
+/* Свёрнутая полоса: видна только шапка (график, индикаторы, сделки скрыты). */
+.tpanel.collapsed .tpanel-body,
+.tpanel.collapsed .tpanel-resize {
+  display: none;
+}
+
+/* Кнопка-треугольник сворачивания в самом левом краю шапки полосы. */
+.tpanel-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.72rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tpanel-collapse:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
 .tpanel-head {
   display: flex;
   align-items: center;
@@ -638,6 +666,45 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Цветная точка в чипе — совпадает с линией индикатора на графике. */
+.tp-ind-chip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Подписи под графиком: на каждый индикатор — образец линии (цвет) + название. */
+.tp-ind-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.75rem;
+  padding: 0 0.3rem 0.15rem;
+  flex-shrink: 0;
+}
+
+.tp-ind-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.64rem;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.tp-ind-legend-sample {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.tp-ind-legend-label {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
 }
 
 .tp-ind-chip-btn {

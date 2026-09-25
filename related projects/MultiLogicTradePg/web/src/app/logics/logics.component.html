@@ -235,9 +235,9 @@
 
             <th class="col-expand"></th>
 
-            <th class="col-check" [style.width.px]="thWidth('col-check')">Вкл.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-check')" (dblclick)="resetColumnWidth('col-check')"></span></th>
+            <th class="col-check sortable-col" [style.width.px]="thWidth('col-check')" title="Нажмите — сортировка по включению логики" (click)="toggleSort('enabled')">Вкл. <span class="sort-indicator">{{ sortIndicator('enabled') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-check')" (dblclick)="resetColumnWidth('col-check')"></span></th>
 
-            <th class="col-signal" [style.width.px]="thWidth('col-signal')" title="Выдавать сигналы покупки/продажи в терминал: торговый цикл пишет непрочитанные сигналы, терминал добавляет бумагу в нижнюю часть и рисует индикаторы логики + вертикальную линию"><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-signal')" (dblclick)="resetColumnWidth('col-signal')"></span>Сигнал</th>
+            <th class="col-signal sortable-col" [style.width.px]="thWidth('col-signal')" title="Выдавать сигналы покупки/продажи в терминал: торговый цикл пишет непрочитанные сигналы, терминал добавляет бумагу в нижнюю часть и рисует индикаторы логики + вертикальную линию; нажмите — сортировка по сигналу" (click)="toggleSort('signal')"><span class="sort-indicator">{{ sortIndicator('signal') }}</span>Сигнал<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-signal')" (dblclick)="resetColumnWidth('col-signal')"></span></th>
 
             <th class="col-id sortable-col" [style.width.px]="thWidth('col-id')" title="Нажмите — сортировка по ID" (click)="toggleSort('id')">ID <span class="sort-indicator">{{ sortIndicator('id') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-id')" (dblclick)="resetColumnWidth('col-id')"></span></th>
 

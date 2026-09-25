@@ -1362,6 +1362,8 @@ CREATE TABLE IF NOT EXISTS logic_terminal_signals (
     signal_kind VARCHAR(20),
     formula TEXT,
     price NUMERIC(20, 6),
+    suggested_quantity INTEGER NOT NULL DEFAULT 0,
+    suggested_amount NUMERIC(20, 2) NOT NULL DEFAULT 0,
     indicator_ids INTEGER[],
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1382,6 +1384,15 @@ COMMENT ON COLUMN logic_terminal_signals.bar_dt IS
 'Закрытая свеча TF логики, на которой сработал сигнал';
 COMMENT ON COLUMN logic_terminal_signals.is_read IS
 'Прочитан терминалом (бумага уже добавлена/отмечена)';
+-- Upgrade existing DBs: CREATE TABLE IF NOT EXISTS does not add columns.
+ALTER TABLE logic_terminal_signals
+    ADD COLUMN IF NOT EXISTS suggested_quantity INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_terminal_signals
+    ADD COLUMN IF NOT EXISTS suggested_amount NUMERIC(20, 2) NOT NULL DEFAULT 0;
+COMMENT ON COLUMN logic_terminal_signals.suggested_quantity IS
+'Количество к подстановке в блок сделок терминала (расчёт лота логики: base × % / цена, вниз до лота)';
+COMMENT ON COLUMN logic_terminal_signals.suggested_amount IS
+'Сумма к подстановке (лот × цена сигнала), 0 — расчёт не дал количества';
 
 CREATE INDEX IF NOT EXISTS idx_logics_account_id ON logics(account_id);
 -- Старые БД: CREATE TABLE IF NOT EXISTS не добавит UNIQUE(name) — ON CONFLICT (name) иначе падает.
@@ -1518,6 +1529,13 @@ ALTER TABLE logic_params ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL 
 -- Must run AFTER CREATE logic_params (fresh verify DB / wipe).
 DELETE FROM logic_params WHERE param_key = 'margin_leverage';
 DELETE FROM logic_param_defs WHERE param_key = 'margin_leverage';
+
+-- Служебный параметр: последняя обработанная свеча терминальных сигналов (дедупликация).
+-- Добавлен в logic_param_defs, чтобы logic_upsert_param в process_logic_terminal_signals не падал по FK.
+INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order)
+VALUES ('terminal_signal_last_bar_dt', 'Последняя обработанная свеча (сигналы в терминал)', 'text', '',
+        'Служебный: дедупликация выдачи сигналов в терминал (OPEN-сигналы на закрытой свече)', 99)
+ON CONFLICT (param_key) DO NOTHING;
 
 -- Upgrade: старый дефолт порога TMON 100000 → 1000000 (= initial_balance теста)
 -- Must run AFTER CREATE logic_params (fresh DBs / wipe recreate public schema).

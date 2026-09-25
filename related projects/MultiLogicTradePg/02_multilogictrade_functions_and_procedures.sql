@@ -5349,6 +5349,12 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
+
+
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -9975,6 +9981,174 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -16934,7 +17108,8 @@ COMMENT ON FUNCTION indicator_has_closed_bar(INTEGER, INTEGER, INTEGER, TIMESTAM
 CREATE OR REPLACE PROCEDURE logic_refresh_market_data(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
-    p_closed_bar_dt TIMESTAMP
+    p_closed_bar_dt TIMESTAMP,
+    p_skip_http BOOLEAN DEFAULT FALSE
 )
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -16959,6 +17134,11 @@ BEGIN
         FROM logic_backtest_runs r
         WHERE r.status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
     ) INTO v_skip_http;
+
+    -- Терминальные сигналы (use_as_terminal_signal) догружают недостающие closed-свечи
+    -- инкрементально (1 HTTP через prices_topup_date_from), как обычная торговля — чтобы
+    -- сигналы шли даже без открытых панелей. Без HTTP остаются только при активном бэктесте.
+    v_skip_http := v_skip_http OR COALESCE(p_skip_http, FALSE);
 
     SELECT COUNT(*)::INTEGER INTO v_missing_prices
     FROM logic_securities ls
@@ -17194,8 +17374,8 @@ BEGIN
 END;
 $$;
 
-COMMENT ON PROCEDURE logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP) IS
-'Перед проверкой сигналов: load_prices (кроме активного бэктеста) + ensure/sync индикаторов логики на TF';
+COMMENT ON PROCEDURE logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP, BOOLEAN) IS
+'Перед проверкой сигналов: load_prices (кроме активного бэктеста / p_skip_http=TRUE) + ensure/sync индикаторов логики на TF';
 
 CREATE OR REPLACE FUNCTION process_logic_trades(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -18228,6 +18408,15 @@ DECLARE
     v_ind_ids INTEGER[] := ARRAY[]::INTEGER[];
     v_eval_sec INTEGER;
     v_new_id BIGINT;
+    -- Подстановка количества/суммы в блок сделок терминала (расчёт лота логики).
+    -- База/проценты считаются ОДИН раз на вызов (для real — один запрос T-Bank).
+    v_sizing_base NUMERIC := 0;
+    v_size_pct NUMERIC := 10;
+    v_max_amt NUMERIC := NULL;
+    v_base_ready BOOLEAN := FALSE;
+    v_lot INTEGER := 1;
+    v_sugg_qty INTEGER := 0;
+    v_sugg_amount NUMERIC := 0;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
@@ -18281,7 +18470,10 @@ BEGIN
     END IF;
 
     -- Цены + значения индикаторов (как в process_logic_trades): бумаги из logic_securities.
-    CALL logic_refresh_market_data(p_logic_id, v_tf_id, v_closed_bar_dt);
+    -- Догружаем недостающие closed-свечи инкрементально, чтобы сигналы проходили без
+    -- открытых панелей терминала и без включённой торговли (skip_http не используется).
+    -- Явная 4-арг сигнатура FALSE: защита от старых 3-арг overload'ов в живой БД.
+    CALL logic_refresh_market_data(p_logic_id, v_tf_id, v_closed_bar_dt, FALSE);
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
     IF logic_is_non_trading_dt(p_logic_id, v_closed_bar_dt) THEN
@@ -18375,13 +18567,54 @@ BEGIN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
             END IF;
 
+            -- Количество к подстановке в терминал: та же база/%/лот/потолок, что у
+            -- боевого входа (логика_posSizing_base + logic_calc_open_quantity).
+            v_sugg_qty := 0;
+            v_sugg_amount := 0;
+            IF v_pp IS NOT NULL AND v_pp > 0 THEN
+                IF NOT v_base_ready THEN
+                    v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+                    -- Демо/фейковые сигнальные логики часто без current_balance:
+                    -- подставляем расчёт из тестового депо логики, чтобы количество
+                    -- и сумма в блоке сделок заполнялись (осталось нажать «Купить/Продать»).
+                    IF COALESCE(v_sizing_base, 0) <= 0 THEN
+                        v_sizing_base := COALESCE(
+                            NULLIF(
+                                get_logic_param_numeric(p_logic_id, 'current_balance', NULL), 0
+                            ),
+                            NULLIF(
+                                get_logic_param_numeric(p_logic_id, 'initial_balance', NULL), 0
+                            ),
+                            NULLIF(
+                                get_logic_param_numeric(p_logic_id, 'test_initial_balance', NULL), 0
+                            ),
+                            0
+                        );
+                    END IF;
+                    v_size_pct := COALESCE(
+                        get_logic_param_numeric(p_logic_id, 'position_size_pct', 10), 10
+                    );
+                    v_max_amt := NULLIF(
+                        get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL), 0
+                    );
+                    v_base_ready := TRUE;
+                END IF;
+                v_lot := logic_security_lot_size(v_sec.security_id);
+                v_sugg_qty := logic_calc_open_quantity(
+                    v_sizing_base, v_size_pct, v_pp, v_lot, v_max_amt
+                );
+                v_sugg_amount := round(v_sugg_qty * v_pp, 2);
+            END IF;
+
             INSERT INTO logic_terminal_signals (
                 logic_id, security_id, timeframe_id, bar_dt,
-                position_side, signal_kind, formula, price, indicator_ids
+                position_side, signal_kind, formula, price,
+                suggested_quantity, suggested_amount, indicator_ids
             )
             VALUES (
                 p_logic_id, v_sec.security_id, v_tf_id, v_closed_bar_dt,
-                v_eff_side, v_signal_kind, v_formulas, v_pp, v_ind_ids
+                v_eff_side, v_signal_kind, v_formulas, v_pp,
+                v_sugg_qty, v_sugg_amount, v_ind_ids
             )
             ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_side) DO NOTHING
             RETURNING id INTO v_new_id;
@@ -18402,6 +18635,8 @@ BEGIN
                     'signal_kind', v_signal_kind,
                     'formula', v_formulas,
                     'price', v_pp,
+                    'suggested_quantity', v_sugg_qty,
+                    'suggested_amount', v_sugg_amount,
                     'indicator_ids', v_ind_ids
                 ),
                 v_sec.security_id,
@@ -18420,7 +18655,11 @@ $$;
 COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
 'Open-сигналы логики для терминала: записывает logic_terminal_signals (сделки НЕ исполняет). '
 'Сторона — эффективная с учётом инверсий: long → покупка, short → продажа. '
-'Работает при use_as_terminal_signal=TRUE независимо от is_enabled (включённая логика торгует как обычно + сигналит в терминал).';
+'Плюс suggested_quantity/suggested_amount — количество/сумма к подстановке в блок сделок '
+'терминала (расчёт лота логики: логика_posSizing_base + logic_calc_open_quantity). '
+'Работает при use_as_terminal_signal=TRUE независимо от is_enabled (включённая логика торгует как обычно + сигналит в терминал). '
+'Недостающие closed-свечи цен сигнальных бумаг догружаются инкрементально (1 HTTP через prices_topup_date_from), '
+'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
 
 -- @include sql/logic_trading_sessions.sql
 -- ============================================
@@ -23254,6 +23493,12 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
+
+
+
+
 
 
 

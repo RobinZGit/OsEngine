@@ -12,6 +12,8 @@ export interface TerminalPanelState {
   signal_event?: TerminalLogicSignalEvent | null;
   /** Индикаторы логики, чьи значения рисуем на графике полосы. */
   logic_indicator_ids?: number[];
+  /** Полоса свёрнута (видна только шапка) — сохраняется между сессиями. */
+  collapsed?: boolean;
 }
 
 /** Сигнал логики, показанный в полосе терминала (сохраняемый в состояние). */
@@ -23,6 +25,14 @@ export interface TerminalLogicSignalEvent {
   label?: string | null;
   /** Цена бара сигнала — для вертикальной линии на графике. */
   price?: number | null;
+  /** Таймфрейм логики (id) — полоса подстраивается под неё. */
+  timeframe_id?: number | null;
+  /** Код таймфрейма (M1, M15, H1…) — для сообщений и бейджа. */
+  timeframe?: string | null;
+  /** Количество к подстановке в блок сделок (расчёт лота логики). */
+  suggested_quantity?: number | null;
+  /** Сумма к подстановке (лот × цена сигнала). */
+  suggested_amount?: number | null;
 }
 
 /** Одна строка GET /api/terminal/logic-signals. */
@@ -42,6 +52,8 @@ export interface TerminalLogicSignal {
   side_label: string;
   formula: string | null;
   price: number | null;
+  suggested_quantity: number;
+  suggested_amount: number;
   indicator_ids: number[];
   indicators: { id: number; code: string; name: string }[];
   created_at: string;

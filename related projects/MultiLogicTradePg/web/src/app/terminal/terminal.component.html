@@ -254,6 +254,7 @@
     <div class="term-panels">
       @for (panel of panels; track panel.uid) {
         <app-terminal-panel
+          id="panel-{{ panel.uid }}"
           [security]="panel.security"
           [contango]="panel.contango"
           [underlying]="panel.underlying"
@@ -262,12 +263,14 @@
           [initialHeight]="panel.chart_height"
           [signalEvent]="panel.signal_event"
           [logicIndicatorIds]="panel.logic_indicator_ids"
+          [initiallyCollapsed]="panel.collapsed"
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
+          (collapsedChange)="onPanelCollapsedChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
           (dataReady)="onPanelDataReady(panel.uid)"
         />

@@ -4,6 +4,7 @@ const RUNNER_INTERVAL_MS = Number(process.env.TRADE_RUNNER_INTERVAL_MS) || 15000
 const STALE_MS = Number(process.env.TRADE_RUNNER_STALE_MS) || 90000;
 const MAX_CYCLE_MS = Number(process.env.TRADE_RUNNER_MAX_CYCLE_MS) || 180000;
 const LOGIC_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_LOGIC_TIMEOUT_MS) || 120000;
+const SIGNAL_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_SIGNAL_TIMEOUT_MS) || 300000;
 const WATCHDOG_MS = Number(process.env.TRADE_WATCHDOG_MS) || 30000;
 
 const { writeTechLogEvent } = require('./lib/tech-log');
@@ -205,6 +206,7 @@ async function runTradeCycle(pool, opts = {}) {
           }
         }
         if (row.use_sig) {
+          await client.query(`SET statement_timeout = ${Math.max(15000, SIGNAL_TIMEOUT_MS)}`);
           const { rows: signalRows } = await client.query(
             `SELECT process_logic_terminal_signals($1)::int AS n`,
             [row.id]

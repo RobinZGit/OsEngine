@@ -1,5 +1,13 @@
-<div class="tpanel">
+<div class="tpanel" [class.collapsed]="collapsed">
   <div class="tpanel-head">
+    <button
+      type="button"
+      class="tpanel-collapse"
+      [attr.aria-expanded]="!collapsed"
+      [attr.aria-label]="collapsed ? 'Развернуть полосу' : 'Свернуть полосу'"
+      [title]="collapsed ? 'Развернуть полосу' : 'Свернуть полосу'"
+      (click)="toggleCollapsed()"
+    >{{ collapsed ? '▸' : '▾' }}</button>
     <div class="tpanel-title">
       <span class="tpanel-prefix">{{ security.prefix }}</span>
       <span class="tpanel-name">{{ security.name }}</span>
@@ -95,6 +103,21 @@
         />
       </div>
 
+      @if (indicatorLegendItems().length > 0) {
+        <div
+          class="tp-ind-legend"
+          role="group"
+          aria-label="Подписи индикаторов графика"
+        >
+          @for (it of indicatorLegendItems(); track it.key) {
+            <span class="tp-ind-legend-item" [title]="it.title">
+              <span class="tp-ind-legend-sample" [style.background]="it.color"></span>
+              <span class="tp-ind-legend-label">{{ it.label }}</span>
+            </span>
+          }
+        </div>
+      }
+
       @if (hasContango && underlying) {
         <div class="tpanel-ctg-caption">
           <span class="tpanel-ctg-title">Контанго — разность фьючерса и базового актива, %</span>
@@ -143,23 +166,29 @@
         <div class="tp-ind-error" role="alert">{{ indicatorError }}</div>
       }
       <div class="tp-ind-chips">
-        @for (chip of indicatorChips(); track chip.indicator_id) {
-          <div class="tp-ind-chip" [title]="chip.row.indicator_name">
+        @for (chip of indicatorChips(); track chip.key) {
+          <div class="tp-ind-chip" [title]="chip.title">
+            <span
+              class="tp-ind-chip-swatch"
+              [style.background]="chip.color"
+            ></span>
             <span class="tp-ind-chip-label">{{ chip.label }}</span>
-            <button
-              type="button"
-              class="tp-ind-chip-btn"
-              [title]="'Параметры ' + chip.label"
-              [attr.aria-label]="'Параметры ' + chip.label"
-              (click)="openEditParams(chip.row)"
-            >⚙</button>
-            <button
-              type="button"
-              class="tp-ind-chip-btn"
-              [title]="'Удалить ' + chip.label"
-              [attr.aria-label]="'Удалить ' + chip.label"
-              (click)="removeIndicator(chip.row.id)"
-            >✕</button>
+            @if (chip.editable && chip.row) {
+              <button
+                type="button"
+                class="tp-ind-chip-btn"
+                [title]="'Параметры ' + chip.label"
+                [attr.aria-label]="'Параметры ' + chip.label"
+                (click)="openEditParams(chip.row)"
+              >⚙</button>
+              <button
+                type="button"
+                class="tp-ind-chip-btn"
+                [title]="'Удалить ' + chip.label"
+                [attr.aria-label]="'Удалить ' + chip.label"
+                (click)="removeIndicator(chip.row.id)"
+              >✕</button>
+            }
           </div>
         }
       </div>

@@ -116,7 +116,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   readonly defaultTestLogicsVisible = 3;
 
   /** Активная колонка сортировки списка логик (null = сортировка по умолчанию). */
-  sortColumn: 'id' | 'name' | 'combat_pnl' | 'test_pnl' | null = null;
+  sortColumn: 'id' | 'name' | 'enabled' | 'signal' | 'combat_pnl' | 'test_pnl' | null = null;
   /** Направление сортировки активной колонки. */
   sortDir: 'asc' | 'desc' = 'asc';
 
@@ -4545,6 +4545,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
         switch (this.sortColumn) {
           case 'id': return r.id;
           case 'name': return r.name;
+          case 'enabled': return r.is_enabled ? 1 : 0;
+          case 'signal': return r.use_as_terminal_signal ? 1 : 0;
           case 'combat_pnl': return this.combatFinancialResult(r.id);
           case 'test_pnl': return this.testFinancialResult(r.id);
           default: return 0;
@@ -4624,7 +4626,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
   }
 
   /** Сортировка по колонке (повторный клик — переключение направления). Раскрывает весь список. */
-  toggleSort(col: 'id' | 'name' | 'combat_pnl' | 'test_pnl'): void {
+  toggleSort(col: 'id' | 'name' | 'enabled' | 'signal' | 'combat_pnl' | 'test_pnl'): void {
     if (this.sortColumn === col) {
       this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     } else {
@@ -4634,12 +4636,12 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     this.showAllLogics = true;
   }
 
-  isColumnSorted(col: 'id' | 'name' | 'combat_pnl' | 'test_pnl'): boolean {
+  isColumnSorted(col: 'id' | 'name' | 'enabled' | 'signal' | 'combat_pnl' | 'test_pnl'): boolean {
     return this.sortColumn === col;
   }
 
   /** Значок направления сортировки (▲/▼) для активной колонки. */
-  sortIndicator(col: 'id' | 'name' | 'combat_pnl' | 'test_pnl'): string {
+  sortIndicator(col: 'id' | 'name' | 'enabled' | 'signal' | 'combat_pnl' | 'test_pnl'): string {
     if (this.sortColumn !== col) return '';
     return this.sortDir === 'asc' ? '▲' : '▼';
   }

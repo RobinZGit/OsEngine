@@ -32,6 +32,8 @@ interface PanelModel {
   signal_event: TerminalLogicSignalEvent | null;
   /** Индикаторы логики, значения которых рисуем на графике полосы. */
   logic_indicator_ids: number[];
+  /** Полоса свёрнута (видна только шапка). Новые добавляются свёрнутыми. */
+  collapsed: boolean;
 }
 
 const DEFAULT_CHART_HEIGHT = 340;
@@ -118,6 +120,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
   /** Последнее уведомление о сигнале — полоса сверху страницы терминала. */
   signalsToast: string | null = null;
   private signalsToastTimer?: ReturnType<typeof setTimeout>;
+  /** Собранные за один опрос сообщения о сигналах (сводятся в один тост). */
+  private signalToastMessages: string[] = [];
 
   constructor(
     private readonly refs: ReferencesService,
@@ -145,7 +149,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.selectDefaultAccount(accounts);
         this.loadSecurities();
         this.loadBondPlan();
-        this.startSignalsPolling();
       },
       error: (err) => {
         this.loading = false;
@@ -261,6 +264,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
         // пустые (на момент первого запроса справочник бумаг мог быть не готов).
         // Иначе запоздавший ответ затрёт только что добавленную пользователем бумагу.
         if (this.panels.length === 0) this.loadSavedState();
+        // Сигналы логик периодически опрашиваем только когда byId уже заполнен:
+        // иначе первая партия сигналов молча отбрасывается (`byId.has` — false)
+        // и «по сигналу появляется не одна бумага, а меньше положенного».
+        this.startSignalsPolling();
       },
       error: () => {
         this.futures = [];
@@ -336,6 +343,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
   private applyLogicSignals(signals: TerminalLogicSignal[]): void {
     if (!signals.length) return;
     const applied: number[] = [];
+    const newPanels: number[] = [];
     for (const s of signals) {
       if (!this.byId.has(s.security_id)) continue;
       const sideLabel = (s.side_label || 'покупка').toLowerCase();
@@ -345,8 +353,23 @@ export class TerminalComponent implements OnInit, OnDestroy {
         logic_name: logicName,
         bar_dt: s.bar_dt ?? null,
         position_side: s.position_side ?? null,
-        label: `${sideLabel} (${logicName})`,
+        label: `${sideLabel} (${logicName}${s.timeframe ? ', ' + s.timeframe : ''})`,
         price: Number.isFinite(Number(s.price)) ? Number(s.price) : null,
+        timeframe_id:
+          Number.isInteger(s.timeframe_id) && s.timeframe_id > 0
+            ? s.timeframe_id
+            : null,
+        timeframe: s.timeframe ?? null,
+        suggested_quantity:
+          Number.isFinite(Number(s.suggested_quantity)) &&
+          Number(s.suggested_quantity) > 0
+            ? Number(s.suggested_quantity)
+            : null,
+        suggested_amount:
+          Number.isFinite(Number(s.suggested_amount)) &&
+          Number(s.suggested_amount) > 0
+            ? Number(s.suggested_amount)
+            : null,
       };
       const tf = this.timeframes.some((t) => t.id === s.timeframe_id)
         ? s.timeframe_id
@@ -373,17 +396,33 @@ export class TerminalComponent implements OnInit, OnDestroy {
         if (!panel) continue;
         this.panels = [...this.panels, panel];
         this.panelsStamp++;
+        newPanels.push(panel.uid);
       }
       applied.push(s.id);
-      this.showSignalsToast(
+      this.signalToastMessages.push(
         `«${s.security_prefix || s.security_name}» — сигнал ${sideLabel} ` +
-          `по логике «${logicName}»`
+          `по логике «${logicName}»` +
+          (s.timeframe ? `, таймфрейм ${s.timeframe}` : '')
       );
     }
     if (applied.length) {
       this.scheduleSave();
       this.markSignalsRead(applied);
     }
+    this.showSignalsToastList(this.signalToastMessages);
+    this.signalToastMessages = [];
+    // Пачка сигналов добавила полосы: подводим к последней добавленной,
+    // чтобы все новые бумаги были видны (а не только первая сверху).
+    if (newPanels.length) {
+      this.scrollToPanel(newPanels[newPanels.length - 1]);
+    }
+  }
+
+  private scrollToPanel(uid: number): void {
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`panel-${uid}`);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
   }
 
   /** Полоса появилась/обновилась в результате сигнала — сразу показываем
@@ -395,12 +434,23 @@ export class TerminalComponent implements OnInit, OnDestroy {
   }
 
   private showSignalsToast(message: string): void {
+    if (!message) return;
     this.signalsToast = message;
     if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
     this.signalsToastTimer = setTimeout(() => {
       this.signalsToast = null;
       this.signalsToastTimer = undefined;
     }, 8000);
+  }
+
+  /** Пачка сигналов — один тост с первыми тройками и счётчиком, а не N окон. */
+  private showSignalsToastList(messages: string[]): void {
+    if (!messages.length) return;
+    const head = messages.slice(0, 3);
+    const shown = head.join('  •  ');
+    const rest = messages.length - head.length;
+    const body = rest > 0 ? `${shown}  •  ещё ${rest}` : shown;
+    this.showSignalsToast(body);
   }
 
   /** Требуется подтверждение; после удаления всех сделок счёта — пересчёт остатка. */
@@ -492,7 +542,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
               st.timeframe_id,
               st.chart_height,
               st.signal_event ?? null,
-              st.logic_indicator_ids ?? []
+              st.logic_indicator_ids ?? [],
+              st.collapsed ?? false
             )
           )
           .filter((p): p is PanelModel => p != null);
@@ -513,13 +564,16 @@ export class TerminalComponent implements OnInit, OnDestroy {
       : null;
   }
 
-  /** Пересборка модели полосы из сохранённого состояния (если бумага ещё есть). */
+  /** Пересборка модели полосы из сохранённого состояния (если бумага ещё есть).
+      Новые полосы добавляются свёрнутыми (collapsed=true), восстановленные из
+      состояния — в своём сохранённом виде (по умолчанию развёрнуты). */
   private buildPanel(
     securityId: number,
     timeframeId?: number | null,
     chartHeight?: number | null,
     signalEvent?: TerminalLogicSignalEvent | null,
-    logicIndicatorIds?: number[] | null
+    logicIndicatorIds?: number[] | null,
+    collapsed = true
   ): PanelModel | null {
     const sec = this.byId.get(securityId);
     if (!sec) return null;
@@ -552,6 +606,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
           : DEFAULT_CHART_HEIGHT,
       signal_event: signalEvent ?? null,
       logic_indicator_ids: ids,
+      collapsed,
     };
   }
 
@@ -754,6 +809,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.scheduleSave();
   }
 
+  /** Пользователь свернул/развернул полосу — запоминаем в состоянии. */
+  onPanelCollapsedChange(collapsed: boolean, uid: number): void {
+    const panel = this.panels.find((p) => p.uid === uid);
+    if (!panel) return;
+    panel.collapsed = collapsed;
+    this.scheduleSave();
+  }
+
   /** Изменение объёмов по умолчанию (и прочих настроек) — сохраняем JSON. */
   onSettingsChange(): void {
     this.scheduleSave();
@@ -795,6 +858,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         logic_indicator_ids: p.logic_indicator_ids.length
           ? p.logic_indicator_ids
           : undefined,
+        collapsed: p.collapsed,
       })),
       settings: this.settings,
     };

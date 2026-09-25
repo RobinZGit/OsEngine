@@ -36,6 +36,24 @@ import {
 } from '../models/market.model';
 import { IndicatorRow } from '../models/lookup.model';
 
+/** Чип индикатора в правом блоке: назначенный на бумагу или из сигнала логики. */
+interface IndicatorChipItem {
+  key: string;
+  label: string;
+  color: string;
+  title: string;
+  editable: boolean;
+  row: SecurityIndicatorSeriesRow | null;
+}
+
+/** Элемент подписи под графиком: образец линии (цвет) + название индикатора. */
+interface IndicatorLegendItem {
+  key: string;
+  label: string;
+  color: string;
+  title: string;
+}
+
 const EMPTY_STATE: SecurityChartState = {
   candles: [],
   loading: false,
@@ -77,6 +95,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Input() signalEvent: TerminalLogicSignalEvent | null = null;
   /** Индикаторы логики, значения которых показываем на графике полосы. */
   @Input() logicIndicatorIds: number[] = [];
+  /** Начальное состояние «свернута» (видна только шапка полосы). */
+  @Input() initiallyCollapsed = false;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -87,11 +107,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Output() tradeExecuted = new EventEmitter<void>();
   /** На графике появились первые свечи (для снятия надписи «идёт выбор бумаги…»). */
   @Output() dataReady = new EventEmitter<void>();
+  /** Пользователь свернул/развернул полосу (сохраняем в состоянии терминала). */
+  @Output() collapsedChange = new EventEmitter<boolean>();
 
   @ViewChild('mainChart') mainChart?: PriceChartComponent;
   @ViewChildren(PriceChartComponent) allCharts?: QueryList<PriceChartComponent>;
 
   timeframeId: number | null = null;
+  /** Полоса свёрнута: видна только шапка (график/сделки скрыты). */
+  collapsed = false;
   /** Высота блока с графиками (можно потянуть за ручку внизу панели). */
   chartHeight = 340;
   chartHeightMin = 100;
@@ -112,6 +136,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   tradeAllSumBuy = false;
   /** Чекбокс под «Продать»: продажа всей позиции бумаги. */
   tradeAllQtySell = false;
+  /** Количество из сигнала логики (расчёт лота) — подставлено в блок сделок. */
+  private prefillQty: number | null = null;
+  /** Сторона, для которой сигнал дал количество (long → buy, short → sell). */
+  private prefillSide: 'buy' | 'sell' | null = null;
   tradingBusy = false;
   tradeMessage: string | null = null;
   tradeError: string | null = null;
@@ -198,6 +226,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.collapsed = this.initiallyCollapsed;
     // Восстановленный таймфрейм, иначе дефолт M15: крупнее бара тика,
     // не так шумно, как H1.
     const m15 = this.timeframes.find((t) => t.tf === 'M15');
@@ -226,6 +255,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** При смене счёта сбрасываем максимум на баланс; при живом обновлении
       баланса (без смены счёта) — только пока пользователь не менял вручную. */
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['signalEvent'] != null) {
+      this.applySignalPrefill();
+    }
     if (changes['signalEvent'] != null || changes['logicIndicatorIds'] != null) {
       this.loadLogicSignalIndicators();
     }
@@ -283,6 +315,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     if (this.tradeAllSumBuy) {
       return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
     }
+    // Расчёт лота логики из сигнала (пока пользователь не начал двигать ползунок).
+    if (this.prefillQty != null) return this.prefillQty;
     if (!(this.tradeAmount > 0)) return 0;
     return Math.floor(this.tradeAmount / p);
   }
@@ -352,6 +386,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     if (this.tradeAllSumBuy) {
       return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
     }
+    // Количество из сигнала (расчёт лота логики) — для стороны сигнала.
+    if (this.prefillQty != null && this.prefillSide === direction) {
+      return this.prefillQty;
+    }
     return this.tradeAmount > 0 ? Math.floor(this.tradeAmount / p) : 0;
   }
 
@@ -385,6 +423,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     if (!ev || !ev.bar_dt) return [];
     const p = Number(ev.price);
     if (!Number.isFinite(p) || p <= 0) return [];
+    // Маркер сигнала/сделки ставим НА свечу закрытия бара сигнала (bar_dt) и
+    // оставляем на ней же, даже когда справа дорисовываются новые свечи:
+    // маркер не должен «уезжать в самый конец» при каждом обновлении цен.
     return [
       {
         dt: ev.bar_dt,
@@ -395,9 +436,18 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     ];
   }
 
-  /** Все маркеры графика: сперва сигнал логики, затем сделки терминала. */
+  /** Все маркеры графика: при активном сигнале — сигнальная линия/треугольник
+      и сделки ПОСЛЕ бара сигнала (предыдущие сделки на графике не показываем);
+      без сигнала — все сделки счёта. */
   get allTradeMarkers(): ChartTradeMarker[] {
-    return [...this.signalMarkers, ...this.tradeMarkers];
+    const sig = this.signalEvent;
+    if (!sig) return this.tradeMarkers;
+    const sinceTs = sig.bar_dt ? new Date(sig.bar_dt).getTime() : NaN;
+    const current = this.tradeMarkers.filter((m) => {
+      const ts = new Date(m.dt).getTime();
+      return Number.isFinite(ts) && Number.isFinite(sinceTs) && ts >= sinceTs;
+    });
+    return [...this.signalMarkers, ...current];
   }
 
   /** Текст бейджа сигнала в шапке полосы (покупка/продажа по позиции). */
@@ -407,17 +457,18 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return ev?.position_side === 'short' ? 'продажа' : 'покупка';
   }
 
-  /** Подпись в подсказке бейджа: логика и бар сигнала. */
+  /** Подпись в подсказке бейджа: логика, бар и таймфрейм сигнала. */
   get signalBadgeTitle(): string {
     const ev = this.signalEvent;
     if (!ev) return '';
     const name = ev.logic_name || `Логика #${ev.logic_id}`;
-    if (!ev.bar_dt) return `Сигнал логики «${name}»`;
+    const tfPart = ev.timeframe ? `, таймфрейм ${ev.timeframe}` : '';
+    if (!ev.bar_dt) return `Сигнал логики «${name}»${tfPart}`;
     const d = new Date(ev.bar_dt);
     const dtLabel = Number.isNaN(d.getTime())
       ? ev.bar_dt
       : d.toLocaleString('ru-RU');
-    return `Сигнал логики «${name}» от ${dtLabel}`;
+    return `Сигнал логики «${name}» от ${dtLabel}${tfPart}`;
   }
 
   /** Маркеры входов на графике: покупка — зелёный треугольник (long),
@@ -448,22 +499,75 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return this.indicatorRows.some((r) => r.indicator_id === indicatorId);
   }
 
-  /** Чипы по индикаторам: одна строка = индикатор (у него может быть несколько линий). */
-  indicatorChips(): { indicator_id: number; label: string; row: SecurityIndicatorSeriesRow }[] {
+  /** Чипы блока индикаторов: назначенные на бумагу (можно менять параметры,
+      удалять) и индикаторы логики из сигнала (информация о линиях). */
+  indicatorChips(): IndicatorChipItem[] {
+    const chips: IndicatorChipItem[] = [];
     const byInd = new Map<number, SecurityIndicatorSeriesRow[]>();
     for (const r of this.indicatorRows) {
       const list = byInd.get(r.indicator_id) ?? [];
       list.push(r);
       byInd.set(r.indicator_id, list);
     }
-    return [...byInd.entries()].map(([indicator_id, rows]) => ({
-      indicator_id,
-      label:
-        rows.length > 1
-          ? `${rows[0].indicator_code} ×${rows.length}`
-          : rows[0].indicator_code,
-      row: rows[0],
-    }));
+    let manualIdx = 0;
+    for (const [indicator_id, rows] of byInd.entries()) {
+      const code = rows[0].indicator_code;
+      chips.push({
+        key: `m:${indicator_id}`,
+        label: rows.length > 1 ? `${code} ×${rows.length}` : code,
+        color:
+          this.chipColorForCode(this.indicatorChartSeries, code) ??
+          this.indicatorSeriesColors[manualIdx % this.indicatorSeriesColors.length],
+        title: rows[0].indicator_name || code,
+        editable: true,
+        row: rows[0],
+      });
+      manualIdx += 1;
+    }
+    const byCode = new Map<string, ChartIndicatorSeries[]>();
+    for (const s of this.signalIndicatorChartSeries) {
+      const list = byCode.get(s.indicator_code) ?? [];
+      list.push(s);
+      byCode.set(s.indicator_code, list);
+    }
+    for (const [code, lines] of byCode.entries()) {
+      chips.push({
+        key: `s:${code}`,
+        label: lines.length > 1 ? `${code} ×${lines.length}` : code,
+        color: lines[0].color,
+        title: `Индикатор логики — ${code}`,
+        editable: false,
+        row: null,
+      });
+    }
+    return chips;
+  }
+
+  /** Цвет первой линии индикатора (по коду) среди подготовленных серий. */
+  private chipColorForCode(
+    series: ChartIndicatorSeries[],
+    code: string
+  ): string | null {
+    const s = series.find((x) => x.indicator_code === code);
+    return s ? s.color : null;
+  }
+
+  /** Подписи под графиком: на каждую линию индикатора — образец (цвет) и название.
+      Первая линия индикатора подписана кодом, остальные — код + имя линии. */
+  indicatorLegendItems(): IndicatorLegendItem[] {
+    const seen = new Set<string>();
+    const items: IndicatorLegendItem[] = [];
+    for (const s of this.displayIndicatorSeries) {
+      const first = !seen.has(s.indicator_code);
+      seen.add(s.indicator_code);
+      items.push({
+        key: `${s.indicator_code}:${s.line_code}`,
+        label: first ? s.indicator_code : `${s.indicator_code} ${s.line_code}`,
+        color: s.color,
+        title: s.line_name || s.indicator_code,
+      });
+    }
+    return items;
   }
 
   isFutures(): boolean {
@@ -1264,12 +1368,44 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     });
   }
 
+  /** Переключение сворачивания полосы (кнопка-треугольник слева в шапке). */
+  toggleCollapsed(): void {
+    this.collapsed = !this.collapsed;
+    this.collapsedChange.emit(this.collapsed);
+  }
+
+  /** Подстановка количества/суммы из сигнала (расчёт лота логики) в блок сделок,
+      чтобы осталось нажать «Купить»/«Продать». Сбрасывается движением ползунка. */
+  private applySignalPrefill(): void {
+    const ev = this.signalEvent;
+    if (!ev) {
+      this.prefillQty = null;
+      this.prefillSide = null;
+      return;
+    }
+    const qty = ev.suggested_quantity;
+    const amount = ev.suggested_amount;
+    if (qty == null || qty <= 0 || amount == null || amount <= 0) {
+      this.prefillQty = null;
+      this.prefillSide = null;
+      return;
+    }
+    this.prefillQty = Math.floor(Number(qty));
+    this.prefillSide = ev.position_side === 'short' ? 'sell' : 'buy';
+    // Слайдер поднимаем до предложенной суммы, чтобы количество и сумма
+    // (лот × цена) были видны целиком, а заявка уходила по расчёту логики.
+    this.tradeMaxInput = Math.max(this.effectiveMaxSum, Math.ceil(Number(amount)));
+    this.tradeAmount = Math.round(Number(amount));
+  }
+
   /** Слайдер имеет приоритет: как только пользователь двигает ползунок —
-      чекбоксы «на всю сумму»/«весь остаток» снимаются, а количество/сумма
-      подстраиваются под выбранную ползунком сумму. */
+      чекбоксы «на всю сумму»/«весь остаток» снимаются, количество из сигнала
+      сбрасывается, а количество/сумма подстраиваются под выбранную сумму. */
   onTradeAmountChange(value?: number): void {
     this.tradeAmount =
       value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;
+    this.prefillQty = null;
+    this.prefillSide = null;
     this.tradeMessage = null;
     this.tradeError = null;
     if (this.tradeAllSumBuy) this.tradeAllSumBuy = false;

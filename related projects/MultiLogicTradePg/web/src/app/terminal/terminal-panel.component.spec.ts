@@ -145,6 +145,51 @@ describe('TerminalPanelComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('кнопка-треугольник слева в шапке сворачивает/разворачивает полосу', () => {
+    const btn = fixture.debugElement.query(By.css('.tpanel-collapse'));
+    expect(btn).not.toBeNull();
+    expect(btn.nativeElement.getAttribute('aria-expanded')).toBe('true');
+
+    const root = () => fixture.debugElement.query(By.css('.tpanel')).nativeElement;
+    expect(root().classList.contains('collapsed')).toBe(false);
+
+    const seen: { value: boolean | null } = { value: null };
+    component.collapsedChange.subscribe((v) => (seen.value = v));
+
+    btn.triggerEventHandler('click', null);
+    fixture.detectChanges();
+    expect(component.collapsed).toBe(true);
+    expect(seen.value).toBe(true);
+    expect(root().classList.contains('collapsed')).toBe(true);
+    expect(btn.nativeElement.getAttribute('aria-expanded')).toBe('false');
+
+    btn.triggerEventHandler('click', null);
+    fixture.detectChanges();
+    expect(component.collapsed).toBe(false);
+    expect(seen.value).toBe(false);
+    expect(root().classList.contains('collapsed')).toBe(false);
+    expect(btn.nativeElement.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('свёрнутая при создании полоса (initiallyCollapsed=true) скрывает тело до разворота', () => {
+    const f = TestBed.createComponent(TerminalPanelComponent);
+    f.componentRef.setInput('security', sberRow);
+    f.componentRef.setInput('timeframes', timeframes);
+    f.componentRef.setInput('initiallyCollapsed', true);
+    f.detectChanges();
+    const comp = f.componentInstance;
+    const root = f.debugElement.query(By.css('.tpanel')).nativeElement;
+    expect(comp.collapsed).toBe(true);
+    expect(root.classList.contains('collapsed')).toBe(true);
+
+    const btn = f.debugElement.query(By.css('.tpanel-collapse'));
+    btn.triggerEventHandler('click', null);
+    f.detectChanges();
+    expect(comp.collapsed).toBe(false);
+    expect(root.classList.contains('collapsed')).toBe(false);
+    f.destroy();
+  });
+
   it('по умолчанию индикаторов на панели нет — только блок с кнопкой «+ Добавить индикатор»', () => {
     expect(component.indicatorRows.length).toBe(0);
     const block = fixture.debugElement.query(By.css('.tp-ind-block'));
@@ -433,6 +478,129 @@ describe('TerminalPanelComponent', () => {
     expect(component.indicatorRows.some((r) => r.id === smaSeries.id)).toBeFalse();
   });
 
+  it('правый блок индикаторов: назначенный — с кнопками, из сигнала — только цвет и код', () => {
+    component.indicatorRows = [
+      smaSeries,
+      {
+        ...smaSeries,
+        id: 2,
+        indicator_id: 8,
+        indicator_code: 'RSI',
+        indicator_name: 'RSI',
+        display_order: 2,
+      },
+    ];
+    component.signalIndicatorChartSeries = [
+      {
+        indicator_code: 'BB',
+        line_code: 'UPPER',
+        line_name: 'Верхняя полоса Боллинджера',
+        color: '#0891b2',
+        on_price_scale: true,
+        is_threshold: false,
+        points: [],
+      },
+      {
+        indicator_code: 'BB',
+        line_code: 'LOWER',
+        line_name: 'Нижняя полоса Боллинджера',
+        color: '#ca8a04',
+        on_price_scale: true,
+        is_threshold: false,
+        points: [],
+      },
+    ];
+    const chips = component.indicatorChips();
+    expect(chips.length).toBe(3);
+    const manual = chips.find((c) => c.editable)!;
+    expect(manual.key).toBe('m:7');
+    expect(manual.label).toBe('SMA');
+    expect(manual.color).toBe('#2563eb');
+    expect(manual.row).toEqual(smaSeries);
+    const signal = chips.find((c) => c.key === 's:BB')!;
+    expect(signal.editable).toBeFalse();
+    expect(signal.row).toBeNull();
+    expect(signal.label).toBe('BB ×2');
+    expect(signal.color).toBe('#0891b2');
+    expect(signal.title).toContain('Индикатор логики');
+  });
+
+  it('подписи под графиком: каждая линия индикатора — образец цвета и название', () => {
+    component.displayIndicatorSeries = [
+      {
+        indicator_code: 'STOCH',
+        line_code: 'K',
+        line_name: '%K линия',
+        color: '#2563eb',
+        on_price_scale: false,
+        is_threshold: false,
+        points: [],
+      },
+      {
+        indicator_code: 'STOCH',
+        line_code: 'D',
+        line_name: '%D линия',
+        color: '#9333ea',
+        on_price_scale: false,
+        is_threshold: false,
+        points: [],
+      },
+      {
+        indicator_code: 'SMA',
+        line_code: 'VALUE',
+        line_name: 'Скользящая средняя MA',
+        color: '#ea580c',
+        on_price_scale: true,
+        is_threshold: false,
+        points: [],
+      },
+    ];
+    const items = component.indicatorLegendItems();
+    expect(items.length).toBe(3);
+    expect(items[0].label).toBe('STOCH');
+    expect(items[0].color).toBe('#2563eb');
+    expect(items[1].label).toBe('STOCH D');
+    expect(items[2].label).toBe('SMA');
+    expect(items[2].title).toContain('MA');
+  });
+
+  it('DOM: легенда под графиком и сигнальный индикатор в правом блоке', () => {
+    component.signalIndicatorChartSeries = [
+      {
+        indicator_code: 'ADX',
+        line_code: 'ADX',
+        line_name: 'Сглаженная линия ADX',
+        color: '#0891b2',
+        on_price_scale: false,
+        is_threshold: false,
+        points: [],
+      },
+    ];
+    component.indicatorChartSeries = [
+      {
+        indicator_code: 'SMA',
+        line_code: 'VALUE',
+        line_name: 'Скользящая средняя MA',
+        color: '#2563eb',
+        on_price_scale: true,
+        is_threshold: false,
+        points: [],
+      },
+    ];
+    (component as any).recomposeIndicatorSeries();
+    fixture.detectChanges();
+    const legend = fixture.debugElement.queryAll(By.css('.tp-ind-legend-item'));
+    expect(legend.length).toBe(2);
+    const legendLabels = legend.map((el) =>
+      el.nativeElement.textContent?.trim()
+    );
+    expect(legendLabels).toEqual(['ADX', 'SMA']);
+    const chips = fixture.debugElement.queryAll(By.css('.tp-ind-chip'));
+    expect(chips.length).toBe(1);
+    expect(chips[0].nativeElement.textContent).toContain('ADX');
+    expect(chips[0].query(By.css('.tp-ind-chip-swatch'))).not.toBeNull();
+  });
+
   it('панель имеет собственный селект таймфрейма и пересчитывает цены по нему', () => {
     const select = fixture.debugElement.query(By.css('.tpanel-field select'));
     expect(select).not.toBeNull();
@@ -452,5 +620,111 @@ describe('TerminalPanelComponent', () => {
       timeframe_id: h1.id,
       chart_height: component.chartHeight,
     });
+  });
+
+  it('сигнал: подставляет количество/сумму из расчёта логики; ползунок сбрасывает', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+    });
+    fixture.detectChanges();
+    expect(component.tradeQuantity).toBe(4);
+    expect((component as any).resolveTradeQuantity('buy')).toBe(4);
+    expect(component.tradeMaxInput).toBeGreaterThanOrEqual(1000);
+    component.onTradeAmountChange(2000);
+    expect(component.tradeQuantity).toBe(8);
+  });
+
+  it('график при сигнале: только сигнал и сделки после его бара (старые скрыты)', () => {
+    component.trades = [
+      trade(1, { executed_at: '2026-09-19T08:00:00', price: 200 }),
+      trade(2, { executed_at: '2026-09-19T10:30:00', price: 260, direction: 'SELL' }),
+    ];
+    // Маркер сигнала якорится на свечу закрытия бара сигнала (bar_dt) и не
+    // «уезжает» на последнюю свечу при обновлении цен справа.
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:45:00',
+          open_price: 261,
+          high_price: 262,
+          low_price: 259,
+          close_price: 261,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      suggested_quantity: 0,
+      suggested_amount: 0,
+    });
+    fixture.detectChanges();
+    const markers = component.allTradeMarkers;
+    expect(markers.length).toBe(2);
+    expect(markers[0]).toEqual({
+      dt: '2026-09-19T10:15:00',
+      price: 250,
+      kind: 'open',
+      side: 'long',
+    });
+    expect(markers[1].dt).toBe('2026-09-19T10:30:00');
+    expect(markers[1].side).toBe('short');
+  });
+
+  it('бейдж сигнала подсказывает логику, бар и таймфрейм', () => {
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 7,
+      logic_name: 'Стратегия',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'short',
+      timeframe: 'M15',
+      suggested_quantity: 0,
+      suggested_amount: 0,
+    });
+    fixture.detectChanges();
+    const title = component.signalBadgeTitle;
+    expect(title).toContain('«Стратегия»');
+    expect(title).toContain('таймфрейм M15');
+    expect(component.signalLabel).toBe('продажа');
+  });
+
+  it('новый сигнал с другим таймфреймом переключает панель на него', () => {
+    securities.getPrices.calls.reset();
+    const h1 = timeframes.find((t) => t.tf === 'H1')!;
+    fixture.componentRef.setInput('initialTimeframeId', h1.id);
+    fixture.detectChanges();
+    expect(component.timeframeId).toBe(h1.id);
+    expect(securities.getPrices).toHaveBeenCalledWith(29, h1.id, 200);
   });
 });
