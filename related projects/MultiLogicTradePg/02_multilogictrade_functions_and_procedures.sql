@@ -5355,6 +5355,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -7865,6 +7866,8 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_result JSONB;
     v_closed INTEGER := 0;
+    v_closed_long INTEGER := 0;
+    v_closed_short INTEGER := 0;
     v_long_qty NUMERIC;
     v_short_qty NUMERIC;
     v_tf_id INTEGER;
@@ -7908,7 +7911,8 @@ BEGIN
     v_formula := COALESCE(NULLIF(btrim(p_reason), ''), 'stop_loss:close');
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
 
-    SELECT l.id, l.account_id, a.account_type
+    SELECT l.id, l.account_id, a.account_type,
+           COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
     INTO v_logic
     FROM logics l
     JOIN accounts a ON a.id = l.account_id
@@ -8025,6 +8029,7 @@ BEGIN
                     PERFORM logic_trade_finalize(v_trade_id, NULL);
                 END IF;
                 v_closed := v_closed + 1;
+                v_closed_long := v_closed_long + 1;
             END IF;
         END IF;
     END IF;
@@ -8119,7 +8124,43 @@ BEGIN
                     PERFORM logic_trade_finalize(v_trade_id, NULL);
                 END IF;
                 v_closed := v_closed + 1;
+                v_closed_short := v_closed_short + 1;
             END IF;
+        END IF;
+    END IF;
+
+    -- Терминал: реальное закрытие позиции логикой по бумаге = сигнал «закрытие».
+    -- Терминал с чекбоксом «Закрывать по сигналу» закроет свою позицию этой бумаги
+    -- (в т.ч. при срабатывании стоп-лосса любого вида) для логик с
+    -- use_as_terminal_signal.
+    IF v_closed > 0 AND v_logic.use_sig AND NOT p_is_shadow THEN
+        IF v_closed_long > 0 THEN
+            INSERT INTO logic_terminal_signals (
+                logic_id, security_id, timeframe_id, bar_dt,
+                position_side, signal_kind, formula, price,
+                suggested_quantity, suggested_amount, indicator_ids
+            )
+            VALUES (
+                p_logic_id, p_security_id, v_tf_id, clock_timestamp(),
+                'long', 'close', v_formula, v_price,
+                0, 0, NULL
+            )
+            ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_side)
+                DO NOTHING;
+        END IF;
+        IF v_closed_short > 0 THEN
+            INSERT INTO logic_terminal_signals (
+                logic_id, security_id, timeframe_id, bar_dt,
+                position_side, signal_kind, formula, price,
+                suggested_quantity, suggested_amount, indicator_ids
+            )
+            VALUES (
+                p_logic_id, p_security_id, v_tf_id, clock_timestamp(),
+                'short', 'close', v_formula, v_price,
+                0, 0, NULL
+            )
+            ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_side)
+                DO NOTHING;
         END IF;
     END IF;
 
@@ -9981,6 +10022,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -23493,6 +23562,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

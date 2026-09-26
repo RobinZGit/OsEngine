@@ -883,7 +883,11 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         position_side: r.position_side,
         signal_kind: r.signal_kind,
         side_label:
-          r.position_side === 'short' ? 'продажа' : 'покупка',
+          r.signal_kind === 'close'
+            ? 'закрытие'
+            : r.position_side === 'short'
+              ? 'продажа'
+              : 'покупка',
         formula: r.formula,
         price: r.price,
         suggested_quantity: Number(r.suggested_quantity) || 0,

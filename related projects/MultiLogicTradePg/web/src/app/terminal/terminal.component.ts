@@ -116,6 +116,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
   private positionSummaryByPanel = new Map<number, PanelPositionSummary>();
   /** Импульс «Закрыть все позиции»: каждая полоса закрывает свою позицию. */
   closeAllPulse = 0;
+  /** Адресный импульс «Закрыть по сигналу логики»: закрытие позиции конкретной бумаги. */
+  closeSignalPulse: { security_id: number; pulse: number } | null = null;
+  /** Автозакрытие позиции бумаги по сигналу/закрытию логики (чекбокс в шапке). */
+  autoCloseOnLogicSignal = true;
 
   /** Счёт, к которому относятся текущие panels (для сохранения при переключении). */
   private activeAccountId: number | null = null;
@@ -315,6 +319,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
       next: (r) => {
         this.tradesLoading = false;
         this.trades = r?.trades ?? [];
+        this.applyPanelOrder();
       },
       error: (err) => {
         this.tradesLoading = false;
@@ -405,6 +410,17 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.panels = [...this.panels, panel];
         this.panelsStamp++;
         newPanels.push(panel.uid);
+      }
+      // Чекбокс «Закрывать по сигналу»: у бумаги есть позиция — закрываем её
+      // (сигнал/закрытие/стоп-лосс любой логики с сигналами по этой бумаге).
+      if (
+        this.autoCloseOnLogicSignal &&
+        this.securityRemainderQty(s.security_id) !== 0
+      ) {
+        this.closeSignalPulse = {
+          security_id: s.security_id,
+          pulse: (this.closeSignalPulse?.pulse ?? 0) + 1,
+        };
       }
       applied.push(s.id);
       this.signalToastMessages.push(
@@ -542,6 +558,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
           null;
         this.commonTimeframeId = tf ?? defTf;
         this.settings = { ...settings };
+        this.autoCloseOnLogicSignal = this.safeBoolean(
+          settings['auto_close_on_logic_signal'],
+          true
+        );
         if (this.panelsStamp !== stamp) return;
         // Набор полос меняется — uid'ы новые; старые сводки стираем, чтобы
         // сумма по счёту не включала устаревшие позиции до нового emit.
@@ -554,10 +574,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
               st.chart_height,
               st.signal_event ?? null,
               st.logic_indicator_ids ?? [],
-              st.collapsed ?? false
+              // Восстановленные полосы всегда свёрнуты: при перезаходе в
+              // терминал бумаги открываются закрытыми, независимо от того,
+              // как пользователь оставил их в прошлый раз.
+              true
             )
           )
           .filter((p): p is PanelModel => p != null);
+        this.applyPanelOrder();
       },
       error: () => undefined,
     });
@@ -565,6 +589,30 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   private safeQty(v: unknown, fallback: number): number {
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback;
+  }
+
+  /** Логическое значение из настроек терминала: true/1/'1'/'true' → true. */
+  private safeBoolean(v: unknown, fallback: boolean): boolean {
+    if (v === undefined || v === null) return fallback;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v === 1;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      return s === '1' || s === 'true' || s === 'on';
+    }
+    return fallback;
+  }
+
+  /** Остаток позиции бумаги на выбранном счёте (filled BUY − SELL); 0 — без позиции. */
+  private securityRemainderQty(securityId: number): number {
+    let qty = 0;
+    for (const t of this.trades) {
+      if (t.security_id !== securityId || t.status !== 'filled') continue;
+      const n = Number(t.quantity);
+      if (!Number.isFinite(n)) continue;
+      qty += t.direction === 'BUY' ? n : -n;
+    }
+    return qty;
   }
 
   /** Таймфрейм из настроек, если он входит в доступные; иначе null. */
@@ -576,8 +624,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
   }
 
   /** Пересборка модели полосы из сохранённого состояния (если бумага ещё есть).
-      Новые полосы добавляются свёрнутыми (collapsed=true), восстановленные из
-      состояния — в своём сохранённом виде (по умолчанию развёрнуты). */
+      Новые и восстановленные полосы добавляются свёрнутыми (collapsed=true):
+      при перезаходе в терминал все бумаги открываются закрытыми. */
   private buildPanel(
     securityId: number,
     timeframeId?: number | null,
@@ -619,6 +667,33 @@ export class TerminalComponent implements OnInit, OnDestroy {
       logic_indicator_ids: ids,
       collapsed,
     };
+  }
+
+  /** Переупорядочивание полос по остатку позиции: бумаги с ненулевым
+      остатком всегда вверху, полностью распроданные/некупленные — внизу.
+      Относительный порядок внутри групп сохраняется (стабильная разбивка):
+      покупка/продажа из нулевого остатка поднимает полосу под уже имеющие
+      позицию, полная продажа опускает её над бумагами без позиции. */
+  private applyPanelOrder(): void {
+    if (!this.panels.length) return;
+    const remainder = new Map<number, number>();
+    for (const t of this.trades) {
+      if (t.status !== 'filled') continue;
+      const qty = Number(t.quantity);
+      if (!(Number.isFinite(qty) && qty > 0)) continue;
+      const cur = remainder.get(t.security_id) ?? 0;
+      remainder.set(
+        t.security_id,
+        cur + (t.direction === 'BUY' ? qty : -qty)
+      );
+    }
+    const hasPosition = (p: PanelModel): boolean =>
+      (remainder.get(p.security.id) ?? 0) !== 0;
+    const ordered = [
+      ...this.panels.filter(hasPosition),
+      ...this.panels.filter((p) => !hasPosition(p)),
+    ];
+    this.panels = ordered;
   }
 
   togglePicker(): void {
@@ -877,6 +952,15 @@ export class TerminalComponent implements OnInit, OnDestroy {
       перетираются — у каждой бумаги свой таймфрейм (селект в шапке). */
   onCommonTimeframeChange(): void {
     this.settings = { ...this.settings, timeframe_id: this.commonTimeframeId };
+    this.scheduleSave();
+  }
+
+  /** Чекбокс «Закрывать по сигналу» — сохраняем в настройках терминала. */
+  onAutoCloseToggle(): void {
+    this.settings = {
+      ...this.settings,
+      auto_close_on_logic_signal: this.autoCloseOnLogicSignal,
+    };
     this.scheduleSave();
   }
 

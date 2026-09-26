@@ -993,4 +993,65 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
     expect(stateSvc.placeTrade.calls.count()).toBe(before);
   });
+
+  it('импульс «Закрыть по сигналу логики»: панель с позицией этой бумаги закрывает её', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 5, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    fixture.componentRef.setInput('closeSignalPulse', {
+      security_id: 29,
+      pulse: 1,
+    });
+    fixture.detectChanges();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'sell',
+      execution: 'market',
+      price: 250,
+      quantity: 5,
+    });
+  });
+
+  it('импульс «Закрыть по сигналу логики»: по другой бумаге заявку не ставит', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 5, price: 250, status: 'filled' }),
+    ];
+    component.accountId = 1;
+    const before = stateSvc.placeTrade.calls.count();
+    fixture.componentRef.setInput('closeSignalPulse', {
+      security_id: 30,
+      pulse: 1,
+    });
+    fixture.detectChanges();
+    expect(stateSvc.placeTrade.calls.count()).toBe(before);
+  });
+
+  it('импульс «Закрыть по сигналу логики»: без позиции заявку не ставит', () => {
+    component.accountId = 1;
+    const before = stateSvc.placeTrade.calls.count();
+    fixture.componentRef.setInput('closeSignalPulse', {
+      security_id: 29,
+      pulse: 1,
+    });
+    fixture.detectChanges();
+    expect(stateSvc.placeTrade.calls.count()).toBe(before);
+  });
 });

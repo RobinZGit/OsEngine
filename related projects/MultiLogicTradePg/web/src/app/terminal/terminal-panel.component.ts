@@ -105,6 +105,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Input() initiallyCollapsed = false;
   /** Счётчик «Закрыть все позиции» — каждая панель закрывает свою позицию. */
   @Input() closeAllPulse = 0;
+  /** Адресный импульс «Закрыть по сигналу логики»: закрывает позицию только
+      полосы с этой бумагой (терминал получил сигнал/стоп логики по бумаге). */
+  @Input() closeSignalPulse: { security_id: number; pulse: number } | null = null;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -269,6 +272,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['closeAllPulse'] != null && this.closeAllPulse > 0) {
       /** Импульс «Закрыть все позиции» от терминала: закрываем только свои. */
+      if (this.remainingPositionQty !== 0) this.closePosition();
+    }
+    if (
+      changes['closeSignalPulse'] != null &&
+      this.closeSignalPulse != null &&
+      this.closeSignalPulse.pulse > 0 &&
+      this.closeSignalPulse.security_id === this.security.id
+    ) {
+      /** Адресный импульс от терминала именно по этой бумаге (сигнал/стоп логики). */
       if (this.remainingPositionQty !== 0) this.closePosition();
     }
     if (changes['trades'] != null) {
