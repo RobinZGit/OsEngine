@@ -536,6 +536,29 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return ev?.position_side === 'short' ? 'продажа' : 'покупка';
   }
 
+  /** Кнопка сигнала в шапке: сторона, которую диктует сигнал логики
+      (short → продажа, иначе покупка). */
+  get signalSide(): 'buy' | 'sell' {
+    return this.signalEvent?.position_side === 'short' ? 'sell' : 'buy';
+  }
+
+  /** Количество для кнопки сигнала: тот же расчёт, что у кнопок «Купить»/
+      «Продать» в блоке «Сделки» (из той же формулы — лот логики или
+      сумма ÷ цена). */
+  get signalQuantity(): number {
+    if (this.signalEvent == null || this.priceMissing) return 0;
+    return this.resolveTradeQuantity(this.signalSide);
+  }
+
+  /** Подпись в подсказке кнопки сигнала в шапке. */
+  get signalBtnTitle(): string {
+    const base = this.signalBadgeTitle || 'Сигнал логики';
+    const dir = this.signalSide === 'sell' ? 'продажу' : 'покупку';
+    const qty = this.signalQuantity;
+    const qtyPart = qty > 0 ? ` на ${qty} шт` : '; задайте сумму в шапке';
+    return `${base} — выполнить ${dir}${qtyPart} по текущей цене`;
+  }
+
   /** Подпись в подсказке бейджа: логика, бар и таймфрейм сигнала. */
   get signalBadgeTitle(): string {
     const ev = this.signalEvent;
@@ -548,6 +571,45 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       ? ev.bar_dt
       : d.toLocaleString('ru-RU');
     return `Сигнал логики «${name}» от ${dtLabel}${tfPart}`;
+  }
+
+  /** Сколько времени прошло с подачи сигнала (по бару сигнала): только что /
+      секунды / минуты / часы / дни назад по-русски. Пусто — времени нет. */
+  get signalTimeAgo(): string {
+    const ev = this.signalEvent;
+    if (!ev?.bar_dt) return '';
+    const t = new Date(ev.bar_dt).getTime();
+    if (!Number.isFinite(t)) return '';
+    const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (sec < 5) return 'только что';
+    if (sec < 60) {
+      return this.pluralWord(sec, 'секунду назад', 'секунды назад', 'секунд назад');
+    }
+    const min = Math.floor(sec / 60);
+    if (min < 60) return this.pluralWord(min, 'минуту назад', 'минуты назад', 'минут назад');
+    const hours = Math.floor(min / 60);
+    if (hours < 48) return this.pluralWord(hours, 'час назад', 'часа назад', 'часов назад');
+    const days = Math.floor(hours / 24);
+    return this.pluralWord(days, 'день назад', 'дня назад', 'дней назад');
+  }
+
+  /** Русское склонение количества: 1 минуту, 2 минуты, 5 минут. */
+  private pluralWord(n: number, one: string, few: string, many: string): string {
+    const n10 = n % 10;
+    const n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return `${n} ${one}`;
+    if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return `${n} ${few}`;
+    return `${n} ${many}`;
+  }
+
+  /** Хинт бара полосы при наведении: какой логикой подан сигнал и сколько
+      времени прошло (секунды/минуты/часы/дни назад). */
+  get signalBarHint(): string {
+    const ev = this.signalEvent;
+    if (!ev) return '';
+    const ago = this.signalTimeAgo;
+    const base = this.signalBadgeTitle;
+    return ago ? `${base}. Подано ${ago}` : base;
   }
 
   /** Маркеры входов на графике: покупка — зелёный треугольник (long),
@@ -1491,6 +1553,17 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.tradeError = null;
     if (this.tradeAllSumBuy) this.tradeAllSumBuy = false;
     if (this.tradeAllQtySell) this.tradeAllQtySell = false;
+  }
+
+  /** Ввод суммы в шапке (компактный импут у кнопки сигнала): те же принципы,
+      что у ползунка блока «Сделки» — сумма в пределах максимума, количество из
+      сигнала сбрасывается (счёт идёт от «сумма ÷ цена»). */
+  onSignalAmountEdit(value?: number): void {
+    let v = Math.floor(Number(value));
+    if (!Number.isFinite(v) || v < 0) v = 0;
+    const max = this.effectiveMaxSum;
+    if (v > max) v = max;
+    this.onTradeAmountChange(v);
   }
 
   /** Чекбокс «на всю сумму»: слайдер перемещается на максимум по деньгам. */

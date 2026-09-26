@@ -101,6 +101,96 @@
   border-color: #fca5a5;
 }
 
+/* Компактная сделка по сигналу в шапке: сумма ₽, ползунок и кнопка
+   «Купить»/«Продать» — уменьшенная копия органов блока «Сделки», та же формула
+   количества (сумма ÷ цена, либо лот логики). */
+.tpanel-signal-trade {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.tpanel-signal-field {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.66rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.tpanel-signal-name {
+  color: #9ca3af;
+}
+
+.tpanel-signal-input {
+  width: 62px;
+  padding: 0.1rem 0.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  text-align: right;
+  background: #fff;
+}
+
+.tpanel-signal-cur {
+  font-size: 0.68rem;
+  color: #6b7280;
+}
+
+.tpanel-signal-slider {
+  width: 88px;
+  accent-color: #2563eb;
+}
+
+/* Кнопка «Купить»/«Продать» по сигналу: тот же зелёный бейдж с круглыми
+   краями, ставший интерактивным. */
+.tpanel-signal-btn {
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 0.28rem 0.55rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.tpanel-signal-btn:hover:enabled {
+  background: #bbf7d0;
+  border-color: #4ade80;
+}
+
+.tpanel-signal-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.tpanel-signal-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.tpanel-signal-btn.short {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.tpanel-signal-btn.short:hover:enabled {
+  background: #fecaca;
+  border-color: #f87171;
+}
+
 .tpanel-field {
   display: flex;
   align-items: center;

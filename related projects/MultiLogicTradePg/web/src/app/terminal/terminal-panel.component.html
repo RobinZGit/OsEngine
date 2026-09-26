@@ -1,5 +1,8 @@
 <div class="tpanel" [class.collapsed]="collapsed">
-  <div class="tpanel-head">
+  <div
+    class="tpanel-head"
+    [title]="signalEvent ? signalBarHint : ''"
+  >
     <button
       type="button"
       class="tpanel-collapse"
@@ -42,14 +45,47 @@
       @if (isFutures()) {
         <span class="tpanel-kind">фьючерс</span>
       }
-      @if (signalEvent) {
-        <span
-          class="tpanel-signal-badge"
-          [class.short]="signalEvent.position_side === 'short'"
-          [title]="signalBadgeTitle"
-        >{{ signalLabel }}</span>
-      }
     </div>
+    @if (signalEvent) {
+      <div class="tpanel-signal-trade" role="group" aria-label="Сделка по сигналу логики">
+        <label
+          class="tpanel-signal-field"
+          title="Сумма сделки по сигналу: количество = сумма ÷ текущая цена (как в блоке «Сделки»)"
+        >
+          <span class="tpanel-signal-name">по сигналу</span>
+          <input
+            type="number"
+            class="tpanel-signal-input"
+            min="0"
+            step="100"
+            [ngModel]="tradeAmount"
+            (ngModelChange)="onSignalAmountEdit($event)"
+            [disabled]="tradingBusy || priceMissing"
+            aria-label="Сумма сделки по сигналу"
+          />
+          <span class="tpanel-signal-cur">₽</span>
+        </label>
+        <input
+          type="range"
+          class="tpanel-signal-slider"
+          min="0"
+          [max]="effectiveMaxSum"
+          step="100"
+          [ngModel]="tradeAmount"
+          (ngModelChange)="onTradeAmountChange($event)"
+          [disabled]="tradingBusy || priceMissing"
+          aria-label="Сумма сделки по сигналу (ползунок)"
+        />
+        <button
+          type="button"
+          class="tpanel-signal-btn"
+          [class.short]="signalSide === 'sell'"
+          [disabled]="tradingBusy || priceMissing || accountId == null"
+          [title]="signalBtnTitle"
+          (click)="placeTrade(signalSide)"
+        >{{ signalSide === 'sell' ? 'Продать' : 'Купить' }}@if (signalQuantity > 0) { {{ signalQuantity }} }</button>
+      </div>
+    }
     <label class="tpanel-field">
       <span>Таймфрейм</span>
       <select

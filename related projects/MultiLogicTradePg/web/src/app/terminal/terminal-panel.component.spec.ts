@@ -1054,4 +1054,238 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
     expect(stateSvc.placeTrade.calls.count()).toBe(before);
   });
+
+  it('сигнал long: кнопка «Купить» в шапке ставит покупку по количеству логики', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+    });
+    fixture.detectChanges();
+    const group = fixture.debugElement.query(By.css('.tpanel-signal-trade'));
+    expect(group).not.toBeNull();
+    const btn = group.query(By.css('.tpanel-signal-btn'));
+    expect(btn.nativeElement.textContent).toContain('Купить');
+    expect(btn.nativeElement.textContent).toContain('4');
+    expect(btn.classes['short']).toBeUndefined();
+    btn.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'market',
+      price: 250,
+      quantity: 4,
+    });
+  });
+
+  it('сигнал short: кнопка «Продать» в шапке ставит продажу по количеству логики', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 6,
+      logic_name: 'Логика Y',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'short',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 3,
+      suggested_amount: 750,
+    });
+    fixture.detectChanges();
+    const group = fixture.debugElement.query(By.css('.tpanel-signal-trade'));
+    const btn = group.query(By.css('.tpanel-signal-btn'));
+    expect(btn.nativeElement.textContent).toContain('Продать');
+    expect(btn.nativeElement.textContent).toContain('3');
+    expect(btn.classes['short']).toBeTrue();
+    btn.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'sell',
+      execution: 'market',
+      price: 250,
+      quantity: 3,
+    });
+  });
+
+  it('сигнал: ввод суммы в компактном импуте шапки меняет количество (сброс лота логики)', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.tradeMaxInput = 5000;
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      position_side: 'long',
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+    });
+    fixture.detectChanges();
+    const input = fixture.debugElement.query(By.css('.tpanel-signal-input'));
+    expect(input).not.toBeNull();
+    expect(input.nativeElement.disabled).toBe(false);
+    expect(component.tradeAmount).toBe(1000);
+    component.onSignalAmountEdit(2000);
+    fixture.detectChanges();
+    expect(component.tradeAmount).toBe(2000);
+    expect(component.tradeQuantity).toBe(8);
+    component.onSignalAmountEdit(99999);
+    expect(component.tradeAmount).toBe(5000);
+    component.onSignalAmountEdit(-5);
+    expect(component.tradeAmount).toBe(0);
+  });
+
+  it('сигнал: компактный ползунок шапки двигает сумму тем же обработчиком, что в «Сделках»', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.tradeMaxInput = 5000;
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      position_side: 'short',
+      suggested_quantity: 3,
+      suggested_amount: 750,
+    });
+    fixture.detectChanges();
+    const slider = fixture.debugElement.query(By.css('.tpanel-signal-slider'));
+    expect(slider).not.toBeNull();
+    expect(Number(slider.nativeElement.max)).toBe(5000);
+    slider.nativeElement.value = '2000';
+    slider.nativeElement.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(component.tradeAmount).toBe(2000);
+    expect(component.signalQuantity).toBe(8);
+  });
+
+  it('без сигнала блока сделки по сигналу в шапке нет', () => {
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('.tpanel-signal-trade'))).toBeNull();
+  });
+
+  it('сигнал: сколько времени прошло — только что / минуты / часы назад', () => {
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: new Date(Date.now() - 3000).toISOString(),
+      position_side: 'long',
+    });
+    fixture.detectChanges();
+    expect(component.signalTimeAgo).toBe('только что');
+
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: new Date(Date.now() - 90_000).toISOString(),
+      position_side: 'long',
+    });
+    fixture.detectChanges();
+    expect(component.signalTimeAgo).toBe('1 минуту назад');
+
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: new Date(Date.now() - 7_300_000).toISOString(),
+      position_side: 'long',
+    });
+    fixture.detectChanges();
+    expect(component.signalTimeAgo).toBe('2 часа назад');
+  });
+
+  it('сигнал: хинт бара — логика, «подано» и время назад', () => {
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 7,
+      logic_name: 'Стратегия',
+      bar_dt: new Date(Date.now() - 300_000).toISOString(),
+      position_side: 'short',
+      timeframe: 'M15',
+    });
+    fixture.detectChanges();
+    const hint = component.signalBarHint;
+    expect(hint).toContain('«Стратегия»');
+    expect(hint).toContain('Подано');
+    expect(hint).toContain('назад');
+  });
+
+  it('сигнал: при наведении на бар полосы подсказка о логике и времени подачи; без сигнала — нет', () => {
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 7,
+      logic_name: 'Стратегия',
+      bar_dt: new Date(Date.now() - 60_000).toISOString(),
+      position_side: 'long',
+      timeframe: 'H1',
+    });
+    fixture.detectChanges();
+    const head = fixture.debugElement.query(By.css('.tpanel-head'));
+    expect(head.nativeElement.getAttribute('title')).toContain('Сигнал логики');
+    expect(head.nativeElement.getAttribute('title')).toContain('назад');
+
+    fixture.componentRef.setInput('signalEvent', null);
+    fixture.detectChanges();
+    expect(head.nativeElement.getAttribute('title')).toBe('');
+  });
 });
