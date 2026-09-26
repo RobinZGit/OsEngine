@@ -2,7 +2,10 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { TerminalPanelComponent } from './terminal-panel.component';
+import {
+  PanelPositionSummary,
+  TerminalPanelComponent,
+} from './terminal-panel.component';
 import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import {
@@ -108,6 +111,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
   tradesError: string | null = null;
   /** Идёт удаление всех сделок (блокирует повторные клики). */
   tradesDeleting = false;
+
+  /** Рыночная стоимость позиций по полосам (суммируем для шапки счёта). */
+  private positionSummaryByPanel = new Map<number, PanelPositionSummary>();
+  /** Импульс «Закрыть все позиции»: каждая полоса закрывает свою позицию. */
+  closeAllPulse = 0;
 
   /** Счёт, к которому относятся текущие panels (для сохранения при переключении). */
   private activeAccountId: number | null = null;
@@ -535,6 +543,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.commonTimeframeId = tf ?? defTf;
         this.settings = { ...settings };
         if (this.panelsStamp !== stamp) return;
+        // Набор полос меняется — uid'ы новые; старые сводки стираем, чтобы
+        // сумма по счёту не включала устаревшие позиции до нового emit.
+        this.positionSummaryByPanel.clear();
         this.panels = (r.payload.panels ?? [])
           .map((st) =>
             this.buildPanel(
@@ -675,6 +686,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   removePanel(uid: number): void {
     this.panels = this.panels.filter((p) => p.uid !== uid);
+    this.forgetPanelSummary(uid);
     this.panelsStamp++;
     if (this.addingSecUid === uid) this.releaseAddingSec();
     this.scheduleSave();
@@ -815,6 +827,44 @@ export class TerminalComponent implements OnInit, OnDestroy {
     if (!panel) return;
     panel.collapsed = collapsed;
     this.scheduleSave();
+  }
+
+  /** Полоса прислала сводку позиции (остаток и рыночная стоимость по текущей
+      цене последней свечи). Копим по uid и обновляем сумму по счёту. */
+  onPanelPositionSummary(uid: number, s: PanelPositionSummary): void {
+    this.positionSummaryByPanel.set(uid, s);
+  }
+
+  /** Сумма рыночной стоимости всех открытых позиций по полосам терминала.
+      Обновляется с каждой новой свечой любой полосы (панели шлют сводки). */
+  get totalPositionMarketValue(): number {
+    let sum = 0;
+    for (const s of this.positionSummaryByPanel.values()) sum += s.marketValue;
+    return Math.round(sum * 100) / 100;
+  }
+
+  /** Есть ли хотя бы одна открытая позиция (остаток != 0) среди полос —
+      управляет кнопкой «Закрыть все позиции» (disabled при пустом счёте). */
+  get anyOpenPosition(): boolean {
+    for (const s of this.positionSummaryByPanel.values()) {
+      if (s.qty !== 0) return true;
+    }
+    // У полос, что ещё не прислали сводку (график/сделки грузятся), остаток
+    // неизвестен — считаем потенциальной позицией: кнопку не разблокируем.
+    if (this.positionSummaryByPanel.size !== this.panels.length) return true;
+    return false;
+  }
+
+  /** Кнопка «Закрыть все позиции»: посылаем импульс — каждая полоса с
+      открытой позицией закрывает её (продажа/выкуп остатка, маркет). */
+  closeAllPositions(): void {
+    if (!this.anyOpenPosition) return;
+    this.closeAllPulse++;
+  }
+
+  /** Полоса убрана — вычищаем её сводку из суммы по счёту. */
+  private forgetPanelSummary(uid: number): void {
+    this.positionSummaryByPanel.delete(uid);
   }
 
   /** Изменение объёмов по умолчанию (и прочих настроек) — сохраняем JSON. */

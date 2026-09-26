@@ -54,6 +54,12 @@ interface IndicatorLegendItem {
   title: string;
 }
 
+/** Сводка позиции полосы для терминала: остаток и рыночная стоимость. */
+export interface PanelPositionSummary {
+  qty: number;
+  marketValue: number;
+}
+
 const EMPTY_STATE: SecurityChartState = {
   candles: [],
   loading: false,
@@ -97,6 +103,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Input() logicIndicatorIds: number[] = [];
   /** Начальное состояние «свернута» (видна только шапка полосы). */
   @Input() initiallyCollapsed = false;
+  /** Счётчик «Закрыть все позиции» — каждая панель закрывает свою позицию. */
+  @Input() closeAllPulse = 0;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -109,6 +117,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Output() dataReady = new EventEmitter<void>();
   /** Пользователь свернул/развернул полосу (сохраняем в состоянии терминала). */
   @Output() collapsedChange = new EventEmitter<boolean>();
+  /** Сводка позиции: остаток и рыночная стоимость — для суммы по счёту
+      (обновляется с каждой новой свечой — меняется текущая цена). */
+  @Output() positionSummary = new EventEmitter<PanelPositionSummary>();
 
   @ViewChild('mainChart') mainChart?: PriceChartComponent;
   @ViewChildren(PriceChartComponent) allCharts?: QueryList<PriceChartComponent>;
@@ -243,6 +254,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.loadChart();
     this.startPolling();
     this.emitStateChange();
+    this.emitPositionSummary();
   }
 
   ngOnDestroy(): void {
@@ -255,6 +267,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** При смене счёта сбрасываем максимум на баланс; при живом обновлении
       баланса (без смены счёта) — только пока пользователь не менял вручную. */
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['closeAllPulse'] != null && this.closeAllPulse > 0) {
+      /** Импульс «Закрыть все позиции» от терминала: закрываем только свои. */
+      if (this.remainingPositionQty !== 0) this.closePosition();
+    }
+    if (changes['trades'] != null) {
+      /** Терминал перечитал сделки счёта — позиция полосы могла измениться. */
+      this.emitPositionSummary();
+    }
     if (changes['signalEvent'] != null) {
       this.applySignalPrefill();
     }
@@ -395,6 +415,27 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     if (qty === 0) return 0;
     const cost = this.remainingPositionCost;
     return qty > 0 ? Math.max(cost, 0) : Math.max(-cost, 0);
+  }
+
+  /** Рыночная стоимость остатка по текущей цене последней свечи:
+      для лонга — сколько стоят бумаги сейчас, для шорта — сколько стоит
+      выкуп объёма сейчас (всегда положительное число). */
+  get remainingPositionMarketValue(): number {
+    const qty = this.remainingPositionQty;
+    if (qty === 0) return 0;
+    const p = this.currentPrice;
+    if (!(p > 0)) return 0;
+    return Math.round(Math.abs(qty) * p * 100) / 100;
+  }
+
+  /** Сообщить терминалу сводку позиции: остаток и рыночную стоимость.
+      Вызывается при изменении сделок, свечей (цена меняется с каждой новой
+      свечой) — терминал копит и суммирует по всем полосам для шапки счёта. */
+  emitPositionSummary(): void {
+    this.positionSummary.emit({
+      qty: this.remainingPositionQty,
+      marketValue: this.remainingPositionMarketValue,
+    });
   }
 
   /** Фактическое количество для заявки: при чекбоксе «на всю сумму» покупка
@@ -644,6 +685,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
         this.maybeDataReady(mainRows);
         this.refreshIndicatorsForChart();
         this.loadLogicSignalIndicators();
+        this.emitPositionSummary();
       },
       error: () => {
         if (this.destroyed) return;
@@ -800,6 +842,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
           });
           this.computeContango();
           this.maybeDataReady(merged);
+          this.emitPositionSummary();
         },
         error: () => undefined,
       })

@@ -81,6 +81,18 @@
               {{ selectedAccountCash ?? 0 | number: '1.0-0' }} ₽
             </strong>
           </span>
+          <span class="term-account-mv" [class.term-account-mv-empty]="totalPositionMarketValue === 0">
+            Позиции по рынку:
+            <strong>{{ totalPositionMarketValue | number: '1.0-0' }} ₽</strong>
+          </span>
+          <button
+            type="button"
+            class="term-account-close-all"
+            [class.term-account-close-all-open]="anyOpenPosition"
+            [disabled]="!anyOpenPosition"
+            [title]="anyOpenPosition ? 'Закрыть все открытые позиции (по каждой бумаге, маркет)' : 'Нет открытых позиций'"
+            (click)="$event.stopPropagation(); closeAllPositions()"
+          >Закрыть все позиции</button>
           <span class="term-account-hint">сделки терминала · {{ trades.length }}</span>
         </summary>
         <div class="term-trades-body">
@@ -268,11 +280,13 @@
           [accountIsFake]="selectedAccountIsFake"
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
+          [closeAllPulse]="closeAllPulse"
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
           (collapsedChange)="onPanelCollapsedChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
           (dataReady)="onPanelDataReady(panel.uid)"
+          (positionSummary)="onPanelPositionSummary(panel.uid, $event)"
         />
       }
     </div>

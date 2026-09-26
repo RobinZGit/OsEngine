@@ -416,6 +416,47 @@
   color: #b91c1c;
 }
 
+/* Рыночная стоимость всех открытых позиций (текущие цены последних свечей). */
+.term-account-mv {
+  color: #374151;
+  font-size: 0.82rem;
+}
+
+.term-account-mv strong {
+  color: #1e3a5f;
+}
+
+.term-account-mv-empty strong {
+  color: #9ca3af;
+}
+
+/* «Закрыть все позиции» — цвет как у кнопки закрытия позиции в шапке полосы. */
+.term-account-close-all {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  font-family: inherit;
+  color: #fff;
+  background: #8b4513;
+  border: 1px solid #6f3410;
+  border-radius: 999px;
+  padding: 0.1rem 0.7rem;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+  opacity: 0.55;
+}
+
+.term-account-close-all-open {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.term-account-close-all-open:hover {
+  background: #73390f;
+  border-color: #5c2e0c;
+}
+
 .term-account-hint {
   color: #9ca3af;
   font-size: 0.72rem;
@@ -519,7 +560,7 @@
   color: #991b1b;
   font-weight: 600;
 }
-/* ����������� � ������� ������: ������ ������ �������� ���������. */
+/* ����������� � ������� ������: ������ ������ �������� ���������. */
 .term-toast {
   position: fixed;
   top: 0.9rem;

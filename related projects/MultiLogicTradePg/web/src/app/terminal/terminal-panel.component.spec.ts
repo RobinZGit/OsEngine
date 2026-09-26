@@ -100,6 +100,7 @@ describe('TerminalPanelComponent', () => {
     securities.getIndicatorValues.and.returnValue(of([]));
 
     stateSvc = jasmine.createSpyObj('TerminalStateService', ['placeTrade']);
+    stateSvc.placeTrade.and.returnValue(of({ ok: true, mode: 'fake' }));
     refs = jasmine.createSpyObj('ReferencesService', ['getIndicators']);
     refs.getIndicators.and.returnValue(of([]));
 
@@ -906,5 +907,90 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
     expect(component.timeframeId).toBe(h1.id);
     expect(securities.getPrices).toHaveBeenCalledWith(29, h1.id, 200);
+  });
+
+  it('сводка позиции: при изменении сделок/цены шлёт терминалу остаток и рыночную стоимость', () => {
+    const sent: { qty: number; marketValue: number }[] = [];
+    component.positionSummary.subscribe((s) => sent.push(s));
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 4, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 260,
+          high_price: 261,
+          low_price: 259,
+          close_price: 260,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.emitPositionSummary();
+    expect(sent.length).toBe(1);
+    expect(sent[0].qty).toBe(4);
+    expect(sent[0].marketValue).toBe(1040);
+    // Новая свеча меняет цену — рыночная стоимость обновляется за ней.
+    component.chartState = {
+      ...component.chartState,
+      candles: [
+        {
+          dt: '2026-09-19T10:30:00',
+          open_price: 270,
+          high_price: 271,
+          low_price: 269,
+          close_price: 270,
+          volume: 100,
+        },
+      ],
+    };
+    component.emitPositionSummary();
+    expect(sent[sent.length - 1].marketValue).toBe(1080);
+  });
+
+  it('импульс «Закрыть все позиции»: панель с позицией закрывает её маркет-заявкой', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 5, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    fixture.componentRef.setInput('closeAllPulse', 1);
+    fixture.detectChanges();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'sell',
+      execution: 'market',
+      price: 250,
+      quantity: 5,
+    });
+  });
+
+  it('импульс «Закрыть все позиции»: без позиции заявку не ставит', () => {
+    component.accountId = 1;
+    const before = stateSvc.placeTrade.calls.count();
+    fixture.componentRef.setInput('closeAllPulse', 1);
+    fixture.detectChanges();
+    expect(stateSvc.placeTrade.calls.count()).toBe(before);
   });
 });
