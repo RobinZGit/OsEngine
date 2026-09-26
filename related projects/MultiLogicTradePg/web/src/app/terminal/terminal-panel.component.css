@@ -170,6 +170,72 @@
   background: #fef2f2;
 }
 
+/* Позиция бумаги в шапке: кнопка закрытия и сумма/разница по остатку.
+   Видна даже у свёрнутой полосы — шапка всегда на виду. */
+.tpanel-pos {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.tpanel-close-pos {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #fff;
+  background: #8b4513;
+  border: 1px solid #6f3410;
+  border-radius: 4px;
+  padding: 0.22rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tpanel-close-pos:hover:not(:disabled) {
+  background: #73390f;
+  border-color: #5c2e0c;
+}
+
+.tpanel-close-pos:disabled {
+  background: #c28a66;
+  border-color: #b07a57;
+  cursor: default;
+}
+
+.tpanel-pos-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.tpanel-pos-label {
+  font-size: 0.62rem;
+  color: #6b7280;
+}
+
+.tpanel-pos-value {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #374151;
+}
+
+.tpanel-pos-diff {
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.tpanel-pos-diff.diff-positive {
+  color: #15803d;
+}
+
+.tpanel-pos-diff.diff-negative {
+  color: #dc2626;
+}
+
 /* Тело полосы: слева графики (фьючерс + контанго), справа прямоугольник под сделки. */
 .tpanel-body {
   display: flex;

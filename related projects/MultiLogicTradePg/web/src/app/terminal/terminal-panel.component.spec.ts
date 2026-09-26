@@ -347,6 +347,186 @@ describe('TerminalPanelComponent', () => {
     expect(Math.round(component.tradeSum * 100) / 100).toBe(1750);
   });
 
+  it('шорт-позиция: сводка показывает разницу и процент, положительные при падении цены', () => {
+    component.trades = [
+      { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 240,
+          high_price: 241,
+          low_price: 239,
+          close_price: 240,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.detectChanges();
+    expect(component.remainingPositionQty).toBe(-10);
+    expect(component.remainingPositionBaseAmount).toBe(2500);
+    expect(component.remainingPositionDiff).toBe(100);
+    expect(component.remainingPositionDiffPct).toBe(4);
+    const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
+    expect(pos).not.toBeNull();
+    expect(pos.nativeElement.textContent).toContain('Получено');
+    expect(pos.nativeElement.textContent).toContain('2,500');
+    expect(pos.nativeElement.textContent).toContain('+100');
+    expect(pos.query(By.css('.diff-positive'))).not.toBeNull();
+  });
+
+  it('шорт-позиция: при росте цены разница отрицательная (красная)', () => {
+    component.trades = [
+      { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 260,
+          high_price: 261,
+          low_price: 259,
+          close_price: 260,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.detectChanges();
+    expect(component.remainingPositionDiff).toBe(-100);
+    expect(component.remainingPositionDiffPct).toBe(-4);
+    const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
+    expect(pos.query(By.css('.diff-negative'))).not.toBeNull();
+  });
+
+  it('шапка: кнопка «Закрыть позицию» и сводка видны всегда, даже без открытой позиции', () => {
+    fixture.detectChanges();
+    expect(component.remainingPositionQty).toBe(0);
+    const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
+    expect(pos).not.toBeNull();
+    const btn = pos.query(By.css('.tpanel-close-pos'));
+    expect(btn).not.toBeNull();
+    expect(btn.nativeElement.disabled).toBe(true);
+    expect(pos.nativeElement.textContent).toContain('Позиция');
+    expect(pos.nativeElement.textContent).toContain('0 ₽');
+    const bodySummary = fixture.debugElement.query(By.css('.trade-summary'));
+    expect(bodySummary).toBeNull();
+  });
+
+  it('тело полосы: сводка по позиции продублирована под кнопками Купить/Продать при лонге', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('.tpanel-pos'))).not.toBeNull();
+    const bodySummary = fixture.debugElement.query(By.css('.trade-summary'));
+    expect(bodySummary).not.toBeNull();
+    expect(bodySummary.nativeElement.textContent).toContain(
+      'Остаток по ценам покупок'
+    );
+    expect(bodySummary.nativeElement.textContent).toContain('2,500');
+  });
+
+  it('кнопка «Закрыть позицию» продаёт весь остаток при лонге (маркет)', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    stateSvc.placeTrade.and.returnValue(
+      of({ ok: true, message: 'ok', mode: 'fake' })
+    );
+    fixture.detectChanges();
+    const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
+    expect(btn).not.toBeNull();
+    btn.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'sell',
+      execution: 'market',
+      price: 250,
+      quantity: 10,
+    });
+  });
+
+  it('кнопка «Закрыть позицию» выкупает весь объём при шорте (маркет)', () => {
+    component.trades = [
+      { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 240,
+          high_price: 241,
+          low_price: 239,
+          close_price: 240,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    stateSvc.placeTrade.and.returnValue(
+      of({ ok: true, message: 'ok', mode: 'fake' })
+    );
+    fixture.detectChanges();
+    const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
+    expect(btn).not.toBeNull();
+    btn.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'market',
+      price: 240,
+      quantity: 10,
+    });
+  });
+
   it('открывает параметры индикатора с текущими значениями', () => {
     component.indicatorRows = [smaSeries];
     component.openEditParams(smaSeries);

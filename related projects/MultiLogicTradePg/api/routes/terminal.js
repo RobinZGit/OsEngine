@@ -623,6 +623,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       // Запись сделки + обновление демо-кэша фейкового счёта (остаток может уйти в минус).
       const client = await pool.connect();
       let tradeId;
+      let executedAt = '';
       let cash = null;
       try {
         await client.query('BEGIN');
@@ -657,6 +658,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
           ]
         );
         tradeId = trRows.rows[0]?.id;
+        executedAt = trRows.rows[0]?.executed_at ?? '';
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK');
@@ -679,7 +681,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         status,
         broker_order_id: brokerOrderId,
         note,
-        executed_at: trRows.rows[0]?.executed_at ?? '',
+        executed_at: executedAt,
       };
 
       if (status === 'rejected') {
@@ -820,21 +822,17 @@ module.exports = function registerTerminalRoutes(app, ctx) {
   });
 
   /** Сигналы логик в терминал (непрочитанные, новые сверху по времени записи).
-      Записи создаёт процесс_logic_terminal_signals в торговом цикле (node-runner). */
+      Записи создаёт процесс_logic_terminal_signals в торговом цикле (node-runner).
+      Сигнал НЕ привязан к счёту логики: бумага добавляется в терминал, а сделки
+      идут по тому счёту, который выбран в терминале. Поэтому фильтра по accounts
+      здесь нет (раньше сигнал логики с чужим счётом молча не доходил до терминала). */
   app.get('/api/terminal/logic-signals', async (req, res) => {
-    const accountId = parseId(req.query.account_id);
     const limitRaw = Number(req.query.limit);
     const limit = Math.min(
       Math.max(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 200, 1),
       500
     );
     try {
-      const params = [];
-      const where = ['lts.is_read = FALSE'];
-      if (accountId != null) {
-        params.push(accountId);
-        where.push(`a.id = $${params.length}`);
-      }
       const { rows } = await pool.query(
         `
         SELECT lts.id, lts.logic_id, lts.security_id, lts.timeframe_id,
@@ -848,16 +846,15 @@ module.exports = function registerTerminalRoutes(app, ctx) {
                t.tf AS timeframe
         FROM logic_terminal_signals lts
         JOIN logics l ON l.id = lts.logic_id
-        JOIN accounts a ON a.id = l.account_id
         JOIN securities s ON s.id = lts.security_id
         LEFT JOIN security_prefixes sp
                ON sp.security_id = s.id AND sp.exchange_id = 1
         JOIN timeframes t ON t.id = lts.timeframe_id
-        WHERE ${where.join(' AND ')}
+        WHERE lts.is_read = FALSE
         ORDER BY lts.id ASC
-        LIMIT $${params.length + 1}
+        LIMIT $1
         `,
-        [...params, limit]
+        [limit]
       );
 
       const indicatorIds = [...new Set(
@@ -876,7 +873,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         id: Number(r.id),
         logic_id: r.logic_id,
         logic_name: r.logic_name,
-        account_id: accountId != null ? accountId : null,
+        account_id: null,
         security_id: r.security_id,
         security_prefix: r.security_prefix,
         security_name: r.security_name,

@@ -19,3 +19,6 @@ api/server.js.pre-routes-bak
 
 # Angular / IDE
 web/.angular/
+
+# Локальная установочная копия (C:\Program Files\MultiLogicTradePg)
+MultiLogicTradePg/

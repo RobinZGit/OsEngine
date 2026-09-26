@@ -327,11 +327,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Считать непрочитанные сигналы логик активного счёта и показать их. */
+  /** Считать непрочитанные сигналы логик и показать их. Сигнал не привязан
+      к счёту логики — бумага добавляется в терминал, а сделки идут по счёту,
+      который выбран в терминале. */
   private pollLogicSignals(): void {
-    const id = this.accountId;
-    if (id == null) return;
-    this.stateSvc.getLogicSignals(id).subscribe({
+    this.stateSvc.getLogicSignals().subscribe({
       next: (r) => this.applyLogicSignals(r?.signals ?? []),
       error: () => undefined,
     });

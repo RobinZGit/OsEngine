@@ -321,14 +321,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return Math.floor(this.tradeAmount / p);
   }
 
-  /** Остаток позиции по текущей бумаге на счёте (filled покупки − продажи). */
+  /** Остаток позиции по текущей бумаге на счёте (filled покупки − продажи).
+      Отрицательное значение — «шорт»: продали больше, чем купили. */
   get remainingPositionQty(): number {
     let qty = 0;
     for (const t of this.trades) {
       if (t.security_id !== this.security.id || t.status !== 'filled') continue;
       qty += t.direction === 'BUY' ? Number(t.quantity) : -Number(t.quantity);
     }
-    return Number.isFinite(qty) && qty > 0 ? qty : 0;
+    return Number.isFinite(qty) ? qty : 0;
   }
 
   /** Фактические деньги, вложенные в текущий остаток: сумма покупок
@@ -346,29 +347,54 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return Number.isFinite(cost) ? cost : 0;
   }
 
-  /** Средняя цена входа в остаток: фактические вложенные деньги / остаток. */
+  /** Средняя цена входа в остаток: фактические вложенные деньги / остаток.
+      Для шорта — средняя цена продажи (деньги получены, cost отрицательный). */
   get remainingPositionAvgPrice(): number {
     const qty = this.remainingPositionQty;
-    if (!(qty > 0)) return 0;
+    if (qty === 0) return 0;
     const cost = this.remainingPositionCost;
-    return cost > 0 ? cost / qty : 0;
+    return cost !== 0 ? cost / qty : 0;
   }
 
-  /** Разница в деньгах по всему остатку: текущая рыночная стоимость остатка
-      (рыночная цена × текущее количество) минус фактические деньги по ценам
-      покупок. Положительная — в плюсе (зелёная), отрицательная — в минусе (красная). */
+  /** Разница в деньгах по всему остатку.
+      Лонг: текущая рыночная стоимость остатка − фактические деньги по ценам
+      покупок; положительная — в плюсе (зелёная), отрицательная — в минусе (красная).
+      Шорт: полученные за продажу деньги − текущая стоимость выкупа остатка;
+      положительная — в плюсе (зелёная, цена упала), отрицательная — в минусе (красная). */
   get remainingPositionDiff(): number {
-    const marketValue = this.currentPrice * this.remainingPositionQty;
-    const cost = this.remainingPositionCost;
-    if (!(marketValue > 0) || !(cost > 0)) return 0;
-    return Math.round((marketValue - cost) * 100) / 100;
+    const qty = this.remainingPositionQty;
+    if (qty === 0) return 0;
+    const p = this.currentPrice;
+    if (!(p > 0)) return 0;
+    if (qty > 0) {
+      const marketValue = p * qty;
+      const cost = this.remainingPositionCost;
+      if (!(marketValue > 0) || !(cost > 0)) return 0;
+      return Math.round((marketValue - cost) * 100) / 100;
+    }
+    const proceeds = this.remainingPositionCost;
+    if (proceeds >= 0) return 0;
+    const repurchaseCost = Math.abs(p * qty);
+    return Math.round((-proceeds - repurchaseCost) * 100) / 100;
   }
 
-  /** То же в процентах от фактических денег, вложенных в остаток. */
+  /** То же в процентах от фактических денег, вложенных в остаток
+      (для шорта — от полученных за продажу денег). */
   get remainingPositionDiffPct(): number {
+    const qty = this.remainingPositionQty;
+    if (qty === 0) return 0;
+    const base = qty > 0 ? this.remainingPositionCost : -this.remainingPositionCost;
+    if (!(base > 0)) return 0;
+    return Math.round((this.remainingPositionDiff / base) * 10000) / 100;
+  }
+
+  /** Деньги по остатку: для лонга — вложенные при покупке, для шорта —
+      полученные при продаже (всегда положительное число для показа). */
+  get remainingPositionBaseAmount(): number {
+    const qty = this.remainingPositionQty;
+    if (qty === 0) return 0;
     const cost = this.remainingPositionCost;
-    if (!(cost > 0)) return 0;
-    return Math.round((this.remainingPositionDiff / cost) * 10000) / 100;
+    return qty > 0 ? Math.max(cost, 0) : Math.max(-cost, 0);
   }
 
   /** Фактическое количество для заявки: при чекбоксе «на всю сумму» покупка
@@ -1502,6 +1528,58 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
           this.tradingBusy = false;
           this.tradeError =
             err?.error?.error || err?.message || 'Не удалось разместить заявку';
+          this.tradeExecuted.emit();
+        },
+      });
+  }
+
+  /** Кнопка «Закрыть позиции» в шапке: закрыть всю позицию по бумаге
+      целиком — продать остаток при покупках или выкупить весь объём при
+      продажах (шорт), чтобы количество стало нулевым. Маркет-заявка. */
+  closePosition(): void {
+    this.tradeMessage = null;
+    this.tradeError = null;
+    const qty = this.remainingPositionQty;
+    if (qty === 0) {
+      this.tradeError = 'Нет открытой позиции по этой бумаге';
+      return;
+    }
+    if (this.accountId == null) {
+      this.tradeError = 'Не выбран счёт';
+      return;
+    }
+    const price = this.currentPrice;
+    if (!(price > 0)) {
+      this.tradeError = 'Нет цены для расчёта — дождитесь загрузки графика';
+      return;
+    }
+    const direction: 'buy' | 'sell' = qty > 0 ? 'sell' : 'buy';
+    const quantity = Math.abs(qty);
+    this.tradingBusy = true;
+    this.stateSvc
+      .placeTrade({
+        account_id: this.accountId,
+        security_id: this.security.id,
+        direction,
+        execution: 'market',
+        price,
+        quantity,
+      })
+      .subscribe({
+        next: (r) => {
+          this.tradingBusy = false;
+          if (r?.ok) {
+            this.tradeMessage =
+              r.message || `Позиция закрыта: ${direction} ${quantity} шт`;
+          } else {
+            this.tradeError = r?.error || 'Не удалось закрыть позицию';
+          }
+          this.tradeExecuted.emit();
+        },
+        error: (err) => {
+          this.tradingBusy = false;
+          this.tradeError =
+            err?.error?.error || err?.message || 'Не удалось закрыть позицию';
           this.tradeExecuted.emit();
         },
       });

@@ -8,6 +8,34 @@
       [title]="collapsed ? 'Развернуть полосу' : 'Свернуть полосу'"
       (click)="toggleCollapsed()"
     >{{ collapsed ? '▸' : '▾' }}</button>
+    <div
+      class="tpanel-pos"
+      aria-live="polite"
+      role="region"
+      aria-label="Позиция по бумаге и закрытие"
+    >
+      <button
+        type="button"
+        class="tpanel-close-pos"
+        [disabled]="tradingBusy || priceMissing || remainingPositionQty === 0"
+        title="Закрыть всю позицию по бумаге: продать остаток (при покупках) или выкупить весь объём (при продажах), чтобы количество стало нулевым"
+        (click)="closePosition()"
+      >{{ tradingBusy ? 'Закрываем…' : 'Закрыть позицию' }}</button>
+      <span class="tpanel-pos-summary">
+        <span class="tpanel-pos-label">
+          {{ remainingPositionQty > 0 ? 'Остаток' : (remainingPositionQty < 0 ? 'Получено' : 'Позиция') }}
+        </span>
+        <span class="tpanel-pos-value">{{ remainingPositionBaseAmount | number: '1.0-2' }} ₽</span>
+        <span
+          class="tpanel-pos-diff"
+          [class.diff-positive]="remainingPositionDiff >= 0"
+          [class.diff-negative]="remainingPositionDiff < 0"
+        >
+          {{ remainingPositionDiff >= 0 ? '+' : '' }}{{ remainingPositionDiff | number: '1.0-2' }}
+          ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{ remainingPositionDiffPct | number: '1.0-1' }}%)
+        </span>
+      </span>
+    </div>
     <div class="tpanel-title">
       <span class="tpanel-prefix">{{ security.prefix }}</span>
       <span class="tpanel-name">{{ security.name }}</span>
@@ -331,23 +359,23 @@
         </div>
       </div>
 
-      @if (remainingPositionQty > 0) {
+      @if (remainingPositionQty !== 0) {
         <div class="trade-summary" aria-live="polite" role="region" aria-label="Сводка по позиции">
           <div class="trade-summary-row">
-            <span class="trade-summary-label">Остаток по ценам покупок</span>
-            <span class="trade-summary-value">{{ remainingPositionCost | number: '1.0-2' }} ₽</span>
+            <span class="trade-summary-label">
+              {{ remainingPositionQty > 0 ? 'Остаток по ценам покупок' : 'Получено за продажу' }}
+            </span>
+            <span class="trade-summary-value">{{ remainingPositionBaseAmount | number: '1.0-2' }} ₽</span>
           </div>
           <div class="trade-summary-row">
             <span class="trade-summary-label">Разница</span>
-
-                    <span
+            <span
               class="trade-summary-diff"
               [class.diff-positive]="remainingPositionDiff >= 0"
               [class.diff-negative]="remainingPositionDiff < 0"
             >
               {{ remainingPositionDiff >= 0 ? '+' : '' }}{{ remainingPositionDiff | number: '1.0-2' }}
-              ₽
-              ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{ remainingPositionDiffPct | number: '1.0-1' }}%)
+              ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{ remainingPositionDiffPct | number: '1.0-1' }}%)
             </span>
           </div>
         </div>

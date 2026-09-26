@@ -253,6 +253,8 @@
 
             <th class="col-active" [style.width.px]="thWidth('col-active')">Актив.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-active')" (dblclick)="resetColumnWidth('col-active')"></span></th>
 
+            <th class="col-timeframe" title="Таймфрейм логики (из параметров торговли)" [style.width.px]="thWidth('col-timeframe')">Таймфрейм<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-timeframe')" (dblclick)="resetColumnWidth('col-timeframe')"></span></th>
+
             <th
               class="col-combat-pnl sortable-col"
               title="Сумма фин. результата боевых сделок — нажмите для сортировки"
@@ -429,6 +431,8 @@
               <td class="col-broker">{{ row.broker_code }}</td>
 
               <td class="col-active">{{ row.account_is_active ? 'да' : 'нет' }}</td>
+
+              <td class="col-timeframe">{{ row.timeframe }}</td>
 
               <td class="col-combat-pnl">
                 @if (hasCombatFinancialResult(row.id)) {

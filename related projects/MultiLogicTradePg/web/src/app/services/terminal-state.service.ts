@@ -35,12 +35,12 @@ export interface TerminalLogicSignalEvent {
   suggested_amount?: number | null;
 }
 
-/** Одна строка GET /api/terminal/logic-signals. */
+/** Одна строка GET /api/terminal/logic-signals.
+      Сигнал не привязан к счёту логики — счёт берётся из терминала. */
 export interface TerminalLogicSignal {
   id: number;
   logic_id: number;
   logic_name: string;
-  account_id: number | null;
   security_id: number;
   security_prefix: string | null;
   security_name: string;
@@ -256,14 +256,13 @@ export class TerminalStateService {
     );
   }
 
-  /** Непрочитанные сигналы логик в терминал (по счёту, новые по id). */
+  /** Непрочитанные сигналы логик в терминал (всех логик, новые по id).
+      Сигнал не привязан к счёту: бумага появляется в терминале, а сделки
+      идут по счёту, выбранному в терминале. */
   getLogicSignals(
-    accountId: number,
     limit = 200
   ): Observable<TerminalLogicSignalsResponse> {
-    const params = new HttpParams()
-      .set('account_id', String(accountId))
-      .set('limit', String(limit));
+    const params = new HttpParams().set('limit', String(limit));
     return this.http.get<TerminalLogicSignalsResponse>(
       `${this.appConfig.apiUrl}/terminal/logic-signals`,
       { params }

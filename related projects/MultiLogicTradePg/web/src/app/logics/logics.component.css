@@ -1058,11 +1058,18 @@ tbody tr.logic-main-row:hover {
   white-space: nowrap;
 }
 
+.col-timeframe {
+  width: 5.8rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
 /* When space is tight, hide secondary columns first — keep name, checkboxes, icons. */
 @media (max-width: 1180px) {
   .table-wrap > table .col-account-id,
   .table-wrap > table .col-active,
-  .table-wrap > table .col-broker {
+  .table-wrap > table .col-broker,
+  .table-wrap > table .col-timeframe {
     display: none;
   }
 
