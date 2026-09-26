@@ -46,6 +46,18 @@
         <span class="tpanel-kind">фьючерс</span>
       }
     </div>
+    <label
+      class="tpanel-auto-close"
+      title="Автозакрытие позиции этой бумаги: когда любая логика с включёнными сигналами подаст сигнал или закроет позицию по этой бумаге (в т.ч. сработает стоп-лосс любого вида), вся позиция полосы закроется автоматически, маркетом. Выключите, чтобы закрывать вручную кнопкой «Закрыть позицию»."
+    >
+      <input
+        type="checkbox"
+        class="tpanel-auto-close-check"
+        [checked]="autoCloseOnLogicSignal"
+        (change)="onAutoCloseChange($event)"
+      />
+      <span>автозакрытие по сигналу</span>
+    </label>
     @if (signalEvent) {
       <div class="tpanel-signal-trade" role="group" aria-label="Сделка по сигналу логики">
         <label

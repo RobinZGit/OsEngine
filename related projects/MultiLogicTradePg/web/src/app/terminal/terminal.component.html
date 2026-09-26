@@ -47,18 +47,6 @@
           }
         </select>
       </label>
-      <label
-        class="term-field term-field-check"
-        title="Закрывать позицию бумаги, когда любая логика с включёнными сигналами подала сигнал или закрыла позицию по этой бумаге (в т.ч. сработал стоп-лосс любого вида)."
-      >
-        <input
-          type="checkbox"
-          class="term-check"
-          [(ngModel)]="autoCloseOnLogicSignal"
-          (ngModelChange)="onAutoCloseToggle()"
-        />
-        <span>Закрывать по сигналу</span>
-      </label>
       <button
         type="button"
         class="term-add-btn"
@@ -294,9 +282,11 @@
           [trades]="trades"
           [closeAllPulse]="closeAllPulse"
           [closeSignalPulse]="closeSignalPulse"
+          [autoCloseOnLogicSignal]="panel.auto_close_on_logic_signal"
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
           (collapsedChange)="onPanelCollapsedChange($event, panel.uid)"
+          (autoCloseChange)="onPanelAutoCloseChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
           (dataReady)="onPanelDataReady(panel.uid)"
           (positionSummary)="onPanelPositionSummary(panel.uid, $event)"

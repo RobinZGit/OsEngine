@@ -81,6 +81,33 @@
   flex-shrink: 0;
 }
 
+/* Чекбокс «Автозакрытие по сигналу» на баре полосы (всегда виден). */
+.tpanel-auto-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  padding: 0.1rem 0.3rem;
+  border-radius: 5px;
+}
+
+.tpanel-auto-close:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.tpanel-auto-close-check {
+  width: 14px;
+  height: 14px;
+  accent-color: #1d4ed8;
+  cursor: pointer;
+}
+
 /* Бейдж сигнала логики в шапке полосы: покупка — зелёный, продажа — красный. */
 .tpanel-signal-badge {
   font-size: 0.66rem;

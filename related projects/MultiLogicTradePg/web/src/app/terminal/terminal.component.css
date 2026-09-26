@@ -75,19 +75,6 @@
   background: #fff;
 }
 
-/* Чекбокс «Закрывать по сигналу» в шапке терминала. */
-.term-field-check {
-  cursor: pointer;
-  user-select: none;
-}
-
-.term-field-check .term-check {
-  width: 15px;
-  height: 15px;
-  accent-color: #1d4ed8;
-  cursor: pointer;
-}
-
 .term-field-num input {
   width: 90px;
   padding: 0.3rem 0.45rem;

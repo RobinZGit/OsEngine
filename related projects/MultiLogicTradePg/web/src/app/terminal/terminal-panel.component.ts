@@ -108,6 +108,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** Адресный импульс «Закрыть по сигналу логики»: закрывает позицию только
       полосы с этой бумагой (терминал получил сигнал/стоп логики по бумаге). */
   @Input() closeSignalPulse: { security_id: number; pulse: number } | null = null;
+  /** Автозакрытие позиции бумаги по сигналу/закрытию логики (чекбокс на баре,
+      включён по умолчанию): сигнал или закрытие любий логики с сигналами по
+      этой бумаге закрывает всю позицию полосы маркетом. */
+  @Input() autoCloseOnLogicSignal = true;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -120,6 +124,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Output() dataReady = new EventEmitter<void>();
   /** Пользователь свернул/развернул полосу (сохраняем в состоянии терминала). */
   @Output() collapsedChange = new EventEmitter<boolean>();
+  /** Изменение чекбокса «Автозакрытие по сигналу» (сохраняем в состоянии полосы). */
+  @Output() autoCloseChange = new EventEmitter<boolean>();
   /** Сводка позиции: остаток и рыночная стоимость — для суммы по счёту
       (обновляется с каждой новой свечой — меняется текущая цена). */
   @Output() positionSummary = new EventEmitter<PanelPositionSummary>();
@@ -1515,6 +1521,13 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   toggleCollapsed(): void {
     this.collapsed = !this.collapsed;
     this.collapsedChange.emit(this.collapsed);
+  }
+
+  /** Чекбокс «Автозакрытие по сигналу» на баре полосы — терминал сохраняет. */
+  onAutoCloseChange(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.autoCloseOnLogicSignal = checked;
+    this.autoCloseChange.emit(checked);
   }
 
   /** Подстановка количества/суммы из сигнала (расчёт лота логики) в блок сделок,

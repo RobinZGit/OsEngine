@@ -1288,4 +1288,34 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
     expect(head.nativeElement.getAttribute('title')).toBe('');
   });
+
+  it('чекбокс «автозакрытие по сигналу» на баре полосы: включён по умолчанию и виден и без сигнала', () => {
+    const box = fixture.debugElement.query(By.css('.tpanel-auto-close-check'));
+    expect(box).not.toBeNull();
+    expect(box.nativeElement.checked).toBe(true);
+    expect(component.autoCloseOnLogicSignal).toBe(true);
+  });
+
+  it('выключенный чекбокс «автозакрытие по сигналу» рисуется снятым', () => {
+    fixture.componentRef.setInput('autoCloseOnLogicSignal', false);
+    fixture.detectChanges();
+    const box = fixture.debugElement.query(By.css('.tpanel-auto-close-check'));
+    expect(box).not.toBeNull();
+    expect(box.nativeElement.checked).toBe(false);
+  });
+
+  it('переключение чекбокса «автозакрытие по сигналу» сообщает терминалу новое значение', () => {
+    const seen: { value: boolean | undefined } = { value: undefined };
+    component.autoCloseChange.subscribe((v) => (seen.value = v));
+    const box = fixture.debugElement.query(By.css('.tpanel-auto-close-check'));
+    box.nativeElement.checked = false;
+    box.triggerEventHandler('change', { target: box.nativeElement });
+    expect(seen.value).toBe(false);
+    expect(component.autoCloseOnLogicSignal).toBe(false);
+
+    box.nativeElement.checked = true;
+    box.triggerEventHandler('change', { target: box.nativeElement });
+    expect(seen.value).toBe(true);
+    expect(component.autoCloseOnLogicSignal).toBe(true);
+  });
 });

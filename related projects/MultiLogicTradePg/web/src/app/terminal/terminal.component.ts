@@ -37,6 +37,9 @@ interface PanelModel {
   logic_indicator_ids: number[];
   /** Полоса свёрнута (видна только шапка). Новые добавляются свёрнутыми. */
   collapsed: boolean;
+  /** Автозакрытие позиции бумаги по сигналу/закрытию логики (чекбокс на баре
+      полосы, включён по умолчанию). Закрывается вся позиция бумаги, маркетом. */
+  auto_close_on_logic_signal: boolean;
 }
 
 const DEFAULT_CHART_HEIGHT = 340;
@@ -118,8 +121,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
   closeAllPulse = 0;
   /** Адресный импульс «Закрыть по сигналу логики»: закрытие позиции конкретной бумаги. */
   closeSignalPulse: { security_id: number; pulse: number } | null = null;
-  /** Автозакрытие позиции бумаги по сигналу/закрытию логики (чекбокс в шапке). */
-  autoCloseOnLogicSignal = true;
 
   /** Счёт, к которому относятся текущие panels (для сохранения при переключении). */
   private activeAccountId: number | null = null;
@@ -389,6 +390,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         : this.commonTimeframeId;
       const ids = (s.indicator_ids ?? []).filter((v) => Number.isInteger(v));
       const existing = this.panels.find((p) => p.security.id === s.security_id);
+      let target: PanelModel;
       if (existing) {
         // Таймфрейм подгоняем под логику — её индикаторы рассчитаны на нём.
         existing.timeframe_id = tf;
@@ -398,6 +400,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
             ...new Set([...existing.logic_indicator_ids, ...ids]),
           ];
         }
+        target = existing;
       } else {
         const panel = this.buildPanel(
           s.security_id,
@@ -410,11 +413,13 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.panels = [...this.panels, panel];
         this.panelsStamp++;
         newPanels.push(panel.uid);
+        target = panel;
       }
-      // Чекбокс «Закрывать по сигналу»: у бумаги есть позиция — закрываем её
-      // (сигнал/закрытие/стоп-лосс любой логики с сигналами по этой бумаге).
+      // Чекбокс «Автозакрытие по сигналу» у полосы: у бумаги есть позиция —
+      // закрываем её (сигнал/закрытие/стоп-лосс любой логики с сигналами).
+      // У полос, только что созданных сигналом, автозакрытие включено по умолчанию.
       if (
-        this.autoCloseOnLogicSignal &&
+        target.auto_close_on_logic_signal &&
         this.securityRemainderQty(s.security_id) !== 0
       ) {
         this.closeSignalPulse = {
@@ -558,10 +563,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
           null;
         this.commonTimeframeId = tf ?? defTf;
         this.settings = { ...settings };
-        this.autoCloseOnLogicSignal = this.safeBoolean(
-          settings['auto_close_on_logic_signal'],
-          true
-        );
         if (this.panelsStamp !== stamp) return;
         // Набор полос меняется — uid'ы новые; старые сводки стираем, чтобы
         // сумма по счёту не включала устаревшие позиции до нового emit.
@@ -577,7 +578,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
               // Восстановленные полосы всегда свёрнуты: при перезаходе в
               // терминал бумаги открываются закрытыми, независимо от того,
               // как пользователь оставил их в прошлый раз.
-              true
+              true,
+              st.auto_close_on_logic_signal
             )
           )
           .filter((p): p is PanelModel => p != null);
@@ -589,18 +591,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   private safeQty(v: unknown, fallback: number): number {
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback;
-  }
-
-  /** Логическое значение из настроек терминала: true/1/'1'/'true' → true. */
-  private safeBoolean(v: unknown, fallback: boolean): boolean {
-    if (v === undefined || v === null) return fallback;
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'number') return v === 1;
-    if (typeof v === 'string') {
-      const s = v.trim().toLowerCase();
-      return s === '1' || s === 'true' || s === 'on';
-    }
-    return fallback;
   }
 
   /** Остаток позиции бумаги на выбранном счёте (filled BUY − SELL); 0 — без позиции. */
@@ -632,7 +622,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
     chartHeight?: number | null,
     signalEvent?: TerminalLogicSignalEvent | null,
     logicIndicatorIds?: number[] | null,
-    collapsed = true
+    collapsed = true,
+    autoCloseOnLogicSignal = true
   ): PanelModel | null {
     const sec = this.byId.get(securityId);
     if (!sec) return null;
@@ -666,6 +657,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
       signal_event: signalEvent ?? null,
       logic_indicator_ids: ids,
       collapsed,
+      auto_close_on_logic_signal: autoCloseOnLogicSignal,
     };
   }
 
@@ -955,12 +947,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.scheduleSave();
   }
 
-  /** Чекбокс «Закрывать по сигналу» — сохраняем в настройках терминала. */
-  onAutoCloseToggle(): void {
-    this.settings = {
-      ...this.settings,
-      auto_close_on_logic_signal: this.autoCloseOnLogicSignal,
-    };
+  /** Чекбокс «Автозакрытие по сигналу» у полосы — запоминаем в состоянии полосы. */
+  onPanelAutoCloseChange(autoClose: boolean, uid: number): void {
+    const panel = this.panels.find((p) => p.uid === uid);
+    if (!panel) return;
+    panel.auto_close_on_logic_signal = autoClose;
     this.scheduleSave();
   }
 
@@ -993,6 +984,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
           ? p.logic_indicator_ids
           : undefined,
         collapsed: p.collapsed,
+        auto_close_on_logic_signal: p.auto_close_on_logic_signal,
       })),
       settings: this.settings,
     };
