@@ -17,27 +17,126 @@
       role="region"
       aria-label="Позиция по бумаге и закрытие"
     >
-      <button
-        type="button"
-        class="tpanel-close-pos"
-        [disabled]="tradingBusy || priceMissing || remainingPositionQty === 0"
-        title="Закрыть всю позицию по бумаге: продать остаток (при покупках) или выкупить весь объём (при продажах), чтобы количество стало нулевым"
-        (click)="closePosition()"
-      >{{ tradingBusy ? 'Закрываем…' : 'Закрыть позицию' }}</button>
+      @if (canClosePosition) {
+        <button
+          type="button"
+          class="tpanel-close-pos"
+          [disabled]="tradingBusy || priceMissing"
+          title="Закрыть всю позицию по бумаге: продать остаток (при покупках) или выкупить весь объём (при продажах), чтобы количество стало нулевым"
+          (click)="closePosition()"
+        >{{ tradingBusy ? 'Закрываем…' : 'Закрыть позицию' }}</button>
+      }
       <span class="tpanel-pos-summary">
+        @if (remainingPositionQty !== 0) {
+          <span
+            class="tpanel-pos-price"
+            [class.tpanel-pos-price-live]="hasLivePrice"
+            [title]="
+              hasLivePrice
+                ? 'Живая цена — последняя сделка T-Bank, обновляется раз в 30 секунд. Разница считается от средней цены вашего входа'
+                : 'Цена последней закрытой свечи графика. Живая цена недоступна — терминал ждёт её от T-Bank'
+            "
+          >
+            <span class="tpanel-pos-price-label">Цена</span>
+            <span class="tpanel-pos-price-value">{{positionPrice | number: '1.0-2' : 'ru' }} ₽</span>
+            <span
+              class="tpanel-pos-price-diff"
+              [class.diff-positive]="positionPriceDiffRub >= 0"
+              [class.diff-negative]="positionPriceDiffRub < 0"
+            >
+              {{ positionPriceDiffRub >= 0 ? '+' : '' }}{{positionPriceDiffRub | number: '1.0-2' : 'ru' }}
+              ₽ ({{ positionPriceDiffRub >= 0 ? '+' : '' }}{{positionPriceDiffPct | number: '1.0-2' : 'ru' }}%)
+            </span>
+          </span>
+        }
         <span class="tpanel-pos-label">
           {{ remainingPositionQty > 0 ? 'Остаток' : (remainingPositionQty < 0 ? 'Получено' : 'Позиция') }}
         </span>
-        <span class="tpanel-pos-value">{{ remainingPositionBaseAmount | number: '1.0-2' }} ₽</span>
+        <span class="tpanel-pos-value">{{remainingPositionBaseAmount | number: '1.0-2' : 'ru' }} ₽</span>
         <span
           class="tpanel-pos-diff"
           [class.diff-positive]="remainingPositionDiff >= 0"
           [class.diff-negative]="remainingPositionDiff < 0"
         >
-          {{ remainingPositionDiff >= 0 ? '+' : '' }}{{ remainingPositionDiff | number: '1.0-2' }}
-          ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{ remainingPositionDiffPct | number: '1.0-1' }}%)
+          {{ remainingPositionDiff >= 0 ? '+' : '' }}{{remainingPositionDiff | number: '1.0-2' : 'ru' }}
+          ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{remainingPositionDiffPct | number: '1.0-1' : 'ru' }}%)
         </span>
       </span>
+    </div>
+    <div
+      class="tpanel-head-trade"
+      role="group"
+      aria-label="Сумма сделки и покупка/продажа по сигналу логики"
+    >
+      <div class="trade-qty-item">
+        <span
+          class="trade-qty-label"
+          [title]="'Сумма сделки в рублях, количество = сумма ÷ ' + (currentPrice | number: '1.0-2' : 'ru') + ' ₽'"
+        >Сумма</span>
+        <input
+          type="number"
+          class="trade-qty trade-sum"
+          min="0"
+          step="100"
+          [ngModel]="tradeAmount"
+          (ngModelChange)="onAmountEdit($event)"
+          [disabled]="tradingBusy"
+          aria-label="Сумма сделки в рублях"
+        />
+      </div>
+
+      <input
+        type="range"
+        class="trade-slider"
+        min="0"
+        [max]="effectiveMaxSum"
+        step="100"
+        [ngModel]="tradeAmount"
+        (ngModelChange)="onTradeAmountChange($event)"
+        [disabled]="tradingBusy"
+        aria-label="Сумма сделки"
+      />
+
+      <button
+        type="button"
+        class="tpanel-signal-btn"
+        [class.short]="signalSide === 'sell'"
+        [disabled]="tradingBusy || priceMissing || accountId == null"
+        [title]="signalBtnTitle"
+        (click)="placeTrade(signalSide)"
+      >{{ signalSide === 'sell' ? 'Продать' : 'Купить' }}@if (signalQuantity > 0) { {{ signalQuantity }} }</button>
+
+      @if (signalSide === 'sell') {
+        <label
+          class="trade-remainder-check"
+          title="Продажа всего остатка — вся позиция по этой бумаге на счёте"
+        >
+          <input
+            type="checkbox"
+            class="trade-remainder-input"
+            [(ngModel)]="tradeAllQtySell"
+            (ngModelChange)="onTradeAllQtySellChange()"
+            [disabled]="tradingBusy || priceMissing"
+            aria-label="Весь остаток"
+          />
+          <span class="trade-remainder-text">весь остаток</span>
+        </label>
+      } @else {
+        <label
+          class="trade-remainder-check"
+          title="Покупка на всю сумму — весь остаток средств счёта"
+        >
+          <input
+            type="checkbox"
+            class="trade-remainder-input"
+            [(ngModel)]="tradeAllSumBuy"
+            (ngModelChange)="onTradeAllSumBuyChange()"
+            [disabled]="tradingBusy || priceMissing"
+            aria-label="На всю сумму"
+          />
+          <span class="trade-remainder-text">на всю сумму</span>
+        </label>
+      }
     </div>
     <div class="tpanel-title">
       <span class="tpanel-prefix">{{ security.prefix }}</span>
@@ -58,46 +157,6 @@
       />
       <span>автозакрытие по сигналу</span>
     </label>
-    @if (signalEvent) {
-      <div class="tpanel-signal-trade" role="group" aria-label="Сделка по сигналу логики">
-        <label
-          class="tpanel-signal-field"
-          title="Сумма сделки по сигналу: количество = сумма ÷ текущая цена (как в блоке «Сделки»)"
-        >
-          <span class="tpanel-signal-name">по сигналу</span>
-          <input
-            type="number"
-            class="tpanel-signal-input"
-            min="0"
-            step="100"
-            [ngModel]="tradeAmount"
-            (ngModelChange)="onSignalAmountEdit($event)"
-            [disabled]="tradingBusy || priceMissing"
-            aria-label="Сумма сделки по сигналу"
-          />
-          <span class="tpanel-signal-cur">₽</span>
-        </label>
-        <input
-          type="range"
-          class="tpanel-signal-slider"
-          min="0"
-          [max]="effectiveMaxSum"
-          step="100"
-          [ngModel]="tradeAmount"
-          (ngModelChange)="onTradeAmountChange($event)"
-          [disabled]="tradingBusy || priceMissing"
-          aria-label="Сумма сделки по сигналу (ползунок)"
-        />
-        <button
-          type="button"
-          class="tpanel-signal-btn"
-          [class.short]="signalSide === 'sell'"
-          [disabled]="tradingBusy || priceMissing || accountId == null"
-          [title]="signalBtnTitle"
-          (click)="placeTrade(signalSide)"
-        >{{ signalSide === 'sell' ? 'Продать' : 'Купить' }}@if (signalQuantity > 0) { {{ signalQuantity }} }</button>
-      </div>
-    }
     <label class="tpanel-field">
       <span>Таймфрейм</span>
       <select
@@ -298,45 +357,6 @@
         </span>
       </div>
 
-      <input
-        type="range"
-        class="trade-slider"
-        min="0"
-        [max]="effectiveMaxSum"
-        step="100"
-        [ngModel]="tradeAmount"
-        (ngModelChange)="onTradeAmountChange($event)"
-        [disabled]="tradingBusy"
-        aria-label="Сумма сделки"
-      />
-
-      <div class="trade-qty-row">
-        <div class="trade-qty-item">
-          <span class="trade-qty-label">Количество</span>
-          <input
-            type="number"
-            class="trade-qty"
-            [ngModel]="tradeQuantity"
-            readonly
-            aria-readonly="true"
-            aria-label="Количество"
-          />
-        </div>
-        <div class="trade-qty-item">
-          <span class="trade-qty-label" title="Сумма сделки (без комиссии): количество × цена">
-            Сумма (без комиссии)
-          </span>
-          <input
-            type="number"
-            class="trade-qty"
-            [ngModel]="tradeSum"
-            readonly
-            aria-readonly="true"
-            aria-label="Сумма сделки (без комиссии)"
-          />
-        </div>
-      </div>
-
       <div class="trade-switch" role="group" aria-label="Тип заявки">
         <span class="trade-switch-label" [class.active]="tradeType === 'market'">Маркет</span>
         <button
@@ -360,60 +380,35 @@
         </div>
       }
 
-      <div class="trade-buttons">
-        <div class="trade-btn-col">
-          <button
-            type="button"
-            class="trade-buy"
-            [disabled]="tradingBusy || priceMissing"
-            (click)="placeTrade('buy')"
-          >Купить</button>
-          <label
-            class="trade-remainder-check"
-            title="Покупка на всю сумму — весь остаток средств счёта"
-          >
-            <input
-              type="checkbox"
-              class="trade-remainder-input"
-              [(ngModel)]="tradeAllSumBuy"
-              (ngModelChange)="onTradeAllSumBuyChange()"
-              [disabled]="tradingBusy || priceMissing"
-              aria-label="На всю сумму"
-            />
-            <span class="trade-remainder-text">на всю сумму</span>
-          </label>
-        </div>
-        <div class="trade-btn-col">
-          <button
-            type="button"
-            class="trade-sell"
-            [disabled]="tradingBusy || priceMissing"
-            (click)="placeTrade('sell')"
-          >Продать</button>
-          <label
-            class="trade-remainder-check"
-            title="Продажа всего остатка — вся позиция по этой бумаге на счёте"
-          >
-            <input
-              type="checkbox"
-              class="trade-remainder-input"
-              [(ngModel)]="tradeAllQtySell"
-              (ngModelChange)="onTradeAllQtySellChange()"
-              [disabled]="tradingBusy || priceMissing"
-              aria-label="Весь остаток"
-            />
-            <span class="trade-remainder-text">весь остаток</span>
-          </label>
-        </div>
-      </div>
-
       @if (remainingPositionQty !== 0) {
         <div class="trade-summary" aria-live="polite" role="region" aria-label="Сводка по позиции">
+          <div class="trade-summary-row">
+            <span
+              class="trade-summary-label"
+              [class.trade-summary-label-live]="hasLivePrice"
+              [title]="
+                hasLivePrice
+                  ? 'Живая цена — последняя сделка T-Bank, обновляется раз в 30 секунд по бумагам с открытой позицией'
+                  : 'Цена последней закрытой свечи графика (живая цена пока недоступна)'
+              "
+            >
+              Цена@if (hasLivePrice) { <span class="trade-summary-live-mark" title="обновляется раз в 30 с">• live</span> }
+            </span>
+            <span class="trade-summary-value">{{positionPrice | number: '1.0-2' : 'ru' }} ₽</span>
+          </div>
+          <div class="trade-summary-row">
+            <span class="trade-summary-label">Средняя цена входа</span>
+            <span class="trade-summary-value">{{remainingPositionAvgPrice | number: '1.0-2' : 'ru' }} ₽</span>
+          </div>
           <div class="trade-summary-row">
             <span class="trade-summary-label">
               {{ remainingPositionQty > 0 ? 'Остаток по ценам покупок' : 'Получено за продажу' }}
             </span>
-            <span class="trade-summary-value">{{ remainingPositionBaseAmount | number: '1.0-2' }} ₽</span>
+            <span class="trade-summary-value">{{remainingPositionBaseAmount | number: '1.0-2' : 'ru' }} ₽</span>
+          </div>
+          <div class="trade-summary-row">
+            <span class="trade-summary-label">Рыночная стоимость остатка</span>
+            <span class="trade-summary-value">{{remainingPositionMarketValue | number: '1.0-2' : 'ru' }} ₽</span>
           </div>
           <div class="trade-summary-row">
             <span class="trade-summary-label">Разница</span>
@@ -422,8 +417,8 @@
               [class.diff-positive]="remainingPositionDiff >= 0"
               [class.diff-negative]="remainingPositionDiff < 0"
             >
-              {{ remainingPositionDiff >= 0 ? '+' : '' }}{{ remainingPositionDiff | number: '1.0-2' }}
-              ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{ remainingPositionDiffPct | number: '1.0-1' }}%)
+              {{ remainingPositionDiff >= 0 ? '+' : '' }}{{remainingPositionDiff | number: '1.0-2' : 'ru' }}
+              ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{remainingPositionDiffPct | number: '1.0-1' : 'ru' }}%)
             </span>
           </div>
         </div>

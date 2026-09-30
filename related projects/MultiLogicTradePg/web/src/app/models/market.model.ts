@@ -85,6 +85,25 @@ export interface PriceRefreshResult {
   closed_bar_dt?: string;
 }
 
+/** Живая цена одной бумаги (#922): `tbank` — последняя сделка,
+    `candle` — фолбэк на последнюю закрытую свечу. Единицы как у candles. */
+export interface LastPriceQuote {
+  security_id: number;
+  price: number;
+  time: string | null;
+  source: 'tbank' | 'candle' | string;
+}
+
+/** Ответ пакетного запроса живых цен (`GET /api/prices/last`). */
+export interface LastPricesResult {
+  ok: boolean;
+  throttled?: boolean;
+  source: string | null;
+  error?: string | null;
+  prices: LastPriceQuote[];
+  ts?: string;
+}
+
 export interface PriceLoadUiState {
   active: boolean;
   message: string | null;

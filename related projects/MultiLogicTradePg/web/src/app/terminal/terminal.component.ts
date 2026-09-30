@@ -130,6 +130,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   /** Опрос сигналов логик в терминал (каждые 15 с, только активный счёт). */
   private signalsTimer?: ReturnType<typeof setInterval>;
+  /** #922: опрос живых цен по бумагам с открытыми позициями (раз в 30 с). */
+  private lastPricesTimer?: ReturnType<typeof setInterval>;
+  private lastPricesBusy = false;
+  private destroyed = false;
+  /** Живые цены бумаг с позициями: security_id → цена последней сделки. */
+  private livePriceBySecurity = new Map<number, number>();
+  /** Время последнего успешного опроса живых цен (для подписи в шапке). */
+  livePricesUpdatedAt: Date | null = null;
   /** Последнее уведомление о сигнале — полоса сверху страницы терминала. */
   signalsToast: string | null = null;
   private signalsToastTimer?: ReturnType<typeof setTimeout>;
@@ -171,7 +179,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     if (this.signalsTimer) clearInterval(this.signalsTimer);
+    if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
     if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
   }
 
@@ -180,6 +190,72 @@ export class TerminalComponent implements OnInit, OnDestroy {
     if (this.signalsTimer) clearInterval(this.signalsTimer);
     this.pollLogicSignals();
     this.signalsTimer = setInterval(() => this.pollLogicSignals(), 15_000);
+  }
+
+  /** #922: бумаги, по которым на выбранном счёте есть открытая позиция
+      (filled-покупки минус filled-продажи ≠ 0). Именно их цены нужно
+      сканировать чаще — по ним считается разница и принимается решение
+      о закрытии. */
+  get positionSecurityIds(): number[] {
+    const bySec = new Map<number, number>();
+    for (const t of this.trades ?? []) {
+      const id = Number(t.security_id);
+      const q = Number(t.quantity);
+      if (!Number.isInteger(id) || id <= 0 || t.status !== 'filled') continue;
+      if (!Number.isFinite(q) || q <= 0) continue;
+      bySec.set(id, (bySec.get(id) ?? 0) + (t.direction === 'BUY' ? q : -q));
+    }
+    return [...bySec.entries()].filter(([, qty]) => qty !== 0).map(([id]) => id);
+  }
+
+  /** Живая цена бумаги для полосы (null — терминал её не получил). */
+  livePriceFor(securityId: number): number | null {
+    const v = this.livePriceBySecurity.get(Number(securityId));
+    return typeof v === 'number' && v > 0 ? v : null;
+  }
+
+  /** Цикл живых цен: раз в 30 с и только по бумагам с открытыми позициями.
+      Без позиций запросов нет вовсе — пустой терминал не дёргает брокера. */
+  private startLastPricesPolling(): void {
+    if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
+    this.pollLastPrices();
+    this.lastPricesTimer = setInterval(() => this.pollLastPrices(), 30_000);
+  }
+
+  private pollLastPrices(): void {
+    if (this.destroyed || this.lastPricesBusy) return;
+    const ids = this.positionSecurityIds;
+    if (ids.length === 0) {
+      // Позиций нет — живые цены больше не нужны, карту чистим.
+      if (this.livePriceBySecurity.size > 0) {
+        this.livePriceBySecurity = new Map();
+        this.livePricesUpdatedAt = null;
+      }
+      return;
+    }
+    this.lastPricesBusy = true;
+    this.securitiesSvc.getLastPrices(ids).subscribe({
+      next: (r) => {
+        this.lastPricesBusy = false;
+        if (this.destroyed) return;
+        const quotes = r?.prices ?? [];
+        if (r?.throttled || quotes.length === 0) return;
+        const next = new Map<number, number>();
+        for (const q of quotes) {
+          const id = Number(q?.security_id);
+          const p = Number(q?.price);
+          if (Number.isInteger(id) && id > 0 && Number.isFinite(p) && p > 0) {
+            next.set(id, p);
+          }
+        }
+        if (next.size === 0) return;
+        this.livePriceBySecurity = next;
+        this.livePricesUpdatedAt = new Date();
+      },
+      error: () => {
+        this.lastPricesBusy = false;
+      },
+    });
   }
 
   /** Выбор счёта при старте: по умолчанию — фейковый (демо), если такой есть.
@@ -281,6 +357,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
         // иначе первая партия сигналов молча отбрасывается (`byId.has` — false)
         // и «по сигналу появляется не одна бумага, а меньше положенного».
         this.startSignalsPolling();
+        // #922: живые цены по бумагам с позициями (цикл 30 с).
+        this.startLastPricesPolling();
       },
       error: () => {
         this.futures = [];
@@ -321,6 +399,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.tradesLoading = false;
         this.trades = r?.trades ?? [];
         this.applyPanelOrder();
+        // #923: после обновления сделок сразу чистим полосы без позиции,
+        // у которых истёк срок таймфрейма последнего сигнала.
+        this.removeFlatPanelsAfterSignalTimeout();
+        // #922: сменился счёт/позиции — сразу освежаем живые цены по ним.
+        this.pollLastPrices();
       },
       error: (err) => {
         this.tradesLoading = false;
@@ -346,7 +429,12 @@ export class TerminalComponent implements OnInit, OnDestroy {
       который выбран в терминале. */
   private pollLogicSignals(): void {
     this.stateSvc.getLogicSignals().subscribe({
-      next: (r) => this.applyLogicSignals(r?.signals ?? []),
+      next: (r) => {
+        this.applyLogicSignals(r?.signals ?? []);
+        // #923: каждый опрос проверяем полосы без позиции — убрать те,
+        // у которых с последнего сигнала прошло больше, чем её таймфрейм.
+        this.removeFlatPanelsAfterSignalTimeout();
+      },
       error: () => undefined,
     });
   }
@@ -757,6 +845,56 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.panelsStamp++;
     if (this.addingSecUid === uid) this.releaseAddingSec();
     this.scheduleSave();
+  }
+
+  /** Длительность таймфрейма сигнала в секундах: по id (TimeframeRow.sec),
+      иначе по коду (M1, M15, H1, D1, W1, MN). Неизвестный — null. */
+  private signalFrameSeconds(ev: TerminalLogicSignalEvent): number | null {
+    if (ev.timeframe_id != null) {
+      const tf = this.timeframes.find((t) => t.id === ev.timeframe_id);
+      if (tf && Number.isFinite(tf.sec) && tf.sec > 0) return tf.sec;
+    }
+    const code = String(ev.timeframe ?? '').toUpperCase();
+    const CODE_SEC_MS: Record<string, number> = {
+      M1: 60,
+      M3: 180,
+      M5: 300,
+      M10: 600,
+      M15: 900,
+      M30: 1800,
+      H1: 3600,
+      H2: 7200,
+      H4: 14400,
+      D1: 86400,
+      W1: 604800,
+      MN: 2592000,
+    };
+    return CODE_SEC_MS[code] ?? null;
+  }
+
+  /** #923: полоса без позиции (нулевой остаток) живёт в списке не дольше
+      таймфрейма последнего сигнала по этой бумаге: M1 — 1 минута, M15 —
+      15 минут и т.п. Как только с бара сигнала прошло больше таймфрейма,
+      а остаток так и нулевой — полоса удаляется из списка. Полосы, добавленные
+      без сигнала (выбором вручную), не трогаем; с открытой позицией — тоже. */
+  private removeFlatPanelsAfterSignalTimeout(): void {
+    if (!this.panels.length) return;
+    const now = Date.now();
+    const stale: number[] = [];
+    for (const p of this.panels) {
+      const ev = p.signal_event;
+      if (!ev) continue; // полоса добавлена без сигнала — не трогаем
+      if (this.securityRemainderQty(p.security.id) !== 0) continue;
+      const frameSec = this.signalFrameSeconds(ev);
+      if (frameSec == null || frameSec <= 0) continue;
+      const barMs = ev.bar_dt ? new Date(ev.bar_dt).getTime() : Number.NaN;
+      if (!Number.isFinite(barMs)) continue;
+      // Срок выдержки не истёк — бумага ещё может «ожить» по этому сигналу.
+      if (now - barMs < frameSec * 1000) continue;
+      stale.push(p.uid);
+    }
+    if (!stale.length) return;
+    for (const uid of stale) this.removePanel(uid);
   }
 
   /** Состав выбранного фонда облигаций (для селекта выпусков). */

@@ -1,6 +1,8 @@
 /**
  * Timeframes, securities, prices.
  */
+const { tbankHttpPost, DEFAULT_API: TBANK_DEFAULT_API } = require('../lib/tbank-invest-client');
+
 module.exports = function registerMarketRoutes(app, ctx) {
   const {
     pool,
@@ -437,6 +439,129 @@ app.post('/api/prices/load', async (req, res) => {
     } catch (err) {
       console.error('POST /api/prices/refresh', err.message || err);
       res.status(502).json({ error: err.message });
+    }
+  });
+
+  // #922: живые цены (последняя сделка) пачкой по бумагам с открытыми позициями.
+  // График живёт на закрытых свечах (POST /prices/refresh), поэтому между закрытиями
+  // бара цена на полосе устаревает на весь TF. Для оперативного закрытия позиции
+  // терминал раз в 30 с спрашивает здесь последнюю цену сделки T-Bank
+  // (MarketDataService/GetLastPrices — один запрос на все бумаги) и пересчитывает
+  // остаток/разницу. Единицы совпадают с candles того же T-Bank, без пересчёта.
+  // Без токена/при ошибке T-Bank отдаём последнюю закрытую свечу из БД (source='candle').
+  const lastPricesAt = new Map();
+  const LAST_PRICES_MIN_GAP_MS = 15_000;
+  const LAST_PRICES_MAX_IDS = 50;
+  app.get('/api/prices/last', async (req, res) => {
+    const raw = String(req.query.security_ids ?? '').trim();
+    const securityIds = [
+      ...new Set(
+        raw
+          .split(',')
+          .map((x) => parseId(x))
+          .filter((x) => x > 0)
+      ),
+    ].slice(0, LAST_PRICES_MAX_IDS);
+    if (securityIds.length === 0) {
+      res.status(400).json({ error: 'Укажите security_ids (список id через запятую)' });
+      return;
+    }
+    const key = securityIds.join(',');
+    const now = Date.now();
+    if (now - (lastPricesAt.get(key) ?? 0) < LAST_PRICES_MIN_GAP_MS) {
+      res.json({ ok: true, throttled: true, source: null, prices: [] });
+      return;
+    }
+    lastPricesAt.set(key, now);
+    try {
+      const { rows: prefixRows } = await pool.query(
+        `SELECT sp.security_id, NULLIF(btrim(COALESCE(sp.tbank_figi, '')), '') AS figi
+         FROM security_prefixes sp
+         WHERE sp.security_id = ANY($1::int[])`,
+        [securityIds]
+      );
+      const figis = [
+        ...new Set(prefixRows.map((r) => r.figi).filter((f) => f && String(f) !== '0'))
+      ];
+      let source = null;
+      let error = null;
+      const byFigi = new Map();
+      if (figis.length > 0) {
+        const token = (await pool.query('SELECT get_tbank_token() AS t')).rows[0]?.t;
+        if (token) {
+          const { rows: brokerRows } = await pool.query(
+            `SELECT NULLIF(btrim(COALESCE(api_url, '')), '') AS u
+             FROM brokers WHERE code = 'T-BANK' LIMIT 1`
+          );
+          const apiUrl = brokerRows[0]?.u || TBANK_DEFAULT_API;
+          try {
+            const data = await tbankHttpPost(
+              apiUrl,
+              'tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+              token,
+              { figi: figis }
+            );
+            for (const q of Array.isArray(data?.lastPrices) ? data.lastPrices : []) {
+              const figi = String(q?.figi || q?.instrumentUid || '').trim();
+              const units = Number(q?.price?.units ?? 0);
+              const nano = Number(q?.price?.nano ?? 0);
+              const price = units + nano / 1e9;
+              if (!figi || !(price > 0)) continue;
+              byFigi.set(figi, { price, time: q.time ?? null });
+            }
+            if (byFigi.size > 0) source = 'tbank';
+            else error = 'T-Bank вернул пустой ответ';
+          } catch (err) {
+            error = err?.message || String(err);
+          }
+        } else {
+          error = 'Не задан T-Bank API-токен';
+        }
+      } else {
+        error = 'У бумаг нет FIGI T-Bank';
+      }
+      // Фолбэк на последнюю закрытую свечу — полоса остаётся с ценой, даже если
+      // T-Bank недоступен (вход в терминал не должен ломаться).
+      const { rows: candleRows } = await pool.query(
+        `SELECT DISTINCT ON (p.security_id)
+           p.security_id, p.close_price, p.dt
+         FROM prices p
+         WHERE p.security_id = ANY($1::int[])
+         ORDER BY p.security_id, p.dt DESC`,
+        [securityIds]
+      );
+      const candleBySec = new Map(candleRows.map((r) => [Number(r.security_id), r]));
+      const prices = [];
+      for (const id of securityIds) {
+        const quotes = prefixRows
+          .filter((r) => Number(r.security_id) === id && r.figi)
+          .map((r) => byFigi.get(r.figi))
+          .filter((q) => q && q.price > 0);
+        if (quotes.length > 0) {
+          // Несколько FIGI у бумаги (спот/контракт) — берём максимально свежий.
+          quotes.sort((a, b) => String(b.time ?? '').localeCompare(String(a.time ?? '')));
+          prices.push({
+            security_id: id,
+            price: quotes[0].price,
+            time: quotes[0].time,
+            source: 'tbank',
+          });
+          continue;
+        }
+        const c = candleBySec.get(id);
+        if (c) {
+          prices.push({
+            security_id: id,
+            price: Number(c.close_price),
+            time: c.dt instanceof Date ? c.dt.toISOString() : String(c.dt),
+            source: 'candle',
+          });
+        }
+      }
+      res.json({ ok: true, source, error, prices, ts: new Date().toISOString() });
+    } catch (err) {
+      console.error('GET /api/prices/last', err);
+      res.status(500).json({ error: err.message });
     }
   });
 };

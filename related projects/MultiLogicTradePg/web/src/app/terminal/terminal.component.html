@@ -78,12 +78,21 @@
           <span class="term-account-cash">
             Остаток:
             <strong [class.neg]="(selectedAccountCash ?? 0) < 0">
-              {{ selectedAccountCash ?? 0 | number: '1.0-0' }} ₽
+              {{selectedAccountCash ?? 0 | number: '1.0-0' : 'ru' }} ₽
             </strong>
           </span>
           <span class="term-account-mv" [class.term-account-mv-empty]="totalPositionMarketValue === 0">
             Позиции по рынку:
-            <strong>{{ totalPositionMarketValue | number: '1.0-0' }} ₽</strong>
+            <strong>{{totalPositionMarketValue | number: '1.0-0' : 'ru' }} ₽</strong>
+            @if (positionSecurityIds.length > 0) {
+              <span
+                class="term-account-live"
+                [title]="
+                  'Живые цены бумаг с открытыми позициями обновляются раз в 30 секунд' +
+                  (livePricesUpdatedAt ? '. Последнее обновление: ' + (livePricesUpdatedAt | date: 'HH:mm:ss') : '. Ожидаем первый ответ…')
+                "
+              >• live@if (livePricesUpdatedAt) { {{ livePricesUpdatedAt | date: 'HH:mm:ss' }} }</span>
+            }
           </span>
           <button
             type="button"
@@ -134,7 +143,7 @@
                       >{{ tradeOpLabel(tr.direction) }}</td>
                       <td>{{ tr.quantity }}</td>
                       <td>{{ tr.price }}</td>
-                      <td>{{ tr.amount | number: '1.0-2' }}</td>
+                      <td>{{tr.amount | number: '1.0-2' : 'ru' }}</td>
                       <td
                         class="trade-reject-reason-cell"
                         [title]="tr.note || ''"
@@ -280,6 +289,7 @@
           [accountIsFake]="selectedAccountIsFake"
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
+          [livePrice]="livePriceFor(panel.security.id)"
           [closeAllPulse]="closeAllPulse"
           [closeSignalPulse]="closeSignalPulse"
           [autoCloseOnLogicSignal]="panel.auto_close_on_logic_signal"

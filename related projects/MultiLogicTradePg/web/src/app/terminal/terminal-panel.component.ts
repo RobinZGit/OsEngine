@@ -112,6 +112,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       включён по умолчанию): сигнал или закрытие любий логики с сигналами по
       этой бумаге закрывает всю позицию полосы маркетом. */
   @Input() autoCloseOnLogicSignal = true;
+  /** #922: живая цена бумаги (последняя сделка) от терминала — обновляется
+      раз в 30 с по бумагам с открытой позицией. График живёт на закрытых
+      барах, поэтому для разницы по позиции берём именно её; null — терминал
+      ещё не прислал (или T-Bank недоступен), тогда цена как раньше — свеча. */
+  @Input() livePrice: number | null = null;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -293,6 +298,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       /** Терминал перечитал сделки счёта — позиция полосы могла измениться. */
       this.emitPositionSummary();
     }
+    if (changes['livePrice'] != null) {
+      /** #922: пришла новая живая цена — рыночная стоимость остатка и
+          разница по позиции пересчитаны, шапке счёта нужна новая сводка. */
+      this.emitPositionSummary();
+    }
     if (changes['signalEvent'] != null) {
       this.applySignalPrefill();
     }
@@ -340,6 +350,37 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     const last = rows.length ? rows[rows.length - 1] : null;
     const p = last ? Number(last.close_price) : 0;
     return Number.isFinite(p) && p > 0 ? p : 0;
+  }
+
+  /** #922: цена для расчёта позиции — живая (последняя сделка, раз в 30 с),
+      иначе закрытая свеча. Обе величины в тех же единицах, что и график. */
+  get positionPrice(): number {
+    const live = Number(this.livePrice);
+    if (Number.isFinite(live) && live > 0) return live;
+    return this.currentPrice;
+  }
+
+  /** Показана ли сейчас живая цена (в шапке помечаем, чтобы было видно,
+      что цифра оперативная, а не цена закрытого бара). */
+  get hasLivePrice(): boolean {
+    const live = Number(this.livePrice);
+    return Number.isFinite(live) && live > 0;
+  }
+
+  /** Разница цены бумаги с живой ценой в рублях на бумагу (положительная —
+      вверх, отрицательная — вниз) и в процентах от средней цены входа. */
+  get positionPriceDiffRub(): number {
+    if (!this.hasLivePrice) return 0;
+    const avg = this.remainingPositionAvgPrice;
+    if (!(avg > 0)) return 0;
+    return Math.round((this.positionPrice - avg) * 100) / 100;
+  }
+
+  get positionPriceDiffPct(): number {
+    if (!this.hasLivePrice) return 0;
+    const avg = this.remainingPositionAvgPrice;
+    if (!(avg > 0)) return 0;
+    return Math.round((this.positionPrice / avg - 1) * 10000) / 100;
   }
 
   get tradeQuantity(): number {
@@ -402,7 +443,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   get remainingPositionDiff(): number {
     const qty = this.remainingPositionQty;
     if (qty === 0) return 0;
-    const p = this.currentPrice;
+    const p = this.positionPrice;
     if (!(p > 0)) return 0;
     if (qty > 0) {
       const marketValue = p * qty;
@@ -426,6 +467,13 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return Math.round((this.remainingPositionDiff / base) * 10000) / 100;
   }
 
+  /** Показывать ли кнопку «Закрыть позицию»: только когда есть что закрывать —
+      ненулевой остаток бумаг И ненулевые деньги по позиции. При нуле
+      (остаток 0 или сумма 0) кнопка не рисуется вовсе, а не бледнеет. */
+  get canClosePosition(): boolean {
+    return this.remainingPositionQty !== 0 && this.remainingPositionBaseAmount > 0;
+  }
+
   /** Деньги по остатку: для лонга — вложенные при покупке, для шорта —
       полученные при продаже (всегда положительное число для показа). */
   get remainingPositionBaseAmount(): number {
@@ -435,13 +483,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return qty > 0 ? Math.max(cost, 0) : Math.max(-cost, 0);
   }
 
-  /** Рыночная стоимость остатка по текущей цене последней свечи:
-      для лонга — сколько стоят бумаги сейчас, для шорта — сколько стоит
-      выкуп объёма сейчас (всегда положительное число). */
+  /** Рыночная стоимость остатка по актуальной цене (живая последняя сделка,
+      иначе последняя закрытая свеча): для лонга — сколько стоят бумаги
+      сейчас, для шорта — сколько стоит выкуп объёма сейчас (всегда
+      положительное число). */
   get remainingPositionMarketValue(): number {
     const qty = this.remainingPositionQty;
     if (qty === 0) return 0;
-    const p = this.currentPrice;
+    const p = this.positionPrice;
     if (!(p > 0)) return 0;
     return Math.round(Math.abs(qty) * p * 100) / 100;
   }
@@ -1568,10 +1617,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     if (this.tradeAllQtySell) this.tradeAllQtySell = false;
   }
 
-  /** Ввод суммы в шапке (компактный импут у кнопки сигнала): те же принципы,
-      что у ползунка блока «Сделки» — сумма в пределах максимума, количество из
-      сигнала сбрасывается (счёт идёт от «сумма ÷ цена»). */
-  onSignalAmountEdit(value?: number): void {
+  /** Ввод суммы сделки в шапке (блок рядом с кнопкой «Закрыть позицию»):
+      те же принципы, что у ползунка, — сумма в пределах максимума, количество
+      из сигнала сбрасывается (счёт идёт от «сумма ÷ цена»). */
+  onAmountEdit(value?: number): void {
     let v = Math.floor(Number(value));
     if (!Number.isFinite(v) || v < 0) v = 0;
     const max = this.effectiveMaxSum;
@@ -1681,7 +1730,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.tradeMessage = null;
     this.tradeError = null;
     const qty = this.remainingPositionQty;
-    if (qty === 0) {
+    if (qty === 0 || !(this.remainingPositionBaseAmount > 0)) {
       this.tradeError = 'Нет открытой позиции по этой бумаге';
       return;
     }

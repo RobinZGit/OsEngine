@@ -7,8 +7,14 @@ import {
 } from '@angular/core/testing';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { By } from '@angular/platform-browser';
+import { registerLocaleData } from '@angular/common';
+import localeRu from '@angular/common/locales/ru';
 import { of } from 'rxjs';
 import { TerminalPanelComponent } from './terminal-panel.component';
+
+// Шаблон полосы форматирует суммы пайпом `| number : '…' : 'ru'` — данные
+// локали для юнит-тестов (в приложении это делает app.config.ts).
+registerLocaleData(localeRu, 'ru');
 import { SecuritiesService } from '../services/securities.service';
 import { ReferencesService } from '../services/references.service';
 import { TechLogService } from '../services/tech-log.service';
@@ -376,7 +382,8 @@ describe('TerminalPanelComponent', () => {
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
     expect(pos.nativeElement.textContent).toContain('Получено');
-    expect(pos.nativeElement.textContent).toContain('2,500');
+    // Русский формат: разделитель разрядов — неразрывный пробел (U+00A0).
+    expect(pos.nativeElement.textContent).toContain('2\u00a0500');
     expect(pos.nativeElement.textContent).toContain('+100');
     expect(pos.query(By.css('.diff-positive'))).not.toBeNull();
   });
@@ -408,21 +415,117 @@ describe('TerminalPanelComponent', () => {
     expect(pos.query(By.css('.diff-negative'))).not.toBeNull();
   });
 
-  it('шапка: кнопка «Закрыть позицию» и сводка видны всегда, даже без открытой позиции', () => {
+  it('шапка: без открытой позиции кнопка «Закрыть позицию» скрыта, сводка видна', () => {
     fixture.detectChanges();
     expect(component.remainingPositionQty).toBe(0);
+    expect(component.canClosePosition).toBe(false);
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
-    const btn = pos.query(By.css('.tpanel-close-pos'));
-    expect(btn).not.toBeNull();
-    expect(btn.nativeElement.disabled).toBe(true);
+    expect(pos.query(By.css('.tpanel-close-pos'))).toBeNull();
     expect(pos.nativeElement.textContent).toContain('Позиция');
     expect(pos.nativeElement.textContent).toContain('0 ₽');
     const bodySummary = fixture.debugElement.query(By.css('.trade-summary'));
     expect(bodySummary).toBeNull();
   });
 
-  it('тело полосы: сводка по позиции продублирована под кнопками Купить/Продать при лонге', () => {
+  it('шапка: кнопка «Закрыть позицию» скрыта, если по позиции нулевые деньги', () => {
+    component.trades = [
+      { ...trade(1, { direction: 'BUY', quantity: 10, price: 0, amount: 0 }), status: 'filled' },
+    ];
+    fixture.detectChanges();
+    expect(component.remainingPositionQty).toBe(10);
+    expect(component.remainingPositionBaseAmount).toBe(0);
+    expect(component.canClosePosition).toBe(false);
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-close-pos'))
+    ).toBeNull();
+  });
+
+  it('шапка: при открытой позиции кнопка «Закрыть позицию» видна', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.detectChanges();
+    expect(component.canClosePosition).toBe(true);
+    const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
+    expect(btn).not.toBeNull();
+    expect(btn.nativeElement.disabled).toBe(false);
+  });
+
+  it('шапка: блок покупок/продаж стоит сразу после кнопки «Закрыть позицию»', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.detectChanges();
+
+    const head = fixture.debugElement.query(By.css('.tpanel-head'));
+    const pos = head.query(By.css('.tpanel-pos'));
+    const block = head.query(By.css('.tpanel-head-trade'));
+    expect(block).not.toBeNull();
+    expect(block.query(By.css('.trade-sum'))).not.toBeNull();
+    // поле «Количество» из шапки убрано — количество видно в кнопке сигнала
+    expect(block.queryAll(By.css('.trade-qty')).length).toBe(1);
+    expect(block.nativeElement.textContent).not.toContain('Количество');
+    expect(block.query(By.css('.trade-slider'))).not.toBeNull();
+    expect(block.queryAll(By.css('button')).length).toBe(1);
+
+    // блок идёт в шапке сразу за кнопкой закрытия позиции
+    const kids = Array.from(head.nativeElement.children) as HTMLElement[];
+    expect(kids.indexOf(block.nativeElement)).toBe(
+      kids.indexOf(pos.nativeElement) + 1,
+    );
+    const posKids = Array.from(pos.nativeElement.children) as HTMLElement[];
+    expect(posKids.indexOf(pos.query(By.css('.tpanel-close-pos')).nativeElement))
+      .toBeLessThan(
+        posKids.indexOf(pos.query(By.css('.tpanel-pos-summary')).nativeElement),
+      );
+
+    // в теле полосы (блок «Сделки») управления сделкой больше нет
+    const bodyTrade = fixture.debugElement.query(By.css('.tpanel-trade'));
+    expect(bodyTrade.query(By.css('.trade-qty'))).toBeNull();
+    expect(bodyTrade.query(By.css('.trade-slider'))).toBeNull();
+    expect(bodyTrade.query(By.css('.tpanel-signal-btn'))).toBeNull();
+    // остались только тумблер типа заявки и сводка позиции
+    expect(
+      bodyTrade
+        .queryAll(By.css('button'))
+        .map((b) => b.nativeElement.className.trim()),
+    ).toEqual(['trade-switch-track']);
+  });
+
+  it('тело полосы: сводка по позиции осталась в блоке «Сделки» при лонге', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
     ];
@@ -449,7 +552,7 @@ describe('TerminalPanelComponent', () => {
     expect(bodySummary.nativeElement.textContent).toContain(
       'Остаток по ценам покупок'
     );
-    expect(bodySummary.nativeElement.textContent).toContain('2,500');
+    expect(bodySummary.nativeElement.textContent).toContain('2\u00a0500');
   });
 
   it('кнопка «Закрыть позицию» продаёт весь остаток при лонге (маркет)', () => {
@@ -1085,7 +1188,7 @@ describe('TerminalPanelComponent', () => {
       suggested_amount: 1000,
     });
     fixture.detectChanges();
-    const group = fixture.debugElement.query(By.css('.tpanel-signal-trade'));
+    const group = fixture.debugElement.query(By.css('.tpanel-head-trade'));
     expect(group).not.toBeNull();
     const btn = group.query(By.css('.tpanel-signal-btn'));
     expect(btn.nativeElement.textContent).toContain('Купить');
@@ -1132,11 +1235,13 @@ describe('TerminalPanelComponent', () => {
       suggested_amount: 750,
     });
     fixture.detectChanges();
-    const group = fixture.debugElement.query(By.css('.tpanel-signal-trade'));
+    const group = fixture.debugElement.query(By.css('.tpanel-head-trade'));
     const btn = group.query(By.css('.tpanel-signal-btn'));
     expect(btn.nativeElement.textContent).toContain('Продать');
     expect(btn.nativeElement.textContent).toContain('3');
     expect(btn.classes['short']).toBeTrue();
+    expect(group.query(By.css('.trade-buy'))).toBeNull();
+    expect(group.query(By.css('.trade-sell'))).toBeNull();
     btn.nativeElement.click();
     expect(stateSvc.placeTrade).toHaveBeenCalledWith({
       account_id: 1,
@@ -1148,7 +1253,7 @@ describe('TerminalPanelComponent', () => {
     });
   });
 
-  it('сигнал: ввод суммы в компактном импуте шапки меняет количество (сброс лота логики)', () => {
+  it('сигнал: ввод суммы в поле «Сумма» шапки меняет количество (сброс лота логики)', () => {
     component.chartState = {
       candles: [
         {
@@ -1173,21 +1278,23 @@ describe('TerminalPanelComponent', () => {
       suggested_amount: 1000,
     });
     fixture.detectChanges();
-    const input = fixture.debugElement.query(By.css('.tpanel-signal-input'));
+    const input = fixture.debugElement.query(
+      By.css('.tpanel-head-trade .trade-sum'),
+    );
     expect(input).not.toBeNull();
     expect(input.nativeElement.disabled).toBe(false);
     expect(component.tradeAmount).toBe(1000);
-    component.onSignalAmountEdit(2000);
+    component.onAmountEdit(2000);
     fixture.detectChanges();
     expect(component.tradeAmount).toBe(2000);
     expect(component.tradeQuantity).toBe(8);
-    component.onSignalAmountEdit(99999);
+    component.onAmountEdit(99999);
     expect(component.tradeAmount).toBe(5000);
-    component.onSignalAmountEdit(-5);
+    component.onAmountEdit(-5);
     expect(component.tradeAmount).toBe(0);
   });
 
-  it('сигнал: компактный ползунок шапки двигает сумму тем же обработчиком, что в «Сделках»', () => {
+  it('сигнал: ползунок шапки двигает сумму тем же обработчиком, что в «Сделках»', () => {
     component.chartState = {
       candles: [
         {
@@ -1212,7 +1319,9 @@ describe('TerminalPanelComponent', () => {
       suggested_amount: 750,
     });
     fixture.detectChanges();
-    const slider = fixture.debugElement.query(By.css('.tpanel-signal-slider'));
+    const slider = fixture.debugElement.query(
+      By.css('.tpanel-head-trade .trade-slider'),
+    );
     expect(slider).not.toBeNull();
     expect(Number(slider.nativeElement.max)).toBe(5000);
     slider.nativeElement.value = '2000';
@@ -1222,9 +1331,43 @@ describe('TerminalPanelComponent', () => {
     expect(component.signalQuantity).toBe(8);
   });
 
-  it('без сигнала блока сделки по сигналу в шапке нет', () => {
+  it('в шапке ровно одна кнопка сделки — по стороне сигнала', () => {
+    fixture.detectChanges();
+    const buttons = fixture.debugElement.query(
+      By.css('.tpanel-head-trade button'),
+    );
+    expect(buttons).not.toBeNull();
+    expect(buttons.nativeElement.textContent).toContain('Купить');
+    expect(
+      fixture.debugElement.queryAll(By.css('.tpanel-head-trade button')).length,
+    ).toBe(1);
+
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      position_side: 'short',
+      suggested_quantity: 3,
+      suggested_amount: 750,
+    });
+    fixture.detectChanges();
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-head-trade button'))
+        .nativeElement.textContent,
+    ).toContain('Продать');
+  });
+
+  it('дубль блока «по сигналу» в шапке больше не рендерится', () => {
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      position_side: 'long',
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+    });
     fixture.detectChanges();
     expect(fixture.debugElement.query(By.css('.tpanel-signal-trade'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.tpanel-signal-input'))).toBeNull();
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-signal-slider')),
+    ).toBeNull();
   });
 
   it('сигнал: сколько времени прошло — только что / минуты / часы назад', () => {
@@ -1317,5 +1460,103 @@ describe('TerminalPanelComponent', () => {
     box.triggerEventHandler('change', { target: box.nativeElement });
     expect(seen.value).toBe(true);
     expect(component.autoCloseOnLogicSignal).toBe(true);
+  });
+
+  // #922 — живые цены по бумагам с открытыми позициями (цикл 30 с в терминале).
+  describe('#922 живая цена позиции', () => {
+    function withPosition(close: number): void {
+      component.trades = [
+        trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+      ];
+      component.chartState = {
+        candles: [
+          {
+            dt: '2026-09-19T10:15:00',
+            open_price: close,
+            high_price: close + 1,
+            low_price: close - 1,
+            close_price: close,
+            volume: 100,
+          },
+        ],
+        loading: false,
+        loadingOlder: false,
+        hasMore: false,
+        error: null,
+      };
+    }
+
+    it('без живой цены позиция считается по закрытой свече (как раньше)', () => {
+      withPosition(260);
+      fixture.detectChanges();
+      expect(component.hasLivePrice).toBe(false);
+      expect(component.positionPrice).toBe(260);
+      expect(component.remainingPositionMarketValue).toBe(2600);
+      expect(component.remainingPositionDiff).toBe(100);
+    });
+
+    it('живая цена перебивает закрытую свечу: рыночная стоимость и разница пересчитаны', () => {
+      withPosition(260);
+      fixture.detectChanges();
+      fixture.componentRef.setInput('livePrice', 255.5);
+      fixture.detectChanges();
+      expect(component.hasLivePrice).toBe(true);
+      expect(component.positionPrice).toBe(255.5);
+      expect(component.remainingPositionMarketValue).toBe(2555);
+      // 2555 − 2500 (10 × 250 по ценам покупок) = +55
+      expect(component.remainingPositionDiff).toBe(55);
+      expect(component.remainingPositionAvgPrice).toBe(250);
+      expect(component.positionPriceDiffRub).toBe(5.5);
+      expect(component.positionPriceDiffPct).toBe(2.2);
+    });
+
+    it('живая цена в шапке полосы и в сводке помечена как live', () => {
+      withPosition(260);
+      fixture.componentRef.setInput('livePrice', 261.2);
+      fixture.detectChanges();
+      const chip = fixture.debugElement.query(By.css('.tpanel-pos-price'));
+      expect(chip).not.toBeNull();
+      expect(chip.nativeElement.classList).toContain('tpanel-pos-price-live');
+      expect(chip.nativeElement.textContent).toContain('Цена');
+      // Формат чисел в терминале — русский (разделитель разрядов — пробел,
+      // десятичный — запятая): «261,2», а не «261.2».
+      expect(chip.nativeElement.textContent).toContain('261,2');
+      const summary = fixture.debugElement.query(By.css('.trade-summary'));
+      expect(summary).not.toBeNull();
+      expect(summary.nativeElement.textContent).toContain('Цена');
+      expect(summary.nativeElement.textContent).toContain('261,2');
+      expect(summary.nativeElement.textContent).toContain('Средняя цена входа');
+      expect(summary.nativeElement.textContent).toContain('250');
+      expect(fixture.debugElement.query(By.css('.trade-summary-live-mark'))).not.toBeNull();
+    });
+
+    it('без позиции блок цены в шапке не рисуется', () => {
+      component.trades = [];
+      fixture.componentRef.setInput('livePrice', 261.2);
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.css('.tpanel-pos-price'))).toBeNull();
+    });
+
+    it('смена живой цены отправляет терминалу новую сводку позиции', () => {
+      const sent: { qty: number; marketValue: number }[] = [];
+      component.positionSummary.subscribe((s) => sent.push(s));
+      withPosition(260);
+      fixture.detectChanges();
+      sent.length = 0;
+      fixture.componentRef.setInput('livePrice', 250);
+      fixture.detectChanges();
+      expect(sent.length).toBe(1);
+      expect(sent[0].qty).toBe(10);
+      expect(sent[0].marketValue).toBe(2500);
+    });
+
+    it('нулевая/мусорная живая цена игнорируется — считаем по свече', () => {
+      withPosition(260);
+      fixture.detectChanges();
+      fixture.componentRef.setInput('livePrice', 0);
+      fixture.detectChanges();
+      expect(component.hasLivePrice).toBe(false);
+      expect(component.positionPrice).toBe(260);
+    });
   });
 });

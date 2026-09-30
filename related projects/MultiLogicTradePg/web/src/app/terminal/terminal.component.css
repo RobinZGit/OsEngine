@@ -430,6 +430,15 @@
   color: #9ca3af;
 }
 
+/* #922: метка живых цен (обновление раз в 30 с) у суммы позиций по рынку. */
+.term-account-live {
+  margin-left: 0.3rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #059669;
+  white-space: nowrap;
+}
+
 /* «Закрыть все позиции» — цвет как у кнопки закрытия позиции в шапке полосы. */
 .term-account-close-all {
   font-size: 0.72rem;

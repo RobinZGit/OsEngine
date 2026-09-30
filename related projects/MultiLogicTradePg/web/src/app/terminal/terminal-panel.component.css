@@ -128,56 +128,8 @@
   border-color: #fca5a5;
 }
 
-/* Компактная сделка по сигналу в шапке: сумма ₽, ползунок и кнопка
-   «Купить»/«Продать» — уменьшенная копия органов блока «Сделки», та же формула
-   количества (сумма ÷ цена, либо лот логики). */
-.tpanel-signal-trade {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin-right: 0.25rem;
-  flex-shrink: 0;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.tpanel-signal-field {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  font-size: 0.66rem;
-  color: #6b7280;
-  white-space: nowrap;
-}
-
-.tpanel-signal-name {
-  color: #9ca3af;
-}
-
-.tpanel-signal-input {
-  width: 62px;
-  padding: 0.1rem 0.25rem;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  font-size: 0.72rem;
-  text-align: right;
-  background: #fff;
-}
-
-.tpanel-signal-cur {
-  font-size: 0.68rem;
-  color: #6b7280;
-}
-
-.tpanel-signal-slider {
-  width: 88px;
-  accent-color: #2563eb;
-}
-
-/* Кнопка «Купить»/«Продать» по сигналу: тот же зелёный бейдж с круглыми
-   краями, ставший интерактивным. */
+/* Кнопка «Купить»/«Продать» в шапке полосы: одна кнопка, сторона — по
+   сигналу логики (покупка — зелёная, продажа — красная). */
 .tpanel-signal-btn {
   font-family: inherit;
   font-size: 0.7rem;
@@ -353,6 +305,107 @@
   color: #dc2626;
 }
 
+/* #922: живая цена бумаги в шапке полосы (обновляется раз в 30 с). */
+.tpanel-pos-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.25rem;
+  background: #f3f4f6;
+}
+
+.tpanel-pos-price-live {
+  background: #ecfdf5;
+  box-shadow: inset 0 0 0 1px #a7f3d0;
+}
+
+.tpanel-pos-price-label {
+  font-size: 0.62rem;
+  color: #6b7280;
+}
+
+.tpanel-pos-price-value {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.tpanel-pos-price-diff {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.tpanel-pos-price-diff.diff-positive {
+  color: #15803d;
+}
+
+.tpanel-pos-price-diff.diff-negative {
+  color: #dc2626;
+}
+
+/* Блок покупок/продаж в шапке полосы — сразу после кнопки «Закрыть позицию»,
+   чтобы закрытие и сделка стояли рядом в одной строке. */
+.tpanel-head-trade {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.tpanel-head-trade .trade-qty-item {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tpanel-head-trade .trade-qty-label {
+  font-size: 0.62rem;
+}
+
+.tpanel-head-trade .trade-qty {
+  width: 4.6rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.72rem;
+}
+
+.tpanel-head-trade .trade-sum {
+  background: #fff;
+}
+
+.tpanel-head-trade .trade-slider {
+  width: 8.5rem;
+  height: 20px;
+}
+
+.tpanel-head-trade .trade-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+}
+
+.tpanel-head-trade .trade-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+}
+
+.tpanel-head-trade .tpanel-signal-btn {
+  padding: 0.28rem 0.6rem;
+}
+
+.tpanel-head-trade .trade-remainder-check {
+  padding: 0;
+}
+
+.tpanel-head-trade .trade-remainder-text {
+  font-size: 0.6rem;
+}
+
 /* Тело полосы: слева графики (фьючерс + контанго), справа прямоугольник под сделки. */
 .tpanel-body {
   display: flex;
@@ -393,7 +446,7 @@
 }
 
 .tpanel-trade {
-  flex: 0 0 360px;
+  flex: 0 0 300px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -630,54 +683,6 @@
   color: #b45309;
 }
 
-.trade-buttons {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.trade-btn-col {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.trade-buy,
-.trade-sell {
-  width: 100%;
-  padding: 0.4rem 0;
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.trade-buy {
-  background: #16a34a;
-}
-
-.trade-buy:hover:not(:disabled) {
-  background: #15803d;
-}
-
-.trade-sell {
-  background: #dc2626;
-}
-
-.trade-sell:hover:not(:disabled) {
-  background: #b91c1c;
-}
-
-.trade-buy:disabled,
-.trade-sell:disabled {
-  background: #d1d5db;
-  color: #f9fafb;
-  cursor: default;
-}
-
 .trade-remainder-check {
   display: inline-flex;
   align-items: center;
@@ -768,6 +773,18 @@
 
 .trade-summary-diff.diff-negative {
   color: #dc2626;
+}
+
+/* #922: метка «живая цена» в сводке по позиции. */
+.trade-summary-label-live {
+  color: #047857;
+  font-weight: 700;
+}
+
+.trade-summary-live-mark {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #059669;
 }
 
 /* Ручка растягивания панели по вертикали. */
