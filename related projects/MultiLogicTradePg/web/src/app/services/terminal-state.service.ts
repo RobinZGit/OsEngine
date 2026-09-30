@@ -24,6 +24,8 @@ export interface TerminalLogicSignalEvent {
   logic_id: number;
   logic_name?: string | null;
   bar_dt?: string | null;
+  /** Когда торговый цикл записал сигнал (база «возраста» сигнала для #923). */
+  created_at?: string | null;
   position_side?: 'long' | 'short' | null;
   label?: string | null;
   /** Цена бара сигнала — для вертикальной линии на графике. */

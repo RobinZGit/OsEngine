@@ -454,6 +454,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         logic_id: s.logic_id,
         logic_name: logicName,
         bar_dt: s.bar_dt ?? null,
+        created_at: s.created_at ?? null,
         position_side: s.position_side ?? null,
         label: `${sideLabel} (${logicName}${s.timeframe ? ', ' + s.timeframe : ''})`,
         price: Number.isFinite(Number(s.price)) ? Number(s.price) : null,
@@ -874,9 +875,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   /** #923: полоса без позиции (нулевой остаток) живёт в списке не дольше
       таймфрейма последнего сигнала по этой бумаге: M1 — 1 минута, M15 —
-      15 минут и т.п. Как только с бара сигнала прошло больше таймфрейма,
-      а остаток так и нулевой — полоса удаляется из списка. Полосы, добавленные
-      без сигнала (выбором вручную), не трогаем; с открытой позицией — тоже. */
+      15 минут и т.п. «Возраст» сигнала считаем от created_at — времени, когда
+      торговый цикл записал сигнал в logic_terminal_signals. bar_dt для замеров
+      НЕ используем: это время ОТКРЫТИЯ последней закрытой свечи, которое к
+      моменту записи сигнала уже на ~1 таймфрейм в прошлом — свежий сигнал
+      M1/M15 удалялся бы мгновенно, ещё до показа полосы. Для старых
+      сохранённых полос без created_at сроком служит bar_dt + таймфрейм
+      (≈ закрытие свечи ≈ время записи). Полосы, добавленные без сигнала
+      (выбором вручную), не трогаем; с открытой позицией — тоже. */
   private removeFlatPanelsAfterSignalTimeout(): void {
     if (!this.panels.length) return;
     const now = Date.now();
@@ -887,10 +893,16 @@ export class TerminalComponent implements OnInit, OnDestroy {
       if (this.securityRemainderQty(p.security.id) !== 0) continue;
       const frameSec = this.signalFrameSeconds(ev);
       if (frameSec == null || frameSec <= 0) continue;
-      const barMs = ev.bar_dt ? new Date(ev.bar_dt).getTime() : Number.NaN;
-      if (!Number.isFinite(barMs)) continue;
+      // Момент появления сигнала: created_at (запись цикла), иначе —
+      // открытие бара сигнала + таймфрейм (≈ время его закрытия/записи).
+      let fireMs = ev.created_at ? new Date(ev.created_at).getTime() : Number.NaN;
+      if (!Number.isFinite(fireMs)) {
+        const barMs = ev.bar_dt ? new Date(ev.bar_dt).getTime() : Number.NaN;
+        if (Number.isFinite(barMs)) fireMs = barMs + frameSec * 1000;
+      }
+      if (!Number.isFinite(fireMs)) continue;
       // Срок выдержки не истёк — бумага ещё может «ожить» по этому сигналу.
-      if (now - barMs < frameSec * 1000) continue;
+      if (now - fireMs < frameSec * 1000) continue;
       stale.push(p.uid);
     }
     if (!stale.length) return;

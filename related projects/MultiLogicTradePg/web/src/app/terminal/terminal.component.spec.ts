@@ -32,13 +32,19 @@ describe('TerminalComponent — удаление полос без позици�
     };
   }
 
-  function ev(barMs: number, timeframeId: number | null, timeframe?: string | null): any {
+  function ev(
+    barMs: number,
+    timeframeId: number | null,
+    timeframe?: string | null,
+    createdAt?: number | null
+  ): any {
     return {
       logic_id: 7,
       logic_name: 'Логика',
       bar_dt: new Date(barMs).toISOString(),
       timeframe_id: timeframeId,
       timeframe: timeframe ?? null,
+      created_at: createdAt == null ? null : new Date(createdAt).toISOString(),
     };
   }
 
@@ -59,28 +65,57 @@ describe('TerminalComponent — удаление полос без позици�
     });
   });
 
-  it('полоса с нулевым остатком, у которой с сигнала прошло больше таймфрейма — удаляется', () => {
+  it('полоса с нулевым остатком, у которой сигнал записан больше таймфрейма назад — удаляется', () => {
     const c = makeComponent();
-    // M15 (900 с), сигнал 1000 с назад (~17 мин), позиции нет.
-    c.panels = [panel(1, 101, ev(Date.now() - 1_000_000, 15, 'M15'))];
+    // M15 (900 с), сигнал записан 1000 с назад (~17 мин), позиции нет.
+    c.panels = [
+      panel(1, 101, ev(Date.now() - 1_000_000, 15, 'M15', Date.now() - 1_000_000)),
+    ];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.length).toBe(0);
   });
 
-  it('M1 (60 с): сигнал старше 1 минуты и нулевой остаток — удаляется; свежий — остаётся', () => {
+  it('M1 (60 с): сигнал записан больше 1 минуты назад и нулевой остаток — удаляется; свежий — остаётся', () => {
     const c = makeComponent();
     c.panels = [
-      panel(1, 101, ev(Date.now() - 90_000, 1, 'M1')), // 90 с > 60 с → удалить
-      panel(2, 102, ev(Date.now() - 30_000, 1, 'M1')), // 30 с < 60 с → оставить
+      panel(1, 101, ev(Date.now() - 90_000, 1, 'M1', Date.now() - 90_000)), // 90 с > 60 с → удалить
+      panel(2, 102, ev(Date.now() - 30_000, 1, 'M1', Date.now() - 30_000)), // 30 с < 60 с → оставить
     ];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.map((p: any) => p.uid)).toEqual([2]);
   });
 
+  it('свежий сигнал не удаляется, даже если bar_dt — открытие уже закрытой свечи (реальный кейс)', () => {
+    const c = makeComponent();
+    // Торговый цикл пишет сигнал по последней ЗАКРЫТОЙ свече: bar_dt (открытие)
+    // уже на ~1 таймфрейм в прошлом, но сам сигнал записан только что. До фикса
+    // возраст считался от bar_dt — свежие полосы M15/M1 удалялись мгновенно.
+    c.panels = [
+      panel(1, 101, ev(Date.now() - 900_000, 15, 'M15', Date.now() - 10_000)), // bar 15 мин назад, записан 10 с назад
+      panel(2, 102, ev(Date.now() - 60_000, 1, 'M1', Date.now() - 5_000)), // bar 1 мин назад, записан 5 с назад
+    ];
+    c.removeFlatPanelsAfterSignalTimeout();
+    expect(c.panels.map((p: any) => p.uid).sort()).toEqual([1, 2]);
+  });
+
+  it('без created_at (старое сохранённое состояние) возраст считается от закрытия бара сигнала', () => {
+    const c = makeComponent();
+    // M1: открытие свечи 40 с назад → закрытие через 20 с → сигнал свежий, оставить.
+    c.panels = [panel(1, 101, ev(Date.now() - 40_000, 1, 'M1', null))];
+    c.removeFlatPanelsAfterSignalTimeout();
+    expect(c.panels.length).toBe(1);
+    // M15: открытие 61 мин назад → закрытие 46 мин назад (> 15 мин) → удалить.
+    c.panels = [panel(2, 102, ev(Date.now() - 61 * 60_000, 15, 'M15', null))];
+    c.removeFlatPanelsAfterSignalTimeout();
+    expect(c.panels.length).toBe(0);
+  });
+
   it('есть открытая позиция — полоса остаётся, даже если сигнал очень старый', () => {
     const c = makeComponent();
     c.trades = [buy(101, 3)];
-    c.panels = [panel(1, 101, ev(Date.now() - 7 * 86_400_000, 15, 'M15'))];
+    c.panels = [
+      panel(1, 101, ev(Date.now() - 7 * 86_400_000, 15, 'M15', Date.now() - 7 * 86_400_000)),
+    ];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.length).toBe(1);
   });
@@ -96,9 +131,9 @@ describe('TerminalComponent — удаление полос без позици�
     const c = makeComponent();
     c.trades = [buy(101, 5)]; // позиция, остаток 5
     c.panels = [
-      panel(1, 101, ev(Date.now() - 7 * 86_400_000, 15, 'M15')), // позиция → оставить
-      panel(2, 102, ev(Date.now() - 1_000_000, 15, 'M15')), // протух → удалить
-      panel(3, 103, ev(Date.now() - 30_000, 1, 'M1')), // свежий M1 → оставить
+      panel(1, 101, ev(Date.now() - 7 * 86_400_000, 15, 'M15', Date.now() - 7 * 86_400_000)), // позиция → оставить
+      panel(2, 102, ev(Date.now() - 1_000_000, 15, 'M15', Date.now() - 1_000_000)), // протух → удалить
+      panel(3, 103, ev(Date.now() - 30_000, 1, 'M1', Date.now() - 30_000)), // свежий M1 → оставить
       panel(4, 104, null), // без сигнала → оставить
     ];
     c.removeFlatPanelsAfterSignalTimeout();
@@ -108,14 +143,24 @@ describe('TerminalComponent — удаление полос без позици�
   it('таймфрейм берётся и по коду, если id не найден в списке', () => {
     const c = makeComponent();
     // timeframe_id 999 — неизвестен, но код TR 'M15' известен (900 с).
-    c.panels = [panel(1, 101, ev(Date.now() - 1_000_000, 999, 'M15'))];
+    c.panels = [
+      panel(1, 101, ev(Date.now() - 1_000_000, 999, 'M15', Date.now() - 1_000_000)),
+    ];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.length).toBe(0);
   });
 
-  it('сигнал без даты бара и без таймфрейма полосу не удаляет', () => {
+  it('сигнал без даты бара, без created_at и без таймфрейма полосу не удаляет', () => {
     const c = makeComponent();
-    c.panels = [panel(1, 101, { logic_id: 7, bar_dt: null, timeframe_id: null, timeframe: null })];
+    c.panels = [
+      panel(1, 101, {
+        logic_id: 7,
+        bar_dt: null,
+        created_at: null,
+        timeframe_id: null,
+        timeframe: null,
+      }),
+    ];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.length).toBe(1);
   });
