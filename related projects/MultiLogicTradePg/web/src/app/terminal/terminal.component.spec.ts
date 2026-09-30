@@ -75,14 +75,25 @@ describe('TerminalComponent — удаление полос без позици�
     expect(c.panels.length).toBe(0);
   });
 
-  it('M1 (60 с): сигнал записан больше 1 минуты назад и нулевой остаток — удаляется; свежий — остаётся', () => {
+  it('M1 (60 с): полосы держатся минимум 5 минут — 6-минутный протух удаляется, свежая остаётся', () => {
     const c = makeComponent();
     c.panels = [
-      panel(1, 101, ev(Date.now() - 90_000, 1, 'M1', Date.now() - 90_000)), // 90 с > 60 с → удалить
-      panel(2, 102, ev(Date.now() - 30_000, 1, 'M1', Date.now() - 30_000)), // 30 с < 60 с → оставить
+      panel(1, 101, ev(Date.now() - 360_000, 1, 'M1', Date.now() - 360_000)), // 6 мин > 5 мин → удалить
+      panel(2, 102, ev(Date.now() - 30_000, 1, 'M1', Date.now() - 30_000)), // 30 с < 5 мин → оставить
     ];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.map((p: any) => p.uid)).toEqual([2]);
+  });
+
+  it('M1: полоса в возрасте 3 минут ещё держится (минимум 5 минут, а не 1)', () => {
+    const c = makeComponent();
+    // Сигнал M1 3 минуты назад: по «голому» таймфрейму (60 с) он протух бы,
+    // но минимум 5 минут его сохраняет.
+    c.panels = [
+      panel(1, 101, ev(Date.now() - 180_000, 1, 'M1', Date.now() - 180_000)),
+    ];
+    c.removeFlatPanelsAfterSignalTimeout();
+    expect(c.panels.length).toBe(1);
   });
 
   it('свежий сигнал не удаляется, даже если bar_dt — открытие уже закрытой свечи (реальный кейс)', () => {
