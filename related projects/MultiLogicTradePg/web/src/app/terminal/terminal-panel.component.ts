@@ -628,12 +628,17 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     return `Сигнал логики «${name}» от ${dtLabel}${tfPart}`;
   }
 
-  /** Сколько времени прошло с подачи сигнала (по бару сигнала): только что /
+  /** Сколько времени прошло с подачи сигнала (по времени записи created_at;
+      для старых сигналов без даты записи — по бару bar_dt): только что /
       секунды / минуты / часы / дни назад по-русски. Пусто — времени нет. */
   get signalTimeAgo(): string {
     const ev = this.signalEvent;
-    if (!ev?.bar_dt) return '';
-    const t = new Date(ev.bar_dt).getTime();
+    if (!ev) return '';
+    // Момент подачи сигнала = время записи торговым циклом (created_at).
+    // bar_dt — это ОТКРЫТИЕ последней закрытой свечи, оно на ~1 таймфрейм
+    // раньше записи: свежий M15-сигнал выглядел бы «15-18 минут назад».
+    let t = ev.created_at ? new Date(ev.created_at).getTime() : Number.NaN;
+    if (!Number.isFinite(t) && ev.bar_dt) t = new Date(ev.bar_dt).getTime();
     if (!Number.isFinite(t)) return '';
     const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
     if (sec < 5) return 'только что';

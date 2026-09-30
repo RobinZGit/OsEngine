@@ -1399,6 +1399,31 @@ describe('TerminalPanelComponent', () => {
     expect(component.signalTimeAgo).toBe('2 часа назад');
   });
 
+  it('сигнал: возраст от created_at (момента записи), а не от bar_dt — открытия бар', () => {
+    // Свежий M15-сигнал: бар открылся 18 минут назад, но сигнал записан 3 с назад
+    // (реальный кейс: bar_dt — открытие последней закрытой свечи). Показываем
+    // «только что», а не «18 минут назад».
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: new Date(Date.now() - 1_080_000).toISOString(),
+      created_at: new Date(Date.now() - 3000).toISOString(),
+      position_side: 'long',
+    });
+    fixture.detectChanges();
+    expect(component.signalTimeAgo).toBe('только что');
+
+    // Старый сигнал без created_at — возраст от bar_dt (фолбэк).
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: new Date(Date.now() - 90_000).toISOString(),
+      position_side: 'long',
+    });
+    fixture.detectChanges();
+    expect(component.signalTimeAgo).toBe('1 минуту назад');
+  });
+
   it('сигнал: хинт бара — логика, «подано» и время назад', () => {
     fixture.componentRef.setInput('signalEvent', {
       logic_id: 7,
