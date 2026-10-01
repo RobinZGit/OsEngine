@@ -89,10 +89,12 @@
   border-left: 1px solid #e5e7eb;
 }
 
-/* #924: постоянные блоки шапки не сжимаем внахлёст — при нехватке ширины
-   строка сдвигается челноками, и контролы сохраняют натуральную ширину. */
+/* #924: постоянные блоки шапки (включая название бумаги) не сжимаем внахлёст —
+   при нехватке ширины строка сдвигается челноками, и контролы сохраняют
+   натуральную ширину; название не «задавливается» соседями. */
 .tpanel-head .tpanel-pos,
 .tpanel-head .tpanel-head-trade,
+.tpanel-head .tpanel-title,
 .tpanel-head .tpanel-auto-close,
 .tpanel-head .tpanel-field,
 .tpanel-head .tpanel-controls,
@@ -126,6 +128,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* #924: название не сжимается соседями (см. flex-shrink ниже), поэтому у
+     неворачиваемо длинных названий свой потолок ширины с многоточием. */
+  max-width: 26rem;
 }
 
 .tpanel-kind {
