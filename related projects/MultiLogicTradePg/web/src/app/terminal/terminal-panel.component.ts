@@ -38,6 +38,7 @@ import {
   TimeframeRow,
 } from '../models/market.model';
 import { IndicatorRow } from '../models/lookup.model';
+import { positionCost, positionQty } from './position-math';
 
 /** Чип индикатора в правом блоке: назначенный на бумагу или из сигнала логики. */
 interface IndicatorChipItem {
@@ -120,6 +121,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       барах, поэтому для разницы по позиции берём именно её; null — терминал
       ещё не прислал (или T-Bank недоступен), тогда цена как раньше — свеча. */
   @Input() livePrice: number | null = null;
+  /** Суммарный П/У по счёту (рубли): прибыль/убыток по ВСЕМ бумагам с
+      открытой позицией, переоценка по живым ценам. Считает терминал (родитель)
+      один раз и передаёт в каждую панель, поэтому значение одинаковое везде.
+      null — данных пока нет (показать «—»). */
+  @Input() accountPnlRub: number | null = null;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -554,30 +560,26 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return Math.floor(this.tradeAmount / p);
   }
 
+  /** Прибыль/убыток по счёту для показа: число (0 — ноль), null — данных нет
+      (показать «—»). Цвет задаётся классами в шаблоне: прибыль — зелёная,
+      убыток — красная, ноль/нет данных — нейтральная. */
+  get accountPnlValue(): number | null {
+    if (this.accountPnlRub == null) return null;
+    const v = Number(this.accountPnlRub);
+    return Number.isFinite(v) ? v : null;
+  }
+
   /** Остаток позиции по текущей бумаге на счёте (filled покупки − продажи).
       Отрицательное значение — «шорт»: продали больше, чем купили. */
   get remainingPositionQty(): number {
-    let qty = 0;
-    for (const t of this.trades) {
-      if (t.security_id !== this.security.id || t.status !== 'filled') continue;
-      qty += t.direction === 'BUY' ? Number(t.quantity) : -Number(t.quantity);
-    }
-    return Number.isFinite(qty) ? qty : 0;
+    return positionQty(this.trades, this.security.id);
   }
 
   /** Фактические деньги, вложенные в текущий остаток: сумма покупок
       (цена × количество) минус сумма продаж. «По ценам покупок остаток,
       минус цены продаж» — хранится у нас в сделках, берём оттуда. */
   get remainingPositionCost(): number {
-    let cost = 0;
-    for (const t of this.trades) {
-      if (t.security_id !== this.security.id || t.status !== 'filled') continue;
-      const p = Number(t.price);
-      const q = Number(t.quantity);
-      if (!(Number.isFinite(p) && p >= 0 && Number.isFinite(q) && q > 0)) continue;
-      cost += t.direction === 'BUY' ? p * q : -p * q;
-    }
-    return Number.isFinite(cost) ? cost : 0;
+    return positionCost(this.trades, this.security.id);
   }
 
   /** Средняя цена входа в остаток: фактические вложенные деньги / остаток.

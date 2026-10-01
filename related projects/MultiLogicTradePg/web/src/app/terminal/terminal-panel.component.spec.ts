@@ -354,7 +354,7 @@ describe('TerminalPanelComponent', () => {
     expect(Math.round(component.tradeSum * 100) / 100).toBe(1750);
   });
 
-  it('шорт-позиция: сводка показывает разницу и процент, положительные при падении цены', () => {
+  it('шорт-позиция: сводка по счёту показывает прибыль (зелёную) при падении цены', () => {
     component.trades = [
       { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
     ];
@@ -379,16 +379,18 @@ describe('TerminalPanelComponent', () => {
     expect(component.remainingPositionBaseAmount).toBe(2500);
     expect(component.remainingPositionDiff).toBe(100);
     expect(component.remainingPositionDiffPct).toBe(4);
+    // #925: в шапке теперь П/У по счёту (считает терминал), а не сумма позиции.
+    component.accountPnlRub = 100;
+    fixture.detectChanges();
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
-    expect(pos.nativeElement.textContent).toContain('Получено');
-    // Русский формат: разделитель разрядов — неразрывный пробел (U+00A0).
-    expect(pos.nativeElement.textContent).toContain('2\u00a0500');
-    expect(pos.nativeElement.textContent).toContain('+100');
+    expect(pos.nativeElement.textContent).toContain('П/У по счёту');
+    expect(pos.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('+100,00 ₽');
+    expect(pos.nativeElement.textContent).not.toContain('2\u00a0500');
     expect(pos.query(By.css('.diff-positive'))).not.toBeNull();
   });
 
-  it('шорт-позиция: при росте цены разница отрицательная (красная)', () => {
+  it('шорт-позиция: при росте цены П/У по счёту отрицательное (красное)', () => {
     component.trades = [
       { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
     ];
@@ -411,19 +413,64 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
     expect(component.remainingPositionDiff).toBe(-100);
     expect(component.remainingPositionDiffPct).toBe(-4);
+    // #925: сумму П/У по счёту передаёт терминал; проверяем отрицательную.
+    component.accountPnlRub = -100;
+    fixture.detectChanges();
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos.query(By.css('.diff-negative'))).not.toBeNull();
+    expect(pos.nativeElement.textContent).toContain('-100,00');
   });
 
-  it('шапка: без открытой позиции кнопка «Закрыть позицию» скрыта, сводка видна', () => {
+  it('#925: в шапке — П/У по счёту: значение терминала, знак «+» и зелёный цвет', () => {
+    component.accountPnlRub = 1234.5;
+    fixture.detectChanges();
+    const pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
+    expect(pnl).not.toBeNull();
+    // Русский формат: разделитель разрядов нормализуем в обычный пробел.
+    expect(pnl.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('+1 234,50 ₽');
+    expect(pnl.nativeElement.classList).toContain('diff-positive');
+    expect(pnl.nativeElement.classList).not.toContain('diff-negative');
+    // Подпись именно общая по счёту, а не позиция этой бумаги.
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-pos')).nativeElement.textContent
+    ).toContain('П/У по счёту');
+  });
+
+  it('#925: убыток по счёту — красный, без плюса', () => {
+    component.accountPnlRub = -777.25;
+    fixture.detectChanges();
+    const pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
+    expect(pnl.nativeElement.classList).toContain('diff-negative');
+    expect(pnl.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('-777,25 ₽');
+    expect(pnl.nativeElement.textContent).not.toContain('+');
+  });
+
+  it('#925: нулевой П/У и отсутствие данных — нейтральный серый, ноль без плюса', () => {
+    component.accountPnlRub = 0;
+    fixture.detectChanges();
+    let pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
+    expect(pnl.nativeElement.classList).toContain('tpanel-pnl-flat');
+    expect(pnl.nativeElement.classList).not.toContain('diff-positive');
+    expect(pnl.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('0,00 ₽');
+    expect(pnl.nativeElement.textContent).not.toContain('+');
+
+    component.accountPnlRub = null;
+    fixture.detectChanges();
+    pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
+    expect(pnl.nativeElement.classList).toContain('tpanel-pnl-flat');
+    expect(pnl.nativeElement.textContent.trim()).toBe('—');
+  });
+
+  it('шапка: без открытой позиции кнопка «Закрыть позицию» скрыта, П/У по счёту видно', () => {
     fixture.detectChanges();
     expect(component.remainingPositionQty).toBe(0);
     expect(component.canClosePosition).toBe(false);
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
     expect(pos.query(By.css('.tpanel-close-pos'))).toBeNull();
-    expect(pos.nativeElement.textContent).toContain('Позиция');
-    expect(pos.nativeElement.textContent).toContain('0 ₽');
+    // #925: вместо «Позиция: 0 ₽» — «П/У по счёту» (по умолчанию данных нет).
+    expect(pos.nativeElement.textContent).toContain('П/У по счёту');
+    expect(pos.nativeElement.textContent).not.toContain('Позиция');
     const bodySummary = fixture.debugElement.query(By.css('.trade-summary'));
     expect(bodySummary).toBeNull();
   });

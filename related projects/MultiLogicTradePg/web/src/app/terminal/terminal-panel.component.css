@@ -386,6 +386,24 @@
   color: #dc2626;
 }
 
+/* #925: суммарный П/У по счёту вместо суммы позиции — прибыль зелёная,
+   убыток красный, ноль/нет данных нейтральный. */
+.tpanel-pnl {
+  font-variant-numeric: tabular-nums;
+}
+
+.tpanel-pnl.diff-positive {
+  color: #15803d;
+}
+
+.tpanel-pnl.diff-negative {
+  color: #dc2626;
+}
+
+.tpanel-pnl.tpanel-pnl-flat {
+  color: #6b7280;
+}
+
 /* #922: живая цена бумаги в шапке полосы (обновляется раз в 30 с). */
 .tpanel-pos-price {
   display: inline-flex;

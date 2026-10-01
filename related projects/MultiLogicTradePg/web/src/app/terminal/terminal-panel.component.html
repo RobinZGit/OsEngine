@@ -74,17 +74,24 @@
             </span>
           </span>
         }
-        <span class="tpanel-pos-label">
-          {{ remainingPositionQty > 0 ? 'Остаток' : (remainingPositionQty < 0 ? 'Получено' : 'Позиция') }}
-        </span>
-        <span class="tpanel-pos-value">{{remainingPositionBaseAmount | number: '1.0-2' : 'ru' }} ₽</span>
+        <!-- #925: на месте суммы позиции — суммарный П/У по счёту: отклонение
+             от закупки по всем бумагам с открытой позицией, переоценка по
+             живым ценам. Прибыль — зелёная с «+», убыток — красная с «−». -->
         <span
-          class="tpanel-pos-diff"
-          [class.diff-positive]="remainingPositionDiff >= 0"
-          [class.diff-negative]="remainingPositionDiff < 0"
+          class="tpanel-pos-label"
+          title="Суммарная прибыль/убыток по счёту: переоценка всех бумаг с открытой позицией по живым ценам относительно цены покупки. Значение общее для всего счёта, одинаковое во всех панелях."
+        >П/У по счёту</span>
+        <span
+          class="tpanel-pos-value tpanel-pnl"
+          [class.diff-positive]="accountPnlValue != null && accountPnlValue > 0"
+          [class.diff-negative]="accountPnlValue != null && accountPnlValue < 0"
+          [class.tpanel-pnl-flat]="accountPnlValue == null || accountPnlValue === 0"
         >
-          {{ remainingPositionDiff >= 0 ? '+' : '' }}{{remainingPositionDiff | number: '1.0-2' : 'ru' }}
-          ₽ ({{ remainingPositionDiffPct >= 0 ? '+' : '' }}{{remainingPositionDiffPct | number: '1.0-1' : 'ru' }}%)
+          @if (accountPnlValue == null) {
+            —
+          } @else {
+            {{ accountPnlValue > 0 ? '+' : '' }}{{ accountPnlValue | number: '1.2-2' : 'ru' }} ₽
+          }
         </span>
       </span>
     </div>

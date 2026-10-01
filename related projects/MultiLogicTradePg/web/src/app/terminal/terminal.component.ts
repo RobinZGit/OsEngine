@@ -23,6 +23,7 @@ import {
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
+import { AccountPnl, accountPnl } from './position-math';
 
 interface PanelModel {
   uid: number;
@@ -206,6 +207,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
       bySec.set(id, (bySec.get(id) ?? 0) + (t.direction === 'BUY' ? q : -q));
     }
     return [...bySec.entries()].filter(([, qty]) => qty !== 0).map(([id]) => id);
+  }
+
+  /** #925: суммарный П/У по счёту — переоценка всех бумаг с открытой позицией
+      по живым ценам (плюс/минус, рубли). Считается ОДИН раз здесь и
+      передаётся в каждую панель, поэтому цифра везде одинаковая и не
+      зависит от того, какие панели открыты. */
+  get accountPnl(): AccountPnl {
+    return accountPnl(this.trades, this.livePriceBySecurity);
   }
 
   /** Живая цена бумаги для полосы (null — терминал её не получил). */
