@@ -3,14 +3,20 @@
     class="tpanel-head-outer"
     [title]="signalEvent ? signalBarHint : ''"
   >
+    <!-- #924: слоты челноков — ЖЁСТКО на своих местах: ««» слева от блока
+         «свернуть + закрыть позицию», «»» справа от него. Виден ровно ОДИН из
+         двух: изначально «»» (сдвинуть строку вправо, к последним контролам),
+         после сдвига — ««» в начале строки (вернуть всё к началу). -->
     @if (headShowLeft) {
-      <button
-        type="button"
-        class="tpanel-head-shuttle tpanel-head-shuttle-left"
-        title="Вернуть строку к началу"
-        aria-label="Вернуть строку к началу"
-        (click)="headShuttleStart()"
-      >«</button>
+      <div class="tpanel-head-shuttle-slot">
+        <button
+          type="button"
+          class="tpanel-head-shuttle tpanel-head-shuttle-left"
+          title="Вернуть строку к началу"
+          aria-label="Вернуть строку к началу"
+          (click)="headShuttleStart()"
+        >«</button>
+      </div>
     }
     <div class="tpanel-head-tools">
     <button
@@ -79,16 +85,8 @@
          «свернуть + закрыть позицию». Виден ровно ОДИН из двух: изначально
          «» (сдвинуть строку вправо, к последним контролам), после сдвига —
          «« (вернуть всё к началу). Слот не зависит от замеров ширины. -->
-    <div class="tpanel-head-shuttle-slot">
-      @if (headShowLeft) {
-        <button
-          type="button"
-          class="tpanel-head-shuttle tpanel-head-shuttle-left"
-          title="Вернуть строку к началу"
-          aria-label="Вернуть строку к началу"
-          (click)="headShuttleStart()"
-        >«</button>
-      } @else {
+    @if (!headShowLeft) {
+      <div class="tpanel-head-shuttle-slot">
         <button
           type="button"
           class="tpanel-head-shuttle tpanel-head-shuttle-right"
@@ -96,8 +94,8 @@
           aria-label="Сдвинуть строку к концу"
           (click)="headShuttleEnd()"
         >»</button>
-      }
-    </div>
+      </div>
+    }
     <div
       class="tpanel-head"
       #headScroll

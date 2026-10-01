@@ -1638,66 +1638,82 @@ describe('TerminalPanelComponent', () => {
     }));
 
     it('в слоте челнока всегда ровно одна кнопка: сначала «»», после сдвига ««»', fakeAsync(() => {
-      // #924: слот жёстко закреплён справа от блока «свернуть + закрыть
-      // позицию», видно ровно одно из двух — сменой состояния, не замерами.
+      // #924: слоты жёстко закреплены слева и справа от блока «свернуть +
+      // закрыть позицию», видно ровно одно из двух — сменой состояния, не
+      // замерами ширины.
       const el = component.headScroll?.nativeElement as HTMLElement;
       Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
       Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
 
-      const slot = () => fixture.debugElement.query(By.css('.tpanel-head-shuttle-slot'));
       const inSlot = (cls: string) =>
         fixture.debugElement.queryAll(By.css(`.tpanel-head-shuttle-slot ${cls}`)).length;
+      const slots = () =>
+        fixture.debugElement.queryAll(By.css('.tpanel-head-shuttle-slot')).length;
 
       fixture.detectChanges();
-      expect(slot()).not.toBeNull();
-      expect(inSlot('.tpanel-head-shuttle')).toBe(1);
+      expect(slots()).toBe(1);
       expect(inSlot('.tpanel-head-shuttle-right')).toBe(1);
       expect(inSlot('.tpanel-head-shuttle-left')).toBe(0);
 
       component.headShuttleEnd();
       tick();
       fixture.detectChanges();
-      expect(inSlot('.tpanel-head-shuttle')).toBe(1);
+      expect(slots()).toBe(1);
       expect(inSlot('.tpanel-head-shuttle-right')).toBe(0);
       expect(inSlot('.tpanel-head-shuttle-left')).toBe(1);
 
       component.headShuttleStart();
       tick();
       fixture.detectChanges();
-      expect(inSlot('.tpanel-head-shuttle')).toBe(1);
+      expect(slots()).toBe(1);
       expect(inSlot('.tpanel-head-shuttle-right')).toBe(1);
       discardPeriodicTasks();
     }));
 
-    it('слот челнока реально виден: ненулевая ширина, кнопка не скрыта', () => {
-      // #924: регрессия «элементов не видно вообще» — проверяем в реальном
-      // браузере с реальными стилями, что слот и кнопка имеют размер и видны.
+    it('слоты челноков стоят по краям блока «свернуть + закрыть позицию»', () => {
+      // #924: жёсткое крепление — [««»] блок инструментов [«»»] строка.
+      const cls = () => Array.from(
+        fixture.debugElement.query(By.css('.tpanel-head-outer')).nativeElement.children
+      ).map((c) => (c as HTMLElement).className);
+      expect(cls()).toEqual([
+        'tpanel-head-tools',
+        'tpanel-head-shuttle-slot',
+        'tpanel-head',
+      ]);
+      const tools = fixture.debugElement.query(By.css('.tpanel-head-tools'));
+      expect(tools.nativeElement.querySelector('.tpanel-collapse')).not.toBeNull();
+      expect(tools.nativeElement.querySelector('.tpanel-pos')).not.toBeNull();
+
+      // После сдвига ««» встаёт слева от блока инструментов.
+      const el = component.headScroll?.nativeElement as HTMLElement;
+      Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
+      Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
+      component.headShuttleEnd();
+      fixture.detectChanges();
+      expect(cls()).toEqual([
+        'tpanel-head-shuttle-slot',
+        'tpanel-head-tools',
+        'tpanel-head',
+      ]);
+      component.headShuttleStart();
+      fixture.detectChanges();
+    });
+
+
+    it('слот челнока заметен: ширина от 30px, кнопка не скрыта и крупная', () => {
+      // #924: регрессия «элементов не видно вообще» — в реальном браузере с
+      // реальными стилями проверяем размер, видимость и контраст кнопки.
       const slot = fixture.debugElement.query(By.css('.tpanel-head-shuttle-slot'))
         .nativeElement as HTMLElement;
       const btn = slot.querySelector('button') as HTMLElement;
-      expect(slot.getBoundingClientRect().width).toBeGreaterThan(0);
-      expect(btn.getBoundingClientRect().width).toBeGreaterThan(0);
+      expect(slot.getBoundingClientRect().width).toBeGreaterThanOrEqual(30);
+      expect(btn.getBoundingClientRect().width).toBeGreaterThanOrEqual(30);
       expect(btn.getBoundingClientRect().height).toBeGreaterThan(0);
       const cs = getComputedStyle(btn);
       expect(cs.display).not.toBe('none');
       expect(cs.visibility).not.toBe('hidden');
+      expect(Number.parseFloat(cs.fontSize)).toBeGreaterThanOrEqual(14);
       expect(btn.textContent?.trim()).toBe('»');
-      // Кнопка стоит в шапке и кликается (сдвигает строку, если есть что).
-      expect(btn.contains(document.activeElement) || true).toBe(true);
-    });
-
-    it('слот челнока стоит сразу справа от блока «свернуть + закрыть позицию»', () => {
-      // #924: жёсткое крепление — блок инструментов, затем слот, затем строка.
-      const children = Array.from(
-        fixture.debugElement.query(By.css('.tpanel-head-outer')).nativeElement.children
-      ) as HTMLElement[];
-      const classes = children.map((c) => c.className);
-      expect(classes[0]).toContain('tpanel-head-tools');
-      expect(classes[1]).toContain('tpanel-head-shuttle-slot');
-      expect(classes[2]).toContain('tpanel-head');
-      const tools = fixture.debugElement.query(By.css('.tpanel-head-tools'));
-      expect(tools.nativeElement.querySelector('.tpanel-collapse')).not.toBeNull();
-      expect(tools.nativeElement.querySelector('.tpanel-pos')).not.toBeNull();
     });
 
     it('«Сдвинуть к концу» ничего не делает, когда строка целиком помещается', fakeAsync(() => {

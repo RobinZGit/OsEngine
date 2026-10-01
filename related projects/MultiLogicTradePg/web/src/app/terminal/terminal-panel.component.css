@@ -66,21 +66,31 @@
   padding: 0.15rem 0 0.15rem 0.4rem;
 }
 
-/* #924: слот челнока — ровно ОДНО место сразу ПРАВЕЕ блока инструментов.
-   Ширина постоянная (не зависит от того, ««» или «»» видно), поэтому
-   пересчёт границ сдвига не «плавает» вместе с кнопками. Виден всегда
-   ровно один челнок: «» — сдвинуть строку вправо, ««» — вернуть к началу. */
+/* #924: слоты челноков — по одному месту слева и справа от блока
+   инструментов, ширина постоянная. Виден ровно один: «» справа, пока строка
+   у начала, и ««» слева после сдвига. Заметная заливка и рамки — чтобы
+   кнопку невозможно было не заметить (жалобы «элементов не видно»). */
 .tpanel-head-shuttle-slot {
   flex: none;
-  width: 1.7rem;
+  width: 2.2rem;
   align-self: stretch;
   display: flex;
-  border-left: 1px solid #e5e7eb;
-  border-right: 1px solid #e5e7eb;
-  background: #f9fafb;
+  background: #dbeafe;
+  border-left: 1px solid #93c5fd;
+  border-right: 1px solid #93c5fd;
 }
 
-/* #924: кнопки-челноки занимают весь слот, ничего не перекрывая. */
+.tpanel-head-shuttle-slot:has(.tpanel-head-shuttle-left) {
+  border-left: none;
+  border-radius: 3px 0 0 3px;
+}
+
+.tpanel-head-shuttle-slot:has(.tpanel-head-shuttle-right) {
+  border-right: none;
+  border-radius: 0 3px 3px 0;
+}
+
+/* #924: кнопка занимает весь слот, ничего не перекрывая. */
 .tpanel-head-shuttle {
   flex: 1;
   align-self: stretch;
@@ -90,15 +100,21 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: #1e3a5f;
+  color: #1d4ed8;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 1.1rem;
+  font-weight: 700;
   line-height: 1;
 }
 
 .tpanel-head-shuttle:hover {
-  background: #eef2f7;
-  color: #1d4ed8;
+  background: #93c5fd;
+  color: #1e3a8a;
+}
+
+.tpanel-head-shuttle:active {
+  background: #60a5fa;
+  color: #172554;
 }
 
 /* #924: постоянные блоки шапки (включая название бумаги) не сжимаем внахлёст —
