@@ -1615,5 +1615,36 @@ describe('TerminalPanelComponent', () => {
       expect(component.headCanScrollLeft).toBe(false);
       discardPeriodicTasks();
     }));
+
+    it('после сдвига в конец кнопка ««» видна даже при устаревшем флаге', fakeAsync(() => {
+      // #924: если строка сдвинута, вернуться к началу можно всегда —
+      // застрять в конце строки без кнопки возврата нельзя.
+      const el = component.headScroll?.nativeElement as HTMLElement;
+      Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
+      Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
+      component.headShuttleEnd();
+      tick();
+      component.headCanScrollLeft = false; // флаг «устарел» (замер не успел)
+      expect(component.headShowLeft).toBe(true);
+      discardPeriodicTasks();
+    }));
+
+    it('«» появляется при переполнении и исчезает у начала строки', fakeAsync(() => {
+      const el = component.headScroll?.nativeElement as HTMLElement;
+      const resize = () => window.dispatchEvent(new Event('resize'));
+      Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
+      Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
+      resize();
+      tick(); // отработал отложенный пересчёт границ сдвига
+      expect(component.headShowRight).toBe(true);
+      expect(component.headShowLeft).toBe(false);
+      // У широкой строки переполнения нет — обе кнопки скрыты.
+      Object.defineProperty(el, 'scrollWidth', { value: 100, configurable: true });
+      resize();
+      tick();
+      expect(component.headShowRight).toBe(false);
+      expect(component.headShowLeft).toBe(false);
+      discardPeriodicTasks();
+    }));
   });
 });

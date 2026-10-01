@@ -3,7 +3,7 @@
     class="tpanel-head-outer"
     [title]="signalEvent ? signalBarHint : ''"
   >
-    @if (headCanScrollLeft) {
+    @if (headShowLeft) {
       <button
         type="button"
         class="tpanel-head-shuttle tpanel-head-shuttle-left"
@@ -233,7 +233,7 @@
       (click)="remove.emit()"
     >✕</button>
     </div>
-    @if (headCanScrollRight) {
+    @if (headShowRight) {
       <button
         type="button"
         class="tpanel-head-shuttle tpanel-head-shuttle-right"

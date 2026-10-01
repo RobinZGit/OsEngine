@@ -1,4 +1,5 @@
 import {
+  AfterViewInit,
   Component,
   ElementRef,
   EventEmitter,
@@ -80,7 +81,7 @@ const FAKE_DEFAULT_MAX_SUM = 10000;
   templateUrl: './terminal-panel.component.html',
   styleUrl: './terminal-panel.component.css',
 })
-export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
+export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, AfterViewInit {
   @Input() security!: SecurityRow;
   /** Синтетическая бумага контанго (только для подписи) — источник графика не она. */
   @Input() contango: SecurityRow | null = null;
@@ -279,6 +280,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.destroyed = true;
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.indicatorPollTimer) clearTimeout(this.indicatorPollTimer);
+    if (this.shuttleRefreshTimer != null) clearTimeout(this.shuttleRefreshTimer);
+    if (this.headResizeObserver) {
+      this.headResizeObserver.disconnect();
+      this.headResizeObserver = null;
+    }
     for (const s of this.subs) s.unsubscribe();
   }
 
@@ -353,6 +359,19 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** True, если строка шапки сдвинута — слева виден челнок возврата. */
   headCanScrollLeft = false;
 
+  /** #924: показываем «» по флагу — есть скрытый хвост строки. */
+  get headShowRight(): boolean {
+    return this.headCanScrollRight;
+  }
+
+  /** #924: «« показываем по флагу ИЛИ по факту сдвига строки. Второе условие —
+      страховка: если строка сдвинута, вернуться к началу можно ВСЕГДА, даже
+      если флаг успел устареть (иначе пользователь оказывался застрявшим в
+      конце строки без кнопки возврата). */
+  get headShowLeft(): boolean {
+    return this.headCanScrollLeft || this.headShift > 4;
+  }
+
   /** Сдвиг строки в px (внутрь). 0 — строка прижата к началу. */
   headShift = 0;
 
@@ -367,10 +386,61 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       применить изменения флагов и ширины строки). */
   private shuttleRefreshTimer: any = null;
 
+  /** Сколько уточняющих проходов пересчёта уже сделано подряд (страховка от
+      бесконечного «пилинга», когда флаги меняются на каждом проходе). */
+  private shuttleSettlePasses = 0;
+
+  /** #924: наблюдаем за размером строки шапки — при любом изменении ширины
+      (тик цены, ресайз, сворачивание, появление/исчезновение челнока)
+      пересчитываем границы сдвига. Без этого флаги могли «залипнуть», и
+      кнопка возврата к началу не появлялась. */
+  private headResizeObserver: ResizeObserver | null = null;
+
+  ngAfterViewInit(): void {
+    const el = this.headScroll?.nativeElement;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // Начальное наблюдение ResizeObserver вызовет колбэк сразу — он и сделает
+    // первый пересчёт (здесь не планируем таймер, чтобы не блокировать
+    // пересчёт, который запросят позже).
+    this.headResizeObserver = new ResizeObserver(() => this.refreshHeadShuttles());
+    this.headResizeObserver.observe(el);
+  }
+
   /** Смещение строки transform-ом — сдвигаем контент влево, чтобы показать
       хвост; сама строка остаётся своей ширины, клипы по краю (`overflow: hidden`). */
   get headShiftTransform(): string {
     return this.headShift > 0 ? `translateX(-${this.headShift}px)` : '';
+  }
+
+  /** Текущий максимальный сдвиг по DOM: ширина контролов − ширина строки
+      (0 — всё помещается). Синхронный замер, чтобы клик по челноку работал
+      сразу, без ожидания таймера. */
+  private measureMaxHeadShift(): number {
+    const el = this.headScroll?.nativeElement;
+    if (!el) return 0;
+    return Math.max(0, el.scrollWidth - el.clientWidth);
+  }
+
+  /** Пересчёт состояния по свежему замеру. Возвращает true, если флаги
+      видимости челноков изменились (значит ширина строки изменилась и нужен
+      ещё один уточняющий проход). */
+  private runHeadShuttleRefresh(): boolean {
+    const el = this.headScroll?.nativeElement;
+    if (!el) return false;
+    const prevRight = this.headCanScrollRight;
+    const prevLeft = this.headCanScrollLeft;
+    const max = this.measureMaxHeadShift();
+    this.maxHeadShift = max;
+    if (this.headPinnedToEnd) {
+      this.headShift = max;
+    } else if (this.headShift > max) {
+      this.headShift = max;
+    }
+    // 4px — не дёргаем кнопки на границе из-за рамок/скруглений.
+    const tol = 4;
+    this.headCanScrollRight = max > tol && this.headShift < max - tol;
+    this.headCanScrollLeft = this.headShift > tol;
+    return prevRight !== this.headCanScrollRight || prevLeft !== this.headCanScrollLeft;
   }
 
   /** #924: шапка полосы не помещается в ширину — вместо сжатия и наезжания
@@ -380,33 +450,31 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       справа после строки) и ни один контрол не перекрывают: правая видна,
       когда есть скрытый хвост, и сдвигает строку к последним контролам;
       левая появляется слева, когда строка сдвинута, и возвращает к началу.
-      Пересчёт выполняется в setTimeout: к этому моменту Angular уже применил
-      изменение флагов к DOM, поэтому scrollWidth/clientWidth строки точные
-      (в т.ч. когда появление/исчезновение челнока меняет её ширину). */
+
+      Отложенный проход (setTimeout) нужен потому, что само появление/
+      исчезновение челнока меняет ширину строки: если флаги поменялись, делаем
+      ещё проход (до 4), иначе границы «залипают» на устаревшей ширине и
+      кнопка возврата пропадает. Дополнительно за размером строки следит
+      ResizeObserver: пересчёт при любом изменении ширины (тик цены, ресайз,
+      сворачивание панели). */
   private refreshHeadShuttles(): void {
     if (this.shuttleRefreshTimer != null) return;
     this.shuttleRefreshTimer = setTimeout(() => {
       this.shuttleRefreshTimer = null;
-      const el = this.headScroll?.nativeElement;
-      if (!el) return;
-      const max = Math.max(0, el.scrollWidth - el.clientWidth);
-      this.maxHeadShift = max;
-      if (this.headPinnedToEnd) {
-        this.headShift = max;
-      } else if (this.headShift > max) {
-        this.headShift = max;
+      const changed = this.runHeadShuttleRefresh();
+      if (changed && this.shuttleSettlePasses < 4) {
+        this.shuttleSettlePasses++;
+        this.refreshHeadShuttles();
+      } else {
+        this.shuttleSettlePasses = 0;
       }
-      // 4px — не дёргаем кнопки на границе из-за рамок/скруглений.
-      const tol = 4;
-      this.headCanScrollRight = max > tol && this.headShift < max - tol;
-      this.headCanScrollLeft = this.headShift > tol;
     }, 0);
   }
 
   /** «» — сдвигаем строку к концу, к последним контролам. */
   headShuttleEnd(): void {
     this.headPinnedToEnd = true;
-    this.headShift = this.maxHeadShift;
+    this.runHeadShuttleRefresh();
     this.refreshHeadShuttles();
   }
 
@@ -414,12 +482,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   headShuttleStart(): void {
     this.headPinnedToEnd = false;
     this.headShift = 0;
+    this.runHeadShuttleRefresh();
     this.refreshHeadShuttles();
   }
 
   /** Колесо над шапкой сдвигает строку по горизонтали, когда есть что сдвигать. */
   onHeadWheel(event: WheelEvent): void {
-    if (this.maxHeadShift <= 0) return;
+    const max = this.measureMaxHeadShift();
+    if (max <= 4) return;
     event.preventDefault();
     this.headPinnedToEnd = false;
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
@@ -427,10 +497,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
       : event.deltaY;
     if (delta === 0) return;
     const step = Math.sign(delta) * 60;
-    this.headShift = Math.max(
-      0,
-      Math.min(this.maxHeadShift, Math.round(this.headShift + step))
-    );
+    this.maxHeadShift = max;
+    this.headShift = Math.max(0, Math.min(max, Math.round(this.headShift + step)));
+    this.headCanScrollRight = this.headShift < max - 4;
+    this.headCanScrollLeft = this.headShift > 4;
     this.refreshHeadShuttles();
   }
 
