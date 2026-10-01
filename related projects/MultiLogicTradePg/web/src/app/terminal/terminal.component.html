@@ -76,14 +76,29 @@
             <span class="term-account-tag">демо</span>
           }
           <span class="term-account-cash">
-            Остаток:
-            <strong [class.neg]="(selectedAccountCash ?? 0) < 0">
-              {{selectedAccountCash ?? 0 | number: '1.0-0' : 'ru' }} ₽
+            Остаток на счёте:
+            <strong [class.neg]="accountTotalAtCost < 0">
+              {{accountTotalAtCost | number: '1.2-2' : 'ru' }} ₽
             </strong>
           </span>
-          <span class="term-account-mv" [class.term-account-mv-empty]="totalPositionMarketValue === 0">
-            Позиции по рынку:
-            <strong>{{totalPositionMarketValue | number: '1.0-0' : 'ru' }} ₽</strong>
+          <span
+            class="term-account-pnl"
+            [class.diff-positive]="accountPnlRub != null && accountPnlRub > 0"
+            [class.diff-negative]="accountPnlRub != null && accountPnlRub < 0"
+            [class.term-account-pnl-flat]="accountPnlRub == null || accountPnlRub === 0"
+            [title]="
+              'Отклонение: разница между рыночной стоимостью открытых позиций и закупкой по всем бумагам счёта. ' +
+              'Остаток на счёте + отклонение = стоимость счёта по рынку.'
+            "
+          >
+            Отклонение:
+            <strong>
+              @if (accountPnlRub == null) {
+                —
+              } @else {
+                {{accountPnlRub > 0 ? '+' : '' }}{{accountPnlRub | number: '1.2-2' : 'ru' }} ₽
+              }
+            </strong>
             @if (positionSecurityIds.length > 0) {
               <span
                 class="term-account-live"
@@ -94,6 +109,7 @@
               >• live@if (livePricesUpdatedAt) { {{ livePricesUpdatedAt | date: 'HH:mm:ss' }} }</span>
             }
           </span>
+
           <button
             type="button"
             class="term-account-close-all"
@@ -290,7 +306,7 @@
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
           [livePrice]="livePriceFor(panel.security.id)"
-          [accountPnlRub]="accountPnl.pnl_rub"
+          [accountPnlRub]="accountPnlRub"
           [closeAllPulse]="closeAllPulse"
           [closeSignalPulse]="closeSignalPulse"
           [autoCloseOnLogicSignal]="panel.auto_close_on_logic_signal"

@@ -379,14 +379,16 @@ describe('TerminalPanelComponent', () => {
     expect(component.remainingPositionBaseAmount).toBe(2500);
     expect(component.remainingPositionDiff).toBe(100);
     expect(component.remainingPositionDiffPct).toBe(4);
-    // #925: в шапке теперь П/У по счёту (считает терминал), а не сумма позиции.
+    // #925: в шапке закупка этой бумаги + суммарный П/У по счёту.
     component.accountPnlRub = 100;
     fixture.detectChanges();
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
     expect(pos.nativeElement.textContent).toContain('П/У по счёту');
+    expect(pos.nativeElement.textContent).toContain('Получено');
+    // Русский формат: разделитель разрядов нормализуем в обычный пробел.
+    expect(pos.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('2 500,00 ₽');
     expect(pos.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('+100,00 ₽');
-    expect(pos.nativeElement.textContent).not.toContain('2\u00a0500');
     expect(pos.query(By.css('.diff-positive'))).not.toBeNull();
   });
 

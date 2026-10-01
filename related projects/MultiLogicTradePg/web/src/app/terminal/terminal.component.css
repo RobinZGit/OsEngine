@@ -416,17 +416,26 @@
   color: #b91c1c;
 }
 
-/* Рыночная стоимость всех открытых позиций (текущие цены последних свечей). */
-.term-account-mv {
+/* #925: отклонение счёта от закупки — нереализованный П/У по всем бумагам:
+   прибыль зелёная, убыток красная, ноль нейтральная. */
+.term-account-pnl {
   color: #374151;
   font-size: 0.82rem;
 }
 
-.term-account-mv strong {
-  color: #1e3a5f;
+.term-account-pnl strong {
+  font-variant-numeric: tabular-nums;
 }
 
-.term-account-mv-empty strong {
+.term-account-pnl.diff-positive strong {
+  color: #15803d;
+}
+
+.term-account-pnl.diff-negative strong {
+  color: #dc2626;
+}
+
+.term-account-pnl.term-account-pnl-flat strong {
   color: #9ca3af;
 }
 

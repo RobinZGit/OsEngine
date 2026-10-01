@@ -23,7 +23,7 @@ import {
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
-import { AccountPnl, accountPnl } from './position-math';
+import { AccountPnl, accountPnl, positionCost } from './position-math';
 
 interface PanelModel {
   uid: number;
@@ -209,12 +209,53 @@ export class TerminalComponent implements OnInit, OnDestroy {
     return [...bySec.entries()].filter(([, qty]) => qty !== 0).map(([id]) => id);
   }
 
+  /** #925: свободные средства счёта (не вложенные в позиции): реальный счёт —
+      свободные деньги T-Bank (`cash_amount`), демо-счёт — `terminal_cash`.
+      Раньше в шапке показывалось это число как «Остаток», из-за чего при
+      полностью вложенных деньгах оно было нулём (#925). */
+  get accountFreeCash(): number {
+    const acc = this.selectedAccount;
+    if (!acc) return 0;
+    if (acc.account_type !== 'real') {
+      const c = Number(acc.terminal_cash);
+      return Number.isFinite(c) ? c : 0;
+    }
+    const free = Number(acc.cash_amount);
+    if (acc.cash_amount != null && Number.isFinite(free)) return free;
+    const total = Number(acc.balance);
+    return Number.isFinite(total) ? total : 0;
+  }
+
+  /** #925: сколько вложено в открытые позиции по ценам покупки — по ВСЕМ
+      бумагам счёта (не только по открытым панелям). Для шорта отрицательное:
+      выручка от продажи уже лежит на счёте. */
+  get totalPositionCost(): number {
+    let sum = 0;
+    for (const id of this.positionSecurityIds) sum += positionCost(this.trades, id);
+    return Math.round(sum * 100) / 100;
+  }
+
+  /** #925: остаток на счёте по закупочным ценам = свободные + вложенное.
+      Плюс отклонение (`accountPnl`) даёт стоимость счёта по рынку. */
+  get accountTotalAtCost(): number {
+    return Math.round((this.accountFreeCash + this.totalPositionCost) * 100) / 100;
+  }
+
   /** #925: суммарный П/У по счёту — переоценка всех бумаг с открытой позицией
       по живым ценам (плюс/минус, рубли). Считается ОДИН раз здесь и
       передаётся в каждую панель, поэтому цифра везде одинаковая и не
       зависит от того, какие панели открыты. */
   get accountPnl(): AccountPnl {
     return accountPnl(this.trades, this.livePriceBySecurity);
+  }
+
+  /** #925: П/У для показа. null («—»), когда позиции есть, но живые цены ещё
+      не пришли (иначе показывали бы «0,00 ₽» — как будто всё в ноль);
+      при отсутствии позиций честный ноль. */
+  get accountPnlRub(): number | null {
+    const r = this.accountPnl;
+    if (r.priced > 0) return r.pnl_rub;
+    return r.securities === 0 ? 0 : null;
   }
 
   /** Живая цена бумаги для полосы (null — терминал её не получил). */
@@ -1063,14 +1104,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
       цене последней свечи). Копим по uid и обновляем сумму по счёту. */
   onPanelPositionSummary(uid: number, s: PanelPositionSummary): void {
     this.positionSummaryByPanel.set(uid, s);
-  }
-
-  /** Сумма рыночной стоимости всех открытых позиций по полосам терминала.
-      Обновляется с каждой новой свечой любой полосы (панели шлют сводки). */
-  get totalPositionMarketValue(): number {
-    let sum = 0;
-    for (const s of this.positionSummaryByPanel.values()) sum += s.marketValue;
-    return Math.round(sum * 100) / 100;
   }
 
   /** Есть ли хотя бы одна открытая позиция (остаток != 0) среди полос —

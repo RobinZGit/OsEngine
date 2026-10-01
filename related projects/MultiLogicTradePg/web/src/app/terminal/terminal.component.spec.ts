@@ -176,3 +176,118 @@ describe('TerminalComponent — удаление полос без позици�
     expect(c.panels.length).toBe(1);
   });
 });
+
+describe('TerminalComponent — остаток на счёте и отклонение (#925)', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: {} },
+        { provide: SecuritiesService, useValue: {} },
+        { provide: TerminalStateService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    return c;
+  }
+
+  const trade = (security_id: number, direction: 'BUY' | 'SELL', quantity: number, price: number): any => ({
+    id: Math.random(),
+    account_id: 1,
+    security_id,
+    direction,
+    execution: 'market',
+    quantity,
+    price,
+    amount: quantity * price,
+    status: 'filled',
+    broker_order_id: null,
+    note: null,
+    executed_at: '2026-10-01T10:00:00Z',
+    security_name: 'S',
+    security_prefix: 'P',
+  });
+
+  it('остаток на счёте = свободные + закупка позиций (вложенные деньги не теряются)', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    expect(c.totalPositionCost).toBe(1000);
+    expect(c.accountTotalAtCost).toBe(1000);
+  });
+
+  it('остаток на счёте суммируется со свободными средствами', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 500 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    expect(c.accountTotalAtCost).toBe(1500);
+  });
+
+  it('у шорта закупка отрицательная — выручка уже на счёте, итог не занижается', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 1000 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'SELL', 10, 100)];
+    expect(c.totalPositionCost).toBe(-1000);
+    expect(c.accountTotalAtCost).toBe(0);
+  });
+
+  it('остаток + отклонение = стоимость счёта по рынку', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    (c as any).livePriceBySecurity = new Map([[101, 110]]);
+    expect(c.accountPnl.pnl_rub).toBe(100);
+    expect(Math.round((c.accountTotalAtCost + c.accountPnl.pnl_rub) * 100) / 100).toBe(1100);
+  });
+
+  it('реальный счёт: свободные деньги берутся из cash_amount, иначе из balance', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'real', cash_amount: 300, balance: 1300 }];
+    c.accountId = 1;
+    expect(c.accountFreeCash).toBe(300);
+    c.accounts = [{ id: 1, account_type: 'real', cash_amount: null, balance: 1300 }];
+    expect(c.accountFreeCash).toBe(1300);
+  });
+
+  it('без счёта и без позиций всё в нуле, отклонение ноль', () => {
+    const c = makeComponent();
+    expect(c.accountFreeCash).toBe(0);
+    expect(c.accountTotalAtCost).toBe(0);
+    expect(c.accountPnl.pnl_rub).toBe(0);
+    expect(c.accountPnl.securities).toBe(0);
+    expect(c.accountPnlRub).toBe(0);
+  });
+
+  it('позиция есть, но живых цен ещё нет → показываем «—», а не «0,00 ₽» (#925)', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    expect(c.accountPnl.securities).toBe(1);
+    expect(c.accountPnl.priced).toBe(0);
+    expect(c.accountPnlRub).toBeNull();
+  });
+
+  it('как только живая цена пришла — отклонение снова число', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    (c as any).livePriceBySecurity = new Map([[101, 110]]);
+    expect(c.accountPnlRub).toBe(100);
+  });
+});
