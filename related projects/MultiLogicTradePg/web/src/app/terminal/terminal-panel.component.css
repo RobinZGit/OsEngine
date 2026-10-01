@@ -56,20 +56,40 @@
   transition: transform 0.2s ease;
 }
 
-/* #924: кнопки-челноки — крайние ЭЛЕМЕНТЫ той же полосы: левый «« стоит до
-   строки, правый «» после неё и занимают своё место, НИЧЕГО не перекрывая.
-   Правый виден, когда есть скрытый хвост; левый появляется, когда строку
-   сдвинули, и возвращает её к началу. */
-.tpanel-head-shuttle {
+/* #924: блок «свернуть полосу» + «закрыть позицию» жёстко закреплён слева —
+   всегда виден и никогда не уезжает вместе со строкой. */
+.tpanel-head-tools {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0 0.15rem 0.4rem;
+}
+
+/* #924: слот челнока — ровно ОДНО место сразу ПРАВЕЕ блока инструментов.
+   Ширина постоянная (не зависит от того, ««» или «»» видно), поэтому
+   пересчёт границ сдвига не «плавает» вместе с кнопками. Виден всегда
+   ровно один челнок: «» — сдвинуть строку вправо, ««» — вернуть к началу. */
+.tpanel-head-shuttle-slot {
+  flex: none;
+  width: 1.7rem;
+  align-self: stretch;
+  display: flex;
+  border-left: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+/* #924: кнопки-челноки занимают весь слот, ничего не перекрывая. */
+.tpanel-head-shuttle {
+  flex: 1;
   align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
   padding: 0;
   border: none;
-  background: #f9fafb;
+  background: transparent;
   color: #1e3a5f;
   cursor: pointer;
   font-size: 0.8rem;
@@ -79,14 +99,6 @@
 .tpanel-head-shuttle:hover {
   background: #eef2f7;
   color: #1d4ed8;
-}
-
-.tpanel-head-shuttle-left {
-  border-right: 1px solid #e5e7eb;
-}
-
-.tpanel-head-shuttle-right {
-  border-left: 1px solid #e5e7eb;
 }
 
 /* #924: постоянные блоки шапки (включая название бумаги) не сжимаем внахлёст —

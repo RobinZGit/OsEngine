@@ -491,7 +491,10 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
 
     const head = fixture.debugElement.query(By.css('.tpanel-head'));
-    const pos = head.query(By.css('.tpanel-pos'));
+    // #924: блок «свернуть + закрыть позицию» вынесен из сдвигаемой строки и
+    // закреплён слева, поэтому ищем его в обёртке шапки, а не в `.tpanel-head`.
+    const tools = fixture.debugElement.query(By.css('.tpanel-head-tools'));
+    const pos = tools.query(By.css('.tpanel-pos'));
     const block = head.query(By.css('.tpanel-head-trade'));
     expect(block).not.toBeNull();
     expect(block.query(By.css('.trade-sum'))).not.toBeNull();
@@ -501,11 +504,16 @@ describe('TerminalPanelComponent', () => {
     expect(block.query(By.css('.trade-slider'))).not.toBeNull();
     expect(block.queryAll(By.css('button')).length).toBe(1);
 
-    // блок идёт в шапке сразу за кнопкой закрытия позиции
-    const kids = Array.from(head.nativeElement.children) as HTMLElement[];
-    expect(kids.indexOf(block.nativeElement)).toBe(
-      kids.indexOf(pos.nativeElement) + 1,
-    );
+    // #924: блок идёт в шапке сразу за блоком инструментов («свернуть +
+    // закрыть позицию») и слотом челнока — то есть первым элементом
+    // сдвигаемой строки `.tpanel-head`.
+    const outerKids = Array.from(
+      fixture.debugElement.query(By.css('.tpanel-head-outer')).nativeElement.children
+    ) as HTMLElement[];
+    expect(outerKids.indexOf(block.nativeElement) === -1).toBe(true);
+    expect(outerKids[outerKids.length - 1].className).toContain('tpanel-head');
+    const headKids = Array.from(head.nativeElement.children) as HTMLElement[];
+    expect(headKids[0].className).toContain('tpanel-head-trade');
     const posKids = Array.from(pos.nativeElement.children) as HTMLElement[];
     expect(posKids.indexOf(pos.query(By.css('.tpanel-close-pos')).nativeElement))
       .toBeLessThan(
@@ -1598,7 +1606,7 @@ describe('TerminalPanelComponent', () => {
       expect(component.headShift).toBe(300);
       expect(component.headShiftTransform).toBe('translateX(-300px)');
       expect(component.headCanScrollLeft).toBe(true);
-      expect(component.headCanScrollRight).toBe(false);
+      expect(component.headShowRight).toBe(false); // в слоте теперь ««»
       discardPeriodicTasks();
     }));
 
@@ -1624,25 +1632,64 @@ describe('TerminalPanelComponent', () => {
       Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
       component.headShuttleEnd();
       tick();
-      component.headCanScrollLeft = false; // флаг «устарел» (замер не успел)
+      component.headCanScrollLeft = false; // флаг «устарел»
       expect(component.headShowLeft).toBe(true);
       discardPeriodicTasks();
     }));
 
-    it('«» появляется при переполнении и исчезает у начала строки', fakeAsync(() => {
+    it('в слоте челнока всегда ровно одна кнопка: сначала «»», после сдвига ««»', fakeAsync(() => {
+      // #924: слот жёстко закреплён справа от блока «свернуть + закрыть
+      // позицию», видно ровно одно из двух — сменой состояния, не замерами.
       const el = component.headScroll?.nativeElement as HTMLElement;
-      const resize = () => window.dispatchEvent(new Event('resize'));
       Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
       Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
-      resize();
-      tick(); // отработал отложенный пересчёт границ сдвига
-      expect(component.headShowRight).toBe(true);
-      expect(component.headShowLeft).toBe(false);
-      // У широкой строки переполнения нет — обе кнопки скрыты.
-      Object.defineProperty(el, 'scrollWidth', { value: 100, configurable: true });
-      resize();
+
+      const slot = () => fixture.debugElement.query(By.css('.tpanel-head-shuttle-slot'));
+      const inSlot = (cls: string) =>
+        fixture.debugElement.queryAll(By.css(`.tpanel-head-shuttle-slot ${cls}`)).length;
+
+      fixture.detectChanges();
+      expect(slot()).not.toBeNull();
+      expect(inSlot('.tpanel-head-shuttle')).toBe(1);
+      expect(inSlot('.tpanel-head-shuttle-right')).toBe(1);
+      expect(inSlot('.tpanel-head-shuttle-left')).toBe(0);
+
+      component.headShuttleEnd();
       tick();
-      expect(component.headShowRight).toBe(false);
+      fixture.detectChanges();
+      expect(inSlot('.tpanel-head-shuttle')).toBe(1);
+      expect(inSlot('.tpanel-head-shuttle-right')).toBe(0);
+      expect(inSlot('.tpanel-head-shuttle-left')).toBe(1);
+
+      component.headShuttleStart();
+      tick();
+      fixture.detectChanges();
+      expect(inSlot('.tpanel-head-shuttle')).toBe(1);
+      expect(inSlot('.tpanel-head-shuttle-right')).toBe(1);
+      discardPeriodicTasks();
+    }));
+
+    it('слот челнока стоит сразу справа от блока «свернуть + закрыть позицию»', () => {
+      // #924: жёсткое крепление — блок инструментов, затем слот, затем строка.
+      const children = Array.from(
+        fixture.debugElement.query(By.css('.tpanel-head-outer')).nativeElement.children
+      ) as HTMLElement[];
+      const classes = children.map((c) => c.className);
+      expect(classes[0]).toContain('tpanel-head-tools');
+      expect(classes[1]).toContain('tpanel-head-shuttle-slot');
+      expect(classes[2]).toContain('tpanel-head');
+      const tools = fixture.debugElement.query(By.css('.tpanel-head-tools'));
+      expect(tools.nativeElement.querySelector('.tpanel-collapse')).not.toBeNull();
+      expect(tools.nativeElement.querySelector('.tpanel-pos')).not.toBeNull();
+    });
+
+    it('«Сдвинуть к концу» ничего не делает, когда строка целиком помещается', fakeAsync(() => {
+      const el = component.headScroll?.nativeElement as HTMLElement;
+      Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
+      component.headShuttleEnd();
+      tick();
+      expect(component.headShift).toBe(0);
       expect(component.headShowLeft).toBe(false);
       discardPeriodicTasks();
     }));

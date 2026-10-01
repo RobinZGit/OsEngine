@@ -12,13 +12,8 @@
         (click)="headShuttleStart()"
       >«</button>
     }
-    <div
-      class="tpanel-head"
-      #headScroll
-      (wheel)="onHeadWheel($event)"
-      [style.transform]="headShiftTransform"
-    >
-      <button
+    <div class="tpanel-head-tools">
+    <button
       type="button"
       class="tpanel-collapse"
       [attr.aria-expanded]="!collapsed"
@@ -26,6 +21,7 @@
       [title]="collapsed ? 'Развернуть полосу' : 'Свернуть полосу'"
       (click)="toggleCollapsed()"
     >{{ collapsed ? '▸' : '▾' }}</button>
+
     <div
       class="tpanel-pos"
       aria-live="polite"
@@ -78,6 +74,36 @@
         </span>
       </span>
     </div>
+    </div>
+    <!-- #924: слот челнока — жёстко на своём месте сразу ПРАВЕЕ блока
+         «свернуть + закрыть позицию». Виден ровно ОДИН из двух: изначально
+         «» (сдвинуть строку вправо, к последним контролам), после сдвига —
+         «« (вернуть всё к началу). Слот не зависит от замеров ширины. -->
+    <div class="tpanel-head-shuttle-slot">
+      @if (headShowLeft) {
+        <button
+          type="button"
+          class="tpanel-head-shuttle tpanel-head-shuttle-left"
+          title="Вернуть строку к началу"
+          aria-label="Вернуть строку к началу"
+          (click)="headShuttleStart()"
+        >«</button>
+      } @else {
+        <button
+          type="button"
+          class="tpanel-head-shuttle tpanel-head-shuttle-right"
+          title="Сдвинуть строку к концу"
+          aria-label="Сдвинуть строку к концу"
+          (click)="headShuttleEnd()"
+        >»</button>
+      }
+    </div>
+    <div
+      class="tpanel-head"
+      #headScroll
+      (wheel)="onHeadWheel($event)"
+      [style.transform]="headShiftTransform"
+    >
     <div
       class="tpanel-head-trade"
       role="group"
@@ -233,15 +259,6 @@
       (click)="remove.emit()"
     >✕</button>
     </div>
-    @if (headShowRight) {
-      <button
-        type="button"
-        class="tpanel-head-shuttle tpanel-head-shuttle-right"
-        title="Сдвинуть строку к концу"
-        aria-label="Сдвинуть строку к концу"
-        (click)="headShuttleEnd()"
-      >»</button>
-    }
   </div>
 
   <div class="tpanel-body">

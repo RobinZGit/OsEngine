@@ -353,23 +353,20 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
   }
 
-  /** True, если правая стрелка-челнок нужна (есть скрытый хвост строки). */
-  headCanScrollRight = false;
-
-  /** True, если строка шапки сдвинута — слева виден челнок возврата. */
+  /** True, если строка шапки сдвинута — в слоте челнока показываем ««. */
   headCanScrollLeft = false;
 
-  /** #924: показываем «» по флагу — есть скрытый хвост строки. */
-  get headShowRight(): boolean {
-    return this.headCanScrollRight;
+  /** #924: какой из двух челноков виден в единственном слоте. Виден ровно
+      один: пока строка у начала — «» (сдвинуть вправо), после сдвига — ««
+      (вернуть к началу). Условие — по фактическому сдвигу, а не по замеру
+      ширины, поэтому «застрять» без кнопки возврата невозможно. */
+  get headShowLeft(): boolean {
+    return this.headShift > 4;
   }
 
-  /** #924: «« показываем по флагу ИЛИ по факту сдвига строки. Второе условие —
-      страховка: если строка сдвинута, вернуться к началу можно ВСЕГДА, даже
-      если флаг успел устареть (иначе пользователь оказывался застрявшим в
-      конце строки без кнопки возврата). */
-  get headShowLeft(): boolean {
-    return this.headCanScrollLeft || this.headShift > 4;
+  /** True, если у строки есть скрытый хвост (для подсказок/состояния). */
+  get headShowRight(): boolean {
+    return !this.headShowLeft;
   }
 
   /** Сдвиг строки в px (внутрь). 0 — строка прижата к началу. */
@@ -382,13 +379,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       строки меняется (появился/исчез левый челнок, ресайз окна). */
   private headPinnedToEnd = false;
 
-  /** Подписка на пересчёт флагов челноков (setTimeout — чтобы DOM уже успел
-      применить изменения флагов и ширины строки). */
+  /** Подписка на пересчёт границ сдвига (setTimeout — чтобы DOM уже успел
+      применить предыдущие изменения). */
   private shuttleRefreshTimer: any = null;
-
-  /** Сколько уточняющих проходов пересчёта уже сделано подряд (страховка от
-      бесконечного «пилинга», когда флаги меняются на каждом проходе). */
-  private shuttleSettlePasses = 0;
 
   /** #924: наблюдаем за размером строки шапки — при любом изменении ширины
       (тик цены, ресайз, сворачивание, появление/исчезновение челнока)
@@ -421,60 +414,45 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return Math.max(0, el.scrollWidth - el.clientWidth);
   }
 
-  /** Пересчёт состояния по свежему замеру. Возвращает true, если флаги
-      видимости челноков изменились (значит ширина строки изменилась и нужен
-      ещё один уточняющий проход). */
-  private runHeadShuttleRefresh(): boolean {
+  /** Пересчёт состояния по свежему замеру. Слот челнока имеет постоянную
+      ширину и не зависит от состояния, поэтому ширина строки не «плавает» и
+      одного прохода достаточно. */
+  private runHeadShuttleRefresh(): void {
     const el = this.headScroll?.nativeElement;
-    if (!el) return false;
-    const prevRight = this.headCanScrollRight;
-    const prevLeft = this.headCanScrollLeft;
-    const max = this.measureMaxHeadShift();
+    if (!el) return;
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
     this.maxHeadShift = max;
-    if (this.headPinnedToEnd) {
+    if (max <= 4) {
+      // Всё помещается — сдвигать нечего, держим начало строки.
+      this.headPinnedToEnd = false;
+      this.headShift = 0;
+    } else if (this.headPinnedToEnd) {
       this.headShift = max;
-    } else if (this.headShift > max) {
-      this.headShift = max;
+    } else {
+      this.headShift = Math.max(0, Math.min(this.headShift, max));
     }
-    // 4px — не дёргаем кнопки на границе из-за рамок/скруглений.
-    const tol = 4;
-    this.headCanScrollRight = max > tol && this.headShift < max - tol;
-    this.headCanScrollLeft = this.headShift > tol;
-    return prevRight !== this.headCanScrollRight || prevLeft !== this.headCanScrollLeft;
+    this.headCanScrollLeft = this.headShift > 4;
   }
 
-  /** #924: шапка полосы не помещается в ширину — вместо сжатия и наезжания
-      контролов держим одну строку: её ширина всегда равна доступной, а при
-      нехватке места недостающая часть уходит за правый край и показывается
-      челноками. Стрелки стоят в той же полосе как крайние элементы (слева до,
-      справа после строки) и ни один контрол не перекрывают: правая видна,
-      когда есть скрытый хвост, и сдвигает строку к последним контролам;
-      левая появляется слева, когда строка сдвинута, и возвращает к началу.
-
-      Отложенный проход (setTimeout) нужен потому, что само появление/
-      исчезновение челнока меняет ширину строки: если флаги поменялись, делаем
-      ещё проход (до 4), иначе границы «залипают» на устаревшей ширине и
-      кнопка возврата пропадает. Дополнительно за размером строки следит
-      ResizeObserver: пересчёт при любом изменении ширины (тик цены, ресайз,
-      сворачивание панели). */
+  /** #924: пересчёт границ сдвига строки шапки. Отложенный проход (setTimeout)
+      нужен, чтобы DOM уже применил предыдущие изменения; за шириной строки
+      дополнительно следит ResizeObserver (тик цены, ресайз, сворачивание). */
   private refreshHeadShuttles(): void {
     if (this.shuttleRefreshTimer != null) return;
     this.shuttleRefreshTimer = setTimeout(() => {
       this.shuttleRefreshTimer = null;
-      const changed = this.runHeadShuttleRefresh();
-      if (changed && this.shuttleSettlePasses < 4) {
-        this.shuttleSettlePasses++;
-        this.refreshHeadShuttles();
-      } else {
-        this.shuttleSettlePasses = 0;
-      }
+      this.runHeadShuttleRefresh();
     }, 0);
   }
 
   /** «» — сдвигаем строку к концу, к последним контролам. */
   headShuttleEnd(): void {
+    const max = this.measureMaxHeadShift();
+    if (max <= 4) return;
     this.headPinnedToEnd = true;
-    this.runHeadShuttleRefresh();
+    this.maxHeadShift = max;
+    this.headShift = max;
+    this.headCanScrollLeft = true;
     this.refreshHeadShuttles();
   }
 
@@ -482,7 +460,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   headShuttleStart(): void {
     this.headPinnedToEnd = false;
     this.headShift = 0;
-    this.runHeadShuttleRefresh();
+    this.headCanScrollLeft = false;
     this.refreshHeadShuttles();
   }
 
@@ -499,7 +477,6 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     const step = Math.sign(delta) * 60;
     this.maxHeadShift = max;
     this.headShift = Math.max(0, Math.min(max, Math.round(this.headShift + step)));
-    this.headCanScrollRight = this.headShift < max - 4;
     this.headCanScrollLeft = this.headShift > 4;
     this.refreshHeadShuttles();
   }
