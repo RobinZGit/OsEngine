@@ -1670,21 +1670,22 @@ describe('TerminalPanelComponent', () => {
       discardPeriodicTasks();
     }));
 
-    it('слоты челноков стоят по краям блока «свернуть + закрыть позицию»', () => {
-      // #924: жёсткое крепление — [««»] блок инструментов [«»»] строка.
+    it('слот челнока — самый первый элемент полосы, у самого левого края', () => {
+      // #924: жёсткое крепление — [челнок] блок инструментов [строка].
+      // Порядок детей не меняется при сдвиге: только стрелка внутри слота.
       const cls = () => Array.from(
         fixture.debugElement.query(By.css('.tpanel-head-outer')).nativeElement.children
       ).map((c) => (c as HTMLElement).className);
       expect(cls()).toEqual([
-        'tpanel-head-tools',
         'tpanel-head-shuttle-slot',
+        'tpanel-head-tools',
         'tpanel-head',
       ]);
       const tools = fixture.debugElement.query(By.css('.tpanel-head-tools'));
       expect(tools.nativeElement.querySelector('.tpanel-collapse')).not.toBeNull();
       expect(tools.nativeElement.querySelector('.tpanel-pos')).not.toBeNull();
 
-      // После сдвига ««» встаёт слева от блока инструментов.
+      // После сдвига порядок детей тот же — слот остаётся первым.
       const el = component.headScroll?.nativeElement as HTMLElement;
       Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
       Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });

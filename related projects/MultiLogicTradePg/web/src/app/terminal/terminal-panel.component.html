@@ -3,12 +3,12 @@
     class="tpanel-head-outer"
     [title]="signalEvent ? signalBarHint : ''"
   >
-    <!-- #924: слоты челноков — ЖЁСТКО на своих местах: ««» слева от блока
-         «свернуть + закрыть позицию», «»» справа от него. Виден ровно ОДИН из
-         двух: изначально «»» (сдвинуть строку вправо, к последним контролам),
-         после сдвига — ««» в начале строки (вернуть всё к началу). -->
-    @if (headShowLeft) {
-      <div class="tpanel-head-shuttle-slot">
+    <!-- #924: челнок — ЖЁСТКО в самом начале полосы, первым элементом, его
+         ничто не может вытолкнуть или перекрыть. Внутри слота видно РОВНО ОДНУ
+         кнопку: изначально «»» (сдвинуть всю строку вправо, к последним
+         контролам), после сдвига — ««» (вернуть всё к началу). -->
+    <div class="tpanel-head-shuttle-slot">
+      @if (headShowLeft) {
         <button
           type="button"
           class="tpanel-head-shuttle tpanel-head-shuttle-left"
@@ -16,8 +16,16 @@
           aria-label="Вернуть строку к началу"
           (click)="headShuttleStart()"
         >«</button>
-      </div>
-    }
+      } @else {
+        <button
+          type="button"
+          class="tpanel-head-shuttle tpanel-head-shuttle-right"
+          title="Сдвинуть строку к концу"
+          aria-label="Сдвинуть строку к концу"
+          (click)="headShuttleEnd()"
+        >»</button>
+      }
+    </div>
     <div class="tpanel-head-tools">
     <button
       type="button"
@@ -81,21 +89,6 @@
       </span>
     </div>
     </div>
-    <!-- #924: слот челнока — жёстко на своём месте сразу ПРАВЕЕ блока
-         «свернуть + закрыть позицию». Виден ровно ОДИН из двух: изначально
-         «» (сдвинуть строку вправо, к последним контролам), после сдвига —
-         «« (вернуть всё к началу). Слот не зависит от замеров ширины. -->
-    @if (!headShowLeft) {
-      <div class="tpanel-head-shuttle-slot">
-        <button
-          type="button"
-          class="tpanel-head-shuttle tpanel-head-shuttle-right"
-          title="Сдвинуть строку к концу"
-          aria-label="Сдвинуть строку к концу"
-          (click)="headShuttleEnd()"
-        >»</button>
-      </div>
-    }
     <div
       class="tpanel-head"
       #headScroll
