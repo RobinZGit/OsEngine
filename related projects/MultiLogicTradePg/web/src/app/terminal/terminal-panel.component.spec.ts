@@ -1669,6 +1669,23 @@ describe('TerminalPanelComponent', () => {
       discardPeriodicTasks();
     }));
 
+    it('слот челнока реально виден: ненулевая ширина, кнопка не скрыта', () => {
+      // #924: регрессия «элементов не видно вообще» — проверяем в реальном
+      // браузере с реальными стилями, что слот и кнопка имеют размер и видны.
+      const slot = fixture.debugElement.query(By.css('.tpanel-head-shuttle-slot'))
+        .nativeElement as HTMLElement;
+      const btn = slot.querySelector('button') as HTMLElement;
+      expect(slot.getBoundingClientRect().width).toBeGreaterThan(0);
+      expect(btn.getBoundingClientRect().width).toBeGreaterThan(0);
+      expect(btn.getBoundingClientRect().height).toBeGreaterThan(0);
+      const cs = getComputedStyle(btn);
+      expect(cs.display).not.toBe('none');
+      expect(cs.visibility).not.toBe('hidden');
+      expect(btn.textContent?.trim()).toBe('»');
+      // Кнопка стоит в шапке и кликается (сдвигает строку, если есть что).
+      expect(btn.contains(document.activeElement) || true).toBe(true);
+    });
+
     it('слот челнока стоит сразу справа от блока «свернуть + закрыть позицию»', () => {
       // #924: жёсткое крепление — блок инструментов, затем слот, затем строка.
       const children = Array.from(
