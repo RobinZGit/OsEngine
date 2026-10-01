@@ -350,42 +350,95 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** True, если правая стрелка-челнок нужна (есть скрытый хвост строки). */
   headCanScrollRight = false;
 
-  /** True, если строка шапки сдвинута — в начале видна стрелка назад. */
+  /** True, если строка шапки сдвинута — слева виден челнок возврата. */
   headCanScrollLeft = false;
 
-  /** #924: шапка полосы не помещается в ширину — вместо сжатия и наезжания
-      контролов держим одну строку с горизонтальной прокруткой. Кнопки-челноки
-      по краям: «» в конце сдвигает строку к последним контролам, «« в начале
-      возвращает к первым. Показываются только когда есть куда сдвигать. */
-  private refreshHeadShuttles(): void {
-    const el = this.headScroll?.nativeElement;
-    if (!el) return;
-    // 6px: не дёргаем кнопки при незначительном перескоке из-за рамок.
-    const tol = 6;
-    const maxScroll = el.scrollWidth - el.clientWidth;
-    this.headCanScrollRight = maxScroll > tol && el.scrollLeft < maxScroll - tol;
-    this.headCanScrollLeft = el.scrollLeft > tol;
+  /** Сдвиг строки в px (внутрь). 0 — строка прижата к началу. */
+  headShift = 0;
+
+  /** Максимальный сдвиг: ширина контролов − ширина строки (0 — всё помещается). */
+  private maxHeadShift = 0;
+
+  /** После «сдвинуть к концу» держим хвост у правого края, даже если ширина
+      строки меняется (появился/исчез левый челнок, ресайз окна). */
+  private headPinnedToEnd = false;
+
+  /** Подписка на пересчёт флагов челноков (setTimeout — чтобы DOM уже успел
+      применить изменения флагов и ширины строки). */
+  private shuttleRefreshTimer: any = null;
+
+  /** Смещение строки transform-ом — сдвигаем контент влево, чтобы показать
+      хвост; сама строка остаётся своей ширины, клипы по краю (`overflow: hidden`). */
+  get headShiftTransform(): string {
+    return this.headShift > 0 ? `translateX(-${this.headShift}px)` : '';
   }
 
-  onHeadScroll(): void {
+  /** #924: шапка полосы не помещается в ширину — вместо сжатия и наезжания
+      контролов держим одну строку: её ширина всегда равна доступной, а при
+      нехватке места недостающая часть уходит за правый край и показывается
+      челноками. Стрелки стоят в той же полосе как крайние элементы (слева до,
+      справа после строки) и ни один контрол не перекрывают: правая видна,
+      когда есть скрытый хвост, и сдвигает строку к последним контролам;
+      левая появляется слева, когда строка сдвинута, и возвращает к началу.
+      Пересчёт выполняется в setTimeout: к этому моменту Angular уже применил
+      изменение флагов к DOM, поэтому scrollWidth/clientWidth строки точные
+      (в т.ч. когда появление/исчезновение челнока меняет её ширину). */
+  private refreshHeadShuttles(): void {
+    if (this.shuttleRefreshTimer != null) return;
+    this.shuttleRefreshTimer = setTimeout(() => {
+      this.shuttleRefreshTimer = null;
+      const el = this.headScroll?.nativeElement;
+      if (!el) return;
+      const max = Math.max(0, el.scrollWidth - el.clientWidth);
+      this.maxHeadShift = max;
+      if (this.headPinnedToEnd) {
+        this.headShift = max;
+      } else if (this.headShift > max) {
+        this.headShift = max;
+      }
+      // 4px — не дёргаем кнопки на границе из-за рамок/скруглений.
+      const tol = 4;
+      this.headCanScrollRight = max > tol && this.headShift < max - tol;
+      this.headCanScrollLeft = this.headShift > tol;
+    }, 0);
+  }
+
+  /** «» — сдвигаем строку к концу, к последним контролам. */
+  headShuttleEnd(): void {
+    this.headPinnedToEnd = true;
+    this.headShift = this.maxHeadShift;
+    this.refreshHeadShuttles();
+  }
+
+  /** «« — возвращаем строку к началу. */
+  headShuttleStart(): void {
+    this.headPinnedToEnd = false;
+    this.headShift = 0;
+    this.refreshHeadShuttles();
+  }
+
+  /** Колесо над шапкой сдвигает строку по горизонтали, когда есть что сдвигать. */
+  onHeadWheel(event: WheelEvent): void {
+    if (this.maxHeadShift <= 0) return;
+    event.preventDefault();
+    this.headPinnedToEnd = false;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
+    if (delta === 0) return;
+    const step = Math.sign(delta) * 60;
+    this.headShift = Math.max(
+      0,
+      Math.min(this.maxHeadShift, Math.round(this.headShift + step))
+    );
     this.refreshHeadShuttles();
   }
 
   @HostListener('window:resize')
   onWindowResize(): void {
+    // Ширина полосы/строки изменилась — пересчитываем границы сдвига.
+    this.headPinnedToEnd = false;
     this.refreshHeadShuttles();
-  }
-
-  /** «» — сдвигаем строку шапки к концу, к последним контролам. */
-  headShuttleEnd(): void {
-    const el = this.headScroll?.nativeElement;
-    if (!el) return;
-    el.scrollTo({ left: el.scrollWidth - el.clientWidth, behavior: 'smooth' });
-  }
-
-  /** «« — возвращаем строку шапки к началу. */
-  headShuttleStart(): void {
-    this.headScroll?.nativeElement?.scrollTo({ left: 0, behavior: 'smooth' });
   }
 
   /** Действующая максимальная сумма (после правки импута). */

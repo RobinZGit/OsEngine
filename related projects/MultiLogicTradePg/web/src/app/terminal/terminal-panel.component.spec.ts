@@ -1448,7 +1448,9 @@ describe('TerminalPanelComponent', () => {
       timeframe: 'H1',
     });
     fixture.detectChanges();
-    const head = fixture.debugElement.query(By.css('.tpanel-head'));
+    // #924: хинт висит на полосе шапки (`.tpanel-head-outer`) — она же
+    // владеет челноками по краям.
+    const head = fixture.debugElement.query(By.css('.tpanel-head-outer'));
     expect(head.nativeElement.getAttribute('title')).toContain('Сигнал логики');
     expect(head.nativeElement.getAttribute('title')).toContain('назад');
 
@@ -1586,29 +1588,32 @@ describe('TerminalPanelComponent', () => {
   });
 
   describe('#924 стрелки-челноки строки шапки', () => {
-    it('«Сдвинуть к концу» вызывает прокрутку на максимум', () => {
-      const el = component.headScroll?.nativeElement;
-      expect(el).toBeTruthy();
-      const head: HTMLElement = el as HTMLElement;
-      const spy = jasmine.createSpy('scrollTo');
-      head.scrollTo = spy as unknown as typeof head.scrollTo;
-      component.headShuttleEnd();
-      expect(spy).toHaveBeenCalledWith(
-        jasmine.objectContaining({
-          left: head.scrollWidth - head.clientWidth,
-          behavior: 'smooth',
-        })
-      );
-    });
-
-    it('«Вернуть к началу» прокручивает в нулевую позицию', () => {
+    it('«Сдвинуть к концу» сдвигает строку на всю скрытую ширину (transform)', fakeAsync(() => {
+      // #924: сдвиг — transform-ом, кнопка-челнок в полосе, а не прокрутка.
       const el = component.headScroll?.nativeElement as HTMLElement;
-      const spy = jasmine.createSpy('scrollTo');
-      el.scrollTo = spy as unknown as typeof el.scrollTo;
+      Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
+      Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
+      component.headShuttleEnd();
+      tick(); // отработал отложенный пересчёт границ сдвига
+      expect(component.headShift).toBe(300);
+      expect(component.headShiftTransform).toBe('translateX(-300px)');
+      expect(component.headCanScrollLeft).toBe(true);
+      expect(component.headCanScrollRight).toBe(false);
+      discardPeriodicTasks();
+    }));
+
+    it('«Вернуть к началу» возвращает строку к началу (shift = 0)', fakeAsync(() => {
+      const el = component.headScroll?.nativeElement as HTMLElement;
+      Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
+      Object.defineProperty(el, 'scrollWidth', { value: 400, configurable: true });
+      component.headShuttleEnd();
+      tick();
       component.headShuttleStart();
-      expect(spy).toHaveBeenCalledWith(
-        jasmine.objectContaining({ left: 0, behavior: 'smooth' })
-      );
-    });
+      tick();
+      expect(component.headShift).toBe(0);
+      expect(component.headShiftTransform).toBe('');
+      expect(component.headCanScrollLeft).toBe(false);
+      discardPeriodicTasks();
+    }));
   });
 });

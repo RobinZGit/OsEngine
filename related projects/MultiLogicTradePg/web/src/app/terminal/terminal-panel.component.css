@@ -34,64 +34,63 @@
   border-color: #93c5fd;
 }
 
+.tpanel-head-outer {
+  display: flex;
+  align-items: stretch;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  /* Строка шапки шире доступного — лишнее обрезается по краю полосы,
+     показывается челноками сдвига (#924). */
+  overflow: hidden;
+}
+
 .tpanel-head {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.15rem 0.5rem 0.15rem 0.4rem;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-  /* #924: при нехватке ширины строка шапки не сжимает контролы внахлёст,
-     а прокручивается по горизонтали кнопками-челноками по краям. */
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
+  /* #924: контент сдвигаем transform-ом, чтобы показать хвост строки */
+  will-change: transform;
+  transition: transform 0.2s ease;
 }
 
-.tpanel-head::-webkit-scrollbar {
-  display: none;
-}
-
-/* #924: кнопки-челноки по краям строки шапки: «» в конце сдвигает к последним
-   контролам, «« в начале возвращает к началу. Видны только когда есть куда
-   сдвигать; липнут к своему краю во время прокрутки. */
+/* #924: кнопки-челноки — крайние ЭЛЕМЕНТЫ той же полосы: левый «« стоит до
+   строки, правый «» после неё и занимают своё место, НИЧЕГО не перекрывая.
+   Правый виден, когда есть скрытый хвост; левый появляется, когда строку
+   сдвинули, и возвращает её к началу. */
 .tpanel-head-shuttle {
-  position: sticky;
-  z-index: 4;
+  flex: none;
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  align-self: center;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.7rem;
   padding: 0;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #fff;
+  border: none;
+  background: #f9fafb;
   color: #1e3a5f;
   cursor: pointer;
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   line-height: 1;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
 }
 
 .tpanel-head-shuttle:hover {
-  background: #eff6ff;
-  border-color: #93c5fd;
+  background: #eef2f7;
+  color: #1d4ed8;
 }
 
 .tpanel-head-shuttle-left {
-  left: 0;
+  border-right: 1px solid #e5e7eb;
 }
 
 .tpanel-head-shuttle-right {
-  right: 0;
+  border-left: 1px solid #e5e7eb;
 }
 
 /* #924: постоянные блоки шапки не сжимаем внахлёст — при нехватке ширины
-   строка прокручивается челноками, и контролы сохраняют натуральную ширину. */
+   строка сдвигается челноками, и контролы сохраняют натуральную ширину. */
 .tpanel-head .tpanel-pos,
 .tpanel-head .tpanel-head-trade,
 .tpanel-head .tpanel-auto-close,

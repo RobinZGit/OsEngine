@@ -1,8 +1,6 @@
 <div class="tpanel" [class.collapsed]="collapsed">
   <div
-    class="tpanel-head"
-    #headScroll
-    (scroll)="onHeadScroll()"
+    class="tpanel-head-outer"
     [title]="signalEvent ? signalBarHint : ''"
   >
     @if (headCanScrollLeft) {
@@ -14,7 +12,13 @@
         (click)="headShuttleStart()"
       >«</button>
     }
-    <button
+    <div
+      class="tpanel-head"
+      #headScroll
+      (wheel)="onHeadWheel($event)"
+      [style.transform]="headShiftTransform"
+    >
+      <button
       type="button"
       class="tpanel-collapse"
       [attr.aria-expanded]="!collapsed"
@@ -228,6 +232,7 @@
       aria-label="Убрать полосу"
       (click)="remove.emit()"
     >✕</button>
+    </div>
     @if (headCanScrollRight) {
       <button
         type="button"
