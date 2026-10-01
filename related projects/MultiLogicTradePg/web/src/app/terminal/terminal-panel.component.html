@@ -1,8 +1,19 @@
 <div class="tpanel" [class.collapsed]="collapsed">
   <div
     class="tpanel-head"
+    #headScroll
+    (scroll)="onHeadScroll()"
     [title]="signalEvent ? signalBarHint : ''"
   >
+    @if (headCanScrollLeft) {
+      <button
+        type="button"
+        class="tpanel-head-shuttle tpanel-head-shuttle-left"
+        title="Вернуть строку к началу"
+        aria-label="Вернуть строку к началу"
+        (click)="headShuttleStart()"
+      >«</button>
+    }
     <button
       type="button"
       class="tpanel-collapse"
@@ -217,6 +228,15 @@
       aria-label="Убрать полосу"
       (click)="remove.emit()"
     >✕</button>
+    @if (headCanScrollRight) {
+      <button
+        type="button"
+        class="tpanel-head-shuttle tpanel-head-shuttle-right"
+        title="Сдвинуть строку к концу"
+        aria-label="Сдвинуть строку к концу"
+        (click)="headShuttleEnd()"
+      >»</button>
+    }
   </div>
 
   <div class="tpanel-body">

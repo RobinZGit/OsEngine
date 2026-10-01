@@ -1,6 +1,8 @@
 import {
   Component,
+  ElementRef,
   EventEmitter,
+  HostListener,
   Input,
   OnChanges,
   OnDestroy,
@@ -136,6 +138,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
   @Output() positionSummary = new EventEmitter<PanelPositionSummary>();
 
   @ViewChild('mainChart') mainChart?: PriceChartComponent;
+  @ViewChild('headScroll') headScroll?: ElementRef<HTMLElement>;
   @ViewChildren(PriceChartComponent) allCharts?: QueryList<PriceChartComponent>;
 
   timeframeId: number | null = null;
@@ -269,6 +272,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.startPolling();
     this.emitStateChange();
     this.emitPositionSummary();
+    requestAnimationFrame(() => this.refreshHeadShuttles());
   }
 
   ngOnDestroy(): void {
@@ -332,6 +336,56 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy {
     this.tradeAmount = Math.max(0, Math.min(max, this.tradeAmount));
     this.tradeMessage = null;
     this.tradeError = null;
+    if (
+      changes['signalEvent'] != null ||
+      changes['trades'] != null ||
+      changes['livePrice'] != null
+    ) {
+      // Ширина шапки полосы меняется (бейдж сигнала, блок позиции) —
+      // пересчитываем видимость стрелок-челноков.
+      requestAnimationFrame(() => this.refreshHeadShuttles());
+    }
+  }
+
+  /** True, если правая стрелка-челнок нужна (есть скрытый хвост строки). */
+  headCanScrollRight = false;
+
+  /** True, если строка шапки сдвинута — в начале видна стрелка назад. */
+  headCanScrollLeft = false;
+
+  /** #924: шапка полосы не помещается в ширину — вместо сжатия и наезжания
+      контролов держим одну строку с горизонтальной прокруткой. Кнопки-челноки
+      по краям: «» в конце сдвигает строку к последним контролам, «« в начале
+      возвращает к первым. Показываются только когда есть куда сдвигать. */
+  private refreshHeadShuttles(): void {
+    const el = this.headScroll?.nativeElement;
+    if (!el) return;
+    // 6px: не дёргаем кнопки при незначительном перескоке из-за рамок.
+    const tol = 6;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    this.headCanScrollRight = maxScroll > tol && el.scrollLeft < maxScroll - tol;
+    this.headCanScrollLeft = el.scrollLeft > tol;
+  }
+
+  onHeadScroll(): void {
+    this.refreshHeadShuttles();
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.refreshHeadShuttles();
+  }
+
+  /** «» — сдвигаем строку шапки к концу, к последним контролам. */
+  headShuttleEnd(): void {
+    const el = this.headScroll?.nativeElement;
+    if (!el) return;
+    el.scrollTo({ left: el.scrollWidth - el.clientWidth, behavior: 'smooth' });
+  }
+
+  /** «« — возвращаем строку шапки к началу. */
+  headShuttleStart(): void {
+    this.headScroll?.nativeElement?.scrollTo({ left: 0, behavior: 'smooth' });
   }
 
   /** Действующая максимальная сумма (после правки импута). */

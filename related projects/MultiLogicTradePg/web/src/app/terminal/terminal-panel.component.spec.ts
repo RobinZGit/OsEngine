@@ -1584,4 +1584,31 @@ describe('TerminalPanelComponent', () => {
       expect(component.positionPrice).toBe(260);
     });
   });
+
+  describe('#924 стрелки-челноки строки шапки', () => {
+    it('«Сдвинуть к концу» вызывает прокрутку на максимум', () => {
+      const el = component.headScroll?.nativeElement;
+      expect(el).toBeTruthy();
+      const head: HTMLElement = el as HTMLElement;
+      const spy = jasmine.createSpy('scrollTo');
+      head.scrollTo = spy as unknown as typeof head.scrollTo;
+      component.headShuttleEnd();
+      expect(spy).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          left: head.scrollWidth - head.clientWidth,
+          behavior: 'smooth',
+        })
+      );
+    });
+
+    it('«Вернуть к началу» прокручивает в нулевую позицию', () => {
+      const el = component.headScroll?.nativeElement as HTMLElement;
+      const spy = jasmine.createSpy('scrollTo');
+      el.scrollTo = spy as unknown as typeof el.scrollTo;
+      component.headShuttleStart();
+      expect(spy).toHaveBeenCalledWith(
+        jasmine.objectContaining({ left: 0, behavior: 'smooth' })
+      );
+    });
+  });
 });
