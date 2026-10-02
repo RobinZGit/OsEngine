@@ -579,8 +579,33 @@
   font-weight: 600;
 }
 /* ����������� � ������� ������: ������ ������ �������� ���������. */
+.term-feed-down {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  align-items: baseline;
+  margin: 0 0 0.75rem;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #dc2626;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.term-feed-down strong {
+  font-weight: 700;
+}
+.term-feed-down-prices {
+  background: #fffbeb;
+  color: #92400e;
+  border-color: #fde68a;
+  border-left-color: #f59e0b;
+}
 .term-toast {
   position: fixed;
+
   top: 0.9rem;
   left: 50%;
   transform: translateX(-50%);

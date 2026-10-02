@@ -261,13 +261,15 @@ export class TerminalStateService {
     );
   }
 
-  /** Непрочитанные сигналы логик в терминал (всех логик, новые по id).
+  /** Непрочитанные сигналы логик в терминал (всех логик, свежие первыми).
       Сигнал не привязан к счёту: бумага появляется в терминале, а сделки
       идут по счёту, выбранному в терминале. */
   getLogicSignals(
     limit = 200
   ): Observable<TerminalLogicSignalsResponse> {
-    const params = new HttpParams().set('limit', String(limit));
+    const params = new HttpParams()
+      .set('limit', String(limit))
+      .set('order', 'desc');
     return this.http.get<TerminalLogicSignalsResponse>(
       `${this.appConfig.apiUrl}/terminal/logic-signals`,
       { params }

@@ -60,6 +60,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
   stocks: SecurityRow[] = [];
   /** Облигации (security_type Bond), зарегистрированные для терминала. */
   bonds: SecurityRow[] = [];
+  /** #925: фонды/ETF и прочие торгуемые бумаги (instrument_market 'other'),
+      кроме синтетики контанго. Нужны и в byId, и в выборе бумаг. */
+  etfs: SecurityRow[] = [];
   timeframes: TimeframeRow[] = [];
   /** Синтетики контанго (префикс CTG:*) по префиксу фьючерса. */
   contangoByPrefix = new Map<string, SecurityRow>();
@@ -108,6 +111,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   loading = true;
   error: string | null = null;
+
+  /** #925: лента сигналов логик недоступна (API не отвечает). Показываем
+      статичное сообщение и держим его, пока следующий опрос не пройдёт —
+      чтобы «нет бумаг» не выглядело так, будто сигналов нет вовсе. */
+  logicFeedDown = false;
+  /** #925: не удаётся получить живые цены (T-Bank/API). Сообщение держим,
+      пока цены снова не придут. */
+  pricesFeedDown = false;
 
   /** История сделок терминала выбранного счёта (новые сверху). */
   trades: TerminalTradeRow[] = [];
@@ -281,6 +292,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.livePriceBySecurity = new Map();
         this.livePricesUpdatedAt = null;
       }
+      this.pricesFeedDown = false;
       return;
     }
     this.lastPricesBusy = true;
@@ -288,6 +300,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
       next: (r) => {
         this.lastPricesBusy = false;
         if (this.destroyed) return;
+        // Ответ сервиса получен — лента цен доступна, снимаем предупреждение.
+        this.pricesFeedDown = false;
         const quotes = r?.prices ?? [];
         if (r?.throttled || quotes.length === 0) return;
         const next = new Map<number, number>();
@@ -304,6 +318,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.lastPricesBusy = false;
+        // #925: сервис цен молчит — держим статичное предупреждение, пока он
+        // снова не ответит (сообщение снимается в ветке next выше).
+        if (!this.destroyed) this.pricesFeedDown = true;
       },
     });
   }
@@ -362,6 +379,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
       this.futures = [];
       this.stocks = [];
       this.bonds = [];
+      this.etfs = [];
       this.contangoByPrefix.clear();
       return;
     }
@@ -372,6 +390,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         const futures: SecurityRow[] = [];
         const stocks: SecurityRow[] = [];
         const bonds: SecurityRow[] = [];
+        const others: SecurityRow[] = [];
         const contango = new Map<string, SecurityRow>();
         const seenIds = new Set<number>();
         for (const list of lists) {
@@ -386,18 +405,27 @@ export class TerminalComponent implements OnInit, OnDestroy {
               bonds.push(s);
             } else if (s.prefix && s.prefix.startsWith('CTG:')) {
               contango.set('CTG:' + s.prefix.slice(4), s);
+            } else {
+              // #925: прочие торгуемые бумаги (ETF/фонды, instrument_market
+              // 'other'), кроме синтетики контанго. Раньше они молча выпадали
+              // из byId, и сигналы логик по ним не попадали в терминал.
+              others.push(s);
             }
           }
         }
         futures.sort((a, b) => a.prefix.localeCompare(b.prefix, 'ru'));
         stocks.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
         bonds.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+        others.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
         this.futures = futures;
         this.stocks = stocks;
         this.bonds = bonds;
+        this.etfs = others;
         this.contangoByPrefix = contango;
+        // byId — для разрешения ЛЮБОЙ бумаги по id (сигналы, сделки, полосы),
+        // поэтому включает и ETF/прочие, а не только акции/фьючерсы/облигации.
         this.byId = new Map(
-          [...futures, ...stocks, ...bonds].map((s) => [s.id, s])
+          [...futures, ...stocks, ...bonds, ...others].map((s) => [s.id, s])
         );
         // Полосы перечитываем из сохранённого состояния только если они ещё
         // пустые (на момент первого запроса справочник бумаг мог быть не готов).
@@ -414,6 +442,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.futures = [];
         this.stocks = [];
         this.bonds = [];
+        this.etfs = [];
         this.contangoByPrefix.clear();
       },
     });
@@ -480,12 +509,18 @@ export class TerminalComponent implements OnInit, OnDestroy {
   private pollLogicSignals(): void {
     this.stateSvc.getLogicSignals().subscribe({
       next: (r) => {
+        // #925: связь есть — снимаем предупреждение о недоступной ленте.
+        this.logicFeedDown = false;
         this.applyLogicSignals(r?.signals ?? []);
         // #923: каждый опрос проверяем полосы без позиции — убрать те,
         // у которых с последнего сигнала прошло больше, чем её таймфрейм.
         this.removeFlatPanelsAfterSignalTimeout();
       },
-      error: () => undefined,
+      error: () => {
+        // #925: API сигналов не ответил — держим статичное предупреждение,
+        // пока следующий опрос не пройдёт успешно.
+        if (!this.destroyed) this.logicFeedDown = true;
+      },
     });
   }
 
@@ -494,9 +529,15 @@ export class TerminalComponent implements OnInit, OnDestroy {
       прочитанными и показать уведомление сверху страницы. */
   private applyLogicSignals(signals: TerminalLogicSignal[]): void {
     if (!signals.length) return;
+    // Все полученные сигналы отмечаем прочитанными, даже если полосу по ним
+    // не показали. Иначе непрочитанный хвост (нет бумаги в справочнике или
+    // сигнал уже просрочен) застревает в голове очереди и свежие сигналы
+    // никогда не доходят до терминала.
+    const processed: number[] = [];
     const applied: number[] = [];
     const newPanels: number[] = [];
     for (const s of signals) {
+      processed.push(s.id);
       if (!this.byId.has(s.security_id)) continue;
       const sideLabel = (s.side_label || 'покупка').toLowerCase();
       const logicName = s.logic_name || `логика #${s.logic_id}`;
@@ -527,6 +568,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
       const tf = this.timeframes.some((t) => t.id === s.timeframe_id)
         ? s.timeframe_id
         : this.commonTimeframeId;
+      // #923/#925: если сигнал уже старше своего окна удержания, полосу по нему
+      // терминал тут же удалил бы. Не создаём её (иначе «мигание») и не трогаем
+      // существующую — просто считаем сигнал обработанным, чтобы он не застревал
+      // в очереди непрочитанных и не блокировал свежие бумаги.
+      if (this.signalPastKeepWindow(event)) continue;
       const ids = (s.indicator_ids ?? []).filter((v) => Number.isInteger(v));
       const existing = this.panels.find((p) => p.security.id === s.security_id);
       let target: PanelModel;
@@ -573,10 +619,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
           (s.timeframe ? `, таймфрейм ${s.timeframe}` : '')
       );
     }
-    if (applied.length) {
-      this.scheduleSave();
-      this.markSignalsRead(applied);
-    }
+    if (applied.length) this.scheduleSave();
+    this.markSignalsRead(processed);
     this.showSignalsToastList(this.signalToastMessages);
     this.signalToastMessages = [];
     // Пачка сигналов добавила полосы: подводим к последней добавленной,
@@ -923,6 +967,31 @@ export class TerminalComponent implements OnInit, OnDestroy {
     return CODE_SEC_MS[code] ?? null;
   }
 
+  /** Момент появления/актуальности сигнала: created_at (время записи цикла),
+      иначе bar_dt + таймфрейм (≈ время закрытия бара сигнала). NaN — неизвестен. */
+  private signalFireMs(ev: TerminalLogicSignalEvent): number {
+    const created = ev.created_at ? new Date(ev.created_at).getTime() : Number.NaN;
+    if (Number.isFinite(created)) return created;
+    const barMs = ev.bar_dt ? new Date(ev.bar_dt).getTime() : Number.NaN;
+    const frameSec = this.signalFrameSeconds(ev);
+    if (Number.isFinite(barMs) && frameSec != null && frameSec > 0) {
+      return barMs + frameSec * 1000;
+    }
+    return Number.NaN;
+  }
+
+  /** #923/#925: сигнал уже старше окна удержания полосы (для M1/M5/M10 минимум
+      5 минут, для M15+ — сам таймфрейм). По такому сигналу полосу не создаём и
+      не трогаем: терминал удалил бы её следующим же опросом. Таймфрейм или время
+      сигнала неизвестны — считаем сигнал свежим (не выбрасываем вслепую). */
+  private signalPastKeepWindow(ev: TerminalLogicSignalEvent): boolean {
+    const frameSec = this.signalFrameSeconds(ev);
+    if (frameSec == null || frameSec <= 0) return false;
+    const fireMs = this.signalFireMs(ev);
+    if (!Number.isFinite(fireMs)) return false;
+    return Date.now() - fireMs >= Math.max(frameSec * 1000, 5 * 60 * 1000);
+  }
+
   /** #923: полоса без позиции (нулевой остаток) живёт в списке не дольше
       таймфрейма последнего сигнала по этой бумаге, но НЕ меньше 5 минут:
       M1/M5/M10 — минимум 5 минут (мелкие сигналы должны быть видны, а не
@@ -937,26 +1006,12 @@ export class TerminalComponent implements OnInit, OnDestroy {
       с открытой позицией — тоже. */
   private removeFlatPanelsAfterSignalTimeout(): void {
     if (!this.panels.length) return;
-    const MIN_KEEP_MS = 5 * 60 * 1000; // минимум 5 минут для любых полос
-    const now = Date.now();
     const stale: number[] = [];
     for (const p of this.panels) {
       const ev = p.signal_event;
       if (!ev) continue; // полоса добавлена без сигнала — не трогаем
       if (this.securityRemainderQty(p.security.id) !== 0) continue;
-      const frameSec = this.signalFrameSeconds(ev);
-      if (frameSec == null || frameSec <= 0) continue;
-      // Момент появления сигнала: created_at (запись цикла), иначе —
-      // открытие бара сигнала + таймфрейм (≈ время его закрытия/записи).
-      let fireMs = ev.created_at ? new Date(ev.created_at).getTime() : Number.NaN;
-      if (!Number.isFinite(fireMs)) {
-        const barMs = ev.bar_dt ? new Date(ev.bar_dt).getTime() : Number.NaN;
-        if (Number.isFinite(barMs)) fireMs = barMs + frameSec * 1000;
-      }
-      if (!Number.isFinite(fireMs)) continue;
-      // Срок выдержки не истёк (минимум 5 минут, а для M15+ — свой таймфрейм) —
-      // бумага ещё может «ожить» по этому сигналу.
-      if (now - fireMs < Math.max(frameSec * 1000, MIN_KEEP_MS)) continue;
+      if (!this.signalPastKeepWindow(ev)) continue;
       stale.push(p.uid);
     }
     if (!stale.length) return;

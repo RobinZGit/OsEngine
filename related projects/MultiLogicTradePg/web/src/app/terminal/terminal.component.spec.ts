@@ -177,6 +177,134 @@ describe('TerminalComponent — удаление полос без позици�
   });
 });
 
+describe('TerminalComponent — очередь сигналов не застревает (#925)', () => {
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.commonTimeframeId = 1;
+    c.timeframes = [
+      { id: 1, tf: 'M1', sec: 60, full_name: '1 минута', is_active: true },
+      { id: 15, tf: 'M15', sec: 900, full_name: '15 минут', is_active: true },
+    ];
+    c.trades = [];
+    c.panels = [];
+    c.byId = new Map<number, any>();
+    c.markSignalsRead = jasmine.createSpy('markSignalsRead');
+    c.showSignalsToastList = () => undefined;
+    c.scrollToPanel = () => undefined;
+    c.buildPanel = jasmine.createSpy('buildPanel').and.callFake(
+      (securityId: number, tf: number, _h: number, ev: any) => ({
+        uid: 500 + securityId,
+        security: { id: securityId },
+        timeframe_id: tf,
+        signal_event: { ...ev },
+        logic_indicator_ids: [],
+        auto_close_on_logic_signal: true,
+        collapsed: false,
+      })
+    );
+    return c;
+  }
+
+  function sig(
+    id: number,
+    securityId: number,
+    createdAtMs: number,
+    timeframeId = 1,
+    timeframe = 'M1'
+  ): any {
+    return {
+      id,
+      logic_id: 7,
+      logic_name: 'Логика',
+      security_id: securityId,
+      security_name: 'Бумага',
+      security_prefix: 'TEST',
+      side_label: 'покупка',
+      position_side: 'long',
+      bar_dt: new Date(createdAtMs).toISOString(),
+      created_at: new Date(createdAtMs).toISOString(),
+      timeframe_id: timeframeId,
+      timeframe,
+      price: 100,
+      suggested_quantity: 1,
+      suggested_amount: 100,
+      indicator_ids: [],
+    };
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: {} },
+        { provide: SecuritiesService, useValue: {} },
+        { provide: TerminalStateService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  it('сигнал по бумаге, которой нет в справочнике, всё равно помечается прочитанным', () => {
+    const c = makeComponent();
+    c.applyLogicSignals([sig(11, 999, Date.now())]);
+    expect(c.buildPanel).not.toHaveBeenCalled();
+    expect(c.markSignalsRead).toHaveBeenCalledWith([11]);
+  });
+
+  it('устаревший сигнал не создаёт полосу, но помечается прочитанным (очередь движется)', () => {
+    const c = makeComponent();
+    c.byId = new Map([[101, { id: 101 }]]);
+    c.applyLogicSignals([sig(21, 101, Date.now() - 10 * 60_000)]);
+    expect(c.buildPanel).not.toHaveBeenCalled();
+    expect(c.panels.length).toBe(0);
+    expect(c.markSignalsRead).toHaveBeenCalledWith([21]);
+  });
+
+  it('свежий резолвимый сигнал создаёт полосу и помечается прочитанным', () => {
+    const c = makeComponent();
+    c.byId = new Map([[101, { id: 101 }]]);
+    c.applyLogicSignals([sig(31, 101, Date.now())]);
+    expect(c.buildPanel).toHaveBeenCalled();
+    expect(c.panels.length).toBe(1);
+    expect(c.markSignalsRead).toHaveBeenCalledWith([31]);
+  });
+
+  it('пачка: нерезолвимые и протухшие помечаются, свежие применяются', () => {
+    const c = makeComponent();
+    c.byId = new Map([[101, { id: 101 }]]);
+    c.applyLogicSignals([
+      sig(41, 999, Date.now()), // нет бумаги → только пометить
+      sig(42, 101, Date.now() - 10 * 60_000), // протух → только пометить
+      sig(43, 101, Date.now()), // свежий → полоса
+    ]);
+    expect(c.panels.length).toBe(1);
+    expect(c.markSignalsRead).toHaveBeenCalledWith([41, 42, 43]);
+  });
+
+  it('signalPastKeepWindow: старый M15 протух, свежий M1 — нет', () => {
+    const c = makeComponent();
+    expect(
+      c.signalPastKeepWindow({
+        created_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+        bar_dt: null,
+        timeframe_id: 15,
+        timeframe: 'M15',
+      })
+    ).toBe(true);
+    expect(
+      c.signalPastKeepWindow({
+        created_at: new Date(Date.now() - 10_000).toISOString(),
+        bar_dt: null,
+        timeframe_id: 1,
+        timeframe: 'M1',
+      })
+    ).toBe(false);
+  });
+});
+
 describe('TerminalComponent — остаток на счёте и отклонение (#925)', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({

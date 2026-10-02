@@ -832,6 +832,11 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       Math.max(Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 200, 1),
       500
     );
+    // Порядок выдачи: по умолчанию свежие сигналы первыми (desc). Иначе при
+    // большом хвосте непрочитанных старых сигналов терминал вычитывал бы
+    // очередь с головы и свежие бумаги не появлялись бы до её конца.
+    const order =
+      String(req.query.order || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     try {
       const { rows } = await pool.query(
         `
@@ -851,7 +856,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
                ON sp.security_id = s.id AND sp.exchange_id = 1
         JOIN timeframes t ON t.id = lts.timeframe_id
         WHERE lts.is_read = FALSE
-        ORDER BY lts.id ASC
+        ORDER BY lts.id ${order}
         LIMIT $1
         `,
         [limit]

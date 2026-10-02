@@ -703,3 +703,5 @@
 164. «Order buys on paper with best result / rating at the moment best PnL — if under ~50 lines do it.»
 165. «Logic param checkbox for stop-loss with renewal: do not reduce resume stake; default off; when on, on renew never lower resume target — only keep or raise (last max / HWM); paper may stay off to the end.»
 167. «Optimize with the same test: checkbox next to Testing; form with indicator params/checkboxes/step/iterations ±; limit combos; warn on start; same run equity+paper lanes; HTML report; Apply best + Reset on Signals bar.»
+
+168. «Терминал: логики включены, сигналы есть (даже по одной минуте), но бумаги в терминал не выпадают — нестабильно, уже не раз. Если сбой в получении цен/данных, вместо сигнала логики должно приходить статичное сообщение, что сервис недоступен, и оно остаётся в терминале, пока это действительно так. Починить и выложить.»

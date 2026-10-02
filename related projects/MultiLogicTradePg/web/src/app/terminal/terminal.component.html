@@ -16,6 +16,18 @@
   }
 
   @if (!loading && !error) {
+    @if (logicFeedDown) {
+      <div class="term-feed-down" role="alert">
+        <strong>Лента сигналов логик недоступна</strong>
+        <span>Терминал не получает новые сигналы. Повторяем подключение каждые 15 секунд — бумаги появятся автоматически, как только связь восстановится.</span>
+      </div>
+    }
+    @if (pricesFeedDown) {
+      <div class="term-feed-down term-feed-down-prices" role="alert">
+        <strong>Живые цены недоступны</strong>
+        <span>Сервис котировок T-Bank не отдаёт цены. П/У по позициям и отклонение могут быть неполными; обновим их, когда цены вернутся.</span>
+      </div>
+    }
     @if (signalsToast) {
       <div class="term-toast" role="status">{{ signalsToast }}</div>
     }
@@ -197,6 +209,13 @@
                 <option [ngValue]="s.id">{{ s.prefix }} — {{ s.name }}</option>
               }
             </optgroup>
+            @if (etfs.length) {
+              <optgroup label="Фонды (ETF)">
+                @for (s of etfs; track s.id) {
+                  <option [ngValue]="s.id">{{ s.prefix }} — {{ s.name }}</option>
+                }
+              </optgroup>
+            }
             <optgroup label="Фьючерсы">
               @for (s of futures; track s.id) {
                 <option [ngValue]="s.id">{{ s.prefix }} — {{ s.name }}</option>
