@@ -45,7 +45,9 @@ export function positionQty(
 }
 
 /** Фактические деньги в позиции: сумма покупок минус сумма продаж (по ценам
-    сделок). Для шорта — отрицательные (выручка от продаж). */
+    сделок) плюс комиссия. Комиссия увеличивает «вложенные» деньги и для
+    покупки, и для продажи (у продажи уменьшает выручку), поэтому П/У —
+    чистый, с учётом комиссии. Для шорта — отрицательные. */
 export function positionCost(
   trades: readonly TerminalTradeRow[] | null | undefined,
   securityId: number
@@ -56,7 +58,9 @@ export function positionCost(
     const p = Number(t.price);
     const q = Number(t.quantity);
     if (!(Number.isFinite(p) && p >= 0 && Number.isFinite(q) && q > 0)) continue;
-    cost += t.direction === 'BUY' ? p * q : -p * q;
+    const c = Number(t.commission);
+    const commission = Number.isFinite(c) && c > 0 ? c : 0;
+    cost += (t.direction === 'BUY' ? p * q : -p * q) + commission;
   }
   return Number.isFinite(cost) ? cost : 0;
 }

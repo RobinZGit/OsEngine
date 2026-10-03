@@ -4565,6 +4565,7 @@ CREATE TABLE IF NOT EXISTS terminal_trades (
     quantity        NUMERIC(20,6) NOT NULL CHECK (quantity > 0),
     price           NUMERIC(18,6) NOT NULL CHECK (price > 0),
     amount          NUMERIC(20,6) NOT NULL,
+    commission      NUMERIC(20,6) NOT NULL DEFAULT 0,
     status          VARCHAR(20) NOT NULL DEFAULT 'filled'
         CHECK (status IN ('pending','submitted','filled','rejected','cancelled')),
     broker_order_id VARCHAR(100),
@@ -4575,10 +4576,15 @@ CREATE TABLE IF NOT EXISTS terminal_trades (
 CREATE INDEX IF NOT EXISTS idx_terminal_trades_account_executed
     ON terminal_trades (account_id, executed_at DESC);
 
+-- Миграция для уже развёрнутых БД (CREATE TABLE IF NOT EXISTS не меняет существующую таблицу).
+ALTER TABLE terminal_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(20,6) NOT NULL DEFAULT 0;
+
 COMMENT ON TABLE terminal_trades IS
-'Сделки терминала: account_id, бумага, направление, количество, цена, сумма, статус';
+'Сделки терминала: account_id, бумага, направление, количество, цена, сумма, комиссия, статус';
 COMMENT ON COLUMN terminal_trades.broker_order_id IS 'ID заявки T-Bank для реального счёта';
 COMMENT ON COLUMN terminal_trades.note IS 'Сообщение/причина отклонения';
+COMMENT ON COLUMN terminal_trades.commission IS
+'Комиссия сделки, ₽: у фейка — notional × commission_pct, у реального — из ответа T-Bank';
 
 -- Глобальный выбор счёта закладки «Терминал» (сохраняется при перезапуске).
 CREATE TABLE IF NOT EXISTS terminal_ui_state (

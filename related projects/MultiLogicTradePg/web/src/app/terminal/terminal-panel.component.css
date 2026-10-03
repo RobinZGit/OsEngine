@@ -626,6 +626,11 @@
   color: #9ca3af;
 }
 
+/* Комиссия демо-счёта: узкое поле (процент), рядом с максимальной суммой. */
+.trade-commission .trade-max-input {
+  width: 70px;
+}
+
 /* Толстый ползунок с крупным бегунком — удобно захватывать мышкой. */
 .trade-slider {
   -webkit-appearance: none;

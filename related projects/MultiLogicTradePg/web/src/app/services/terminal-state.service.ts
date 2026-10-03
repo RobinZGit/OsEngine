@@ -119,6 +119,8 @@ export interface TerminalTradeParams {
   execution: 'market' | 'limit';
   price: number;
   quantity: number;
+  /** Комиссия демо-счёта, % от суммы сделки (для реального счёта не нужна). */
+  commission_pct?: number;
 }
 
 /** Сделка терминала (история в блоке «Сделки»). */
@@ -131,6 +133,8 @@ export interface TerminalTradeRow {
   quantity: number;
   price: number;
   amount: number;
+  /** Комиссия сделки, ₽ (демо — от процента, реальный — из ответа T-Bank). */
+  commission: number;
   status: 'pending' | 'submitted' | 'filled' | 'rejected' | 'cancelled';
   broker_order_id: string | null;
   note: string | null;
@@ -148,6 +152,8 @@ export interface TerminalTradeResult {
   quantity?: number;
   price?: number;
   amount?: number;
+  /** Комиссия сделки, ₽. */
+  commission?: number;
   message?: string;
   order?: unknown;
   error?: string;

@@ -551,6 +551,12 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       }
       const amount = Number((quantity * price).toFixed(2));
       const sideLabel = direction === 'BUY' ? 'Куплено' : 'Продано';
+      // Комиссия демо-счёта (% от суммы сделки) — задаётся в терминале.
+      const commissionPctRaw = Number(req.body?.commission_pct);
+      const commissionPct =
+        Number.isFinite(commissionPctRaw) && commissionPctRaw >= 0
+          ? Math.min(commissionPctRaw, 100)
+          : null;
 
       // Реальный ордер T-Bank (фейк не выходит наружу). Сбои не падают с 500 —
       // фиксируются в terminal_trades статусом rejected.
@@ -620,6 +626,26 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         }
       }
 
+      // Комиссия: у фейка — процент от суммы сделки; у реального — из ответа
+      // T-Bank (executed → initial → service), 0 если брокер её не вернул.
+      let commission = 0;
+      if (isFake) {
+        if (commissionPct != null) {
+          commission = Number(((amount * commissionPct) / 100).toFixed(2));
+        }
+      } else if (status !== 'rejected' && order != null) {
+        try {
+          const cRows = await pool.query(
+            `SELECT tbank_order_commission($1::jsonb) AS c`,
+            [JSON.stringify(order)]
+          );
+          const c = Number(cRows.rows[0]?.c);
+          if (Number.isFinite(c) && c > 0) commission = Number(c.toFixed(2));
+        } catch (_e) {
+          /* комиссия опциональна — сделку не роняем */
+        }
+      }
+
       // Запись сделки + обновление демо-кэша фейкового счёта (остаток может уйти в минус).
       const client = await pool.connect();
       let tradeId;
@@ -628,7 +654,9 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       try {
         await client.query('BEGIN');
         if (isFake) {
-          const delta = direction === 'BUY' ? -amount : amount;
+          // Покупка: списываем сумму и комиссию; продажа: зачисляем сумму за вычетом комиссии.
+          const delta =
+            direction === 'BUY' ? -(amount + commission) : amount - commission;
           const cashRows = await client.query(
             `UPDATE accounts
              SET terminal_cash = COALESCE(terminal_cash, 0) + $1, updated_at = now()
@@ -641,8 +669,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         const trRows = await client.query(
           `INSERT INTO terminal_trades
              (account_id, security_id, direction, execution, quantity, price, amount,
-              status, broker_order_id, note)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              commission, status, broker_order_id, note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            RETURNING id, to_char(executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at`,
           [
             accountId,
@@ -652,6 +680,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
             quantity,
             price,
             amount,
+            commission,
             status,
             brokerOrderId,
             note,
@@ -678,6 +707,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         quantity,
         price,
         amount,
+        commission,
         status,
         broker_order_id: brokerOrderId,
         note,
@@ -693,6 +723,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
           quantity,
           price,
           amount,
+          commission,
           trade,
           cash,
           error: note,
@@ -709,11 +740,12 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         quantity,
         price,
         amount,
+        commission,
         trade,
         cash,
         order,
         message: isFake
-          ? `Демо: ${sideLabel} ${quantity} шт ${sec.prefix} по ~${price} — сумма ≈ ${amount} ₽. Остаток: ${Math.round(cash ?? 0).toLocaleString('ru-RU')} ₽`
+          ? `Демо: ${sideLabel} ${quantity} шт ${sec.prefix} по ~${price} — сумма ≈ ${amount} ₽${commission > 0 ? `, комиссия ≈ ${commission} ₽` : ''}. Остаток: ${Math.round(cash ?? 0).toLocaleString('ru-RU')} ₽`
           : `Сделка размещена: ${sideLabel} ${quantity} шт ${sec.prefix}`,
       });
     } catch (err) {
@@ -739,7 +771,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       const { rows } = await pool.query(
         `
         SELECT tt.id, tt.account_id, tt.security_id, tt.direction, tt.execution,
-               tt.quantity, tt.price, tt.amount, tt.status, tt.broker_order_id,
+               tt.quantity, tt.price, tt.amount, tt.commission, tt.status,
+               tt.broker_order_id,
                tt.note, to_char(tt.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS executed_at,
                s.name AS security_name,
                sp.prefix AS security_prefix
@@ -761,7 +794,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
 
   /** Удаление всех сделок терминала по счёту.
       У фейкового счёта демо-кэш пересчитывается: откатывается сумма всех
-      сделок (BUY -= amount, SELL += amount) → остаток возвращается к базовому. */
+      сделок с учётом комиссии (BUY: amount+commission, SELL: amount−commission)
+      → остаток возвращается к базовому. */
   app.delete('/api/terminal/trades', async (req, res) => {
     const accountId = parseId(req.query.account_id);
     if (accountId == null) {
@@ -773,7 +807,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       await client.query('BEGIN');
       const sumRows = await client.query(
         `SELECT COALESCE(
-           SUM(CASE WHEN direction = 'SELL' THEN amount ELSE -amount END), 0) AS delta
+           SUM(CASE WHEN direction = 'SELL' THEN amount - commission
+                    ELSE -(amount + commission) END), 0) AS delta
          FROM terminal_trades WHERE account_id = $1`,
         [accountId]
       );

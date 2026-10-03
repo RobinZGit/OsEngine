@@ -732,6 +732,23 @@ export class TerminalComponent implements OnInit, OnDestroy {
     return Number.isFinite(b) && b > 0 ? Math.floor(b) : 10000;
   }
 
+  /** Комиссия демо-счёта, % от суммы сделки (настройка терминала, по умолчанию 0.03).
+      У реального счёта комиссия берётся из ответа T-Bank, поле не используется. */
+  get commissionPct(): number {
+    const v = Number(this.settings['commission_pct']);
+    return Number.isFinite(v) && v >= 0 ? Math.min(v, 100) : 0.03;
+  }
+
+  /** Сохранить «Комиссия, %» в настройках терминала выбранного счёта. */
+  onCommissionPctChange(v: number): void {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return;
+    const pct = Math.min(n, 100);
+    if (this.commissionPct === pct) return;
+    this.settings = { ...this.settings, commission_pct: pct };
+    this.scheduleSave();
+  }
+
   /** Восстановление сохранённых полос и настроек для текущего счёта.
       Полосы применяем только если пользователь за время ответа их не менял —
       иначе запоздавший снимок «съел» бы только что добавленную бумагу. */

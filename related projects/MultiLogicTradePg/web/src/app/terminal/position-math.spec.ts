@@ -7,7 +7,8 @@ const trade = (
   direction: 'BUY' | 'SELL',
   quantity: number,
   price: number,
-  status: TerminalTradeRow['status'] = 'filled'
+  status: TerminalTradeRow['status'] = 'filled',
+  commission = 0
 ): TerminalTradeRow => ({
   id: nextId++,
   account_id: 1,
@@ -17,6 +18,7 @@ const trade = (
   quantity,
   price,
   amount: quantity * price,
+  commission,
   status,
   broker_order_id: null,
   note: null,
@@ -47,6 +49,22 @@ describe('#925 position-math (П/У по счёту)', () => {
   it('закупка позиции: сумма покупок минус сумма продаж', () => {
     const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 4, 120)];
     expect(positionCost(trades, 1)).toBe(1000 - 480);
+  });
+
+  it('комиссия входит в закупку: покупка +комиссия, продажа −комиссия из выручки', () => {
+    const trades = [
+      trade(1, 'BUY', 10, 100, 'filled', 5),
+      trade(1, 'SELL', 4, 120, 'filled', 3),
+    ];
+    // (1000 + 5) + (−480 + 3) = 528
+    expect(positionCost(trades, 1)).toBe(528);
+  });
+
+  it('П/У по счёту чистое: комиссия уменьшает прибыль', () => {
+    const trades = [trade(1, 'BUY', 10, 100, 'filled', 7)];
+    // без комиссии: 110*10 − 1000 = 100; с комиссией 7 → 93
+    const r = accountPnl(trades, new Map([[1, 110]]));
+    expect(r.pnl_rub).toBe(93);
   });
 
   it('прибыль лонга: цена выросла — плюс, упала — минус', () => {

@@ -97,6 +97,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   @Input() accountId: number | null = null;
   /** Фейковый счёт — сделки записываются как демо. */
   @Input() accountIsFake = false;
+  /** Комиссия демо-счёта, % от суммы сделки (только для фейкового счёта). */
+  @Input() commissionPct = 0.03;
   /** Максимальная сумма сделки (баланс счёта, для фейка/нуля — 10 000). */
   @Input() tradeMaxSum = FAKE_DEFAULT_MAX_SUM;
   /** История сделок счёта — для маркеров входов на графике. */
@@ -129,6 +131,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   }>();
   /** Сделка размещена (ок или отклонена) — терминал обновляет остаток и историю. */
   @Output() tradeExecuted = new EventEmitter<void>();
+  /** Изменение «Комиссия, %» — терминал сохраняет настройку счётa. */
+  @Output() commissionPctChange = new EventEmitter<number>();
   /** На графике появились первые свечи (для снятия надписи «идёт выбор бумаги…»). */
   @Output() dataReady = new EventEmitter<void>();
   /** Пользователь свернул/развернул полосу (сохраняем в состоянии терминала). */
@@ -1842,6 +1846,13 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.placeTradeWithQty(direction, this.tradeButtonsQty);
   }
 
+  /** «Комиссия, %»: ограничиваем 0..100 и сообщаем терминалу (сохраняется). */
+  onCommissionPctChange(v: unknown): void {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) return;
+    this.commissionPctChange.emit(Math.min(n, 100));
+  }
+
   /** Разместить заявку на заданное количество. Ноль — сообщение об ошибке. */
   private placeTradeWithQty(direction: 'buy' | 'sell', qty: number): void {
     this.tradeMessage = null;
@@ -1871,6 +1882,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         execution: this.tradeType,
         price,
         quantity: qty,
+        // Комиссия важна только для демо-счёта (реальный — из ответа T-Bank).
+        ...(this.accountIsFake ? { commission_pct: this.commissionPct } : {}),
       })
       .subscribe({
         next: (r) => {
@@ -1924,6 +1937,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         execution: 'market',
         price,
         quantity,
+        ...(this.accountIsFake ? { commission_pct: this.commissionPct } : {}),
       })
       .subscribe({
         next: (r) => {

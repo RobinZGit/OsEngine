@@ -390,6 +390,29 @@
         </span>
       </div>
 
+      @if (accountIsFake) {
+        <div class="trade-max trade-commission">
+          <label class="trade-max-label" for="trade-commission-input">
+            Комиссия, %
+          </label>
+          <span class="trade-max-input-wrap">
+            <input
+              id="trade-commission-input"
+              type="number"
+              class="trade-max-input"
+              min="0"
+              max="100"
+              step="0.01"
+              [ngModel]="commissionPct"
+              (ngModelChange)="onCommissionPctChange($event)"
+              [disabled]="tradingBusy"
+              aria-label="Комиссия, процент от суммы сделки"
+            />
+            <span class="trade-max-currency">%</span>
+          </span>
+        </div>
+      }
+
       <div class="trade-switch" role="group" aria-label="Тип заявки">
         <span class="trade-switch-label" [class.active]="tradeType === 'market'">Маркет</span>
         <button

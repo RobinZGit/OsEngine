@@ -158,6 +158,7 @@
                     <th>Кол-во</th>
                     <th>Цена</th>
                     <th>Сумма</th>
+                    <th>Комиссия</th>
                     <th>Причина</th>
                     <th>Статус</th>
                   </tr>
@@ -178,7 +179,8 @@
                       >{{ tradeOpLabel(tr.direction) }}</td>
                       <td>{{ tr.quantity }}</td>
                       <td>{{ tr.price }}</td>
-                      <td>{{tr.amount | number: '1.0-2' : 'ru' }}</td>
+                      <td>{{ tr.amount | number: '1.0-2' : 'ru' }}</td>
+                      <td>@if (tr.commission > 0) { {{tr.commission | number: '1.0-2' : 'ru' }} } @else { — }</td>
                       <td
                         class="trade-reject-reason-cell"
                         [title]="tr.note || ''"
@@ -329,6 +331,7 @@
           [initiallyCollapsed]="panel.collapsed"
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"
+          [commissionPct]="commissionPct"
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
           [livePrice]="livePriceFor(panel.security.id)"
@@ -340,6 +343,7 @@
           (collapsedChange)="onPanelCollapsedChange($event, panel.uid)"
           (autoCloseChange)="onPanelAutoCloseChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
+          (commissionPctChange)="onCommissionPctChange($event)"
           (dataReady)="onPanelDataReady(panel.uid)"
           (positionSummary)="onPanelPositionSummary(panel.uid, $event)"
         />

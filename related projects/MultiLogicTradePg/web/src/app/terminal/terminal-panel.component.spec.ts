@@ -76,6 +76,7 @@ describe('TerminalPanelComponent', () => {
     quantity: 10,
     price: 250,
     amount: 2500,
+    commission: 0,
     status: 'filled',
     broker_order_id: null,
     note: null,
@@ -1428,6 +1429,59 @@ describe('TerminalPanelComponent', () => {
       price: 250,
       quantity: 4,
     });
+  });
+
+  it('фейковый счёт: поле «Комиссия, %» есть, в заявку уходит commission_pct', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    component.tradeMaxInput = 1000;
+    component.tradeAmount = 1000;
+    fixture.componentRef.setInput('accountIsFake', true);
+    fixture.componentRef.setInput('commissionPct', 0.05);
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('.trade-commission'))).not.toBeNull();
+    const body = fixture.debugElement.query(By.css('.tpanel-trade'));
+    body.query(By.css('.trade-buy')).nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'market',
+      price: 250,
+      quantity: 4,
+      commission_pct: 0.05,
+    });
+  });
+
+  it('реальный счёт: поле «Комиссия, %» скрыто, commission_pct не уходит', () => {
+    component.accountId = 1;
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('.trade-commission'))).toBeNull();
+  });
+
+  it('«Комиссия, %»: нечисловое и отрицательное игнорируются, значение ограничено 100', () => {
+    const spy = jasmine.createSpy('commissionPct');
+    component.commissionPctChange.subscribe(spy);
+    component.onCommissionPctChange(-1);
+    component.onCommissionPctChange('abc' as unknown as number);
+    expect(spy).not.toHaveBeenCalled();
+    component.onCommissionPctChange(150);
+    expect(spy).toHaveBeenCalledWith(100);
   });
 
   it('сигнал: ввод суммы в поле «Сумма» шапки меняет количество (сброс лота логики)', () => {
