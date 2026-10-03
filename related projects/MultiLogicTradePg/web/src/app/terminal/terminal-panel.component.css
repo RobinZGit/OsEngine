@@ -355,6 +355,17 @@
   cursor: default;
 }
 
+/* Комиссия за закрытие перекрывает текущую прибыль — кнопка красная. */
+.tpanel-close-pos-warn {
+  background: #b91c1c;
+  border-color: #991b1b;
+}
+
+.tpanel-close-pos-warn:hover:not(:disabled) {
+  background: #991b1b;
+  border-color: #7f1d1d;
+}
+
 .tpanel-pos-summary {
   display: inline-flex;
   align-items: baseline;

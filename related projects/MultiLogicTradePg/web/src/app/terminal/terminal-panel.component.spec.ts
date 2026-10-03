@@ -474,6 +474,89 @@ describe('TerminalPanelComponent', () => {
     expect(btn.nativeElement.disabled).toBe(false);
   });
 
+  it('кнопка «Закрыть позицию» показывает комиссию за закрытие в подписи', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.componentRef.setInput('accountIsFake', true);
+    fixture.componentRef.setInput('commissionPct', 0.5);
+    fixture.detectChanges();
+    // 10 × 250 × 0,5% = 12,50 ₽
+    expect(component.closingCommission).toBe(12.5);
+    const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
+    expect(btn.nativeElement.textContent).toContain('Закрыть позицию (ком.');
+    expect(btn.nativeElement.textContent).toContain('12,50');
+  });
+
+  it('кнопка «Закрыть позицию»: комиссия пересчитывается от живой цены', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.componentRef.setInput('accountIsFake', true);
+    fixture.componentRef.setInput('commissionPct', 0.5);
+    fixture.componentRef.setInput('livePrice', 260);
+    fixture.detectChanges();
+    // живая цена 260: 10 × 260 × 0,5% = 13,00 ₽
+    expect(component.closingCommission).toBe(13);
+    const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
+    expect(btn.nativeElement.textContent).toContain('13,00');
+  });
+
+  it('кнопка «Закрыть позицию» краснеет, когда комиссия перекрывает прибыль', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    fixture.componentRef.setInput('accountIsFake', true);
+    fixture.componentRef.setInput('commissionPct', 0.5);
+    // Прибыль мизерная (1 ₽), а комиссия за закрытие ~12,51 ₽ — не покрывает.
+    fixture.componentRef.setInput('livePrice', 250.1);
+    fixture.detectChanges();
+    expect(component.closingCommissionEatsProfit).toBe(true);
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-close-pos')).nativeElement.className
+    ).toContain('tpanel-close-pos-warn');
+
+    // Прибыль большая (500 ₽) — комиссия 15 ₽ её не перекрывает.
+    fixture.componentRef.setInput('livePrice', 300);
+    fixture.detectChanges();
+    expect(component.closingCommissionEatsProfit).toBe(false);
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-close-pos')).nativeElement.className
+    ).not.toContain('tpanel-close-pos-warn');
+  });
+
   it('шапка: блок покупок/продаж стоит сразу после кнопки «Закрыть позицию»', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),

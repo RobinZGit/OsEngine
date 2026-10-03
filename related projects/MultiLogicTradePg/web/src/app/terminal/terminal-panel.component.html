@@ -46,10 +46,11 @@
         <button
           type="button"
           class="tpanel-close-pos"
+          [class.tpanel-close-pos-warn]="closingCommissionEatsProfit"
           [disabled]="tradingBusy || priceMissing"
-          title="Закрыть всю позицию по бумаге: продать остаток (при покупках) или выкупить весь объём (при продажах), чтобы количество стало нулевым"
+          [title]="closeButtonTitle"
           (click)="closePosition()"
-        >{{ tradingBusy ? 'Закрываем…' : 'Закрыть позицию' }}</button>
+        >{{ tradingBusy ? 'Закрываем…' : closeButtonLabel }}</button>
       }
       <span class="tpanel-pos-summary">
         @if (remainingPositionQty !== 0) {

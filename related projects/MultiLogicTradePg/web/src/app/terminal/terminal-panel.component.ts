@@ -641,6 +641,64 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return Math.round(Math.abs(qty) * p * 100) / 100;
   }
 
+  /** Ожидаемая комиссия за закрытие всей позиции: |остаток| × актуальная цена
+      × «Комиссия, %» / 100. Считается от позиционной цены (живой, иначе
+      свеча), поэтому пересчитывается при каждой загрузке цен и по кнопке
+      «обновить» в шапке счёта — видно, покроет ли прибыль комиссию. */
+  get closingCommission(): number {
+    const qty = this.remainingPositionQty;
+    if (qty === 0) return 0;
+    const p = this.positionPrice;
+    if (!(p > 0)) return 0;
+    const pct = Number(this.commissionPct);
+    if (!Number.isFinite(pct) || pct <= 0) return 0;
+    return Math.round(Math.abs(qty) * p * pct) / 100;
+  }
+
+  /** Итог после закрытия позиции по текущей цене: разница по остатку (уже за
+      вычетом комиссии входа) минус комиссия за закрытие. Отрицательный —
+      комиссия не покрыта прибылью (после закрытия убыток). */
+  get closingNetDiff(): number {
+    return Math.round((this.remainingPositionDiff - this.closingCommission) * 100) / 100;
+  }
+
+  /** Прибыль по остатку положительная, но комиссия за закрытие её перекрывает
+      — подсвечиваем кнопку, чтобы был виден риск уйти в минус после закрытия. */
+  get closingCommissionEatsProfit(): boolean {
+    return this.remainingPositionDiff > 0 && this.closingCommission > this.remainingPositionDiff;
+  }
+
+  /** Деньги по-русски с двумя знаками (для подписи кнопки закрытия). */
+  private formatMoney(v: number): string {
+    return v.toLocaleString('ru-RU', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  /** Подпись кнопки «Закрыть позицию»: при известной комиссии добавляем
+      «(ком. X ₽)» — сумма пересчитывается вместе с ценой. */
+  get closeButtonLabel(): string {
+    const c = this.closingCommission;
+    if (c <= 0) return 'Закрыть позицию';
+    return `Закрыть позицию (ком. ${this.formatMoney(c)} ₽)`;
+  }
+
+  /** Подсказка кнопки закрытия: что делает + ожидаемая комиссия и итог после
+      закрытия (покрывает ли прибыль комиссию). */
+  get closeButtonTitle(): string {
+    const base =
+      'Закрыть всю позицию по бумаге: продать остаток (при покупках) или выкупить весь объём (при продажах), чтобы количество стало нулевым';
+    const c = this.closingCommission;
+    if (c <= 0) return base;
+    const net = this.closingNetDiff;
+    const netLabel = `${net >= 0 ? '+' : ''}${this.formatMoney(net)} ₽`;
+    const verdict = this.closingCommissionEatsProfit
+      ? `с учётом комиссии за закрытие результат ${netLabel} — комиссия перекрывает прибыль`
+      : `с учётом комиссии за закрытие результат ${netLabel}`;
+    return `${base}. Ожидаемая комиссия за закрытие: ${this.formatMoney(c)} ₽ (${this.commissionPct}% от суммы). Итог по текущей цене: ${verdict}`;
+  }
+
   /** Сообщить терминалу сводку позиции: остаток и рыночную стоимость.
       Вызывается при изменении сделок, свечей (цена меняется с каждой новой
       свечой) — терминал копит и суммирует по всем полосам для шапки счёта. */
