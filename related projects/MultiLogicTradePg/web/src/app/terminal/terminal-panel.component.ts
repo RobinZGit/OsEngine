@@ -747,6 +747,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return this.resolveTradeQuantity(this.signalSide);
   }
 
+  /** Количество для кнопок «Купить»/«Продать» в блоке «Сделки»: то же, что
+      выполняет кнопка сигнала в шапке (количество лота логики), — чтобы обе
+      кнопки делали сделку на одном и том же количестве, но в разные стороны.
+      Без сигнала — количество по выбранной сумме. */
+  get tradeButtonsQty(): number {
+    if (this.signalEvent != null) return this.signalQuantity;
+    return this.tradeQuantity;
+  }
+
   /** Подпись в подсказке кнопки сигнала в шапке. */
   get signalBtnTitle(): string {
     const base = this.signalBadgeTitle || 'Сигнал логики';
@@ -1823,9 +1832,20 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
 
   /** Купить/продать по рассчитанному количеству. Ноль — сообщение об ошибке. */
   placeTrade(direction: 'buy' | 'sell'): void {
+    this.placeTradeWithQty(direction, this.resolveTradeQuantity(direction));
+  }
+
+  /** Кнопки «Купить»/«Продать» в блоке «Сделки»: то же количество, что у
+      кнопки сигнала в шапке (количество лота логики), — меняется только
+      направление сделки, количество общее. */
+  placeTradeFixed(direction: 'buy' | 'sell'): void {
+    this.placeTradeWithQty(direction, this.tradeButtonsQty);
+  }
+
+  /** Разместить заявку на заданное количество. Ноль — сообщение об ошибке. */
+  private placeTradeWithQty(direction: 'buy' | 'sell', qty: number): void {
     this.tradeMessage = null;
     this.tradeError = null;
-    const qty = this.resolveTradeQuantity(direction);
     if (qty < 1) {
       this.tradeError =
         'Количество равно нулю — увеличьте сумму сделки на ползунке';

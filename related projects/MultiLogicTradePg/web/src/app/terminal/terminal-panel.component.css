@@ -782,6 +782,50 @@
   color: #b45309;
 }
 
+/* Кнопки «Купить»/«Продать» в блоке «Сделки» (#929): обе работают на одном
+   количестве (как кнопка сигнала в шапке), меняется только направление. */
+.trade-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.trade-buy,
+.trade-sell {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.4rem 0;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.trade-buy {
+  background: #16a34a;
+}
+
+.trade-buy:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.trade-sell {
+  background: #dc2626;
+}
+
+.trade-sell:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.trade-buy:disabled,
+.trade-sell:disabled {
+  background: #d1d5db;
+  color: #f9fafb;
+  cursor: default;
+}
+
 .trade-remainder-check {
   display: inline-flex;
   align-items: center;

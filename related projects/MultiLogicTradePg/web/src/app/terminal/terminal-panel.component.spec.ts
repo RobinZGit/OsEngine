@@ -525,17 +525,19 @@ describe('TerminalPanelComponent', () => {
         posKids.indexOf(pos.query(By.css('.tpanel-pos-summary')).nativeElement),
       );
 
-    // в теле полосы (блок «Сделки») управления сделкой больше нет
+    // в теле полосы (блок «Сделки»): поле количества и ползунок убраны из
+    // тела (они в шапке), сигнальной кнопки в теле нет
     const bodyTrade = fixture.debugElement.query(By.css('.tpanel-trade'));
     expect(bodyTrade.query(By.css('.trade-qty'))).toBeNull();
     expect(bodyTrade.query(By.css('.trade-slider'))).toBeNull();
     expect(bodyTrade.query(By.css('.tpanel-signal-btn'))).toBeNull();
-    // остались только тумблер типа заявки и сводка позиции
+    // #929: в теле остались тумблер типа заявки и кнопки «Купить»/«Продать»
+    // на то же количество, что у кнопки сигнала в шапке
     expect(
       bodyTrade
         .queryAll(By.css('button'))
         .map((b) => b.nativeElement.className.trim()),
-    ).toEqual(['trade-switch-track']);
+    ).toEqual(['trade-switch-track', 'trade-buy', 'trade-sell']);
   });
 
   it('тело полосы: сводка по позиции осталась в блоке «Сделки» при лонге', () => {
@@ -1330,6 +1332,101 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 3,
+    });
+  });
+
+  it('блок «Сделки»: кнопки «Купить»/«Продать» ставят сделку на то же количество, что кнопка сигнала, разными сторонами', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика X',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+    });
+    fixture.detectChanges();
+    const body = fixture.debugElement.query(By.css('.tpanel-trade'));
+    const buy = body.query(By.css('.trade-buy'));
+    const sell = body.query(By.css('.trade-sell'));
+    expect(buy).not.toBeNull();
+    expect(sell).not.toBeNull();
+    expect(buy.nativeElement.textContent).toContain('Купить');
+    expect(buy.nativeElement.textContent).toContain('4');
+    expect(sell.nativeElement.textContent).toContain('Продать');
+    expect(sell.nativeElement.textContent).toContain('4');
+    buy.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'market',
+      price: 250,
+      quantity: 4,
+    });
+    stateSvc.placeTrade.calls.reset();
+    sell.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'sell',
+      execution: 'market',
+      price: 250,
+      quantity: 4,
+    });
+  });
+
+  it('блок «Сделки» без сигнала: кнопки работают на количество по выбранной сумме', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    component.tradeMaxInput = 1000;
+    component.tradeAmount = 1000;
+    fixture.detectChanges();
+    const body = fixture.debugElement.query(By.css('.tpanel-trade'));
+    const buy = body.query(By.css('.trade-buy'));
+    expect(buy.nativeElement.textContent).toContain('4');
+    buy.nativeElement.click();
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'market',
+      price: 250,
+      quantity: 4,
     });
   });
 
