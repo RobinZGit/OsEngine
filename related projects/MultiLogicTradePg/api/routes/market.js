@@ -466,9 +466,15 @@ app.post('/api/prices/load', async (req, res) => {
       res.status(400).json({ error: 'Укажите security_ids (список id через запятую)' });
       return;
     }
+    // force=1 — принудительный пересчёт (кнопка «Отклонение» в терминале):
+    // обходим троттлинг, чтобы пользователь мог обновить цены по всем бумагам
+    // с позицией вне очереди стандартного 30-секундного опроса.
+    const force = ['1', 'true', 'yes'].includes(
+      String(req.query.force ?? '').trim().toLowerCase()
+    );
     const key = securityIds.join(',');
     const now = Date.now();
-    if (now - (lastPricesAt.get(key) ?? 0) < LAST_PRICES_MIN_GAP_MS) {
+    if (!force && now - (lastPricesAt.get(key) ?? 0) < LAST_PRICES_MIN_GAP_MS) {
       res.json({ ok: true, throttled: true, source: null, prices: [] });
       return;
     }

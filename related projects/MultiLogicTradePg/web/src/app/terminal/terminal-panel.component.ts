@@ -121,11 +121,6 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       барах, поэтому для разницы по позиции берём именно её; null — терминал
       ещё не прислал (или T-Bank недоступен), тогда цена как раньше — свеча. */
   @Input() livePrice: number | null = null;
-  /** Суммарный П/У по счёту (рубли): прибыль/убыток по ВСЕМ бумагам с
-      открытой позицией, переоценка по живым ценам. Считает терминал (родитель)
-      один раз и передаёт в каждую панель, поэтому значение одинаковое везде.
-      null — данных пока нет (показать «—»). */
-  @Input() accountPnlRub: number | null = null;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -558,15 +553,6 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (this.prefillQty != null) return this.prefillQty;
     if (!(this.tradeAmount > 0)) return 0;
     return Math.floor(this.tradeAmount / p);
-  }
-
-  /** Прибыль/убыток по счёту для показа: число (0 — ноль), null — данных нет
-      (показать «—»). Цвет задаётся классами в шаблоне: прибыль — зелёная,
-      убыток — красная, ноль/нет данных — нейтральная. */
-  get accountPnlValue(): number | null {
-    if (this.accountPnlRub == null) return null;
-    const v = Number(this.accountPnlRub);
-    return Number.isFinite(v) ? v : null;
   }
 
   /** Остаток позиции по текущей бумаге на счёте (filled покупки − продажи).
@@ -1849,7 +1835,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.tradeError = 'Не выбран счёт';
       return;
     }
-    const price = this.currentPrice;
+    // Маркет исполняется по живой цене (той же, что в «Отклонении»), чтобы
+    // сразу после сделки переоценка была нулевой; лимит — по цене графика.
+    const price = this.tradeType === 'limit' ? this.currentPrice : this.positionPrice;
     if (!(price > 0)) {
       this.tradeError = 'Нет цены для расчёта — дождитесь загрузки графика';
       return;
@@ -1899,7 +1887,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.tradeError = 'Не выбран счёт';
       return;
     }
-    const price = this.currentPrice;
+    // Закрытие — маркет, цена живая (как в «Отклонении»).
+    const price = this.positionPrice;
     if (!(price > 0)) {
       this.tradeError = 'Нет цены для расчёта — дождитесь загрузки графика';
       return;

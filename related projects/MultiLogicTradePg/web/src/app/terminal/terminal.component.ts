@@ -145,6 +145,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
   /** #922: опрос живых цен по бумагам с открытыми позициями (раз в 30 с). */
   private lastPricesTimer?: ReturnType<typeof setInterval>;
   private lastPricesBusy = false;
+  /** Идёт ручной пересчёт цен кнопкой «Отклонение» в шапке. */
+  pricesRefreshing = false;
   private destroyed = false;
   /** Живые цены бумаг с позициями: security_id → цена последней сделки. */
   private livePriceBySecurity = new Map<number, number>();
@@ -268,8 +270,25 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.lastPricesTimer = setInterval(() => this.pollLastPrices(), 30_000);
   }
 
-  private pollLastPrices(): void {
+  /** Кнопка «Отклонение» в шапке: принудительно тянем живые цены по всем
+      бумагам с открытой позицией (вне 30-секундного цикла) и пересчитываем
+      отклонение. Общая сумма по счёту = сумма отклонений по всем этим бумагам. */
+  refreshAllPrices(): void {
     if (this.destroyed || this.lastPricesBusy) return;
+    this.pricesRefreshing = true;
+    this.pollLastPrices(true, () => {
+      this.pricesRefreshing = false;
+    });
+  }
+
+  private pollLastPrices(force = false, done?: () => void): void {
+    const finish = (): void => {
+      if (done) done();
+    };
+    if (this.destroyed || this.lastPricesBusy) {
+      finish();
+      return;
+    }
     const ids = this.positionSecurityIds;
     if (ids.length === 0) {
       // Позиций нет — живые цены больше не нужны, карту чистим.
@@ -278,12 +297,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.livePricesUpdatedAt = null;
       }
       this.pricesFeedDown = false;
+      finish();
       return;
     }
     this.lastPricesBusy = true;
-    this.securitiesSvc.getLastPrices(ids).subscribe({
+    this.securitiesSvc.getLastPrices(ids, force).subscribe({
       next: (r) => {
         this.lastPricesBusy = false;
+        finish();
         if (this.destroyed) return;
         // Ответ сервиса получен — лента цен доступна, снимаем предупреждение.
         this.pricesFeedDown = false;
@@ -306,6 +327,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         // #925: сервис цен молчит — держим статичное предупреждение, пока он
         // снова не ответит (сообщение снимается в ветке next выше).
         if (!this.destroyed) this.pricesFeedDown = true;
+        finish();
       },
     });
   }

@@ -98,12 +98,19 @@
             [class.diff-positive]="accountPnlRub != null && accountPnlRub > 0"
             [class.diff-negative]="accountPnlRub != null && accountPnlRub < 0"
             [class.term-account-pnl-flat]="accountPnlRub == null || accountPnlRub === 0"
-            [title]="
-              'Отклонение: разница между рыночной стоимостью открытых позиций и ценой закупки ' +
-              '(П/У по открытым позициям, рубли).'
-            "
           >
-            Отклонение:
+            <button
+              type="button"
+              class="term-account-pnl-label"
+              [class.is-refreshing]="pricesRefreshing"
+              [disabled]="pricesRefreshing || positionSecurityIds.length === 0"
+              [title]="
+                'Отклонение: разница между рыночной стоимостью открытых позиций и ценой закупки ' +
+                '(сумма по всем бумагам с позицией, рубли). Нажмите, чтобы принудительно ' +
+                'обновить живые цены по всем этим бумагам и пересчитать отклонение.'
+              "
+              (click)="refreshAllPrices()"
+            >Отклонение:@if (pricesRefreshing) { <span class="term-account-pnl-spin">↻</span> }</button>
             <strong>
               @if (accountPnlRub == null) {
                 —
@@ -325,7 +332,6 @@
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
           [livePrice]="livePriceFor(panel.security.id)"
-          [accountPnlRub]="accountPnlRub"
           [closeAllPulse]="closeAllPulse"
           [closeSignalPulse]="closeSignalPulse"
           [autoCloseOnLogicSignal]="panel.auto_close_on_logic_signal"

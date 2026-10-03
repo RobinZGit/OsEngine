@@ -74,9 +74,9 @@
             </span>
           </span>
         }
-        <!-- #925: закупка этой бумаги (сколько вложено) — остаётся, как было,
-             и рядом суммарный П/У по счёту: прибыль — зелёная с «+»,
-             убыток — красная с «−». -->
+        <!-- Закупка этой бумаги (сколько вложено) — остаётся, как было.
+             П/У по счёту показывается только в шапке терминала (общее
+             значение по счёту, не по отдельной бумаге). -->
         <span
           class="tpanel-pos-label"
           [title]="
@@ -86,22 +86,6 @@
           "
         >{{ remainingPositionQty < 0 ? 'Получено' : 'Закупка' }}</span>
         <span class="tpanel-pos-value">{{ remainingPositionBaseAmount | number: '1.2-2' : 'ru' }} ₽</span>
-        <span
-          class="tpanel-pos-label"
-          title="Суммарная прибыль/убыток по счёту: переоценка всех бумаг с открытой позицией по живым ценам относительно цены покупки. Значение общее для всего счёта, одинаковое во всех панелях."
-        >П/У по счёту</span>
-        <span
-          class="tpanel-pos-value tpanel-pnl"
-          [class.diff-positive]="accountPnlValue != null && accountPnlValue > 0"
-          [class.diff-negative]="accountPnlValue != null && accountPnlValue < 0"
-          [class.tpanel-pnl-flat]="accountPnlValue == null || accountPnlValue === 0"
-        >
-          @if (accountPnlValue == null) {
-            —
-          } @else {
-            {{ accountPnlValue > 0 ? '+' : '' }}{{ accountPnlValue | number: '1.2-2' : 'ru' }} ₽
-          }
-        </span>
       </span>
     </div>
     </div>

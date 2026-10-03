@@ -354,7 +354,7 @@ describe('TerminalPanelComponent', () => {
     expect(Math.round(component.tradeSum * 100) / 100).toBe(1750);
   });
 
-  it('шорт-позиция: сводка по счёту показывает прибыль (зелёную) при падении цены', () => {
+  it('шорт-позиция: сводка показывает прибыль по бумаге при падении цены', () => {
     component.trades = [
       { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
     ];
@@ -379,20 +379,18 @@ describe('TerminalPanelComponent', () => {
     expect(component.remainingPositionBaseAmount).toBe(2500);
     expect(component.remainingPositionDiff).toBe(100);
     expect(component.remainingPositionDiffPct).toBe(4);
-    // #925: в шапке закупка этой бумаги + суммарный П/У по счёту.
-    component.accountPnlRub = 100;
+    // #925: в шапке закупка этой бумаги. П/У по счёту — только в шапке
+    // терминала, в полосе его нет.
     fixture.detectChanges();
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
-    expect(pos.nativeElement.textContent).toContain('П/У по счёту');
+    expect(pos.nativeElement.textContent).not.toContain('П/У по счёту');
     expect(pos.nativeElement.textContent).toContain('Получено');
     // Русский формат: разделитель разрядов нормализуем в обычный пробел.
     expect(pos.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('2 500,00 ₽');
-    expect(pos.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('+100,00 ₽');
-    expect(pos.query(By.css('.diff-positive'))).not.toBeNull();
   });
 
-  it('шорт-позиция: при росте цены П/У по счёту отрицательное (красное)', () => {
+  it('шорт-позиция: при росте цены отклонение по бумаге отрицательное', () => {
     component.trades = [
       { ...trade(1, { direction: 'SELL', quantity: 10, price: 250, amount: 2500 }), status: 'filled' },
     ];
@@ -415,63 +413,21 @@ describe('TerminalPanelComponent', () => {
     fixture.detectChanges();
     expect(component.remainingPositionDiff).toBe(-100);
     expect(component.remainingPositionDiffPct).toBe(-4);
-    // #925: сумму П/У по счёту передаёт терминал; проверяем отрицательную.
-    component.accountPnlRub = -100;
+    // #925: П/У по счёту показывается только в шапке терминала.
     fixture.detectChanges();
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
-    expect(pos.query(By.css('.diff-negative'))).not.toBeNull();
-    expect(pos.nativeElement.textContent).toContain('-100,00');
+    expect(pos.nativeElement.textContent).not.toContain('П/У по счёту');
   });
 
-  it('#925: в шапке — П/У по счёту: значение терминала, знак «+» и зелёный цвет', () => {
-    component.accountPnlRub = 1234.5;
-    fixture.detectChanges();
-    const pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
-    expect(pnl).not.toBeNull();
-    // Русский формат: разделитель разрядов нормализуем в обычный пробел.
-    expect(pnl.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('+1 234,50 ₽');
-    expect(pnl.nativeElement.classList).toContain('diff-positive');
-    expect(pnl.nativeElement.classList).not.toContain('diff-negative');
-    // Подпись именно общая по счёту, а не позиция этой бумаги.
-    expect(
-      fixture.debugElement.query(By.css('.tpanel-pos')).nativeElement.textContent
-    ).toContain('П/У по счёту');
-  });
-
-  it('#925: убыток по счёту — красный, без плюса', () => {
-    component.accountPnlRub = -777.25;
-    fixture.detectChanges();
-    const pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
-    expect(pnl.nativeElement.classList).toContain('diff-negative');
-    expect(pnl.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('-777,25 ₽');
-    expect(pnl.nativeElement.textContent).not.toContain('+');
-  });
-
-  it('#925: нулевой П/У и отсутствие данных — нейтральный серый, ноль без плюса', () => {
-    component.accountPnlRub = 0;
-    fixture.detectChanges();
-    let pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
-    expect(pnl.nativeElement.classList).toContain('tpanel-pnl-flat');
-    expect(pnl.nativeElement.classList).not.toContain('diff-positive');
-    expect(pnl.nativeElement.textContent.replace(/\s+/g, ' ')).toContain('0,00 ₽');
-    expect(pnl.nativeElement.textContent).not.toContain('+');
-
-    component.accountPnlRub = null;
-    fixture.detectChanges();
-    pnl = fixture.debugElement.query(By.css('.tpanel-pnl'));
-    expect(pnl.nativeElement.classList).toContain('tpanel-pnl-flat');
-    expect(pnl.nativeElement.textContent.trim()).toBe('—');
-  });
-
-  it('шапка: без открытой позиции кнопка «Закрыть позицию» скрыта, П/У по счёту видно', () => {
+  it('шапка: без открытой позиции кнопка «Закрыть позицию» скрыта', () => {
     fixture.detectChanges();
     expect(component.remainingPositionQty).toBe(0);
     expect(component.canClosePosition).toBe(false);
     const pos = fixture.debugElement.query(By.css('.tpanel-pos'));
     expect(pos).not.toBeNull();
     expect(pos.query(By.css('.tpanel-close-pos'))).toBeNull();
-    // #925: вместо «Позиция: 0 ₽» — «П/У по счёту» (по умолчанию данных нет).
-    expect(pos.nativeElement.textContent).toContain('П/У по счёту');
+    // П/У по счёту в полосе больше не дублируется — только в шапке терминала.
+    expect(pos.nativeElement.textContent).not.toContain('П/У по счёту');
     expect(pos.nativeElement.textContent).not.toContain('Позиция');
     const bodySummary = fixture.debugElement.query(By.css('.trade-summary'));
     expect(bodySummary).toBeNull();
@@ -685,6 +641,73 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 240,
       quantity: 10,
+    });
+  });
+
+  it('маркет-заявка уходит по живой цене, а не по последней свече', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    component.tradeAmount = 1000;
+    component.tradeMaxInput = 1000;
+    fixture.componentRef.setInput('livePrice', 260);
+    fixture.detectChanges();
+    component.placeTrade('buy');
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'market',
+      price: 260,
+      quantity: 4,
+    });
+  });
+
+  it('лимит-заявка уходит по цене графика, а не по живой', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    component.accountId = 1;
+    component.tradeAmount = 1000;
+    component.tradeMaxInput = 1000;
+    component.tradeType = 'limit';
+    fixture.componentRef.setInput('livePrice', 260);
+    fixture.detectChanges();
+    component.placeTrade('buy');
+    expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+      account_id: 1,
+      security_id: 29,
+      direction: 'buy',
+      execution: 'limit',
+      price: 250,
+      quantity: 4,
     });
   });
 

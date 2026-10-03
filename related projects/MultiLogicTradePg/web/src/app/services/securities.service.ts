@@ -91,12 +91,13 @@ export class SecuritiesService {
   /** #922: живые цены (последняя сделка) пачкой по бумагам с открытыми
       позициями — терминал зовёт раз в 30 с, чтобы разница по позиции была
       оперативной (график живёт на закрытых барах). */
-  getLastPrices(securityIds: number[]): Observable<LastPricesResult> {
+  getLastPrices(securityIds: number[], force = false): Observable<LastPricesResult> {
     const ids = [...new Set(securityIds.filter((id) => Number.isInteger(id) && id > 0))];
     if (ids.length === 0) {
       return of({ ok: true, source: null, prices: [] });
     }
-    const params = new HttpParams().set('security_ids', ids.join(','));
+    let params = new HttpParams().set('security_ids', ids.join(','));
+    if (force) params = params.set('force', '1');
     return this.http
       .get<LastPricesResult>(`${this.appConfig.apiUrl}/prices/last`, { params })
       .pipe(timeout(20_000));

@@ -5,6 +5,7 @@ import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import { TerminalStateService } from '../services/terminal-state.service';
 import { AppConfigService } from '../services/app-config.service';
+import { of } from 'rxjs';
 
 describe('TerminalComponent — удаление полос без позиции по таймауту таймфрейма (#923)', () => {
   function makeComponent(): any {
@@ -395,5 +396,31 @@ describe('TerminalComponent — остаток на счёте и отклоне
     c.trades = [trade(101, 'BUY', 10, 100)];
     (c as any).livePriceBySecurity = new Map([[101, 110]]);
     expect(c.accountPnlRub).toBe(100);
+  });
+
+  it('кнопка «Отклонение»: принудительно (force) запрашивает цены по всем бумагам с позицией', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.accountId = 1;
+    c.trades = [
+      trade(101, 'BUY', 10, 100),
+      trade(202, 'BUY', 5, 200),
+      trade(202, 'SELL', 5, 200),
+    ];
+    const calls: Array<{ ids: number[]; force: boolean }> = [];
+    (c as any).securitiesSvc = {
+      getLastPrices: (ids: number[], force: boolean) => {
+        calls.push({ ids, force });
+        return of({ ok: true, source: 'tbank', prices: [{ security_id: 101, price: 110 }] });
+      },
+    };
+    c.refreshAllPrices();
+    // Только бумага с ненулевым остатком; запрос идёт с force=1 (мимо троттлинга).
+    expect(calls.length).toBe(1);
+    expect(calls[0].force).toBe(true);
+    expect(calls[0].ids).toEqual([101]);
+    // Отклонение пересчиталось (сумма по бумагам): 10 × (110 − 100) = 100.
+    expect(c.accountPnlRub).toBe(100);
+    expect(c.pricesRefreshing).toBe(false);
   });
 });
