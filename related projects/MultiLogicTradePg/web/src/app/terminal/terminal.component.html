@@ -89,8 +89,8 @@
           }
           <span class="term-account-cash">
             Остаток на счёте:
-            <strong [class.neg]="accountTotalAtCost < 0">
-              {{accountTotalAtCost | number: '1.2-2' : 'ru' }} ₽
+            <strong [class.neg]="accountFreeCash < 0">
+              {{accountFreeCash | number: '1.2-2' : 'ru' }} ₽
             </strong>
           </span>
           <span
@@ -99,8 +99,8 @@
             [class.diff-negative]="accountPnlRub != null && accountPnlRub < 0"
             [class.term-account-pnl-flat]="accountPnlRub == null || accountPnlRub === 0"
             [title]="
-              'Отклонение: разница между рыночной стоимостью открытых позиций и закупкой по всем бумагам счёта. ' +
-              'Остаток на счёте + отклонение = стоимость счёта по рынку.'
+              'Отклонение: разница между рыночной стоимостью открытых позиций и ценой закупки ' +
+              '(П/У по открытым позициям, рубли).'
             "
           >
             Отклонение:

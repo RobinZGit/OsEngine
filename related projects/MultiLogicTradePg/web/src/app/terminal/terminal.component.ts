@@ -23,7 +23,7 @@ import {
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
-import { AccountPnl, accountPnl, positionCost } from './position-math';
+import { AccountPnl, accountPnl } from './position-math';
 
 interface PanelModel {
   uid: number;
@@ -220,10 +220,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
     return [...bySec.entries()].filter(([, qty]) => qty !== 0).map(([id]) => id);
   }
 
-  /** #925: свободные средства счёта (не вложенные в позиции): реальный счёт —
-      свободные деньги T-Bank (`cash_amount`), демо-счёт — `terminal_cash`.
-      Раньше в шапке показывалось это число как «Остаток», из-за чего при
-      полностью вложенных деньгах оно было нулём (#925). */
+  /** #925: остаток на счёте — свободные средства, не вложенные в позиции:
+      реальный счёт — свободные деньги T-Bank (`cash_amount`, fallback `balance`),
+      демо-счёт — `terminal_cash` (торгует в маржу со старта 0, поэтому после
+      покупок число отрицательное — минус суммы покупок). */
   get accountFreeCash(): number {
     const acc = this.selectedAccount;
     if (!acc) return 0;
@@ -235,21 +235,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
     if (acc.cash_amount != null && Number.isFinite(free)) return free;
     const total = Number(acc.balance);
     return Number.isFinite(total) ? total : 0;
-  }
-
-  /** #925: сколько вложено в открытые позиции по ценам покупки — по ВСЕМ
-      бумагам счёта (не только по открытым панелям). Для шорта отрицательное:
-      выручка от продажи уже лежит на счёте. */
-  get totalPositionCost(): number {
-    let sum = 0;
-    for (const id of this.positionSecurityIds) sum += positionCost(this.trades, id);
-    return Math.round(sum * 100) / 100;
-  }
-
-  /** #925: остаток на счёте по закупочным ценам = свободные + вложенное.
-      Плюс отклонение (`accountPnl`) даёт стоимость счёта по рынку. */
-  get accountTotalAtCost(): number {
-    return Math.round((this.accountFreeCash + this.totalPositionCost) * 100) / 100;
   }
 
   /** #925: суммарный П/У по счёту — переоценка всех бумаг с открытой позицией

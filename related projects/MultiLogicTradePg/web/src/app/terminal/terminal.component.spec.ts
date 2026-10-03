@@ -346,40 +346,19 @@ describe('TerminalComponent — остаток на счёте и отклоне
     security_prefix: 'P',
   });
 
-  it('остаток на счёте = свободные + закупка позиций (вложенные деньги не теряются)', () => {
+  it('остаток на счёте = свободные средства (демо, минус суммы покупок)', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: -69482.23 }];
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    expect(c.accountFreeCash).toBe(-69482.23);
+  });
+
+  it('демо без покупок: остаток ноль', () => {
     const c = makeComponent();
     c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
     c.accountId = 1;
-    c.trades = [trade(101, 'BUY', 10, 100)];
-    expect(c.totalPositionCost).toBe(1000);
-    expect(c.accountTotalAtCost).toBe(1000);
-  });
-
-  it('остаток на счёте суммируется со свободными средствами', () => {
-    const c = makeComponent();
-    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 500 }];
-    c.accountId = 1;
-    c.trades = [trade(101, 'BUY', 10, 100)];
-    expect(c.accountTotalAtCost).toBe(1500);
-  });
-
-  it('у шорта закупка отрицательная — выручка уже на счёте, итог не занижается', () => {
-    const c = makeComponent();
-    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 1000 }];
-    c.accountId = 1;
-    c.trades = [trade(101, 'SELL', 10, 100)];
-    expect(c.totalPositionCost).toBe(-1000);
-    expect(c.accountTotalAtCost).toBe(0);
-  });
-
-  it('остаток + отклонение = стоимость счёта по рынку', () => {
-    const c = makeComponent();
-    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
-    c.accountId = 1;
-    c.trades = [trade(101, 'BUY', 10, 100)];
-    (c as any).livePriceBySecurity = new Map([[101, 110]]);
-    expect(c.accountPnl.pnl_rub).toBe(100);
-    expect(Math.round((c.accountTotalAtCost + c.accountPnl.pnl_rub) * 100) / 100).toBe(1100);
+    expect(c.accountFreeCash).toBe(0);
   });
 
   it('реальный счёт: свободные деньги берутся из cash_amount, иначе из balance', () => {
@@ -394,7 +373,6 @@ describe('TerminalComponent — остаток на счёте и отклоне
   it('без счёта и без позиций всё в нуле, отклонение ноль', () => {
     const c = makeComponent();
     expect(c.accountFreeCash).toBe(0);
-    expect(c.accountTotalAtCost).toBe(0);
     expect(c.accountPnl.pnl_rub).toBe(0);
     expect(c.accountPnl.securities).toBe(0);
     expect(c.accountPnlRub).toBe(0);
