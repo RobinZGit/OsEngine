@@ -688,6 +688,107 @@ describe('TerminalPanelComponent', () => {
     expect(cls).not.toContain('tpanel-close-pos-loss');
   });
 
+  describe('#939 градиентная заливка кнопки закрытия', () => {
+    const candle = {
+      dt: '2026-09-19T10:15:00',
+      open_price: 250,
+      high_price: 251,
+      low_price: 249,
+      close_price: 250,
+      volume: 100,
+    };
+
+    function setPosition(): void {
+      component.trades = [
+        trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+      ];
+      component.chartState = {
+        candles: [candle],
+        loading: false,
+        loadingOlder: false,
+        hasMore: false,
+        error: null,
+      };
+      fixture.detectChanges();
+    }
+
+    it('без сигнала заливки нет: только рамка, длительность 0', () => {
+      setPosition();
+      expect(component.closeFillDurationMs).toBe(0);
+      expect(component.closeFillDelayMs).toBe(0);
+      const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'))
+        .nativeElement as HTMLButtonElement;
+      expect(btn.classList.contains('tpanel-close-pos-fill')).toBe(false);
+    });
+
+    it('M15: полная заливка через 10 свечей = 150 минут, задержка = прошедшее время', () => {
+      jasmine.clock().install();
+      const start = new Date('2026-09-19T10:00:00Z').getTime();
+      jasmine.clock().mockDate(new Date(start));
+      try {
+        fixture.componentRef.setInput('signalEvent', {
+          logic_id: 5,
+          logic_name: 'Логика',
+          bar_dt: '2026-09-19T09:45:00',
+          created_at: '2026-09-19T10:00:00Z',
+          position_side: 'long',
+          price: 250,
+          timeframe_id: 6,
+          timeframe: 'M15',
+          suggested_quantity: 4,
+          suggested_amount: 1000,
+        } as any);
+        fixture.componentRef.setInput('timeframes', [
+          { id: 6, tf: 'M15', full_name: '15 минут', sec: 900, is_active: true },
+        ] as any);
+        setPosition();
+
+        // 10 свечей M15 = 9000 с = 9 000 000 мс.
+        expect(component.closeFillDurationMs).toBe(9_000_000);
+        // Сигнал только что появился — заливки ещё нет.
+        expect(component.closeFillDelayMs).toBe(0);
+        const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'))
+          .nativeElement as HTMLButtonElement;
+        expect(btn.classList.contains('tpanel-close-pos-fill')).toBe(true);
+        // Chrome сериализует большие времена в экспоненциальной форме — сравниваем числа.
+        expect(parseFloat(btn.style.animationDuration)).toBe(9_000_000);
+        expect(parseFloat(btn.style.animationDelay)).toBe(0);
+
+        // Прошло 45 минут (половина) — задержка в половину срока.
+        jasmine.clock().mockDate(new Date(start + 45 * 60_000));
+        fixture.detectChanges();
+        expect(component.closeFillDelayMs).toBe(2_700_000);
+        expect(parseFloat(btn.style.animationDelay)).toBe(-2_700_000);
+
+        // Прошло 150 минут — заливка полная, дальше задержка не растёт.
+        jasmine.clock().mockDate(new Date(start + 150 * 60_000));
+        fixture.detectChanges();
+        expect(component.closeFillDelayMs).toBe(9_000_000);
+        jasmine.clock().mockDate(new Date(start + 600 * 60_000));
+        fixture.detectChanges();
+        expect(component.closeFillDelayMs).toBe(9_000_000);
+      } finally {
+        jasmine.clock().uninstall();
+      }
+    });
+
+    it('без таймфрейма в сигнале длительность берётся из кода (M1 → 10 минут)', () => {
+      fixture.componentRef.setInput('signalEvent', {
+        logic_id: 5,
+        logic_name: 'Логика',
+        bar_dt: '2026-09-19T10:00:00',
+        created_at: '2026-09-19T10:01:00Z',
+        position_side: 'long',
+        price: 250,
+        timeframe: 'M1',
+        suggested_quantity: 4,
+        suggested_amount: 1000,
+      } as any);
+      setPosition();
+      expect(component.closeFillDurationMs).toBe(600_000);
+    });
+  });
+
   it('шапка: блок покупок/продаж стоит сразу после кнопки «Закрыть позицию»', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),

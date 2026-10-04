@@ -330,14 +330,24 @@
   flex-shrink: 0;
 }
 
+/* #939: кнопка закрытия — рамка всегда цветом результата (красный/зелёный/коричневый),
+   заливка тем же цветом градиентом слева направо (слева цвет, справа в белый) и
+   растёт со временем: полная заливка через 10 свечей таймфрейма сигнала. */
 .tpanel-close-pos {
+  --close-fill: #8b4513;
   display: inline-flex;
   align-items: center;
   font-size: 0.66rem;
   font-weight: 700;
-  color: #fff;
-  background: #8b4513;
-  border: 1px solid #6f3410;
+  /* #940: чёрный текст — на незалитой (светлой) части кнопки он читается,
+     на залитой цветом помогает светлый ореол. */
+  color: #111827;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.75);
+  background-color: #f8fafc;
+  background-image: linear-gradient(to right, var(--close-fill) 0%, #fff 100%);
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  border: 1px solid var(--close-fill);
   border-radius: 4px;
   padding: 0.22rem 0.5rem;
   cursor: pointer;
@@ -346,35 +356,44 @@
 }
 
 .tpanel-close-pos:hover:not(:disabled) {
-  background: #73390f;
-  border-color: #5c2e0c;
+  --close-fill: #6f3410;
 }
 
 .tpanel-close-pos:disabled {
-  background: #c28a66;
-  border-color: #b07a57;
+  --close-fill: #c28a66;
   cursor: default;
+}
+
+/* Анимация заливки: ширина градиента 0% → 100% за 10 свечей сигнала.
+   Отрицательная задержка (closeFillDelayMs) стартует сразу с нужной доли. */
+@keyframes tpanel-close-pos-fill {
+  from {
+    background-size: 0% 100%;
+  }
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+.tpanel-close-pos.tpanel-close-pos-fill {
+  animation: tpanel-close-pos-fill linear forwards;
 }
 
 /* Итог закрытия позиции: убыток — красный, прибыль — тёмно-зелёный. */
 .tpanel-close-pos-loss {
-  background: #b91c1c;
-  border-color: #991b1b;
+  --close-fill: #b91c1c;
 }
 
 .tpanel-close-pos-loss:hover:not(:disabled) {
-  background: #991b1b;
-  border-color: #7f1d1d;
+  --close-fill: #991b1b;
 }
 
 .tpanel-close-pos-profit {
-  background: #15803d;
-  border-color: #166534;
+  --close-fill: #15803d;
 }
 
 .tpanel-close-pos-profit:hover:not(:disabled) {
-  background: #166534;
-  border-color: #14532d;
+  --close-fill: #166534;
 }
 
 .tpanel-pos-summary {

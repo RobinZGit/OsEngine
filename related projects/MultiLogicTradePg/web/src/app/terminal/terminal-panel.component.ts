@@ -710,6 +710,64 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return `${base}. ${parts.join('. ')}.`;
   }
 
+  /** #939: длительность свечи таймфрейма сигнала в секундах: по id
+      (TimeframeRow.sec), иначе по коду (M1, M15, H1, D1, W1, MN). */
+  private signalFrameSeconds(): number | null {
+    const ev = this.signalEvent;
+    if (!ev) return null;
+    if (ev.timeframe_id != null) {
+      const tf = this.timeframes.find((t) => t.id === ev.timeframe_id);
+      if (tf && Number.isFinite(tf.sec) && tf.sec > 0) return tf.sec;
+    }
+    const code = String(ev.timeframe ?? '').toUpperCase();
+    const CODE_SEC: Record<string, number> = {
+      M1: 60,
+      M3: 180,
+      M5: 300,
+      M10: 600,
+      M15: 900,
+      M30: 1800,
+      H1: 3600,
+      H2: 7200,
+      H4: 14400,
+      D1: 86400,
+      W1: 604800,
+      MN: 2592000,
+    };
+    return CODE_SEC[code] ?? null;
+  }
+
+  /** #939: начало сигнала — момент появления цикла логики (created_at), иначе
+      закрытие бара сигнала (bar_dt + таймфрейм). Неизвестно — NaN. */
+  private signalStartMs(): number {
+    const ev = this.signalEvent;
+    if (!ev) return Number.NaN;
+    const created = ev.created_at ? new Date(ev.created_at).getTime() : Number.NaN;
+    if (Number.isFinite(created)) return created;
+    const barMs = ev.bar_dt ? new Date(ev.bar_dt).getTime() : Number.NaN;
+    const sec = this.signalFrameSeconds();
+    if (Number.isFinite(barMs) && sec != null && sec > 0) return barMs + sec * 1000;
+    return Number.NaN;
+  }
+
+  /** #939: сколько длится полная заливка кнопки закрытия — 10 свечей
+      таймфрейма сигнала (M15 → 150 минут). Нет сигнала/таймфрейма — 0. */
+  get closeFillDurationMs(): number {
+    const sec = this.signalFrameSeconds();
+    return sec != null && sec > 0 ? 10 * sec * 1000 : 0;
+  }
+
+  /** #939: прошедшее от начала сигнала время в пределах 0..closeFillDurationMs.
+      Стартовое значение (отрицательная задержка анимации) — чем больше, тем
+      ближе заливка к полной. */
+  get closeFillDelayMs(): number {
+    const dur = this.closeFillDurationMs;
+    const start = this.signalStartMs();
+    if (dur <= 0 || !Number.isFinite(start)) return 0;
+    const elapsed = Date.now() - start;
+    return Math.min(Math.max(elapsed, 0), dur);
+  }
+
   /** Сообщить терминалу сводку позиции: остаток и рыночную стоимость.
       Вызывается при изменении сделок, свечей (цена меняется с каждой новой
       свечой) — терминал копит и суммирует по всем полосам для шапки счёта. */
