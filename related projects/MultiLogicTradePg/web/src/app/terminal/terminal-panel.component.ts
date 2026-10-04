@@ -168,10 +168,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** Пользователь менял максимум вручную — не затираем при обновлении баланса. */
   private userEditedMax = false;
   tradeType: 'market' | 'limit' = 'market';
-  /** Чекбокс под «Купить»: покупка на всю сумму (весь остаток денег). */
-  tradeAllSumBuy = false;
-  /** Чекбокс под «Продать»: продажа всей позиции бумаги. */
-  tradeAllQtySell = false;
+  /** «Инверсия» (#934): выключена — стороны как диктует логика; включена —
+      кнопки меняются местами (кнопка покупки продаёт, кнопка продажи покупает),
+      чтобы сделать сделку вопреки сигналу. */
+  tradeInverted = false;
   /** Количество из сигнала логики (расчёт лота) — подставлено в блок сделок. */
   private prefillQty: number | null = null;
   /** Сторона, для которой сигнал дал количество (long → buy, short → sell). */
@@ -552,14 +552,6 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   get tradeQuantity(): number {
     const p = this.currentPrice;
     if (!(p > 0)) return 0;
-    // Отображение: если включён «весь остаток» и есть позиция — она;
-    // если «на всю сумму» — максимум по деньгам (покупка).
-    if (this.tradeAllQtySell && this.remainingPositionQty > 0) {
-      return this.remainingPositionQty;
-    }
-    if (this.tradeAllSumBuy) {
-      return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
-    }
     // Расчёт лота логики из сигнала (пока пользователь не начал двигать ползунок).
     if (this.prefillQty != null) return this.prefillQty;
     if (!(this.tradeAmount > 0)) return 0;
@@ -729,23 +721,22 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     });
   }
 
-  /** Фактическое количество для заявки: при чекбоксе «на всю сумму» покупка
-      идёт на весь остаток денег, при «весь остаток» продажа — вся позиция. */
+  /** Логика дала количество для своей стороны. При включённой «Инверсии» этот лот
+      применяется и к противоположной стороне — ради этого инверсия и нужна:
+      кнопка вопреки логике должна работать на количестве логики. */
+  private isPrefillSide(direction: 'buy' | 'sell'): boolean {
+    if (this.prefillSide == null) return false;
+    if (this.prefillSide === direction) return true;
+    return this.tradeInverted;
+  }
+
+  /** Фактическое количество для заявки: лот логики для её стороны, иначе
+      выбранная сумма, делённая на цену. */
   private resolveTradeQuantity(direction: 'buy' | 'sell'): number {
     const p = this.currentPrice;
     if (!(p > 0)) return 0;
-    if (direction === 'sell' && this.tradeAllQtySell) {
-      return this.remainingPositionQty;
-    }
-    if (direction === 'buy' && this.tradeAllSumBuy) {
-      return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
-    }
-    if (this.tradeAllQtySell) return this.remainingPositionQty;
-    if (this.tradeAllSumBuy) {
-      return this.effectiveMaxSum > 0 ? Math.floor(this.effectiveMaxSum / p) : 0;
-    }
     // Количество из сигнала (расчёт лота логики) — для стороны сигнала.
-    if (this.prefillQty != null && this.prefillSide === direction) {
+    if (this.prefillQty != null && this.isPrefillSide(direction)) {
       return this.prefillQty;
     }
     return this.tradeAmount > 0 ? Math.floor(this.tradeAmount / p) : 0;
@@ -815,18 +806,43 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return ev?.position_side === 'short' ? 'продажа' : 'покупка';
   }
 
-  /** Кнопка сигнала в шапке: сторона, которую диктует сигнал логики
-      (short → продажа, иначе покупка). */
-  get signalSide(): 'buy' | 'sell' {
+  /** Сторона, которую диктует сигнал логики: short → продажа, иначе покупка. */
+  get signalLogicSide(): 'buy' | 'sell' {
     return this.signalEvent?.position_side === 'short' ? 'sell' : 'buy';
+  }
+
+  /** Сторона кнопки сигнала в шапке с учётом «Инверсии»: включённая галочка
+      меняет сторону на противоположную — сделка делается вопреки логике. */
+  get signalSide(): 'buy' | 'sell' {
+    if (!this.tradeInverted) return this.signalLogicSide;
+    return this.signalLogicSide === 'buy' ? 'sell' : 'buy';
+  }
+
+  /** Кнопка «Купить» в блоке «Сделки»: сторона с учётом инверсии (при включённой
+      инверсии кнопка покупки продаёт). */
+  get buyButtonSide(): 'buy' | 'sell' {
+    return this.tradeInverted ? 'sell' : 'buy';
+  }
+
+  /** Кнопка «Продать» в блоке «Сделки»: сторона с учётом инверсии. */
+  get sellButtonSide(): 'buy' | 'sell' {
+    return this.tradeInverted ? 'buy' : 'sell';
+  }
+
+  get buyButtonLabel(): string {
+    return this.buyButtonSide === 'buy' ? 'Купить' : 'Продать';
+  }
+
+  get sellButtonLabel(): string {
+    return this.sellButtonSide === 'buy' ? 'Купить' : 'Продать';
   }
 
   /** Количество для кнопки сигнала: тот же расчёт, что у кнопок «Купить»/
       «Продать» в блоке «Сделки» (из той же формулы — лот логики или
-      сумма ÷ цена). */
+      сумма ÷ цена). Инверсия сторону не меняет — только направление сделки. */
   get signalQuantity(): number {
     if (this.signalEvent == null || this.priceMissing) return 0;
-    return this.resolveTradeQuantity(this.signalSide);
+    return this.resolveTradeQuantity(this.signalLogicSide);
   }
 
   /** Количество для кнопок «Купить»/«Продать» в блоке «Сделки»: то же, что
@@ -1841,9 +1857,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.tradeAmount = Math.round(Number(amount));
   }
 
-  /** Слайдер имеет приоритет: как только пользователь двигает ползунок —
-      чекбоксы «на всю сумму»/«весь остаток» снимаются, количество из сигнала
-      сбрасывается, а количество/сумма подстраиваются под выбранную сумму. */
+/** Слайдер имеет приоритет: как только пользователь двигает ползунок,
+      количество из сигнала сбрасывается, а количество/сумма подстраиваются
+      под выбранную сумму. */
   onTradeAmountChange(value?: number): void {
     this.tradeAmount =
       value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;
@@ -1851,8 +1867,6 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.prefillSide = null;
     this.tradeMessage = null;
     this.tradeError = null;
-    if (this.tradeAllSumBuy) this.tradeAllSumBuy = false;
-    if (this.tradeAllQtySell) this.tradeAllQtySell = false;
   }
 
   /** Ввод суммы сделки в шапке (блок рядом с кнопкой «Закрыть позицию»):
@@ -1866,30 +1880,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.onTradeAmountChange(v);
   }
 
-  /** Чекбокс «на всю сумму»: слайдер перемещается на максимум по деньгам. */
-  onTradeAllSumBuyChange(): void {
-    if (this.tradeAllSumBuy) {
-      this.tradeAllQtySell = false;
-      const max = this.effectiveMaxSum;
-      this.tradeAmount = max;
-      if (max <= 0) this.tradeAllSumBuy = false;
-    }
-    this.tradeMessage = null;
-    this.tradeError = null;
-  }
-
-  /** Чекбокс «весь остаток»: слайдер перемещается на сумму всей позиции. */
-  onTradeAllQtySellChange(): void {
-    if (this.tradeAllQtySell) {
-      this.tradeAllSumBuy = false;
-      const qty = this.remainingPositionQty;
-      const p = this.currentPrice;
-      if (qty < 1 || !(p > 0)) {
-        this.tradeAllQtySell = false;
-      } else {
-        this.tradeAmount = Math.round(qty * p * 100) / 100;
-      }
-    }
+  /** «Инверсия»: меняет стороны кнопок покупки/продажи на противоположные —
+      так можно выполнить сделку вопреки сигналу логики. */
+  onTradeInvertedChange(): void {
     this.tradeMessage = null;
     this.tradeError = null;
   }

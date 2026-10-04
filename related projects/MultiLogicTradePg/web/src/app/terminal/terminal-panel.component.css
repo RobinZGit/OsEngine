@@ -852,6 +852,24 @@
   cursor: default;
 }
 
+/* #934 «Инверсия»: кнопки покупки/продажи меняются сторонами, поэтому и вид
+   у них меняется — зелёная становится красной, красная зелёной. */
+.trade-buy.trade-sell-look {
+  background: #dc2626;
+}
+
+.trade-buy.trade-sell-look:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.trade-sell.trade-buy-look {
+  background: #16a34a;
+}
+
+.trade-sell.trade-buy-look:hover:not(:disabled) {
+  background: #15803d;
+}
+
 .trade-remainder-check {
   display: inline-flex;
   align-items: center;

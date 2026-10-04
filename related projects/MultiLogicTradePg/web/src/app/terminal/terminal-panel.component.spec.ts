@@ -292,11 +292,7 @@ describe('TerminalPanelComponent', () => {
     expect(component.tradeQuantity).toBe(8);
   });
 
-  it('слайдер сбрасывает отмеченный чекбокс и подхватывает количество от ползунка', () => {
-    component.trades = [
-      trade(1, { direction: 'BUY', quantity: 10, status: 'filled' }),
-      trade(2, { direction: 'SELL', quantity: 3, status: 'filled' }),
-    ];
+  it('слайдер сбрасывает количество из сигнала и считает от ползунка', () => {
     component.chartState = {
       candles: [
         {
@@ -313,18 +309,30 @@ describe('TerminalPanelComponent', () => {
       hasMore: false,
       error: null,
     };
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 7,
+      suggested_amount: 1750,
+    } as any);
     component.tradeMaxInput = 5000;
     fixture.detectChanges();
-    component.tradeAllQtySell = true;
-    fixture.detectChanges();
+    // Количество из сигнала (лот логики) — 7 шт.
     expect(component.tradeQuantity).toBe(7);
-    component.onTradeAmountChange();
+    expect(component.signalQuantity).toBe(7);
+    // Ползунок имеет приоритет: лот логики сброшен, количество — от суммы.
+    component.onTradeAmountChange(1000);
     fixture.detectChanges();
-    expect(component.tradeAllQtySell).toBeFalse();
-    expect(component.tradeQuantity).toBe(0);
+    expect(component.tradeQuantity).toBe(4);
+    expect(component.signalQuantity).toBe(4);
   });
 
-  it('чекбоксы направлений: продажа — вся позиция, покупка — на всю сумму', () => {
+  it('чекбокс направлений: продажа — вся позиция по бумаге', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, status: 'filled' }),
       trade(2, { direction: 'SELL', quantity: 3, status: 'filled' }),
@@ -347,12 +355,129 @@ describe('TerminalPanelComponent', () => {
       error: null,
     };
     component.tradeMaxInput = 5000;
-    component.tradeAllQtySell = true;
-    component.tradeAllSumBuy = true;
+    component.tradeAmount = 1750;
+    component.onTradeAmountChange(1750);
     expect(component.remainingPositionQty).toBe(7);
     expect((component as any).resolveTradeQuantity('sell')).toBe(7);
-    expect((component as any).resolveTradeQuantity('buy')).toBe(20);
+    expect(component.tradeQuantity).toBe(7);
     expect(Math.round(component.tradeSum * 100) / 100).toBe(1750);
+  });
+
+  it('«инверсия» выключена: кнопки покупки и продажи на своих местах (#934)', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 4,
+    } as any);
+    component.tradeInverted = false;
+    fixture.detectChanges();
+    expect(component.signalLogicSide).toBe('buy');
+    expect(component.signalSide).toBe('buy');
+    expect(component.buyButtonSide).toBe('buy');
+    expect(component.sellButtonSide).toBe('sell');
+    expect(component.buyButtonLabel).toBe('Купить');
+    expect(component.sellButtonLabel).toBe('Продать');
+    const btns = fixture.debugElement
+      .query(By.css('.trade-buttons'))
+      .queryAll(By.css('button'));
+    expect(btns.map((b) => b.nativeElement.className.trim())).toEqual([
+      'trade-buy',
+      'trade-sell',
+    ]);
+    expect(btns.map((b) => b.nativeElement.textContent.trim().split(' ')[0])).toEqual([
+      'Купить',
+      'Продать',
+    ]);
+    // Чекбоксов «на всю сумму» и «весь остаток» в форме больше нет (#934).
+    expect(fixture.debugElement.query(By.css('input[aria-label="На всю сумму"]'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('input[aria-label="Весь остаток"]'))).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('на всю сумму');
+    expect(fixture.nativeElement.textContent).not.toContain('весь остаток');
+  });
+
+  it('«инверсия» включена: кнопки меняются местами и сторонами (#934)', () => {
+    component.chartState = {
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    };
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      logic_name: 'Логика',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 4,
+    } as any);
+    component.accountId = 1;
+    component.tradeInverted = true;
+    component.tradeAmount = 1000;
+    component.onTradeAmountChange(1000);
+    stateSvc.placeTrade.and.returnValue(of({ ok: true, message: 'ok', mode: 'fake' }));
+    fixture.detectChanges();
+
+    // Логика говорит «покупка», инверсия делает сторону продажи.
+    expect(component.signalLogicSide).toBe('buy');
+    expect(component.signalSide).toBe('sell');
+    expect(component.buyButtonSide).toBe('sell');
+    expect(component.sellButtonSide).toBe('buy');
+    expect(component.buyButtonLabel).toBe('Продать');
+    expect(component.sellButtonLabel).toBe('Купить');
+
+    const btns = fixture.debugElement
+      .query(By.css('.trade-buttons'))
+      .queryAll(By.css('button'));
+    expect(btns[0].nativeElement.textContent).toContain('Продать');
+    expect(btns[1].nativeElement.textContent).toContain('Купить');
+    // Вид кнопок тоже меняется: первая красная, вторая зелёная.
+    expect(btns[0].nativeElement.className).toContain('trade-sell-look');
+    expect(btns[1].nativeElement.className).toContain('trade-buy-look');
+    // «Весь остаток» не появляется даже когда инверсия сделала сторону продающей.
+    expect(fixture.debugElement.query(By.css('input[aria-label="Весь остаток"]'))).toBeNull();
+
+    // Кнопка покупки реально продаёт (стороны — по своей подписи).
+    btns[0].nativeElement.click();
+    expect((stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0].direction).toBe(
+      'sell'
+    );
+    btns[1].nativeElement.click();
+    expect((stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0].direction).toBe(
+      'buy'
+    );
   });
 
   it('шорт-позиция: сводка показывает прибыль по бумаге при падении цены', () => {

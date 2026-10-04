@@ -140,37 +140,20 @@
         (click)="placeTrade(signalSide)"
       >{{ signalSide === 'sell' ? 'Продать' : 'Купить' }}@if (signalQuantity > 0) { {{ signalQuantity }} }</button>
 
-      @if (signalSide === 'sell') {
-        <label
-          class="trade-remainder-check"
-          title="Продажа всего остатка — вся позиция по этой бумаге на счёте"
-        >
-          <input
-            type="checkbox"
-            class="trade-remainder-input"
-            [(ngModel)]="tradeAllQtySell"
-            (ngModelChange)="onTradeAllQtySellChange()"
-            [disabled]="tradingBusy || priceMissing"
-            aria-label="Весь остаток"
-          />
-          <span class="trade-remainder-text">весь остаток</span>
-        </label>
-      } @else {
-        <label
-          class="trade-remainder-check"
-          title="Покупка на всю сумму — весь остаток средств счёта"
-        >
-          <input
-            type="checkbox"
-            class="trade-remainder-input"
-            [(ngModel)]="tradeAllSumBuy"
-            (ngModelChange)="onTradeAllSumBuyChange()"
-            [disabled]="tradingBusy || priceMissing"
-            aria-label="На всю сумму"
-          />
-          <span class="trade-remainder-text">на всю сумму</span>
-        </label>
-      }
+      <label
+        class="trade-remainder-check"
+        title="Инверсия: поменять стороны кнопок покупки и продажи местами — выполнить сделку вопреки сигналу логики"
+      >
+        <input
+          type="checkbox"
+          class="trade-remainder-input"
+          [(ngModel)]="tradeInverted"
+          (ngModelChange)="onTradeInvertedChange()"
+          [disabled]="tradingBusy"
+          aria-label="Инверсия"
+        />
+        <span class="trade-remainder-text">инверсия</span>
+      </label>
     </div>
     <div class="tpanel-title">
       <span class="tpanel-prefix">{{ security.prefix }}</span>
@@ -442,17 +425,31 @@
         <button
           type="button"
           class="trade-buy"
+          [class.trade-sell-look]="buyButtonSide === 'sell'"
           [disabled]="tradingBusy || priceMissing || accountId == null"
-          [title]="'Купить ' + tradeButtonsQty + ' шт — то же количество, что у кнопки сигнала в шапке'"
-          (click)="placeTradeFixed('buy')"
-        >Купить@if (tradeButtonsQty > 0) { {{ tradeButtonsQty }} }</button>
+          [title]="
+            buyButtonLabel +
+            ' ' +
+            tradeButtonsQty +
+            ' шт — то же количество, что у кнопки сигнала в шапке' +
+            (tradeInverted ? ' (инверсия: сторона наоборот)' : '')
+          "
+          (click)="placeTradeFixed(buyButtonSide)"
+        >{{ buyButtonLabel }}@if (tradeButtonsQty > 0) { {{ tradeButtonsQty }} }</button>
         <button
           type="button"
           class="trade-sell"
+          [class.trade-buy-look]="sellButtonSide === 'buy'"
           [disabled]="tradingBusy || priceMissing || accountId == null"
-          [title]="'Продать ' + tradeButtonsQty + ' шт — противоположно сигналу, на то же количество'"
-          (click)="placeTradeFixed('sell')"
-        >Продать@if (tradeButtonsQty > 0) { {{ tradeButtonsQty }} }</button>
+          [title]="
+            sellButtonLabel +
+            ' ' +
+            tradeButtonsQty +
+            ' шт — противоположно сигналу, на то же количество' +
+            (tradeInverted ? ' (инверсия: сторона наоборот)' : '')
+          "
+          (click)="placeTradeFixed(sellButtonSide)"
+        >{{ sellButtonLabel }}@if (tradeButtonsQty > 0) { {{ tradeButtonsQty }} }</button>
       </div>
 
       @if (remainingPositionQty !== 0) {
