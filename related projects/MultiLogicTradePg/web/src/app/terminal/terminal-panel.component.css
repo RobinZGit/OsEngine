@@ -131,19 +131,20 @@
 
 .tpanel-prefix {
   font-family: ui-monospace, monospace;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #2563eb;
-  background: #eff6ff;
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: #0057ff;
+  background: #e6efff;
+  border: 1px solid #bfd6ff;
   padding: 0.05rem 0.3rem;
   border-radius: 3px;
   flex-shrink: 0;
 }
 
 .tpanel-name {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #374151;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
