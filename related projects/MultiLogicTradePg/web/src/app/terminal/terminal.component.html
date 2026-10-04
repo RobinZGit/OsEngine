@@ -133,6 +133,8 @@
             type="button"
             class="term-account-close-all"
             [class.term-account-close-all-open]="anyOpenPosition"
+            [class.term-account-close-all-loss]="closeAllIsLoss"
+            [class.term-account-close-all-profit]="closeAllIsProfit"
             [disabled]="!anyOpenPosition"
             [title]="anyOpenPosition ? closeAllButtonTitle : 'Нет открытых позиций'"
             (click)="$event.stopPropagation(); closeAllPositions()"

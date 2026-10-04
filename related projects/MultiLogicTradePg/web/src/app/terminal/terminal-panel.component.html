@@ -46,7 +46,8 @@
         <button
           type="button"
           class="tpanel-close-pos"
-          [class.tpanel-close-pos-warn]="closingCommissionEatsProfit"
+          [class.tpanel-close-pos-loss]="closingIsLoss"
+          [class.tpanel-close-pos-profit]="closingIsProfit"
           [disabled]="tradingBusy || priceMissing"
           [title]="closeButtonTitle"
           (click)="closePosition()"

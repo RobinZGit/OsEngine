@@ -526,6 +526,27 @@
   border-color: #5c2e0c;
 }
 
+/* Итог закрытия всех позиций: убыток — красный, прибыль — тёмно-зелёный. */
+.term-account-close-all-open.term-account-close-all-loss {
+  background: #b91c1c;
+  border-color: #991b1b;
+}
+
+.term-account-close-all-open.term-account-close-all-loss:hover {
+  background: #991b1b;
+  border-color: #7f1d1d;
+}
+
+.term-account-close-all-open.term-account-close-all-profit {
+  background: #15803d;
+  border-color: #166534;
+}
+
+.term-account-close-all-open.term-account-close-all-profit:hover {
+  background: #166534;
+  border-color: #14532d;
+}
+
 .term-account-hint {
   color: #9ca3af;
   font-size: 0.72rem;

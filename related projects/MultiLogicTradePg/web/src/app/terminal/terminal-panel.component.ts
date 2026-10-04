@@ -58,12 +58,12 @@ interface IndicatorLegendItem {
   title: string;
 }
 
-/** Сводка позиции полосы для терминала: остаток, рыночная стоимость и
-    ожидаемая комиссия за закрытие позиции этой бумаги. */
+/** Сводка позиции полосы для терминала: остаток, рыночная стоимость и итог
+    закрытия позиции этой бумаги (прибыль/убыток с учётом комиссий). */
 export interface PanelPositionSummary {
   qty: number;
   marketValue: number;
-  closingCommission: number;
+  closingNetDiff: number;
 }
 
 const EMPTY_STATE: SecurityChartState = {
@@ -321,8 +321,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.emitPositionSummary();
     }
     if (changes['commissionPct'] != null) {
-      /** #931: изменился процент комиссии — пересчитываем ожидаемую комиссию
-          за закрытие и обновляем сумму по счёту в шапке терминала. */
+      /** #932: изменился процент комиссии — пересчитываем итог закрытия
+          и обновляем сумму по счёту в шапке терминала. */
       this.emitPositionSummary();
     }
     if (changes['signalEvent'] != null) {
@@ -663,16 +663,21 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   }
 
   /** Итог после закрытия позиции по текущей цене: разница по остатку (уже за
-      вычетом комиссии входа) минус комиссия за закрытие. Отрицательный —
-      комиссия не покрыта прибылью (после закрытия убыток). */
+      вычетом комиссии входа) минус комиссия за закрытие. Именно его показываем
+      в кнопке закрытия: «приб.» — в плюсе, «уб.» — комиссия съела прибыль или
+      позиция уже в минусе. Пересчитывается при каждой загрузке цен. */
   get closingNetDiff(): number {
     return Math.round((this.remainingPositionDiff - this.closingCommission) * 100) / 100;
   }
 
-  /** Прибыль по остатку положительная, но комиссия за закрытие её перекрывает
-      — подсвечиваем кнопку, чтобы был виден риск уйти в минус после закрытия. */
-  get closingCommissionEatsProfit(): boolean {
-    return this.remainingPositionDiff > 0 && this.closingCommission > this.remainingPositionDiff;
+  /** Закрытие сейчас уводит в минус — кнопку красим в красный. */
+  get closingIsLoss(): boolean {
+    return this.closingNetDiff < 0;
+  }
+
+  /** Закрытие сейчас в плюсе — кнопку красим в тёмно-зелёный. */
+  get closingIsProfit(): boolean {
+    return this.closingNetDiff > 0;
   }
 
   /** Деньги по-русски с двумя знаками (для подписи кнопки закрытия). */
@@ -683,27 +688,34 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     });
   }
 
-  /** Подпись кнопки «Закрыть позицию»: при известной комиссии добавляем
-      «(ком. X ₽)» — сумма пересчитывается вместе с ценой. */
+  /** Подпись кнопки «Закрыть позицию»: итог закрытия с учётом комиссий входа
+      и выхода — «Закрыть позицию (приб. X ₽)» / «(уб. X ₽)». Ноль — без скобок. */
   get closeButtonLabel(): string {
-    const c = this.closingCommission;
-    if (c <= 0) return 'Закрыть позицию';
-    return `Закрыть позицию (ком. ${this.formatMoney(c)} ₽)`;
+    const net = this.closingNetDiff;
+    if (net === 0) return 'Закрыть позицию';
+    const sign = net > 0 ? 'приб. ' : 'уб. ';
+    return `Закрыть позицию (${sign}${this.formatMoney(Math.abs(net))} ₽)`;
   }
 
-  /** Подсказка кнопки закрытия: что делает + ожидаемая комиссия и итог после
-      закрытия (покрывает ли прибыль комиссию). */
+  /** Подсказка кнопки закрытия: что делает + комиссия выхода и итог закрытия. */
   get closeButtonTitle(): string {
     const base =
       'Закрыть всю позицию по бумаге: продать остаток (при покупках) или выкупить весь объём (при продажах), чтобы количество стало нулевым';
-    const c = this.closingCommission;
-    if (c <= 0) return base;
     const net = this.closingNetDiff;
-    const netLabel = `${net >= 0 ? '+' : ''}${this.formatMoney(net)} ₽`;
-    const verdict = this.closingCommissionEatsProfit
-      ? `с учётом комиссии за закрытие результат ${netLabel} — комиссия перекрывает прибыль`
-      : `с учётом комиссии за закрытие результат ${netLabel}`;
-    return `${base}. Ожидаемая комиссия за закрытие: ${this.formatMoney(c)} ₽ (${this.commissionPct}% от суммы). Итог по текущей цене: ${verdict}`;
+    const commission = this.closingCommission;
+    if (net === 0 && commission === 0) return base;
+    const parts: string[] = [];
+    if (commission > 0) {
+      parts.push(
+        `комиссия за закрытие ${this.formatMoney(commission)} ₽ (${this.commissionPct}% от суммы)`
+      );
+    }
+    parts.push(
+      net === 0
+        ? 'закрытие без прибыли и убытка'
+        : `итог закрытия ${net > 0 ? 'прибыль' : 'убыток'} ${this.formatMoney(Math.abs(net))} ₽ (с учётом комиссий входа и выхода)`
+    );
+    return `${base}. ${parts.join('. ')}.`;
   }
 
   /** Сообщить терминалу сводку позиции: остаток и рыночную стоимость.
@@ -713,7 +725,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.positionSummary.emit({
       qty: this.remainingPositionQty,
       marketValue: this.remainingPositionMarketValue,
-      closingCommission: this.closingCommission,
+      closingNetDiff: this.closingNetDiff,
     });
   }
 

@@ -355,15 +355,25 @@
   cursor: default;
 }
 
-/* Комиссия за закрытие перекрывает текущую прибыль — кнопка красная. */
-.tpanel-close-pos-warn {
+/* Итог закрытия позиции: убыток — красный, прибыль — тёмно-зелёный. */
+.tpanel-close-pos-loss {
   background: #b91c1c;
   border-color: #991b1b;
 }
 
-.tpanel-close-pos-warn:hover:not(:disabled) {
+.tpanel-close-pos-loss:hover:not(:disabled) {
   background: #991b1b;
   border-color: #7f1d1d;
+}
+
+.tpanel-close-pos-profit {
+  background: #15803d;
+  border-color: #166534;
+}
+
+.tpanel-close-pos-profit:hover:not(:disabled) {
+  background: #166534;
+  border-color: #14532d;
 }
 
 .tpanel-pos-summary {

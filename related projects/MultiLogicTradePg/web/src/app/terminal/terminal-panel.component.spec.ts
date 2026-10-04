@@ -474,7 +474,7 @@ describe('TerminalPanelComponent', () => {
     expect(btn.nativeElement.disabled).toBe(false);
   });
 
-  it('кнопка «Закрыть позицию» показывает комиссию за закрытие в подписи', () => {
+  it('кнопка «Закрыть позицию» показывает убыток закрытия в подписи', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
     ];
@@ -497,14 +497,16 @@ describe('TerminalPanelComponent', () => {
     fixture.componentRef.setInput('accountIsFake', true);
     fixture.componentRef.setInput('commissionPct', 0.5);
     fixture.detectChanges();
-    // 10 × 250 × 0,5% = 12,50 ₽
+    // Цена = цене покупки: разница 0, комиссия выхода 10 × 250 × 0,5% = 12,50 ₽.
     expect(component.closingCommission).toBe(12.5);
+    expect(component.closingNetDiff).toBe(-12.5);
+    expect(component.closingIsLoss).toBe(true);
     const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
-    expect(btn.nativeElement.textContent).toContain('Закрыть позицию (ком.');
+    expect(btn.nativeElement.textContent).toContain('Закрыть позицию (уб.');
     expect(btn.nativeElement.textContent).toContain('12,50');
   });
 
-  it('кнопка «Закрыть позицию»: комиссия пересчитывается от живой цены', () => {
+  it('кнопка «Закрыть позицию»: прибыль/убыток пересчитывается от живой цены', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
     ];
@@ -528,33 +530,37 @@ describe('TerminalPanelComponent', () => {
     fixture.componentRef.setInput('commissionPct', 0.5);
     fixture.componentRef.setInput('livePrice', 260);
     fixture.detectChanges();
-    // живая цена 260: 10 × 260 × 0,5% = 13,00 ₽
+    // Живая цена 260: разница 100 ₽, комиссия выхода 13 ₽ → прибыль 87 ₽.
     expect(component.closingCommission).toBe(13);
+    expect(component.closingNetDiff).toBe(87);
+    expect(component.closingIsProfit).toBe(true);
     const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
-    expect(btn.nativeElement.textContent).toContain('13,00');
+    expect(btn.nativeElement.textContent).toContain('Закрыть позицию (приб.');
+    expect(btn.nativeElement.textContent).toContain('87,00');
   });
 
-  it('кнопка «Закрыть позицию» краснеет, когда комиссия перекрывает прибыль', () => {
+  it('кнопка «Закрыть позицию»: убыток — красная, прибыль — тёмно-зелёная', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
     ];
     fixture.componentRef.setInput('accountIsFake', true);
     fixture.componentRef.setInput('commissionPct', 0.5);
-    // Прибыль мизерная (1 ₽), а комиссия за закрытие ~12,51 ₽ — не покрывает.
+    // Прибыль мизерная (1 ₽), комиссия выхода ~12,51 ₽ — итог убыточный.
     fixture.componentRef.setInput('livePrice', 250.1);
     fixture.detectChanges();
-    expect(component.closingCommissionEatsProfit).toBe(true);
+    expect(component.closingIsLoss).toBe(true);
     expect(
       fixture.debugElement.query(By.css('.tpanel-close-pos')).nativeElement.className
-    ).toContain('tpanel-close-pos-warn');
+    ).toContain('tpanel-close-pos-loss');
 
-    // Прибыль большая (500 ₽) — комиссия 15 ₽ её не перекрывает.
+    // Прибыль 500 ₽, комиссия 15 ₽ → закрытие в плюсе.
     fixture.componentRef.setInput('livePrice', 300);
     fixture.detectChanges();
-    expect(component.closingCommissionEatsProfit).toBe(false);
-    expect(
-      fixture.debugElement.query(By.css('.tpanel-close-pos')).nativeElement.className
-    ).not.toContain('tpanel-close-pos-warn');
+    expect(component.closingIsProfit).toBe(true);
+    const cls = fixture.debugElement.query(By.css('.tpanel-close-pos')).nativeElement
+      .className;
+    expect(cls).toContain('tpanel-close-pos-profit');
+    expect(cls).not.toContain('tpanel-close-pos-loss');
   });
 
   it('шапка: блок покупок/продаж стоит сразу после кнопки «Закрыть позицию»', () => {

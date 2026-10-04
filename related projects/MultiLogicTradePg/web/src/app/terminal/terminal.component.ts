@@ -1204,15 +1204,25 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.closeAllPulse++;
   }
 
-  /** Суммарная ожидаемая комиссия за закрытие всех открытых позиций — равна
-      сумме комиссий по каждой бумаге (из сводок полос). */
-  get totalClosingCommission(): number {
+  /** Суммарный итог закрытия всех открытых позиций (с учётом комиссий входа
+      и выхода) — сумма по каждой бумаге из сводок полос. */
+  get totalClosingNetDiff(): number {
     let sum = 0;
     for (const s of this.positionSummaryByPanel.values()) {
-      const c = Number(s.closingCommission);
-      if (Number.isFinite(c) && c > 0) sum += c;
+      const v = Number(s.closingNetDiff);
+      if (Number.isFinite(v)) sum += v;
     }
     return Math.round(sum * 100) / 100;
+  }
+
+  /** Закрытие всех позиций сейчас уводит в минус — кнопка красная. */
+  get closeAllIsLoss(): boolean {
+    return this.totalClosingNetDiff < 0;
+  }
+
+  /** Закрытие всех позиций сейчас в плюсе — кнопка тёмно-зелёная. */
+  get closeAllIsProfit(): boolean {
+    return this.totalClosingNetDiff > 0;
   }
 
   /** Деньги по-русски с двумя знаками (подпись кнопки закрытия всех позиций). */
@@ -1223,21 +1233,24 @@ export class TerminalComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Подпись кнопки «Закрыть все позиции»: при известной комиссии добавляем
-      «(ком. X ₽)» — сумма всех комиссий по каждой бумаге. */
+  /** Подпись кнопки «Закрыть все позиции»: суммарный итог закрытия —
+      «Закрыть все позиции (приб. X ₽)» / «(уб. X ₽)». Ноль — без скобок. */
   get closeAllButtonLabel(): string {
-    const c = this.totalClosingCommission;
-    if (!(c > 0)) return 'Закрыть все позиции';
-    return `Закрыть все позиции (ком. ${this.formatMoney(c)} ₽)`;
+    const net = this.totalClosingNetDiff;
+    if (net === 0) return 'Закрыть все позиции';
+    const sign = net > 0 ? 'приб. ' : 'уб. ';
+    return `Закрыть все позиции (${sign}${this.formatMoney(Math.abs(net))} ₽)`;
   }
 
   /** Подсказка кнопки «Закрыть все позиции». */
   get closeAllButtonTitle(): string {
     const base = 'Закрыть все открытые позиции (по каждой бумаге, маркет)';
-    const c = this.totalClosingCommission;
-    return c > 0
-      ? `${base}. Ожидаемая комиссия за закрытие всех позиций: ${this.formatMoney(c)} ₽`
-      : base;
+    const net = this.totalClosingNetDiff;
+    return net === 0
+      ? base
+      : `${base}. Итог закрытия всех позиций по текущим ценам: ${
+          net > 0 ? 'прибыль' : 'убыток'
+        } ${this.formatMoney(Math.abs(net))} ₽ (с учётом комиссий входа и выхода)`;
   }
 
   /** Полоса убрана — вычищаем её сводку из суммы по счёту. */

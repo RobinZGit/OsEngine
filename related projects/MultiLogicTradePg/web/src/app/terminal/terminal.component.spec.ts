@@ -424,25 +424,35 @@ describe('TerminalComponent — остаток на счёте и отклоне
     expect(c.pricesRefreshing).toBe(false);
   });
 
-  it('кнопка «Закрыть все позиции»: в подписи сумма комиссий по всем бумагам (#931)', () => {
+  it('кнопка «Закрыть все позиции»: в подписи суммарный итог закрытия (#933)', () => {
     const c = makeComponent();
     c.panels = [
       { uid: 1, security: { id: 101 }, signal_event: null, collapsed: true },
       { uid: 2, security: { id: 202 }, signal_event: null, collapsed: true },
     ];
-    // Две бумаги с позициями: комиссия за закрытие 12,50 и 7,25 → сумма 19,75.
-    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingCommission: 12.5 });
-    c.onPanelPositionSummary(2, { qty: 5, marketValue: 500, closingCommission: 7.25 });
-    expect(c.totalClosingCommission).toBe(19.75);
-    expect(c.closeAllButtonLabel).toBe('Закрыть все позиции (ком. 19,75 ₽)');
-    expect(c.closeAllButtonTitle).toContain('19,75');
+    // Бумага 1 в убыток (−60,10), бумага 2 в плюс (+120,00) → сумма +59,90.
+    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingNetDiff: -60.1 });
+    c.onPanelPositionSummary(2, { qty: 5, marketValue: 500, closingNetDiff: 120 });
+    expect(c.totalClosingNetDiff).toBe(59.9);
+    expect(c.closeAllIsProfit).toBe(true);
+    expect(c.closeAllButtonLabel).toBe('Закрыть все позиции (приб. 59,90 ₽)');
+    expect(c.closeAllButtonTitle).toContain('59,90');
   });
 
-  it('кнопка «Закрыть все позиции»: без комиссий подпись без скобок', () => {
+  it('кнопка «Закрыть все позиции»: убыток по сумме — красная, нулевая — без скобок', () => {
     const c = makeComponent();
-    c.panels = [{ uid: 1, security: { id: 101 }, signal_event: null, collapsed: true }];
-    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingCommission: 0 });
-    expect(c.totalClosingCommission).toBe(0);
+    c.panels = [
+      { uid: 1, security: { id: 101 }, signal_event: null, collapsed: true },
+    ];
+    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingNetDiff: -12.5 });
+    expect(c.totalClosingNetDiff).toBe(-12.5);
+    expect(c.closeAllIsLoss).toBe(true);
+    expect(c.closeAllButtonLabel).toBe('Закрыть все позиции (уб. 12,50 ₽)');
+
+    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingNetDiff: 0 });
+    expect(c.totalClosingNetDiff).toBe(0);
+    expect(c.closeAllIsLoss).toBe(false);
+    expect(c.closeAllIsProfit).toBe(false);
     expect(c.closeAllButtonLabel).toBe('Закрыть все позиции');
   });
 });
