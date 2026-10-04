@@ -1,4 +1,4 @@
-.tpanel {
+﻿.tpanel {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -34,9 +34,13 @@
   border-color: #93c5fd;
 }
 
+/* #945: высота строки полосы бумаги и кнопки «Закрыть позицию» — переменная:
+   от обычной (итог закрытия 0%) до двухкратной (|процент| ≥ 1%). Множитель
+   --pnl-scale ставит компонент (positionPnlScale). */
 .tpanel-head-outer {
   display: flex;
   align-items: stretch;
+  min-height: calc(1.75rem * var(--pnl-scale, 1));
   background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
   /* Строка шапки шире доступного — лишнее обрезается по краю полосы,
@@ -333,7 +337,7 @@
 /* #942: итог закрытия вынесен из кнопки в отдельный текстовый блок сразу за ней —
    крупнее прочих подписей и цветом (красный — убыток, зелёный — прибыль). */
 .tpanel-close-diff {
-  font-size: 0.9rem;
+  font-size: calc(0.9rem * var(--pnl-scale, 1));
   font-weight: 800;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
@@ -352,7 +356,7 @@
 /* #943: процент от затраченной суммы в скобках — чуть мельче и приглушённее,
    чтобы не спорить с суммой, но оставаться читаемым. */
 .tpanel-close-diff-pct {
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--pnl-scale, 1));
   font-weight: 700;
   opacity: 0.85;
 }
@@ -364,6 +368,8 @@
   --close-fill: #8b4513;
   display: inline-flex;
   align-items: center;
+  /* #945: высота кнопки растёт вместе с итогом закрытия (1×…2×). */
+  min-height: calc(1.4rem * var(--pnl-scale, 1));
   font-size: 0.66rem;
   font-weight: 700;
   /* #941: белый текст + тёмная обводка — читается и на залитой цветом части,
@@ -477,44 +483,8 @@
   color: #6b7280;
 }
 
-/* #922: живая цена бумаги в шапке полосы (обновляется раз в 30 с). */
-.tpanel-pos-price {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.3rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: 0.25rem;
-  background: #f3f4f6;
-}
-
-.tpanel-pos-price-live {
-  background: #ecfdf5;
-  box-shadow: inset 0 0 0 1px #a7f3d0;
-}
-
-.tpanel-pos-price-label {
-  font-size: 0.62rem;
-  color: #6b7280;
-}
-
-.tpanel-pos-price-value {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #111827;
-}
-
-.tpanel-pos-price-diff {
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.tpanel-pos-price-diff.diff-positive {
-  color: #15803d;
-}
-
-.tpanel-pos-price-diff.diff-negative {
-  color: #dc2626;
-}
+/* #944: стили чипа «Цена + разница в %» удалены вместе с разметкой —
+   живая цена осталась в сводке сделки (Цена / Средняя цена входа). */
 
 /* Блок покупок/продаж в шапке полосы — сразу после кнопки «Закрыть позицию»,
    чтобы закрытие и сделка стояли рядом в одной строке. */

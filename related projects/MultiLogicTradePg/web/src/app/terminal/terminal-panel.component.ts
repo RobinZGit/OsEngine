@@ -526,28 +526,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return this.currentPrice;
   }
 
-  /** Показана ли сейчас живая цена (в шапке помечаем, чтобы было видно,
+  /** Показана ли сейчас живая цена (в сводке помечаем, чтобы было видно,
       что цифра оперативная, а не цена закрытого бара). */
   get hasLivePrice(): boolean {
     const live = Number(this.livePrice);
     return Number.isFinite(live) && live > 0;
   }
 
-  /** Разница цены бумаги с живой ценой в рублях на бумагу (положительная —
-      вверх, отрицательная — вниз) и в процентах от средней цены входа. */
-  get positionPriceDiffRub(): number {
-    if (!this.hasLivePrice) return 0;
-    const avg = this.remainingPositionAvgPrice;
-    if (!(avg > 0)) return 0;
-    return Math.round((this.positionPrice - avg) * 100) / 100;
-  }
-
-  get positionPriceDiffPct(): number {
-    if (!this.hasLivePrice) return 0;
-    const avg = this.remainingPositionAvgPrice;
-    if (!(avg > 0)) return 0;
-    return Math.round((this.positionPrice / avg - 1) * 10000) / 100;
-  }
+  /* #944: геттеры positionPriceDiffRub / positionPriceDiffPct удалены вместе
+     с чипом «Цена + разница в %» — он дублировал цену из сводки сделки. */
 
   get tradeQuantity(): number {
     const p = this.currentPrice;
@@ -684,6 +671,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       в отдельный текстовый блок сразу за кнопкой (`closingDiffLabel`). */
   get closeButtonLabel(): string {
     return 'Закрыть позицию';
+  }
+
+  /** #945: во сколько раз выше кнопка «Закрыть позицию» и вся строка полосы
+      бумаги: от 1 (итог закрытия 0%) до 2 (|процент| ≥ 1%). Рост
+      пропорционален |проценту| / 1%, дальше 1% — держится максимум. */
+  get positionPnlScale(): number {
+    const pct = Math.abs(this.closingNetDiffPct);
+    return Math.round(Math.min(1 + pct, 2) * 100) / 100;
   }
 
   /** #943: итог закрытия в процентах от затраченной суммы по бумаге: для лонга —

@@ -1,4 +1,4 @@
-<div class="tpanel" [class.collapsed]="collapsed">
+<div class="tpanel" [class.collapsed]="collapsed" [style.--pnl-scale]="positionPnlScale">
   <div
     class="tpanel-head-outer"
     [title]="signalEvent ? signalBarHint : ''"
@@ -69,28 +69,10 @@
         }
       }
       <span class="tpanel-pos-summary">
-        @if (remainingPositionQty !== 0) {
-          <span
-            class="tpanel-pos-price"
-            [class.tpanel-pos-price-live]="hasLivePrice"
-            [title]="
-              hasLivePrice
-                ? 'Живая цена — последняя сделка T-Bank, обновляется раз в 30 секунд. Разница считается от средней цены вашего входа'
-                : 'Цена последней закрытой свечи графика. Живая цена недоступна — терминал ждёт её от T-Bank'
-            "
-          >
-            <span class="tpanel-pos-price-label">Цена</span>
-            <span class="tpanel-pos-price-value">{{positionPrice | number: '1.0-2' : 'ru' }} ₽</span>
-            <span
-              class="tpanel-pos-price-diff"
-              [class.diff-positive]="positionPriceDiffRub >= 0"
-              [class.diff-negative]="positionPriceDiffRub < 0"
-            >
-              {{ positionPriceDiffRub >= 0 ? '+' : '' }}{{positionPriceDiffRub | number: '1.0-2' : 'ru' }}
-              ₽ ({{ positionPriceDiffRub >= 0 ? '+' : '' }}{{positionPriceDiffPct | number: '1.0-2' : 'ru' }}%)
-            </span>
-          </span>
-        }
+        <!-- #944: чип «Цена + разница в %» из этой строки убран — он дублировал
+             цену из сводки сделки и путал зелёной «прибылью» без комиссий.
+             Актуальная цена осталась в сводке (Цена / Средняя цена входа),
+             реальный результат закрытия — в блоке у кнопки «Закрыть позицию». -->
         <!-- Закупка этой бумаги (сколько вложено) — остаётся, как было.
              П/У по счёту показывается только в шапке терминала (общее
              значение по счёту, не по отдельной бумаге). -->

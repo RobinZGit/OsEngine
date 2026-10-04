@@ -680,6 +680,39 @@ describe('TerminalPanelComponent', () => {
     ).toContain('(+3,48%)');
   });
 
+  it('#945: высота кнопки и строки полосы растёт пропорционально проценту (1×…2×)', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    fixture.componentRef.setInput('accountIsFake', true);
+    // Итог закрытия 0% → обычная высота.
+    fixture.componentRef.setInput('commissionPct', 0);
+    fixture.componentRef.setInput('livePrice', 250);
+    fixture.detectChanges();
+    expect(component.closingNetDiffPct).toBe(0);
+    expect(component.positionPnlScale).toBe(1);
+    const root = fixture.debugElement.query(By.css('.tpanel')).nativeElement;
+    expect(root.style.getPropertyValue('--pnl-scale')).toBe('1');
+
+    // Убыток 12,50 ₽ от базы 2500 ₽ = −0,5% → высота 1,5×.
+    fixture.componentRef.setInput('commissionPct', 0.5);
+    fixture.detectChanges();
+    expect(component.closingNetDiffPct).toBe(-0.5);
+    expect(component.positionPnlScale).toBe(1.5);
+    expect(root.style.getPropertyValue('--pnl-scale')).toBe('1.5');
+
+    // Прибыль 100 ₽ = +4% → максимум 2×, дальше не растёт.
+    fixture.componentRef.setInput('commissionPct', 0);
+    fixture.componentRef.setInput('livePrice', 260);
+    fixture.detectChanges();
+    expect(component.closingNetDiffPct).toBe(4);
+    expect(component.positionPnlScale).toBe(2);
+
+    fixture.componentRef.setInput('livePrice', 300);
+    fixture.detectChanges();
+    expect(component.positionPnlScale).toBe(2);
+  });
+
   it('#942: при нулевом итоге закрытия блок прибыли/убытка не показывается', () => {
     component.trades = [
       trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
@@ -2108,21 +2141,19 @@ describe('TerminalPanelComponent', () => {
       // 2555 − 2500 (10 × 250 по ценам покупок) = +55
       expect(component.remainingPositionDiff).toBe(55);
       expect(component.remainingPositionAvgPrice).toBe(250);
-      expect(component.positionPriceDiffRub).toBe(5.5);
-      expect(component.positionPriceDiffPct).toBe(2.2);
     });
 
-    it('живая цена в шапке полосы и в сводке помечена как live', () => {
+    it('#944: чип «Цена + разница в %» из строки позиции убран', () => {
       withPosition(260);
       fixture.componentRef.setInput('livePrice', 261.2);
       fixture.detectChanges();
-      const chip = fixture.debugElement.query(By.css('.tpanel-pos-price'));
-      expect(chip).not.toBeNull();
-      expect(chip.nativeElement.classList).toContain('tpanel-pos-price-live');
-      expect(chip.nativeElement.textContent).toContain('Цена');
-      // Формат чисел в терминале — русский (разделитель разрядов — пробел,
-      // десятичный — запятая): «261,2», а не «261.2».
-      expect(chip.nativeElement.textContent).toContain('261,2');
+      expect(fixture.debugElement.query(By.css('.tpanel-pos-price'))).toBeNull();
+    });
+
+    it('живая цена в сводке помечена как live', () => {
+      withPosition(260);
+      fixture.componentRef.setInput('livePrice', 261.2);
+      fixture.detectChanges();
       const summary = fixture.debugElement.query(By.css('.trade-summary'));
       expect(summary).not.toBeNull();
       expect(summary.nativeElement.textContent).toContain('Цена');
@@ -2130,13 +2161,6 @@ describe('TerminalPanelComponent', () => {
       expect(summary.nativeElement.textContent).toContain('Средняя цена входа');
       expect(summary.nativeElement.textContent).toContain('250');
       expect(fixture.debugElement.query(By.css('.trade-summary-live-mark'))).not.toBeNull();
-    });
-
-    it('без позиции блок цены в шапке не рисуется', () => {
-      component.trades = [];
-      fixture.componentRef.setInput('livePrice', 261.2);
-      fixture.detectChanges();
-      expect(fixture.debugElement.query(By.css('.tpanel-pos-price'))).toBeNull();
     });
 
     it('смена живой цены отправляет терминалу новую сводку позиции', () => {
