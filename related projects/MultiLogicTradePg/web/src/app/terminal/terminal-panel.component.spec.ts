@@ -632,6 +632,11 @@ describe('TerminalPanelComponent', () => {
     const diff = fixture.debugElement.query(By.css('.tpanel-close-diff'));
     expect(diff.nativeElement.textContent).toContain('уб. 12,50');
     expect(diff.nativeElement.classList).toContain('tpanel-close-diff-loss');
+    // #943: процент от затраченной суммы (2500 ₽) в скобках: -12,5 / 2500 = -0,5%.
+    expect(component.closingNetDiffPct).toBe(-0.5);
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-close-diff-pct')).nativeElement.textContent
+    ).toContain('(-0,5%)');
   });
 
   it('кнопка «Закрыть позицию»: прибыль/убыток пересчитывается от живой цены', () => {
@@ -668,6 +673,11 @@ describe('TerminalPanelComponent', () => {
     const diff = fixture.debugElement.query(By.css('.tpanel-close-diff'));
     expect(diff.nativeElement.textContent).toContain('приб. 87,00');
     expect(diff.nativeElement.classList).toContain('tpanel-close-diff-profit');
+    // #943: 87 / 2500 = +3,48%.
+    expect(component.closingNetDiffPct).toBe(3.48);
+    expect(
+      fixture.debugElement.query(By.css('.tpanel-close-diff-pct')).nativeElement.textContent
+    ).toContain('(+3,48%)');
   });
 
   it('#942: при нулевом итоге закрытия блок прибыли/убытка не показывается', () => {

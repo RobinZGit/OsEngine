@@ -686,6 +686,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     return 'Закрыть позицию';
   }
 
+  /** #943: итог закрытия в процентах от затраченной суммы по бумаге: для лонга —
+      деньги, потраченные на покупку, для шорта — полученные за продажу
+      (`remainingPositionBaseAmount`). */
+  get closingNetDiffPct(): number {
+    const base = this.remainingPositionBaseAmount;
+    if (!(base > 0)) return 0;
+    return Math.round((this.closingNetDiff / base) * 10000) / 100;
+  }
+
   /** #942: итог закрытия отдельным текстом за кнопкой — «приб. 60,10 ₽» /
       «уб. 12,30 ₽». Ноль — пустая строка, блок не показывается. */
   get closingDiffLabel(): string {

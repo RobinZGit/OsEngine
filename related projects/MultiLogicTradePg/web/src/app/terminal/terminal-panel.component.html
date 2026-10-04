@@ -61,7 +61,11 @@
             [class.tpanel-close-diff-profit]="closingIsProfit"
             [class.tpanel-close-diff-loss]="closingIsLoss"
             title="Итог закрытия позиции по текущей цене (с комиссиями входа и выхода)"
-          >{{ closingDiffLabel }}</span>
+          >{{ closingDiffLabel }}
+            <span class="tpanel-close-diff-pct"
+              >({{ closingNetDiffPct >= 0 ? '+' : '' }}{{ closingNetDiffPct | number: '1.0-2' : 'ru' }}%)</span
+            ></span
+          >
         }
       }
       <span class="tpanel-pos-summary">
