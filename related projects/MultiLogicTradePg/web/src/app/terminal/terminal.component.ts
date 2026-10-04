@@ -830,7 +830,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
     signalEvent?: TerminalLogicSignalEvent | null,
     logicIndicatorIds?: number[] | null,
     collapsed = true,
-    autoCloseOnLogicSignal = true
+    autoCloseOnLogicSignal = false
   ): PanelModel | null {
     const sec = this.byId.get(securityId);
     if (!sec) return null;
