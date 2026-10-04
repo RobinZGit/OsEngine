@@ -626,9 +626,12 @@ describe('TerminalPanelComponent', () => {
     expect(component.closingCommission).toBe(12.5);
     expect(component.closingNetDiff).toBe(-12.5);
     expect(component.closingIsLoss).toBe(true);
+    // #942: в кнопке только название, итог убытка — отдельным блоком за ней.
     const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
-    expect(btn.nativeElement.textContent).toContain('Закрыть позицию (уб.');
-    expect(btn.nativeElement.textContent).toContain('12,50');
+    expect(btn.nativeElement.textContent.trim()).toBe('Закрыть позицию');
+    const diff = fixture.debugElement.query(By.css('.tpanel-close-diff'));
+    expect(diff.nativeElement.textContent).toContain('уб. 12,50');
+    expect(diff.nativeElement.classList).toContain('tpanel-close-diff-loss');
   });
 
   it('кнопка «Закрыть позицию»: прибыль/убыток пересчитывается от живой цены', () => {
@@ -659,9 +662,25 @@ describe('TerminalPanelComponent', () => {
     expect(component.closingCommission).toBe(13);
     expect(component.closingNetDiff).toBe(87);
     expect(component.closingIsProfit).toBe(true);
+    // #942: в кнопке только название, прибыль — отдельным блоком за ней.
     const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
-    expect(btn.nativeElement.textContent).toContain('Закрыть позицию (приб.');
-    expect(btn.nativeElement.textContent).toContain('87,00');
+    expect(btn.nativeElement.textContent.trim()).toBe('Закрыть позицию');
+    const diff = fixture.debugElement.query(By.css('.tpanel-close-diff'));
+    expect(diff.nativeElement.textContent).toContain('приб. 87,00');
+    expect(diff.nativeElement.classList).toContain('tpanel-close-diff-profit');
+  });
+
+  it('#942: при нулевом итоге закрытия блок прибыли/убытка не показывается', () => {
+    component.trades = [
+      trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+    ];
+    fixture.componentRef.setInput('accountIsFake', true);
+    fixture.componentRef.setInput('commissionPct', 0);
+    fixture.componentRef.setInput('livePrice', 250);
+    fixture.detectChanges();
+    expect(component.closingNetDiff).toBe(0);
+    expect(component.closingDiffLabel).toBe('');
+    expect(fixture.debugElement.query(By.css('.tpanel-close-diff'))).toBeNull();
   });
 
   it('кнопка «Закрыть позицию»: убыток — красная, прибыль — тёмно-зелёная', () => {

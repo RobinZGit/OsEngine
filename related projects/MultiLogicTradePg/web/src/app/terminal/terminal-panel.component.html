@@ -55,6 +55,14 @@
           [title]="closeButtonTitle"
           (click)="closePosition()"
         >{{ tradingBusy ? 'Закрываем…' : closeButtonLabel }}</button>
+        @if (closingDiffLabel) {
+          <span
+            class="tpanel-close-diff"
+            [class.tpanel-close-diff-profit]="closingIsProfit"
+            [class.tpanel-close-diff-loss]="closingIsLoss"
+            title="Итог закрытия позиции по текущей цене (с комиссиями входа и выхода)"
+          >{{ closingDiffLabel }}</span>
+        }
       }
       <span class="tpanel-pos-summary">
         @if (remainingPositionQty !== 0) {

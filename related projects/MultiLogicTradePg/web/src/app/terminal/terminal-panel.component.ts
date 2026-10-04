@@ -680,13 +680,18 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     });
   }
 
-  /** Подпись кнопки «Закрыть позицию»: итог закрытия с учётом комиссий входа
-      и выхода — «Закрыть позицию (приб. X ₽)» / «(уб. X ₽)». Ноль — без скобок. */
+  /** Подпись кнопки закрытия. #942: из кнопки убран итог закрытия — он вынесен
+      в отдельный текстовый блок сразу за кнопкой (`closingDiffLabel`). */
   get closeButtonLabel(): string {
+    return 'Закрыть позицию';
+  }
+
+  /** #942: итог закрытия отдельным текстом за кнопкой — «приб. 60,10 ₽» /
+      «уб. 12,30 ₽». Ноль — пустая строка, блок не показывается. */
+  get closingDiffLabel(): string {
     const net = this.closingNetDiff;
-    if (net === 0) return 'Закрыть позицию';
-    const sign = net > 0 ? 'приб. ' : 'уб. ';
-    return `Закрыть позицию (${sign}${this.formatMoney(Math.abs(net))} ₽)`;
+    if (net === 0) return '';
+    return `${net > 0 ? 'приб.' : 'уб.'} ${this.formatMoney(Math.abs(net))} ₽`;
   }
 
   /** Подсказка кнопки закрытия: что делает + комиссия выхода и итог закрытия. */
