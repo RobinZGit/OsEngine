@@ -1204,6 +1204,42 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.closeAllPulse++;
   }
 
+  /** Суммарная ожидаемая комиссия за закрытие всех открытых позиций — равна
+      сумме комиссий по каждой бумаге (из сводок полос). */
+  get totalClosingCommission(): number {
+    let sum = 0;
+    for (const s of this.positionSummaryByPanel.values()) {
+      const c = Number(s.closingCommission);
+      if (Number.isFinite(c) && c > 0) sum += c;
+    }
+    return Math.round(sum * 100) / 100;
+  }
+
+  /** Деньги по-русски с двумя знаками (подпись кнопки закрытия всех позиций). */
+  private formatMoney(v: number): string {
+    return v.toLocaleString('ru-RU', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  /** Подпись кнопки «Закрыть все позиции»: при известной комиссии добавляем
+      «(ком. X ₽)» — сумма всех комиссий по каждой бумаге. */
+  get closeAllButtonLabel(): string {
+    const c = this.totalClosingCommission;
+    if (!(c > 0)) return 'Закрыть все позиции';
+    return `Закрыть все позиции (ком. ${this.formatMoney(c)} ₽)`;
+  }
+
+  /** Подсказка кнопки «Закрыть все позиции». */
+  get closeAllButtonTitle(): string {
+    const base = 'Закрыть все открытые позиции (по каждой бумаге, маркет)';
+    const c = this.totalClosingCommission;
+    return c > 0
+      ? `${base}. Ожидаемая комиссия за закрытие всех позиций: ${this.formatMoney(c)} ₽`
+      : base;
+  }
+
   /** Полоса убрана — вычищаем её сводку из суммы по счёту. */
   private forgetPanelSummary(uid: number): void {
     this.positionSummaryByPanel.delete(uid);

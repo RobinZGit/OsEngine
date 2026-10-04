@@ -423,4 +423,26 @@ describe('TerminalComponent — остаток на счёте и отклоне
     expect(c.accountPnlRub).toBe(100);
     expect(c.pricesRefreshing).toBe(false);
   });
+
+  it('кнопка «Закрыть все позиции»: в подписи сумма комиссий по всем бумагам (#931)', () => {
+    const c = makeComponent();
+    c.panels = [
+      { uid: 1, security: { id: 101 }, signal_event: null, collapsed: true },
+      { uid: 2, security: { id: 202 }, signal_event: null, collapsed: true },
+    ];
+    // Две бумаги с позициями: комиссия за закрытие 12,50 и 7,25 → сумма 19,75.
+    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingCommission: 12.5 });
+    c.onPanelPositionSummary(2, { qty: 5, marketValue: 500, closingCommission: 7.25 });
+    expect(c.totalClosingCommission).toBe(19.75);
+    expect(c.closeAllButtonLabel).toBe('Закрыть все позиции (ком. 19,75 ₽)');
+    expect(c.closeAllButtonTitle).toContain('19,75');
+  });
+
+  it('кнопка «Закрыть все позиции»: без комиссий подпись без скобок', () => {
+    const c = makeComponent();
+    c.panels = [{ uid: 1, security: { id: 101 }, signal_event: null, collapsed: true }];
+    c.onPanelPositionSummary(1, { qty: 10, marketValue: 2500, closingCommission: 0 });
+    expect(c.totalClosingCommission).toBe(0);
+    expect(c.closeAllButtonLabel).toBe('Закрыть все позиции');
+  });
 });

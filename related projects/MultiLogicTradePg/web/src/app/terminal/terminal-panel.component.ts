@@ -58,10 +58,12 @@ interface IndicatorLegendItem {
   title: string;
 }
 
-/** Сводка позиции полосы для терминала: остаток и рыночная стоимость. */
+/** Сводка позиции полосы для терминала: остаток, рыночная стоимость и
+    ожидаемая комиссия за закрытие позиции этой бумаги. */
 export interface PanelPositionSummary {
   qty: number;
   marketValue: number;
+  closingCommission: number;
 }
 
 const EMPTY_STATE: SecurityChartState = {
@@ -316,6 +318,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (changes['livePrice'] != null) {
       /** #922: пришла новая живая цена — рыночная стоимость остатка и
           разница по позиции пересчитаны, шапке счёта нужна новая сводка. */
+      this.emitPositionSummary();
+    }
+    if (changes['commissionPct'] != null) {
+      /** #931: изменился процент комиссии — пересчитываем ожидаемую комиссию
+          за закрытие и обновляем сумму по счёту в шапке терминала. */
       this.emitPositionSummary();
     }
     if (changes['signalEvent'] != null) {
@@ -706,6 +713,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.positionSummary.emit({
       qty: this.remainingPositionQty,
       marketValue: this.remainingPositionMarketValue,
+      closingCommission: this.closingCommission,
     });
   }
 
