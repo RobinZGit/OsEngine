@@ -5356,6 +5356,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10022,6 +10023,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -23659,6 +23688,7 @@ COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 
 
 
+
 -- instrumentId для GetCandles: ShareBy по тикеру (исправляет устаревший tbank_figi)
 CREATE OR REPLACE FUNCTION resolve_tbank_instrument_id(
     p_security_id INTEGER,
@@ -24297,7 +24327,12 @@ BEGIN
     SELECT
         p.security_id,
         p_dst_timeframe_id,
-        to_timestamp((extract(epoch FROM p.dt)::bigint / v_dst_sec) * v_dst_sec),
+        -- epoch-бакет строим в наивном времени (prices.dt = wall-clock МСК).
+        -- EXTRACT(EPOCH FROM timestamp) считает epoch как UTC, а to_timestamp()
+        -- возвращает timestamptz → при TimeZone=Europe/Moscow свечи уезжали на +3 часа.
+        -- Отсюда чистая наивная арифметика от timestamp 'epoch' (без timestamptz).
+        timestamp 'epoch'
+            + ((extract(epoch FROM p.dt)::bigint / v_dst_sec) * v_dst_sec) * interval '1 second',
         (array_agg(p.open_price ORDER BY p.dt ASC))[1],
         max(p.high_price),
         min(p.low_price),

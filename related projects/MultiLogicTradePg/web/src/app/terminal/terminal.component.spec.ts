@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+﻿import { TestBed } from '@angular/core/testing';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TerminalComponent } from './terminal.component';
 import { ReferencesService } from '../services/references.service';
@@ -398,6 +398,17 @@ describe('TerminalComponent — остаток на счёте и отклоне
     expect(c.accountPnlRub).toBe(100);
   });
 
+  it('закрытие убыточной позиции не «улучшает» отклонение: убыток остаётся в итоге', () => {
+    const c = makeComponent();
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.accountId = 1;
+    (c as any).livePriceBySecurity = new Map([[101, 95]]);
+    c.trades = [trade(101, 'BUY', 10, 100), trade(101, 'SELL', 10, 90)];
+    expect(c.accountPnl.securities).toBe(0); // позиции больше нет
+    expect(c.accountPnl.realized_rub).toBe(-100);
+    expect(c.accountPnlRub).toBe(-100);
+  });
+
   it('кнопка «Отклонение»: принудительно (force) запрашивает цены по всем бумагам с позицией', () => {
     const c = makeComponent();
     c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
@@ -454,5 +465,282 @@ describe('TerminalComponent — остаток на счёте и отклоне
     expect(c.closeAllIsLoss).toBe(false);
     expect(c.closeAllIsProfit).toBe(false);
     expect(c.closeAllButtonLabel).toBe('Закрыть все позиции');
+  });
+});
+
+describe('TerminalComponent — «Исполнять сделки сразу» (#946)', () => {
+  const stateSvc: any = {
+    markLogicSignalsRead: () => of({ ok: true }),
+  };
+  // Галочка живёт в шапке — рендерим её настоящим шаблоном, поэтому ngOnInit
+  // должен получить справочники (пустые ответы — шапка всё равно рисуется).
+  const refs: any = {
+    getAccounts: () => of([]),
+    getExchanges: () => of([]),
+    getBondFunds: () => of([]),
+  };
+  const securitiesSvc: any = {
+    getTimeframes: () =>
+      of([
+        { id: 1, tf: 'M1', sec: 60, full_name: '1 минута', is_active: true },
+        { id: 15, tf: 'M15', sec: 900, full_name: '15 минут', is_active: true },
+      ]),
+  };
+  const stateSvcUi: any = {
+    ...stateSvc,
+    getUiState: () => of({ ok: true, selected_account_id: null }),
+    getBondPlan: () => of({ ok: true, bonds: [] }),
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: refs },
+        { provide: SecuritiesService, useValue: securitiesSvc },
+        { provide: TerminalStateService, useValue: stateSvcUi },
+        { provide: AppConfigService, useValue: {} },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null; // без активного счёта scheduleSave() — no-op
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    c.timeframes = [
+      { id: 1, tf: 'M1', sec: 60, full_name: '1 минута', is_active: true },
+      { id: 15, tf: 'M15', sec: 900, full_name: '15 минут', is_active: true },
+    ];
+    c.contangoByPrefix = new Map();
+    c.byId = new Map([
+      [101, { id: 101, name: 'S', prefix: 'P', instrument_market: 'stock' }],
+    ]);
+    return c;
+  }
+
+  const signalRow = (over?: Record<string, unknown>): any => ({
+    id: 990,
+    logic_id: 7,
+    logic_name: 'Логика',
+    security_id: 101,
+    security_prefix: 'P',
+    security_name: 'S',
+    timeframe_id: 15,
+    timeframe: 'M15',
+    bar_dt: new Date().toISOString(),
+    position_side: 'long',
+    signal_kind: 'open',
+    side_label: 'Покупка',
+    formula: null,
+    price: 250,
+    suggested_quantity: 4,
+    suggested_amount: 1000,
+    indicator_ids: [],
+    indicators: [],
+    created_at: new Date().toISOString(),
+    ...(over ?? {}),
+  });
+
+  it('по умолчанию выключена, галочка в шапке есть', () => {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    fixture.detectChanges();
+
+    expect(c.executeSignalsNow).toBe(false);
+    const box = fixture.nativeElement.querySelector('.term-field-check .term-check');
+    expect(box).not.toBeNull();
+    expect(box.checked).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Исполнять сделки сразу');
+  });
+
+  it('включение сохраняется в настройках и включает автозакрытие на всех полосах', () => {
+    const c = makeComponent();
+    c.panels = [
+      { uid: 1, security: { id: 101 }, signal_event: null, collapsed: true, auto_close_on_logic_signal: false },
+      { uid: 2, security: { id: 202 }, signal_event: null, collapsed: true, auto_close_on_logic_signal: false },
+    ];
+    c.onExecuteSignalsNowChange(true);
+    expect(c.executeSignalsNow).toBe(true);
+    expect(c.settings['execute_signals_now']).toBe(true);
+    expect(c.panels.every((p: any) => p.auto_close_on_logic_signal)).toBe(true);
+
+    c.onExecuteSignalsNowChange(false);
+    expect(c.executeSignalsNow).toBe(false);
+    // Выключение не трогает уже включённые галочки автозакрытия.
+    expect(c.panels.every((p: any) => p.auto_close_on_logic_signal)).toBe(true);
+  });
+
+  it('новый сигнал при включённой галочке сразу включает автозакрытие полосы', () => {
+    const c = makeComponent();
+    c.settings = { ...c.settings, execute_signals_now: true };
+    c.applyLogicSignals([signalRow()]);
+
+    expect(c.panels.length).toBe(1);
+    expect(c.panels[0].auto_close_on_logic_signal).toBe(true);
+    // Сигнал сохранён в полосу вместе с id — по нему полоса исполняет его один раз.
+    expect(c.panels[0].signal_event.signal_id).toBe(990);
+  });
+
+  it('выключенная галочка не включает автозакрытие полосы (по умолчанию)', () => {
+    const c = makeComponent();
+    c.applyLogicSignals([signalRow()]);
+    expect(c.panels.length).toBe(1);
+    expect(c.panels[0].auto_close_on_logic_signal).toBe(false);
+  });
+});
+
+describe('TerminalComponent — порядок полос бумаг (#948)', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: {} },
+        { provide: SecuritiesService, useValue: {} },
+        { provide: TerminalStateService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null; // без счёта scheduleSave() — no-op
+    c.trades = [];
+    c.panels = [];
+    return c;
+  }
+
+  const panel = (uid: number, securityId: number): any => ({
+    uid,
+    security: { id: securityId },
+    signal_event: null,
+    auto_close_on_logic_signal: false,
+    collapsed: true,
+  });
+
+  const trade = (
+    securityId: number,
+    direction: 'BUY' | 'SELL',
+    quantity: number
+  ): any => ({
+    security_id: securityId,
+    direction,
+    quantity: String(quantity),
+    status: 'filled',
+  });
+
+  const order = (c: any): number[] => c.panels.map((p: any) => p.security.id);
+
+  it('сверху позиции, посередине бумаги без позиции (новые сверху), внизу закрытые', () => {
+    const c = makeComponent();
+    // Порядок до раскладки намеренно смешанный.
+    c.panels = [
+      panel(1, 301), // закрыта (были сделки, остаток 0)   → вниз
+      panel(2, 201), // позиция                            → наверх
+      panel(3, 401), // позиции ещё нет, старая            → середина, ниже новых
+      panel(4, 302), // закрыта                             → вниз
+      panel(5, 202), // позиция                             → наверх
+      panel(6, 402), // позиции ещё нет, новая (uid больше)  → верх середины
+    ];
+    c.trades = [
+      trade(201, 'BUY', 10),
+      trade(202, 'SELL', 5),
+      trade(301, 'BUY', 3),
+      trade(301, 'SELL', 3),
+      trade(302, 'BUY', 1),
+      trade(302, 'SELL', 1),
+    ];
+    c.applyPanelOrder();
+    expect(order(c)).toEqual([201, 202, 402, 401, 301, 302]);
+  });
+
+  it('внутри «с позицией» и «закрытой» порядок не меняется', () => {
+    const c = makeComponent();
+    c.panels = [panel(1, 201), panel(2, 202), panel(3, 301)];
+    c.trades = [
+      trade(201, 'BUY', 10),
+      trade(202, 'BUY', 10),
+      trade(301, 'BUY', 1),
+      trade(301, 'SELL', 1),
+    ];
+    c.applyPanelOrder();
+    expect(order(c)).toEqual([201, 202, 301]);
+  });
+
+  it('покупка поднимает полосу вверх, полная продажа опускает её вниз', () => {
+    const c = makeComponent();
+    c.panels = [panel(1, 201), panel(2, 202)];
+    c.trades = [trade(201, 'BUY', 10)];
+    c.applyPanelOrder();
+    expect(order(c)).toEqual([201, 202]);
+
+    c.trades = [trade(201, 'BUY', 10), trade(201, 'SELL', 10), trade(202, 'BUY', 5)];
+    c.applyPanelOrder();
+    expect(order(c)).toEqual([202, 201]);
+  });
+
+  it('частичная продажа позицию не закрывает — полоса остаётся сверху', () => {
+    const c = makeComponent();
+    c.panels = [panel(1, 201), panel(2, 202)];
+    c.trades = [trade(201, 'BUY', 10), trade(201, 'SELL', 4), trade(202, 'BUY', 5)];
+    c.applyPanelOrder();
+    expect(order(c)).toEqual([201, 202]);
+  });
+
+  it('не-filled сделки не считаются ни позицией, ни закрытой бумагой', () => {
+    const c = makeComponent();
+    c.panels = [panel(1, 301), panel(2, 402)];
+    c.trades = [
+      { security_id: 301, direction: 'BUY', quantity: '5', status: 'rejected' },
+      { security_id: 402, direction: 'BUY', quantity: '5', status: 'pending' },
+    ];
+    c.applyPanelOrder();
+    // Обе — «позиции нет»; новая (uid 2) сверху
+    expect(order(c)).toEqual([402, 301]);
+  });
+
+  it('новая бумага по сигналу встаёт наверх группы «позиции ещё нет»', () => {
+    const c = makeComponent();
+    // 201 — с позицией, 301 — закрыта, 401 — без позиции (уже висит).
+    c.panels = [panel(1, 201), panel(2, 301), panel(3, 401)];
+    c.trades = [trade(201, 'BUY', 10), trade(301, 'BUY', 2), trade(301, 'SELL', 2)];
+    c.nextUid = 4;
+    c.timeframes = [
+      { id: 15, tf: 'M15', sec: 900, full_name: '15 минут', is_active: true },
+    ];
+    c.contangoByPrefix = new Map();
+    c.byId = new Map([
+      [501, { id: 501, name: 'НОВАЯ', prefix: 'NEW', instrument_market: 'stock' }],
+    ]);
+    (c as any).stateSvc = { markLogicSignalsRead: () => of({ ok: true }) };
+    c.applyLogicSignals([
+      {
+        id: 777,
+        logic_id: 7,
+        logic_name: 'Логика',
+        security_id: 501,
+        security_name: 'НОВАЯ',
+        security_prefix: 'NEW',
+        direction: 'BUY',
+        timeframe_id: 15,
+        timeframe: 'M15',
+        bar_dt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        indicator_ids: [],
+      },
+    ]);
+
+    expect(order(c)).toEqual([201, 501, 401, 301]);
   });
 });

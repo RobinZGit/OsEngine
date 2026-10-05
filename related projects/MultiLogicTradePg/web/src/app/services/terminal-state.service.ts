@@ -22,6 +22,10 @@ export interface TerminalPanelState {
 /** Сигнал логики, показанный в полосе терминала (сохраняемый в состояние). */
 export interface TerminalLogicSignalEvent {
   logic_id: number;
+  /** #946: id сигнала в БД (logic_terminal_signals.id) — по нему полоса
+      понимает, что сигнал новый, и исполняет его один раз (галочка
+      «Исполнять сделки сразу»). У старых сохранённых полос поля нет. */
+  signal_id?: number | null;
   logic_name?: string | null;
   bar_dt?: string | null;
   /** Когда торговый цикл записал сигнал (база «возраста» сигнала для #923). */

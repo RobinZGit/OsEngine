@@ -52,7 +52,12 @@ BEGIN
     SELECT
         p.security_id,
         p_dst_timeframe_id,
-        to_timestamp((extract(epoch FROM p.dt)::bigint / v_dst_sec) * v_dst_sec),
+        -- epoch-бакет строим в наивном времени (prices.dt = wall-clock МСК).
+        -- EXTRACT(EPOCH FROM timestamp) считает epoch как UTC, а to_timestamp()
+        -- возвращает timestamptz → при TimeZone=Europe/Moscow свечи уезжали на +3 часа.
+        -- Отсюда чистая наивная арифметика от timestamp 'epoch' (без timestamptz).
+        timestamp 'epoch'
+            + ((extract(epoch FROM p.dt)::bigint / v_dst_sec) * v_dst_sec) * interval '1 second',
         (array_agg(p.open_price ORDER BY p.dt ASC))[1],
         max(p.high_price),
         min(p.low_price),

@@ -1294,6 +1294,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     priceBottom: number
   ): void {
     if (!this.tradeMarkers.length) return;
+    const labelSize = this.px(10);
+    const right = left + visible.length * candleWidth;
     // Каждая сделка ставится в своё время внутри бара (по секундам исполнения),
     // а не в центр. Несколько сделок в одну секунду — небольшой разброс по X.
     const slotByKey = new Map<string, number>();
@@ -1361,6 +1363,32 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+
+      // Горизонтальная черта по фактической цене исполнения + подпись цены у правого края
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = m.isShadow ? 0.16 : 0.45;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (!m.isShadow) {
+        const text = Number(m.price).toFixed(2).replace('.', ',');
+        const tx = Math.max(left, right - 4);
+        const ty = Math.min(priceBottom - 2, Math.max(priceTop + labelSize, y - 4));
+        ctx.font = `600 ${labelSize}px system-ui, sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.globalAlpha = 0.9;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.strokeText(text, tx, ty);
+        ctx.fillStyle = color;
+        ctx.fillText(text, tx, ty);
+        ctx.textAlign = 'left';
+      }
       ctx.globalAlpha = 1;
     }
   }

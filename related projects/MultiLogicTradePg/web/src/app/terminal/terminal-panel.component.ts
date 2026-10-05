@@ -1,4 +1,4 @@
-import {
+﻿import {
   AfterViewInit,
   Component,
   ElementRef,
@@ -120,6 +120,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       по умолчанию выключено — #937): включённая галочка закрывает всю позицию
       полосы маркетом по сигналу или закрытию логики с сигналами по этой бумаге. */
   @Input() autoCloseOnLogicSignal = false;
+  /** #946: «Исполнять сделки сразу» (галочка на планке выбора счёта): новый
+      сигнал логики исполняется сам, без клика по кнопке сигнала. Каждый сигнал
+      (signalKey) исполняется не более одного раза за жизнь полосы. */
+  @Input() executeSignalsNow = false;
   /** #922: живая цена бумаги (последняя сделка) от терминала — обновляется
       раз в 30 с по бумагам с открытой позицией. График живёт на закрытых
       барах, поэтому для разницы по позиции берём именно её; null — терминал
@@ -245,6 +249,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   private dataReadySent = false;
   private subs: Subscription[] = [];
   private destroyed = false;
+  /** #946: ключ уже исполненного сигнала (см. signalKey) — чтобы один и тот
+      же сигнал логики не исполнить дважды. */
+  private executedSignalKey: string | null = null;
 
   constructor(
     private readonly securities: SecuritiesService,
@@ -362,6 +369,20 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       // Ширина шапки полосы меняется (бейдж сигнала, блок позиции) —
       // пересчитываем видимость стрелок-челноков.
       requestAnimationFrame(() => this.refreshHeadShuttles());
+    }
+    // #946: при включённой галочке «Исполнять сделки сразу» новый сигнал
+    // логики исполняется сразу, без клика по кнопке сигнала. В конце — чтобы
+    // сброс сообщений выше не затирал сообщение о только что поставленной сделке.
+    // Повторяем попытку и при смене счёта/цены/сделок: если в момент сигнала
+    // счёта или цены ещё не было, сигнал исполнится на ближайшем обновлении
+    // (сам сигнал исполняется при этом не более одного раза).
+    if (
+      changes['signalEvent'] != null ||
+      changes['livePrice'] != null ||
+      changes['trades'] != null ||
+      changes['accountId'] != null
+    ) {
+      this.maybeExecuteSignal();
     }
   }
 
@@ -883,6 +904,47 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   get signalSide(): 'buy' | 'sell' {
     if (!this.tradeInverted) return this.signalLogicSide;
     return this.signalLogicSide === 'buy' ? 'sell' : 'buy';
+  }
+
+  /** #946: ключ текущего сигнала — по нему полоса понимает, что сигнал новый.
+      Обычно это id сигнала в БД; у полос, восстановленных из старого
+      сохранённого состояния, id нет — тогда ключ собирается из логики, бара,
+      таймфрейма, стороны и подписи. */
+  get signalKey(): string {
+    const ev = this.signalEvent;
+    if (!ev) return '';
+    if (ev.signal_id != null) return `id:${ev.signal_id}`;
+    return [
+      `l:${ev.logic_id}`,
+      `b:${ev.bar_dt ?? ''}`,
+      `t:${ev.timeframe ?? ev.timeframe_id ?? ''}`,
+      `s:${ev.position_side ?? ''}`,
+      `n:${ev.label ?? ''}`,
+    ].join('|');
+  }
+
+  /** #946: автоисполнение сигнала логики («Исполнять сделки сразу»). Ставим
+      заявку тем же путём, что и кнопка сигнала: сторона — с учётом инверсии,
+      количество — количество логики (иначе по сумме), цена — актуальная
+      (живая, иначе свеча), тип заявки — как выбран в полосе. Сигнал исполняется
+      один раз; если счёта, цены или количества нет — ждём следующего тика. */
+  private maybeExecuteSignal(): void {
+    if (!this.executeSignalsNow || this.signalEvent == null) return;
+    const key = this.signalKey;
+    if (!key || this.executedSignalKey === key) return;
+    if (this.tradingBusy || this.accountId == null) return;
+    // Цена — как у кнопки сигнала: маркет по живой цене, лимит по цене графика.
+    const price = this.tradeType === 'limit' ? this.currentPrice : this.positionPrice;
+    if (!(price > 0)) return;
+    const side = this.signalSide;
+    let qty = this.resolveTradeQuantity(side);
+    // График ещё не загружен — берём количество прямо из сигнала логики.
+    if (qty < 1 && this.prefillQty != null && this.isPrefillSide(side)) {
+      qty = this.prefillQty;
+    }
+    if (qty < 1) return;
+    this.executedSignalKey = key;
+    this.placeTradeWithQty(side, qty);
   }
 
   /** Кнопка «Купить» в блоке «Сделки»: сторона с учётом инверсии (при включённой

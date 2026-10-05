@@ -1,4 +1,10 @@
-import { accountPnl, positionCost, positionQty, securityPnl } from './position-math';
+import {
+  accountPnl,
+  positionCost,
+  positionQty,
+  realizedPnl,
+  securityPnl,
+} from './position-math';
 import { TerminalTradeRow } from '../services/terminal-state.service';
 
 let nextId = 1;
@@ -115,5 +121,78 @@ describe('#925 position-math (П/У по счёту)', () => {
     expect(accountPnl([], new Map()).pnl_rub).toBe(0);
     expect(accountPnl(null, null).securities).toBe(0);
     expect(accountPnl([trade(1, 'BUY', 1, 10)], null).pnl_rub).toBe(0);
+  });
+});
+
+describe('#946 realizedPnl (реализованный П/У по закрытым частям)', () => {
+  it('закрытый лонг в плюс: реализованный П/У сохраняется после закрытия', () => {
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 10, 120)];
+    expect(realizedPnl(trades, 1)).toBe(200);
+  });
+
+  it('закрытый лонг в минус: реализованный П/У отрицательный', () => {
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 10, 90)];
+    expect(realizedPnl(trades, 1)).toBe(-100);
+  });
+
+  it('закрытый шорт в плюс и в минус: знак от цены обратного выкупа', () => {
+    expect(realizedPnl([trade(1, 'SELL', 10, 100), trade(1, 'BUY', 10, 90)], 1)).toBe(100);
+    expect(realizedPnl([trade(1, 'SELL', 10, 100), trade(1, 'BUY', 10, 110)], 1)).toBe(-100);
+  });
+
+  it('комиссии обеих сторон уменьшают реализованный П/У', () => {
+    const trades = [trade(1, 'BUY', 10, 100, 'filled', 7), trade(1, 'SELL', 10, 110, 'filled', 3)];
+    // цена: (110 − 100) * 10 = 100; входная комиссия 7 уже в средней цене
+    // (1000 + 7) / 10 = 100.7 → 93; минус комиссия выхода 3 → 90
+    expect(realizedPnl(trades, 1)).toBe(90);
+  });
+
+  it('частичное закрытие: реализуется только закрытая часть, остаток открыт', () => {
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 4, 120)];
+    expect(realizedPnl(trades, 1)).toBe(80);
+    expect(positionQty(trades, 1)).toBe(6);
+  });
+
+  it('сделки вразнобой: порядок берётся по времени исполнения', () => {
+    const a = { ...trade(1, 'BUY', 10, 100), executed_at: '2026-10-01T10:00:00Z' };
+    const b = { ...trade(1, 'SELL', 10, 120), executed_at: '2026-10-01T12:00:00Z' };
+    expect(realizedPnl([b, a], 1)).toBe(200);
+  });
+
+  it('сделка в обратную сторону больше позиции: закрытая часть + новая позиция', () => {
+    // лонг 10 @100, продажа 14 @120 → закрыто 10 (+200), открыт шорт 4
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 14, 120)];
+    expect(realizedPnl(trades, 1)).toBe(200);
+    expect(positionQty(trades, 1)).toBe(-4);
+  });
+
+  it('итог счёта после закрытия убытка остаётся минусом, а не обнуляется', () => {
+    // Ключевая жалоба: закрытие убыточной позиции не должно «улучшать» итог.
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 10, 90)];
+    const r = accountPnl(trades, new Map([[1, 95]]));
+    expect(r.securities).toBe(0); // позиции больше нет
+    expect(r.pnl_rub).toBe(0); // переоценки нет
+    expect(r.realized_rub).toBe(-100);
+    expect(r.total_rub).toBe(-100);
+  });
+
+  it('итог счёта после закрытия прибыли остаётся плюсом', () => {
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 10, 130)];
+    const r = accountPnl(trades, new Map([[1, 125]]));
+    expect(r.securities).toBe(0);
+    expect(r.total_rub).toBe(300);
+  });
+
+  it('частичное закрытие: реализуется закрытая часть, остаток переоценивается один раз', () => {
+    // BUY 10 @100, SELL 4 @120, остаток 6 шт, текущая цена 110.
+    // Денежный поток: −1000 + 480 = −520, рыночная стоимость остатка 660 → итог +140.
+    // Из него realized +80 и переоценка остатка +60 — складывать их нельзя.
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 4, 120)];
+    const r = accountPnl(trades, new Map([[1, 110]]));
+    expect(realizedPnl(trades, 1)).toBe(80);
+    expect(r.pnl_rub).toBe(140);
+    expect(r.realized_rub).toBe(80);
+    expect(r.unrealized_rub).toBe(60);
+    expect(r.total_rub).toBe(140);
   });
 });

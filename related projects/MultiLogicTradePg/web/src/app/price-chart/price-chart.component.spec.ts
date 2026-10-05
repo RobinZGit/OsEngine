@@ -205,6 +205,81 @@ describe('PriceChartComponent', () => {
     expect(idxIn).toBe(1);
   });
 
+  it('draws a horizontal line at the trade execution price next to the vertical band', () => {
+    const mk = (dt: string, price: number) => ({
+      dt,
+      open_price: price,
+      high_price: price,
+      low_price: price,
+      close_price: price,
+      volume: 1,
+    });
+    component.candles = [
+      mk('2026-01-01T10:00:00', 100),
+      mk('2026-01-01T10:15:00', 101),
+      mk('2026-01-01T10:30:00', 102),
+      mk('2026-01-01T10:45:00', 103),
+    ];
+    component.tradeMarkers = [{ dt: '2026-01-01T10:15:00', price: 99.5, kind: 'open', side: 'long' }];
+    (component as unknown as { viewStart: number }).viewStart = 0;
+
+    const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+    let cur: { x: number; y: number } | null = null;
+    const ctx = {
+      strokeStyle: '',
+      fillStyle: '',
+      globalAlpha: 1,
+      lineWidth: 1,
+      font: '',
+      textAlign: 'left',
+      setLineDash: () => {},
+      beginPath: () => {
+        cur = null;
+      },
+      moveTo: (x: number, y: number) => {
+        cur = { x, y };
+      },
+      lineTo: (x: number, y: number) => {
+        if (cur) segments.push({ x1: cur.x, y1: cur.y, x2: x, y2: y });
+        cur = null;
+      },
+      stroke: () => {},
+      fill: () => {},
+      closePath: () => {},
+      fillText: () => {},
+      strokeText: () => {},
+      measureText: () => ({ width: 10 }),
+    } as unknown as CanvasRenderingContext2D;
+
+    const priceY = (v: number) => 500 - v; // yScale: чем выше цена, тем выше линия
+    (component as unknown as {
+      drawTradeMarkers: (
+        c: CanvasRenderingContext2D,
+        v: unknown[],
+        y: (v: number) => number,
+        l: number,
+        cw: number,
+        pt: number,
+        pb: number
+      ) => void;
+    }).drawTradeMarkers(ctx, component.candles, priceY, 10, 20, 0, 400);
+
+    const left = 10;
+    const candleWidth = 20;
+    const right = left + component.candles.length * candleWidth;
+    const tradeY = priceY(99.5);
+
+    // Вертикальная полоса по времени сделки
+    const verticals = segments.filter((s) => s.y1 === 0 && s.y2 === 400);
+    expect(verticals.length).toBe(1);
+
+    // Горизонтальная черта по цене исполнения — на всю ширину графика
+    const horizontals = segments.filter((s) => s.y1 === tradeY && s.y2 === tradeY);
+    expect(horizontals.length).toBe(1);
+    expect(horizontals[0].x1).toBe(left);
+    expect(horizontals[0].x2).toBe(right);
+  });
+
   it('fxInBar places marker at its own time inside the bar', () => {
     const fxInBar = (PriceChartComponent as unknown as {
       fxInBar: (d: string, s: string, e: string) => number;

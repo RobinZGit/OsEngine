@@ -1,4 +1,4 @@
-import {
+﻿import {
   ComponentFixture,
   TestBed,
   fakeAsync,
@@ -2318,5 +2318,153 @@ describe('TerminalPanelComponent', () => {
       expect(component.headShowLeft).toBe(false);
       discardPeriodicTasks();
     }));
+  });
+
+  describe('#946 «Исполнять сделки сразу»', () => {
+    const signal = (over?: Record<string, unknown>) => ({
+      logic_id: 5,
+      signal_id: 777,
+      logic_name: 'Логика',
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      timeframe_id: 6,
+      timeframe: 'M15',
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+      ...(over ?? {}),
+    });
+
+    const candles = () => ({
+      candles: [
+        {
+          dt: '2026-09-19T10:15:00',
+          open_price: 250,
+          high_price: 251,
+          low_price: 249,
+          close_price: 250,
+          volume: 100,
+        },
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasMore: false,
+      error: null,
+    });
+
+    it('выключена по умолчанию: сигнал только заполняет форму, заявки нет', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('signalEvent', signal());
+      fixture.detectChanges();
+
+      expect(component.executeSignalsNow).toBe(false);
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.signalQuantity).toBe(4);
+    });
+
+    it('включена: сигнал исполняется сразу — маркет по живой цене, количество логики', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      const done: number[] = [];
+      component.tradeExecuted.subscribe(() => done.push(1));
+      fixture.componentRef.setInput('livePrice', 260);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal());
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(stateSvc.placeTrade).toHaveBeenCalledWith({
+        account_id: 1,
+        security_id: 29,
+        direction: 'buy',
+        execution: 'market',
+        price: 260,
+        quantity: 4,
+      });
+      // Сделка отображается как обычно: терминал перезапрашивает сделки.
+      expect(done.length).toBe(1);
+      expect(component.tradeMessage).toContain('Сделка размещена');
+    });
+
+    it('один и тот же сигнал исполняется один раз (повторный тик polling не дублирует)', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal());
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+
+      // Тот же сигнал пришёл снова (новый объект, тот же signal_id).
+      fixture.componentRef.setInput('signalEvent', signal({ label: 'Покупка' }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+
+      // Новый сигнал (новый id) — исполняется.
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 778 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+    });
+
+    it('включение галочки не исполняет старый сигнал (ждём следующего сигнала)', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('signalEvent', signal());
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+    });
+
+    it('инверсия: исполняется сторона, обратная сигналу, количество логии', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      component.tradeInverted = true;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal());
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent()
+        .args[0];
+      expect(arg.direction).toBe('sell');
+      expect(arg.quantity).toBe(4);
+    });
+
+    it('без счёта заявка не уходит; со счётом тот же сигнал доходит при обновлении', () => {
+      component.chartState = candles();
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 778 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      // Счёт выбрали — тот же сигнал исполняется (он ещё не исполнялся).
+      fixture.componentRef.setInput('accountId', 1);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+
+      // Новый сигнал логики — ещё одна сделка.
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 779 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+    });
+
+    it('без цены заявка не уходит, сигнал ждёт цены', () => {
+      component.chartState = { ...candles(), candles: [] };
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 780 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      // Пришла живая цена — тот же сигнал исполняется.
+      fixture.componentRef.setInput('livePrice', 260);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0];
+      expect(arg.price).toBe(260);
+    });
   });
 });

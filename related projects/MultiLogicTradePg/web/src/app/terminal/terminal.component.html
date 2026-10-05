@@ -47,6 +47,21 @@
           <span class="term-empty">Счета не найдены</span>
         }
       </label>
+      <!-- #946: галочка «Исполнять сделки сразу» — сигнал логики исполняется
+           сам, без клика по кнопке сигнала; заодно на всех полосах включается
+           «закроется тоже по сигналу логики». -->
+      <label
+        class="term-field term-field-check"
+        title="Сигнал логики исполнится сразу, без клика по кнопке сигнала: сделка уйдёт по актуальной цене и появится в сделках как обычно. Заодно на всех полосах включится «закроется тоже по сигналу логики» — выход по сигналу закроется автоматически."
+      >
+        <input
+          type="checkbox"
+          class="term-check"
+          [checked]="executeSignalsNow"
+          (change)="onExecuteSignalsNowChange($any($event.target).checked)"
+        />
+        <span>Исполнять сделки сразу</span>
+      </label>
       <label class="term-field">
         <span>Таймфрейм (для новых)</span>
         <select
@@ -105,9 +120,11 @@
               [class.is-refreshing]="pricesRefreshing"
               [disabled]="pricesRefreshing || positionSecurityIds.length === 0"
               [title]="
-                'Отклонение: разница между рыночной стоимостью открытых позиций и ценой закупки ' +
-                '(сумма по всем бумагам с позицией, рубли). Нажмите, чтобы принудительно ' +
-                'обновить живые цены по всем этим бумагам и пересчитать отклонение.'
+                'Отклонение: итоговый П/У счёта = реализованный (по закрытым ' +
+                'частям позиций, с комиссиями) + переоценка открытых позиций по ' +
+                'живым ценам, рубли. Поэтому закрытие убытка не «улучшает» итог. ' +
+                'Нажмите, чтобы принудительно обновить живые цены по всем бумагам ' +
+                'с позицией и пересчитать отклонение.'
               "
               (click)="refreshAllPrices()"
             >Отклонение:@if (pricesRefreshing) { <span class="term-account-pnl-spin">↻</span> }</button>
@@ -340,6 +357,7 @@
           [closeAllPulse]="closeAllPulse"
           [closeSignalPulse]="closeSignalPulse"
           [autoCloseOnLogicSignal]="panel.auto_close_on_logic_signal"
+          [executeSignalsNow]="executeSignalsNow"
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
           (collapsedChange)="onPanelCollapsedChange($event, panel.uid)"

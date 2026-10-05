@@ -75,6 +75,28 @@
   background: #fff;
 }
 
+/* #946: галочка «Исполнять сделки сразу» в шапке терминала. */
+.term-field-check {
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.term-field-check:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.term-check {
+  width: 14px;
+  height: 14px;
+  accent-color: #1d4ed8;
+  cursor: pointer;
+}
+
 .term-field-num input {
   width: 90px;
   padding: 0.3rem 0.45rem;

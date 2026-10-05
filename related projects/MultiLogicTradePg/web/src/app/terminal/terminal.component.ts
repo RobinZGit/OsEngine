@@ -239,21 +239,24 @@ export class TerminalComponent implements OnInit, OnDestroy {
     return Number.isFinite(total) ? total : 0;
   }
 
-  /** #925: суммарный П/У по счёту — переоценка всех бумаг с открытой позицией
+  /** #925: суммарный П/У по счёту — реализованный (уже закрытые части
+      позиций, с комиссиями) ПЛЮС переоценка всех бумаг с открытой позицией
       по живым ценам (плюс/минус, рубли). Считается ОДИН раз здесь и
       передаётся в каждую панель, поэтому цифра везде одинаковая и не
-      зависит от того, какие панели открыты. */
+      зависит от того, какие панели открыты. Закрытие позиции не «съедает»
+      её результат: убыток остаётся в итоге отрицательным. */
   get accountPnl(): AccountPnl {
     return accountPnl(this.trades, this.livePriceBySecurity);
   }
 
-  /** #925: П/У для показа. null («—»), когда позиции есть, но живые цены ещё
-      не пришли (иначе показывали бы «0,00 ₽» — как будто всё в ноль);
-      при отсутствии позиций честный ноль. */
+  /** #925: П/У для показа (итог: реализованный + переоценка открытого).
+      null («—»), когда позиции есть, но живые цены ещё не пришли (иначе
+      показывали бы «0,00 ₽» — как будто всё в ноль); при отсутствии
+      позиций честный итог. */
   get accountPnlRub(): number | null {
     const r = this.accountPnl;
-    if (r.priced > 0) return r.pnl_rub;
-    return r.securities === 0 ? 0 : null;
+    if (r.priced > 0) return r.total_rub;
+    return r.securities === 0 ? r.total_rub : null;
   }
 
   /** Живая цена бумаги для полосы (null — терминал её не получил). */
@@ -550,6 +553,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
       const logicName = s.logic_name || `логика #${s.logic_id}`;
       const event: TerminalLogicSignalEvent = {
         logic_id: s.logic_id,
+        signal_id: s.id,
         logic_name: logicName,
         bar_dt: s.bar_dt ?? null,
         created_at: s.created_at ?? null,
@@ -607,9 +611,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
         newPanels.push(panel.uid);
         target = panel;
       }
-      // Чекбокс «Автозакрытие по сигналу» у полосы: у бумаги есть позиция —
+      // #946: галочка «Исполнять сделки сразу» включает и «закроется тоже по
+      // сигналу логики» на всех полосах — иначе вход исполнялся бы сразу,
+      // а выход по сигналу пришлось бы закрывать вручную.
+      if (this.executeSignalsNow) target.auto_close_on_logic_signal = true;
+      // Чекбокс «закроется тоже по сигналу» у полосы: у бумаги есть позиция —
       // закрываем её (сигнал/закрытие/стоп-лосс любой логики с сигналами).
-      // У полос, только что созданных сигналом, автозакрытие включено по умолчанию.
+      // По умолчанию выключен (#937), включается вручную на полосе или галочкой
+      // «Исполнять сделки сразу».
       if (
         target.auto_close_on_logic_signal &&
         this.securityRemainderQty(s.security_id) !== 0
@@ -627,6 +636,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
       );
     }
     if (applied.length) this.scheduleSave();
+    // #948: новая бумага по сигналу — наверх группы «позиции ещё нет»
+    // (между бумагами с позицией и уже закрытыми), а не в самый конец.
+    if (newPanels.length) this.applyPanelOrder();
     this.markSignalsRead(processed);
     this.showSignalsToastList(this.signalToastMessages);
     this.signalToastMessages = [];
@@ -790,6 +802,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
             )
           )
           .filter((p): p is PanelModel => p != null);
+        // #946: сохранённая галочка «Исполнять сделки сразу» возвращает и
+        // включённое «закроется тоже по сигналу логики» на всех полосах.
+        if (this.executeSignalsNow) {
+          for (const p of this.panels) p.auto_close_on_logic_signal = true;
+        }
         this.applyPanelOrder();
       },
       error: () => undefined,
@@ -868,31 +885,39 @@ export class TerminalComponent implements OnInit, OnDestroy {
     };
   }
 
-  /** Переупорядочивание полос по остатку позиции: бумаги с ненулевым
-      остатком всегда вверху, полностью распроданные/некупленные — внизу.
-      Относительный порядок внутри групп сохраняется (стабильная разбивка):
-      покупка/продажа из нулевого остатка поднимает полосу под уже имеющие
-      позицию, полная продажа опускает её над бумагами без позиции. */
+  /** Порядок полос бумаг (#948): 1) с открытой позицией — всегда сверху,
+      2) позиции ещё нет (свежая бумага по сигналу, ещё не торговали) —
+      посередине, новые сверху, 3) позиция закрыта (были сделки, остаток ноль)
+      — всегда внизу. Внутри групп 1 и 3 порядок не трогаем (стабильная
+      разбивка), в группе 2 новые бумаги идут сверху: `uid` растёт с каждой
+      созданной полосой. Отсюда: вход по сделке поднимает полосу в группу 1,
+      полная продажа опускает её в группу 3, сигнал по новой бумаге ставит
+      её на верх группы 2. */
   private applyPanelOrder(): void {
     if (!this.panels.length) return;
     const remainder = new Map<number, number>();
+    const traded = new Set<number>();
     for (const t of this.trades) {
       if (t.status !== 'filled') continue;
       const qty = Number(t.quantity);
       if (!(Number.isFinite(qty) && qty > 0)) continue;
-      const cur = remainder.get(t.security_id) ?? 0;
+      traded.add(t.security_id);
       remainder.set(
         t.security_id,
-        cur + (t.direction === 'BUY' ? qty : -qty)
+        (remainder.get(t.security_id) ?? 0) + (t.direction === 'BUY' ? qty : -qty)
       );
     }
-    const hasPosition = (p: PanelModel): boolean =>
-      (remainder.get(p.security.id) ?? 0) !== 0;
-    const ordered = [
-      ...this.panels.filter(hasPosition),
-      ...this.panels.filter((p) => !hasPosition(p)),
-    ];
-    this.panels = ordered;
+    const withPosition: PanelModel[] = [];
+    const noPositionYet: PanelModel[] = [];
+    const positionClosed: PanelModel[] = [];
+    for (const p of this.panels) {
+      if ((remainder.get(p.security.id) ?? 0) !== 0) withPosition.push(p);
+      else if (traded.has(p.security.id)) positionClosed.push(p);
+      else noPositionYet.push(p);
+    }
+    // Новая бумага (сигнал/добавление вручную) — наверх группы «позиции нет».
+    noPositionYet.sort((a, b) => b.uid - a.uid);
+    this.panels = [...withPosition, ...noPositionYet, ...positionClosed];
   }
 
   togglePicker(): void {
@@ -929,6 +954,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.pickerError = null;
     this.panels = [panel, ...this.panels];
     this.panelsStamp++;
+    // #948: бумага с позицией не должна перепрыгивать выше полос с позицией.
+    this.applyPanelOrder();
     // Блокируем выбор, пока новая полоса не покажет первые свечи (см. dataReady).
     this.holdAddingSec(panel.uid, 'stock');
     this.scheduleSave();
@@ -1109,6 +1136,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
         }
         this.panels = [panel, ...this.panels];
         this.panelsStamp++;
+        // #948: та же раскладка, что и для акций/фьючерсов (#addSecurityByPicker).
+        this.applyPanelOrder();
         this.holdAddingSec(panel.uid, 'bond');
         this.scheduleSave();
       },
@@ -1276,6 +1305,22 @@ export class TerminalComponent implements OnInit, OnDestroy {
     const panel = this.panels.find((p) => p.uid === uid);
     if (!panel) return;
     panel.auto_close_on_logic_signal = autoClose;
+    this.scheduleSave();
+  }
+
+  /** #946: галочка «Исполнять сделки сразу» на планке выбора счёта. По
+      умолчанию выключена; включённая — сигнал логики исполняется сразу и на
+      всех полосах включается «закроется тоже по сигналу логики». */
+  get executeSignalsNow(): boolean {
+    return this.settings['execute_signals_now'] === true;
+  }
+
+  onExecuteSignalsNowChange(checked: boolean): void {
+    if (this.executeSignalsNow === checked) return;
+    this.settings = { ...this.settings, execute_signals_now: checked };
+    if (checked) {
+      for (const p of this.panels) p.auto_close_on_logic_signal = true;
+    }
     this.scheduleSave();
   }
 
