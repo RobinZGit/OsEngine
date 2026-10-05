@@ -562,6 +562,24 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
     expect(fixture.nativeElement.textContent).toContain('Исполнять сделки сразу');
   });
 
+  it('#949: включённая галочка получает класс оранжевой подсветки, выключенная — нет', () => {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    fixture.detectChanges();
+
+    const label = (): any =>
+      fixture.nativeElement.querySelector('.term-field-check');
+    expect(label().classList.contains('term-field-check-on')).toBe(false);
+
+    c.onExecuteSignalsNowChange(true); // executeSignalsNow — геттер, пишем через обработчик
+    fixture.detectChanges();
+    expect(label().classList.contains('term-field-check-on')).toBe(true);
+  });
+
   it('включение сохраняется в настройках и включает автозакрытие на всех полосах', () => {
     const c = makeComponent();
     c.panels = [

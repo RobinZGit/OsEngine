@@ -90,6 +90,25 @@
   color: #1d4ed8;
 }
 
+/* #949: включённый режим «исполнять сделки сразу» — яркая оранжевая заливка
+   и жирная рамка, чтобы не спутать его с остальными полями шапки. */
+.term-field-check-on,
+.term-field-check-on:hover {
+  background: #ff7a1a;
+  border: 3px solid #b23c00;
+  color: #fff;
+  font-weight: 800;
+  box-shadow:
+    0 0 0 3px rgba(255, 122, 26, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.term-field-check-on .term-check {
+  width: 18px;
+  height: 18px;
+  accent-color: #b23c00;
+}
+
 .term-check {
   width: 14px;
   height: 14px;
