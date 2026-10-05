@@ -239,6 +239,11 @@ module.exports = function registerTerminalRoutes(app, ctx) {
             security_id: parseId(p.security_id),
             timeframe_id: p.timeframe_id != null ? parseId(p.timeframe_id) : null,
             chart_height: parseId(p.chart_height),
+            // #953: свёрнутое состояние и «автозакрытие по сигналу» — часть
+            // настроек полосы. Без них в payload перезагрузка страницы
+            // возвращала полосу развёрнутой и с выключенным автозакрытием.
+            collapsed: p.collapsed === true,
+            auto_close_on_logic_signal: p.auto_close_on_logic_signal === true,
             ...(p.signal_event && typeof p.signal_event === 'object'
               ? {
                   signal_event: {
@@ -246,6 +251,19 @@ module.exports = function registerTerminalRoutes(app, ctx) {
                     bar_dt:
                       typeof p.signal_event.bar_dt === 'string'
                         ? p.signal_event.bar_dt
+                        : null,
+                    // #953: id и время сигнала — по ним полоса понимает, что
+                    // сигнал новый (иначе после перезагрузки страницы он
+                    // выглядит как другой сигнал и автоисполнение пропускает
+                    // его как «уже исполненный», а время нужно для срока жизни
+                    // полосы без позиции).
+                    signal_id:
+                      p.signal_event.signal_id != null
+                        ? parseId(p.signal_event.signal_id)
+                        : null,
+                    created_at:
+                      typeof p.signal_event.created_at === 'string'
+                        ? p.signal_event.created_at
                         : null,
                     position_side: ['long', 'short'].includes(
                       p.signal_event.position_side

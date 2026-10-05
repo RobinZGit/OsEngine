@@ -266,7 +266,12 @@ export class TerminalComponent implements OnInit, OnDestroy {
   }
 
   /** Цикл живых цен: раз в 30 с и только по бумагам с открытыми позициями.
-      Без позиций запросов нет вовсе — пустой терминал не дёргает брокера. */
+      Без позиций запросов нет вовсе — пустой терминал не дёргает брокера.
+      #953: при этом автоисполнению нужна цена и по бумаге БЕЗ позиции (вход по
+      сигналу), а запрос за живой ценой по ней не уходит. Поэтому бумаги с
+      неисполненным сигналом («Исполнять сделки сразу») в список всегда
+      добавляются — иначе новая полоса по сигналу остаётся без цены, пока
+      позиция не открыта, и вход не проходит. */
   private startLastPricesPolling(): void {
     if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
     this.pollLastPrices();
@@ -292,7 +297,18 @@ export class TerminalComponent implements OnInit, OnDestroy {
       finish();
       return;
     }
-    const ids = this.positionSecurityIds;
+    // #953: бумаги с неисполненным сигналом тоже нужны в цене — иначе полоса
+    // по сигналу без позиции остаётся без живой цены и вход не проходит.
+    const ids = Array.from(
+      new Set([
+        ...this.positionSecurityIds,
+        ...(this.executeSignalsNow
+          ? this.panels
+              .filter((p) => p.signal_event != null)
+              .map((p) => p.security.id)
+          : []),
+      ])
+    );
     if (ids.length === 0) {
       // Позиций нет — живые цены больше не нужны, карту чистим.
       if (this.livePriceBySecurity.size > 0) {

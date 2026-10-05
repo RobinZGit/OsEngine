@@ -255,6 +255,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** #952: ключ сигнала, который мы один раз пропустили из-за открытой позиции —
       чтобы сообщение об этом не переписывалось на каждом тике. */
   private skippedSignalKey: string | null = null;
+  /** #953: ключ сигнала, для которого полоса уже показала причину ожидания
+      (нет цены/количества/счёта) — чтобы текст не мигал на каждом тике. */
+  private autoWaitKey: string | null = null;
 
   constructor(
     private readonly securities: SecuritiesService,
@@ -362,8 +365,17 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
     const max = this.effectiveMaxSum;
     this.tradeAmount = Math.max(0, Math.min(max, this.tradeAmount));
-    this.tradeMessage = null;
-    this.tradeError = null;
+    // #953: сообщения НЕ сбрасываем на каждом обновлении. Раньше здесь стояло
+    // безусловное обнуление — сообщение об исполнении/пропуске сигнала жило
+    // меньше секунды до следующего 30-секундного обновления, и по факту
+    // автоисполнение выглядело как «ничего не происходит, причины нет».
+    // Чистим только при новом сигнале — тогда сообщение относится к нему.
+    if (changes['signalEvent'] != null) {
+      this.tradeMessage = null;
+      this.tradeError = null;
+      this.autoWaitKey = null;
+      this.skippedSignalKey = null;
+    }
     if (
       changes['signalEvent'] != null ||
       changes['trades'] != null ||
@@ -822,9 +834,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   }
 
   /** Фактическое количество для заявки: лот логики для её стороны, иначе
-      выбранная сумма, делённая на цену. */
-  private resolveTradeQuantity(direction: 'buy' | 'sell'): number {
-    const p = this.currentPrice;
+      выбранная сумма, делённая на цену. Цена передаётся явно (#953): при
+      автоисполнении она может быть ценой сигнала, когда график ещё пуст. */
+  private resolveTradeQuantity(direction: 'buy' | 'sell', price?: number): number {
+    const p = Number(price ?? this.currentPrice);
     if (!(p > 0)) return 0;
     // Количество из сигнала (расчёт лота логики) — для стороны сигнала.
     if (this.prefillQty != null && this.isPrefillSide(direction)) {
@@ -933,13 +946,25 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** #946: автоисполнение сигнала логики («Исполнять сделки сразу»). Ставим
       заявку тем же путём, что и кнопка сигнала: сторона — с учётом инверсии,
       количество — количество логики (иначе по сумме), цена — актуальная
-      (живая, иначе свеча), тип заявки — как выбран в полосе. Сигнал исполняется
-      один раз; если счёта, цены или количества нет — ждём следующего тика. */
+      (живая, иначе свеча, иначе цена самого сигнала — #953), тип заявки — как
+      выбран в полосе. Сигнал исполняется один раз; если счёта, цены или
+      количества нет — ждём следующего тика (свой цикл полосы, #953). */
   private maybeExecuteSignal(): void {
     if (!this.executeSignalsNow || this.signalEvent == null) return;
     const key = this.signalKey;
     if (!key || this.executedSignalKey === key) return;
-    if (this.tradingBusy || this.accountId == null) return;
+    // Новый сигнал — прежние ожидания сбрасываем (иначе причина от старого
+    // бара висит на новой бумаге).
+    if (this.autoWaitKey !== null && this.autoWaitKey !== key) {
+      this.autoWaitKey = null;
+      this.skippedSignalKey = null;
+    }
+    // Идёт своя заявка или закрытие — следующий тик, повторять нельзя.
+    if (this.tradingBusy) return;
+    if (this.accountId == null) {
+      this.noteAutoWait(key, 'Сигнал ждёт: не выбран счёт');
+      return;
+    }
     // #952: не наращиваем позицию. Логика может сигналить одну и ту же бумагу на
     // каждом баре (условие держится несколько баров) — с автоисполнением это давало
     // заявку на каждом баре. Вход исполняется только когда позиция закрыта; выход
@@ -954,18 +979,47 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       return;
     }
     // Цена — как у кнопки сигнала: маркет по живой цене, лимит по цене графика.
-    const price = this.tradeType === 'limit' ? this.currentPrice : this.positionPrice;
-    if (!(price > 0)) return;
+    const price = this.autoExecutionPrice();
+    if (!(price > 0)) {
+      this.noteAutoWait(key, 'Сигнал ждёт цену: график пуст и котировки нет');
+      return;
+    }
     const side = this.signalSide;
-    let qty = this.resolveTradeQuantity(side);
+    let qty = this.resolveTradeQuantity(side, price);
     // График ещё не загружен — берём количество прямо из сигнала логики.
     if (qty < 1 && this.prefillQty != null && this.isPrefillSide(side)) {
       qty = this.prefillQty;
     }
-    if (qty < 1) return;
-    this.executedSignalKey = key;
+    if (qty < 1) {
+      this.noteAutoWait(key, 'Сигнал ждёт количество: у логики нет лота');
+      return;
+    }
+    this.autoWaitKey = null;
     this.skippedSignalKey = '';
-    this.placeTradeWithQty(side, qty);
+    this.placeTradeWithQty(side, qty, { price, signalKey: key });
+  }
+
+  /** #953: показать причину, по которой сигнал пока не исполнен, — один раз на
+      сигнал (иначе текст переписывался бы на каждом тике). */
+  private noteAutoWait(key: string, text: string): void {
+    if (this.autoWaitKey === key && this.tradeMessage === text) return;
+    this.autoWaitKey = key;
+    this.tradeMessage = text;
+    this.tradeError = null;
+  }
+
+  /** #953: цена автоисполнения. Живая цена в терминале приходит только по бумагам
+      с открытой позицией (см. pollLastPrices), а график новой полосы может быть
+      ещё пуст — раньше это молча блокировало исполнение сигнала навсегда. Поэтому
+      третий источник — цена самого сигнала: логика её уже посчитала. Маркет:
+      живая → свеча → цена сигнала; лимит: свеча графика → цена сигнала. */
+  private autoExecutionPrice(): number {
+    const sig = Number(this.signalEvent?.price);
+    const sigPrice = Number.isFinite(sig) && sig > 0 ? sig : 0;
+    if (this.tradeType === 'limit') return this.currentPrice || sigPrice;
+    const live = Number(this.livePrice);
+    if (Number.isFinite(live) && live > 0) return live;
+    return this.currentPrice || sigPrice;
   }
 
   /** Кнопка «Купить» в блоке «Сделки»: сторона с учётом инверсии (при включённой
@@ -1282,6 +1336,12 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       затем перечитываем цены и вливаем новые/обновившиеся бары в графики. */
   private refreshLatest(): void {
     if (this.destroyed || !this.security || !this.timeframeId) return;
+    // #953: свой 15-секундный цикл полосы — последний шанс для автоисполнения
+    // сигнала, который не прошёл из-за цены/счёта/занятой заявки. Список
+    // повторов в ngOnChanges (signalEvent/livePrice/trades/accountId) не
+    // покрывал этот случай: все они молчат, когда позиций нет (живая цена
+    // тогда не приходит вовсе) — сигнал так и не исполнялся.
+    this.maybeExecuteSignal();
     if (this.chartState.loading || this.liveBusy) return;
     this.liveBusy = true;
     const secId = this.security.id;
@@ -1293,8 +1353,16 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       loads.push(this.securities.refreshPrices(this.underlying!.id, tfId));
     }
     forkJoin(loads).subscribe({
-      next: () => this.mergeLatest(),
-      error: () => this.mergeLatest(),
+      next: () => {
+        this.mergeLatest();
+        // #953: попытка выше шла до догрузки свечей. Повторяем после неё —
+        // свеча может дать цену, которой не было на момент сигнала.
+        this.maybeExecuteSignal();
+      },
+      error: () => {
+        this.mergeLatest();
+        this.maybeExecuteSignal();
+      },
     });
   }
 
@@ -2079,8 +2147,18 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.commissionPctChange.emit(Math.min(n, 100));
   }
 
-  /** Разместить заявку на заданное количество. Ноль — сообщение об ошибке. */
-  private placeTradeWithQty(direction: 'buy' | 'sell', qty: number): void {
+  /** Разместить заявку на заданное количество. Ноль — сообщение об ошибке.
+      #953: `opts.price` — готовая цена (автоисполнение сигнала умеет взять её
+      из самого сигнала, когда ни живой котировки, ни графика ещё нет);
+      `opts.signalKey` — ключ сигнала: он запоминается выполненным только после
+      подтверждения сервера, поэтому сетевой сбой не съедает сигнал (следующий
+      тик повторит попытку). */
+  private placeTradeWithQty(
+    direction: 'buy' | 'sell',
+    qty: number,
+    opts?: { price?: number; signalKey?: string }
+  ): void {
+    const signalKey = opts?.signalKey;
     this.tradeMessage = null;
     this.tradeError = null;
     if (qty < 1) {
@@ -2094,7 +2172,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
     // Маркет исполняется по живой цене (той же, что в «Отклонении»), чтобы
     // сразу после сделки переоценка была нулевой; лимит — по цене графика.
-    const price = this.tradeType === 'limit' ? this.currentPrice : this.positionPrice;
+    const price =
+      opts?.price ??
+      (this.tradeType === 'limit' ? this.currentPrice : this.positionPrice);
     if (!(price > 0)) {
       this.tradeError = 'Нет цены для расчёта — дождитесь загрузки графика';
       return;
@@ -2114,6 +2194,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       .subscribe({
         next: (r) => {
           this.tradingBusy = false;
+          // #953: сигнал считается выполненным только по подтверждённому ответу.
+          if (signalKey && r?.ok) this.executedSignalKey = signalKey;
           if (r?.ok) {
             this.tradeMessage =
               r.message || `Сделка размещена: ${direction} ${qty} шт`;

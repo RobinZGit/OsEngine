@@ -9,7 +9,7 @@ import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { By } from '@angular/platform-browser';
 import { registerLocaleData } from '@angular/common';
 import localeRu from '@angular/common/locales/ru';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { TerminalPanelComponent } from './terminal-panel.component';
 
 // Шаблон полосы форматирует суммы пайпом `| number : '…' : 'ru'` — данные
@@ -95,8 +95,10 @@ describe('TerminalPanelComponent', () => {
       'removeIndicatorSeries',
       'updateIndicatorSeriesParams',
       'getIndicatorValues',
+      'refreshPrices',
     ]);
     securities.getPrices.and.returnValue(of([]));
+    securities.refreshPrices.and.returnValue(of({ ok: true }));
     securities.getSecurityIndicatorSeries.and.returnValue(of([]));
     securities.syncIndicatorSeries.and.returnValue(of({ ok: true }));
     securities.assignIndicatorSeries.and.returnValue(of([]));
@@ -2471,36 +2473,47 @@ describe('TerminalPanelComponent', () => {
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
     });
 
-    it('без цены заявка не уходит, сигнал ждёт цены', () => {
+    // #953: раньше этот тест ждал живую цену (свечей и цены сигнала не было в
+    // сценарии). Теперь цена сигнала — рабочий источник: заявка уходит сразу,
+    // а живая цена, когда появится, перебивает её.
+    it('#953: без графика заявка уходит по цене сигнала, живая цена её перебивает', () => {
       component.chartState = { ...candles(), candles: [] };
       component.accountId = 1;
       fixture.componentRef.setInput('executeSignalsNow', true);
       fixture.componentRef.setInput('signalEvent', signal({ signal_id: 780 }));
       fixture.detectChanges();
-      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
-
-      // Пришла живая цена — тот же сигнал исполняется.
-      fixture.componentRef.setInput('livePrice', 260);
-      fixture.detectChanges();
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(
+        (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0].price
+      ).toBe(250);
+
+      // Новый сигнал, когда уже пришла живая цена — маркет по ней.
+      fixture.componentRef.setInput('livePrice', 260);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 7800 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
       const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0];
       expect(arg.price).toBe(260);
     });
 
-    // #950: воспроизводим боевой порядок — полоса создана по сигналу, графика
-    // на ней ещё нет (currentPrice = 0), свечи приходят отдельным запросом.
+    // #950 + #953: боевой порядок — полоса создана по сигналу, графика на ней
+    // ещё нет (currentPrice = 0), свечи приходят отдельным запросом. С #953
+    // заявка уходит уже по цене сигнала, но путь через свечи тоже обязан
+    // сработать: цена в нём совпадает с ценой сигнала.
     it('#950: сигнал на новой полосе исполняется, когда пришли свечи графика', () => {
       component.chartState = { ...candles(), candles: [], loading: true };
       component.accountId = 1;
       fixture.componentRef.setInput('executeSignalsNow', true);
-      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 781 }));
+      // Цена в сигнале пустая — единственный источник цены тут свечи графика.
+      // Количество по логике остаётся, иначе проверять тут нечего.
+      fixture.componentRef.setInput(
+        'signalEvent',
+        signal({ signal_id: 781, price: null })
+      );
       fixture.detectChanges();
-      // Цены ещё нет — заявки нет.
       expect(stateSvc.placeTrade).not.toHaveBeenCalled();
 
-      securities.getPrices.and.returnValue(
-        of(candles().candles as any)
-      );
+      securities.getPrices.and.returnValue(of(candles().candles as any));
       component.loadChart();
       fixture.detectChanges();
 
@@ -2557,6 +2570,115 @@ describe('TerminalPanelComponent', () => {
       fixture.detectChanges();
 
       expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+    });
+
+    // #953: разбор «галочка включена, а сделки не исполнились» на живой БД.
+    // Позиций нет → терминал не опрашивает живую цену (pollLastPrices только
+    // по позициям), график новой полосы ещё пуст, и цена из сигнала была
+    // отброшена: maybeExecuteSignal() молча возвращался, сигнал терялся.
+    // Сигнал без цены: лот логики есть, а цену взять пока неоткуда —
+    // именно этот случай раньше молча терял сигнал.
+    const noPriceSignal = (over?: Record<string, unknown>) =>
+      signal({ price: null, ...(over ?? {}) });
+
+    it('#953: без позиции и без графика вход исполняется по цене самого сигнала', () => {
+      component.chartState = { ...candles(), candles: [], loading: true };
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 794 }));
+      fixture.detectChanges();
+
+      // Живой цены нет (позиции нет), графика нет — цену берём из сигнала.
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0];
+      expect(arg.direction).toBe('buy');
+      expect(arg.price).toBe(250);
+      expect(arg.quantity).toBe(4);
+    });
+
+    it('#953: лимит-заявка без графика уходит по цене сигнала', () => {
+      component.chartState = { ...candles(), candles: [], loading: true };
+      component.accountId = 1;
+      component.tradeType = 'limit';
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 795 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0];
+      expect(arg.execution).toBe('limit');
+      expect(arg.price).toBe(250);
+    });
+
+    // #953: повторы в ngOnChanges (signalEvent/livePrice/trades/accountId) при
+    // позициях не срабатывают — все эти входы молчат. Спасёт только свой
+    // 15-секундный цикл полосы, поэтому он тоже зовёт maybeExecuteSignal().
+    it('#953: свой цикл полосы повторяет попытку, когда раньше не было цены', () => {
+      component.chartState = { ...candles(), candles: [], loading: false };
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', noPriceSignal({ signal_id: 796 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      // Причина видна пользователю, а не молча пропадает.
+      expect(component.tradeMessage).toContain('Сигнал ждёт цену');
+
+      // Через 15 секунд догрузилась свеча — тот же сигнал ещё не потерян.
+      // Тот же путь, что у боевого таймера (startPolling -> refreshLatest):
+      // сначала попытка без цены, потом догрузка свечей и повтор.
+      securities.getPrices.and.returnValue(of(candles().candles as any));
+      (component as any).refreshLatest();
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(
+        (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0].price
+      ).toBe(250);
+    });
+
+    it('#953: причина пропуска не затирается следующим обновлением', () => {
+      component.chartState = { ...candles(), candles: [], loading: false };
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', noPriceSignal({ signal_id: 797 }));
+      fixture.detectChanges();
+      expect(component.tradeMessage).toContain('Сигнал ждёт цену');
+
+      // Терминал перечитал сделки — сообщение обязано остаться.
+      // Позиция по бумаге закрыта (покупка и продажа), иначе #952 перебил бы
+      // сообщение своей формулировкой.
+      fixture.componentRef.setInput('trades', [
+        trade(1, {}),
+        trade(2, { direction: 'SELL' }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.tradeMessage).toContain('Сигнал ждёт цену');
+    });
+
+    // #953: сетевой сбой не должен съедать сигнал — раньше ключ
+    // executedSignalKey ставился ДО отправки заявки.
+    it('#953: при сетевом сбое сигнал не считается исполненным и повторяется', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      stateSvc.placeTrade.and.returnValue(throwError(() => new Error('offline')));
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 798 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+
+      stateSvc.placeTrade.and.returnValue(
+        of({ ok: true, message: 'ок', mode: 'fake' })
+      );
+      // Перечитали сделки: позиция закрыта (покупка + продажа), иначе #952
+      // заблокировал бы повтор по другой причине.
+      fixture.componentRef.setInput('trades', [
+        trade(1, {}),
+        trade(2, { direction: 'SELL' }),
+      ]);
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
     });
   });
 });
