@@ -2466,5 +2466,30 @@ describe('TerminalPanelComponent', () => {
       const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0];
       expect(arg.price).toBe(260);
     });
+
+    // #950: воспроизводим боевой порядок — полоса создана по сигналу, графика
+    // на ней ещё нет (currentPrice = 0), свечи приходят отдельным запросом.
+    it('#950: сигнал на новой полосе исполняется, когда пришли свечи графика', () => {
+      component.chartState = { ...candles(), candles: [], loading: true };
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 781 }));
+      fixture.detectChanges();
+      // Цены ещё нет — заявки нет.
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      securities.getPrices.and.returnValue(
+        of(candles().candles as any)
+      );
+      component.loadChart();
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent().args[0];
+      expect(arg.direction).toBe('buy');
+      expect(arg.quantity).toBe(4);
+      // Маркет без живой цены уходит по цене последней свечи.
+      expect(arg.price).toBe(250);
+    });
   });
 });

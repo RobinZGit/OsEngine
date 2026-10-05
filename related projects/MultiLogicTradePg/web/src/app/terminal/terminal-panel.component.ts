@@ -1198,6 +1198,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         this.refreshIndicatorsForChart();
         this.loadLogicSignalIndicators();
         this.emitPositionSummary();
+        // #950: цены только что пришли. У новой полосы, созданной по сигналу
+        // логики, в момент самого сигнала графика ещё нет (currentPrice = 0),
+        // поэтому автоисполнение ждало цены, а свечи — не входили в список
+        // повторов: сигнал молча не исполнялся до следующего тика livePrice.
+        this.maybeExecuteSignal();
       },
       error: () => {
         if (this.destroyed) return;
