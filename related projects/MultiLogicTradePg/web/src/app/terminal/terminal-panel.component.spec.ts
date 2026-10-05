@@ -1402,7 +1402,7 @@ describe('TerminalPanelComponent', () => {
     expect(component.tradeQuantity).toBe(8);
   });
 
-  it('график при сигнале: только сигнал и сделки после его бара (старые скрыты)', () => {
+  it('график при сигнале: только сделки после его бара (старые скрыты)', () => {
     component.trades = [
       trade(1, { executed_at: '2026-09-19T08:00:00', price: 200 }),
       trade(2, { executed_at: '2026-09-19T10:30:00', price: 260, direction: 'SELL' }),
@@ -1435,15 +1435,35 @@ describe('TerminalPanelComponent', () => {
     });
     fixture.detectChanges();
     const markers = component.allTradeMarkers;
-    expect(markers.length).toBe(2);
+    // #951: сделка по сигналу уже есть — отдельная сигнальная полоса не рисуется,
+    // иначе на одном баре выходило две вертикальные полосы на одну сделку.
+    expect(markers.length).toBe(1);
+    expect(markers[0].dt).toBe('2026-09-19T10:30:00');
+    expect(markers[0].side).toBe('short');
+  });
+
+  it('#951: сигнальная линия остаётся, пока по сигналу ещё нет сделки', () => {
+    component.trades = [
+      trade(1, { executed_at: '2026-09-19T08:00:00', price: 200 }), // до бара сигнала
+    ];
+    fixture.componentRef.setInput('signalEvent', {
+      logic_id: 5,
+      bar_dt: '2026-09-19T10:15:00',
+      position_side: 'long',
+      price: 250,
+      suggested_quantity: 4,
+      suggested_amount: 1000,
+    });
+    fixture.detectChanges();
+
+    const markers = component.allTradeMarkers;
+    expect(markers.length).toBe(1);
     expect(markers[0]).toEqual({
       dt: '2026-09-19T10:15:00',
       price: 250,
       kind: 'open',
       side: 'long',
     });
-    expect(markers[1].dt).toBe('2026-09-19T10:30:00');
-    expect(markers[1].side).toBe('short');
   });
 
   it('бейдж сигнала подсказывает логику, бар и таймфрейм', () => {
@@ -2490,6 +2510,53 @@ describe('TerminalPanelComponent', () => {
       expect(arg.quantity).toBe(4);
       // Маркет без живой цены уходит по цене последней свечи.
       expect(arg.price).toBe(250);
+    });
+
+    // #952: логика сигналит одну бумагу на каждом баре — позиция не растёт.
+    it('#952: при открытой позиции сигнал не исполняется и показывается причина', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      // Остаток по бумаге уже есть (покупка 10).
+      component.trades = [trade(1, { security_id: 29, quantity: 10, price: 250 })];
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 790 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('наращивание отключено');
+    });
+
+    it('#952: после закрытия позиции тот же сигнал уже не проходит — нужен новый сигнал', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 791 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+
+      // Позиция открылась (терминал перечитал сделки) — повторов не будет.
+      component.trades = [trade(1, { security_id: 29, quantity: 10, price: 250 })];
+      fixture.componentRef.setInput('trades', component.trades);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+
+      // Позиция закрылась, пришёл новый сигнал — вход снова исполняется.
+      component.trades = [];
+      fixture.componentRef.setInput('trades', component.trades);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 792 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+    });
+
+    it('#952: шорт-позиция тоже не наращивается', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      component.trades = [trade(1, { security_id: 29, direction: 'SELL', quantity: 5 })];
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 793 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
     });
   });
 });

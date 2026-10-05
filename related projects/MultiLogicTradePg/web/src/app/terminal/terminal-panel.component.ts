@@ -252,6 +252,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** #946: ключ уже исполненного сигнала (см. signalKey) — чтобы один и тот
       же сигнал логики не исполнить дважды. */
   private executedSignalKey: string | null = null;
+  /** #952: ключ сигнала, который мы один раз пропустили из-за открытой позиции —
+      чтобы сообщение об этом не переписывалось на каждом тике. */
+  private skippedSignalKey: string | null = null;
 
   constructor(
     private readonly securities: SecuritiesService,
@@ -875,7 +878,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
 
   /** Все маркеры графика: при активном сигнале — сигнальная линия/треугольник
       и сделки ПОСЛЕ бара сигнала (предыдущие сделки на графике не показываем);
-      без сигнала — все сделки счёта. */
+      без сигнала — все сделки счёта. #951: если по сигналу уже есть реальная
+      сделка (на баре сигнала или позже), её маркер и есть отметка этого момента —
+      отдельная сигнальная полоса рядом с ним только путала («две сделки вместо
+      одной»). Сигнальная линия остаётся, пока сделки ещё нет: сигнал ждёт. */
   get allTradeMarkers(): ChartTradeMarker[] {
     const sig = this.signalEvent;
     if (!sig) return this.tradeMarkers;
@@ -884,7 +890,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       const ts = new Date(m.dt).getTime();
       return Number.isFinite(ts) && Number.isFinite(sinceTs) && ts >= sinceTs;
     });
-    return [...this.signalMarkers, ...current];
+    if (current.length) return current;
+    return this.signalMarkers;
   }
 
   /** Текст бейджа сигнала в шапке полосы (покупка/продажа по позиции). */
@@ -933,6 +940,19 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     const key = this.signalKey;
     if (!key || this.executedSignalKey === key) return;
     if (this.tradingBusy || this.accountId == null) return;
+    // #952: не наращиваем позицию. Логика может сигналить одну и ту же бумагу на
+    // каждом баре (условие держится несколько баров) — с автоисполнением это давало
+    // заявку на каждом баре. Вход исполняется только когда позиция закрыта; выход
+    // по сигналу работает отдельной галочкой «закроется тоже по сигналу логики»,
+    // так что после закрытия следующий сигнал снова войдёт.
+    if (this.remainingPositionQty !== 0) {
+      if (this.skippedSignalKey !== key) {
+        this.skippedSignalKey = key;
+        this.tradeMessage =
+          'Позиция по этой бумаге уже открыта — сигнал пропущен, наращивание отключено';
+      }
+      return;
+    }
     // Цена — как у кнопки сигнала: маркет по живой цене, лимит по цене графика.
     const price = this.tradeType === 'limit' ? this.currentPrice : this.positionPrice;
     if (!(price > 0)) return;
@@ -944,6 +964,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
     if (qty < 1) return;
     this.executedSignalKey = key;
+    this.skippedSignalKey = '';
     this.placeTradeWithQty(side, qty);
   }
 
