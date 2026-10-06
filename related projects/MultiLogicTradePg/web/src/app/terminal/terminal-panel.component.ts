@@ -258,6 +258,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** #953: ключ сигнала, для которого полоса уже показала причину ожидания
       (нет цены/количества/счёта) — чтобы текст не мигал на каждом тике. */
   private autoWaitKey: string | null = null;
+  /** #954: предыдущее значение итога закрытия в % для детекта заметного
+      изменения (≥0,03 п.п.); null — замер ещё не делался или позиции нет. */
+  private prevClosePct: number | null = null;
+  /** #954: кнопка «Закрыть позицию» сейчас мигает (класс tpanel-close-pos-blink). */
+  closeBlink = false;
+  private closeBlinkTimer?: ReturnType<typeof setTimeout>;
+  /** #954: момент последнего мелькания — не чаще раза в секунду. */
+  private lastCloseBlinkAt = 0;
 
   constructor(
     private readonly securities: SecuritiesService,
@@ -301,6 +309,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.indicatorPollTimer) clearTimeout(this.indicatorPollTimer);
     if (this.shuttleRefreshTimer != null) clearTimeout(this.shuttleRefreshTimer);
+    if (this.closeBlinkTimer != null) clearTimeout(this.closeBlinkTimer);
     if (this.headResizeObserver) {
       this.headResizeObserver.disconnect();
       this.headResizeObserver = null;
@@ -822,6 +831,36 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       marketValue: this.remainingPositionMarketValue,
       closingNetDiff: this.closingNetDiff,
     });
+    // #954: тот же центральный момент — детект заметного изменения итога
+    // закрытия для мелькания кнопки «Закрыть позицию».
+    this.maybeBlinkClose();
+  }
+
+  /** #954: заметное изменение итога закрытия (|Δ closingNetDiffPct| ≥ 0,03 п.п.)
+      даёт одно яркое мелькание кнопки «Закрыть позицию», но не чаще раза в
+      секунду. Первый замер при живой позиции — только база, без мелькания;
+      позиции нет — база сбрасывается, чтобы вернувшаяся позиция не мигала
+      от «чужого» предыдущего значения. */
+  private maybeBlinkClose(): void {
+    if (!this.canClosePosition) {
+      this.prevClosePct = null;
+      this.closeBlink = false;
+      return;
+    }
+    const pct = this.closingNetDiffPct;
+    const prev = this.prevClosePct;
+    this.prevClosePct = pct;
+    if (prev == null) return;
+    if (!(Math.abs(pct - prev) >= 0.03)) return;
+    const now = Date.now();
+    if (now - this.lastCloseBlinkAt < 1000) return;
+    this.lastCloseBlinkAt = now;
+    this.closeBlink = true;
+    if (this.closeBlinkTimer != null) clearTimeout(this.closeBlinkTimer);
+    this.closeBlinkTimer = setTimeout(() => {
+      this.closeBlink = false;
+      this.closeBlinkTimer = undefined;
+    }, 700);
   }
 
   /** Логика дала количество для своей стороны. При включённой «Инверсии» этот лот

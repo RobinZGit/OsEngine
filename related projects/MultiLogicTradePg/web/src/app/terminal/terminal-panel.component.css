@@ -368,6 +368,8 @@
   --close-fill: #8b4513;
   display: inline-flex;
   align-items: center;
+  /* #954: позиционирование для оверлея мелькания (tpanel-close-pos-blink). */
+  position: relative;
   /* #945: высота кнопки растёт вместе с итогом закрытия (1×…2×). */
   min-height: calc(1.4rem * var(--pnl-scale, 1));
   font-size: 0.66rem;
@@ -432,6 +434,37 @@
 
 .tpanel-close-pos-profit:hover:not(:disabled) {
   --close-fill: #166534;
+}
+
+/* #954: одно яркое мелькание при заметном изменении итога закрытия (≥0,03 п.п.).
+   Работает через псевдоэлемент: у самой кнопки свойство animation занято
+   заливкой (#939), инлайновые animation-duration/animation-delay — тоже ей. */
+@keyframes tpanel-close-pos-blink {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.tpanel-close-pos.tpanel-close-pos-blink::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 6px;
+  background: rgba(255, 245, 150, 0.95);
+  box-shadow:
+    0 0 0 3px rgba(253, 224, 71, 0.9),
+    0 0 14px 5px rgba(253, 224, 71, 0.85);
+  animation: tpanel-close-pos-blink 700ms ease-out;
+  pointer-events: none;
 }
 
 .tpanel-pos-summary {

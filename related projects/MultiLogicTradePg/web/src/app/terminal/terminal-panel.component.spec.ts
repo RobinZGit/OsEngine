@@ -752,6 +752,147 @@ describe('TerminalPanelComponent', () => {
     expect(cls).not.toContain('tpanel-close-pos-loss');
   });
 
+  describe('#954 мелькание кнопки «Закрыть позицию» при заметном изменении итога', () => {
+    const candle = {
+      dt: '2026-09-19T10:15:00',
+      open_price: 250,
+      high_price: 251,
+      low_price: 249,
+      close_price: 250,
+      volume: 100,
+    };
+
+    // Позиция: BUY 10 × 250 = 2500 ₽ вложено, комиссия 0 — итог в % считается
+    // только от живой цены, 1 ₽ движения = 0,04 п.п.
+    function setPosition(): void {
+      component.trades = [
+        trade(1, { direction: 'BUY', quantity: 10, price: 250, status: 'filled' }),
+      ];
+      component.chartState = {
+        candles: [candle],
+        loading: false,
+        loadingOlder: false,
+        hasMore: false,
+        error: null,
+      };
+    }
+
+    function blinkClass(): boolean {
+      const btn = fixture.debugElement.query(By.css('.tpanel-close-pos'));
+      return btn != null && btn.nativeElement.classList.contains('tpanel-close-pos-blink');
+    }
+
+    it('изменение ≥0,03 п.п. даёт одно мелькание, через 700 мс оно гаснет', fakeAsync(() => {
+      fixture.componentRef.setInput('accountIsFake', true);
+      fixture.componentRef.setInput('commissionPct', 0);
+      setPosition();
+      // Первый замер — база, мелькания нет.
+      fixture.componentRef.setInput('livePrice', 250);
+      fixture.detectChanges();
+      expect(component.closingNetDiffPct).toBe(0);
+      expect(component.closeBlink).toBe(false);
+      expect(blinkClass()).toBe(false);
+
+      // +1 ₽ = +0,04 п.п. ≥ 0,03 — мелькаем.
+      fixture.componentRef.setInput('livePrice', 250.1);
+      fixture.detectChanges();
+      expect(component.closingNetDiffPct).toBe(0.04);
+      expect(component.closeBlink).toBe(true);
+      expect(blinkClass()).toBe(true);
+
+      tick(700);
+      fixture.detectChanges();
+      expect(component.closeBlink).toBe(false);
+      expect(blinkClass()).toBe(false);
+      discardPeriodicTasks();
+    }));
+
+    it('изменение меньше 0,03 п.п. кнопку не мигает', fakeAsync(() => {
+      fixture.componentRef.setInput('accountIsFake', true);
+      fixture.componentRef.setInput('commissionPct', 0);
+      setPosition();
+      fixture.componentRef.setInput('livePrice', 250);
+      fixture.detectChanges();
+      // +0,2 ₽ = +0,01 п.п. — ниже порога.
+      fixture.componentRef.setInput('livePrice', 250.02);
+      fixture.detectChanges();
+      expect(component.closingNetDiffPct).toBe(0.01);
+      expect(component.closeBlink).toBe(false);
+      expect(blinkClass()).toBe(false);
+      tick(700);
+      discardPeriodicTasks();
+    }));
+
+    it('мелькание не чаще раза в секунду: второй скачок в лимите не мигает, третий — мигает', fakeAsync(() => {
+      fixture.componentRef.setInput('accountIsFake', true);
+      fixture.componentRef.setInput('commissionPct', 0);
+      setPosition();
+      fixture.componentRef.setInput('livePrice', 250);
+      fixture.detectChanges();
+
+      // Первое мелькание в t=0.
+      fixture.componentRef.setInput('livePrice', 250.1);
+      fixture.detectChanges();
+      expect(component.closeBlink).toBe(true);
+      tick(700); // погасло, до секунды ещё 300 мс
+      expect(component.closeBlink).toBe(false);
+
+      // Скачок в t=700 мс (в пределах 1 с) — подавлен.
+      fixture.componentRef.setInput('livePrice', 250.2);
+      fixture.detectChanges();
+      expect(component.closingNetDiffPct).toBe(0.08);
+      expect(component.closeBlink).toBe(false);
+      expect(blinkClass()).toBe(false);
+
+      // t=1100 мс — лимит прошёл, третий скачок мигает.
+      tick(400);
+      fixture.componentRef.setInput('livePrice', 250.3);
+      fixture.detectChanges();
+      expect(component.closingNetDiffPct).toBe(0.12);
+      expect(component.closeBlink).toBe(true);
+      expect(blinkClass()).toBe(true);
+      tick(700);
+      expect(component.closeBlink).toBe(false);
+      discardPeriodicTasks();
+    }));
+
+    it('без позиции база сбрасывается: вернувшаяся позиция стартует без мелькания', fakeAsync(() => {
+      fixture.componentRef.setInput('accountIsFake', true);
+      fixture.componentRef.setInput('commissionPct', 0);
+      setPosition();
+      // Первый замер с живой позицией — только база (0%).
+      fixture.componentRef.setInput('livePrice', 250);
+      fixture.detectChanges();
+      expect(component.closeBlink).toBe(false);
+
+      // +4 п.п. — мелькаем.
+      fixture.componentRef.setInput('livePrice', 260);
+      fixture.detectChanges();
+      expect(component.closingNetDiffPct).toBe(4);
+      expect(component.closeBlink).toBe(true);
+      tick(700);
+      fixture.detectChanges();
+      expect(component.closeBlink).toBe(false);
+      expect(blinkClass()).toBe(false);
+
+      // Позиции нет — активное мелькание гаснет, база обнуляется.
+      component.trades = [];
+      component.emitPositionSummary();
+      expect(component.canClosePosition).toBe(false);
+      expect(component.closeBlink).toBe(false);
+
+      // Позиция вернулась с итогом 4% — первый замер только база, без вспышки
+      // от «чужого» предыдущего значения.
+      setPosition();
+      component.emitPositionSummary();
+      expect(component.closingNetDiffPct).toBe(4);
+      expect(component.closeBlink).toBe(false);
+      expect(blinkClass()).toBe(false);
+      tick(700);
+      discardPeriodicTasks();
+    }));
+  });
+
   describe('#939 градиентная заливка кнопки закрытия', () => {
     const candle = {
       dt: '2026-09-19T10:15:00',
