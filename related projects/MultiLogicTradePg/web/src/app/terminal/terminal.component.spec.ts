@@ -5,7 +5,7 @@ import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import { TerminalStateService } from '../services/terminal-state.service';
 import { AppConfigService } from '../services/app-config.service';
-import { of } from 'rxjs';
+import { NEVER, of, Subject } from 'rxjs';
 
 describe('TerminalComponent — удаление полос без позиции по таймауту таймфрейма (#923)', () => {
   function makeComponent(): any {
@@ -760,5 +760,145 @@ describe('TerminalComponent — порядок полос бумаг (#948)', ()
     ]);
 
     expect(order(c)).toEqual([201, 501, 401, 301]);
+  });
+});
+
+describe('TerminalComponent — обновление сделок и гонка ответов (#955)', () => {
+  const trade = (id: number): any => ({
+    id,
+    account_id: 1,
+    security_id: 101,
+    direction: 'BUY',
+    execution: 'market',
+    quantity: '10',
+    price: 100,
+    amount: 1000,
+    status: 'filled',
+    broker_order_id: null,
+    note: null,
+    executed_at: '2026-10-06T10:00:00Z',
+    security_name: 'S',
+    security_prefix: 'P',
+  });
+
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null; // без активного счёта scheduleSave() — no-op
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    // В успешном ответе loadTrades живые цены опрашиваются по бумагам позиции.
+    (c as any).securitiesSvc = {
+      getLastPrices: () => of({ ok: true, prices: [] }),
+    };
+    return c;
+  }
+
+  /** stateSvc.getTrades отдаёт очередной Subject — ответы управляемы по очереди. */
+  function queueTrades(c: any): Subject<any>[] {
+    const reqs: Subject<any>[] = [];
+    (c as any).stateSvc = {
+      getTrades: () => {
+        const s = new Subject<any>();
+        reqs.push(s);
+        return s;
+      },
+    };
+    return reqs;
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: {} },
+        { provide: SecuritiesService, useValue: {} },
+        { provide: TerminalStateService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  it('запоздавший ответ старого запроса не перетирает сделки нового', () => {
+    const c = makeComponent();
+    const reqs = queueTrades(c);
+    c.accountId = 1;
+    c.loadTrades(); // запрос 1 (медленный)
+    c.loadTrades(); // запрос 2 (свежий)
+    expect(reqs.length).toBe(2);
+
+    // Свежий ответ пришёл первым, старый — запоздал и пришёл вторым.
+    reqs[1].next({ trades: [trade(200)] });
+    reqs[0].next({ trades: [trade(100)] });
+
+    expect(c.trades.map((t: any) => t.id)).toEqual([200]);
+    expect(c.tradesLoading).toBe(false);
+  });
+
+  it('повторная загрузка того же счёта не очищает список сделок синхронно', () => {
+    const c = makeComponent();
+    const reqs = queueTrades(c);
+    c.accountId = 1;
+    c.loadTrades();
+    reqs[0].next({ trades: [trade(1)] });
+
+    c.loadTrades(); // тот же счёт — прежние сделки остаются на месте
+    expect(c.trades.map((t: any) => t.id)).toEqual([1]);
+    expect(c.tradesLoading).toBe(true);
+
+    reqs[1].next({ trades: [trade(1), trade(2)] });
+    expect(c.trades.map((t: any) => t.id)).toEqual([1, 2]);
+    expect(c.tradesLoading).toBe(false);
+  });
+
+  it('смена счёта сразу убирает чужую историю сделок', () => {
+    const c = makeComponent();
+    const reqs = queueTrades(c);
+    c.accountId = 1;
+    c.loadTrades();
+    reqs[0].next({ trades: [trade(1)] });
+    expect(c.trades.length).toBe(1);
+
+    c.accountId = 2;
+    c.loadTrades();
+    expect(c.trades).toEqual([]);
+    expect(c.tradesLoading).toBe(true);
+  });
+
+  it('ошибка загрузки не затирает уже показанные сделки', () => {
+    const c = makeComponent();
+    const reqs = queueTrades(c);
+    c.accountId = 1;
+    c.loadTrades();
+    reqs[0].next({ trades: [trade(1)] });
+
+    c.loadTrades();
+    reqs[1].error({ message: 'сеть упала' });
+    expect(c.trades.map((t: any) => t.id)).toEqual([1]);
+    expect(c.tradesError).toContain('сеть упала');
+    expect(c.tradesLoading).toBe(false);
+  });
+
+  it('onTradeExecuted грузит сделки сразу, не дожидаясь getAccounts', () => {
+    const c = makeComponent();
+    const reqs = queueTrades(c);
+    let accountsCalls = 0;
+    (c as any).refs = {
+      getAccounts: () => {
+        accountsCalls++;
+        return NEVER; // баланс реального счёта «висит» — ответа нет
+      },
+    };
+    c.accountId = 1;
+
+    c.onTradeExecuted();
+    expect(accountsCalls).toBe(1);
+    expect(reqs.length).toBe(1); // сделки запрошены параллельно, не в next
+
+    reqs[0].next({ trades: [trade(1)] });
+    expect(c.trades.map((t: any) => t.id)).toEqual([1]);
+    expect(c.accounts).toEqual([]); // подвисший баланс не мешает
   });
 });

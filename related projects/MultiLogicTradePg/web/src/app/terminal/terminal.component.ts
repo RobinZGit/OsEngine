@@ -124,6 +124,11 @@ export class TerminalComponent implements OnInit, OnDestroy {
   trades: TerminalTradeRow[] = [];
   tradesLoading = false;
   tradesError: string | null = null;
+  /** #955: счёт, чья история сейчас загружена — при смене счёта старую
+      историю чистим сразу, при повторной загрузке того же счёта — держим. */
+  private tradesAccountId: number | null = null;
+  /** #955: счётчик запросов сделок — применяется только последний ответ. */
+  private tradesReqSeq = 0;
   /** Идёт удаление всех сделок (блокирует повторные клики). */
   tradesDeleting = false;
 
@@ -489,10 +494,21 @@ export class TerminalComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** История сделок выбранного счёта (последние 100). */
+  /** История сделок выбранного счёта (последние 100).
+      #955: три правила против «полосы не обновились после автоисполнения»:
+      (1) токен запроса — применяется только ответ последнего вызова, а не
+      любого, что пришёл последним по времени (вспышка сигналов порождает
+      несколько параллельных GET /trades); (2) при повторной загрузке того же
+      счёта прежние сделки остаются на экране, пока не придёт новый ответ;
+      старая история чистится только при смене счёта; (3) ошибка не затирает
+      уже загруженные сделки — показываем tradesError рядом с прежним списком. */
   loadTrades(): void {
     const id = this.accountId;
-    this.trades = [];
+    const seq = ++this.tradesReqSeq;
+    if (id !== this.tradesAccountId) {
+      this.tradesAccountId = id;
+      this.trades = [];
+    }
     this.tradesError = null;
     if (id == null) {
       this.tradesLoading = false;
@@ -501,6 +517,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.tradesLoading = true;
     this.stateSvc.getTrades(id, 100).subscribe({
       next: (r) => {
+        if (seq !== this.tradesReqSeq) return; // запоздавший ответ
         this.tradesLoading = false;
         this.trades = r?.trades ?? [];
         this.applyPanelOrder();
@@ -511,6 +528,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.pollLastPrices();
       },
       error: (err) => {
+        if (seq !== this.tradesReqSeq) return; // запоздавший ответ
         this.tradesLoading = false;
         this.tradesError =
           err?.error?.error || err?.message || 'Не удалось загрузить сделки';
@@ -518,14 +536,18 @@ export class TerminalComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** После сделки терминала обновляем баланс/остаток счёта и список сделок. */
+  /** После сделки терминала обновляем список сделок и баланс/остаток счёта.
+      #955: сделки грузим сразу, не дожидаясь getAccounts(with_balance) —
+      баланс реального счёта идёт через внешний T-Bank и может зависнуть,
+      а полосы обязаны показать сделку немедленно; баланс освежается
+      параллельно и его падение обновление сделок не блокирует. */
   onTradeExecuted(): void {
+    this.loadTrades();
     this.refs.getAccounts(undefined, true).subscribe({
       next: (updated) => {
         this.accounts = updated;
-        this.loadTrades();
       },
-      error: () => this.loadTrades(),
+      error: () => undefined,
     });
   }
 
