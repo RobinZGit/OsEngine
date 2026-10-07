@@ -1,6 +1,42 @@
 <section class="page page-scroll">
   <header class="page-header">
-    <h1>Терминал</h1>
+    <div class="page-header-row">
+      <h1>Терминал</h1>
+      <!-- Выбор счёта и таймфрейма для новых бумаг — в самом верху, правее
+           «Терминал»: бар под шапкой разгрузили, там только галочка, лимит
+           и «Добавить бумагу». -->
+      @if (!loading && !error) {
+        <div class="page-header-controls">
+          <label class="term-field">
+            <span>Счёт</span>
+            @if (accounts.length) {
+              <select
+                [(ngModel)]="accountId"
+                (ngModelChange)="onAccountChange()"
+              >
+                @for (a of accounts; track a.id) {
+                  <option [ngValue]="a.id">{{ a.name }} ({{ a.account_code }})</option>
+                }
+              </select>
+            } @else {
+              <span class="term-empty">Счета не найдены</span>
+            }
+          </label>
+          <label class="term-field">
+            <span>Таймфрейм (для новых)</span>
+            <select
+              [(ngModel)]="commonTimeframeId"
+              (ngModelChange)="onCommonTimeframeChange()"
+              title="Таймфрейм по умолчанию для добавляемых бумаг. У каждой добавленной бумаги таймфрейм меняется отдельно — селектор в шапке панели."
+            >
+              @for (tf of timeframes; track tf.id) {
+                <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }} — {{ tf.full_name }}</option>
+              }
+            </select>
+          </label>
+        </div>
+      }
+    </div>
     <p class="subtitle">Ручная торговля: графики и ввод сделок</p>
   </header>
 
@@ -32,21 +68,6 @@
       <div class="term-toast" role="status">{{ signalsToast }}</div>
     }
     <div class="term-bar">
-      <label class="term-field">
-        <span>Счёт</span>
-        @if (accounts.length) {
-          <select
-            [(ngModel)]="accountId"
-            (ngModelChange)="onAccountChange()"
-          >
-            @for (a of accounts; track a.id) {
-              <option [ngValue]="a.id">{{ a.name }} ({{ a.account_code }})</option>
-            }
-          </select>
-        } @else {
-          <span class="term-empty">Счета не найдены</span>
-        }
-      </label>
       <!-- #946: галочка «Исполнять сделки сразу» — сигнал логики исполняется
            сам, без клика по кнопке сигнала; заодно на всех полосах включается
            «закроется тоже по сигналу логики». -->
@@ -86,18 +107,6 @@
           >
         </label>
       }
-      <label class="term-field">
-        <span>Таймфрейм (для новых)</span>
-        <select
-          [(ngModel)]="commonTimeframeId"
-          (ngModelChange)="onCommonTimeframeChange()"
-          title="Таймфрейм по умолчанию для добавляемых бумаг. У каждой добавленной бумаги таймфрейм меняется отдельно — селектор в шапке панели."
-        >
-          @for (tf of timeframes; track tf.id) {
-            <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }} — {{ tf.full_name }}</option>
-          }
-        </select>
-      </label>
       <button
         type="button"
         class="term-add-btn"

@@ -14,6 +14,21 @@
   font-size: 1.25rem;
 }
 
+/* «Терминал» + выбор счёта и таймфрейма для новых бумаг в один ряд шапки. */
+.page-header-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+}
+
+.page-header-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
 .subtitle {
   margin: 0.15rem 0 0;
   color: #555;
@@ -44,7 +59,9 @@
   font-size: 0.88rem;
 }
 
-/* Общий бар: выбор счёта + «Добавить бумагу»/«Скрыть выбор» в одну строку. */
+/* Общий бар: галочка «Исполнять сделки сразу» + лимит суммы автоисполнения +
+   «Добавить бумагу»/«Скрыть выбор» в одну строку. Счёт и таймфрейм (для новых)
+   вынесены в шапку (page-header-controls), чтобы бар не разрастался. */
 .term-bar {
   display: flex;
   align-items: center;
