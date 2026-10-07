@@ -2569,7 +2569,7 @@ describe('TerminalPanelComponent', () => {
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
     });
 
-    it('включение галочки не исполняет старый сигнал (ждём следующего сигнала)', () => {
+    it('включение галочки исполняет уже показанный сигнал (не ждём следующего)', () => {
       component.chartState = candles();
       component.accountId = 1;
       fixture.componentRef.setInput('signalEvent', signal());
@@ -2578,7 +2578,11 @@ describe('TerminalPanelComponent', () => {
 
       fixture.componentRef.setInput('executeSignalsNow', true);
       fixture.detectChanges();
-      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      const arg = (stateSvc.placeTrade as jasmine.Spy).calls.mostRecent()
+        .args[0];
+      expect(arg.direction).toBe('buy');
+      expect(arg.quantity).toBe(4);
     });
 
     it('инверсия: исполняется сторона, обратная сигналу, количество логии', () => {

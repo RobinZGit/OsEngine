@@ -310,6 +310,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (this.indicatorPollTimer) clearTimeout(this.indicatorPollTimer);
     if (this.shuttleRefreshTimer != null) clearTimeout(this.shuttleRefreshTimer);
     if (this.closeBlinkTimer != null) clearTimeout(this.closeBlinkTimer);
+    this.cancelSignalRetry();
     if (this.headResizeObserver) {
       this.headResizeObserver.disconnect();
       this.headResizeObserver = null;
@@ -384,6 +385,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.tradeError = null;
       this.autoWaitKey = null;
       this.skippedSignalKey = null;
+      // Новый сигнал — лимит коротких ретраев (см. scheduleSignalRetry) начинаем заново.
+      this.cancelSignalRetry();
     }
     if (
       changes['signalEvent'] != null ||
@@ -404,7 +407,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       changes['signalEvent'] != null ||
       changes['livePrice'] != null ||
       changes['trades'] != null ||
-      changes['accountId'] != null
+      changes['accountId'] != null ||
+      changes['executeSignalsNow'] != null
     ) {
       this.maybeExecuteSignal();
     }
@@ -991,17 +995,22 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   private maybeExecuteSignal(): void {
     if (!this.executeSignalsNow || this.signalEvent == null) return;
     const key = this.signalKey;
-    if (!key || this.executedSignalKey === key) return;
+    if (!key || this.executedSignalKey === key) {
+      this.cancelSignalRetry();
+      return;
+    }
     // Новый сигнал — прежние ожидания сбрасываем (иначе причина от старого
     // бара висит на новой бумаге).
     if (this.autoWaitKey !== null && this.autoWaitKey !== key) {
       this.autoWaitKey = null;
       this.skippedSignalKey = null;
+      this.signalRetryCount = 0;
     }
     // Идёт своя заявка или закрытие — следующий тик, повторять нельзя.
     if (this.tradingBusy) return;
     if (this.accountId == null) {
       this.noteAutoWait(key, 'Сигнал ждёт: не выбран счёт');
+      this.scheduleSignalRetry();
       return;
     }
     // #952: не наращиваем позицию. Логика может сигналить одну и ту же бумагу на
@@ -1021,6 +1030,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     const price = this.autoExecutionPrice();
     if (!(price > 0)) {
       this.noteAutoWait(key, 'Сигнал ждёт цену: график пуст и котировки нет');
+      this.scheduleSignalRetry();
       return;
     }
     const side = this.signalSide;
@@ -1031,10 +1041,12 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
     if (qty < 1) {
       this.noteAutoWait(key, 'Сигнал ждёт количество: у логики нет лота');
+      this.scheduleSignalRetry();
       return;
     }
     this.autoWaitKey = null;
     this.skippedSignalKey = '';
+    this.cancelSignalRetry();
     this.placeTradeWithQty(side, qty, { price, signalKey: key });
   }
 
@@ -1045,6 +1057,32 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.autoWaitKey = key;
     this.tradeMessage = text;
     this.tradeError = null;
+  }
+
+  /** Сигнал ждёт (цена/количество/счёт) — короткий ретрай, чтобы исполнить
+      сразу, как только условие готово, а не на 15-секундном тике полосы.
+      Без лимита сигнал мог «зависнуть» на ожидании до следующего тика, что
+      выглядело как «сделка не исполняется». */
+  private signalRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private signalRetryCount = 0;
+
+  private scheduleSignalRetry(): void {
+    if (this.signalRetryTimer != null || this.destroyed) return;
+    if (this.signalRetryCount >= 40) return;
+    this.signalRetryCount += 1;
+    this.signalRetryTimer = setTimeout(() => {
+      this.signalRetryTimer = null;
+      if (this.destroyed) return;
+      this.maybeExecuteSignal();
+    }, 750);
+  }
+
+  private cancelSignalRetry(): void {
+    if (this.signalRetryTimer != null) {
+      clearTimeout(this.signalRetryTimer);
+      this.signalRetryTimer = null;
+    }
+    this.signalRetryCount = 0;
   }
 
   /** #953: цена автоисполнения. Живая цена в терминале приходит только по бумагам
