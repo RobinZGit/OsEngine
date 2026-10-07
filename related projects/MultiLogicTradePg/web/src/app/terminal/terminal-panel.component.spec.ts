@@ -2907,5 +2907,87 @@ describe('TerminalPanelComponent', () => {
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
       expect(sums).toEqual([1000]);
     });
+
+    // #958: цикл из трёх итераций — сигнал не исполнился, повторяем отправку.
+    it('#958: при сетевом сбое попытка повторяется сама, после трёх — сигнал закрыт', fakeAsync(() => {
+      component.chartState = candles();
+      component.accountId = 1;
+      stateSvc.placeTrade.and.returnValue(throwError(() => new Error('offline')));
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 810 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(component.tradeError).toContain('попытка 1 из 3');
+
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+      expect(component.tradeError).toContain('попытка 2 из 3');
+
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(3);
+      expect(component.tradeError).toContain('после 3 попыток');
+
+      // Цикл закрыт: и таймер, и поздние тики не отправляют четвёртую заявку.
+      tick(750);
+      fixture.componentRef.setInput('trades', [
+        trade(1, {}),
+        trade(2, { direction: 'SELL' }),
+      ]);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(3);
+      discardPeriodicTasks();
+    }));
+
+    it('#958: отказ сервера входит в цикл, успех на второй попытке его останавливает', fakeAsync(() => {
+      component.chartState = candles();
+      component.accountId = 1;
+      stateSvc.placeTrade.and.returnValue(
+        of({ ok: false, mode: 'fake', error: 'нет средств' })
+      );
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 811 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(component.tradeError).toContain('попытка 1 из 3');
+      expect(component.tradeError).toContain('нет средств');
+
+      stateSvc.placeTrade.and.returnValue(
+        of({ ok: true, mode: 'fake' })
+      );
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+      expect(component.tradeMessage).toContain('Сделка размещена');
+
+      // Исполнено — дальше тики цикл не продолжают.
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+      discardPeriodicTasks();
+    }));
+
+    it('#958: новый сигнал начинает цикл попыток заново', fakeAsync(() => {
+      component.chartState = candles();
+      component.accountId = 1;
+      stateSvc.placeTrade.and.returnValue(throwError(() => new Error('offline')));
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 820 }));
+      fixture.detectChanges();
+      tick(750);
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(3);
+      expect(component.tradeError).toContain('после 3 попыток');
+
+      // Новый сигнал (новый ключ) — три попытки доступны опять.
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 821 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(4);
+      expect(component.tradeError).toContain('попытка 1 из 3');
+
+      // И вторая попытка нового цикла уходит — цикл жив, а не «закрыт навсегда».
+      stateSvc.placeTrade.and.returnValue(of({ ok: true, mode: 'fake' }));
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(5);
+      expect(component.tradeMessage).toContain('Сделка размещена');
+      discardPeriodicTasks();
+    }));
   });
 });

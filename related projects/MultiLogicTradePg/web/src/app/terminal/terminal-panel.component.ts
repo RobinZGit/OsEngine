@@ -320,6 +320,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (this.shuttleRefreshTimer != null) clearTimeout(this.shuttleRefreshTimer);
     if (this.closeBlinkTimer != null) clearTimeout(this.closeBlinkTimer);
     this.cancelSignalRetry();
+    this.cancelExecRetry();
     if (this.headResizeObserver) {
       this.headResizeObserver.disconnect();
       this.headResizeObserver = null;
@@ -1017,6 +1018,16 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.skippedSignalKey = null;
       this.signalRetryCount = 0;
     }
+    // #958: свой ключ — своя корзина попыток; новый сигнал начинает цикл заново.
+    if (this.execAttemptsKey !== key) {
+      this.execAttemptsKey = key;
+      this.execAttempts = 0;
+    }
+    // #958: три попытки исчерпаны — сами не отправляем (итоговая причина уже
+    // показана), до следующего сигнала с новым ключом.
+    if (this.execAttempts >= TerminalPanelComponent.AUTO_EXEC_MAX_ATTEMPTS) {
+      return;
+    }
     // Идёт своя заявка или закрытие — следующий тик, повторять нельзя.
     if (this.tradingBusy) return;
     if (this.accountId == null) {
@@ -1103,6 +1114,49 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.signalRetryTimer = null;
     }
     this.signalRetryCount = 0;
+  }
+
+  /** #958: цикл из трёх итераций для одного сигнала. Если сигнал найден, а
+      заявка не исполнилась (сбой сети или сервер ответил отказом) — повторяем
+      отправку, всего 3 попытки; после третьей сигнал для этой полосы больше
+      не уходит и показывается итоговая причина. Счётчик живёт на ключе
+      сигнала: новый сигнал (новый ключ) начинает цикл заново. Ожидание
+      счёта/цены/количества попытками не считается — это не отправка заявки,
+      там свой лимит (scheduleSignalRetry). */
+  private static readonly AUTO_EXEC_MAX_ATTEMPTS = 3;
+  private execAttemptsKey: string | null = null;
+  private execAttempts = 0;
+  private execRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Неудачная отправка авто-сделки — план следующую попытку или закрываем цикл. */
+  private failAutoExecAttempt(key: string, reason: string): void {
+    // Пока заявка была в полёте, пришёл новый сигнал — попытку старого не
+    // считаем и не повторяем (новый ключ и так начнёт свой цикл заново).
+    if (this.execAttemptsKey !== key) return;
+    this.execAttempts += 1;
+    if (this.execAttempts >= TerminalPanelComponent.AUTO_EXEC_MAX_ATTEMPTS) {
+      this.autoWaitKey = key;
+      this.tradeMessage = null;
+      this.tradeError = `Сделка не исполнена после ${this.execAttempts} попыток: ${reason}`;
+      return;
+    }
+    this.autoWaitKey = key;
+    this.tradeError = `Сделка не исполнена (попытка ${this.execAttempts} из ${TerminalPanelComponent.AUTO_EXEC_MAX_ATTEMPTS}): ${reason} — повтор…`;
+    if (this.execRetryTimer != null || this.destroyed) return;
+    this.execRetryTimer = setTimeout(() => {
+      this.execRetryTimer = null;
+      if (this.destroyed) return;
+      this.maybeExecuteSignal();
+    }, 750);
+  }
+
+  private cancelExecRetry(): void {
+    if (this.execRetryTimer != null) {
+      clearTimeout(this.execRetryTimer);
+      this.execRetryTimer = null;
+    }
+    this.execAttempts = 0;
+    this.execAttemptsKey = null;
   }
 
   /** #953: цена автоисполнения. Живая цена в терминале приходит только по бумагам
@@ -2301,14 +2355,20 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
             this.tradeMessage =
               r.message || `Сделка размещена: ${direction} ${qty} шт`;
           } else {
-            this.tradeError = r?.error || 'Не удалось разместить заявку';
+            const reason = r?.error || 'Не удалось разместить заявку';
+            this.tradeError = reason;
+            // #958: отказ сервера — следующая итерация цикла из трёх попыток.
+            if (signalKey) this.failAutoExecAttempt(signalKey, reason);
           }
           this.tradeExecuted.emit();
         },
         error: (err) => {
           this.tradingBusy = false;
-          this.tradeError =
+          const reason =
             err?.error?.error || err?.message || 'Не удалось разместить заявку';
+          this.tradeError = reason;
+          // #958: сбой сети — сигнал не потерян, плануем следующую попытку.
+          if (signalKey) this.failAutoExecAttempt(signalKey, reason);
           this.tradeExecuted.emit();
         },
       });
