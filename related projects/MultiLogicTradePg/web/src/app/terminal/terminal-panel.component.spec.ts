@@ -2825,5 +2825,87 @@ describe('TerminalPanelComponent', () => {
 
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
     });
+
+    // #957: лимит суммы автоисполнения. Сделка 4 × 250 = 1000 ₽.
+    it('#957: при достигнутом лимите заявка не уходит и показывается причина', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('autoExecMaxSum', 900);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 801 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('Достигнут лимит');
+    });
+
+    it('#957: израсходованный лимит учитывается: spent + сделка > максимума — блок', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('autoExecMaxSum', 1500);
+      fixture.componentRef.setInput('autoExecSpent', 600);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 802 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('Достигнут лимит');
+    });
+
+    it('#957: в пределах лимита сделка уходит и эмитит сумму терминалу', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      const sums: number[] = [];
+      component.autoTradePlaced.subscribe((v: number) => sums.push(v));
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 803 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      // 4 шт × 250 ₽ (цена свечи, живой цены нет) = 1000 ₽.
+      expect(sums).toEqual([1000]);
+    });
+
+    it('#957: увеличение лимита после блокировки исполняет тот же сигнал', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('autoExecMaxSum', 900);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 804 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('Достигнут лимит');
+
+      // Пользователь поднял лимит — сигнал не потерян, исполняется.
+      fixture.componentRef.setInput('autoExecMaxSum', 5000);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(component.tradeMessage).toContain('Сделка размещена');
+    });
+
+    it('#957: сетевой сбой не идёт в расход лимита — сигнал повторяется', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      const sums: number[] = [];
+      component.autoTradePlaced.subscribe((v: number) => sums.push(v));
+      stateSvc.placeTrade.and.returnValue(throwError(() => new Error('offline')));
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 805 }));
+      fixture.detectChanges();
+      expect(sums).toEqual([]);
+
+      stateSvc.placeTrade.and.returnValue(
+        of({ ok: true, message: 'ок', mode: 'fake' })
+      );
+      fixture.componentRef.setInput('trades', [
+        trade(1, {}),
+        trade(2, { direction: 'SELL' }),
+      ]);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
+      expect(sums).toEqual([1000]);
+    });
   });
 });

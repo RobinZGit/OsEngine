@@ -6,6 +6,11 @@ import { SecuritiesService } from '../services/securities.service';
 import { TerminalStateService } from '../services/terminal-state.service';
 import { AppConfigService } from '../services/app-config.service';
 import { NEVER, of, Subject } from 'rxjs';
+import { registerLocaleData } from '@angular/common';
+import localeRu from '@angular/common/locales/ru';
+
+// Пайп number с локалью 'ru' в шаблоне терминала (#957).
+registerLocaleData(localeRu, 'ru');
 
 describe('TerminalComponent — удаление полос без позиции по таймауту таймфрейма (#923)', () => {
   function makeComponent(): any {
@@ -613,6 +618,72 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
     c.applyLogicSignals([signalRow()]);
     expect(c.panels.length).toBe(1);
     expect(c.panels[0].auto_close_on_logic_signal).toBe(false);
+  });
+
+  // #957: лимит суммы автоисполнения.
+  it('#957: дефолт лимита — 300 000 на тестовом счёте, остаток на реальном', () => {
+    const c = makeComponent();
+    c.accounts = [
+      { id: 1, name: 'Демо', account_code: 'D', account_type: 'demo', terminal_cash: 50000 },
+      { id: 2, name: 'Реал', account_code: 'R', account_type: 'real', balance: 120000 },
+    ];
+
+    c.accountId = 1;
+    expect(c.autoExecMaxSum).toBe(300000);
+
+    c.accountId = 2;
+    expect(c.autoExecMaxSum).toBe(120000);
+
+    // Сохранённое значение важнее дефолта.
+    c.settings = { ...c.settings, auto_exec_max_sum: 45000 };
+    expect(c.autoExecMaxSum).toBe(45000);
+  });
+
+  it('#957: ввод лимита сохраняется в настройках, мусор отбрасывается', () => {
+    const c = makeComponent();
+    c.onAutoExecMaxSumChange('250000');
+    expect(c.autoExecMaxSum).toBe(250000);
+    expect(c.settings['auto_exec_max_sum']).toBe(250000);
+
+    c.onAutoExecMaxSumChange('-100');
+    expect(c.autoExecMaxSum).toBe(250000);
+    c.onAutoExecMaxSumChange('abc');
+    expect(c.autoExecMaxSum).toBe(250000);
+  });
+
+  it('#957: расход растёт только по подтверждённым авто-сделкам', () => {
+    const c = makeComponent();
+    expect(c.autoExecSpent).toBe(0);
+
+    c.onAutoTradePlaced(1000);
+    expect(c.autoExecSpent).toBe(1000);
+
+    c.onAutoTradePlaced(250.5);
+    expect(c.autoExecSpent).toBe(1250.5);
+
+    // Мусор и ноль не меняют расход.
+    c.onAutoTradePlaced(Number.NaN);
+    c.onAutoTradePlaced(0);
+    c.onAutoTradePlaced(-500);
+    expect(c.autoExecSpent).toBe(1250.5);
+  });
+
+  it('#957: поле лимита видно только при включённой галочке', () => {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.term-field-limit')).toBeNull();
+
+    c.onExecuteSignalsNowChange(true);
+    fixture.detectChanges();
+    const field = fixture.nativeElement.querySelector('.term-field-limit');
+    expect(field).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('израсходовано');
   });
 });
 

@@ -73,8 +73,15 @@ function assertSourceGuards() {
   if (!service.includes('async: true')) {
     fail('SecuritiesService.syncIndicatorSeries must force async: true');
   }
-  if (service.includes('120_000')) {
-    fail('SecuritiesService must not use 120s sync timeout (blocking path removed)');
+  // Guard только на сам метод sync: у refreshPrices собственный таймаут 120s
+  // (догрузка свечи), он к синхронизации индикаторов отношения не имеет.
+  const syncIdx = service.indexOf('syncIndicatorSeries(');
+  if (syncIdx < 0) {
+    fail('SecuritiesService missing syncIndicatorSeries');
+  }
+  const syncBody = service.slice(syncIdx, syncIdx + 1200);
+  if (syncBody.includes('120_000')) {
+    fail('syncIndicatorSeries must not use 120s sync timeout (blocking path removed)');
   }
 
   console.log('verify-async-sync: OK source guards (optimistic assign + async-only sync)');

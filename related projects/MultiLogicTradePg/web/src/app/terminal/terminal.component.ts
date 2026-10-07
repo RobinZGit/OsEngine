@@ -1362,6 +1362,43 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.scheduleSave();
   }
 
+  /** #957: лимит суммы автоисполнения, ₽ (настройка счёта). Дефолт: у тестового
+      счёта — 300 000 ₽, у реального — остаток на счёте. 0 — автоисполнение
+      полностью запрещено. */
+  get autoExecMaxSum(): number {
+    const v = Number(this.settings['auto_exec_max_sum']);
+    if (Number.isFinite(v) && v >= 0) return v;
+    if (this.selectedAccountIsFake) return 300000;
+    const cash = this.selectedAccountCash;
+    return cash != null && cash > 0 ? cash : 0;
+  }
+
+  onAutoExecMaxSumChange(v: string | number): void {
+    const n = Math.floor(Number(String(v).replace(',', '.')));
+    if (!Number.isFinite(n) || n < 0) return;
+    if (n === Number(this.settings['auto_exec_max_sum'])) return;
+    this.settings = { ...this.settings, auto_exec_max_sum: n };
+    this.scheduleSave();
+  }
+
+  /** #957: сколько уже израсходовано на автоисполненные сделки счёта, ₽
+      (сумма |цена × количество| подтверждённых сделок по галочке). */
+  get autoExecSpent(): number {
+    const v = Number(this.settings['auto_exec_spent']);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  }
+
+  /** #957: авто-сделка прошла сервер — прибавляем её сумму к расходу лимита. */
+  onAutoTradePlaced(amount: number): void {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) return;
+    this.settings = {
+      ...this.settings,
+      auto_exec_spent: Math.round((this.autoExecSpent + n) * 100) / 100,
+    };
+    this.scheduleSave();
+  }
+
   /** Отложенное сохранение состояния активного счёта (антидребезг).
       Снимок payload делается сразу — при смене счёта старый набор не затрётся. */
   scheduleSave(): void {

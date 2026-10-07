@@ -65,6 +65,27 @@
         />
         <span>Исполнять сделки сразу</span>
       </label>
+      <!-- #957: лимит суммы автоисполнения — рядом с галочкой и виден только
+           при включённой. Сумма |сделок| по галочке не выходит за лимит. -->
+      @if (executeSignalsNow) {
+        <label
+          class="term-field term-field-limit"
+          title="Сумма автоисполненных сделок (по модулю) не превысит этот лимит: сигналы сверх него не исполняются и показывают «Достигнут лимит». Дефолт: 300 000 ₽ на тестовом счёте, остаток на реальном. 0 — автоисполнение запрещено."
+        >
+          <span>Лимит автоисполнения, ₽</span>
+          <input
+            type="number"
+            class="term-limit-input"
+            min="0"
+            step="1000"
+            [value]="autoExecMaxSum"
+            (change)="onAutoExecMaxSumChange($any($event.target).value)"
+          />
+          <span class="term-limit-spent"
+            >израсходовано {{ autoExecSpent | number: '1.0-0' : 'ru' }}</span
+          >
+        </label>
+      }
       <label class="term-field">
         <span>Таймфрейм (для новых)</span>
         <select
@@ -361,11 +382,14 @@
           [closeSignalPulse]="closeSignalPulse"
           [autoCloseOnLogicSignal]="panel.auto_close_on_logic_signal"
           [executeSignalsNow]="executeSignalsNow"
+          [autoExecMaxSum]="autoExecMaxSum"
+          [autoExecSpent]="autoExecSpent"
           (remove)="removePanel(panel.uid)"
           (stateChange)="onPanelStateChange($event, panel.uid)"
           (collapsedChange)="onPanelCollapsedChange($event, panel.uid)"
           (autoCloseChange)="onPanelAutoCloseChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
+          (autoTradePlaced)="onAutoTradePlaced($event)"
           (commissionPctChange)="onCommissionPctChange($event)"
           (dataReady)="onPanelDataReady(panel.uid)"
           (positionSummary)="onPanelPositionSummary(panel.uid, $event)"

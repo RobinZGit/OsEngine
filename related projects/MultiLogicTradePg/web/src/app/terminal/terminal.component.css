@@ -735,3 +735,18 @@
   line-height: 1.35;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
+
+/* #957: лимит автоисполнения - поле ввода и расход рядом с галочкой. */
+.term-field-limit input {
+  width: 100px;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+.term-limit-spent {
+  font-size: 0.72rem;
+  color: #9ca3af;
+}

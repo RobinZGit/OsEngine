@@ -124,6 +124,12 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       сигнал логики исполняется сам, без клика по кнопке сигнала. Каждый сигнал
       (signalKey) исполняется не более одного раза за жизнь полосы. */
   @Input() executeSignalsNow = false;
+  /** #957: лимит суммы автоисполнения, ₽: израсходовано + новая сделка не
+      должны превысить его. Infinity — лимит не задан (вход не установлен —
+      старые использования и тесты не блокируются). */
+  @Input() autoExecMaxSum = Number.POSITIVE_INFINITY;
+  /** #957: сколько уже израсходовано на автоисполненные сделки счёта, ₽. */
+  @Input() autoExecSpent = 0;
   /** #922: живая цена бумаги (последняя сделка) от терминала — обновляется
       раз в 30 с по бумагам с открытой позицией. График живёт на закрытых
       барах, поэтому для разницы по позиции берём именно её; null — терминал
@@ -137,6 +143,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   }>();
   /** Сделка размещена (ок или отклонена) — терминал обновляет остаток и историю. */
   @Output() tradeExecuted = new EventEmitter<void>();
+  /** #957: автоисполненная сделка прошла сервер — терминал прибавляет её сумму
+      (|цена × количество|) к израсходованному лимиту автоисполнения. */
+  @Output() autoTradePlaced = new EventEmitter<number>();
   /** Изменение «Комиссия, %» — терминал сохраняет настройку счётa. */
   @Output() commissionPctChange = new EventEmitter<number>();
   /** На графике появились первые свечи (для снятия надписи «идёт выбор бумаги…»). */
@@ -408,7 +417,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       changes['livePrice'] != null ||
       changes['trades'] != null ||
       changes['accountId'] != null ||
-      changes['executeSignalsNow'] != null
+      changes['executeSignalsNow'] != null ||
+      changes['autoExecMaxSum'] != null ||
+      changes['autoExecSpent'] != null
     ) {
       this.maybeExecuteSignal();
     }
@@ -1042,6 +1053,15 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (qty < 1) {
       this.noteAutoWait(key, 'Сигнал ждёт количество: у логики нет лота');
       this.scheduleSignalRetry();
+      return;
+    }
+    // #957: лимит суммы автоисполнения. Израсходовано + новая сделка (|цена ×
+    // количество|) не должны превышать лимит — иначе заявка не уходит и сразу
+    // показывается причина. Ретрай не планируем: само по себе лимит не
+    // меняется — при новом значении вход autoExecMaxSum/autoExecSpent
+    // перезапустит проверку через ngOnChanges.
+    if (price * qty + this.autoExecSpent > this.autoExecMaxSum) {
+      this.noteAutoWait(key, 'Достигнут лимит — сделка не исполнена');
       return;
     }
     this.autoWaitKey = null;
@@ -2272,7 +2292,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         next: (r) => {
           this.tradingBusy = false;
           // #953: сигнал считается выполненным только по подтверждённому ответу.
-          if (signalKey && r?.ok) this.executedSignalKey = signalKey;
+          if (signalKey && r?.ok) {
+            this.executedSignalKey = signalKey;
+            // #957: |сумма| авто-сделки идёт в расход лимита автоисполнения.
+            this.autoTradePlaced.emit(Math.abs(price * qty));
+          }
           if (r?.ok) {
             this.tradeMessage =
               r.message || `Сделка размещена: ${direction} ${qty} шт`;
