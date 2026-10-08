@@ -526,6 +526,21 @@
                 </button>
                 <button
                   type="button"
+                  class="icon-btn icon-lightning"
+                  title="Молния: проверить сигналы логики сейчас на виртуальном баре (не ждёт закрытия свечи); по настройкам — создаст сделку и/или сигнал в терминал. Не дублирует уже обработанный бар."
+                  aria-label="Молния"
+                  [disabled]="isLightningBusy(row.id) || isBacktestRunning(row.id)"
+                  (click)="runLightning(row, $event)"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   class="icon-btn icon-danger"
                   title="Удалить"
                   aria-label="Удалить"

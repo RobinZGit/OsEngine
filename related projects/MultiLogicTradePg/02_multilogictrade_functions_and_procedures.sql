@@ -5357,6 +5357,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10023,6 +10025,62 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -17568,7 +17626,13 @@ BEGIN
 
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
 
-    v_closed_bar_dt := logic_last_closed_bar_dt(v_tf_sec);
+    -- Виртуальный бар «молнии» (#960): logic_lightning_run выставляет session-переменную
+    -- app.lightning_bar_dt (local, видна только в транзакции молнии); для обычного цикла
+    -- переменной нет — берём последний закрытый бар как раньше.
+    v_closed_bar_dt := COALESCE(
+        NULLIF(current_setting('app.lightning_bar_dt', TRUE), '')::TIMESTAMP,
+        logic_last_closed_bar_dt(v_tf_sec)
+    );
     IF v_closed_bar_dt IS NULL THEN
         PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'Не удалось вычислить закрытую свечу TF', NULL, NULL, v_tf_id);
         RETURN 0;
@@ -18535,7 +18599,11 @@ BEGIN
     END IF;
 
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
-    v_closed_bar_dt := logic_last_closed_bar_dt(v_tf_sec);
+    -- Виртуальный бар «молнии» (#960): см. comment в process_logic_trades.
+    v_closed_bar_dt := COALESCE(
+        NULLIF(current_setting('app.lightning_bar_dt', TRUE), '')::TIMESTAMP,
+        logic_last_closed_bar_dt(v_tf_sec)
+    );
     IF v_closed_bar_dt IS NULL THEN
         PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Не удалось вычислить закрытую свечу TF', NULL, NULL, v_tf_id);
         RETURN 0;
@@ -18758,6 +18826,209 @@ COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
 'Работает при use_as_terminal_signal=TRUE независимо от is_enabled (включённая логика торгует как обычно + сигналит в терминал). '
 'Недостающие closed-свечи цен сигнальных бумаг догружаются инкрементально (1 HTTP через prices_topup_date_from), '
 'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
+
+-- ============================================================
+-- Молния (#960): ручная проверка сигналов логики на момент нажатия.
+-- Виртуальный бар логики = начало интервала её ТФ, в котором находится
+-- момент нажатия (последний бар частичный — не ждём его закрытия).
+-- Данные: минутный источник (M1/M2/M5) догружается HTTP до момента нажатия
+-- и резэмплится в ТФ логики и доп. ТФ формул; боевые процессы сами
+-- досчитывают индикаторы до виртуального бара, применяют дедуп
+-- (не дублировать с боевым циклом) и исполняют по настройкам логики.
+-- ============================================================
+CREATE OR REPLACE FUNCTION logic_lightning_run(
+    p_logic_id INTEGER,
+    p_at TIMESTAMP,
+    p_log_only BOOLEAN DEFAULT FALSE
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic RECORD;
+    v_tf_id INTEGER;
+    v_tf_sec INTEGER;
+    v_bar_dt TIMESTAMP;
+    v_moment TIMESTAMP;
+    v_src_id INTEGER;
+    v_src_sec INTEGER;
+    v_date_from DATE;
+    v_date_to DATE;
+    v_sec RECORD;
+    v_xtf RECORD;
+    v_trade INTEGER := 0;
+    v_term INTEGER := 0;
+    v_err TEXT;
+BEGIN
+    SELECT l.id, l.account_id, a.account_type,
+           COALESCE(l.is_enabled, FALSE) AS is_enabled,
+           COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
+    INTO v_logic
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id
+      AND a.is_active = TRUE;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'logic_not_found');
+    END IF;
+
+    v_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    IF v_tf_id IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_timeframe');
+    END IF;
+
+    SELECT sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
+    IF v_tf_sec IS NULL OR v_tf_sec <= 0 THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'invalid_timeframe');
+    END IF;
+
+    -- Момент нажатия не может быть в будущем.
+    v_moment := LEAST(COALESCE(p_at, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP);
+    -- Виртуальный бар: начало интервала ТФ логики, содержащего v_moment.
+    v_bar_dt := timestamp 'epoch'
+        + (floor(extract(epoch FROM v_moment) / v_tf_sec) * v_tf_sec) * interval '1 second';
+
+    IF NOT EXISTS (
+        SELECT 1 FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+    ) OR NOT EXISTS (
+        SELECT 1 FROM logic_securities ls
+        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
+    ) THEN
+        RETURN jsonb_build_object(
+            'ok', TRUE,
+            'reason', 'no_active_signals_or_securities',
+            'bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+            'at', to_char(v_moment, 'YYYY-MM-DD"T"HH24:MI:SS'),
+            'timeframe_id', v_tf_id,
+            'is_enabled', v_logic.is_enabled,
+            'use_sig', v_logic.use_sig,
+            'trade_created', 0,
+            'terminal_signals_created', 0
+        );
+    END IF;
+
+    -- Минутный источник: наименьший из доступных M1/M2/M5.
+    SELECT id, sec INTO v_src_id, v_src_sec
+    FROM timeframes
+    WHERE sec >= 60 AND sec <= 300
+    ORDER BY sec
+    LIMIT 1;
+    IF v_src_id IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_minute_source');
+    END IF;
+
+    v_date_from := v_bar_dt::date;
+    v_date_to   := v_moment::date;
+
+    -- T-Bank может долго не отвечать: ждём не более 1,5 с и уходим в MOEX fallback
+    -- (иначе сетевой таймаут по умолчанию в libcurl не ограничен).
+    BEGIN
+        PERFORM http_set_curlopt('CURLOPT_TIMEOUT_MS', '1500');
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+
+    -- Подготовка данных на виртуальный бар: свежие минуты + резample в ТФ логики
+    -- и доп. ТФ формул сигналов (tf= в формулах).
+    FOR v_sec IN
+        SELECT security_id
+        FROM logic_securities
+        WHERE logic_id = p_logic_id AND is_active = TRUE
+        ORDER BY security_id
+    LOOP
+        BEGIN
+            CALL load_prices_http(v_sec.security_id, v_src_id, v_date_from, v_date_to);
+        EXCEPTION
+            WHEN OTHERS THEN
+                PERFORM logic_trade_log(
+                    p_logic_id, 'lightning.prices_http_error', SQLERRM,
+                    jsonb_build_object('security_id', v_sec.security_id),
+                    v_sec.security_id, v_tf_id
+                );
+        END;
+
+        IF v_tf_sec > v_src_sec THEN
+            BEGIN
+                CALL resample_prices_to_timeframe(
+                    v_sec.security_id, v_src_id, v_tf_id, v_date_from, v_date_to
+                );
+            EXCEPTION
+                WHEN OTHERS THEN
+                    PERFORM logic_trade_log(
+                        p_logic_id, 'lightning.resample_error', SQLERRM,
+                        jsonb_build_object('security_id', v_sec.security_id, 'tf_id', v_tf_id),
+                        v_sec.security_id, v_tf_id
+                    );
+            END;
+        END IF;
+
+        FOR v_xtf IN
+            SELECT x.tf_id FROM logic_signal_extra_tf_ids(p_logic_id, v_tf_id) x
+        LOOP
+            IF v_xtf.tf_id IS NULL OR v_xtf.tf_id = v_tf_id OR v_xtf.tf_id <= 0 THEN
+                CONTINUE;
+            END IF;
+            BEGIN
+                CALL resample_prices_to_timeframe(
+                    v_sec.security_id, v_src_id, v_xtf.tf_id, v_date_from, v_date_to
+                );
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
+        END LOOP;
+    END LOOP;
+
+    -- Исполнение по настройкам: боевые процессы (через session-переменную
+    -- app.lightning_bar_dt) работают на виртуальном баре. Дедуп «не дублировать»
+    -- обеспечивают сами процессы (сравнение v_bar_dt <= last_* и ON CONFLICT).
+    IF NOT p_log_only AND v_logic.is_enabled THEN
+        BEGIN
+            PERFORM set_config('app.lightning_bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
+            v_trade := process_logic_trades(p_logic_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_err := SQLERRM;
+                PERFORM logic_trade_log(
+                    p_logic_id, 'lightning.trade_error', v_err, NULL, NULL, v_tf_id
+                );
+        END;
+    END IF;
+
+    IF NOT p_log_only AND v_logic.use_sig THEN
+        BEGIN
+            PERFORM set_config('app.lightning_bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
+            v_term := process_logic_terminal_signals(p_logic_id);
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_err := SQLERRM;
+                PERFORM logic_trade_log(
+                    p_logic_id, 'lightning.signal_error', v_err, NULL, NULL, v_tf_id
+                );
+        END;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'at', to_char(v_moment, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'timeframe_id', v_tf_id,
+        'is_enabled', v_logic.is_enabled,
+        'use_sig', v_logic.use_sig,
+        'trade_created', v_trade,
+        'terminal_signals_created', v_term
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_lightning_run(INTEGER, TIMESTAMP, BOOLEAN) IS
+'Молния (#960): ручная проверка сигналов логики на виртуальном (частичном) баре на момент '
+'нажатия. Догружает минутные свечи до p_at, резэмплит их в ТФ логики и доп. ТФ, затем боевые '
+'процессы (через session-переменную app.lightning_bar_dt) применяют дедуп и исполняют: '
+'включённая логика — сделка, use_as_terminal_signal — сигнал в терминал. '
+'p_log_only=TRUE — только подготовка данных без действий.';
 
 -- @include sql/logic_trading_sessions.sql
 -- ============================================
@@ -23591,6 +23862,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
 
 
 

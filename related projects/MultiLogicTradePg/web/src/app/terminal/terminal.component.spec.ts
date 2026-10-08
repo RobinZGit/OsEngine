@@ -651,23 +651,6 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
     expect(c.autoExecMaxSum).toBe(250000);
   });
 
-  it('#957: расход растёт только по подтверждённым авто-сделкам', () => {
-    const c = makeComponent();
-    expect(c.autoExecSpent).toBe(0);
-
-    c.onAutoTradePlaced(1000);
-    expect(c.autoExecSpent).toBe(1000);
-
-    c.onAutoTradePlaced(250.5);
-    expect(c.autoExecSpent).toBe(1250.5);
-
-    // Мусор и ноль не меняют расход.
-    c.onAutoTradePlaced(Number.NaN);
-    c.onAutoTradePlaced(0);
-    c.onAutoTradePlaced(-500);
-    expect(c.autoExecSpent).toBe(1250.5);
-  });
-
   it('#957: поле лимита видно только при включённой галочке', () => {
     const fixture = TestBed.createComponent(TerminalComponent);
     const c: any = fixture.componentInstance;
@@ -683,7 +666,8 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
     fixture.detectChanges();
     const field = fixture.nativeElement.querySelector('.term-field-limit');
     expect(field).not.toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('израсходовано');
+    // Метки «израсходовано» на форме больше нет — расход считается заново.
+    expect(fixture.nativeElement.textContent).not.toContain('израсходовано');
   });
 });
 

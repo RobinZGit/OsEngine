@@ -1,5 +1,6 @@
 import {
   accountPnl,
+  openPositionsSpent,
   positionCost,
   positionQty,
   realizedPnl,
@@ -194,5 +195,29 @@ describe('#946 realizedPnl (реализованный П/У по закрыты
     expect(r.realized_rub).toBe(80);
     expect(r.unrealized_rub).toBe(60);
     expect(r.total_rub).toBe(140);
+  });
+
+  describe('openPositionsSpent (израсходованный лимит автоисполнения)', () => {
+    it('суммирует базу только открытых позиций по модулю', () => {
+      const trades = [
+        trade(1, 'BUY', 10, 100), // 1000 — открыта
+        trade(2, 'SELL', 5, 200), // 1000 (шорт) — открыта
+        trade(3, 'BUY', 7, 50), // 350 — закрыта ниже
+        trade(3, 'SELL', 7, 50),
+      ];
+      expect(openPositionsSpent(trades)).toBe(2000);
+    });
+
+    it('частичная продажа уменьшает занятую базу', () => {
+      const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 4, 120)];
+      // Остаток 6 шт: 1000 − 480 = 520.
+      expect(openPositionsSpent(trades)).toBe(520);
+    });
+
+    it('после полного закрытия и удаления сделок расход равен нулю', () => {
+      expect(openPositionsSpent([trade(1, 'BUY', 10, 100), trade(1, 'SELL', 10, 100)])).toBe(0);
+      expect(openPositionsSpent([])).toBe(0);
+      expect(openPositionsSpent(null)).toBe(0);
+    });
   });
 });

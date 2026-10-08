@@ -2839,11 +2839,15 @@ describe('TerminalPanelComponent', () => {
       expect(component.tradeMessage).toContain('Достигнут лимит');
     });
 
-    it('#957: израсходованный лимит учитывается: spent + сделка > максимума — блок', () => {
+    it('#957: открытые позиции счёта + сделка превышают максимум — блок', () => {
+      // По другой бумаге открыта позиция: 6 шт × 100 ₽ = 600 ₽ занято.
+      // Сделка 4 × 250 = 1000 ₽ поднимет занятое до 1600 ₽ при лимите 1500 — блок.
       component.chartState = candles();
       component.accountId = 1;
+      component.trades = [
+        trade(1, { security_id: 99, direction: 'BUY', quantity: 6, price: 100 }),
+      ];
       fixture.componentRef.setInput('autoExecMaxSum', 1500);
-      fixture.componentRef.setInput('autoExecSpent', 600);
       fixture.componentRef.setInput('executeSignalsNow', true);
       fixture.componentRef.setInput('signalEvent', signal({ signal_id: 802 }));
       fixture.detectChanges();
@@ -2852,19 +2856,15 @@ describe('TerminalPanelComponent', () => {
       expect(component.tradeMessage).toContain('Достигнут лимит');
     });
 
-    it('#957: в пределах лимита сделка уходит и эмитит сумму терминалу', () => {
+    it('#957: в пределах лимита сделка уходит', () => {
       component.chartState = candles();
       component.accountId = 1;
-      const sums: number[] = [];
-      component.autoTradePlaced.subscribe((v: number) => sums.push(v));
       fixture.componentRef.setInput('autoExecMaxSum', 2000);
       fixture.componentRef.setInput('executeSignalsNow', true);
       fixture.componentRef.setInput('signalEvent', signal({ signal_id: 803 }));
       fixture.detectChanges();
 
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
-      // 4 шт × 250 ₽ (цена свечи, живой цены нет) = 1000 ₽.
-      expect(sums).toEqual([1000]);
     });
 
     it('#957: увеличение лимита после блокировки исполняет тот же сигнал', () => {
@@ -2884,28 +2884,30 @@ describe('TerminalPanelComponent', () => {
       expect(component.tradeMessage).toContain('Сделка размещена');
     });
 
-    it('#957: сетевой сбой не идёт в расход лимита — сигнал повторяется', () => {
+    it('#957: расход лимита считается заново от открытых позиций — после закрытия сигнал исполняется', () => {
+      // По другой бумаге позиция на 2500 ₽ (10 × 250): сделкой 1000 ₽ занятое
+      // стало бы 3500 ₽ при лимите 3000 — блок.
       component.chartState = candles();
       component.accountId = 1;
-      const sums: number[] = [];
-      component.autoTradePlaced.subscribe((v: number) => sums.push(v));
-      stateSvc.placeTrade.and.returnValue(throwError(() => new Error('offline')));
-      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      component.trades = [
+        trade(1, { security_id: 99, quantity: 10, price: 250 }),
+      ];
+      fixture.componentRef.setInput('autoExecMaxSum', 3000);
       fixture.componentRef.setInput('executeSignalsNow', true);
       fixture.componentRef.setInput('signalEvent', signal({ signal_id: 805 }));
       fixture.detectChanges();
-      expect(sums).toEqual([]);
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('Достигнут лимит');
 
-      stateSvc.placeTrade.and.returnValue(
-        of({ ok: true, message: 'ок', mode: 'fake' })
-      );
-      fixture.componentRef.setInput('trades', [
-        trade(1, {}),
-        trade(2, { direction: 'SELL' }),
-      ]);
+      // Позиция другой бумаги закрыта (продан весь лот): расход падает до нуля.
+      component.trades = [
+        trade(1, { security_id: 99, quantity: 10, price: 250 }),
+        trade(2, { security_id: 99, direction: 'SELL', quantity: 10, price: 250 }),
+      ];
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 806 }));
       fixture.detectChanges();
-      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(2);
-      expect(sums).toEqual([1000]);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(component.tradeMessage).toContain('Сделка размещена');
     });
 
     // #958: цикл из трёх итераций — сигнал не исполнился, повторяем отправку.

@@ -1423,6 +1423,50 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
+  private lightningBusyIds = new Set<number>();
+
+  isLightningBusy(logicId: number): boolean {
+    return this.lightningBusyIds.has(logicId);
+  }
+
+  /** Молния (#960): проверить сигналы логики сейчас на виртуальном (частичном) баре. */
+  runLightning(row: LogicRow, event: Event): void {
+    event.stopPropagation();
+    if (this.lightningBusyIds.has(row.id) || this.isBacktestRunning(row.id)) return;
+    const ok = confirm(
+      `Молния: проверить сигналы логики «${row.name}» сейчас?\n\n` +
+        'Виртуальный бар строится из минутных свечей до текущего момента ' +
+        'и НЕ ждёт закрытия свечи таймфрейма.\n' +
+        'Если сигнал есть, по настройкам логики будет:\n' +
+        '  • включённая — создана сделка;\n' +
+        '  • «сигнал в терминал» — выдан сигнал в терминал.\n\n' +
+        'Уже обработанный бар не обрабатывается повторно (дубли исключены).'
+    );
+    if (!ok) return;
+    this.lightningBusyIds.add(row.id);
+    this.logicsService.runLightning(row.id).subscribe({
+      next: (resp) => {
+        this.lightningBusyIds.delete(row.id);
+        const lines: string[] = [];
+        if (resp.reason) lines.push(`Причина: ${resp.reason}`);
+        if (resp.bar_dt) lines.push(`Виртуальный бар: ${resp.bar_dt}`);
+        lines.push(
+          `Сделка: ${resp.trade_created ?? 0}` +
+            `, сигналов в терминал: ${resp.terminal_signals_created ?? 0}`
+        );
+        alert(lines.join('\n'));
+        this.loadTradesForLogic(row.id, true);
+        this.loadSignalsForLogic(row.id, true);
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.lightningBusyIds.delete(row.id);
+        alert(err?.error?.error || err?.message || 'Не удалось выполнить молнию');
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   private formatPctParam(value: number | string | null | undefined): string {
     if (value == null || value === '') return '10';
     const n =

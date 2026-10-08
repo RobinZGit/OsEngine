@@ -805,6 +805,27 @@ export class LogicsService {
     );
   }
 
+  /**
+   * Молния (#960): проверить сигналы логики на виртуальном (частичном) баре —
+   * не ждёт закрытия свечи; по настройкам создаёт сделку и/или сигнал в терминал.
+   */
+  runLightning(logicId: number): Observable<{
+    ok?: boolean;
+    reason?: string;
+    bar_dt?: string;
+    at?: string;
+    is_enabled?: boolean;
+    use_sig?: boolean;
+    trade_created?: number;
+    terminal_signals_created?: number;
+    error?: string;
+  }> {
+    return this.http.post(
+      `${this.appConfig.apiUrl}/logics/${logicId}/lightning`,
+      {}
+    );
+  }
+
   /** Apply best offline-grid params from last completed test into formulas. */
   applyOptGridBest(logicId: number): Observable<{
     ok?: boolean;

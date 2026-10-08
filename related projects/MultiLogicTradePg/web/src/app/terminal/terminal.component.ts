@@ -1381,24 +1381,6 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.scheduleSave();
   }
 
-  /** #957: сколько уже израсходовано на автоисполненные сделки счёта, ₽
-      (сумма |цена × количество| подтверждённых сделок по галочке). */
-  get autoExecSpent(): number {
-    const v = Number(this.settings['auto_exec_spent']);
-    return Number.isFinite(v) && v > 0 ? v : 0;
-  }
-
-  /** #957: авто-сделка прошла сервер — прибавляем её сумму к расходу лимита. */
-  onAutoTradePlaced(amount: number): void {
-    const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) return;
-    this.settings = {
-      ...this.settings,
-      auto_exec_spent: Math.round((this.autoExecSpent + n) * 100) / 100,
-    };
-    this.scheduleSave();
-  }
-
   /** Отложенное сохранение состояния активного счёта (антидребезг).
       Снимок payload делается сразу — при смене счёта старый набор не затрётся. */
   scheduleSave(): void {

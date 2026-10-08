@@ -133,6 +133,26 @@ export function positionCost(
   return Number.isFinite(cost) ? cost : 0;
 }
 
+/** Сумма денег, занятая всеми открытыми позициями счёта, рубли (по модулю).
+    Считается от текущих сделок заново каждый раз — «израсходованный лимит»
+    автоисполнения не копится, а пересчитывается: закрыли или удалили сделку —
+    расход тут же уменьшился. Для бумаги с остатком берётся базовая сумма
+    позиции (|cost| — те же деньги, что показывает полоса). */
+export function openPositionsSpent(
+  trades: readonly TerminalTradeRow[] | null | undefined
+): number {
+  const ids = new Set<number>();
+  for (const t of trades ?? []) {
+    if (isFilled(t)) ids.add(t.security_id);
+  }
+  let spent = 0;
+  for (const id of ids) {
+    if (positionQty(trades, id) === 0) continue;
+    spent += Math.abs(positionCost(trades, id));
+  }
+  return Number.isFinite(spent) ? round2(spent) : 0;
+}
+
 /** Позиция по одной бумаге: остаток, закупка, средняя, стоимость и П/У.
     Цена `price` — живая котировка (0, если её нет: тогда П/У не считаем). */
 export function securityPosition(

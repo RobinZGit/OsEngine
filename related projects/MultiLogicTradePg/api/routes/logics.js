@@ -1021,6 +1021,33 @@ app.post('/api/logics/:id/shadow-reset', async (req, res) => {
   }
 });
 
+/** Молния (#960): ручная проверка сигналов логики на виртуальном (частичном) баре.
+ *  Нажатие имитирует обычный сигнал на сдвинутом таймфрейме: догружаются минутные
+ *  свечи до текущего момента, резэмплятся в ТФ логики, и применяются настройки
+ *  (is_enabled → сделка, use_as_terminal_signal → сигнал в терминал). */
+app.post('/api/logics/:id/lightning', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT logic_lightning_run($1, LOCALTIMESTAMP, FALSE) AS result`,
+      [id]
+    );
+    const result = rows[0]?.result;
+    if (!result || result.ok !== true) {
+      res.status(400).json(result ?? { ok: false, reason: 'no_result' });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('POST /api/logics/:id/lightning', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Сброс OPT: начальные базы формул + очистка live opt_lane книги. */
 app.post('/api/logics/:id/opt-reset', async (req, res) => {
   const id = Number(req.params.id);

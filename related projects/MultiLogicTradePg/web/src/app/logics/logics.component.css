@@ -130,6 +130,22 @@
   color: #111827;
 }
 
+.icon-lightning {
+  color: #b45309;
+  border-color: #fcd34d;
+}
+
+.icon-lightning:hover:not(:disabled) {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.icon-lightning:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .col-actions {
   width: 6.75rem;
   min-width: 6.75rem;
