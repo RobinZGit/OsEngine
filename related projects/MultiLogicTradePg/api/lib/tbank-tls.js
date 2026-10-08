@@ -136,7 +136,9 @@ function httpsGetText(urlString, agent) {
  * POST JSON via https (not fetch) so Russian CA Agent is applied.
  * @returns {Promise<{ status: number, json: any, text: string }>}
  */
-function httpsJsonPost(urlString, { headers = {}, body = '', agent } = {}) {
+const DEFAULT_HTTP_TIMEOUT_MS = 3000;
+
+function httpsJsonPost(urlString, { headers = {}, body = '', agent, timeoutMs = DEFAULT_HTTP_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(urlString);
     const payload = typeof body === 'string' ? body : JSON.stringify(body ?? {});
@@ -166,15 +168,32 @@ function httpsJsonPost(urlString, { headers = {}, body = '', agent } = {}) {
           } catch (_e) {
             json = null;
           }
-          resolve({ status: res.statusCode || 0, json, text });
+          finish(resolve, { status: res.statusCode || 0, json, text });
         });
       }
     );
+    let settled = false;
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            // socket.setTimeout() does NOT fire while the TCP connect itself hangs,
+            // so use a hard overall budget for the whole request instead.
+            req.destroy(
+              new Error(`timeout after ${timeoutMs} ms (T-Bank не отвечает, сетевой канал завис)`)
+            );
+          }, timeoutMs)
+        : null;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      fn(value);
+    };
     req.on('error', (err) => {
       const wrapped = new Error(`T-Bank HTTPS: ${formatError(err)}`);
       wrapped.cause = err;
       wrapped.code = err.code;
-      reject(wrapped);
+      finish(reject, wrapped);
     });
     req.write(payload);
     req.end();

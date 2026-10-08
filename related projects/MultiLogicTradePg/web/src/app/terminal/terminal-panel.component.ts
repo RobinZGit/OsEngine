@@ -129,6 +129,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       Infinity — лимит не задан (вход не установлен — старые использования
       и тесты не блокируются). */
   @Input() autoExecMaxSum = Number.POSITIVE_INFINITY;
+  /** #969: централизованный лимит терминала. Функции вместо числа: каждая
+      панель проверяет и синхронно резервирует свой вход у общего аккумулятора
+      терминала — снимок сделок ([trades]) отстаёт от реальности на сетевой
+      ответ, поэтому локальная проверка в пачке сигналов пропускала бы
+      несколько входов сверх лимита. Если функции не переданы (тесты,
+      старые вложения) — работает прежний локальный расчёт по [trades]. */
+  @Input() autoLimitCheck: ((entryAmount: number) => boolean) | null = null;
+  @Input() autoLimitRelease: ((entryAmount: number) => void) | null = null;
   /** #922: живая цена бумаги (последняя сделка) от терминала — обновляется
       раз в 30 с по бумагам с открытой позицией. График живёт на закрытых
       барах, поэтому для разницы по позиции берём именно её; null — терминал
@@ -1061,13 +1069,29 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.scheduleSignalRetry();
       return;
     }
-    // #957: лимит суммы автоисполнения. Расход не копится — каждый раз
-    // считаем заново: открытые позиции счёта + новая сделка (|цена ×
-    // количество|) не должны превысить лимит — иначе заявка не уходит и
-    // сразу показывается причина. Ретрай не планируем: само по себе лимит
-    // не меняется — при новом значении autoExecMaxSum или обновлении сделок
-    // проверка перезапускается через ngOnChanges.
-    if (price * qty + openPositionsSpent(this.trades) > this.autoExecMaxSum) {
+    // #957+#969: лимит суммы автоисполнения — расход не копится, каждый раз
+    // заново: уже открытые позиции счёта (по модулю) + ещё «в полёте» заявки
+    // других полос + текущий вход не должны превысить лимит. Сумма входа —
+    // по модулю |цена × количество|: лонг и шорт занимают лимит одинаково.
+    // Сделка здесь всегда вход (#952 не пускает сигнал при открытой позиции),
+    // закрытие позиции — отдельной галочкой «закроется тоже по сигналу».
+    const entryAmount = Math.abs(price * qty);
+    // Предыдущая попытка этого сигнала могла зарезервировать сумму и не
+    // снять её (заявка не прошла — будет ретрай). Снимаем: попытка одна —
+    // резерв один, иначе ретрай копил бы расход вдвое.
+    if (this.autoReserved > 0) {
+      this.autoLimitRelease?.(this.autoReserved);
+      this.autoReserved = 0;
+    }
+    if (this.autoLimitCheck != null) {
+      if (!this.autoLimitCheck(entryAmount)) {
+        this.noteAutoWait(key, 'Достигнут лимит — сделка не исполнена');
+        return;
+      }
+      this.autoReserved = entryAmount;
+    } else if (
+      entryAmount + openPositionsSpent(this.trades) > this.autoExecMaxSum
+    ) {
       this.noteAutoWait(key, 'Достигнут лимит — сделка не исполнена');
       return;
     }
@@ -1123,6 +1147,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   private execAttemptsKey: string | null = null;
   private execAttempts = 0;
   private execRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** #969: сумма входа, зарезервированная в общем лимите терминала, пока
+      заявка в полёте. Снимается по подтверждению/отказу сервера или на
+      следующей попытке того же сигнала. */
+  private autoReserved = 0;
 
   /** Неудачная отправка авто-сделки — план следующую попытку или закрываем цикл. */
   private failAutoExecAttempt(key: string, reason: string): void {
@@ -2354,6 +2382,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
             // #958: отказ сервера — следующая итерация цикла из трёх попыток.
             if (signalKey) this.failAutoExecAttempt(signalKey, reason);
           }
+          this.releaseAutoReserve();
           this.tradeExecuted.emit();
         },
         error: (err) => {
@@ -2363,9 +2392,19 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
           this.tradeError = reason;
           // #958: сбой сети — сигнал не потерян, плануем следующую попытку.
           if (signalKey) this.failAutoExecAttempt(signalKey, reason);
+          this.releaseAutoReserve();
           this.tradeExecuted.emit();
         },
       });
+  }
+
+  /** #969: заявка завершилась (исполнилась, отклонена или сетевой сбой) —
+      снять её расход из общего лимита терминала. */
+  private releaseAutoReserve(): void {
+    if (this.autoReserved > 0) {
+      this.autoLimitRelease?.(this.autoReserved);
+      this.autoReserved = 0;
+    }
   }
 
   /** Кнопка «Закрыть позиции» в шапке: закрыть всю позицию по бумаге

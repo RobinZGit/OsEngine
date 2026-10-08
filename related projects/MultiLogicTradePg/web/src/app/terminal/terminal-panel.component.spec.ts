@@ -2910,6 +2910,73 @@ describe('TerminalPanelComponent', () => {
       expect(component.tradeMessage).toContain('Сделка размещена');
     });
 
+    // #969: лимит — общий для всех полос терминала, а не по снимку сделок.
+    // Снимок сделок отстаёт на сетевой ответ; вспышка сигналов за один тик
+    // по нему пропускала бы несколько входов сверх лимита.
+    it('#969: вход, зарезервированный в общем лимите, блокирует следующую панель в том же тике', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      // Аккумулятор терминала: «занято» уже 1500 ₽ (другая полоса только что
+      // разместила заявку, в снимок сделок она ещё не попала).
+      let reserved = 1500;
+      component.autoLimitCheck = (amount: number) => {
+        if (reserved + amount > 2000) return false;
+        reserved += amount;
+        return true;
+      };
+      component.autoLimitRelease = (amount: number) => {
+        reserved = Math.max(0, reserved - amount);
+      };
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 820 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('Достигнут лимит');
+    });
+
+    it('#969: резерв входа снимается после подтверждения сделки', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      let reserved = 0;
+      component.autoLimitCheck = (amount: number) => {
+        reserved += amount;
+        return true;
+      };
+      component.autoLimitRelease = (amount: number) => {
+        reserved = Math.max(0, reserved - amount);
+      };
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 821 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(reserved).toBe(0); // ответ сервера подтверждён — резерв снят
+    });
+
+    it('#969: вход в шорт занимает лимит тоже — сумма по модулю', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      const check = jasmine.createSpy('autoLimitCheck').and.returnValue(true);
+      component.autoLimitCheck = check;
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput(
+        'signalEvent',
+        signal({ signal_id: 822, position_side: 'short' })
+      );
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(stateSvc.placeTrade).toHaveBeenCalledWith(
+        jasmine.objectContaining({ direction: 'sell' })
+      );
+      // Шорт 4 × 250 = 1000 ₽ занимает лимит так же, как лонг (по модулю).
+      expect(check).toHaveBeenCalledWith(1000);
+    });
+
     // #958: цикл из трёх итераций — сигнал не исполнился, повторяем отправку.
     it('#958: при сетевом сбое попытка повторяется сама, после трёх — сигнал закрыт', fakeAsync(() => {
       component.chartState = candles();

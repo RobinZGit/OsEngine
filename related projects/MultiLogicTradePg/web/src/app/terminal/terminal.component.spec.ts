@@ -290,6 +290,20 @@ describe('TerminalComponent — очередь сигналов не застр�
     expect(c.markSignalsRead).toHaveBeenCalledWith([41, 42, 43]);
   });
 
+  it('#967: сигнал по бумаге, уже имеющейся в списке полос, не создаёт вторую полосу — только обновляет первую', () => {
+    const c = makeComponent();
+    c.byId = new Map([[101, { id: 101 }]]);
+    c.applyLogicSignals([sig(71, 101, Date.now())]);
+    expect(c.panels.length).toBe(1);
+    expect(c.buildPanel).toHaveBeenCalledTimes(1);
+
+    c.applyLogicSignals([sig(72, 101, Date.now())]);
+    expect(c.panels.length).toBe(1); // дубль не создан
+    expect(c.panels[0].security.id).toBe(101);
+    expect(c.panels[0].signal_event.signal_id).toBe(72); // сигнал обновился
+    expect(c.buildPanel).toHaveBeenCalledTimes(1); // вторая полоса не строилась
+  });
+
   it('signalPastKeepWindow: старый M15 протух, свежий M1 — нет', () => {
     const c = makeComponent();
     expect(
@@ -955,5 +969,89 @@ describe('TerminalComponent — обновление сделок и гонка 
     reqs[0].next({ trades: [trade(1)] });
     expect(c.trades.map((t: any) => t.id)).toEqual([1]);
     expect(c.accounts).toEqual([]); // подвисший баланс не мешает
+  });
+});
+
+describe('TerminalComponent — не создавать полосу-дубликат (#967)', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: {} },
+        { provide: SecuritiesService, useValue: {} },
+        { provide: TerminalStateService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null; // без активного счёта scheduleSave() — no-op
+    c.accountId = 7;
+    c.accounts = [{ id: 7, account_type: 'fake', terminal_cash: 0 }];
+    c.timeframes = [
+      { id: 1, tf: 'M1', sec: 60, full_name: '1 минута', is_active: true },
+    ];
+    c.trades = [];
+    c.panels = [];
+    c.byId = new Map([
+      [101, { id: 101, name: 'A', prefix: 'AA', instrument_market: 'stock' }],
+      [202, { id: 202, name: 'B', prefix: 'BB', instrument_market: 'stock' }],
+    ]);
+    c.contangoByPrefix = new Map();
+    c.stateSvc = {
+      getState: () =>
+        of({
+          ok: true,
+          payload: {
+            settings: {},
+            panels: [
+              panelRow(101),
+              panelRow(101), // накопленный дубль одной бумаги в снимке
+              panelRow(202),
+            ],
+          },
+        }),
+    };
+    return c;
+  }
+
+  function panelRow(securityId: number): any {
+    return {
+      security_id: securityId,
+      timeframe_id: null,
+      chart_height: 340,
+      signal_event: null,
+      logic_indicator_ids: [],
+      collapsed: true,
+      auto_close_on_logic_signal: false,
+    };
+  }
+
+  it('дубль одной бумаги в сохранённом состоянии восстанавливается одной полосой', () => {
+    const c = makeComponent();
+    c.loadSavedState();
+    const ids: number[] = c.panels.map((p: any) => p.security.id);
+    expect(ids.length).toBe(2);
+    expect(ids.filter((x) => x === 101).length).toBe(1);
+    expect(ids).toContain(202);
+  });
+
+  it('#969: общий лимит терминала резервирует вход синхронно и блокирует сверх лимита', () => {
+    const c = makeComponent();
+    c.settings = { auto_exec_max_sum: 5000 } as any;
+    (c as any).spentAutoExecBase = 3000;
+    (c as any).pendingAutoExec = 0;
+
+    expect(c.autoLimitCheck(1500)).toBe(true); // 3000+1500 = 4500 ≤ 5000
+    expect(c.autoLimitCheck(2000)).toBe(false); // 4500+2000 = 6500 > 5000
+    expect((c as any).pendingAutoExec).toBe(1500); // резерв лежит в общем счетчике
+
+    c.autoLimitRelease(1500);
+    expect((c as any).pendingAutoExec).toBe(0);
+    expect(c.autoLimitCheck(2000)).toBe(true); // 3000+2000 = 5000 ≤ 5000
   });
 });

@@ -23,7 +23,7 @@ import {
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
-import { AccountPnl, accountPnl } from './position-math';
+import { AccountPnl, accountPnl, openPositionsSpent } from './position-math';
 
 interface PanelModel {
   uid: number;
@@ -508,6 +508,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
     if (id !== this.tradesAccountId) {
       this.tradesAccountId = id;
       this.trades = [];
+      // Новый счёт — новая база открытых позиций и заявок в полёте.
+      this.spentAutoExecBase = 0;
+      this.pendingAutoExec = 0;
     }
     this.tradesError = null;
     if (id == null) {
@@ -520,6 +523,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
         if (seq !== this.tradesReqSeq) return; // запоздавший ответ
         this.tradesLoading = false;
         this.trades = r?.trades ?? [];
+        // #969: база расхода лимита — только фактические открытые позиции
+        // счёта. Резервы в полёте поверх неё добавляются отдельно.
+        this.spentAutoExecBase = openPositionsSpent(this.trades);
         this.applyPanelOrder();
         // #923: после обновления сделок сразу чистим полосы без позиции,
         // у которых истёк срок таймфрейма последнего сигнала.
@@ -586,7 +592,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
     const newPanels: number[] = [];
     for (const s of signals) {
       processed.push(s.id);
-      if (!this.byId.has(s.security_id)) continue;
+      // security_id нормализуем к числу: Map byId и сравнения id должны быть
+      // строгими — строковое представление иначе молча разминается с полосой.
+      const secId = Number(s.security_id);
+      if (!this.byId.has(secId)) continue;
       const sideLabel = (s.side_label || 'покупка').toLowerCase();
       const logicName = s.logic_name || `логика #${s.logic_id}`;
       const event: TerminalLogicSignalEvent = {
@@ -623,7 +632,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
       // в очереди непрочитанных и не блокировал свежие бумаги.
       if (this.signalPastKeepWindow(event)) continue;
       const ids = (s.indicator_ids ?? []).filter((v) => Number.isInteger(v));
-      const existing = this.panels.find((p) => p.security.id === s.security_id);
+      // Полоса по той же бумаге уже есть в списке — не создаём вторую,
+      // а обновляем сигнал и индикаторы. Дублей по одной бумаге не бывает.
+      const existing = this.panels.find((p) => p.security.id === secId);
       let target: PanelModel;
       if (existing) {
         // Таймфрейм подгоняем под логику — её индикаторы рассчитаны на нём.
@@ -637,7 +648,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         target = existing;
       } else {
         const panel = this.buildPanel(
-          s.security_id,
+          secId,
           tf,
           DEFAULT_CHART_HEIGHT,
           event,
@@ -659,10 +670,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
       // «Исполнять сделки сразу».
       if (
         target.auto_close_on_logic_signal &&
-        this.securityRemainderQty(s.security_id) !== 0
+        this.securityRemainderQty(secId) !== 0
       ) {
         this.closeSignalPulse = {
-          security_id: s.security_id,
+          security_id: secId,
           pulse: (this.closeSignalPulse?.pulse ?? 0) + 1,
         };
       }
@@ -824,7 +835,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
         // Набор полос меняется — uid'ы новые; старые сводки стираем, чтобы
         // сумма по счёту не включала устаревшие позиции до нового emit.
         this.positionSummaryByPanel.clear();
-        this.panels = (r.payload.panels ?? [])
+        const restored = (r.payload.panels ?? [])
           .map((st) =>
             this.buildPanel(
               st.security_id,
@@ -840,6 +851,16 @@ export class TerminalComponent implements OnInit, OnDestroy {
             )
           )
           .filter((p): p is PanelModel => p != null);
+        // #967: бумага на графике одна — дубли из сохранённого состояния
+        // (могли накопиться, если сигнал создал полосу раньше ответа
+        // loadSavedState, а потом обе попали в снимок) выкидываем,
+        // остаётся первая полоса каждой бумаги.
+        const seenSecurities = new Set<number>();
+        this.panels = restored.filter((p) => {
+          if (seenSecurities.has(p.security.id)) return false;
+          seenSecurities.add(p.security.id);
+          return true;
+        });
         // #946: сохранённая галочка «Исполнять сделки сразу» возвращает и
         // включённое «закроется тоже по сигналу логики» на всех полосах.
         if (this.executeSignalsNow) {
@@ -1380,6 +1401,38 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.settings = { ...this.settings, auto_exec_max_sum: n };
     this.scheduleSave();
   }
+
+  /** #969: расход лимита автоисполнения, общий для всех полос терминала.
+      `spentAutoExecBase` — открытые позиции счёта (|сумма|), пересчитываются
+      при каждом обновлении сделок; `pendingAutoExec` — суммы заявок, которые
+      уже размещены, но ещё не вернулись в снимок сделок. Снимок сделок всегда
+      отстаёт от реальности (приходит после сетевого ответа), поэтому сами
+      панели проверять лимит по нему нельзя: вспышка сигналов за один тик
+      покупала бы сверх лимита. Резерв кладётся синхронно в момент отправки —
+      следующая полоса в этом же тике уже видит новую занятую сумму. */
+  private spentAutoExecBase = 0;
+  private pendingAutoExec = 0;
+
+  /** Проверка одного входа (|цена × количество|) против лимита: уже открытые
+      позиции + заявки в полёте + текущий вход не должны превысить лимит.
+      При входе в рамках лимита сумма сразу резервируется. true — исполнять. */
+  autoLimitCheck = (entryAmount: number): boolean => {
+    const limit = Number(this.autoExecMaxSum);
+    if (!(Number.isFinite(limit) && limit > 0)) return true;
+    if (entryAmount < 0) return true;
+    const total = this.spentAutoExecBase + this.pendingAutoExec + entryAmount;
+    if (total <= limit) {
+      this.pendingAutoExec += entryAmount;
+      return true;
+    }
+    return false;
+  };
+
+  /** Снять резерв заявки (исполнилась, отклонена или произошёл сбой сети). */
+  autoLimitRelease = (entryAmount: number): void => {
+    if (!(entryAmount > 0)) return;
+    this.pendingAutoExec = Math.max(0, this.pendingAutoExec - entryAmount);
+  };
 
   /** Отложенное сохранение состояния активного счёта (антидребезг).
       Снимок payload делается сразу — при смене счёта старый набор не затрётся. */
