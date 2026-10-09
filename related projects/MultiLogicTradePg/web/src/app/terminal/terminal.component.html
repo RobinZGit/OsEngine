@@ -112,6 +112,26 @@
         [disabled]="addingSecInProgress"
         (click)="togglePicker()"
       >{{ pickerOpen ? 'Скрыть выбор' : '+ Добавить бумагу' }}</button>
+      <button
+        type="button"
+        class="term-add-btn term-lightning-btn"
+        [disabled]="allLightningBusy"
+        (click)="requestAllLogicSignals()"
+        title="Молния для всех: по каждой логике с включённым сигналом в терминал догрузить цены, пересчитать индикаторы и отправить сигналы сейчас — как кнопка «молния» на самой логике. Цены по каждой бумаге качаются один раз. Работает в фоне."
+        aria-label="Запросить сигналы всех логик"
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
+        </svg>
+        @if (allLightningBusy) {
+          <span>Запрос…</span>
+        } @else {
+          <span>Запросить сигналы</span>
+        }
+      </button>
+      @if (allLightningNote) {
+        <span class="term-lightning-note" role="status">{{ allLightningNote }}</span>
+      }
     </div>
 
     <div class="term-account-card">

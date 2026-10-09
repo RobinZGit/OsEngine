@@ -826,6 +826,28 @@ export class LogicsService {
     );
   }
 
+  /**
+   * Молния для всех логик с включённым сигналом в терминал (#970): как кнопка
+   * «молния» на каждой из них — цены догружаются один раз на бумагу, сигналы
+   * считаются в фоне на сервере.
+   */
+  runLightningAll(): Observable<{
+    ok?: boolean;
+    reason?: string;
+    ran?: number;
+    sent?: number;
+    signals_created?: number;
+    trades_created?: number;
+    failed?: { id: number; reason?: string }[];
+    skipped?: { id: number; reason?: string }[];
+    error?: string;
+  }> {
+    return this.http.post(
+      `${this.appConfig.apiUrl}/logics/lightning-all`,
+      {}
+    );
+  }
+
   /** Apply best offline-grid params from last completed test into formulas. */
   applyOptGridBest(logicId: number): Observable<{
     ok?: boolean;

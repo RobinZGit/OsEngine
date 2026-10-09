@@ -171,6 +171,34 @@
   border-color: #60a5fa;
 }
 
+/* #970: «Молния для всех» — запрос сигналов по всем логикам сразу.
+   Выглядит как кнопка молнии на логиках, но с текстом. */
+.term-lightning-btn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.term-lightning-btn:hover:not(:disabled) {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.term-lightning-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.term-lightning-note {
+  margin-left: 0.5rem;
+  font-size: 0.78rem;
+  color: #92400e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Маленькая кнопка «+ Добавить» у селектов бумаг и выпусков. */
 .term-add-btn-small {
   display: inline-flex;

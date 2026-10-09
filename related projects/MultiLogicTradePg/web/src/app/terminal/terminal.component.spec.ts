@@ -5,7 +5,8 @@ import { ReferencesService } from '../services/references.service';
 import { SecuritiesService } from '../services/securities.service';
 import { TerminalStateService } from '../services/terminal-state.service';
 import { AppConfigService } from '../services/app-config.service';
-import { NEVER, of, Subject } from 'rxjs';
+import { LogicsService } from '../services/logics.service';
+import { NEVER, Observable, of, Subject } from 'rxjs';
 import { registerLocaleData } from '@angular/common';
 import localeRu from '@angular/common/locales/ru';
 
@@ -66,6 +67,7 @@ describe('TerminalComponent — удаление полос без позици�
         { provide: SecuritiesService, useValue: {} },
         { provide: TerminalStateService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -248,6 +250,7 @@ describe('TerminalComponent — очередь сигналов не застр�
         { provide: SecuritiesService, useValue: {} },
         { provide: TerminalStateService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -334,6 +337,7 @@ describe('TerminalComponent — остаток на счёте и отклоне
         { provide: SecuritiesService, useValue: {} },
         { provide: TerminalStateService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -519,6 +523,7 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
         { provide: SecuritiesService, useValue: securitiesSvc },
         { provide: TerminalStateService, useValue: stateSvcUi },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -694,6 +699,7 @@ describe('TerminalComponent — порядок полос бумаг (#948)', ()
         { provide: SecuritiesService, useValue: {} },
         { provide: TerminalStateService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -885,6 +891,7 @@ describe('TerminalComponent — обновление сделок и гонка 
         { provide: SecuritiesService, useValue: {} },
         { provide: TerminalStateService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -950,6 +957,28 @@ describe('TerminalComponent — обновление сделок и гонка 
     expect(c.tradesLoading).toBe(false);
   });
 
+  it('#971: пересчёт базы снимает из резерва ровно появившиеся позиции', () => {
+    const c = makeComponent();
+    const reqs = queueTrades(c);
+    c.accountId = 1;
+    c.loadTrades();
+    reqs[0].next({ trades: [] }); // стартовая база — позиций нет
+    expect((c as any).spentAutoExecBase).toBe(0);
+
+    // Две заявки «в полёте» по 2000 ₽ (4000 ₽ резерва), одна из них уже
+    // подтверждена, но в снимок ещё не попала — резерв пока держится весь.
+    (c as any).pendingAutoExec = 4000;
+
+    c.loadTrades();
+    // В новом снимке появилась позиция 10 × 100 = 1000 ₽.
+    reqs[1].next({ trades: [trade(1)] });
+
+    expect((c as any).spentAutoExecBase).toBe(1000);
+    // Из резерва снято ровно то, что материализовалось в базе; оставшиеся
+    // «в полёте» заявки по-прежнему блокируют лимит.
+    expect((c as any).pendingAutoExec).toBe(3000);
+  });
+
   it('onTradeExecuted грузит сделки сразу, не дожидаясь getAccounts', () => {
     const c = makeComponent();
     const reqs = queueTrades(c);
@@ -981,6 +1010,7 @@ describe('TerminalComponent — не создавать полосу-дубли�
         { provide: SecuritiesService, useValue: {} },
         { provide: TerminalStateService, useValue: {} },
         { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
       ],
       schemas: [NO_ERRORS_SCHEMA],
     });
@@ -1050,8 +1080,112 @@ describe('TerminalComponent — не создавать полосу-дубли�
     expect(c.autoLimitCheck(2000)).toBe(false); // 4500+2000 = 6500 > 5000
     expect((c as any).pendingAutoExec).toBe(1500); // резерв лежит в общем счетчике
 
-    c.autoLimitRelease(1500);
+c.autoLimitRelease(1500);
     expect((c as any).pendingAutoExec).toBe(0);
-    expect(c.autoLimitCheck(2000)).toBe(true); // 3000+2000 = 5000 ≤ 5000
+    expect(c.autoLimitCheck(2000)).toBe(true); // 3000+2000 = 5000 ? 5000
+  });
+});
+
+describe('TerminalComponent - #970: кнопка «Запросить сигналы» (молния для всех логик)', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: {} },
+        { provide: SecuritiesService, useValue: {} },
+        { provide: TerminalStateService, useValue: {} },
+        { provide: AppConfigService, useValue: {} },
+  { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  function makeComponent(logicsMock: any): any {
+    TestBed.overrideProvider(LogicsService, { useValue: logicsMock });
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null; // без активного счёта scheduleSave() — no-op
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    return c;
+  }
+
+  it('#970: нажатие вызывает runLightningAll и показывает результат', () => {
+    const logics: any = {
+      runLightningAll: jasmine.createSpy('runLightningAll').and.returnValue(
+        of({
+          ok: true,
+          ran: 2,
+          sent: 3,
+          signals_created: 3,
+          trades_created: 0,
+          failed: [],
+          skipped: [],
+        })
+      ),
+    };
+    const c = makeComponent(logics);
+    c.requestAllLogicSignals();
+    expect(logics.runLightningAll).toHaveBeenCalled();
+    expect(c.allLightningBusy).toBe(false);
+    expect(c.allLightningNote).toContain('2 логик');
+  });
+
+  it('#970: при нуле логик с сигналом показывает подсказку', () => {
+    const logics: any = {
+      runLightningAll: jasmine.createSpy('runLightningAll').and.returnValue(
+        of({
+          ok: true,
+          ran: 0,
+          sent: 0,
+          signals_created: 0,
+          trades_created: 0,
+          failed: [],
+          skipped: [],
+        })
+      ),
+    };
+    const c = makeComponent(logics);
+    c.requestAllLogicSignals();
+    expect(c.allLightningNote).toBe('Логики с сигналом в терминал не найдены');
+  });
+
+  it('#970: пока запрос выполняется, повторный клик игнорируется', () => {
+    const subject = new Subject<any>();
+    const logics: any = {
+      runLightningAll: jasmine.createSpy('runLightningAll').and.returnValue(subject),
+    };
+    const c = makeComponent(logics);
+    c.requestAllLogicSignals();
+    expect(c.allLightningBusy).toBe(true);
+    c.requestAllLogicSignals();
+    expect(logics.runLightningAll).toHaveBeenCalledTimes(1);
+    subject.next({
+      ok: true,
+      ran: 1,
+      sent: 1,
+      signals_created: 1,
+      trades_created: 0,
+      failed: [],
+      skipped: [],
+    });
+    subject.complete();
+    expect(c.allLightningBusy).toBe(false);
+  });
+
+  it('#970: при ошибке сервера показывает сообщение об ошибке', () => {
+    const logics: any = {
+      runLightningAll: jasmine
+        .createSpy('runLightningAll')
+        .and.returnValue(
+          new Observable((subscriber) => subscriber.error(new Error('boom')))
+        ),
+    };
+    const c = makeComponent(logics);
+    c.requestAllLogicSignals();
+    expect(c.allLightningBusy).toBe(false);
+expect(c.allLightningNote).toContain('boom');
   });
 });

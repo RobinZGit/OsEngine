@@ -1048,6 +1048,106 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
   }
 });
 
+/** Молния для всех логик с включённым сигналом в терминал (#970).
+ *  Вначале один раз догружаются минутные свечи по всем уникальным бумагам этих
+ *  логик, затем для каждой логики выполняется logic_lightning_run (резample в её
+ *  таймфрейм, расчёт индикаторов, сигнал в терминал и/или сделка по настройкам).
+ *  Работает в фоне: клиент ничего не блокирует. */
+app.post('/api/logics/lightning-all', async (req, res) => {
+  try {
+    const idsQ = await pool.query(`
+      SELECT l.id
+      FROM logics l
+      JOIN accounts a ON a.id = l.account_id
+      WHERE COALESCE(l.use_as_terminal_signal, FALSE) = TRUE
+        AND a.is_active = TRUE
+      ORDER BY l.id
+    `);
+    const ids = idsQ.rows.map((r) => r.id);
+    if (ids.length === 0) {
+      res.json({
+        ok: true, ran: 0, sent: 0,
+        signals_created: 0, trades_created: 0,
+        failed: [], skipped: [],
+      });
+      return;
+    }
+
+    // Единый прогрев цен: минутки по каждой уникальной бумаге из этих логик.
+    const srcQ = await pool.query(
+      `SELECT id, sec FROM timeframes WHERE sec >= 60 AND sec <= 300 ORDER BY sec LIMIT 1`
+    );
+    const srcId = srcQ.rows[0]?.id;
+    if (!srcId) {
+      res.status(400).json({ ok: false, reason: 'no_minute_source' });
+      return;
+    }
+    const secsQ = await pool.query(
+      `SELECT DISTINCT s.security_id AS id
+         FROM logic_securities s
+        WHERE s.is_active = TRUE
+          AND s.logic_id = ANY($1::int[])
+        ORDER BY id`,
+      [ids]
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    for (const s of secsQ.rows) {
+      try {
+        await pool.query(`CALL load_prices_http($1, $2, $3, $4)`, [s.id, srcId, today, today]);
+      } catch (err) {
+        console.warn(`lightning-all prices security=${s.id}:`, err.message);
+      }
+    }
+
+    const runLightning = (id) =>
+      pool
+        .query(`SELECT logic_lightning_run($1, LOCALTIMESTAMP, FALSE) AS result`, [id])
+        .then(({ rows }) => rows[0]?.result)
+        .catch((err) => ({ ok: false, reason: 'run_error', err: err.message }));
+    const limit = 4;
+    const results = new Array(ids.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < ids.length) {
+        const i = next++;
+        results[i] = await runLightning(ids[i]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, ids.length) }, worker));
+
+    const failed = [];
+    const skipped = [];
+    let signals_created = 0;
+    let trades_created = 0;
+    results.forEach((r, i) => {
+      const meta = { id: ids[i] };
+      if (!r || r.ok !== true) {
+        failed.push({ id: ids[i], reason: r?.reason ?? r?.err ?? 'no_result' });
+        return;
+      }
+      const sig = Number(r.terminal_signals_created ?? 0);
+      const trd = Number(r.trade_created ?? 0);
+      signals_created += sig;
+      trades_created += trd;
+      if (sig === 0 && trd === 0) {
+        skipped.push({ ...meta, reason: r.reason ?? 'no_signal' });
+      }
+    });
+    res.json({
+      ok: true,
+      ran: ids.length,
+      sent: signals_created + trades_created,
+      signals_created,
+      trades_created,
+      failed,
+      skipped,
+    });
+  } catch (err) {
+    console.error('POST /api/logics/lightning-all', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Сброс OPT: начальные базы формул + очистка live opt_lane книги. */
 app.post('/api/logics/:id/opt-reset', async (req, res) => {
   const id = Number(req.params.id);

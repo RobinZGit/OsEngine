@@ -2936,7 +2936,10 @@ describe('TerminalPanelComponent', () => {
       expect(component.tradeMessage).toContain('Достигнут лимит');
     });
 
-    it('#969: резерв входа снимается после подтверждения сделки', () => {
+    // #971: по успеху резерв из общего лимита НЕ снимается сразу — снимок
+    // сделок отстаёт на сетевой ответ, и следующая панель вспышки видела бы
+    // расход заниженным. Резерв снимет сам терминал при пересчёте базы.
+    it('#971: после подтверждения сделки резерв держится, локальный autoReserved обнуляется', () => {
       component.chartState = candles();
       component.accountId = 1;
       let reserved = 0;
@@ -2953,7 +2956,35 @@ describe('TerminalPanelComponent', () => {
       fixture.detectChanges();
 
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
-      expect(reserved).toBe(0); // ответ сервера подтверждён — резерв снят
+      // Сделка подтверждена, но в снимок сделок ещё не попала: общий резерв
+      // терминала хранит её, чтобы следующая полоса той же вспышки учла расход.
+      expect(reserved).toBe(1000);
+      // Локальный указатель панели обнулён — ретрай следующего сигнала не
+      // снимет уже учтённую терминалом сумму повторно.
+      expect((component as any).autoReserved).toBe(0);
+    });
+
+    it('#971: при сетевом сбое резерв входа снимается из общего лимита', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      let reserved = 0;
+      component.autoLimitCheck = (amount: number) => {
+        reserved += amount;
+        return true;
+      };
+      component.autoLimitRelease = (amount: number) => {
+        reserved = Math.max(0, reserved - amount);
+      };
+      stateSvc.placeTrade.and.returnValue(throwError(() => new Error('offline')));
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 832 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      // Заявка не создана — денег не ушло, резерв отпущен сразу.
+      expect(reserved).toBe(0);
+      expect((component as any).autoReserved).toBe(0);
     });
 
     it('#969: вход в шорт занимает лимит тоже — сумма по модулю', () => {
@@ -3060,3 +3091,4 @@ describe('TerminalPanelComponent', () => {
     }));
   });
 });
+

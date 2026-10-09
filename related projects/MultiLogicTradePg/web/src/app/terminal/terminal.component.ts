@@ -20,6 +20,7 @@ import {
   AppConfigService,
   logicsLoadErrorMessage,
 } from '../services/app-config.service';
+import { LogicsService } from '../services/logics.service';
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
@@ -163,11 +164,17 @@ export class TerminalComponent implements OnInit, OnDestroy {
   /** Собранные за один опрос сообщения о сигналах (сводятся в один тост). */
   private signalToastMessages: string[] = [];
 
+  /** #970: запрос сигналов всех логик («молния» по всем сразу). */
+  allLightningBusy = false;
+  allLightningNote: string | null = null;
+  private allLightningNoteTimer?: ReturnType<typeof setTimeout>;
+
   constructor(
     private readonly refs: ReferencesService,
     private readonly securitiesSvc: SecuritiesService,
     private readonly stateSvc: TerminalStateService,
-    private readonly appConfig: AppConfigService
+    private readonly appConfig: AppConfigService,
+    private readonly logicsSvc: LogicsService
   ) {}
 
   ngOnInit(): void {
@@ -200,6 +207,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroyed = true;
     if (this.signalsTimer) clearInterval(this.signalsTimer);
+    if (this.allLightningNoteTimer) clearTimeout(this.allLightningNoteTimer);
     if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
     if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
   }
@@ -525,7 +533,18 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.trades = r?.trades ?? [];
         // #969: база расхода лимита — только фактические открытые позиции
         // счёта. Резервы в полёте поверх неё добавляются отдельно.
-        this.spentAutoExecBase = openPositionsSpent(this.trades);
+        // #971: резерв по факту подтверждения сделки не снимается (снимок
+        // отстаёт на сетевой ответ — вспышка сигналов за один тик прошла бы
+        // сверх лимита). Он снимается здесь: ровно на то, что появилось в
+        // снимке с прошлого пересчёта, т.е. уже материализовалось в базе.
+        const nextSpent = openPositionsSpent(this.trades);
+        if (nextSpent > this.spentAutoExecBase) {
+          this.pendingAutoExec = Math.max(
+            0,
+            this.pendingAutoExec - (nextSpent - this.spentAutoExecBase)
+          );
+        }
+        this.spentAutoExecBase = nextSpent;
         this.applyPanelOrder();
         // #923: после обновления сделок сразу чистим полосы без позиции,
         // у которых истёк срок таймфрейма последнего сигнала.
@@ -984,6 +1003,50 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.pendingSecurityId = null;
   }
 
+  /** #970: «Молния для всех» — запрос сигналов по всем логикам с включённым
+      сигналом в терминал. Цены догружаются один раз на бумагу, сигналы считаются
+      в фоне на сервере; терминал не блокируется. */
+  requestAllLogicSignals(): void {
+    if (this.allLightningBusy) return;
+    this.allLightningBusy = true;
+    this.allLightningNote = null;
+    if (this.allLightningNoteTimer) {
+      clearTimeout(this.allLightningNoteTimer);
+      this.allLightningNoteTimer = undefined;
+    }
+    this.logicsSvc.runLightningAll().subscribe({
+      next: (r) => {
+        this.allLightningBusy = false;
+        if (!r || r.ok !== true) {
+          this.allLightningNote =
+            r?.error ?? r?.reason ?? 'Не удалось запросить сигналы логик';
+        } else if (r.ran === 0) {
+          this.allLightningNote = 'Логики с сигналом в терминал не найдены';
+        } else {
+          const failedN = r.failed?.length ?? 0;
+          const base = `Сигналы запрошены: ${r.ran} логик, отправлено ${r.sent}`;
+          this.allLightningNote =
+            failedN > 0 ? `${base}, ошибок ${failedN}` : base;
+        }
+        this.scheduleAllLightningNoteClear();
+      },
+      error: (err) => {
+        this.allLightningBusy = false;
+        this.allLightningNote =
+          err?.message ?? 'Ошибка запроса сигналов логик';
+        this.scheduleAllLightningNoteClear();
+      },
+    });
+  }
+
+  private scheduleAllLightningNoteClear(): void {
+    if (this.allLightningNoteTimer) clearTimeout(this.allLightningNoteTimer);
+    this.allLightningNoteTimer = setTimeout(() => {
+      this.allLightningNote = null;
+      this.allLightningNoteTimer = undefined;
+    }, 8000);
+  }
+
   /** Кнопка «+ Добавить» у селекта бумаг: регистрирует выбранную бумагу
       даже если значение в селекте не менялось (повторный выбор той же бумаги).
       Выбранная бумага остаётся в селекте; при ошибке — сообщение и разблокировка. */
@@ -1415,7 +1478,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   /** Проверка одного входа (|цена × количество|) против лимита: уже открытые
       позиции + заявки в полёте + текущий вход не должны превысить лимит.
-      При входе в рамках лимита сумма сразу резервируется. true — исполнять. */
+      При входе в рамках лимита сумма сразу резервируется. true — исполнять.
+      #971: резерв снимается не по факту подтверждения сделки, а при пересчёте
+      базы (spentAutoExecBase) в loadTrades — см. там. */
   autoLimitCheck = (entryAmount: number): boolean => {
     const limit = Number(this.autoExecMaxSum);
     if (!(Number.isFinite(limit) && limit > 0)) return true;
