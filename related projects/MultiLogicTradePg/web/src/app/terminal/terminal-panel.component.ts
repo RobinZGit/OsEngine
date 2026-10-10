@@ -137,6 +137,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       старые вложения) — работает прежний локальный расчёт по [trades]. */
   @Input() autoLimitCheck: ((entryAmount: number) => boolean) | null = null;
   @Input() autoLimitRelease: ((entryAmount: number) => void) | null = null;
+  /** #977: полоса восстановлена из сохранённого состояния счёта (страница
+      перезагружена / терминал открыт заново). Сигнал, показанный в сохранённом
+      состоянии, уже жил в терминале и мог быть исполнен — при загрузке его НЕ
+      переисполняем, иначе одна и та же сделка повторяется после каждого F5. */
+  @Input() restoredSignalHandled = false;
   /** #922: живая цена бумаги (последняя сделка) от терминала — обновляется
       раз в 30 с по бумагам с открытой позицией. График живёт на закрытых
       барах, поэтому для разницы по позиции берём именно её; null — терминал
@@ -335,6 +340,17 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** При смене счёта сбрасываем максимум на баланс; при живом обновлении
       баланса (без смены счёта) — только пока пользователь не менял вручную. */
   ngOnChanges(changes: SimpleChanges): void {
+    // #977: восстановленную полосу с уже показанным сигналом при загрузке НЕ
+    // переисполняем: сигнал жил в терминале до перезагрузки страницы и мог быть
+    // исполнен — иначе автосделка повторялась бы после каждого обновления/F5.
+    // Помечаем текущий сигнал исполненным до первой попытки ниже.
+    if (
+      this.restoredSignalHandled &&
+      this.executedSignalKey === null &&
+      this.signalKey
+    ) {
+      this.executedSignalKey = this.signalKey;
+    }
     if (changes['closeAllPulse'] != null && this.closeAllPulse > 0) {
       /** Импульс «Закрыть все позиции» от терминала: закрываем только свои. */
       if (this.remainingPositionQty !== 0) this.closePosition();
@@ -2365,6 +2381,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         quantity: qty,
         // Комиссия важна только для демо-счёта (реальный — из ответа T-Bank).
         ...(this.accountIsFake ? { commission_pct: this.commissionPct } : {}),
+        // #977: заявку по галочке «Исполнять сделки сразу» помечаем авто — её
+        // сервер ограничивает лимитом автоисполнения счёта (общим для всех окон).
+        ...(signalKey ? { auto: true } : {}),
       })
       .subscribe({
         next: (r) => {
@@ -2379,8 +2398,14 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
           } else {
             const reason = r?.error || 'Не удалось разместить заявку';
             this.tradeError = reason;
-            // #958: отказ сервера — следующая итерация цикла из трёх попыток.
-            if (signalKey) this.failAutoExecAttempt(signalKey, reason);
+            // #977: серверный отказ по лимиту автоисполнения — не сетевой сбой,
+            // повторять бессмысленно; снимаем резерв и не запускаем цикл попыток.
+            if (r?.limit_blocked) {
+              this.releaseAutoReserve();
+            } else if (signalKey) {
+              // #958: отказ сервера — следующая итерация цикла из трёх попыток.
+              this.failAutoExecAttempt(signalKey, reason);
+            }
           }
           // #971: по успеху резерв из общего лимита НЕ снимаем — снимок сделок
           // отстаёт на сетевой ответ, и между подтверждением и пересчётом базы

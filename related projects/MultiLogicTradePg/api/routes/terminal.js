@@ -27,6 +27,47 @@ function backgroundPriceLoad(pool, securityId, tfId, days) {
 }
 
 /**
+ * #977: лимит автоисполнения терминала, хранится в настройках счёта
+ * (terminal_state.payload.settings.auto_exec_max_sum). Проверяется на сервере,
+ * чтобы лимит был общим пределом СЧЁТА для всех открытых окон и устройств, а не
+ * только одного браузера (клиентский счётчик этого не гарантирует). Для
+ * тестового счёта без сохранённой настройки — дефолт 300 000; для реального без
+ * настройки — null (лимит не задан, не проверяем). 0 — автоисполнение запрещено.
+ */
+async function loadAutoExecLimit(pool, accountId, isFake) {
+  const r = await pool.query(
+    `SELECT payload->'settings'->>'auto_exec_max_sum' AS v
+       FROM terminal_state WHERE account_id = $1`,
+    [accountId]
+  );
+  const raw = r.rows[0]?.v;
+  if (raw != null && String(raw).trim() !== '') {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return isFake ? 300000 : null;
+}
+
+/** Сумма денег, занятая открытыми позициями счёта (|база| по каждой бумаге) —
+    та же величина, что openPositionsSpent в web/position-math.ts: остаток
+    считается по всем исполненным сделкам счёта, берётся по модулю. */
+async function loadOpenPositionsSpent(pool, accountId) {
+  const r = await pool.query(
+    `SELECT COALESCE(SUM(ABS(cost)), 0) AS spent FROM (
+       SELECT SUM(CASE WHEN direction = 'BUY' THEN quantity ELSE -quantity END) AS qty,
+              SUM((CASE WHEN direction = 'BUY' THEN price * quantity
+                        ELSE -price * quantity END) + COALESCE(commission, 0)) AS cost
+         FROM terminal_trades
+        WHERE account_id = $1 AND status = 'filled'
+        GROUP BY security_id
+     ) t WHERE qty <> 0`,
+    [accountId]
+  );
+  const n = Number(r.rows[0]?.spent);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
  * Выпуск облигации по ISIN.
  * GetInstrumentBy/BondBy с id_type=ISIN шлюз T-Bank отдаёт ошибкой
  * «Missing parameter: id_type», поэтому сначала ищем через FindInstrument
@@ -517,6 +558,9 @@ module.exports = function registerTerminalRoutes(app, ctx) {
     const execution = String(req.body?.execution || 'market').trim().toLowerCase();
     const price = Number(req.body?.price);
     const quantity = Number(req.body?.quantity);
+    // #977: сделка по галочке «Исполнять сделки сразу» — только такие
+    // ограничиваются лимитом автоисполнения (ручные лимитом не ограничены).
+    const isAuto = req.body?.auto === true;
     if (!accountId || !securityId) {
       res.status(400).json({ error: 'Укажите account_id и security_id' });
       return;
@@ -537,7 +581,16 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       res.status(400).json({ error: 'Лимитная заявка требует цену больше нуля' });
       return;
     }
+    let lockConn = null;
     try {
+      // #977: сериализуем сделки счёта (advisory-блок на время запроса), чтобы
+      // серверный лимит автоисполнения был истинным общим пределом: пока одна
+      // заявка не учтена в terminal_trades, следующая её «видит».
+      lockConn = await pool.connect();
+      await lockConn.query('SELECT pg_advisory_lock(hashtext($1))', [
+        `terminal_trade:${accountId}`,
+      ]);
+
       const accRows = await pool.query(
         `SELECT id, account_type FROM accounts WHERE id = $1`,
         [accountId]
@@ -575,6 +628,32 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         Number.isFinite(commissionPctRaw) && commissionPctRaw >= 0
           ? Math.min(commissionPctRaw, 100)
           : null;
+
+      // #977: серверный лимит автоисполнения — общий для счёта, а не только для
+      // одного браузера. Занятая сумма = база текущих открытых позиций счёта;
+      // |цена × количество| новой сделки не должна вывести её за лимит.
+      if (isAuto) {
+        const limit = await loadAutoExecLimit(pool, accountId, isFake);
+        if (limit != null) {
+          const spent = await loadOpenPositionsSpent(pool, accountId);
+          const entry = Math.abs(amount);
+          if (!(limit > 0) || spent + entry > limit) {
+            res.json({
+              ok: false,
+              mode: isFake ? 'fake' : 'real',
+              direction,
+              execution,
+              quantity,
+              price,
+              amount,
+              limit_blocked: true,
+              error: 'Достигнут лимит — сделка не исполнена',
+              message: 'Достигнут лимит — сделка не исполнена',
+            });
+            return;
+          }
+        }
+      }
 
       // Реальный ордер T-Bank (фейк не выходит наружу). Сбои не падают с 500 —
       // фиксируются в terminal_trades статусом rejected.
@@ -770,6 +849,18 @@ module.exports = function registerTerminalRoutes(app, ctx) {
       const status = Number(err.status) || 502;
       if (status >= 500) console.error('POST /api/terminal/trade', err);
       res.status(status).json({ error: err.message || 'Ордер не размещён' });
+    } finally {
+      // #977: снимаем advisory-блок счёта и возвращаем соединение в пул.
+      if (lockConn) {
+        try {
+          await lockConn.query('SELECT pg_advisory_unlock(hashtext($1))', [
+            `terminal_trade:${accountId}`,
+          ]);
+        } catch (_e) {
+          /* соединение оборвалось — блок снимется при закрытии сессии */
+        }
+        lockConn.release();
+      }
     }
   });
 

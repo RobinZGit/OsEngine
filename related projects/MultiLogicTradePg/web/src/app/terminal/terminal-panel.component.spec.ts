@@ -2544,6 +2544,8 @@ describe('TerminalPanelComponent', () => {
         execution: 'market',
         price: 260,
         quantity: 4,
+        // #977: автосделка помечается флагом — сервер считает её лимитом счёта.
+        auto: true,
       });
       // Сделка отображается как обычно: терминал перезапрашивает сделки.
       expect(done.length).toBe(1);
@@ -2986,6 +2988,63 @@ describe('TerminalPanelComponent', () => {
       expect(reserved).toBe(0);
       expect((component as any).autoReserved).toBe(0);
     });
+
+    // #977: восстановленную полосу с уже показанным сигналом при загрузке не
+    // переисполняем — иначе автосделка повторяется после каждого обновления/F5.
+    it('#977: восстановленная полоса не переисполняет показанный сигнал при загрузке', () => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('restoredSignalHandled', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 850 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      // А вот новый сигнал (не из снимка) исполняется как обычно.
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 851 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+    });
+
+    // #977: сервер тоже проверяет лимит (общий для всех окон). Отказ по лимиту
+    // — не сетевой сбой: не повторяем и снимаем резерв общего аккумулятора.
+    it('#977: серверный отказ по лимиту — без повторов, резерв освобождён', fakeAsync(() => {
+      component.chartState = candles();
+      component.accountId = 1;
+      let reserved = 0;
+      component.autoLimitCheck = (amount: number) => {
+        reserved += amount;
+        return true;
+      };
+      component.autoLimitRelease = (amount: number) => {
+        reserved = Math.max(0, reserved - amount);
+      };
+      stateSvc.placeTrade.and.returnValue(
+        of({
+          ok: false,
+          mode: 'fake',
+          limit_blocked: true,
+          error: 'Достигнут лимит — сделка не исполнена',
+        })
+      );
+      fixture.componentRef.setInput('autoExecMaxSum', 2000);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 852 }));
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      expect(component.tradeError).toContain('Достигнут лимит');
+
+      // Повторов нет: лимит — не сбой, цикл трёх попыток не запускается.
+      tick(750);
+      tick(750);
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      // Резерв, взятый у общего аккумулятора терминала, освобождён.
+      expect(reserved).toBe(0);
+      expect((component as any).autoReserved).toBe(0);
+      discardPeriodicTasks();
+    }));
 
     it('#969: вход в шорт занимает лимит тоже — сумма по модулю', () => {
       component.chartState = candles();

@@ -42,6 +42,9 @@ interface PanelModel {
   /** Автозакрытие позиции бумаги по сигналу/закрытию логики (чекбокс на баре
       полосы, включён по умолчанию). Закрывается вся позиция бумаги, маркетом. */
   auto_close_on_logic_signal: boolean;
+  /** #977: полоса восстановлена из сохранённого состояния счёта — её сигнал при
+      загрузке не переисполняется (см. terminal-panel.component.ts). */
+  restored_signal_handled: boolean;
 }
 
 const DEFAULT_CHART_HEIGHT = 340;
@@ -866,7 +869,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
               // терминал бумаги открываются закрытыми, независимо от того,
               // как пользователь оставил их в прошлый раз.
               true,
-              st.auto_close_on_logic_signal
+              st.auto_close_on_logic_signal,
+              // #977: сигнал из сохранённого состояния при загрузке не
+              // переисполняем (мог быть исполнен до перезагрузки страницы).
+              true
             )
           )
           .filter((p): p is PanelModel => p != null);
@@ -925,7 +931,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
     signalEvent?: TerminalLogicSignalEvent | null,
     logicIndicatorIds?: number[] | null,
     collapsed = true,
-    autoCloseOnLogicSignal = false
+    autoCloseOnLogicSignal = false,
+    restoredSignalHandled = false
   ): PanelModel | null {
     const sec = this.byId.get(securityId);
     if (!sec) return null;
@@ -960,6 +967,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
       logic_indicator_ids: ids,
       collapsed,
       auto_close_on_logic_signal: autoCloseOnLogicSignal,
+      restored_signal_handled: restoredSignalHandled,
     };
   }
 

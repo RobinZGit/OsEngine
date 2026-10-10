@@ -1070,6 +1070,15 @@ describe('TerminalComponent — не создавать полосу-дубли�
     expect(ids).toContain(202);
   });
 
+  it('#977: восстановленные полосы помечены «сигнал обработан» — при загрузке не переисполняем', () => {
+    const c = makeComponent();
+    c.loadSavedState();
+    expect(c.panels.length).toBeGreaterThan(0);
+    expect(
+      c.panels.every((p: any) => p.restored_signal_handled === true)
+    ).toBe(true);
+  });
+
   it('#969: общий лимит терминала резервирует вход синхронно и блокирует сверх лимита', () => {
     const c = makeComponent();
     c.settings = { auto_exec_max_sum: 5000 } as any;
