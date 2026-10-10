@@ -141,6 +141,47 @@ describe('#946 realizedPnl (реализованный П/У по закрыты
     expect(realizedPnl([trade(1, 'SELL', 10, 100), trade(1, 'BUY', 10, 110)], 1)).toBe(-100);
   });
 
+  it('комиссии обеих сторон закрытого шорта уменьшают П/У (не улучшают)', () => {
+    // Выручка от продажи 993, обратный выкуп 1003 → −10, а не +... ошибочно.
+    const trades = [trade(1, 'SELL', 10, 100, 'filled', 7), trade(1, 'BUY', 10, 100, 'filled', 3)];
+    expect(realizedPnl(trades, 1)).toBe(-10);
+    expect(positionQty(trades, 1)).toBe(0);
+  });
+
+  it('две подряд закрытые позиции: база прошлой не перетекает в следующую', () => {
+    const first = [trade(1, 'SELL', 10, 100), trade(1, 'BUY', 10, 90)]; // +100
+    const second = [trade(1, 'SELL', 5, 200), trade(1, 'BUY', 5, 210)]; // −50
+    expect(realizedPnl([...first, ...second], 1)).toBe(50);
+    expect(realizedPnl(first, 1) + realizedPnl(second, 1)).toBe(50);
+  });
+
+  it('разворот: остаток — новая позиция с верным базисом', () => {
+    // лонг 10 @100, продажа 14 @120 → закрыто 10 (+200), открыт шорт 4 @120;
+    // обратный выкуп 4 @125 даёт −20, итог +180 (а не +380 из-за старой базы).
+    const trades = [trade(1, 'BUY', 10, 100), trade(1, 'SELL', 14, 120), trade(1, 'BUY', 4, 125)];
+    expect(realizedPnl(trades, 1)).toBe(180);
+    expect(positionQty(trades, 1)).toBe(0);
+  });
+
+  it('регрессия: три закрытых шорта — П/У равен денежному потоку сделок', () => {
+    const trades = [
+      trade(32, 'SELL', 2380, 42.01, 'filled', 30),
+      trade(32, 'BUY', 2380, 42.03, 'filled', 30.01),
+      trade(32, 'SELL', 2380, 42.03, 'filled', 30.01),
+      trade(32, 'BUY', 2380, 42.03, 'filled', 30.01),
+      trade(32, 'SELL', 2370, 42.03, 'filled', 29.88),
+      trade(32, 'BUY', 2370, 42.02, 'filled', 29.88),
+    ];
+    let cash = 0;
+    for (const t of trades) {
+      const amount = +t.price * +t.quantity;
+      cash += t.direction === 'SELL' ? amount - t.commission : -(amount + t.commission);
+    }
+    expect(realizedPnl(trades, 32)).toBe(Math.round(cash * 100) / 100);
+    expect(realizedPnl(trades, 32)).toBe(-203.69);
+    expect(positionQty(trades, 32)).toBe(0);
+  });
+
   it('комиссии обеих сторон уменьшают реализованный П/У', () => {
     const trades = [trade(1, 'BUY', 10, 100, 'filled', 7), trade(1, 'SELL', 10, 110, 'filled', 3)];
     // цена: (110 − 100) * 10 = 100; входная комиссия 7 уже в средней цене

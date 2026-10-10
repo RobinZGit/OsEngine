@@ -24,8 +24,8 @@ export interface AccountPnl {
   securities: number;
   /** У скольких бумаг есть живая цена (остальные — по цене последней свечи). */
   priced: number;
-  /** Реализованный П/У по уже закрытым частям позиций (с комиссиями), рубли.
-      Не исчезает при закрытии позиции — в отличие от переоценки. */
+/** Реализованный П/У по уже закрытым частям позиций (с комиссиями), рубли.
+    Не исчезает при закрытии позиции — в отличие от переоценки. */
   realized_rub: number;
   /** Переоценка открытого остатка (без уже реализованного), рубли. */
   unrealized_rub: number;
@@ -64,9 +64,16 @@ function filledRowsInOrder(
     рубли, с учётом комиссий обеих сторон. Считается методом средней цены:
     пока позиция открыта, её средняя закупочная цена (вместе с комиссией)
     находится в `cost/qty`; комиссия выходящей части сделки списывается
-    пропорционально закрытому количеству. Так же, как `positionCost`,
-    знак денег совпадает со знаком позиции: лонг — положительный, шорт —
-    отрицательный, поэтому средняя всегда положительная. */
+    пропорционально закрытому количеству. Знак денег совпадает со знаком
+    позиции: лонг — положительный, шорт — отрицательный, поэтому средняя
+    всегда положительная.
+
+    Комиссия входа увеличивает «вложенные» деньги одинаково и для покупки,
+    и для продажи: у шорта она уменьшает выручку и потому для повышения
+    средней ВЫЧИТАЕТСЯ (`-p*q + commission`, как в `positionCost`). Когда
+    встречная сделка закрывает позицию целиком, база обнуляется, а при
+    развороте принимает базис новой позиции — иначе накопленный остаток базы
+    прошлой позиции искажал бы среднюю следующей. */
 export function realizedPnl(
   trades: readonly TerminalTradeRow[] | null | undefined,
   securityId: number
@@ -80,18 +87,31 @@ export function realizedPnl(
     if (!(Number.isFinite(p) && p >= 0 && Number.isFinite(q) && q > 0)) continue;
     const c = Number(t.commission);
     const commission = Number.isFinite(c) && c > 0 ? c : 0;
-    const isBuy = t.direction === 'BUY';
-    let closing = 0;
-    if (qty > 0 && !isBuy) closing = Math.min(qty, q);
-    else if (qty < 0 && isBuy) closing = Math.min(-qty, q);
-    if (closing > 0 && qty !== 0) {
-      const avg = cost / qty; // > 0: лонг и шорт дают положительную среднюю
-      const exitCommission = commission * (closing / q);
-      const gross = (p - avg) * closing * (qty > 0 ? 1 : -1);
-      realized += gross - exitCommission;
+    const signedQ = t.direction === 'BUY' ? q : -q;
+    if (qty === 0 || Math.sign(qty) === Math.sign(signedQ)) {
+      // Открытие или добавление в сторону текущей позиции.
+      qty += signedQ;
+      cost += signedQ > 0 ? p * q + commission : -p * q + commission;
+      continue;
     }
-    qty += isBuy ? q : -q;
-    cost += isBuy ? p * q + commission : -(p * q + commission);
+    // Встречная сделка: закрываем часть текущей позиции по средней цене.
+    const closing = Math.min(Math.abs(qty), q);
+    const avg = cost / qty; // > 0: у лонга и шорта средняя положительная
+    const exitCommission = commission * (closing / q);
+    const gross = (p - avg) * closing * Math.sign(qty);
+    realized += gross - exitCommission;
+    cost -= avg * closing * Math.sign(qty);
+    qty += signedQ;
+    if (qty === 0) {
+      // Позиция закрыта полностью — база не должна перетекать дальше.
+      cost = 0;
+    } else if (Math.sign(qty) === Math.sign(signedQ)) {
+      // Разворот: остаток |qty| — новая позиция противоположного знака.
+      // Её базис — цена сделки плюс входная доля комиссии (остальное ушло
+      // в комиссию выхода выше).
+      const openCommission = commission - exitCommission;
+      cost = qty > 0 ? p * qty + openCommission : -p * -qty + openCommission;
+    }
   }
   return Number.isFinite(realized) ? round2(realized) : 0;
 }
