@@ -1,3 +1,6 @@
+/** Режим торговых периодов: off — не учитывать; trading — только торговые; non_trading — только неторговые. */
+export type NonTradingPeriodsMode = 'off' | 'trading' | 'non_trading';
+
 export interface LogicRow {
   id: number;
   name: string;
@@ -51,8 +54,10 @@ export interface LogicRow {
   cash_fund_code?: string;
   /** Порог equity портфеля (₽): парковать min(кэш, equity−порог−уже_в_фонде). */
   cash_fund_threshold?: number;
-  /** Учитывать неторговые периоды при открытии сделок. */
+  /** Учитывать неторговые периоды при открытии сделок (устаревший флаг). */
   use_non_trading_periods?: boolean;
+  /** Режим торговых периодов (приоритетнее use_non_trading_periods). */
+  non_trading_periods_mode?: NonTradingPeriodsMode;
   /** Закрывать позиции в конце дня (кроме денежных фондов). */
   close_positions_eod?: boolean;
   /** Продавать фьючерсы за N дней до экспирации (EOD). */
@@ -95,6 +100,7 @@ export interface LogicTradingParamsPayload {
   cash_fund_code?: string;
   cash_fund_threshold?: number;
   use_non_trading_periods?: boolean;
+  non_trading_periods_mode?: NonTradingPeriodsMode;
   close_positions_eod?: boolean;
   sell_futures_before_expiry?: boolean;
   sell_futures_days_before_expiry?: number;
@@ -123,6 +129,7 @@ export interface LogicTradingParamsResponse {
   cash_fund_code: string;
   cash_fund_threshold: number;
   use_non_trading_periods: boolean;
+  non_trading_periods_mode: NonTradingPeriodsMode;
   close_positions_eod: boolean;
   sell_futures_before_expiry: boolean;
   sell_futures_days_before_expiry: number;
@@ -151,6 +158,7 @@ export interface LogicNonTradingIntervalPayload {
 
 export interface LogicNonTradingPeriodsResponse {
   logic_id: number;
+  non_trading_periods_mode?: NonTradingPeriodsMode;
   use_non_trading_periods: boolean;
   intervals: LogicNonTradingIntervalRow[];
   applied?: number;
@@ -182,6 +190,8 @@ export interface LogicIndicatorSignalRow {
   signal_kind: 'trend' | 'counter';
   /** security = бумага; base_asset = база; contango = ряд (фьючерс − база) */
   signal_acts_on?: 'security' | 'base_asset' | 'contango';
+  /** #972: секунды подтверждения типа сигнала (0 = не подтверждать; 10/20/30/40/50/60/120). */
+  signal_confirm_sec?: number;
   formula: string;
   /** Боевой рейтинг сигнала на логике (не справочник indicators). */
   rating: number;

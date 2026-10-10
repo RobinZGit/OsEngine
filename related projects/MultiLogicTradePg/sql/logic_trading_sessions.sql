@@ -87,6 +87,34 @@ $$;
 COMMENT ON FUNCTION logic_ensure_non_trading_periods(INTEGER) IS
 'Если у логики нет интервалов — поставить MOEX по умолчанию';
 
+-- Режим торговых периодов логики: off | trading | non_trading.
+-- Новый text-параметр non_trading_periods_mode; при его отсутствии — обратная
+-- совместимость с boolean use_non_trading_periods (true → trading, иначе off).
+CREATE OR REPLACE FUNCTION get_non_trading_periods_mode(
+    p_logic_id INTEGER
+)
+RETURNS TEXT
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_mode TEXT;
+BEGIN
+    v_mode := lower(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'non_trading_periods_mode'), '')));
+    IF v_mode IN ('off', 'trading', 'non_trading') THEN
+        RETURN v_mode;
+    END IF;
+
+    IF get_logic_param_boolean(p_logic_id, 'use_non_trading_periods', FALSE) THEN
+        RETURN 'trading';
+    END IF;
+    RETURN 'off';
+END;
+$$;
+
+COMMENT ON FUNCTION get_non_trading_periods_mode(INTEGER) IS
+'Режим торговых периодов: off (не учитывать) | trading (только торговые) | non_trading (только неторговые)';
+
+-- True если момент внутри неторгового интервала логики (без учёта режима).
 CREATE OR REPLACE FUNCTION logic_is_non_trading_dt(
     p_logic_id INTEGER,
     p_dt TIMESTAMP
@@ -94,15 +122,9 @@ CREATE OR REPLACE FUNCTION logic_is_non_trading_dt(
 RETURNS BOOLEAN
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
-    v_use BOOLEAN;
     v_dow SMALLINT;
     v_t TIME;
 BEGIN
-    v_use := get_logic_param_boolean(p_logic_id, 'use_non_trading_periods', TRUE);
-    IF NOT v_use THEN
-        RETURN FALSE;
-    END IF;
-
     -- ISO: Monday=1 … Sunday=7 (PostgreSQL DOW: 0=Sun … 6=Sat)
     v_dow := EXTRACT(ISODOW FROM p_dt)::SMALLINT;
     v_t := p_dt::TIME;
@@ -120,7 +142,36 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_is_non_trading_dt(INTEGER, TIMESTAMP) IS
-'True если момент в неторговом окне логики (при use_non_trading_periods)';
+'True если момент внутри неторгового интервала логики (без учёта режима)';
+
+-- True если на этом моменте НЕ нужно открывать новые сделки по режиму периодов:
+--   off         — никогда не блокируем (торгуем в любое время);
+--   trading     — блокируем внутри неторгового интервала;
+--   non_trading — блокируем вне неторгового интервала (торгуем только неторговые).
+CREATE OR REPLACE FUNCTION logic_skip_signal_by_periods(
+    p_logic_id INTEGER,
+    p_dt TIMESTAMP
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_mode TEXT;
+    v_in_non_trading BOOLEAN;
+BEGIN
+    v_mode := get_non_trading_periods_mode(p_logic_id);
+    IF v_mode = 'off' THEN
+        RETURN FALSE;
+    END IF;
+    v_in_non_trading := logic_is_non_trading_dt(p_logic_id, p_dt);
+    IF v_mode = 'non_trading' THEN
+        RETURN NOT v_in_non_trading;
+    END IF;
+    RETURN v_in_non_trading;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_skip_signal_by_periods(INTEGER, TIMESTAMP) IS
+'True: по режиму торговых периодов сигналы на этом моменте не открываются';
 
 -- Старт вечернего неторгового окна дня (MSK), или NULL.
 CREATE OR REPLACE FUNCTION logic_eod_session_end_dt(

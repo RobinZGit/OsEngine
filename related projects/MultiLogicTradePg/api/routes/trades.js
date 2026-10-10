@@ -471,6 +471,7 @@ app.get('/api/logic-trades/export', async (req, res) => {
       },
       trading_params: tradingParams,
       non_trading_periods: {
+        non_trading_periods_mode: tradingParams.non_trading_periods_mode,
         use_non_trading_periods: tradingParams.use_non_trading_periods !== false,
         intervals: nonTradingIntervals,
       },

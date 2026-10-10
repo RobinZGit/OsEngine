@@ -139,6 +139,7 @@ BEGIN
     FROM logics l
     CROSS JOIN (VALUES
         ('stop_loss_timeframe', 'M5', 'text'),
+        ('non_trading_periods_mode', 'trading', 'text'),
         ('use_non_trading_periods', 'true', 'boolean'),
         ('warmup_pretest', 'true', 'boolean'),
         ('close_positions_eod', 'false', 'boolean'),

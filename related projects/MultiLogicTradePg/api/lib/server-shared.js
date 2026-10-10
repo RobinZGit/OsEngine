@@ -648,6 +648,17 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.non_trading_periods_mode !== undefined) {
+    const mode = String(body.non_trading_periods_mode || '')
+      .trim()
+      .toLowerCase();
+    if (mode !== 'off' && mode !== 'trading' && mode !== 'non_trading') {
+      return { error: 'Режим периодов: off, trading или non_trading' };
+    }
+    out.non_trading_periods_mode = mode;
+    hasField = true;
+  }
+
   if (body?.close_positions_eod !== undefined) {
     out.close_positions_eod = Boolean(body.close_positions_eod);
     hasField = true;

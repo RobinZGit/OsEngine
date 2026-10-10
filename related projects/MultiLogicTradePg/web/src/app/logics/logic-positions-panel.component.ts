@@ -296,8 +296,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   periodTo = '';
 
-  /** Проскальзывание включено по умолчанию: 0.2% = случайный сдвиг цены сделки от -0.2% до +0.2%. */
-  slippageEnabled = true;
+  /** Проскальзывание выключено по умолчанию. При включении: 0.2% = случайный сдвиг цены сделки от -0.2% до +0.2%. */
+  slippageEnabled = false;
 
   slippagePct = 0.2;
 

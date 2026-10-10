@@ -14,7 +14,7 @@ import { SecuritiesService } from '../services/securities.service';
 import { SettingsService } from '../services/settings.service';
 import { TechLogService } from '../services/tech-log.service';
 import { BacktestUiStateService } from '../services/backtest-ui-state.service';
-import { LogicIndicatorSignalRow, LogicRow, LogicSecurityRow, LogicStopRow, LogicParamsResponse } from '../models/logic.model';
+import { LogicIndicatorSignalRow, LogicRow, LogicSecurityRow, LogicStopRow, LogicParamsResponse, NonTradingPeriodsMode } from '../models/logic.model';
 import { IndicatorRow } from '../models/lookup.model';
 import { SecurityRow } from '../models/market.model';
 import {
@@ -232,6 +232,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   nonTradingByLogic = new Map<
     number,
     {
+      non_trading_periods_mode: NonTradingPeriodsMode;
       use_non_trading_periods: boolean;
       intervals: {
         id: number;
@@ -351,6 +352,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_code: string;
       cash_fund_threshold: string;
       use_non_trading_periods: boolean;
+      non_trading_periods_mode: NonTradingPeriodsMode;
       close_positions_eod: boolean;
       sell_futures_before_expiry: boolean;
       sell_futures_days_before_expiry: string;
@@ -1554,6 +1556,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_code?: string;
       cash_fund_threshold?: number;
       use_non_trading_periods?: boolean;
+      non_trading_periods_mode?: NonTradingPeriodsMode;
       close_positions_eod?: boolean;
       sell_futures_before_expiry?: boolean;
       sell_futures_days_before_expiry?: number;
@@ -1589,6 +1592,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     cash_fund_code?: string;
     cash_fund_threshold?: number;
     use_non_trading_periods?: boolean;
+    non_trading_periods_mode?: NonTradingPeriodsMode;
     close_positions_eod?: boolean;
     sell_futures_before_expiry?: boolean;
     sell_futures_days_before_expiry?: number;
@@ -1616,6 +1620,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     cash_fund_code: string;
     cash_fund_threshold: string;
     use_non_trading_periods: boolean;
+    non_trading_periods_mode: NonTradingPeriodsMode;
     close_positions_eod: boolean;
     sell_futures_before_expiry: boolean;
     sell_futures_days_before_expiry: string;
@@ -1656,7 +1661,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_threshold: this.formatBalanceDraft(
         trading.cash_fund_threshold != null ? trading.cash_fund_threshold : 1000000
       ),
-      use_non_trading_periods: trading.use_non_trading_periods !== false,
+      use_non_trading_periods:
+        this.normalizeNonTradingMode(
+          trading.non_trading_periods_mode,
+          trading.use_non_trading_periods
+        ) === 'trading',
+      non_trading_periods_mode: this.normalizeNonTradingMode(
+        trading.non_trading_periods_mode,
+        trading.use_non_trading_periods
+      ),
       close_positions_eod: trading.close_positions_eod === true,
       sell_futures_before_expiry: trading.sell_futures_before_expiry === true,
       sell_futures_days_before_expiry: this.formatIntParam(
@@ -1710,6 +1723,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       cash_fund_code: row.cash_fund_code,
       cash_fund_threshold: row.cash_fund_threshold,
       use_non_trading_periods: row.use_non_trading_periods,
+      non_trading_periods_mode: this.normalizeNonTradingMode(
+        row.non_trading_periods_mode,
+        row.use_non_trading_periods
+      ),
       close_positions_eod: row.close_positions_eod,
       sell_futures_before_expiry: row.sell_futures_before_expiry,
       sell_futures_days_before_expiry: row.sell_futures_days_before_expiry,
@@ -1880,6 +1897,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         cash_fund_code,
         cash_fund_threshold,
         use_non_trading_periods: draft.use_non_trading_periods,
+        non_trading_periods_mode: draft.non_trading_periods_mode,
         close_positions_eod: draft.close_positions_eod,
         sell_futures_before_expiry: draft.sell_futures_before_expiry,
         sell_futures_days_before_expiry,
@@ -1900,6 +1918,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
       if (nt) {
         this.nonTradingByLogic.set(row.id, {
           ...nt,
+          non_trading_periods_mode: this.normalizeNonTradingMode(
+            resp.trading.non_trading_periods_mode,
+            resp.trading.use_non_trading_periods
+          ),
           use_non_trading_periods: resp.trading.use_non_trading_periods !== false,
         });
       }
@@ -2034,6 +2056,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private applyNonTradingResponse(
     logicId: number,
     resp: {
+      non_trading_periods_mode?: NonTradingPeriodsMode;
       use_non_trading_periods?: boolean;
       intervals?: {
         id: number;
@@ -2044,8 +2067,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
       }[];
     }
   ): void {
+    const prev = this.nonTradingByLogic.get(logicId);
+    const mode = this.normalizeNonTradingMode(
+      resp.non_trading_periods_mode ?? prev?.non_trading_periods_mode,
+      resp.use_non_trading_periods ?? prev?.use_non_trading_periods
+    );
     this.nonTradingByLogic.set(logicId, {
-      use_non_trading_periods: resp.use_non_trading_periods !== false,
+      non_trading_periods_mode: mode,
+      use_non_trading_periods: mode === 'trading',
       intervals: resp.intervals ?? [],
     });
   }
@@ -2120,32 +2149,61 @@ export class LogicsComponent implements OnInit, OnDestroy {
     });
   }
 
-  useNonTradingPeriods(logicId: number): boolean {
-    const cached = this.nonTradingByLogic.get(logicId);
-    if (cached) return cached.use_non_trading_periods;
-    return this.getParamsDraft(logicId).use_non_trading_periods !== false;
+  private normalizeNonTradingMode(
+    mode?: NonTradingPeriodsMode,
+    legacyEnabled?: boolean
+  ): NonTradingPeriodsMode {
+    if (mode === 'off' || mode === 'trading' || mode === 'non_trading') return mode;
+    return legacyEnabled !== false ? 'trading' : 'off';
   }
 
-  onUseNonTradingPeriodsChange(logicId: number, value: boolean, event?: Event): void {
+  nonTradingPeriodsMode(logicId: number): NonTradingPeriodsMode {
+    const cached = this.nonTradingByLogic.get(logicId);
+    if (cached) return cached.non_trading_periods_mode;
+    const draft = this.getParamsDraft(logicId);
+    return this.normalizeNonTradingMode(
+      draft.non_trading_periods_mode,
+      draft.use_non_trading_periods
+    );
+  }
+
+  onNonTradingPeriodsModeChange(
+    logicId: number,
+    mode: NonTradingPeriodsMode,
+    event?: Event
+  ): void {
     event?.stopPropagation();
-    this.getParamsDraft(logicId).use_non_trading_periods = value;
+    const draft = this.getParamsDraft(logicId);
+    draft.non_trading_periods_mode = mode;
+    draft.use_non_trading_periods = mode === 'trading';
     const cached = this.nonTradingByLogic.get(logicId);
     if (cached) {
-      this.nonTradingByLogic.set(logicId, { ...cached, use_non_trading_periods: value });
+      this.nonTradingByLogic.set(logicId, {
+        ...cached,
+        non_trading_periods_mode: mode,
+        use_non_trading_periods: mode === 'trading',
+      });
     }
     this.logicsService
-      .saveLogicParams(logicId, { use_non_trading_periods: value })
+      .saveLogicParams(logicId, { non_trading_periods_mode: mode })
       .subscribe({
         next: (resp) => {
           this.applyTradingParamsToLogic(logicId, resp.trading);
-          this.getParamsDraft(logicId).use_non_trading_periods =
-            resp.trading.use_non_trading_periods !== false;
-          if (value && (!cached || !cached.intervals || cached.intervals.length === 0)) {
+          const savedMode = this.normalizeNonTradingMode(
+            resp.trading.non_trading_periods_mode,
+            resp.trading.use_non_trading_periods
+          );
+          draft.non_trading_periods_mode = savedMode;
+          draft.use_non_trading_periods = savedMode === 'trading';
+          if (
+            mode !== 'off' &&
+            (!cached || !cached.intervals || cached.intervals.length === 0)
+          ) {
             this.applyMoexNonTradingPeriods(logicId, new Event('click'));
           }
         },
         error: (err) => {
-          console.error('use_non_trading_periods save', err);
+          console.error('non_trading_periods_mode save', err);
         },
       });
   }
@@ -2156,8 +2214,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.periodsApplying.add(logicId);
     this.logicsService.applyMoexNonTradingPeriods(logicId).subscribe({
       next: (resp) => {
+        const mode = this.normalizeNonTradingMode(
+          resp.non_trading_periods_mode,
+          resp.use_non_trading_periods
+        );
         this.nonTradingByLogic.set(logicId, {
-          use_non_trading_periods: resp.use_non_trading_periods !== false,
+          non_trading_periods_mode: mode,
+          use_non_trading_periods: mode === 'trading',
           intervals: resp.intervals ?? [],
         });
         this.periodsApplying.delete(logicId);
@@ -2177,12 +2240,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.periodsLoading.add(logicId);
     this.logicsService.getNonTradingPeriods(logicId).subscribe({
       next: (resp) => {
+        const mode = this.normalizeNonTradingMode(
+          resp.non_trading_periods_mode,
+          resp.use_non_trading_periods
+        );
         this.nonTradingByLogic.set(logicId, {
-          use_non_trading_periods: resp.use_non_trading_periods !== false,
+          non_trading_periods_mode: mode,
+          use_non_trading_periods: mode === 'trading',
           intervals: resp.intervals ?? [],
         });
-        this.getParamsDraft(logicId).use_non_trading_periods =
-          resp.use_non_trading_periods !== false;
+        const draft = this.getParamsDraft(logicId);
+        draft.non_trading_periods_mode = mode;
+        draft.use_non_trading_periods = mode === 'trading';
         this.periodsLoading.delete(logicId);
       },
       error: (err) => {
@@ -3292,6 +3361,37 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       .updateLogicIndicatorSignal(signal.id, {
         formula: this.formulaDraft(signal).trim() || signal.formula,
         signal_acts_on: actsOn,
+      })
+      .subscribe({
+        next: (updated) => {
+          const list = this.logicSignals.get(signal.logic_id) ?? [];
+          this.logicSignals.set(
+            signal.logic_id,
+            list.map((s) => (s.id === updated.id ? updated : s))
+          );
+          this.formulaDrafts.set(updated.id, updated.formula);
+          this.savingFormulaIds.delete(signal.id);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.savingFormulaIds.delete(signal.id);
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  /** #972: подтверждение типа сигнала — секунды ожидания направления цены (0 = не подтверждать). */
+  onSignalConfirmSecChange(signal: LogicIndicatorSignalRow, next: string): void {
+    const nextSec = Number(next);
+    const confirmSec = Number.isInteger(nextSec) && nextSec >= 0 ? nextSec : 0;
+    if ((signal.signal_confirm_sec || 0) === confirmSec || this.savingFormulaIds.has(signal.id)) {
+      return;
+    }
+    this.savingFormulaIds.add(signal.id);
+    this.logicsService
+      .updateLogicIndicatorSignal(signal.id, {
+        formula: this.formulaDraft(signal).trim() || signal.formula,
+        signal_confirm_sec: confirmSec,
       })
       .subscribe({
         next: (updated) => {

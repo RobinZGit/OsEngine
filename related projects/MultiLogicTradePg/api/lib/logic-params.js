@@ -23,6 +23,7 @@ const PARAM_KEYS = {
   CASH_FUND_CODE: 'cash_fund_code',
   CASH_FUND_THRESHOLD: 'cash_fund_threshold',
   USE_NON_TRADING_PERIODS: 'use_non_trading_periods',
+  NON_TRADING_PERIODS_MODE: 'non_trading_periods_mode',
   CLOSE_POSITIONS_EOD: 'close_positions_eod',
   SELL_FUTURES_BEFORE_EXPIRY: 'sell_futures_before_expiry',
   SELL_FUTURES_DAYS_BEFORE_EXPIRY: 'sell_futures_days_before_expiry',
@@ -31,6 +32,15 @@ const PARAM_KEYS = {
 };
 
 const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
+
+/** Режим торговых периодов: off | trading | non_trading. */
+const NON_TRADING_MODES = new Set(['off', 'trading', 'non_trading']);
+
+function normalizeNonTradingMode(raw, legacyBoolean) {
+  const mode = raw == null ? '' : String(raw).trim().toLowerCase();
+  if (NON_TRADING_MODES.has(mode)) return mode;
+  return legacyBoolean === true ? 'trading' : 'off';
+}
 
 const DEFAULTS = {
   [PARAM_KEYS.TIMEFRAME]: { value: 'M15', type: 'text' },
@@ -53,7 +63,8 @@ const DEFAULTS = {
   [PARAM_KEYS.RESUME_SL_NO_REDUCE]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.CASH_FUND_CODE]: { value: '', type: 'text' },
   [PARAM_KEYS.CASH_FUND_THRESHOLD]: { value: '1000000', type: 'money' },
-  [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'true', type: 'boolean' },
+  [PARAM_KEYS.USE_NON_TRADING_PERIODS]: { value: 'false', type: 'boolean' },
+  [PARAM_KEYS.NON_TRADING_PERIODS_MODE]: { value: 'off', type: 'text' },
   [PARAM_KEYS.CLOSE_POSITIONS_EOD]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.SELL_FUTURES_BEFORE_EXPIRY]: { value: 'false', type: 'boolean' },
   [PARAM_KEYS.SELL_FUTURES_DAYS_BEFORE_EXPIRY]: { value: '3', type: 'integer' },
@@ -99,6 +110,10 @@ function rowsToTradingParams(rows) {
   for (const r of rows) {
     map[r.param_key] = parseParamValue(r.param_key, r.param_value, r.value_type);
   }
+  const nonTradingMode = normalizeNonTradingMode(
+    map[PARAM_KEYS.NON_TRADING_PERIODS_MODE],
+    map[PARAM_KEYS.USE_NON_TRADING_PERIODS] === true
+  );
   return {
     timeframe:
       map[PARAM_KEYS.TIMEFRAME] != null && String(map[PARAM_KEYS.TIMEFRAME]).trim() !== ''
@@ -163,7 +178,8 @@ function rowsToTradingParams(rows) {
       map[PARAM_KEYS.CASH_FUND_THRESHOLD] != null
         ? Number(map[PARAM_KEYS.CASH_FUND_THRESHOLD])
         : 1000000,
-    use_non_trading_periods: map[PARAM_KEYS.USE_NON_TRADING_PERIODS] !== false,
+    non_trading_periods_mode: nonTradingMode,
+    use_non_trading_periods: nonTradingMode === 'trading',
     close_positions_eod: map[PARAM_KEYS.CLOSE_POSITIONS_EOD] === true,
     sell_futures_before_expiry: map[PARAM_KEYS.SELL_FUTURES_BEFORE_EXPIRY] === true,
     sell_futures_days_before_expiry: (() => {
@@ -538,7 +554,29 @@ async function saveTradingParams(pool, logicId, payload) {
     await upsertParam(pool, logicId, PARAM_KEYS.CASH_FUND_THRESHOLD, v, 'money');
   }
 
-  if (payload.use_non_trading_periods !== undefined) {
+  if (payload.non_trading_periods_mode !== undefined) {
+    const mode = String(payload.non_trading_periods_mode || '')
+      .trim()
+      .toLowerCase();
+    if (!NON_TRADING_MODES.has(mode)) {
+      throw new Error('Режим периодов: off, trading или non_trading');
+    }
+    await upsertParam(pool, logicId, PARAM_KEYS.NON_TRADING_PERIODS_MODE, mode, 'text');
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.USE_NON_TRADING_PERIODS,
+      mode === 'trading' ? 'true' : 'false',
+      'boolean'
+    );
+  } else if (payload.use_non_trading_periods !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.NON_TRADING_PERIODS_MODE,
+      payload.use_non_trading_periods ? 'trading' : 'off',
+      'text'
+    );
     await upsertParam(
       pool,
       logicId,

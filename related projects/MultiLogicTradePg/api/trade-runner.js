@@ -227,6 +227,22 @@ async function runTradeCycle(pool, opts = {}) {
       }
     }
 
+    // #972: финализируем созревшие отложенные подтверждения сигналов (свежая цена +
+    // повтор группы). Вызов на уровне цикла — срабатывает и при нуле active-логик.
+    try {
+      await client.query(`SET statement_timeout = ${Math.max(15000, LOGIC_TIMEOUT_MS)}`);
+      await client.query(`SET lock_timeout = '15s'`);
+      const { rows: confirmRows } = await client.query(
+        `SELECT logic_signal_confirm_finalize()::int AS n`
+      );
+      const confirmed = Number(confirmRows[0]?.n ?? 0);
+      if (confirmed > 0) {
+        console.log(`confirm finalize created=${confirmed}`);
+      }
+    } catch (confirmErr) {
+      console.error('logic_signal_confirm_finalize', confirmErr.message);
+    }
+
     try {
       await client.query('SET statement_timeout = 0');
       await client.query('SET lock_timeout = 0');

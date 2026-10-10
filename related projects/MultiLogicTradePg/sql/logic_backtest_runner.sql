@@ -3079,7 +3079,7 @@ BEGIN
         );
     END IF;
 
-    IF NOT logic_is_non_trading_dt(p_logic_id, p_bar_dt) THEN
+    IF NOT logic_skip_signal_by_periods(p_logic_id, p_bar_dt) THEN
         v_balance := logic_backtest_process_signals(
             p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
         );

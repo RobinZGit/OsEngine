@@ -1,6 +1,7 @@
 -- ============================================
 -- MultiLogicTrade — шаг 1: таблицы и справочники
--- Версия: v65 (идемпотентный запуск)
+-- Версия: v66 (идемпотентный запуск)
+-- v66: режим торговых периодов non_trading_periods_mode (off|trading|non_trading) вместо чекбокса
 -- v65: мультитаймфрейм-сигналы tf=<База>[×k] (#843): уникальность timeframes(tf/sec)
 --      для автосоздания производных ТФ (M7 и т.п.); сами ТФ создаёт signal_tf_id_for_sec
 -- v64: T-Bank API host invest-public-api.tbank.ru (не tinkoff.ru); см. developer.tbank.ru network
@@ -1480,8 +1481,10 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'Пусто = не покупать. TMON / LQDT / SBMM — runner паркует избыток кэша на реальном счёте (1 раз на закрытую свечу TF)', 14),
     ('cash_fund_threshold', 'Порог портфеля (equity), ₽', 'money', '1000000',
      'Если equity выше порога и выбран фонд — парковать избыток (buy-only). По умолчанию = начальный остаток теста (1 000 000)', 15),
-    ('use_non_trading_periods', 'Учитывать неторговые периоды', 'boolean', 'true',
-     'Не открывать сделки в интервалах из блока «Торговые периоды» (шаблон MOEX TQBR по умолчанию)', 16),
+    ('use_non_trading_periods', 'Учитывать неторговые периоды (устарел)', 'boolean', 'false',
+     'Устаревший флаг. Используйте «Режим торговых периодов» (non_trading_periods_mode) — он имеет приоритет', 16),
+    ('non_trading_periods_mode', 'Режим торговых периодов', 'text', 'off',
+     'off — не учитывать интервалы (торговать в любое время); trading — только торговые периоды; non_trading — только неторговые периоды', 16),
     ('close_positions_eod', 'Закрывать позиции в конце дня (кроме фондов)', 'boolean', 'false',
      'В конце каждого торгового дня закрыть все позиции, кроме TMON/LQDT/SBMM. Не зависит от «Учитывать неторговые периоды» (тот чекбокс только блокирует новые входы). Фонды не закрываются', 17),
     ('sell_futures_before_expiry', 'Продавать фьючерсы до экспирации', 'boolean', 'false',
@@ -1610,6 +1613,23 @@ FROM logics l
 CROSS JOIN logic_param_defs d
 ON CONFLICT (logic_id, param_key) DO NOTHING;
 
+-- v66: торговые периоды — режим non_trading_periods_mode (off|trading|non_trading).
+-- Сохраняем прежнее поведение: где старый флаг use_non_trading_periods был включён — ставим 'trading'.
+-- Идемпотентно: API поддерживает use_non_trading_periods = (mode = 'trading'), поэтому повторный
+-- прогон не перезатрёт явный выбор пользователя ('off' / 'non_trading').
+UPDATE logic_params m
+SET param_value = 'trading',
+    updated_at = CURRENT_TIMESTAMP
+WHERE m.param_key = 'non_trading_periods_mode'
+  AND m.param_value = 'off'
+  AND EXISTS (
+      SELECT 1
+      FROM logic_params b
+      WHERE b.logic_id = m.logic_id
+        AND b.param_key = 'use_non_trading_periods'
+        AND lower(btrim(b.param_value)) IN ('true', '1', 'yes')
+  );
+
 -- Upgrade / install-over: на real — сбросить paper-остатки в 0 (в т.ч. «миллион» после теста).
 -- Затем 02 вызовет logic_sync_all_real_account_balances() → кэш брокера или 0.
 UPDATE logic_params lp
@@ -1681,6 +1701,8 @@ CREATE TABLE IF NOT EXISTS logic_indicator_signals (
     signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
     signal_acts_on VARCHAR(20) NOT NULL DEFAULT 'security'
         CHECK (signal_acts_on IN ('security', 'base_asset', 'contango')),
+    -- #972: секунды подтверждения типа сигнала (0 = не подтверждать; 10/20/30/40/50/60/120)
+    signal_confirm_sec INTEGER NOT NULL DEFAULT 0 CHECK (signal_confirm_sec >= 0),
     formula TEXT NOT NULL,
     rating INTEGER NOT NULL DEFAULT 0,
     rating_test INTEGER NOT NULL DEFAULT 0,
@@ -1697,6 +1719,7 @@ ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_event VARC
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short'));
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10) CHECK (signal_kind IN ('trend', 'counter'));
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS signal_acts_on VARCHAR(20) NOT NULL DEFAULT 'security';
+ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS signal_confirm_sec INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS formula TEXT;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_indicator_signals ADD COLUMN IF NOT EXISTS rating_test INTEGER NOT NULL DEFAULT 0;
@@ -1730,6 +1753,40 @@ CREATE INDEX IF NOT EXISTS idx_contango_securities_und
     ON contango_securities(underlying_security_id);
 COMMENT ON TABLE contango_securities IS
 'Синтетическая бумага контанго: prices = OHLC(fut) − OHLC(und); для signal_acts_on=contango';
+
+-- #972: отложенные подтверждения сигналов логик (подождать N секунд и проверить направление цены).
+-- Группа сигналов (position_event × position_side) с signal_confirm_sec>0 не исполняется сразу:
+-- записывается сюда, а logic_signal_confirm_finalize() после deadline сравнивает свежую цену
+-- с fire_price по expected_dir и только при подтверждении повторно прогоняет группу на баре bar_dt.
+CREATE TABLE IF NOT EXISTS logic_signal_confirm_pending (
+    id BIGSERIAL PRIMARY KEY,
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    bar_dt TIMESTAMP NOT NULL,
+    position_event VARCHAR(10) NOT NULL DEFAULT 'open',
+    position_side VARCHAR(10) NOT NULL DEFAULT 'long',
+    signal_kind VARCHAR(10) NOT NULL DEFAULT 'trend',
+    formula TEXT NOT NULL DEFAULT '',
+    fire_price NUMERIC NOT NULL,
+    expected_dir VARCHAR(10) NOT NULL CHECK (expected_dir IN ('up', 'down')),
+    confirm_sec INTEGER NOT NULL DEFAULT 0,
+    deadline TIMESTAMP NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'failed')),
+    check_price NUMERIC,
+    note TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TIMESTAMP,
+    UNIQUE (logic_id, security_id, timeframe_id, bar_dt, position_event, position_side)
+);
+CREATE INDEX IF NOT EXISTS idx_signal_confirm_pending_due
+    ON logic_signal_confirm_pending(status, deadline)
+    WHERE status = 'pending';
+
+COMMENT ON TABLE logic_signal_confirm_pending IS
+'Отложенные подтверждения сигналов логик (#972): группа (position_event × position_side) '
+'с signal_confirm_sec>0 ждёт deadline, logic_signal_confirm_finalize() сверяет свежую цену '
+'с fire_price по expected_dir и при подтверждении повторно прогоняет группу на баре bar_dt';
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 

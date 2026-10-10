@@ -1445,8 +1445,11 @@
                         Колонка <strong>Действует на</strong>: «Бумага» — торгуемый инструмент;
                         «Базовый актив» — underlying фьючерса;
                         «Контанго» — ряд цен (фьючерс − база), на нём считается индикатор как обычно.
-                        «Рейтинг» — сумма боевых оценок сигнала по всем бумагам логики
-                        (не зависит от сделок; не тестовый рейтинг). Разверните строку сигнала —
+                        <strong>Подтверждать тип</strong> — подождать N секунд после срабатывания, заново
+                        запросить цену и проверить направление: <strong>по течению</strong> — long при
+                        выросшей цене, short при упавшей; <strong>против тренда</strong> — цена в обратную
+                        сторону (long при упавшей, short при выросшей). Подтвердилось — сигнал проходит
+                        с задержкой, как обычно (сделка или сигнал в терминал). Разверните строку сигнала —
                         список бумаг и график.
                       </p>
 
@@ -1593,13 +1596,13 @@
 
                             <th>Тип</th>
 
+                            <th
+                              title="Подтверждать тип сигнала: подождать N секунд, заново запросить цену и проверить направление (тренд — по движению, против тренда — навстречу)"
+                            >Подтверждать тип</th>
+
                             <th>Индикатор</th>
 
                             <th title="На какой цене/индикаторе считается сигнал">Действует на</th>
-
-                            <th
-                              title="Сумма боевых рейтингов сигнала по всем бумагам логики"
-                            >Рейтинг</th>
 
                             <th>Формула сигнала</th>
 
@@ -1687,6 +1690,25 @@
 
                               </td>
 
+                              <td class="col-sig-confirm">
+                                <select
+                                  class="sig-confirm-select"
+                                  [ngModel]="sig.signal_confirm_sec || 0"
+                                  [disabled]="isFormulaSaving(sig.id)"
+                                  (ngModelChange)="onSignalConfirmSecChange(sig, $event)"
+                                  title="Подтверждать тип сигнала: подождать N секунд, заново запросить цену и проверить направление. Тренд: long — цена вверх, short — вниз. Против тренда: наоборот."
+                                >
+                                  <option [ngValue]="0">не подтверждать</option>
+                                  <option [ngValue]="10">10 сек</option>
+                                  <option [ngValue]="20">20 сек</option>
+                                  <option [ngValue]="30">30 сек</option>
+                                  <option [ngValue]="40">40 сек</option>
+                                  <option [ngValue]="50">50 сек</option>
+                                  <option [ngValue]="60">60 сек</option>
+                                  <option [ngValue]="120">2 мин</option>
+                                </select>
+                              </td>
+
                               <td>
 
                                 <strong>{{ sig.indicator_code }}</strong>
@@ -1707,13 +1729,6 @@
                                   <option value="base_asset">Базовый актив</option>
                                   <option value="contango">Контанго</option>
                                 </select>
-                              </td>
-
-                              <td
-                                class="col-sig-rating"
-                                title="Сумма боевых рейтингов по бумагам"
-                              >
-                                {{ sig.rating }}
                               </td>
 
                               <td class="col-formula">
@@ -2179,12 +2194,17 @@
                             class="periods-use-flag"
                             (click)="$event.stopPropagation()"
                           >
-                            <input
-                              type="checkbox"
-                              [checked]="useNonTradingPeriods(row.id)"
-                              (change)="onUseNonTradingPeriodsChange(row.id, $any($event.target).checked, $event)"
-                            />
-                            Учитывать неторговые периоды
+                            <span class="periods-mode-label">Торговые периоды:</span>
+                            <select
+                              class="params-input periods-mode-select"
+                              [ngModel]="nonTradingPeriodsMode(row.id)"
+                              (ngModelChange)="onNonTradingPeriodsModeChange(row.id, $any($event))"
+                              (click)="$event.stopPropagation()"
+                            >
+                              <option value="off">Не учитывать</option>
+                              <option value="trading">Только торговые периоды</option>
+                              <option value="non_trading">Только неторговые периоды</option>
+                            </select>
                           </label>
 
                           <button
@@ -2208,10 +2228,16 @@
                           По умолчанию TQBR ≈ вне 10:00–18:40 пн–пт + выходные целиком.
                         </p>
 
-                        @if (!useNonTradingPeriods(row.id)) {
+                        @if (nonTradingPeriodsMode(row.id) === 'off') {
                           <p class="signals-help periods-warn">
-                            Галочка «Учитывать неторговые периоды» выключена — интервалы ниже
-                            <strong>не применяются</strong>, сделки возможны в любое время, включая субботу и воскресенье.
+                            Режим «Не учитывать» — интервалы ниже <strong>не применяются</strong>,
+                            сделки возможны в любое время, включая субботу и воскресенье.
+                          </p>
+                        }
+                        @if (nonTradingPeriodsMode(row.id) === 'non_trading') {
+                          <p class="signals-help periods-warn">
+                            Режим «Только неторговые периоды» — новые сделки открываются
+                            <strong>только внутри</strong> интервалов ниже.
                           </p>
                         }
 

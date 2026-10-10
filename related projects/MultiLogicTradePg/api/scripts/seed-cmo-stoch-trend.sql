@@ -33,6 +33,7 @@ CROSS JOIN (VALUES
     ('max_open_positions', '15', 'integer'),
     ('base_annual_rate_pct', '20', 'number'),
     ('test_initial_balance', '1000000', 'money'),
+    ('non_trading_periods_mode', 'trading', 'text'),
     ('use_non_trading_periods', 'true', 'boolean'),
     ('opt_eval_candles', '200', 'integer')
 ) AS v(param_key, param_value, value_type)

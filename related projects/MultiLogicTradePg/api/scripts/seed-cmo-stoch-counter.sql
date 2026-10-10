@@ -80,7 +80,14 @@ CROSS JOIN (VALUES
 WHERE l.name = 'CMO Stoch Counter'
   AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
--- Торговые периоды: MOEX по умолчанию (12 окон) + признак «учитывать неторговые периоды».
+-- Торговые периоды: MOEX по умолчанию (12 окон) + режим «только торговые периоды».
+UPDATE logic_params lp
+SET param_value = 'trading', value_type = 'text', updated_at = CURRENT_TIMESTAMP
+FROM logics l
+WHERE l.id = lp.logic_id
+  AND l.name = 'CMO Stoch Counter'
+  AND lp.param_key = 'non_trading_periods_mode';
+
 UPDATE logic_params lp
 SET param_value = 'true', value_type = 'boolean', updated_at = CURRENT_TIMESTAMP
 FROM logics l

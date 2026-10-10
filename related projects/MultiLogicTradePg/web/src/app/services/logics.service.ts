@@ -163,6 +163,7 @@ export interface LogicTradesExportBundle {
   };
   trading_params: Record<string, unknown>;
   non_trading_periods: {
+    non_trading_periods_mode?: 'off' | 'trading' | 'non_trading';
     use_non_trading_periods: boolean;
     intervals: Array<Record<string, unknown>>;
   };
@@ -405,6 +406,7 @@ export class LogicsService {
       formula: string;
       is_active?: boolean;
       signal_acts_on?: 'security' | 'base_asset' | 'contango';
+      signal_confirm_sec?: number;
     }
   ): Observable<LogicIndicatorSignalRow> {
     return this.http.put<LogicIndicatorSignalRow>(

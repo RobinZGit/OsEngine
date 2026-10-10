@@ -1848,6 +1848,11 @@ DECLARE
     v_rtf INTEGER;
     v_rtf_sec INTEGER;
     v_rclosed TIMESTAMP;
+    v_confirm_disabled BOOLEAN;      -- #972: повторный прогон при подтверждении цены
+    v_confirm_sec INTEGER;           -- #972: настройка подтверждения группы (сек)
+    v_group_filter_event TEXT;       -- #972: создавать только подтверждённую группу
+    v_group_filter_side TEXT;
+    v_expected_dir TEXT;             -- #972: направление подтверждения up/down
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -1883,11 +1888,20 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- #972: подтверждение типа сигнала. Обычный цикл — удержание сработавшей группы до проверки
+    -- цены. Повторный прогон подтверждённой группы (logic_signal_confirm_finalize) — session-флаги
+    -- app.confirm_disabled / app.confirm_group_{event,side}: создаётся только она, дедуп обходится.
+    v_confirm_disabled := COALESCE(NULLIF(current_setting('app.confirm_disabled', TRUE), '')::BOOLEAN, FALSE);
+    v_group_filter_event := lower(NULLIF(current_setting('app.confirm_group_event', TRUE), ''));
+    v_group_filter_side := lower(NULLIF(current_setting('app.confirm_group_side', TRUE), ''));
+    v_confirm_sec := 0;
+
     v_last_bar_raw := btrim(COALESCE(get_logic_param_text(p_logic_id, 'last_trade_bar_dt'), ''));
     IF v_last_bar_raw <> '' THEN
         BEGIN
             v_last_bar_dt := v_last_bar_raw::TIMESTAMP;
-            IF v_closed_bar_dt <= v_last_bar_dt THEN
+            -- Если бар уже обработан обычным циклом — повтор только для подтверждённой группы (#972).
+            IF v_closed_bar_dt <= v_last_bar_dt AND NOT v_confirm_disabled THEN
                 PERFORM logic_trade_log(
                     p_logic_id,
                     'trade.bar_skip',
@@ -2003,7 +2017,7 @@ BEGIN
         v_open_positions := logic_count_open_positions(p_logic_id);
     END IF;
 
-    IF logic_is_non_trading_dt(p_logic_id, v_closed_bar_dt) THEN
+    IF logic_skip_signal_by_periods(p_logic_id, v_closed_bar_dt) THEN
         PERFORM logic_trade_log(
             p_logic_id,
             'trade.non_trading_skip',
@@ -2219,6 +2233,62 @@ BEGIN
             v_eff_side := lower(COALESCE(v_grp.position_side, 'long'));
             IF v_eff_inversion THEN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
+            END IF;
+
+            -- #972: повторный прогон после подтверждения — создаём только подтверждённую группу.
+            IF (COALESCE(v_group_filter_event, '') <> '' OR COALESCE(v_group_filter_side, '') <> '')
+               AND (v_group_filter_event <> lower(COALESCE(v_grp.position_event, 'open'))
+                    OR v_group_filter_side <> lower(COALESCE(v_grp.position_side, 'long'))) THEN
+                CONTINUE;
+            END IF;
+            -- #972: подтверждение типа сигнала. Все активные сигналы группы сработали (AND), но
+            -- у одного из них включено подтверждение — вход придерживается на N секунд: создаётся
+            -- запись logic_signal_confirm_pending, после deadline финализатор сверяет цену и лишь
+            -- при подтверждении направления повторно прогоняет эту группу на баре bar_dt.
+            IF NOT v_confirm_disabled THEN
+                SELECT COALESCE(max(lis.signal_confirm_sec), 0)
+                INTO v_confirm_sec
+                FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id
+                  AND lis.is_active = TRUE
+                  AND lis.position_event = v_grp.position_event
+                  AND lis.position_side = v_grp.position_side
+                  AND lis.signal_confirm_sec > 0;
+                IF v_confirm_sec > 0 THEN
+                    v_expected_dir := CASE
+                        WHEN lower(COALESCE(v_signal_kind, 'trend')) = 'counter'
+                            THEN CASE WHEN v_eff_side = 'long' THEN 'down' ELSE 'up' END
+                        ELSE CASE WHEN v_eff_side = 'long' THEN 'up' ELSE 'down' END
+                    END;
+                    INSERT INTO logic_signal_confirm_pending (
+                        logic_id, security_id, timeframe_id, bar_dt,
+                        position_event, position_side, signal_kind, formula,
+                        fire_price, expected_dir, confirm_sec, deadline
+                    )
+                    VALUES (
+                        p_logic_id, v_sec.security_id, v_tf_id, v_closed_bar_dt,
+                        v_grp.position_event, v_grp.position_side, v_signal_kind, v_formulas,
+                        v_pp, v_expected_dir, v_confirm_sec,
+                        CURRENT_TIMESTAMP + make_interval(secs => v_confirm_sec)
+                    )
+                    ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_event, position_side)
+                    DO NOTHING;
+                    PERFORM logic_trade_log(
+                        p_logic_id,
+                        'trade.confirm_wait',
+                        format('Сигнал %s/%s придержан: проверка направления цены через %s с',
+                            v_grp.position_event, v_grp.position_side, v_confirm_sec),
+                        jsonb_build_object(
+                            'closed_bar', v_closed_bar_dt,
+                            'security_id', v_sec.security_id,
+                            'fire_price', v_pp,
+                            'expected_dir', v_expected_dir
+                        ),
+                        v_sec.security_id,
+                        v_tf_id
+                    );
+                    CONTINUE;
+                END IF;
             END IF;
 
             v_held_long := CASE
@@ -2585,12 +2655,15 @@ BEGIN
         to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS'),
         'text'
     );
-    PERFORM logic_upsert_param(
-        p_logic_id,
-        'last_trade_bar_dt',
-        to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
-        'text'
-    );
+    -- #972: повторный прогон подтверждённой группы не должен откатывать дедуп-маркер.
+    IF NOT v_confirm_disabled THEN
+        PERFORM logic_upsert_param(
+            p_logic_id,
+            'last_trade_bar_dt',
+            to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+            'text'
+        );
+    END IF;
 
     IF v_created = 0 THEN
         PERFORM logic_trade_log(
@@ -2676,6 +2749,21 @@ BEGIN
 
     PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));
 
+    -- #972: финализируем отложенные подтверждения сигналов (свежие цены, повтор групп).
+    BEGIN
+        PERFORM logic_signal_confirm_finalize();
+    EXCEPTION
+        WHEN OTHERS THEN
+            PERFORM app_tech_log_event(
+                'trade-runner',
+                'cycle.confirm_error',
+                format('logic_signal_confirm_finalize: %s', SQLERRM),
+                'postgresql',
+                'error',
+                NULL, NULL, NULL, NULL
+            );
+    END;
+
     CALL touch_trade_runner_last_ok('postgresql');
 
     PERFORM app_tech_log_event(
@@ -2759,6 +2847,11 @@ DECLARE
     v_lot INTEGER := 1;
     v_sugg_qty INTEGER := 0;
     v_sugg_amount NUMERIC := 0;
+    v_confirm_disabled BOOLEAN;      -- #972: повторный прогон при подтверждении цены
+    v_confirm_sec INTEGER;           -- #972: настройка подтверждения группы (сек)
+    v_group_filter_event TEXT;       -- #972: создавать только подтверждённую группу
+    v_group_filter_side TEXT;
+    v_expected_dir TEXT;             -- #972: направление подтверждения up/down
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
@@ -2789,12 +2882,18 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- #972: подтверждение типа сигнала (см. process_logic_trades).
+    v_confirm_disabled := COALESCE(NULLIF(current_setting('app.confirm_disabled', TRUE), '')::BOOLEAN, FALSE);
+    v_group_filter_event := lower(NULLIF(current_setting('app.confirm_group_event', TRUE), ''));
+    v_group_filter_side := lower(NULLIF(current_setting('app.confirm_group_side', TRUE), ''));
+    v_confirm_sec := 0;
+
     -- Своя дедуп-ямка свечей: сигналы прогрессируют независимо от торговых last_trade_bar_dt.
     v_last_bar_raw := btrim(COALESCE(get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), ''));
     IF v_last_bar_raw <> '' THEN
         BEGIN
             v_last_bar_dt := v_last_bar_raw::TIMESTAMP;
-            IF v_closed_bar_dt <= v_last_bar_dt THEN
+            IF v_closed_bar_dt <= v_last_bar_dt AND NOT v_confirm_disabled THEN
                 RETURN 0;
             END IF;
         EXCEPTION WHEN OTHERS THEN
@@ -2822,7 +2921,7 @@ BEGIN
     CALL logic_refresh_market_data(p_logic_id, v_tf_id, v_closed_bar_dt, FALSE);
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
-    IF logic_is_non_trading_dt(p_logic_id, v_closed_bar_dt) THEN
+    IF logic_skip_signal_by_periods(p_logic_id, v_closed_bar_dt) THEN
         PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Неторговый период (сигнал в терминал не выдаётся)', NULL, NULL, v_tf_id);
         PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
             to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
@@ -2913,6 +3012,59 @@ BEGIN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
             END IF;
 
+            -- #972: повторный прогон после подтверждения — создаём только подтверждённую группу.
+            IF (COALESCE(v_group_filter_event, '') <> '' OR COALESCE(v_group_filter_side, '') <> '')
+               AND (v_group_filter_event <> lower(COALESCE(v_grp.position_event, 'open'))
+                    OR v_group_filter_side <> lower(COALESCE(v_grp.position_side, 'long'))) THEN
+                CONTINUE;
+            END IF;
+            -- #972: подтверждение типа сигнала (см. process_logic_trades).
+            IF NOT v_confirm_disabled THEN
+                SELECT COALESCE(max(lis.signal_confirm_sec), 0)
+                INTO v_confirm_sec
+                FROM logic_indicator_signals lis
+                WHERE lis.logic_id = p_logic_id
+                  AND lis.is_active = TRUE
+                  AND lis.position_event = v_grp.position_event
+                  AND lis.position_side = v_grp.position_side
+                  AND lis.signal_confirm_sec > 0;
+                IF v_confirm_sec > 0 THEN
+                    v_expected_dir := CASE
+                        WHEN lower(COALESCE(v_signal_kind, 'trend')) = 'counter'
+                            THEN CASE WHEN v_eff_side = 'long' THEN 'down' ELSE 'up' END
+                        ELSE CASE WHEN v_eff_side = 'long' THEN 'up' ELSE 'down' END
+                    END;
+                    INSERT INTO logic_signal_confirm_pending (
+                        logic_id, security_id, timeframe_id, bar_dt,
+                        position_event, position_side, signal_kind, formula,
+                        fire_price, expected_dir, confirm_sec, deadline
+                    )
+                    VALUES (
+                        p_logic_id, v_sec.security_id, v_tf_id, v_closed_bar_dt,
+                        v_grp.position_event, v_grp.position_side, v_signal_kind, v_formulas,
+                        v_pp, v_expected_dir, v_confirm_sec,
+                        CURRENT_TIMESTAMP + make_interval(secs => v_confirm_sec)
+                    )
+                    ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_event, position_side)
+                    DO NOTHING;
+                    PERFORM logic_trade_log(
+                        p_logic_id,
+                        'signal.confirm_wait',
+                        format('Сигнал %s/%s придержан: проверка направления цены через %s с',
+                            v_grp.position_event, v_grp.position_side, v_confirm_sec),
+                        jsonb_build_object(
+                            'closed_bar', v_closed_bar_dt,
+                            'security_id', v_sec.security_id,
+                            'fire_price', v_pp,
+                            'expected_dir', v_expected_dir
+                        ),
+                        v_sec.security_id,
+                        v_tf_id
+                    );
+                    CONTINUE;
+                END IF;
+            END IF;
+
             -- Количество к подстановке в терминал: та же база/%/лот/потолок, что у
             -- боевого входа (логика_posSizing_base + logic_calc_open_quantity).
             v_sugg_qty := 0;
@@ -2991,8 +3143,11 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
-        to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
+    -- #972: повторный прогон подтверждённой группы не должен откатывать дедуп-маркер.
+    IF NOT v_confirm_disabled THEN
+        PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
+            to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
+    END IF;
 
     RETURN v_created;
 END;
@@ -3006,6 +3161,176 @@ COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
 'Работает при use_as_terminal_signal=TRUE независимо от is_enabled (включённая логика торгует как обычно + сигналит в терминал). '
 'Недостающие closed-свечи цен сигнальных бумаг догружаются инкрементально (1 HTTP через prices_topup_date_from), '
 'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
+
+-- ============================================================
+-- Подтверждение типа сигнала (#972)
+-- Финализатор отложенных подтверждений: берёт по истёкшему дедлайну записи
+-- logic_signal_confirm_pending, дозагружает свежую цену (logic_fresh_order_price),
+-- сравнивает с fire_price по expected_dir и при подтверждении направления
+-- повторно прогоняет process_logic_trades / process_logic_terminal_signals на
+-- баре bar_dt с флагом app.confirm_disabled=TRUE (дедуп обходится, создаётся
+-- только подтверждённая группа). Вызывается из run_trade_cycle(), боевого цикла
+-- api/trade-runner.js и logic_lightning_run.
+-- ============================================================
+CREATE OR REPLACE FUNCTION logic_signal_confirm_finalize()
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_pend RECORD;
+    v_check_price NUMERIC;
+    v_ok BOOLEAN;
+    v_note TEXT;
+    v_created INTEGER := 0;
+    v_created_this INTEGER := 0;
+    v_bt_skip BOOLEAN := FALSE;
+BEGIN
+    FOR v_pend IN
+        SELECT p.id, p.logic_id, p.security_id, p.timeframe_id, p.bar_dt,
+               p.position_event, p.position_side, p.signal_kind, p.formula,
+               p.fire_price, p.expected_dir, p.confirm_sec, p.deadline,
+               l.is_enabled, COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig,
+               a.is_active AS account_active
+        FROM logic_signal_confirm_pending p
+        JOIN logics l ON l.id = p.logic_id
+        JOIN accounts a ON a.id = l.account_id
+        WHERE p.status = 'pending'
+          AND p.deadline <= CURRENT_TIMESTAMP
+        ORDER BY p.deadline, p.id
+        FOR UPDATE SKIP LOCKED
+    LOOP
+        -- Бэктест логики идёт впереди — не мешаем ему (та же проверка, что в боевом цикле).
+        v_bt_skip := FALSE;
+        BEGIN
+            SELECT coalesce(bool_or(bt.status IN ('running', 'queued')), FALSE)
+            INTO v_bt_skip
+            FROM logic_backtest_runs bt
+            WHERE bt.logic_id = v_pend.logic_id
+              AND bt.status IN ('running', 'queued');
+        EXCEPTION
+            WHEN undefined_table THEN
+                v_bt_skip := FALSE;
+        END;
+
+        IF v_bt_skip OR NOT COALESCE(v_pend.account_active, FALSE) THEN
+            UPDATE logic_signal_confirm_pending
+            SET status = 'failed',
+                note = CASE WHEN v_bt_skip THEN 'backtest busy' ELSE 'account inactive' END,
+                confirmed_at = CURRENT_TIMESTAMP
+            WHERE id = v_pend.id;
+            CONTINUE;
+        END IF;
+
+        -- Догружаем цены и берём свежую цену на момент проверки.
+        -- Скаляр (не RECORD): при исключении до SELECT INTO запись остаётся
+        -- «не присвоенной» и чтение v_fresh.* падает с 55000.
+        v_check_price := NULL;
+        BEGIN
+            CALL logic_refresh_market_data(v_pend.logic_id, v_pend.timeframe_id, v_pend.bar_dt);
+            SELECT fp.price INTO v_check_price
+            FROM logic_fresh_order_price(v_pend.logic_id, v_pend.security_id, v_pend.timeframe_id) fp;
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_check_price := NULL;
+        END;
+
+        v_ok := FALSE;
+        v_note := NULL;
+        IF v_check_price IS NOT NULL AND v_pend.fire_price IS NOT NULL
+           AND v_check_price <> v_pend.fire_price THEN
+            v_ok := (v_check_price > v_pend.fire_price) = (v_pend.expected_dir = 'up');
+            IF NOT v_ok THEN
+                v_note := format(
+                    'цена %s против ожидания %s (была %s)', v_check_price, v_pend.expected_dir, v_pend.fire_price
+                );
+            END IF;
+        ELSIF v_check_price IS NULL THEN
+            v_note := 'цена недоступна';
+        ELSE
+            v_note := 'цена не изменилась';
+        END IF;
+
+        UPDATE logic_signal_confirm_pending
+        SET status = CASE WHEN v_ok THEN 'confirmed' ELSE 'failed' END,
+            check_price = v_check_price,
+            note = v_note,
+            confirmed_at = CURRENT_TIMESTAMP
+        WHERE id = v_pend.id;
+
+        IF NOT v_ok THEN
+            PERFORM logic_trade_log(
+                v_pend.logic_id,
+                'trade.confirm_failed',
+                format('Сигнал %s/%s НЕ подтверждён: %s',
+                    v_pend.position_event, v_pend.position_side, COALESCE(v_note, 'цена не изменилась')),
+                jsonb_build_object(
+                    'closed_bar', v_pend.bar_dt,
+                    'security_id', v_pend.security_id,
+                    'fire_price', v_pend.fire_price,
+                    'check_price', v_check_price,
+                    'expected_dir', v_pend.expected_dir
+                ),
+                v_pend.security_id,
+                v_pend.timeframe_id
+            );
+            CONTINUE;
+        END IF;
+
+        -- Подтверждено: повторно прогоняем боевые процессы на ОРИГИНАЛЬНОМ баре bar_dt.
+        -- app.lightning_bar_dt фиксирует v_closed_bar_dt, app.confirm_disabled обходит дедуп
+        -- и не перезаписывает last_trade_bar_dt, app.confirm_group_{event,side} создаёт
+        -- только подтверждённую группу.
+        PERFORM set_config('app.lightning_bar_dt', to_char(v_pend.bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
+        PERFORM set_config('app.confirm_disabled', 'TRUE', TRUE);
+        PERFORM set_config('app.confirm_group_event', v_pend.position_event, TRUE);
+        PERFORM set_config('app.confirm_group_side', v_pend.position_side, TRUE);
+
+        v_created_this := 0;
+        IF COALESCE(v_pend.is_enabled, FALSE) THEN
+            v_created_this := process_logic_trades(v_pend.logic_id);
+        END IF;
+        IF COALESCE(v_pend.use_sig, FALSE) THEN
+            v_created_this := v_created_this + process_logic_terminal_signals(v_pend.logic_id);
+        END IF;
+        v_created := v_created + v_created_this;
+
+        PERFORM set_config('app.lightning_bar_dt', '', TRUE);
+        PERFORM set_config('app.confirm_disabled', '', TRUE);
+        PERFORM set_config('app.confirm_group_event', '', TRUE);
+        PERFORM set_config('app.confirm_group_side', '', TRUE);
+
+        IF v_created_this = 0 THEN
+            PERFORM logic_trade_log(
+                v_pend.logic_id,
+                'trade.confirm_ok',
+                format('Сигнал %s/%s подтверждён, но сделка не создана',
+                    v_pend.position_event, v_pend.position_side),
+                jsonb_build_object('closed_bar', v_pend.bar_dt),
+                v_pend.security_id,
+                v_pend.timeframe_id
+            );
+        ELSE
+            PERFORM logic_trade_log(
+                v_pend.logic_id,
+                'trade.confirm_ok',
+                format('Сигнал %s/%s подтверждён: создано %s',
+                    v_pend.position_event, v_pend.position_side, v_created_this),
+                jsonb_build_object('closed_bar', v_pend.bar_dt),
+                v_pend.security_id,
+                v_pend.timeframe_id
+            );
+        END IF;
+    END LOOP;
+
+    RETURN v_created;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_signal_confirm_finalize() IS
+'Финализатор отложенных подтверждений сигналов (#972): по истёкшему дедлайну сравнивает '
+'свежую цену (logic_fresh_order_price) с fire_price по expected_dir и при подтверждении '
+'направления повторно прогоняет process_logic_trades / process_logic_terminal_signals '
+'на исходном баре (app.confirm_disabled обходит дедуп, app.confirm_group_* — только группу). '
+'Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
 
 -- ============================================================
 -- Молния (#960): ручная проверка сигналов логики на момент нажатия.
@@ -3109,6 +3434,17 @@ BEGIN
         WHEN OTHERS THEN
             NULL;
     END;
+
+    -- #972: финализируем уже созревшие отложенные подтверждения (вновь созданные
+    -- при этом прогоне имеют deadline в будущем — сюда не попадают).
+    IF NOT p_log_only THEN
+        BEGIN
+            PERFORM logic_signal_confirm_finalize();
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
+    END IF;
 
     -- Подготовка данных на виртуальный бар: свежие минуты + резample в ТФ логики
     -- и доп. ТФ формул сигналов (tf= в формулах).

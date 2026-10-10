@@ -1250,6 +1250,7 @@ app.get('/api/logic-indicator-signals', async (req, res) => {
         lis.position_side,
         lis.signal_kind,
         COALESCE(lis.signal_acts_on, 'security') AS signal_acts_on,
+        lis.signal_confirm_sec,
         lis.formula,
         lis.rating,
         lis.rating_test,
@@ -1435,7 +1436,7 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
       INSERT INTO logic_indicator_signals
         (logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, display_order)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, rating, rating_test, display_order, is_active
+      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, signal_confirm_sec, formula, rating, rating_test, display_order, is_active
     `,
       [logicId, indicatorId, positionEvent, positionSide, signalKind, signalActsOn, formula, displayOrder]
     );
@@ -1471,6 +1472,13 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
     res.status(400).json({ error: 'formula required' });
     return;
   }
+  // #972: подтверждение типа сигнала (0 = не подтверждать).
+  const hasConfirm = Object.prototype.hasOwnProperty.call(req.body || {}, 'signal_confirm_sec');
+  const signalConfirmSec = hasConfirm ? Number(req.body?.signal_confirm_sec) : null;
+  if (signalConfirmSec !== null && (!Number.isInteger(signalConfirmSec) || signalConfirmSec < 0 || signalConfirmSec > 86400)) {
+    res.status(400).json({ error: 'signal_confirm_sec must be an integer 0..86400' });
+    return;
+  }
   try {
     const { rows: curRows } = await pool.query(
       `SELECT logic_id FROM logic_indicator_signals WHERE id = $1`,
@@ -1498,11 +1506,12 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
       UPDATE logic_indicator_signals
       SET formula = $2,
           is_active = COALESCE($3::boolean, is_active),
-          signal_acts_on = COALESCE($4::varchar, signal_acts_on)
+          signal_acts_on = COALESCE($4::varchar, signal_acts_on),
+          signal_confirm_sec = COALESCE($5::int, signal_confirm_sec)
       WHERE id = $1
-      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, formula, rating, rating_test, display_order, is_active
+      RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, signal_confirm_sec, formula, rating, rating_test, display_order, is_active
     `,
-      [id, formula, isActive === undefined ? null : isActive, signalActsOn]
+      [id, formula, isActive === undefined ? null : isActive, signalActsOn, signalConfirmSec]
     );
     const row = rows[0];
     const { rows: meta } = await pool.query(
@@ -1949,6 +1958,7 @@ app.get('/api/logics/:id/non-trading-periods', async (req, res) => {
     const trading = await getTradingParams(pool, id);
     res.json({
       logic_id: id,
+      non_trading_periods_mode: trading.non_trading_periods_mode,
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       intervals: rows,
     });
@@ -2003,6 +2013,7 @@ app.post('/api/logics/:id/non-trading-periods/moex-defaults', async (req, res) =
     res.json({
       logic_id: id,
       applied: Number(rows[0]?.n ?? 0),
+      non_trading_periods_mode: trading.non_trading_periods_mode,
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       intervals,
     });
@@ -2064,6 +2075,7 @@ app.post('/api/logics/:id/non-trading-periods', async (req, res) => {
     const trading = await getTradingParams(pool, id);
     res.status(201).json({
       logic_id: id,
+      non_trading_periods_mode: trading.non_trading_periods_mode,
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       intervals: await fetchNonTradingIntervals(pool, id),
     });
@@ -2144,6 +2156,7 @@ app.patch('/api/logic-non-trading-intervals/:id', async (req, res) => {
     const trading = await getTradingParams(pool, logicId);
     res.json({
       logic_id: logicId,
+      non_trading_periods_mode: trading.non_trading_periods_mode,
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       intervals: await fetchNonTradingIntervals(pool, logicId),
     });
@@ -2177,6 +2190,7 @@ app.delete('/api/logic-non-trading-intervals/:id', async (req, res) => {
     res.json({
       ok: true,
       logic_id: logicId,
+      non_trading_periods_mode: trading.non_trading_periods_mode,
       use_non_trading_periods: trading.use_non_trading_periods !== false,
       intervals: await fetchNonTradingIntervals(pool, logicId),
     });
