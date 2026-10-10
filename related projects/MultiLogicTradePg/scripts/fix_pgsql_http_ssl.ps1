@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
   Updates CA-bundle for libcurl (pgsql-http) in PostgreSQL 15:

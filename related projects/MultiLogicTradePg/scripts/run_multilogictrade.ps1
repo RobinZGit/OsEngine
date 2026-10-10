@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Выполнение SQL-скриптов MultiLogicTrade на локальном PostgreSQL 15.
