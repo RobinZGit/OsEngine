@@ -147,8 +147,8 @@
 }
 
 .col-actions {
-  width: 6.75rem;
-  min-width: 6.75rem;
+  width: 8.5rem;
+  min-width: 8.5rem;
   white-space: nowrap;
   text-align: right;
   overflow: visible;
@@ -297,7 +297,7 @@
 
 .table-wrap > table th.col-export,
 .table-wrap > table td.col-export {
-  right: 6.75rem;
+  right: 8.5rem;
 }
 
 /* Always paint sticky ends from the row token (init / expand / hover / testing). */
