@@ -9,6 +9,7 @@ const WATCHDOG_MS = Number(process.env.TRADE_WATCHDOG_MS) || 30000;
 
 const { writeTechLogEvent } = require('./lib/tech-log');
 const { isUiSessionActive } = require('./lib/trade-runner-session');
+const { decorate } = require('./lib/error-codes');
 
 const TRADE_CYCLE_LOCK_KEY = 'multilogictrade_run_trade_cycle';
 
@@ -60,7 +61,7 @@ async function touchLastOkDb(poolOrClient, source) {
     await poolOrClient.query(`CALL touch_trade_runner_last_ok($1)`, [source || 'node']);
   } catch (e) {
     // Still mark in-memory so UI does not stay red while cycles run.
-    console.error('touch_trade_runner_last_ok failed:', e.message || e);
+    console.error('touch_trade_runner_last_ok failed:', decorate(e.message || e));
   }
   lastOkAtMs = Date.now();
 }
@@ -202,7 +203,7 @@ async function runTradeCycle(pool, opts = {}) {
           try {
             await client.query(`SELECT logic_park_excess_cash($1)`, [row.id]);
           } catch (parkErr) {
-            console.error(`cash fund park logic=${row.id}`, parkErr.message);
+            console.error(`cash fund park logic=${row.id}`, decorate(parkErr.message));
           }
         }
         if (row.use_sig) {
@@ -218,7 +219,7 @@ async function runTradeCycle(pool, opts = {}) {
         await touchLastOkDb(client, 'node-logic');
       } catch (logicErr) {
         logicErrors += 1;
-        console.error(`Trade runner logic=${row.id}`, logicErr.message);
+        console.error(`Trade runner logic=${row.id}`, decorate(logicErr.message));
         try {
           await client.query('SET statement_timeout = 0');
         } catch (_e) {
@@ -240,7 +241,7 @@ async function runTradeCycle(pool, opts = {}) {
         console.log(`confirm finalize created=${confirmed}`);
       }
     } catch (confirmErr) {
-      console.error('logic_signal_confirm_finalize', confirmErr.message);
+      console.error('logic_signal_confirm_finalize', decorate(confirmErr.message));
     }
 
     try {
@@ -456,7 +457,7 @@ function startTradeRunner(pool) {
         );
       })
       .catch((err) => {
-        console.error('Trade runner cycle error', err.message);
+        console.error('Trade runner cycle error', decorate(err.message));
         forceResetBusy('cycle_error');
       });
   }, RUNNER_INTERVAL_MS);
@@ -468,7 +469,7 @@ function startTradeRunner(pool) {
         console.log(`Trade watchdog: action=${out.action}`);
       })
       .catch((err) => {
-        console.error('Trade watchdog error', err.message);
+        console.error('Trade watchdog error', decorate(err.message));
         watchdogRunning = false;
       });
   }, WATCHDOG_MS);

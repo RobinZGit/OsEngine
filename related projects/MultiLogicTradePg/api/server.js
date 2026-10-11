@@ -30,6 +30,7 @@ const { resumeOrphanBacktests } = require('./logic-backtest');
 const { startTradeRunner } = require('./trade-runner');
 const { startMaintenanceScheduler } = require('./maintenance-scheduler');
 const { createRouteContext, resumeOrphanWarmups } = require('./lib/server-shared');
+const { describeHttpStatus } = require('./lib/error-codes');
 
 const registerSettingsRoutes = require('./routes/settings');
 const registerInternalTbankRoutes = require('./routes/internal-tbank');
@@ -61,6 +62,18 @@ const ctx = createRouteContext(pool);
 
 app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const status = res.statusCode;
+    if (status < 400) return;
+    const info = describeHttpStatus(status);
+    console.warn(
+      `[HTTP ${status}] ${req.method} ${req.originalUrl}` + (info ? `\n         -> ${info}` : '')
+    );
+  });
+  next();
+});
 
 registerSettingsRoutes(app, ctx);
 registerInternalTbankRoutes(app, ctx);
@@ -159,5 +172,8 @@ app.use((_req, res) => {
       })
       .catch((err) => console.error('resumeOrphanBacktests', err));
     console.log('API ready — keep this window open. Trade cycles every 15s (see lines below).');
+    console.log(
+      'Коды ошибок расшифровываются ниже (HTTP 429, ETIMEDOUT ...). Справочник: node api/lib/error-codes.js'
+    );
   });
 })();

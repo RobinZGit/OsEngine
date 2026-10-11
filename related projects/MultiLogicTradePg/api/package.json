@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "error-codes": "node lib/error-codes.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

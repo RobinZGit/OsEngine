@@ -377,6 +377,7 @@ UI-only install без наката 01/02/hotfix бой не чинит.`,
 • ops — tech-log, processes, schema
 • Авто: после бэктеста — cleanup_unused_indicator_values(); по расписанию — если APP_CLEANUP_DISK включён.
 • Trade runner — фоновый цикл сделок (по умолчанию headless, Angular не обязателен). Watchdog каждые ~30 с: если цикл спит — kick stuck + повторный запуск. В UI чекбокс «включено» зелёный пульс = heartbeat цикла (~15 с), не таймфрейм логики и не момент сделки; красный = цикл реально спит / UI required / тень портфеля.
+• В консоли окна запуска (MultiLogic_Trade_Progress_Start.bat) коды ошибок расшифровываются автоматически: HTTP 429 — это лимит запросов T-Bank/прокси (не сертификаты), ETIMEDOUT, ошибки TLS и др. Полный справочник: node api/lib/error-codes.js.
 
 В Angular сервисы (web/src/app/services/*.ts) — тонкие обёртки над этими URL; JSDoc у публичных методов.`,
   },
