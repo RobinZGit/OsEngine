@@ -79,6 +79,23 @@ free_port() {
   fi
 }
 
+wait_port() {
+  # Wait until something is listening on $1 (up to $2 half-second tries).
+  local port="$1" tries="${2:-480}" i=0
+  while [[ "$i" -lt "$tries" ]]; do
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]" && return 0
+    elif command -v lsof >/dev/null 2>&1; then
+      lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+    elif (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 0.5
+  done
+  return 1
+}
+
 echo "  [1/3] Free ports 3000 and 4200..."
 free_port 3000
 free_port 4200
@@ -118,9 +135,10 @@ echo "  Opening http://localhost:4200 (Angular UI)..."
 echo "  Ctrl+C to stop both. Trading continues if you close the browser only."
 echo
 
-# Try to open the Angular form in the default browser (ignore failures on headless hosts).
+# Open the Angular form in the default browser only after :4200 is listening
+# (ignore failures on headless hosts).
 (
-  sleep 27
+  wait_port 4200 || true
   if command -v xdg-open >/dev/null 2>&1; then
     xdg-open "http://localhost:4200/?v=${RANDOM}" >/dev/null 2>&1 || true
   elif command -v sensible-browser >/dev/null 2>&1; then

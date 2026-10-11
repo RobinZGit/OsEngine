@@ -132,9 +132,10 @@ popd
 REM Give API a moment to bind the port.
 ping 127.0.0.1 -n 3 >nul
 
-REM Open browser after Angular has time to compile. Do not nest cmd/start quotes here.
+REM Open browser only after Angular is actually listening on :4200 (not a fixed delay).
+REM Do not nest cmd/start quotes here.
 set "CACHE_BUST=%RANDOM%"
-start "MultiLogic Browser Opener" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 27; Start-Process 'http://localhost:4200/?v=%CACHE_BUST%'"
+start "MultiLogic Browser Opener" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$end=(Get-Date).AddSeconds(240); while((Get-Date) -lt $end -and -not (Get-NetTCPConnection -LocalPort 4200 -State Listen -ErrorAction SilentlyContinue)){ Start-Sleep -Milliseconds 500 }; Start-Process ('http://localhost:4200/?v=' + $env:CACHE_BUST)"
 
 pushd "%WEB%"
 echo  Launch: ng serve --port 4200 ...
