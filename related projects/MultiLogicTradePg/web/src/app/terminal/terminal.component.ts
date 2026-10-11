@@ -367,29 +367,23 @@ export class TerminalComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Выбор счёта при старте: по умолчанию — фейковый (демо), если такой есть.
-      Сохранённый ранее реальный счёт игнорируется — иначе терминал «залипает»
-      на старом реальном и не переходит на новый фейковый. Сохранённый
-      фейковый счёт восстанавливается (выбор фейка запоминается). */
+  /** Выбор счёта при старте: восстанавливаем ПОСЛЕДНИЙ выбранный счёт (фейковый
+      или реальный), чтобы между сессиями терминал открывался на том же счёте.
+      Если ничего не сохранено — дефолт: первый фейковый (демо), иначе первый в
+      списке. Выбор запоминается на сервере (PUT /api/terminal/ui-state). */
   private selectDefaultAccount(accounts: AccountRow[]): void {
     const fakeIds = accounts
       .filter((a) => String(a.account_type).toLowerCase() !== 'real')
       .map((a) => a.id);
     const fallbackId = fakeIds[0] ?? accounts[0]?.id ?? null;
-    this.applyAccount(fallbackId);
     this.stateSvc.getUiState().subscribe({
       next: (r) => {
-        if (!this.accounts.length) return;
         const saved = r?.selected_account_id ?? null;
-        if (saved == null || saved === this.accountId) return;
-        const savedAccount = this.accounts.find((a) => a.id === saved);
-        if (!savedAccount) return;
-        const savedIsFake =
-          String(savedAccount.account_type).toLowerCase() !== 'real';
-        // Реальный сохранённый счёт не перебивает дефолтный фейковый.
-        if (!fakeIds.length || savedIsFake) this.applyAccount(saved);
+        const savedAccount =
+          saved != null ? this.accounts.find((a) => a.id === saved) : undefined;
+        this.applyAccount(savedAccount ? saved : fallbackId);
       },
-      error: () => undefined,
+      error: () => this.applyAccount(fallbackId),
     });
   }
 

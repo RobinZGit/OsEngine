@@ -965,6 +965,45 @@ module.exports = function registerTerminalRoutes(app, ctx) {
     }
   });
 
+  /** Сохранить выбор счёта терминала (переживает перезапуск).
+      Раньше ветки PUT не было: фронт делает PUT, а на сервере регистрировался
+      только GET — Express отвечал 404, и выбор между сессиями не сохранялся. */
+  app.put('/api/terminal/ui-state', async (req, res) => {
+    const raw = req.body?.selected_account_id;
+    const accountId =
+      raw === null || raw === undefined || raw === '' ? null : Number(raw);
+    if (accountId !== null && (!Number.isInteger(accountId) || accountId <= 0)) {
+      res
+        .status(400)
+        .json({ ok: false, error: 'selected_account_id должен быть id счёта или null' });
+      return;
+    }
+    try {
+      if (accountId === null) {
+        const { rows } = await pool.query(
+          `UPDATE terminal_ui_state
+             SET selected_account_id = NULL, updated_at = now()
+           WHERE id = 1
+           RETURNING selected_account_id`
+        );
+        res.json({ ok: true, selected_account_id: rows[0]?.selected_account_id ?? null });
+        return;
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO terminal_ui_state (id, selected_account_id, updated_at)
+         VALUES (1, $1, now())
+         ON CONFLICT (id) DO UPDATE
+           SET selected_account_id = EXCLUDED.selected_account_id,
+               updated_at = now()
+         RETURNING selected_account_id`,
+        [accountId]
+      );
+      res.json({ ok: true, selected_account_id: rows[0]?.selected_account_id ?? null });
+    } catch (err) {
+      handleDbError(res, err, 'terminal ui-state put');
+    }
+  });
+
   /** Сигналы логик в терминал (непрочитанные, новые сверху по времени записи).
       Записи создаёт процесс_logic_terminal_signals в торговом цикле (node-runner).
       Сигнал НЕ привязан к счёту логики: бумага добавляется в терминал, а сделки

@@ -6,9 +6,81 @@
  */
 
 const { httpsJsonPost, formatError } = require('./tbank-tls');
+const crypto = require('crypto');
 
 /** Prod T-Invest REST (support: invest-public-api.tbank.ru:443). */
 const DEFAULT_API = 'https://invest-public-api.tbank.ru/rest';
+
+const RPC_GET_ACCOUNTS = 'tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts';
+const RPC_GET_PORTFOLIO = 'tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio';
+const RPC_POST_ORDER = 'tinkoff.public.invest.api.contract.v1.OrdersService/PostOrder';
+
+/**
+ * TTL-кэш read-only RPC (GetAccounts/GetPortfolio). Трейд-цикл за один прогон
+ * вызывает баланс по 3 раза на каждую реальную логику (sizing_base + equity +
+ * cycle_budget) — это и порождало HTTP 429 у T-Bank. Кэш на короткий TTL
+ * схлопывает параллельные чтения в один запрос. GetAccounts меняется редко —
+ * длинный TTL; GetPortfolio — короткий, и сбрасывается после любой заявки.
+ */
+const RPC_CACHE_TTL_MS = {
+  [RPC_GET_ACCOUNTS]: 300_000,
+  [RPC_GET_PORTFOLIO]: 20_000,
+};
+const RPC_CACHE_MAX = 500;
+const rpcCache = new Map();
+
+/** Повтор при 429 (Retry-After или экспоненциальная пауза). */
+const RATE_LIMIT_RETRIES = 2;
+const RATE_LIMIT_BASE_DELAY_MS = 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function rpcCacheKey(apiUrl, rpcPath, token, body) {
+  const tokenHash = crypto
+    .createHash('sha1')
+    .update(String(token || ''))
+    .digest('hex')
+    .slice(0, 12);
+  let bodyKey;
+  try {
+    bodyKey = JSON.stringify(body ?? {}) || '';
+  } catch (_e) {
+    bodyKey = String(body);
+  }
+  return `${baseUrl(apiUrl)}\n${rpcPath}\n${tokenHash}\n${bodyKey}`;
+}
+
+function cloneJson(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function rpcCacheGet(key, ttlMs) {
+  const hit = rpcCache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > ttlMs) {
+    rpcCache.delete(key);
+    return undefined;
+  }
+  return hit.data;
+}
+
+function rpcCacheSet(key, data) {
+  if (rpcCache.size >= RPC_CACHE_MAX) {
+    const oldest = rpcCache.keys().next().value;
+    if (oldest !== undefined) rpcCache.delete(oldest);
+  }
+  rpcCache.set(key, { at: Date.now(), data: cloneJson(data) });
+}
+
+/** Сброс кэша после заявки: баланс портфеля должен стать свежим сразу. */
+function invalidateRpcCache(rpcPath) {
+  const marker = `\n${rpcPath}\n`;
+  for (const key of [...rpcCache.keys()]) {
+    if (key.includes(marker)) rpcCache.delete(key);
+  }
+}
 
 function baseUrl(apiUrl) {
   const u = String(apiUrl || DEFAULT_API).trim().replace(/\/+$/, '');
@@ -43,20 +115,43 @@ function formatMoneyRu(amount, currency) {
 }
 
 async function tbankHttpPost(apiUrl, rpcPath, token, body = {}) {
-  const url = `${baseUrl(apiUrl)}/${String(rpcPath || '').replace(/^\/+/, '')}`;
+  const path = String(rpcPath || '');
+  const ttlMs = RPC_CACHE_TTL_MS[path];
+  const cacheKey = ttlMs ? rpcCacheKey(apiUrl, path, token, body) : null;
+  if (cacheKey) {
+    const cached = rpcCacheGet(cacheKey, ttlMs);
+    if (cached !== undefined) return cloneJson(cached);
+  }
+
+  const url = `${baseUrl(apiUrl)}/${path.replace(/^\/+/, '')}`;
   let status;
   let json;
   let text;
-  try {
-    ({ status, json, text } = await httpsJsonPost(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      body: body ?? {},
-    }));
-  } catch (err) {
-    const wrapped = new Error(formatError(err));
-    wrapped.cause = err.cause || err;
-    wrapped.code = err.code;
-    throw wrapped;
+  let headers;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      ({ status, json, text, headers } = await httpsJsonPost(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        body: body ?? {},
+      }));
+    } catch (err) {
+      const wrapped = new Error(formatError(err));
+      wrapped.cause = err.cause || err;
+      wrapped.code = err.code;
+      throw wrapped;
+    }
+    // 429 — превышен лимит запросов T-Bank. Ждём Retry-After (или паузу с
+    // ростом) и повторяем, а не сразу валим цикл/UI ошибкой.
+    if (status === 429 && attempt < RATE_LIMIT_RETRIES) {
+      const retryAfter = Number(headers?.['retry-after']);
+      const waitMs =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 5000)
+          : RATE_LIMIT_BASE_DELAY_MS * (attempt + 1);
+      await sleep(waitMs);
+      continue;
+    }
+    break;
   }
   if (status < 200 || status >= 300) {
     const msg =
@@ -74,6 +169,10 @@ async function tbankHttpPost(apiUrl, rpcPath, token, body = {}) {
     err.body = json;
     throw err;
   }
+  if (cacheKey) rpcCacheSet(cacheKey, json);
+  // Заявка меняет состав портфеля — сбрасываем кэш портфеля, чтобы UI сразу
+  // показал новый остаток, а не закэшированный до сделки.
+  if (path === RPC_POST_ORDER) invalidateRpcCache(RPC_GET_PORTFOLIO);
   return json;
 }
 

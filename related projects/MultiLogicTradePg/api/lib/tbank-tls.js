@@ -134,7 +134,7 @@ function httpsGetText(urlString, agent) {
 
 /**
  * POST JSON via https (not fetch) so Russian CA Agent is applied.
- * @returns {Promise<{ status: number, json: any, text: string }>}
+ * @returns {Promise<{ status: number, json: any, text: string, headers: object }>}
  */
 const DEFAULT_HTTP_TIMEOUT_MS = 3000;
 
@@ -168,7 +168,7 @@ function httpsJsonPost(urlString, { headers = {}, body = '', agent, timeoutMs = 
           } catch (_e) {
             json = null;
           }
-          finish(resolve, { status: res.statusCode || 0, json, text });
+          finish(resolve, { status: res.statusCode || 0, json, text, headers: res.headers });
         });
       }
     );
