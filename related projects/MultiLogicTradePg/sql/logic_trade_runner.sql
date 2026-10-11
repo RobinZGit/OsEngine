@@ -3104,6 +3104,20 @@ BEGIN
                 v_sugg_amount := round(v_sugg_qty * v_pp, 2);
             END IF;
 
+            -- #982: жёсткая проверка флага ПЕРЕД записью. Функция могла начать
+            -- работу, когда «сигнал в терминал» был включён, и затем выполнить
+            -- долгую догрузку цен (logic_refresh_market_data) и расчёт
+            -- индикаторов. Если галочку выключили УЖЕ во время выполнения —
+            -- сигнал не создаём: отдельный SELECT видит свежие закоммиченные
+            -- данные, поэтому выключение срабатывает сразу, а не со следующего
+            -- цикла. RETURN — проход целиком прекращаем.
+            IF NOT COALESCE(
+                (SELECT l.use_as_terminal_signal FROM logics l WHERE l.id = p_logic_id),
+                FALSE
+            ) THEN
+                RETURN v_created;
+            END IF;
+
             INSERT INTO logic_terminal_signals (
                 logic_id, security_id, timeframe_id, bar_dt,
                 position_side, signal_kind, formula, price,

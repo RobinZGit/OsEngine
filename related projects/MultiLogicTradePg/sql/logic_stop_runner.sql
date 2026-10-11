@@ -936,7 +936,11 @@ BEGIN
     -- Терминал с чекбоксом «Закрывать по сигналу» закроет свою позицию этой бумаги
     -- (в т.ч. при срабатывании стоп-лосса любого вида) для логик с
     -- use_as_terminal_signal.
-    IF v_closed > 0 AND v_logic.use_sig AND NOT p_is_shadow THEN
+    -- #982: флаг перечитываем ЗДЕСЬ (а не только на входе функции) — если галочку
+    -- выключили во время длинного прогона, сигнал о закрытии не создаём.
+    IF v_closed > 0 AND NOT p_is_shadow AND COALESCE(
+        (SELECT l.use_as_terminal_signal FROM logics l WHERE l.id = p_logic_id), FALSE
+    ) THEN
         IF v_closed_long > 0 THEN
             INSERT INTO logic_terminal_signals (
                 logic_id, security_id, timeframe_id, bar_dt,

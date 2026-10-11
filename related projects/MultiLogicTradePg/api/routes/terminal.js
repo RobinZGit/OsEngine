@@ -1038,7 +1038,11 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         LEFT JOIN security_prefixes sp
                ON sp.security_id = s.id AND sp.exchange_id = 1
         JOIN timeframes t ON t.id = lts.timeframe_id
+        -- #982: отдаём только сигналы логик, у которых «сигнал в терминал»
+        -- ВКЛЮЧЁН ПРЯМО СЕЙЧАС. Так уже созданный, но ещё не прочитанный
+        -- сигнал не «доедет» до терминала после того, как галочку выключили.
         WHERE lts.is_read = FALSE
+          AND COALESCE(l.use_as_terminal_signal, FALSE) = TRUE
         ORDER BY lts.id ${order}
         LIMIT $1
         `,

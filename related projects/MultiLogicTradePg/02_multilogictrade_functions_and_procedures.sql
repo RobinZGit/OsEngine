@@ -5364,6 +5364,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -8141,7 +8142,11 @@ BEGIN
     -- Терминал с чекбоксом «Закрывать по сигналу» закроет свою позицию этой бумаги
     -- (в т.ч. при срабатывании стоп-лосса любого вида) для логик с
     -- use_as_terminal_signal.
-    IF v_closed > 0 AND v_logic.use_sig AND NOT p_is_shadow THEN
+    -- #982: флаг перечитываем ЗДЕСЬ (а не только на входе функции) — если галочку
+    -- выключили во время длинного прогона, сигнал о закрытии не создаём.
+    IF v_closed > 0 AND NOT p_is_shadow AND COALESCE(
+        (SELECT l.use_as_terminal_signal FROM logics l WHERE l.id = p_logic_id), FALSE
+    ) THEN
         IF v_closed_long > 0 THEN
             INSERT INTO logic_terminal_signals (
                 logic_id, security_id, timeframe_id, bar_dt,
@@ -10030,6 +10035,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -19069,6 +19102,20 @@ BEGIN
                 v_sugg_amount := round(v_sugg_qty * v_pp, 2);
             END IF;
 
+            -- #982: жёсткая проверка флага ПЕРЕД записью. Функция могла начать
+            -- работу, когда «сигнал в терминал» был включён, и затем выполнить
+            -- долгую догрузку цен (logic_refresh_market_data) и расчёт
+            -- индикаторов. Если галочку выключили УЖЕ во время выполнения —
+            -- сигнал не создаём: отдельный SELECT видит свежие закоммиченные
+            -- данные, поэтому выключение срабатывает сразу, а не со следующего
+            -- цикла. RETURN — проход целиком прекращаем.
+            IF NOT COALESCE(
+                (SELECT l.use_as_terminal_signal FROM logics l WHERE l.id = p_logic_id),
+                FALSE
+            ) THEN
+                RETURN v_created;
+            END IF;
+
             INSERT INTO logic_terminal_signals (
                 logic_id, security_id, timeframe_id, bar_dt,
                 position_side, signal_kind, formula, price,
@@ -24394,6 +24441,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 
