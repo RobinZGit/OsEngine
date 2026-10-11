@@ -4034,6 +4034,7 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     is_test BOOLEAN NOT NULL DEFAULT FALSE,
     run_id BIGINT,
     broker_order_id VARCHAR(100),
+    broker_order_missing BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(20) NOT NULL DEFAULT 'filled'
         CHECK (status IN ('pending', 'submitted', 'filled', 'rejected', 'cancelled')),
     commission NUMERIC(18, 6) NOT NULL DEFAULT 0,
@@ -4083,6 +4084,7 @@ ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN NOT NULL DEF
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS run_id BIGINT;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS broker_order_id VARCHAR(100);
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS broker_order_missing BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'filled' CHECK (status IN ('pending', 'submitted', 'filled', 'rejected', 'cancelled'));
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(18, 6) NOT NULL DEFAULT 0;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS financial_result NUMERIC(20, 6);
@@ -4868,6 +4870,7 @@ COMMENT ON COLUMN logic_trades.price IS 'Цена исполнения';
 COMMENT ON COLUMN logic_trades.executed_at IS 'Время записи/исполнения';
 COMMENT ON COLUMN logic_trades.is_simulated IS 'Бумажная торговля (fake account)';
 COMMENT ON COLUMN logic_trades.broker_order_id IS 'ID заявки у брокера (real)';
+COMMENT ON COLUMN logic_trades.broker_order_missing IS 'T-Bank вернул 404 Order not found — заявку больше не опрашиваем';
 COMMENT ON COLUMN logic_trades.status IS 'pending | submitted | filled | rejected | cancelled';
 COMMENT ON COLUMN logic_trades.note IS 'Произвольная заметка';
 COMMENT ON COLUMN logic_trades.created_at IS 'Дата создания записи';

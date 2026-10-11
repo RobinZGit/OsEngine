@@ -10,20 +10,28 @@ LANGUAGE sql IMMUTABLE AS $$
             p_order->>'order_id',
             p_order->'orderState'->>'orderId'
         ) IS NULL THEN 'rejected'
-        WHEN COALESCE(p_order->>'executionReportStatus', '') IN (
-            'EXECUTION_REPORT_STATUS_FILL',
-            'EXECUTION_REPORT_STATUS_PARTIALLYFILL'
-        ) THEN 'filled'
+        -- 'filled' — только финальное ПОЛНОЕ исполнение брокером
+        -- (executionReportStatus=FILL либо исполнены все лоты).
+        WHEN COALESCE(p_order->>'executionReportStatus', '') = 'EXECUTION_REPORT_STATUS_FILL'
+            THEN 'filled'
         WHEN COALESCE(
-            NULLIF(regexp_replace(COALESCE(p_order->>'lotsExecuted', '0'), '[^0-9.\-]', '', 'g'), ''),
+            NULLIF(regexp_replace(COALESCE(p_order->>'lotsRequested', '0'), '[^0-9]', '', 'g'), ''),
             '0'
-        )::numeric > 0 THEN 'filled'
+        )::numeric > 0
+        AND COALESCE(
+            NULLIF(regexp_replace(COALESCE(p_order->>'lotsExecuted', '0'), '[^0-9]', '', 'g'), ''),
+            '0'
+        )::numeric >= COALESCE(
+            NULLIF(regexp_replace(COALESCE(p_order->>'lotsRequested', '0'), '[^0-9]', '', 'g'), ''),
+            '0'
+        )::numeric THEN 'filled'
+        -- Всё остальное (NEW, PARTIALLYFILL, частично исполнено) — не финал.
         ELSE 'submitted'
     END;
 $$;
 
 COMMENT ON FUNCTION tbank_trade_status_from_post_order(JSONB) IS
-'Статус сделки по ответу T-Bank PostOrder: filled / submitted / rejected.';
+'Статус сделки по ответу T-Bank PostOrder: filled — только полное финальное исполнение брокером; submitted — заявка ещё может измениться (в т.ч. частичное исполнение); rejected — брокер не вернул заявку.';
 
 -- Param def + seed for existing logics
 INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, description, display_order) VALUES

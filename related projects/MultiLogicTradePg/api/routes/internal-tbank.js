@@ -38,7 +38,7 @@ module.exports = function registerInternalTbankRoutes(app, ctx) {
     } catch (err) {
       console.error('POST /api/internal/tbank/http-post', err.message);
       const status = Number(err.status) >= 400 && Number(err.status) < 600 ? Number(err.status) : 500;
-      res.status(status >= 500 ? 500 : 400).json({
+      res.status(status).json({
         ok: false,
         error: err.message || String(err),
       });
@@ -67,7 +67,7 @@ module.exports = function registerInternalTbankRoutes(app, ctx) {
     } catch (err) {
       console.error('POST /api/internal/tbank/post-order', err.message);
       const status = Number(err.status) >= 400 && Number(err.status) < 600 ? Number(err.status) : 500;
-      res.status(status >= 500 ? 500 : 400).json({
+      res.status(status).json({
         ok: false,
         error: err.message || String(err),
       });

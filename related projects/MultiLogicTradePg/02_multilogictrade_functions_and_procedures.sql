@@ -26304,20 +26304,16 @@ LANGUAGE sql IMMUTABLE AS $$
             p_order->>'order_id',
             p_order->'orderState'->>'orderId'
         ) IS NULL THEN 'rejected'
-        WHEN COALESCE(p_order->>'executionReportStatus', '') IN (
-            'EXECUTION_REPORT_STATUS_FILL',
-            'EXECUTION_REPORT_STATUS_PARTIALLYFILL'
-        ) THEN 'filled'
-        WHEN COALESCE(
-            NULLIF(regexp_replace(COALESCE(p_order->>'lotsExecuted', '0'), '[^0-9.\-]', '', 'g'), ''),
-            '0'
-        )::numeric > 0 THEN 'filled'
+        WHEN COALESCE(p_order->>'executionReportStatus', '') = 'EXECUTION_REPORT_STATUS_FILL' THEN 'filled'
+        WHEN COALESCE(NULLIF(regexp_replace(COALESCE(p_order->>'lotsRequested', '0'), '[^0-9]', '', 'g'), ''), '0')::numeric > 0
+         AND COALESCE(NULLIF(regexp_replace(COALESCE(p_order->>'lotsExecuted', '0'), '[^0-9]', '', 'g'), ''), '0')::numeric
+             >= COALESCE(NULLIF(regexp_replace(COALESCE(p_order->>'lotsRequested', '0'), '[^0-9]', '', 'g'), ''), '0')::numeric THEN 'filled'
         ELSE 'submitted'
     END;
 $$;
 
 COMMENT ON FUNCTION tbank_trade_status_from_post_order(JSONB) IS
-'Статус сделки по ответу T-Bank PostOrder: filled / submitted / rejected.';
+'Статус сделки по ответу T-Bank PostOrder: filled — только полное финальное исполнение брокером; submitted — заявка ещё может измениться (в т.ч. частичное исполнение); rejected — брокер не вернул заявку.';
 
 DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR);
 DROP FUNCTION IF EXISTS tbank_post_order(INTEGER, VARCHAR, NUMERIC, NUMERIC, VARCHAR, VARCHAR);
@@ -26886,6 +26882,7 @@ DECLARE
     v_comm NUMERIC;
     v_price NUMERIC;
     v_updated INTEGER := 0;
+    v_not_found INTEGER := 0;
     v_refinalized INTEGER := 0;
     v_rebuild_error TEXT := NULL;
     v_errors JSONB := '[]'::JSONB;
@@ -26901,7 +26898,11 @@ BEGIN
           AND COALESCE(lt.is_shadow, FALSE) = FALSE
           AND lt.broker_order_id IS NOT NULL
           AND btrim(lt.broker_order_id) <> ''
-          AND lt.status IN ('filled', 'submitted')
+          -- Опрашиваем только НЕ финальные заявки: 'filled' уже пришёл от брокера
+          -- как полное исполнение и измениться не может. Заявки, по которым T-Bank
+          -- вернул 404 (broker_order_missing), больше не трогаем.
+          AND COALESCE(lt.broker_order_missing, FALSE) = FALSE
+          AND lt.status = 'submitted'
           AND (p_logic_id IS NULL OR lt.logic_id = p_logic_id)
           AND a.account_type = 'real'
           AND a.broker_id IN (SELECT id FROM brokers WHERE code = 'T-BANK')
@@ -26938,11 +26939,22 @@ BEGIN
             END IF;
         EXCEPTION
             WHEN OTHERS THEN
-                v_errors := v_errors || jsonb_build_array(jsonb_build_object(
-                    'trade_id', v_tr.id,
-                    'order_id', v_tr.broker_order_id,
-                    'error', SQLERRM
-                ));
+                -- T-Bank больше не знает заявку (старая/чужой контур) → помечаем
+                -- её недоступной и выводим из синка, чтобы не долбить 404 каждые 5 минут.
+                IF SQLERRM ILIKE '%order not found%'
+                   OR SQLERRM ILIKE '%not found%'
+                   OR SQLERRM LIKE '%HTTP 404%' THEN
+                    UPDATE logic_trades
+                    SET broker_order_missing = TRUE
+                    WHERE id = v_tr.id;
+                    v_not_found := v_not_found + 1;
+                ELSE
+                    v_errors := v_errors || jsonb_build_array(jsonb_build_object(
+                        'trade_id', v_tr.id,
+                        'order_id', v_tr.broker_order_id,
+                        'error', SQLERRM
+                    ));
+                END IF;
         END;
     END LOOP;
 
@@ -26966,6 +26978,7 @@ BEGIN
     RETURN jsonb_build_object(
         'ok', TRUE,
         'updated', v_updated,
+        'order_not_found', v_not_found,
         'refinalized', v_refinalized,
         'rebuild_error', v_rebuild_error,
         'errors', v_errors,
@@ -26975,7 +26988,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_sync_real_trade_broker_fees(INTEGER) IS
-'Подтянуть комиссию/цену исполнения с T-Bank GetOrderState; при изменении цены закрытия — сразу пересобрать её пакеты/PnL; в конце полный rebuild_pnl';
+'Подтянуть комиссию/цену исполнения с T-Bank GetOrderState для ещё НЕ финальных (status=submitted) боевых заявок; при изменении цены закрытия — сразу пересобрать её пакеты/PnL; заявки с ответом 404 Order not found помечаются broker_order_missing и больше не опрашиваются; в конце полный rebuild_pnl';
 
 -- Детектор испорченного боевого FinRes:
 --  1) finres <> 0 при полном отсутствии пакетов закрытия (значение писалось мимо build_lots
