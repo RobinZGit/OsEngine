@@ -207,6 +207,9 @@
             [title]="anyOpenPosition ? closeAllButtonTitle : 'Нет открытых позиций'"
             (click)="$event.stopPropagation(); closeAllPositions()"
           >{{ closeAllButtonLabel }}</button>
+          @if (closeAllNote) {
+            <span class="term-lightning-note" role="status">{{ closeAllNote }}</span>
+          }
           <span class="term-account-hint">сделки терминала · {{ trades.length }}</span>
         </summary>
         <div class="term-trades-body">

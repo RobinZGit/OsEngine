@@ -1217,6 +1217,73 @@ describe('TerminalComponent - #970: кнопка «Запросить сигна
     const c = makeComponent(logics);
     c.requestAllLogicSignals();
     expect(c.allLightningBusy).toBe(false);
-expect(c.allLightningNote).toContain('boom');
+    expect(c.allLightningNote).toContain('boom');
+  });
+
+  it('#988: кнопка «Закрыть все позиции» активна при открытой позиции без полосы', () => {
+    const logics: any = { runLightningAll: jasmine.createSpy('runLightningAll') };
+    const c = makeComponent(logics);
+    c.trades = [
+      { security_id: 27, status: 'filled', quantity: '16', direction: 'SELL', price: 6022.5 },
+    ];
+    c.panels = [];
+    expect(c.anyOpenPosition).toBe(true);
+    expect(c.positionSecurityIds).toEqual([27]);
+  });
+
+  it('#988: «Закрыть все позиции» закрывает бумагу без полосы маркет-заявкой', () => {
+    const placeTrade = jasmine
+      .createSpy('placeTrade')
+      .and.returnValue(of({ ok: true, mode: 'fake' }));
+    TestBed.overrideProvider(TerminalStateService, {
+      useValue: { placeTrade, getTrades: () => NEVER },
+    });
+    TestBed.overrideProvider(ReferencesService, {
+      useValue: { getAccounts: () => NEVER },
+    });
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.accountId = 1;
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    // Открытый шорт по бумаге 27 — полосы по ней в терминале нет.
+    c.trades = [
+      { security_id: 27, status: 'filled', quantity: '16', direction: 'SELL', price: 6022.5 },
+    ];
+    c.panels = [];
+    c.livePriceBySecurity = new Map([[27, 6000]]);
+    c.closeAllPositions();
+    expect(placeTrade).toHaveBeenCalledTimes(1);
+    const arg = placeTrade.calls.mostRecent().args[0];
+    expect(arg.security_id).toBe(27);
+    expect(arg.direction).toBe('buy'); // шорт закрываем выкупом
+    expect(arg.quantity).toBe(16);
+    expect(arg.execution).toBe('market');
+    expect(c.closeAllNote).toContain('1 шт.');
+  });
+
+  it('#988: бумагу с полосой закрывает сама полоса (терминал её не дублирует)', () => {
+    const placeTrade = jasmine
+      .createSpy('placeTrade')
+      .and.returnValue(of({ ok: true, mode: 'fake' }));
+    TestBed.overrideProvider(TerminalStateService, {
+      useValue: { placeTrade, getTrades: () => NEVER },
+    });
+    TestBed.overrideProvider(ReferencesService, {
+      useValue: { getAccounts: () => NEVER },
+    });
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null;
+    c.accountId = 1;
+    c.accounts = [{ id: 1, account_type: 'fake', terminal_cash: 0 }];
+    c.trades = [
+      { security_id: 27, status: 'filled', quantity: '16', direction: 'SELL', price: 6022.5 },
+    ];
+    c.panels = [{ uid: 1, security: { id: 27 } }];
+    c.livePriceBySecurity = new Map([[27, 6000]]);
+    c.closeAllPositions();
+    expect(placeTrade).not.toHaveBeenCalled();
+    expect(c.closeAllPulse).toBe(1);
   });
 });

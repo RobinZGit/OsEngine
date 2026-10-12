@@ -140,6 +140,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
   private positionSummaryByPanel = new Map<number, PanelPositionSummary>();
   /** Импульс «Закрыть все позиции»: каждая полоса закрывает свою позицию. */
   closeAllPulse = 0;
+  /** #988: сообщение о закрытии всех позиций (в т.ч. бумаг без полосы). */
+  closeAllNote: string | null = null;
+  private closeAllNoteTimer?: ReturnType<typeof setTimeout>;
   /** Адресный импульс «Закрыть по сигналу логики»: закрытие позиции конкретной бумаги. */
   closeSignalPulse: { security_id: number; pulse: number } | null = null;
 
@@ -211,6 +214,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.destroyed = true;
     if (this.signalsTimer) clearInterval(this.signalsTimer);
     if (this.allLightningNoteTimer) clearTimeout(this.allLightningNoteTimer);
+    if (this.closeAllNoteTimer) clearTimeout(this.closeAllNoteTimer);
     if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
     if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
   }
@@ -222,11 +226,12 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.signalsTimer = setInterval(() => this.pollLogicSignals(), 15_000);
   }
 
-  /** #922: бумаги, по которым на выбранном счёте есть открытая позиция
-      (filled-покупки минус filled-продажи ≠ 0). Именно их цены нужно
-      сканировать чаще — по ним считается разница и принимается решение
-      о закрытии. */
-  get positionSecurityIds(): number[] {
+  /** #988: открытые позиции счёта по фактическим сделкам терминала — знаковый
+      остаток по каждой бумаге (filled-покупки минус filled-продажи ≠ 0). Это
+      источник правды для кнопки «Закрыть все позиции»: позиция остаётся
+      открытой, даже когда полосу бумаги убрали из терминала, а историю сделок
+      почистили «не закрывая». qty > 0 — длинная позиция, qty < 0 — короткая. */
+  get openPositions(): { security_id: number; qty: number }[] {
     const bySec = new Map<number, number>();
     for (const t of this.trades ?? []) {
       const id = Number(t.security_id);
@@ -235,7 +240,28 @@ export class TerminalComponent implements OnInit, OnDestroy {
       if (!Number.isFinite(q) || q <= 0) continue;
       bySec.set(id, (bySec.get(id) ?? 0) + (t.direction === 'BUY' ? q : -q));
     }
-    return [...bySec.entries()].filter(([, qty]) => qty !== 0).map(([id]) => id);
+    return [...bySec.entries()]
+      .filter(([, qty]) => qty !== 0)
+      .map(([security_id, qty]) => ({ security_id, qty }));
+  }
+
+  /** #922: бумаги, по которым на выбранном счёте есть открытая позиция
+      (filled-покупки минус filled-продажи ≠ 0). Именно их цены нужно
+      сканировать чаще — по ним считается разница и принимается решение
+      о закрытии. */
+  get positionSecurityIds(): number[] {
+    return this.openPositions.map((p) => p.security_id);
+  }
+
+  /** Цена последней заполненной сделки по бумаге — запасной вариант, когда
+      живой котировки ещё нет (иначе закрытие «повисло» бы без цены). */
+  private lastFilledPrice(securityId: number): number | null {
+    for (const t of this.trades ?? []) {
+      if (Number(t.security_id) !== securityId || t.status !== 'filled') continue;
+      const p = Number(t.price);
+      if (Number.isFinite(p) && p > 0) return p;
+    }
+    return null;
   }
 
   /** #925: остаток на счёте — свободные средства, не вложенные в позиции:
@@ -1340,23 +1366,76 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.positionSummaryByPanel.set(uid, s);
   }
 
-  /** Есть ли хотя бы одна открытая позиция (остаток != 0) среди полос —
-      управляет кнопкой «Закрыть все позиции» (disabled при пустом счёте). */
+  /** #988: есть ли открытая позиция по счёту. Считается по фактическим сделкам
+      терминала, а НЕ по полосам: позиция может остаться открытой, даже если
+      полосу бумаги убрали, а историю сделок почистили «не закрывая». Управляет
+      доступностью кнопки «Закрыть все позиции». */
   get anyOpenPosition(): boolean {
-    for (const s of this.positionSummaryByPanel.values()) {
-      if (s.qty !== 0) return true;
-    }
-    // У полос, что ещё не прислали сводку (график/сделки грузятся), остаток
-    // неизвестен — считаем потенциальной позицией: кнопку не разблокируем.
-    if (this.positionSummaryByPanel.size !== this.panels.length) return true;
-    return false;
+    return this.openPositions.length > 0;
   }
 
-  /** Кнопка «Закрыть все позиции»: посылаем импульс — каждая полоса с
-      открытой позицией закрывает её (продажа/выкуп остатка, маркет). */
+  /** Кнопка «Закрыть все позиции». Бумаги, у которых есть полоса, закрывает
+      сама полоса по импульсу (со своей ценой/комиссией и сообщением). Бумаги
+      БЕЗ полосы закрываем отсюда — иначе позиция осталась бы «зависшей»: раньше
+      кнопка по ним не срабатывала и была выключена. */
   closeAllPositions(): void {
-    if (!this.anyOpenPosition) return;
+    const positions = this.openPositions;
+    if (positions.length === 0) return;
+    const covered = new Set(this.panels.map((p) => p.security.id));
+    const orphan = positions.filter((p) => !covered.has(p.security_id));
+    if (orphan.length > 0) this.closeOrphanPositions(orphan);
     this.closeAllPulse++;
+  }
+
+  /** #988: закрытие позиций, по которым в терминале нет полосы (маркет, по
+      живой цене, запасной вариант — цена последней сделки). После каждой заявки
+      перечитываем сделки и баланс. */
+  private closeOrphanPositions(
+    positions: { security_id: number; qty: number }[]
+  ): void {
+    if (this.accountId == null || positions.length === 0) return;
+    let posted = 0;
+    let skipped = 0;
+    for (const pos of positions) {
+      const price =
+        this.livePriceFor(pos.security_id) ?? this.lastFilledPrice(pos.security_id);
+      if (price == null || price <= 0) {
+        skipped++;
+        continue;
+      }
+      posted++;
+      const direction: 'buy' | 'sell' = pos.qty > 0 ? 'sell' : 'buy';
+      this.stateSvc
+        .placeTrade({
+          account_id: this.accountId,
+          security_id: pos.security_id,
+          direction,
+          execution: 'market',
+          price,
+          quantity: Math.abs(pos.qty),
+          ...(this.selectedAccountIsFake ? { commission_pct: this.commissionPct } : {}),
+        })
+        .subscribe({
+          next: () => this.onTradeExecuted(),
+          error: () => this.onTradeExecuted(),
+        });
+    }
+    if (posted === 0) {
+      this.setCloseAllNote('Нет живой цены — нажмите «Отклонение» для обновления');
+    } else {
+      const tail = skipped > 0 ? ` (без цены: ${skipped})` : '';
+      this.setCloseAllNote(`Закрываю позиции без полосы: ${posted} шт. бумаг${tail}`);
+    }
+  }
+
+  /** #988: показать сообщение кнопки «Закрыть все позиции» и убрать через 6 с. */
+  private setCloseAllNote(text: string): void {
+    this.closeAllNote = text;
+    if (this.closeAllNoteTimer) clearTimeout(this.closeAllNoteTimer);
+    this.closeAllNoteTimer = setTimeout(() => {
+      this.closeAllNote = null;
+      this.closeAllNoteTimer = undefined;
+    }, 6000);
   }
 
   /** Суммарный итог закрытия всех открытых позиций (с учётом комиссий входа
