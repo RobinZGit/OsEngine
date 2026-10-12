@@ -30,7 +30,8 @@ const { resumeOrphanBacktests } = require('./logic-backtest');
 const { startTradeRunner } = require('./trade-runner');
 const { startMaintenanceScheduler } = require('./maintenance-scheduler');
 const { createRouteContext, resumeOrphanWarmups } = require('./lib/server-shared');
-const { describeHttpStatus } = require('./lib/error-codes');
+const { describeHttpStatus, decorate } = require('./lib/error-codes');
+const { writeErrorLog, levelForHttpStatus } = require('./lib/error-log');
 
 const registerSettingsRoutes = require('./routes/settings');
 const registerInternalTbankRoutes = require('./routes/internal-tbank');
@@ -42,6 +43,7 @@ const registerTradesRoutes = require('./routes/trades');
 const registerBacktestRoutes = require('./routes/backtest');
 const registerOpsRoutes = require('./routes/ops');
 const registerTerminalRoutes = require('./routes/terminal');
+const registerMonitoringRoutes = require('./routes/monitoring');
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -71,8 +73,49 @@ app.use((req, res, next) => {
     console.warn(
       `[HTTP ${status}] ${req.method} ${req.originalUrl}` + (info ? `\n         -> ${info}` : '')
     );
+    // Журнал «Мониторинг системы»: 4xx → warning, 5xx → error.
+    const level = levelForHttpStatus(status);
+    if (level) {
+      writeErrorLog(pool, {
+        level,
+        source: 'api',
+        category: 'http',
+        code: `HTTP_${status}`,
+        message: `${req.method} ${req.originalUrl} → HTTP ${status}`,
+        detail: info,
+        endpoint: req.originalUrl,
+        httpStatus: status,
+        method: req.method,
+      });
+    }
   });
   next();
+});
+
+// Необработанные исключения процесса — в журнал ошибок (не даём API молча упасть).
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('[unhandledRejection]', decorate(err.message || String(reason)));
+  writeErrorLog(pool, {
+    level: 'fatal',
+    source: 'process',
+    category: 'process',
+    code: 'UNHANDLED_REJECTION',
+    message: err.message || String(reason),
+    detail: err.stack,
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err?.stack || err?.message || err);
+  writeErrorLog(pool, {
+    level: 'fatal',
+    source: 'process',
+    category: 'process',
+    code: 'UNCAUGHT_EXCEPTION',
+    message: err?.message || String(err),
+    detail: err?.stack,
+  });
 });
 
 registerSettingsRoutes(app, ctx);
@@ -85,6 +128,7 @@ registerTradesRoutes(app, ctx);
 registerBacktestRoutes(app, ctx);
 registerOpsRoutes(app, ctx);
 registerTerminalRoutes(app, ctx);
+registerMonitoringRoutes(app, ctx);
 
 app.use((_req, res) => {
   res.status(404).json({

@@ -7,9 +7,9 @@
     "01_multilogictrade_tables_and_data.sql",
     "02_multilogictrade_functions_and_procedures.sql"
   ],
-  "generatedAt": "2026-10-12T12:54:07.408Z",
+  "generatedAt": "2026-10-12T14:26:56.738Z",
   "stats": {
-    "tables": 41,
+    "tables": 42,
     "routines": 346,
     "createStatementsIn02": 572,
     "dedupedFromCreates": 226
@@ -141,6 +141,152 @@
           "name": "actions_pkey",
           "type": "PRIMARY KEY",
           "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "name": "app_error_log",
+      "comment": "Журнал ошибок проекта для закладки «Мониторинг системы»: сбои внешних сервисов, API, БД и процессов. Хранение 24 ч",
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGSERIAL PRIMARY KEY",
+          "nullable": true,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMPTZ",
+          "nullable": false,
+          "default": "now()",
+          "comment": null
+        },
+        {
+          "name": "level",
+          "type": "VARCHAR(10)",
+          "nullable": false,
+          "default": "'error'",
+          "comment": "Уровень: warning | error | fatal"
+        },
+        {
+          "name": "source",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "default": "'api'",
+          "comment": "Источник: api | web | trade-runner | maintenance | tbank | moex | postgresql | process"
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "default": "'internal'",
+          "comment": "Категория: http | external | internal | db | runner | signal | process"
+        },
+        {
+          "name": "code",
+          "type": "VARCHAR(64)",
+          "nullable": true,
+          "default": null,
+          "comment": "Код ошибки: HTTP_500, ETIMEDOUT, SQLSTATE и т.п."
+        },
+        {
+          "name": "message",
+          "type": "TEXT",
+          "nullable": false,
+          "default": null,
+          "comment": "Краткое сообщение об ошибке"
+        },
+        {
+          "name": "detail",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "comment": "Подробности / расшифровка кода"
+        },
+        {
+          "name": "endpoint",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "comment": "HTTP endpoint, если применимо"
+        },
+        {
+          "name": "http_status",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "comment": "HTTP-статус, если применимо"
+        },
+        {
+          "name": "method",
+          "type": "VARCHAR(10)",
+          "nullable": true,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "trace_id",
+          "type": "UUID",
+          "nullable": true,
+          "default": null,
+          "comment": "Корреляция с app_tech_log"
+        },
+        {
+          "name": "logic_id",
+          "type": "INTEGER REFERENCES logics(id) ON DELETE SET",
+          "nullable": true,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "security_id",
+          "type": "INTEGER REFERENCES securities(id) ON DELETE SET",
+          "nullable": true,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "context",
+          "type": "JSONB",
+          "nullable": true,
+          "default": null,
+          "comment": "Произвольные поля (params, stack и т.п.)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_app_error_log_created_at",
+          "definition": "CREATE INDEX IF NOT EXISTS idx_app_error_log_created_at ON app_error_log(created_at DESC)"
+        },
+        {
+          "name": "idx_app_error_log_level",
+          "definition": "CREATE INDEX IF NOT EXISTS idx_app_error_log_level ON app_error_log(level, created_at DESC)"
+        },
+        {
+          "name": "idx_app_error_log_source",
+          "definition": "CREATE INDEX IF NOT EXISTS idx_app_error_log_source ON app_error_log(source, created_at DESC)"
+        },
+        {
+          "name": "idx_app_error_log_category",
+          "definition": "CREATE INDEX IF NOT EXISTS idx_app_error_log_category ON app_error_log(category, created_at DESC)"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "app_error_log_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "app_error_log_logic_id_fkey",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (logic_id) REFERENCES logics(id)"
+        },
+        {
+          "name": "app_error_log_security_id_fkey",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (security_id) REFERENCES securities(id)"
         }
       ]
     },

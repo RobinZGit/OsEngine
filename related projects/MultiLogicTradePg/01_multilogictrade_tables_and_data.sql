@@ -4588,6 +4588,64 @@ COMMENT ON COLUMN app_tech_log.logic_id IS 'Торговая логика (trade
 COMMENT ON COLUMN app_tech_log.phase IS 'start | end | event';
 
 -- ============================================
+-- Таблица: app_error_log (журнал ошибок для закладки «Мониторинг системы»)
+-- Отдельная от app_tech_log: только ошибки/сбои (внешние сервисы, API, БД, процессы).
+-- Уровни по общепринятой шкале severity (warning < error < fatal). Хранение 24 ч:
+-- фоновый планировщик API чистит записи старше суток каждый час (+ на старте).
+-- ============================================
+CREATE TABLE IF NOT EXISTS app_error_log (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    level VARCHAR(10) NOT NULL DEFAULT 'error'
+        CHECK (level IN ('warning', 'error', 'fatal')),
+    source VARCHAR(32) NOT NULL DEFAULT 'api',
+    category VARCHAR(32) NOT NULL DEFAULT 'internal',
+    code VARCHAR(64),
+    message TEXT NOT NULL,
+    detail TEXT,
+    endpoint TEXT,
+    http_status INTEGER,
+    method VARCHAR(10),
+    trace_id UUID,
+    logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL,
+    security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL,
+    context JSONB
+);
+-- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS level VARCHAR(10) NOT NULL DEFAULT 'error';
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'api';
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS category VARCHAR(32) NOT NULL DEFAULT 'internal';
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS code VARCHAR(64);
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS message TEXT;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS detail TEXT;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS endpoint TEXT;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS http_status INTEGER;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS method VARCHAR(10);
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS trace_id UUID;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL;
+ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS context JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_app_error_log_created_at ON app_error_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_error_log_level ON app_error_log(level, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_error_log_source ON app_error_log(source, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_error_log_category ON app_error_log(category, created_at DESC);
+
+COMMENT ON TABLE app_error_log IS
+'Журнал ошибок проекта для закладки «Мониторинг системы»: сбои внешних сервисов, API, БД и процессов. Хранение 24 ч';
+COMMENT ON COLUMN app_error_log.level IS 'Уровень: warning | error | fatal';
+COMMENT ON COLUMN app_error_log.source IS 'Источник: api | web | trade-runner | maintenance | tbank | moex | postgresql | process';
+COMMENT ON COLUMN app_error_log.category IS 'Категория: http | external | internal | db | runner | signal | process';
+COMMENT ON COLUMN app_error_log.code IS 'Код ошибки: HTTP_500, ETIMEDOUT, SQLSTATE и т.п.';
+COMMENT ON COLUMN app_error_log.message IS 'Краткое сообщение об ошибке';
+COMMENT ON COLUMN app_error_log.detail IS 'Подробности / расшифровка кода';
+COMMENT ON COLUMN app_error_log.endpoint IS 'HTTP endpoint, если применимо';
+COMMENT ON COLUMN app_error_log.http_status IS 'HTTP-статус, если применимо';
+COMMENT ON COLUMN app_error_log.trace_id IS 'Корреляция с app_tech_log';
+COMMENT ON COLUMN app_error_log.context IS 'Произвольные поля (params, stack и т.п.)';
+
+-- ============================================
 -- Таблица: terminal_state (состояние закладки «Терминал»)
 -- Выбранные бумаги (полосы) и прочие настройки UI в одном JSONB.
 -- ============================================

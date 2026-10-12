@@ -1,0 +1,83 @@
+<div class="page-scroll monitoring">
+  <header class="page-header monitoring-header">
+    <h2>Мониторинг системы</h2>
+    <div class="monitoring-controls">
+      <label class="mon-level">
+        Уровень:
+        <select [(ngModel)]="levelFilter">
+          <option value="">все</option>
+          <option value="warning">предупреждения</option>
+          <option value="error">ошибки</option>
+          <option value="fatal">критические</option>
+        </select>
+      </label>
+      <span class="mon-updated">
+        @if (loading) {
+          Загрузка…
+        } @else if (lastUpdated) {
+          Обновлено {{ lastUpdated }} · авто каждые {{ pollSeconds }} с
+        }
+      </span>
+    </div>
+  </header>
+
+  @if (loadError) {
+    <p class="mon-error">{{ loadError }}</p>
+  }
+
+  <section class="monitoring-chart">
+    <div class="mon-chart-title">
+      Отказы за последний час
+      <small>· столбик = минута · всего {{ chartTotal }}</small>
+    </div>
+    <app-error-trend-chart [points]="chartPoints" />
+  </section>
+
+  <section class="monitoring-list scroll-list">
+    <table class="mon-table">
+      <thead>
+        <tr>
+          <th class="col-time">Время</th>
+          <th class="col-level">Уровень</th>
+          <th class="col-src">Источник</th>
+          <th class="col-cat">Категория</th>
+          <th class="col-code">Код</th>
+          <th class="col-msg">Ошибка</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of visibleErrors; track row.id) {
+          <tr>
+            <td class="col-time">{{ row.created_at | date: 'dd.MM HH:mm:ss' }}</td>
+            <td class="col-level">
+              <span class="lvl-badge lvl-{{ row.level }}">{{ levelLabel(row.level) }}</span>
+            </td>
+            <td class="col-src">{{ row.source }}</td>
+            <td class="col-cat">{{ row.category }}</td>
+            <td class="col-code">
+              @if (row.http_status) {
+                <span class="mon-code">HTTP {{ row.http_status }}</span>
+              }
+              @if (row.code) {
+                <span class="mon-code">{{ row.code }}</span>
+              }
+            </td>
+            <td class="col-msg">
+              <div class="mon-msg">{{ row.message }}</div>
+              @if (row.endpoint) {
+                <div class="mon-sub">{{ row.method || '' }} {{ row.endpoint }}</div>
+              }
+              @if (row.detail) {
+                <div class="mon-sub mon-detail">{{ row.detail }}</div>
+              }
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="6" class="mon-empty">{{ emptyText }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </section>
+</div>

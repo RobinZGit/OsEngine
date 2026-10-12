@@ -8,6 +8,7 @@ const SIGNAL_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_SIGNAL_TIMEOUT_MS) || 
 const WATCHDOG_MS = Number(process.env.TRADE_WATCHDOG_MS) || 30000;
 
 const { writeTechLogEvent } = require('./lib/tech-log');
+const { writeErrorLog } = require('./lib/error-log');
 const { isUiSessionActive } = require('./lib/trade-runner-session');
 const { decorate } = require('./lib/error-codes');
 const { tbankHttpPost, DEFAULT_API: TBANK_DEFAULT_API } = require('./lib/tbank-invest-client');
@@ -526,6 +527,14 @@ function startTradeRunner(pool) {
       })
       .catch((err) => {
         console.error('Trade runner cycle error', decorate(err.message));
+        writeErrorLog(pool, {
+          level: 'error',
+          source: 'trade-runner',
+          category: 'runner',
+          code: 'TRADE_CYCLE',
+          message: err.message || 'Trade cycle error',
+          detail: decorate(err.stack || err.message),
+        });
         forceResetBusy('cycle_error');
       });
   }, RUNNER_INTERVAL_MS);
@@ -538,6 +547,14 @@ function startTradeRunner(pool) {
       })
       .catch((err) => {
         console.error('Trade watchdog error', decorate(err.message));
+        writeErrorLog(pool, {
+          level: 'error',
+          source: 'trade-runner',
+          category: 'runner',
+          code: 'TRADE_WATCHDOG',
+          message: err.message || 'Trade watchdog error',
+          detail: decorate(err.stack || err.message),
+        });
         watchdogRunning = false;
       });
   }, WATCHDOG_MS);

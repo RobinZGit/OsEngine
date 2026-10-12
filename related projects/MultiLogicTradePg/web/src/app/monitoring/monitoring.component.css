@@ -1,0 +1,159 @@
+.monitoring-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem 0.5rem;
+}
+
+.monitoring-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.monitoring-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.mon-level select {
+  padding: 0.15rem 0.35rem;
+}
+
+.mon-updated {
+  color: #6b7280;
+}
+
+.mon-error {
+  margin: 0 1.25rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.monitoring-chart {
+  flex-shrink: 0;
+  padding: 0 1.25rem 0.5rem;
+}
+
+.mon-chart-title {
+  font-size: 0.9rem;
+  color: #374151;
+  margin-bottom: 0.35rem;
+}
+
+.mon-chart-title small {
+  color: #9ca3af;
+}
+
+.monitoring-list {
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.mon-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.mon-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f9fafb;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.mon-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.col-time {
+  white-space: nowrap;
+  width: 118px;
+}
+
+.col-level {
+  width: 118px;
+}
+
+.col-src,
+.col-cat {
+  width: 110px;
+}
+
+.col-code {
+  width: 132px;
+}
+
+.col-msg {
+  word-break: break-word;
+}
+
+.mon-msg {
+  white-space: pre-wrap;
+  color: #111827;
+}
+
+.mon-sub {
+  margin-top: 2px;
+  font-size: 0.76rem;
+  color: #6b7280;
+  word-break: break-all;
+}
+
+.mon-detail {
+  white-space: pre-wrap;
+}
+
+.mon-empty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 1.5rem;
+}
+
+.lvl-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.lvl-badge.lvl-warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.lvl-badge.lvl-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.lvl-badge.lvl-fatal {
+  background: #dc2626;
+  color: #fff;
+}
+
+.mon-code {
+  display: inline-block;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 4px;
+  padding: 0 0.3rem;
+  font-size: 0.72rem;
+  margin-right: 2px;
+}

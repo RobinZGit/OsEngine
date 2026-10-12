@@ -157,6 +157,9 @@ import { assetUrl } from './shared/asset-url';
       <a routerLink="/terminal" routerLinkActive="active">
         Терминал
       </a>
+      <a routerLink="/monitoring" routerLinkActive="active">
+        Мониторинг системы
+      </a>
     </nav>
     <main>
       <router-outlet />

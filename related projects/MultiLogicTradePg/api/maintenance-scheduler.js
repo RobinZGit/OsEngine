@@ -3,6 +3,11 @@
 const CLEANUP_CHECK_MS = Number(process.env.CLEANUP_CHECK_MS) || 60 * 60 * 1000; // hourly check
 const CLEANUP_MIN_INTERVAL_MS = Number(process.env.CLEANUP_MIN_INTERVAL_MS) || 24 * 60 * 60 * 1000;
 
+// Журнал ошибок «Мониторинг системы»: храним 24 ч, чистим каждый час (+ на старте).
+const ERROR_LOG_RETENTION_HOURS = Number(process.env.ERROR_LOG_RETENTION_HOURS) || 24;
+const ERROR_LOG_PURGE_CHECK_MS =
+  Number(process.env.ERROR_LOG_PURGE_CHECK_MS) || 60 * 60 * 1000; // hourly
+
 // Брокерская сверка (цена исполнения + комиссия → пересборка PnL боевых сделок).
 // Лечит зависший finres, записанный по предварительной цене до финального fill.
 const BROKER_FEE_SYNC_CHECK_MS =
@@ -10,6 +15,7 @@ const BROKER_FEE_SYNC_CHECK_MS =
 
 let running = false;
 let feeSyncRunning = false;
+let errorPurgeRunning = false;
 
 /**
  * Windows / no-pg_cron fallback: if APP_CLEANUP_DISK is on and last run > 24h,
@@ -79,6 +85,33 @@ async function maybeSyncBrokerFees(pool) {
   }
 }
 
+/**
+ * Чистка app_error_log: удаляет записи старше retention (по умолчанию 24 ч).
+ * Держит журнал «Мониторинг системы» компактным; вызывается каждый час и на старте.
+ */
+async function purgeErrorLog(pool) {
+  if (process.env.ERROR_LOG_PURGE_ENABLED === '0') {
+    return { skipped: true, reason: 'disabled' };
+  }
+  if (errorPurgeRunning) return { skipped: true, reason: 'busy' };
+  errorPurgeRunning = true;
+  try {
+    const res = await pool.query(
+      `DELETE FROM app_error_log WHERE created_at < now() - make_interval(hours => $1::int)`,
+      [ERROR_LOG_RETENTION_HOURS]
+    );
+    return { ok: true, deleted: res.rowCount ?? 0 };
+  } catch (err) {
+    // На старой схеме таблицы может не быть — молча ждём обновления 01.
+    if (process.env.ERROR_LOG_DEBUG === '1') {
+      console.error('Error log purge error', err.message);
+    }
+    return { ok: false, error: err.message };
+  } finally {
+    errorPurgeRunning = false;
+  }
+}
+
 function startMaintenanceScheduler(pool) {
   if (process.env.CLEANUP_SCHEDULER_ENABLED === '0') {
     console.log('Maintenance cleanup scheduler: disabled (CLEANUP_SCHEDULER_ENABLED=0)');
@@ -110,10 +143,27 @@ function startMaintenanceScheduler(pool) {
       maybeSyncBrokerFees(pool).catch(() => {});
     }, 30000);
   }
+
+  if (process.env.ERROR_LOG_PURGE_ENABLED === '0') {
+    console.log('Error log purge scheduler: disabled (ERROR_LOG_PURGE_ENABLED=0)');
+  } else {
+    console.log(
+      `Error log purge scheduler: retention ${ERROR_LOG_RETENTION_HOURS}h; check every ${ERROR_LOG_PURGE_CHECK_MS}ms`
+    );
+    setInterval(() => {
+      purgeErrorLog(pool).catch((err) => {
+        console.error('Error log purge tick error', err.message);
+      });
+    }, ERROR_LOG_PURGE_CHECK_MS);
+    setTimeout(() => {
+      purgeErrorLog(pool).catch(() => {});
+    }, 20000);
+  }
 }
 
 module.exports = {
   maybeRunScheduledCleanup,
   maybeSyncBrokerFees,
+  purgeErrorLog,
   startMaintenanceScheduler,
 };
