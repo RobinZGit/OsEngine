@@ -1142,6 +1142,28 @@ describe('TerminalComponent - #970: кнопка «Запросить сигна
     expect(c.allLightningNote).toContain('2 логик');
   });
 
+  it('#987: неблокирующий запуск показывает сообщение «в фоне»', () => {
+    const logics: any = {
+      runLightningAll: jasmine.createSpy('runLightningAll').and.returnValue(
+        of({
+          ok: true,
+          started: true,
+          ran: 2,
+          sent: 0,
+          signals_created: 0,
+          trades_created: 0,
+          failed: [],
+          skipped: [],
+        })
+      ),
+    };
+    const c = makeComponent(logics);
+    c.requestAllLogicSignals();
+    expect(c.allLightningBusy).toBe(false);
+    expect(c.allLightningNote).toContain('2 логик');
+    expect(c.allLightningNote).toContain('в фоне');
+  });
+
   it('#970: при нуле логик с сигналом показывает подсказку', () => {
     const logics: any = {
       runLightningAll: jasmine.createSpy('runLightningAll').and.returnValue(

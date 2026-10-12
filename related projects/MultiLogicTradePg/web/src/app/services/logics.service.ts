@@ -835,6 +835,7 @@ export class LogicsService {
    */
   runLightningAll(): Observable<{
     ok?: boolean;
+    started?: boolean;
     reason?: string;
     ran?: number;
     sent?: number;

@@ -1024,6 +1024,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
             r?.error ?? r?.reason ?? 'Не удалось запросить сигналы логик';
         } else if (r.ran === 0) {
           this.allLightningNote = 'Логики с сигналом в терминал не найдены';
+        } else if (r.started) {
+          this.allLightningNote = `Сигналы запрашиваются: ${r.ran} логик (в фоне)`;
         } else {
           const failedN = r.failed?.length ?? 0;
           const base = `Сигналы запрошены: ${r.ran} логик, отправлено ${r.sent}`;

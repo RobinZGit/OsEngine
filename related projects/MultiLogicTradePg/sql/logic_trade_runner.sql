@@ -2263,7 +2263,7 @@ BEGIN
                 IF v_confirm_sec > 0 THEN
                     v_expected_dir := CASE
                         WHEN lower(COALESCE(v_signal_kind, 'trend')) = 'counter'
-                            THEN CASE WHEN v_eff_side = 'long' THEN 'down' ELSE 'up' END
+                            THEN CASE WHEN v_eff_side = 'long' THEN 'up' ELSE 'down' END
                         ELSE CASE WHEN v_eff_side = 'long' THEN 'up' ELSE 'down' END
                     END;
                     INSERT INTO logic_signal_confirm_pending (
@@ -3037,7 +3037,7 @@ BEGIN
                 IF v_confirm_sec > 0 THEN
                     v_expected_dir := CASE
                         WHEN lower(COALESCE(v_signal_kind, 'trend')) = 'counter'
-                            THEN CASE WHEN v_eff_side = 'long' THEN 'down' ELSE 'up' END
+                            THEN CASE WHEN v_eff_side = 'long' THEN 'up' ELSE 'down' END
                         ELSE CASE WHEN v_eff_side = 'long' THEN 'up' ELSE 'down' END
                     END;
                     INSERT INTO logic_signal_confirm_pending (
@@ -3183,11 +3183,101 @@ COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
 'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
 
 -- ============================================================
--- Подтверждение типа сигнала (#972, #984)
+-- Живая цена T-Bank для подтверждений (#985)
+-- Один запрос MarketDataService/GetLastPrices по всем бумагам сразу.
+-- Возвращает {"<security_id>": price, ...} для logic_signal_confirm_finalize;
+-- при ошибке/нет токена/нет pgsql-http → {} (финализатор откатится на свечу).
+-- http-типы не объявляются в DECLARE (их нет до CREATE EXTENSION http) —
+-- используются прямо в запросе, который plpgsql разбирает в момент вызова.
+-- ============================================================
+CREATE OR REPLACE FUNCTION logic_live_prices(p_security_ids INTEGER[])
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_token TEXT;
+    v_api_url TEXT;
+    v_figis JSONB;
+    v_status INTEGER;
+    v_content TEXT;
+    v_price NUMERIC;
+    v_out JSONB := '{}'::jsonb;
+    v_rec RECORD;
+BEGIN
+    IF p_security_ids IS NULL OR COALESCE(array_length(p_security_ids, 1), 0) = 0 THEN
+        RETURN v_out;
+    END IF;
+
+    SELECT jsonb_agg(DISTINCT NULLIF(btrim(COALESCE(sp.tbank_figi, '')), ''))
+    INTO v_figis
+    FROM security_prefixes sp
+    WHERE sp.security_id = ANY(p_security_ids)
+      AND NULLIF(btrim(COALESCE(sp.tbank_figi, '')), '') IS NOT NULL
+      AND sp.tbank_figi <> '0';
+    IF v_figis IS NULL THEN
+        RETURN v_out;
+    END IF;
+
+    v_token := get_tbank_token();
+    IF v_token IS NULL OR btrim(v_token) = '' THEN
+        RETURN v_out;
+    END IF;
+    v_api_url := get_tbank_api_url();
+
+    BEGIN
+        PERFORM configure_http_ssl();
+        SELECT (r).status, (r).content INTO v_status, v_content
+        FROM http((
+            'POST',
+            v_api_url || '/tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+            ARRAY[
+                http_header('Authorization', 'Bearer ' || v_token),
+                http_header('Accept', 'application/json')
+            ],
+            'application/json',
+            jsonb_build_object('figi', v_figis)::TEXT
+        )::http_request) r;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RETURN '{}'::jsonb;
+    END;
+
+    IF v_status IS DISTINCT FROM 200 OR v_content IS NULL THEN
+        RETURN v_out;
+    END IF;
+
+    FOR v_rec IN
+        SELECT sp.security_id AS sid, NULLIF(btrim(COALESCE(sp.tbank_figi, '')), '') AS figi
+        FROM security_prefixes sp
+        WHERE sp.security_id = ANY(p_security_ids)
+          AND NULLIF(btrim(COALESCE(sp.tbank_figi, '')), '') IS NOT NULL
+    LOOP
+        SELECT (elem->'price'->>'units')::NUMERIC
+             + COALESCE((elem->'price'->>'nano')::NUMERIC, 0) / 1000000000.0
+        INTO v_price
+        FROM jsonb_array_elements(COALESCE(v_content::JSONB -> 'lastPrices', '[]'::JSONB)) elem
+        WHERE elem->>'figi' = v_rec.figi
+        LIMIT 1;
+
+        IF v_price IS NOT NULL AND v_price > 0 THEN
+            v_out := v_out || jsonb_build_object(v_rec.sid::TEXT, v_price);
+        END IF;
+    END LOOP;
+
+    RETURN v_out;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_live_prices(INTEGER[]) IS
+'Живые последние цены T-Bank (MarketDataService/GetLastPrices) одним запросом для подтверждений сигналов (#985): '
+'{"<security_id>": price, ...}; при ошибке/нет токена/pgsql-http → {} (финализатор откатится на свечу).';
+
+-- ============================================================
+-- Подтверждение типа сигнала (#972, #984, #985)
 -- Финализатор отложенных подтверждений: берёт по истёкшему дедлайну записи
 -- logic_signal_confirm_pending, берёт цену на момент проверки — приоритетно живую
--- цену T-Bank из p_live_prices (её передаёт боевой раннер), иначе свечу
--- (logic_fresh_order_price), — сравнивает с fire_price по expected_dir и при
+-- цену T-Bank: из p_live_prices (её передаёт боевой раннер) либо, если аргумент
+-- не передан (молния, SQL-цикл run_trade_cycle), тянет её сам через logic_live_prices
+-- (#985); иначе свечу (logic_fresh_order_price) — сравнивает с fire_price по expected_dir и при
 -- подтверждении направления повторно прогоняет process_logic_trades /
 -- process_logic_terminal_signals на баре bar_dt с флагом app.confirm_disabled=TRUE
 -- (дедуп обходится, создаётся только подтверждённая группа). Вызывается из
@@ -3210,7 +3300,24 @@ DECLARE
     v_created INTEGER := 0;
     v_created_this INTEGER := 0;
     v_bt_skip BOOLEAN := FALSE;
+    v_live JSONB := p_live_prices;
 BEGIN
+    -- #985: если боевой раннер не передал живые цены (молния, SQL-цикл
+    -- run_trade_cycle), тянем их сами одним запросом T-Bank GetLastPrices
+    -- по бумагам всех созревших подтверждений. При сбое v_live = NULL → свеча.
+    IF v_live IS NULL THEN
+        BEGIN
+            SELECT logic_live_prices(array_agg(DISTINCT p.security_id))
+            INTO v_live
+            FROM logic_signal_confirm_pending p
+            WHERE p.status = 'pending'
+              AND p.deadline <= CURRENT_TIMESTAMP;
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_live := NULL;
+        END;
+    END IF;
+
     FOR v_pend IN
         SELECT p.id, p.logic_id, p.security_id, p.timeframe_id, p.bar_dt,
                p.position_event, p.position_side, p.signal_kind, p.formula,
@@ -3247,15 +3354,16 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Цена на момент проверки. Приоритет — живая цена T-Bank, которую раннер
-        -- передаёт в p_live_prices ({"<security_id>": price, ...}): сверка идёт по ней,
-        -- а не по устаревшей свече стоп-ТФ. Если живой цены нет — откат на свечу
+        -- Цена на момент проверки. Приоритет — живая цена T-Bank в v_live
+        -- ({"<security_id>": price, ...}): либо из p_live_prices раннера, либо
+        -- добранная самим финализатором (#985). Сверка идёт по ней, а не по
+        -- устаревшей свече стоп-ТФ. Если живой цены нет — откат на свечу
         -- (logic_refresh_market_data + logic_fresh_order_price). Скаляр (не RECORD):
         -- при исключении до SELECT INTO запись остаётся «не присвоенной» и чтение
         -- v_fresh.* падает с 55000.
         v_check_price := NULL;
-        IF p_live_prices IS NOT NULL THEN
-            v_check_price := NULLIF(p_live_prices ->> v_pend.security_id::text, '')::numeric;
+        IF v_live IS NOT NULL THEN
+            v_check_price := NULLIF(v_live ->> v_pend.security_id::text, '')::numeric;
         END IF;
         IF v_check_price IS NULL OR v_check_price <= 0 THEN
             v_check_price := NULL;
@@ -3362,8 +3470,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_confirm_finalize(JSONB) IS
-'Финализатор отложенных подтверждений сигналов (#972, #984): по истёкшему дедлайну сравнивает '
-'цену на момент проверки (живая цена T-Bank из p_live_prices, иначе logic_fresh_order_price) '
+'Финализатор отложенных подтверждений сигналов (#972, #984, #985): по истёкшему дедлайну сравнивает '
+'цену на момент проверки (живая цена T-Bank из p_live_prices либо, если аргумент не передан, добранная '
+'самим финализатором через logic_live_prices; иначе свеча logic_fresh_order_price) '
 'с fire_price по expected_dir и при подтверждении направления повторно прогоняет '
 'process_logic_trades / process_logic_terminal_signals на исходном баре (app.confirm_disabled '
 'обходит дедуп, app.confirm_group_* — только группу). p_live_prices — jsonb {"<security_id>": price}.
@@ -3462,6 +3571,15 @@ BEGIN
 
     v_date_from := v_bar_dt::date;
     v_date_to   := v_moment::date;
+
+    -- #987: сериализация с боевым циклом одним общим advisory-lock. Иначе длинные
+    -- транзакции «молнии» и цикла вставляют одни и те же свечи `prices` и конфликтуют
+    -- (дедлоки/ожидание локов → запрос кнопки зависает). xact-lock освобождается
+    -- автоматически в конце оператора, утечки нет; тот же ключ держат
+    -- api/trade-runner.js и run_trade_cycle(). При занятости возвращаем busy.
+    IF NOT pg_try_advisory_xact_lock(hashtext('multilogictrade_run_trade_cycle')) THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'busy', 'busy', TRUE);
+    END IF;
 
     -- T-Bank может долго не отвечать: ждём не более 1,5 с и уходим в MOEX fallback
     -- (иначе сетевой таймаут по умолчанию в libcurl не ограничен).
@@ -3581,4 +3699,6 @@ COMMENT ON FUNCTION logic_lightning_run(INTEGER, TIMESTAMP, BOOLEAN) IS
 'нажатия. Догружает минутные свечи до p_at, резэмплит их в ТФ логики и доп. ТФ, затем боевые '
 'процессы (через session-переменную app.lightning_bar_dt) применяют дедуп и исполняют: '
 'включённая логика — сделка, use_as_terminal_signal — сигнал в терминал. '
-'p_log_only=TRUE — только подготовка данных без действий.';
+'p_log_only=TRUE — только подготовка данных без действий. '
+'#987: берёт общий advisory-lock боевого цикла (multilogictrade_run_trade_cycle); при занятости '
+'возвращает {ok:false,reason:''busy''} — иначе молния и цикл конфликтуют на свечах `prices`.';

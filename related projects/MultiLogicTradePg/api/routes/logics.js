@@ -1032,12 +1032,26 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
     return;
   }
   try {
-    const { rows } = await pool.query(
-      `SELECT logic_lightning_run($1, LOCALTIMESTAMP, FALSE) AS result`,
-      [id]
-    );
-    const result = rows[0]?.result;
+    // #987: цикл уже держит общий advisory-lock — logic_lightning_run вернёт 'busy'.
+    // Немного ждём и повторяем, чтобы ручная кнопка на строке логики не «падала».
+    let result;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { rows } = await pool.query(
+        `SELECT logic_lightning_run($1, LOCALTIMESTAMP, FALSE) AS result`,
+        [id]
+      );
+      result = rows[0]?.result;
+      if (result?.ok === true || result?.reason !== 'busy') break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
     if (!result || result.ok !== true) {
+      if (result?.reason === 'busy') {
+        res.status(409).json({
+          ok: false, reason: 'busy',
+          error: 'Боевой цикл занят, повторите через несколько секунд',
+        });
+        return;
+      }
       res.status(400).json(result ?? { ok: false, reason: 'no_result' });
       return;
     }
@@ -1048,11 +1062,81 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
   }
 });
 
-/** Молния для всех логик с включённым сигналом в терминал (#970).
- *  Вначале один раз догружаются минутные свечи по всем уникальным бумагам этих
- *  логик, затем для каждой логики выполняется logic_lightning_run (резample в её
- *  таймфрейм, расчёт индикаторов, сигнал в терминал и/или сделка по настройкам).
- *  Работает в фоне: клиент ничего не блокирует. */
+const LIGHTNING_LOCK_KEY = 'multilogictrade_run_trade_cycle';
+
+/** #987: фоновая часть lightning-all — прогрев цен и прогон logic_lightning_run
+ *  на выделенном соединении под общим advisory-lock с боевым циклом
+ *  (api/trade-runner.js, run_trade_cycle). Иначе длинные транзакции «молнии» и
+ *  цикла вставляют одни и те же свечи `prices` и ловят дедлоки → запрос зависает. */
+async function runLightningAllBackground({ ids, secIds, srcId, today }) {
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    for (let i = 0; i < 60 && !locked; i++) {
+      const { rows } = await client.query(
+        `SELECT pg_try_advisory_lock(hashtext($1)) AS ok`,
+        [LIGHTNING_LOCK_KEY]
+      );
+      locked = rows[0]?.ok === true;
+      if (!locked) await new Promise((r) => setTimeout(r, 2000));
+    }
+    if (!locked) {
+      console.warn('lightning-all: боевой цикл занят, пропуск');
+      return;
+    }
+
+    // Единый прогрев цен: минутки по каждой уникальной бумаге из этих логик.
+    for (const s of secIds) {
+      try {
+        await client.query(`CALL load_prices_http($1, $2, $3, $4)`, [s, srcId, today, today]);
+      } catch (err) {
+        console.warn(`lightning-all prices security=${s}:`, err.message);
+      }
+    }
+
+    let signals = 0;
+    let trades = 0;
+    for (const id of ids) {
+      try {
+        const { rows } = await client.query(
+          `SELECT logic_lightning_run($1, LOCALTIMESTAMP, FALSE) AS result`,
+          [id]
+        );
+        const r = rows[0]?.result;
+        if (r && r.ok === true) {
+          signals += Number(r.terminal_signals_created ?? 0);
+          trades += Number(r.trade_created ?? 0);
+        } else {
+          console.warn(`lightning-all logic=${id}:`, r?.reason ?? 'no_result');
+        }
+      } catch (err) {
+        console.error(`lightning-all logic=${id}`, err.message);
+      }
+      try {
+        await client.query(`CALL touch_trade_runner_last_ok($1)`, ['lightning']);
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    console.log(
+      `lightning-all done: logics=${ids.length} signals=${signals} trades=${trades}`
+    );
+  } finally {
+    if (locked) {
+      try {
+        await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, [LIGHTNING_LOCK_KEY]);
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    client.release();
+  }
+}
+
+/** Молния для всех логик с включённым сигналом в терминал (#970, #987).
+ *  Ответ отдаётся сразу (started=true): прогрев цен и прогон logic_lightning_run
+ *  выполняются в фоне на выделенном соединении под общим advisory-lock с боевым
+ *  циклом (иначе длинные транзакции конфликтуют на `prices` и запрос зависает). */
 app.post('/api/logics/lightning-all', async (req, res) => {
   try {
     const idsQ = await pool.query(`
@@ -1066,14 +1150,13 @@ app.post('/api/logics/lightning-all', async (req, res) => {
     const ids = idsQ.rows.map((r) => r.id);
     if (ids.length === 0) {
       res.json({
-        ok: true, ran: 0, sent: 0,
+        ok: true, started: false, ran: 0, sent: 0,
         signals_created: 0, trades_created: 0,
         failed: [], skipped: [],
       });
       return;
     }
 
-    // Единый прогрев цен: минутки по каждой уникальной бумаге из этих логик.
     const srcQ = await pool.query(
       `SELECT id, sec FROM timeframes WHERE sec >= 60 AND sec <= 300 ORDER BY sec LIMIT 1`
     );
@@ -1090,58 +1173,18 @@ app.post('/api/logics/lightning-all', async (req, res) => {
         ORDER BY id`,
       [ids]
     );
+    const secIds = secsQ.rows.map((r) => r.id);
     const today = new Date().toISOString().slice(0, 10);
-    for (const s of secsQ.rows) {
-      try {
-        await pool.query(`CALL load_prices_http($1, $2, $3, $4)`, [s.id, srcId, today, today]);
-      } catch (err) {
-        console.warn(`lightning-all prices security=${s.id}:`, err.message);
-      }
-    }
 
-    const runLightning = (id) =>
-      pool
-        .query(`SELECT logic_lightning_run($1, LOCALTIMESTAMP, FALSE) AS result`, [id])
-        .then(({ rows }) => rows[0]?.result)
-        .catch((err) => ({ ok: false, reason: 'run_error', err: err.message }));
-    const limit = 4;
-    const results = new Array(ids.length);
-    let next = 0;
-    const worker = async () => {
-      while (next < ids.length) {
-        const i = next++;
-        results[i] = await runLightning(ids[i]);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(limit, ids.length) }, worker));
-
-    const failed = [];
-    const skipped = [];
-    let signals_created = 0;
-    let trades_created = 0;
-    results.forEach((r, i) => {
-      const meta = { id: ids[i] };
-      if (!r || r.ok !== true) {
-        failed.push({ id: ids[i], reason: r?.reason ?? r?.err ?? 'no_result' });
-        return;
-      }
-      const sig = Number(r.terminal_signals_created ?? 0);
-      const trd = Number(r.trade_created ?? 0);
-      signals_created += sig;
-      trades_created += trd;
-      if (sig === 0 && trd === 0) {
-        skipped.push({ ...meta, reason: r.reason ?? 'no_signal' });
-      }
-    });
+    // Ответ сразу — работу уводим в фон, клиент не блокируется.
     res.json({
-      ok: true,
-      ran: ids.length,
-      sent: signals_created + trades_created,
-      signals_created,
-      trades_created,
-      failed,
-      skipped,
+      ok: true, started: true, ran: ids.length, sent: 0,
+      signals_created: 0, trades_created: 0,
+      failed: [], skipped: [],
     });
+    runLightningAllBackground({ ids, secIds, srcId, today }).catch((err) =>
+      console.error('POST /api/logics/lightning-all (bg)', err)
+    );
   } catch (err) {
     console.error('POST /api/logics/lightning-all', err);
     res.status(500).json({ error: err.message });
