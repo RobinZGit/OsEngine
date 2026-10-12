@@ -5365,6 +5365,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -12388,6 +12390,62 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -13028,122 +13086,6 @@ $$;
 
 COMMENT ON FUNCTION logic_trade_sync_point_count(INTEGER) IS
 'Число свечей для sync индикаторов в runner: больше на M1/M2/M5';
-
-CREATE OR REPLACE PROCEDURE logic_refresh_market_data(
-    p_logic_id INTEGER,
-    p_timeframe_id INTEGER,
-    p_closed_bar_dt TIMESTAMP
-)
-LANGUAGE plpgsql AS $$
-DECLARE
-    v_sec RECORD;
-    v_sig RECORD;
-    v_date_from DATE;
-    v_date_to DATE;
-    v_point_count INTEGER;
-    v_tf_sec INTEGER;
-    v_err TEXT;
-BEGIN
-    SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
-
-    v_point_count := logic_trade_sync_point_count(v_tf_sec);
-    v_date_to := GREATEST(p_closed_bar_dt::date, CURRENT_DATE);
-    v_date_from := logic_trade_load_date_from(v_tf_sec, v_point_count, p_closed_bar_dt);
-
-    FOR v_sec IN
-        SELECT ls.security_id
-        FROM logic_securities ls
-        WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-    LOOP
-        BEGIN
-            CALL load_prices(v_sec.security_id, p_timeframe_id, v_date_from, v_date_to);
-            PERFORM logic_trade_log(
-                p_logic_id,
-                'trade.prices.loaded',
-                format('Цены подгружены sec=%s (%s .. %s)', v_sec.security_id, v_date_from, v_date_to),
-                jsonb_build_object(
-                    'security_id', v_sec.security_id,
-                    'date_from', v_date_from,
-                    'date_to', v_date_to,
-                    'timeframe_id', p_timeframe_id
-                ),
-                v_sec.security_id,
-                p_timeframe_id
-            );
-        EXCEPTION
-            WHEN undefined_function THEN
-                PERFORM logic_trade_log(
-                    p_logic_id,
-                    'trade.prices.error',
-                    'load_prices недоступен (нет HTTP-расширения)',
-                    jsonb_build_object('security_id', v_sec.security_id),
-                    v_sec.security_id,
-                    p_timeframe_id
-                );
-            WHEN OTHERS THEN
-                v_err := SQLERRM;
-                PERFORM logic_trade_log(
-                    p_logic_id,
-                    'trade.prices.error',
-                    format('Ошибка загрузки цен sec=%s: %s', v_sec.security_id, v_err),
-                    jsonb_build_object('security_id', v_sec.security_id, 'error', v_err),
-                    v_sec.security_id,
-                    p_timeframe_id
-                );
-        END;
-
-        FOR v_sig IN
-            SELECT DISTINCT lis.indicator_id
-            FROM logic_indicator_signals lis
-            WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
-        LOOP
-            BEGIN
-                CALL ensure_security_indicator_series(v_sec.security_id, v_sig.indicator_id);
-                CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
-                CALL sync_security_indicator_series_for_indicator(
-                    v_sec.security_id,
-                    v_sig.indicator_id,
-                    p_timeframe_id,
-                    p_closed_bar_dt,
-                    v_point_count,
-                    TRUE
-                );
-                PERFORM logic_trade_log(
-                    p_logic_id,
-                    'trade.indicator.synced',
-                    format('Индикатор id=%s пересчитан sec=%s', v_sig.indicator_id, v_sec.security_id),
-                    jsonb_build_object(
-                        'security_id', v_sec.security_id,
-                        'indicator_id', v_sig.indicator_id,
-                        'closed_bar', p_closed_bar_dt,
-                        'point_count', v_point_count
-                    ),
-                    v_sec.security_id,
-                    p_timeframe_id
-                );
-            EXCEPTION
-                WHEN OTHERS THEN
-                    v_err := SQLERRM;
-                    PERFORM logic_trade_log(
-                        p_logic_id,
-                        'trade.indicator.error',
-                        format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sec.security_id, v_err),
-                        jsonb_build_object(
-                            'security_id', v_sec.security_id,
-                            'indicator_id', v_sig.indicator_id,
-                            'error', v_err
-                        ),
-                        v_sec.security_id,
-                        p_timeframe_id
-                    );
-            END;
-        END LOOP;
-    END LOOP;
-END;
-$$;
-
-COMMENT ON PROCEDURE logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP) IS
-'Перед проверкой сигналов: load_prices + ensure/sync индикаторов логики на TF (live trading)';
 
 -- @include sql/logic_trade_pnl.sql (см. sql/logic_trade_pnl.sql — дублируется ниже)
 -- Renamed arg p_balance → p_notional: CREATE OR REPLACE cannot rename args
@@ -17438,6 +17380,12 @@ $$;
 COMMENT ON FUNCTION indicator_has_closed_bar(INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
 'True если индикатор уже посчитан на closed bar';
 
+-- #984: в ранее установленных БД могли остаться обе перегрузки — старая 3-арг
+-- (без p_skip_http) и 4-арг ниже. Тогда CALL по 3 аргументам падает с
+-- «procedure is not unique» (42725), а исключение в вызывающем коде глотается —
+-- из-за этого подтверждения сигналов не находили цену. Убираем 3-арг перегрузку.
+DROP PROCEDURE IF EXISTS logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP);
+
 -- Early exit: все бумаги уже имеют closed-свечу — не трогаем HTTP/sync.
 CREATE OR REPLACE PROCEDURE logic_refresh_market_data(
     p_logic_id INTEGER,
@@ -19175,16 +19123,23 @@ COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
 'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
 
 -- ============================================================
--- Подтверждение типа сигнала (#972)
+-- Подтверждение типа сигнала (#972, #984)
 -- Финализатор отложенных подтверждений: берёт по истёкшему дедлайну записи
--- logic_signal_confirm_pending, дозагружает свежую цену (logic_fresh_order_price),
--- сравнивает с fire_price по expected_dir и при подтверждении направления
--- повторно прогоняет process_logic_trades / process_logic_terminal_signals на
--- баре bar_dt с флагом app.confirm_disabled=TRUE (дедуп обходится, создаётся
--- только подтверждённая группа). Вызывается из run_trade_cycle(), боевого цикла
--- api/trade-runner.js и logic_lightning_run.
+-- logic_signal_confirm_pending, берёт цену на момент проверки — приоритетно живую
+-- цену T-Bank из p_live_prices (её передаёт боевой раннер), иначе свечу
+-- (logic_fresh_order_price), — сравнивает с fire_price по expected_dir и при
+-- подтверждении направления повторно прогоняет process_logic_trades /
+-- process_logic_terminal_signals на баре bar_dt с флагом app.confirm_disabled=TRUE
+-- (дедуп обходится, создаётся только подтверждённая группа). Вызывается из
+-- run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.
 -- ============================================================
-CREATE OR REPLACE FUNCTION logic_signal_confirm_finalize()
+-- #984: старая сигнатура без аргументов и новая с параметром DEFAULT дают
+-- неоднозначность при 0-арг вызове («function is not unique»). Снимаем старую.
+DROP FUNCTION IF EXISTS logic_signal_confirm_finalize();
+
+CREATE OR REPLACE FUNCTION logic_signal_confirm_finalize(
+    p_live_prices JSONB DEFAULT NULL
+)
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -19232,18 +19187,27 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Догружаем цены и берём свежую цену на момент проверки.
-        -- Скаляр (не RECORD): при исключении до SELECT INTO запись остаётся
-        -- «не присвоенной» и чтение v_fresh.* падает с 55000.
+        -- Цена на момент проверки. Приоритет — живая цена T-Bank, которую раннер
+        -- передаёт в p_live_prices ({"<security_id>": price, ...}): сверка идёт по ней,
+        -- а не по устаревшей свече стоп-ТФ. Если живой цены нет — откат на свечу
+        -- (logic_refresh_market_data + logic_fresh_order_price). Скаляр (не RECORD):
+        -- при исключении до SELECT INTO запись остаётся «не присвоенной» и чтение
+        -- v_fresh.* падает с 55000.
         v_check_price := NULL;
-        BEGIN
-            CALL logic_refresh_market_data(v_pend.logic_id, v_pend.timeframe_id, v_pend.bar_dt);
-            SELECT fp.price INTO v_check_price
-            FROM logic_fresh_order_price(v_pend.logic_id, v_pend.security_id, v_pend.timeframe_id) fp;
-        EXCEPTION
-            WHEN OTHERS THEN
-                v_check_price := NULL;
-        END;
+        IF p_live_prices IS NOT NULL THEN
+            v_check_price := NULLIF(p_live_prices ->> v_pend.security_id::text, '')::numeric;
+        END IF;
+        IF v_check_price IS NULL OR v_check_price <= 0 THEN
+            v_check_price := NULL;
+            BEGIN
+                CALL logic_refresh_market_data(v_pend.logic_id, v_pend.timeframe_id, v_pend.bar_dt);
+                SELECT fp.price INTO v_check_price
+                FROM logic_fresh_order_price(v_pend.logic_id, v_pend.security_id, v_pend.timeframe_id) fp;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    v_check_price := NULL;
+            END;
+        END IF;
 
         v_ok := FALSE;
         v_note := NULL;
@@ -19337,12 +19301,13 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION logic_signal_confirm_finalize() IS
-'Финализатор отложенных подтверждений сигналов (#972): по истёкшему дедлайну сравнивает '
-'свежую цену (logic_fresh_order_price) с fire_price по expected_dir и при подтверждении '
-'направления повторно прогоняет process_logic_trades / process_logic_terminal_signals '
-'на исходном баре (app.confirm_disabled обходит дедуп, app.confirm_group_* — только группу). '
-'Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
+COMMENT ON FUNCTION logic_signal_confirm_finalize(JSONB) IS
+'Финализатор отложенных подтверждений сигналов (#972, #984): по истёкшему дедлайну сравнивает '
+'цену на момент проверки (живая цена T-Bank из p_live_prices, иначе logic_fresh_order_price) '
+'с fire_price по expected_dir и при подтверждении направления повторно прогоняет '
+'process_logic_trades / process_logic_terminal_signals на исходном баре (app.confirm_disabled '
+'обходит дедуп, app.confirm_group_* — только группу). p_live_prices — jsonb {"<security_id>": price}.
+Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
 
 -- ============================================================
 -- Молния (#960): ручная проверка сигналов логики на момент нажатия.
@@ -23848,6 +23813,289 @@ COMMENT ON PROCEDURE sync_security_indicator_series_all IS
   'Синхронизация всех серий индикаторов на бумаге.';
 
 
+
+
+-- ===========================================================================
+-- @include sql/routine_comments_missing.sql (дублируется ниже)
+-- ===========================================================================
+
+-- Комментарии к функциям/процедурам без COMMENT ON (для UI «Структура БД» / obj_description).
+-- Файл генерируется: node scripts/generate-missing-routine-comments.mjs
+
+COMMENT ON FUNCTION calc_ind_atr IS
+  'Расчёт ATR (Average True Range) для бумаги/таймфрейма; пишет серии индикатора.';
+
+COMMENT ON FUNCTION calc_ind_atr_array IS
+  'ATR массивом по барам (TABLE dt,value) для sync серий.';
+
+COMMENT ON FUNCTION calc_ind_bb IS
+  'Расчёт Bollinger Bands (UPPER/MIDDLE/LOWER).';
+
+COMMENT ON FUNCTION calc_ind_bb_array IS
+  'Bollinger Bands массивом по барам.';
+
+COMMENT ON FUNCTION calc_ind_ema IS
+  'Расчёт EMA (Exponential Moving Average).';
+
+COMMENT ON FUNCTION calc_ind_ema_array IS
+  'EMA массивом по барам.';
+
+COMMENT ON FUNCTION calc_ind_macd IS
+  'Расчёт MACD / SIGNAL / HISTOGRAM.';
+
+COMMENT ON FUNCTION calc_ind_macd_array IS
+  'MACD массивом по барам.';
+
+COMMENT ON FUNCTION calc_ind_rsi IS
+  'Расчёт RSI.';
+
+COMMENT ON FUNCTION calc_ind_rsi_array IS
+  'RSI массивом по барам.';
+
+COMMENT ON FUNCTION calc_ind_sma IS
+  'Расчёт SMA.';
+
+COMMENT ON FUNCTION calc_ind_sma_array IS
+  'SMA массивом по барам.';
+
+COMMENT ON FUNCTION calc_ind_stoch IS
+  'Расчёт Stochastic (K/D).';
+
+COMMENT ON FUNCTION calc_ind_stoch_array IS
+  'Stochastic массивом по барам.';
+
+COMMENT ON FUNCTION calc_indicator_series_array IS
+  'Универсальный расчёт серии индикатора (calc_ind_* или poly-формула).';
+
+COMMENT ON FUNCTION default_invoke_formula IS
+  'Формула вызова индикатора по умолчанию из справочника.';
+
+COMMENT ON PROCEDURE ensure_security_indicator_series IS
+  'Создаёт строки security_indicator_series для индикатора на бумаге.';
+
+COMMENT ON FUNCTION evaluate_signal_condition IS
+  'Проверяет условие сигнала (@CODE …) на закрытом баре; слева/справа — арифметика (+ − * / #, скобки) над pp и VALUE.';
+
+COMMENT ON FUNCTION get_logic_param_numeric IS
+  'Числовой параметр логики из logic_params (EAV).';
+
+COMMENT ON FUNCTION get_logic_param_text IS
+  'Текстовый параметр логики из logic_params (EAV).';
+
+COMMENT ON FUNCTION ind_resolve_end_dt IS
+  'Конечная дата/время окна расчёта индикатора.';
+
+COMMENT ON FUNCTION ind_warmup_bars IS
+  'Число баров прогрева для индикатора/формулы.';
+
+COMMENT ON FUNCTION is_perpetual_future_group IS
+  'Признак вечного фьючерса (CNYRUBF и т.п.) по группе префикса.';
+
+COMMENT ON FUNCTION logic_backtest_cancel_requested IS
+  'Проверка: пользователь запросил остановку бэктеста.';
+
+COMMENT ON FUNCTION logic_backtest_close_security IS
+  'Закрытие позиции по бумаге в бэктесте.';
+
+COMMENT ON FUNCTION logic_backtest_count_open_positions IS
+  'Число открытых позиций в прогоне бэктеста.';
+
+COMMENT ON FUNCTION logic_backtest_diagnose IS
+  'Диагностика состояния бэктеста (отладка).';
+
+COMMENT ON FUNCTION logic_backtest_insert_trade IS
+  'Вставка тестовой сделки (logic_trades, is_test=1, run_id).';
+
+COMMENT ON FUNCTION logic_backtest_price_at IS
+  'Цена бумаги на баре бэктеста.';
+
+COMMENT ON FUNCTION logic_backtest_process_risk IS
+  'Стопы/риск в бэктесте на баре.';
+
+COMMENT ON FUNCTION logic_backtest_process_signals IS
+  'Сигналы open/close в бэктесте на баре.';
+
+COMMENT ON FUNCTION logic_backtest_request_cancel IS
+  'Помечает прогон бэктеста к отмене (UI Стоп).';
+
+COMMENT ON FUNCTION logic_backtest_sec_inverted IS
+  'Локальная инверсия бумаги в бэктесте (security_inversion).';
+
+COMMENT ON FUNCTION logic_backtest_sec_shadow IS
+  'Теневой режим бумаги в бэктесте (пауза/resume).';
+
+COMMENT ON FUNCTION logic_backtest_security_drawdown_pct IS
+  'Просадка по бумаге в бэктесте, %.';
+
+COMMENT ON FUNCTION logic_backtest_security_gain_pct IS
+  'Прирост по бумаге в бэктесте, %.';
+
+COMMENT ON FUNCTION logic_backtest_update_run IS
+  'Обновление статуса/прогресса logic_backtest_runs.';
+
+COMMENT ON FUNCTION logic_check_security_resume IS
+  'Проверка условий security_resume для возобновления торговли.';
+
+COMMENT ON FUNCTION logic_close_security_positions_market IS
+  'Закрытие боевых позиций по бумаге по рынку.';
+
+COMMENT ON FUNCTION logic_count_open_positions IS
+  'Число открытых боевых позиций логики.';
+
+COMMENT ON FUNCTION logic_ensure_balance IS
+  'Fake: current_balance/initial. Real: кэш с T-Bank → current_balance.';
+
+COMMENT ON FUNCTION logic_long_position_qty IS
+  'Объём открытого лонга по бумаге.';
+
+COMMENT ON FUNCTION logic_portfolio_drawdown_pct IS
+  'Просадка портфеля логики, %.';
+
+COMMENT ON FUNCTION logic_portfolio_equity IS
+  'Эквити портфеля логики (бой): cash + long×price − short×price (как в бэктесте).';
+
+COMMENT ON FUNCTION logic_security_drawdown_pct IS
+  'Просадка по бумаге в боевом режиме, %.';
+
+COMMENT ON FUNCTION logic_security_position_cost IS
+  'Себестоимость позиции по бумаге.';
+
+COMMENT ON FUNCTION logic_security_position_market IS
+  'Рыночная оценка позиции по бумаге.';
+
+COMMENT ON FUNCTION logic_security_track_value IS
+  'Учётная стоимость позиции для стопов.';
+
+COMMENT ON FUNCTION logic_short_position_qty IS
+  'Объём открытого шорта по бумаге.';
+
+COMMENT ON FUNCTION logic_signal_evaluate_at IS
+  'Оценка сигнала логики на заданном баре.';
+
+COMMENT ON FUNCTION logic_signal_record_fire IS
+  'Фиксация срабатывания сигнала (pending рейтинга и т.п.).';
+
+COMMENT ON FUNCTION logic_upsert_param IS
+  'UPSERT параметра в logic_params.';
+
+COMMENT ON FUNCTION parse_signal_formula IS
+  'Разбор формулы сигнала @CODE(…) condition.';
+
+COMMENT ON FUNCTION parse_signal_param_num IS
+  'Числовой параметр из текста формулы сигнала.';
+
+COMMENT ON FUNCTION parse_signal_series IS
+  'Код серии (VALUE/UPPER/…) из формулы сигнала.';
+
+COMMENT ON FUNCTION poly_add IS
+  'Сложение рядов в poly-парсере.';
+
+COMMENT ON FUNCTION poly_align2 IS
+  'Выравнивание двух рядов по длине.';
+
+COMMENT ON FUNCTION poly_build_ema_kernel IS
+  'Ядро EMA для свёртки.';
+
+COMMENT ON FUNCTION poly_build_sma_kernel IS
+  'Ядро SMA для свёртки.';
+
+COMMENT ON FUNCTION poly_comp_div IS
+  'Покомпонентное деление рядов.';
+
+COMMENT ON FUNCTION poly_comp_mul IS
+  'Покомпонентное умножение рядов.';
+
+COMMENT ON FUNCTION poly_ctx_period IS
+  'Период из контекста poly-формулы.';
+
+COMMENT ON FUNCTION poly_delta_kernel IS
+  'Ядро дельты (производной) для свёртки.';
+
+COMMENT ON FUNCTION poly_eval_node IS
+  'Вычисление узла AST poly-формулы.';
+
+COMMENT ON FUNCTION poly_extend IS
+  'Дополнение ряда до нужной длины.';
+
+COMMENT ON FUNCTION poly_fn_empty_args IS
+  'Проверка пустых аргументов функции sma/ema/…';
+
+COMMENT ON FUNCTION poly_fn_resolve_period IS
+  'Период из аргументов sma(period=…).';
+
+COMMENT ON FUNCTION poly_fn_resolve_series IS
+  'Серия из аргументов sma(…, series=…).';
+
+COMMENT ON FUNCTION poly_fn_validate_args IS
+  'Валидация аргументов встроенных poly-функций.';
+
+COMMENT ON FUNCTION poly_formula_conv_depth IS
+  'Глубина свёрток формулы (для warmup).';
+
+COMMENT ON FUNCTION poly_formula_warmup_bars IS
+  'Бары прогрева для poly-формулы.';
+
+COMMENT ON FUNCTION poly_is_formula IS
+  'Признак, что invoke — многочленная формула.';
+
+COMMENT ON FUNCTION poly_len IS
+  'Длина числового ряда.';
+
+COMMENT ON FUNCTION poly_load_indicator_array IS
+  'Загрузка ряда индикатора @CODE в poly-контекст.';
+
+COMMENT ON FUNCTION poly_load_market_array IS
+  'Загрузка OHLC/V ряда (pp/oo/…) в poly-контекст.';
+
+COMMENT ON FUNCTION poly_load_market_dts IS
+  'Метки времени баров рынка для poly.';
+
+COMMENT ON FUNCTION poly_neg IS
+  'Унарный минус ряда.';
+
+COMMENT ON FUNCTION poly_parse IS
+  'Разбор текста poly-формулы в AST.';
+
+COMMENT ON FUNCTION poly_parse_add IS
+  'Разбор сложения/вычитания.';
+
+COMMENT ON FUNCTION poly_parse_atom IS
+  'Разбор атома (число, ряд, скобки).';
+
+COMMENT ON FUNCTION poly_parse_comp IS
+  'Разбор покомпонентных операций.';
+
+COMMENT ON FUNCTION poly_parse_conv IS
+  'Разбор свёртки (*).';
+
+COMMENT ON FUNCTION poly_parse_fn_args IS
+  'Разбор аргументов sma(…)/ema(…).';
+
+COMMENT ON FUNCTION poly_parse_unary IS
+  'Разбор унарных операций.';
+
+COMMENT ON FUNCTION poly_peek_token IS
+  'Просмотр текущего токена без потребления.';
+
+COMMENT ON FUNCTION poly_pp_from_ctx IS
+  'Ряд Close (pp) из контекста.';
+
+COMMENT ON FUNCTION poly_sub IS
+  'Вычитание рядов.';
+
+COMMENT ON FUNCTION poly_tokenize IS
+  'Лексер poly-формулы.';
+
+COMMENT ON FUNCTION resolve_indicator_params IS
+  'Параметры индикатора (period и др.) для расчёта.';
+
+COMMENT ON PROCEDURE sync_security_indicator_series IS
+  'Синхронизация (пересчёт) серий индикатора на бумаге.';
+
+COMMENT ON PROCEDURE sync_security_indicator_series_all IS
+  'Синхронизация всех серий индикаторов на бумаге.';
+
+
 -- @optional-http-block
 -- Ниже: CREATE EXTENSION + процедуры load_*_http (часть B скрипта 02).
 -- ============================================
@@ -24441,6 +24689,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
 
 
 

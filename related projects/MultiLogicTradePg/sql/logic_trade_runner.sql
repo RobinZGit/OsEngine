@@ -1505,6 +1505,12 @@ $$;
 COMMENT ON FUNCTION indicator_has_closed_bar(INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
 'True если индикатор уже посчитан на closed bar';
 
+-- #984: в ранее установленных БД могли остаться обе перегрузки — старая 3-арг
+-- (без p_skip_http) и 4-арг ниже. Тогда CALL по 3 аргументам падает с
+-- «procedure is not unique» (42725), а исключение в вызывающем коде глотается —
+-- из-за этого подтверждения сигналов не находили цену. Убираем 3-арг перегрузку.
+DROP PROCEDURE IF EXISTS logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP);
+
 -- Early exit: все бумаги уже имеют closed-свечу — не трогаем HTTP/sync.
 CREATE OR REPLACE PROCEDURE logic_refresh_market_data(
     p_logic_id INTEGER,
@@ -3177,16 +3183,23 @@ COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
 'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
 
 -- ============================================================
--- Подтверждение типа сигнала (#972)
+-- Подтверждение типа сигнала (#972, #984)
 -- Финализатор отложенных подтверждений: берёт по истёкшему дедлайну записи
--- logic_signal_confirm_pending, дозагружает свежую цену (logic_fresh_order_price),
--- сравнивает с fire_price по expected_dir и при подтверждении направления
--- повторно прогоняет process_logic_trades / process_logic_terminal_signals на
--- баре bar_dt с флагом app.confirm_disabled=TRUE (дедуп обходится, создаётся
--- только подтверждённая группа). Вызывается из run_trade_cycle(), боевого цикла
--- api/trade-runner.js и logic_lightning_run.
+-- logic_signal_confirm_pending, берёт цену на момент проверки — приоритетно живую
+-- цену T-Bank из p_live_prices (её передаёт боевой раннер), иначе свечу
+-- (logic_fresh_order_price), — сравнивает с fire_price по expected_dir и при
+-- подтверждении направления повторно прогоняет process_logic_trades /
+-- process_logic_terminal_signals на баре bar_dt с флагом app.confirm_disabled=TRUE
+-- (дедуп обходится, создаётся только подтверждённая группа). Вызывается из
+-- run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.
 -- ============================================================
-CREATE OR REPLACE FUNCTION logic_signal_confirm_finalize()
+-- #984: старая сигнатура без аргументов и новая с параметром DEFAULT дают
+-- неоднозначность при 0-арг вызове («function is not unique»). Снимаем старую.
+DROP FUNCTION IF EXISTS logic_signal_confirm_finalize();
+
+CREATE OR REPLACE FUNCTION logic_signal_confirm_finalize(
+    p_live_prices JSONB DEFAULT NULL
+)
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -3234,18 +3247,27 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Догружаем цены и берём свежую цену на момент проверки.
-        -- Скаляр (не RECORD): при исключении до SELECT INTO запись остаётся
-        -- «не присвоенной» и чтение v_fresh.* падает с 55000.
+        -- Цена на момент проверки. Приоритет — живая цена T-Bank, которую раннер
+        -- передаёт в p_live_prices ({"<security_id>": price, ...}): сверка идёт по ней,
+        -- а не по устаревшей свече стоп-ТФ. Если живой цены нет — откат на свечу
+        -- (logic_refresh_market_data + logic_fresh_order_price). Скаляр (не RECORD):
+        -- при исключении до SELECT INTO запись остаётся «не присвоенной» и чтение
+        -- v_fresh.* падает с 55000.
         v_check_price := NULL;
-        BEGIN
-            CALL logic_refresh_market_data(v_pend.logic_id, v_pend.timeframe_id, v_pend.bar_dt);
-            SELECT fp.price INTO v_check_price
-            FROM logic_fresh_order_price(v_pend.logic_id, v_pend.security_id, v_pend.timeframe_id) fp;
-        EXCEPTION
-            WHEN OTHERS THEN
-                v_check_price := NULL;
-        END;
+        IF p_live_prices IS NOT NULL THEN
+            v_check_price := NULLIF(p_live_prices ->> v_pend.security_id::text, '')::numeric;
+        END IF;
+        IF v_check_price IS NULL OR v_check_price <= 0 THEN
+            v_check_price := NULL;
+            BEGIN
+                CALL logic_refresh_market_data(v_pend.logic_id, v_pend.timeframe_id, v_pend.bar_dt);
+                SELECT fp.price INTO v_check_price
+                FROM logic_fresh_order_price(v_pend.logic_id, v_pend.security_id, v_pend.timeframe_id) fp;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    v_check_price := NULL;
+            END;
+        END IF;
 
         v_ok := FALSE;
         v_note := NULL;
@@ -3339,12 +3361,13 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION logic_signal_confirm_finalize() IS
-'Финализатор отложенных подтверждений сигналов (#972): по истёкшему дедлайну сравнивает '
-'свежую цену (logic_fresh_order_price) с fire_price по expected_dir и при подтверждении '
-'направления повторно прогоняет process_logic_trades / process_logic_terminal_signals '
-'на исходном баре (app.confirm_disabled обходит дедуп, app.confirm_group_* — только группу). '
-'Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
+COMMENT ON FUNCTION logic_signal_confirm_finalize(JSONB) IS
+'Финализатор отложенных подтверждений сигналов (#972, #984): по истёкшему дедлайну сравнивает '
+'цену на момент проверки (живая цена T-Bank из p_live_prices, иначе logic_fresh_order_price) '
+'с fire_price по expected_dir и при подтверждении направления повторно прогоняет '
+'process_logic_trades / process_logic_terminal_signals на исходном баре (app.confirm_disabled '
+'обходит дедуп, app.confirm_group_* — только группу). p_live_prices — jsonb {"<security_id>": price}.
+Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
 
 -- ============================================================
 -- Молния (#960): ручная проверка сигналов логики на момент нажатия.

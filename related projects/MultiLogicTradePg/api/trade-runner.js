@@ -10,6 +10,7 @@ const WATCHDOG_MS = Number(process.env.TRADE_WATCHDOG_MS) || 30000;
 const { writeTechLogEvent } = require('./lib/tech-log');
 const { isUiSessionActive } = require('./lib/trade-runner-session');
 const { decorate } = require('./lib/error-codes');
+const { tbankHttpPost, DEFAULT_API: TBANK_DEFAULT_API } = require('./lib/tbank-invest-client');
 
 const TRADE_CYCLE_LOCK_KEY = 'multilogictrade_run_trade_cycle';
 
@@ -92,6 +93,52 @@ function forceResetBusy(reason) {
   running = false;
   cycleStartedAt = 0;
   return true;
+}
+
+/**
+ * #984: живые последние цены T-Bank для незакрытых подтверждений типа сигнала (#972).
+ * Один HTTP-запрос MarketDataService/GetLastPrices на все бумаги; возвращает
+ * { "<security_id>": price, ... } для передачи в logic_signal_confirm_finalize(p_live_prices).
+ * При ошибке/отсутствии токена возвращает {} — финализатор откатится на свечу.
+ */
+async function fetchLivePricesForSecurities(pool, securityIds) {
+  const ids = [...new Set((securityIds || []).map((x) => Number(x)).filter((x) => x > 0))];
+  if (ids.length === 0) return {};
+  const { rows: prefixRows } = await pool.query(
+    `SELECT sp.security_id, NULLIF(btrim(COALESCE(sp.tbank_figi, '')), '') AS figi
+     FROM security_prefixes sp
+     WHERE sp.security_id = ANY($1::int[])`,
+    [ids]
+  );
+  const figis = [
+    ...new Set(prefixRows.map((r) => r.figi).filter((f) => f && String(f) !== '0')),
+  ];
+  if (figis.length === 0) return {};
+  const token = (await pool.query('SELECT get_tbank_token() AS t')).rows[0]?.t;
+  if (!token) return {};
+  const { rows: brokerRows } = await pool.query(
+    `SELECT NULLIF(btrim(COALESCE(api_url, '')), '') AS u
+     FROM brokers WHERE code = 'T-BANK' LIMIT 1`
+  );
+  const apiUrl = brokerRows[0]?.u || TBANK_DEFAULT_API;
+  const data = await tbankHttpPost(
+    apiUrl,
+    'tinkoff.public.invest.api.contract.v1.MarketDataService/GetLastPrices',
+    token,
+    { figi: figis }
+  );
+  const byFigi = new Map();
+  for (const q of Array.isArray(data?.lastPrices) ? data.lastPrices : []) {
+    const figi = String(q?.figi || q?.instrumentUid || '').trim();
+    const price = Number(q?.price?.units ?? 0) + Number(q?.price?.nano ?? 0) / 1e9;
+    if (figi && price > 0) byFigi.set(figi, price);
+  }
+  const out = {};
+  for (const r of prefixRows) {
+    const price = r.figi ? byFigi.get(r.figi) : null;
+    if (price > 0) out[String(r.security_id)] = price;
+  }
+  return out;
 }
 
 /**
@@ -228,13 +275,34 @@ async function runTradeCycle(pool, opts = {}) {
       }
     }
 
-    // #972: финализируем созревшие отложенные подтверждения сигналов (свежая цена +
-    // повтор группы). Вызов на уровне цикла — срабатывает и при нуле active-логик.
+    // #972/#984: финализируем созревшие отложенные подтверждения сигналов — сверяем
+    // направление с ЖИВОЙ ценой T-Bank (не со свечой стоп-ТФ, которая у логик не
+    // обновляется). Вызов на уровне цикла — срабатывает и при нуле active-логик.
     try {
       await client.query(`SET statement_timeout = ${Math.max(15000, LOGIC_TIMEOUT_MS)}`);
       await client.query(`SET lock_timeout = '15s'`);
+      let livePrices = null;
+      try {
+        const { rows: pendRows } = await client.query(
+          `SELECT DISTINCT security_id
+           FROM logic_signal_confirm_pending
+           WHERE status = 'pending' AND deadline <= CURRENT_TIMESTAMP`
+        );
+        if (pendRows.length > 0) {
+          livePrices = await fetchLivePricesForSecurities(
+            pool,
+            pendRows.map((r) => r.security_id)
+          );
+        }
+      } catch (priceErr) {
+        livePrices = null;
+        console.error('confirm live prices', decorate(priceErr.message));
+      }
+      const liveArg =
+        livePrices && Object.keys(livePrices).length > 0 ? JSON.stringify(livePrices) : null;
       const { rows: confirmRows } = await client.query(
-        `SELECT logic_signal_confirm_finalize()::int AS n`
+        `SELECT logic_signal_confirm_finalize($1::jsonb)::int AS n`,
+        [liveArg]
       );
       const confirmed = Number(confirmRows[0]?.n ?? 0);
       if (confirmed > 0) {
