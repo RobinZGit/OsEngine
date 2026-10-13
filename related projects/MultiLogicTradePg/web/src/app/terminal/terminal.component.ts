@@ -20,7 +20,7 @@ import {
   AppConfigService,
   logicsLoadErrorMessage,
 } from '../services/app-config.service';
-import { LogicsService } from '../services/logics.service';
+import { LightningAllStatus, LogicsService } from '../services/logics.service';
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
@@ -174,6 +174,8 @@ export class TerminalComponent implements OnInit, OnDestroy {
   allLightningBusy = false;
   allLightningNote: string | null = null;
   private allLightningNoteTimer?: ReturnType<typeof setTimeout>;
+  private allLightningPoll?: ReturnType<typeof setInterval>;
+  private allLightningDeadline = 0;
 
   constructor(
     private readonly refs: ReferencesService,
@@ -217,6 +219,14 @@ export class TerminalComponent implements OnInit, OnDestroy {
     if (this.closeAllNoteTimer) clearTimeout(this.closeAllNoteTimer);
     if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
     if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
+    this.stopAllLightningPoll();
+  }
+
+  private stopAllLightningPoll(): void {
+    if (this.allLightningPoll) {
+      clearInterval(this.allLightningPoll);
+      this.allLightningPoll = undefined;
+    }
   }
 
   /** Периодический опрос непрочитанных сигналов логик активного счёта. */
@@ -1051,7 +1061,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
         } else if (r.ran === 0) {
           this.allLightningNote = 'Логики с сигналом в терминал не найдены';
         } else if (r.started) {
-          this.allLightningNote = `Сигналы запрашиваются: ${r.ran} логик (в фоне)`;
+          // #991: работа идёт в фоне — опрашиваем статус и в конце показываем итог/причины.
+          this.allLightningNote = `Сигналы запрашиваются: ${r.ran} логик (в фоне)…`;
+          this.startAllLightningPoll();
         } else {
           const failedN = r.failed?.length ?? 0;
           const base = `Сигналы запрошены: ${r.ran} логик, отправлено ${r.sent}`;
@@ -1069,12 +1081,81 @@ export class TerminalComponent implements OnInit, OnDestroy {
     });
   }
 
-  private scheduleAllLightningNoteClear(): void {
+  private scheduleAllLightningNoteClear(ms = 8000): void {
     if (this.allLightningNoteTimer) clearTimeout(this.allLightningNoteTimer);
     this.allLightningNoteTimer = setTimeout(() => {
       this.allLightningNote = null;
       this.allLightningNoteTimer = undefined;
-    }, 8000);
+    }, ms);
+  }
+
+  /** #991: опрос статуса фоновой «молнии для всех» до завершения (или таймаута). */
+  private startAllLightningPoll(): void {
+    this.stopAllLightningPoll();
+    this.allLightningDeadline = Date.now() + 5 * 60 * 1000;
+    this.allLightningPoll = setInterval(() => this.checkAllLightningStatus(), 3000);
+    this.checkAllLightningStatus();
+  }
+
+  private checkAllLightningStatus(): void {
+    this.logicsSvc.lightningAllStatus().subscribe({
+      next: (s) => {
+        if (!s || s.started === false) {
+          this.finishAllLightning('Сигналы запрошены');
+          return;
+        }
+        if (s.finished || (s.running === false && (s.ran ?? 0) > 0)) {
+          this.showAllLightningResult(s);
+        } else if (Date.now() > this.allLightningDeadline) {
+          this.finishAllLightning('Сигналы считаются дольше обычного — проверьте терминал позже');
+        }
+      },
+      error: () => {
+        if (Date.now() > this.allLightningDeadline) {
+          this.finishAllLightning('Не удалось получить статус запроса сигналов');
+        }
+      },
+    });
+  }
+
+  private finishAllLightning(note: string): void {
+    this.allLightningBusy = false;
+    this.allLightningNote = note;
+    this.stopAllLightningPoll();
+    this.scheduleAllLightningNoteClear(20000);
+  }
+
+  private showAllLightningResult(s: LightningAllStatus): void {
+    const created = Number(s.signals_created ?? 0) + Number(s.trades_created ?? 0);
+    if (created > 0) {
+      this.finishAllLightning(
+        `Сигналы запрошены: создано сигналов ${s.signals_created ?? 0}, сделок ${s.trades_created ?? 0}`
+      );
+      return;
+    }
+    this.finishAllLightning(this.allLightningDiagNote(s));
+  }
+
+  /** #991: краткая причина, почему по итогам запроса не создано ни одного сигнала. */
+  private allLightningDiagNote(s: LightningAllStatus): string {
+    const rows = s.results ?? [];
+    const parts: string[] = [];
+    if (s.locked === false) {
+      parts.push('боевой цикл занят, свежие бары ещё не посчитаны');
+    }
+    const noActive = rows.filter((r) => (r.diagnostics?.active_signals ?? 1) === 0).length;
+    if (noActive) parts.push(`без активных сигналов: ${noActive}`);
+    const nonTrading = rows.filter((r) => r.diagnostics?.non_trading_period).length;
+    if (nonTrading) parts.push(`неторговый период: ${nonTrading}`);
+    const alreadyOnBar = rows.filter((r) => (r.terminal_signals_on_bar ?? 0) > 0).length;
+    if (alreadyOnBar) parts.push(`на баре уже учтено: ${alreadyOnBar}`);
+    const priceErrors = rows.reduce((a, r) => a + (r.diagnostics?.price_errors ?? 0), 0);
+    if (priceErrors) parts.push(`ошибки загрузки цен: ${priceErrors}`);
+    const lastBars = rows.map((r) => r.diagnostics?.last_signal_bar_dt).filter(Boolean);
+    if (lastBars.length) parts.push(`последние сигналы: ${lastBars[0]}`);
+    return parts.length
+      ? `Новых сигналов нет — ${parts.join('; ')}`
+      : 'Новых сигналов нет: на последнем закрытом баре их не появилось';
   }
 
   /** Кнопка «+ Добавить» у селекта бумаг: регистрирует выбранную бумагу

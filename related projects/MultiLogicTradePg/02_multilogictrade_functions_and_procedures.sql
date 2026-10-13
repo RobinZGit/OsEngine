@@ -5370,6 +5370,15 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
+
+
+
+
+
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10040,6 +10049,258 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -17820,6 +18081,7 @@ DECLARE
     v_confirm_sec INTEGER;           -- #972: настройка подтверждения группы (сек)
     v_group_filter_event TEXT;       -- #972: создавать только подтверждённую группу
     v_group_filter_side TEXT;
+    v_group_filter_sec INTEGER;      -- #990: подтверждение на уровне бумаги (security_id)
     v_expected_dir TEXT;             -- #972: направление подтверждения up/down
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
@@ -17844,9 +18106,9 @@ BEGIN
 
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
 
-    -- Виртуальный бар «молнии» (#960): logic_lightning_run выставляет session-переменную
-    -- app.lightning_bar_dt (local, видна только в транзакции молнии); для обычного цикла
-    -- переменной нет — берём последний закрытый бар как раньше.
+    -- Бар обработки: logic_lightning_run выставляет session-переменную app.lightning_bar_dt
+    -- (local, только в транзакции молнии) = последний ЗАКРЫТЫЙ бар ТФ (#990); для обычного
+    -- цикла переменной нет — берём последний закрытый бар тем же способом.
     v_closed_bar_dt := COALESCE(
         NULLIF(current_setting('app.lightning_bar_dt', TRUE), '')::TIMESTAMP,
         logic_last_closed_bar_dt(v_tf_sec)
@@ -17862,6 +18124,7 @@ BEGIN
     v_confirm_disabled := COALESCE(NULLIF(current_setting('app.confirm_disabled', TRUE), '')::BOOLEAN, FALSE);
     v_group_filter_event := lower(NULLIF(current_setting('app.confirm_group_event', TRUE), ''));
     v_group_filter_side := lower(NULLIF(current_setting('app.confirm_group_side', TRUE), ''));
+    v_group_filter_sec := NULLIF(current_setting('app.confirm_group_sec', TRUE), '')::INTEGER;
     v_confirm_sec := 0;
 
     v_last_bar_raw := btrim(COALESCE(get_logic_param_text(p_logic_id, 'last_trade_bar_dt'), ''));
@@ -18047,6 +18310,10 @@ BEGIN
                  ls.display_order NULLS LAST,
                  ls.id
     LOOP
+        -- #990: повторный прогон подтверждённой группы — только для подтверждённой бумаги.
+        IF v_group_filter_sec IS NOT NULL AND v_sec.security_id <> v_group_filter_sec THEN
+            CONTINUE;
+        END IF;
         v_lot_size := logic_security_lot_size(v_sec.security_id);
         v_is_futures := logic_security_is_futures(v_sec.security_id);
 
@@ -18884,7 +19151,9 @@ DECLARE
     v_confirm_sec INTEGER;           -- #972: настройка подтверждения группы (сек)
     v_group_filter_event TEXT;       -- #972: создавать только подтверждённую группу
     v_group_filter_side TEXT;
+    v_group_filter_sec INTEGER;      -- #990: подтверждение на уровне бумаги (security_id)
     v_expected_dir TEXT;             -- #972: направление подтверждения up/down
+    v_light_ignore_dedup BOOLEAN;    -- #990: молния пересчитывает закрытый бар даже если цикл уже его обработал
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
@@ -18905,7 +19174,8 @@ BEGIN
     END IF;
 
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
-    -- Виртуальный бар «молнии» (#960): см. comment в process_logic_trades.
+    -- Бар обработки: app.lightning_bar_dt = последний ЗАКРЫТЫЙ бар ТФ для молнии (#990);
+    -- см. comment в process_logic_trades.
     v_closed_bar_dt := COALESCE(
         NULLIF(current_setting('app.lightning_bar_dt', TRUE), '')::TIMESTAMP,
         logic_last_closed_bar_dt(v_tf_sec)
@@ -18917,8 +19187,12 @@ BEGIN
 
     -- #972: подтверждение типа сигнала (см. process_logic_trades).
     v_confirm_disabled := COALESCE(NULLIF(current_setting('app.confirm_disabled', TRUE), '')::BOOLEAN, FALSE);
+    -- #990: молния считает последний ЗАКРЫТЫЙ бар и не должна «глохнуть» из-за дедуп-маркера
+    -- уже обработанного цикла бара — пересчитывает (дубли гасит ON CONFLICT).
+    v_light_ignore_dedup := COALESCE(NULLIF(current_setting('app.lightning_ignore_dedup', TRUE), '')::BOOLEAN, FALSE);
     v_group_filter_event := lower(NULLIF(current_setting('app.confirm_group_event', TRUE), ''));
     v_group_filter_side := lower(NULLIF(current_setting('app.confirm_group_side', TRUE), ''));
+    v_group_filter_sec := NULLIF(current_setting('app.confirm_group_sec', TRUE), '')::INTEGER;
     v_confirm_sec := 0;
 
     -- Своя дедуп-ямка свечей: сигналы прогрессируют независимо от торговых last_trade_bar_dt.
@@ -18926,7 +19200,8 @@ BEGIN
     IF v_last_bar_raw <> '' THEN
         BEGIN
             v_last_bar_dt := v_last_bar_raw::TIMESTAMP;
-            IF v_closed_bar_dt <= v_last_bar_dt AND NOT v_confirm_disabled THEN
+            IF v_closed_bar_dt <= v_last_bar_dt AND NOT v_confirm_disabled
+               AND NOT v_light_ignore_dedup THEN
                 RETURN 0;
             END IF;
         EXCEPTION WHEN OTHERS THEN
@@ -18971,6 +19246,10 @@ BEGIN
           AND NOT logic_is_cash_fund_security(ls.security_id)
         ORDER BY ls.display_order NULLS LAST, ls.id
     LOOP
+        -- #990: повторный прогон подтверждённой группы — только для подтверждённой бумаги.
+        IF v_group_filter_sec IS NOT NULL AND v_sec.security_id <> v_group_filter_sec THEN
+            CONTINUE;
+        END IF;
         FOR v_grp IN
             SELECT lis.position_event, lis.position_side
             FROM logic_indicator_signals lis
@@ -19449,11 +19728,12 @@ BEGIN
         -- Подтверждено: повторно прогоняем боевые процессы на ОРИГИНАЛЬНОМ баре bar_dt.
         -- app.lightning_bar_dt фиксирует v_closed_bar_dt, app.confirm_disabled обходит дедуп
         -- и не перезаписывает last_trade_bar_dt, app.confirm_group_{event,side} создаёт
-        -- только подтверждённую группу.
+        -- только подтверждённую группу, app.confirm_group_sec — только подтверждённую бумагу (#990).
         PERFORM set_config('app.lightning_bar_dt', to_char(v_pend.bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
         PERFORM set_config('app.confirm_disabled', 'TRUE', TRUE);
         PERFORM set_config('app.confirm_group_event', v_pend.position_event, TRUE);
         PERFORM set_config('app.confirm_group_side', v_pend.position_side, TRUE);
+        PERFORM set_config('app.confirm_group_sec', v_pend.security_id::text, TRUE);
 
         v_created_this := 0;
         IF COALESCE(v_pend.is_enabled, FALSE) THEN
@@ -19468,6 +19748,7 @@ BEGIN
         PERFORM set_config('app.confirm_disabled', '', TRUE);
         PERFORM set_config('app.confirm_group_event', '', TRUE);
         PERFORM set_config('app.confirm_group_side', '', TRUE);
+        PERFORM set_config('app.confirm_group_sec', '', TRUE);
 
         IF v_created_this = 0 THEN
             PERFORM logic_trade_log(
@@ -19506,6 +19787,107 @@ COMMENT ON FUNCTION logic_signal_confirm_finalize(JSONB) IS
 Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
 
 -- ============================================================
+-- Диагностика «молнии» (#991): почему на баре нет сигналов — чтобы кнопка
+-- «Запросить сигналы» при нуле объясняла причину, а не молчала: нет активных
+-- сигналов/бумаг, неторговый период, ошибки загрузки цен/сигналов/сделок,
+-- когда были последние сигналы по логике. Только чтение, без захвата лока.
+-- ============================================================
+CREATE OR REPLACE FUNCTION logic_lightning_diagnostics(
+    p_logic_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP
+)
+RETURNS JSONB
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_active_signals INTEGER := 0;
+    v_active_securities INTEGER := 0;
+    v_pending INTEGER := 0;
+    v_last_signal_bar TIMESTAMP;
+    v_last_signal_count INTEGER := 0;
+    v_last_processed TEXT;
+    v_non_trading BOOLEAN := FALSE;
+    v_price_errors INTEGER := 0;
+    v_signal_errors INTEGER := 0;
+    v_trade_errors INTEGER := 0;
+    v_last_error TEXT;
+BEGIN
+    SELECT count(*) INTO v_active_signals
+    FROM logic_indicator_signals lis
+    WHERE lis.logic_id = p_logic_id
+      AND lis.is_active = TRUE
+      AND lower(COALESCE(lis.position_event, 'open')) = 'open';
+
+    SELECT count(*) INTO v_active_securities
+    FROM logic_securities ls
+    WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE;
+
+    SELECT count(*) INTO v_pending
+    FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
+
+    -- Самый свежий бар логики, на котором уже есть сигналы в терминал.
+    SELECT bar_dt, cnt INTO v_last_signal_bar, v_last_signal_count
+    FROM (
+        SELECT bar_dt, count(*)::int AS cnt
+        FROM logic_terminal_signals
+        WHERE logic_id = p_logic_id
+        GROUP BY bar_dt
+        ORDER BY bar_dt DESC
+        LIMIT 1
+    ) s;
+
+    -- Бар, который цикл уже обработал (дедуп-маркер самой логики).
+    v_last_processed := NULLIF(
+        btrim(COALESCE(get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), '')),
+        '');
+
+    IF p_bar_dt IS NOT NULL THEN
+        v_non_trading := logic_skip_signal_by_periods(p_logic_id, p_bar_dt);
+    END IF;
+
+    -- Ошибки последних прогонов «молнии» (за 2 часа) — почему часть бумаг не посчиталась.
+    SELECT
+        count(*) FILTER (WHERE operation = 'lightning.prices_http_error'),
+        count(*) FILTER (WHERE operation = 'lightning.signal_error'),
+        count(*) FILTER (WHERE operation = 'lightning.trade_error')
+    INTO v_price_errors, v_signal_errors, v_trade_errors
+    FROM app_tech_log
+    WHERE logic_id = p_logic_id
+      AND created_at > now() - interval '2 hours'
+      AND operation IN ('lightning.prices_http_error', 'lightning.signal_error', 'lightning.trade_error');
+
+    -- Последнее сообщение об ошибке (для показа причины в UI).
+    SELECT a.message INTO v_last_error
+    FROM app_tech_log a
+    WHERE a.logic_id = p_logic_id
+      AND a.created_at > now() - interval '2 hours'
+      AND a.operation IN ('lightning.prices_http_error', 'lightning.signal_error', 'lightning.trade_error')
+    ORDER BY a.created_at DESC
+    LIMIT 1;
+
+    RETURN jsonb_build_object(
+        'active_signals', COALESCE(v_active_signals, 0),
+        'active_securities', COALESCE(v_active_securities, 0),
+        'pending_total', COALESCE(v_pending, 0),
+        'last_signal_bar_dt', CASE WHEN v_last_signal_bar IS NULL THEN NULL
+            ELSE to_char(v_last_signal_bar, 'YYYY-MM-DD"T"HH24:MI:SS') END,
+        'last_signal_count', COALESCE(v_last_signal_count, 0),
+        'last_processed_bar_dt', v_last_processed,
+        'non_trading_period', COALESCE(v_non_trading, FALSE),
+        'price_errors', COALESCE(v_price_errors, 0),
+        'signal_errors', COALESCE(v_signal_errors, 0),
+        'trade_errors', COALESCE(v_trade_errors, 0),
+        'last_error', v_last_error
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_lightning_diagnostics(INTEGER, INTEGER, TIMESTAMP) IS
+'Диагностика «молнии» (#991): почему на закрытом баре нет сигналов — активные сигналы/бумаги, '
+'неторговый период, ошибки загрузки цен/сигналов/сделок за 2 ч и последний бар с сигналами. '
+'Только чтение, без захвата advisory-lock.';
+
+-- ============================================================
 -- Молния (#960): ручная проверка сигналов логики на момент нажатия.
 -- Виртуальный бар логики = начало интервала её ТФ, в котором находится
 -- момент нажатия (последний бар частичный — не ждём его закрытия).
@@ -19531,10 +19913,17 @@ DECLARE
     v_src_sec INTEGER;
     v_date_from DATE;
     v_date_to DATE;
+    v_need_last_min TIMESTAMP;
+    v_loaded BOOLEAN;
     v_sec RECORD;
     v_xtf RECORD;
     v_trade INTEGER := 0;
     v_term INTEGER := 0;
+    v_term_on_bar INTEGER := 0;
+    v_pend_before INTEGER;
+    v_pend_after INTEGER;
+    v_pend_created INTEGER := 0;
+    v_max_confirm INTEGER := 0;
     v_err TEXT;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
@@ -19562,9 +19951,13 @@ BEGIN
 
     -- Момент нажатия не может быть в будущем.
     v_moment := LEAST(COALESCE(p_at, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP);
-    -- Виртуальный бар: начало интервала ТФ логики, содержащего v_moment.
-    v_bar_dt := timestamp 'epoch'
-        + (floor(extract(epoch FROM v_moment) / v_tf_sec) * v_tf_sec) * interval '1 second';
+    -- #990: считаем на последнем ЗАКРЫТОМ баре ТФ (как боевой цикл), а не на текущем
+    -- частичном — иначе кнопка на строке логики показывает сигналы на незакрытом баре
+    -- и расходится с тем, что публикует цикл на закрытии свечи.
+    v_bar_dt := logic_last_closed_bar_dt(v_tf_sec, v_moment);
+    IF v_bar_dt IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_closed_bar');
+    END IF;
 
     IF NOT EXISTS (
         SELECT 1 FROM logic_indicator_signals lis
@@ -19582,7 +19975,11 @@ BEGIN
             'is_enabled', v_logic.is_enabled,
             'use_sig', v_logic.use_sig,
             'trade_created', 0,
-            'terminal_signals_created', 0
+            'terminal_signals_created', 0,
+            'terminal_signals_on_bar', 0,
+            'pending_created', 0,
+            'max_confirm_sec', 0,
+            'diagnostics', logic_lightning_diagnostics(p_logic_id, v_tf_id, v_bar_dt)
         );
     END IF;
 
@@ -19605,17 +20002,22 @@ BEGIN
     -- автоматически в конце оператора, утечки нет; тот же ключ держат
     -- api/trade-runner.js и run_trade_cycle(). При занятости возвращаем busy.
     IF NOT pg_try_advisory_xact_lock(hashtext('multilogictrade_run_trade_cycle')) THEN
-        RETURN jsonb_build_object('ok', FALSE, 'reason', 'busy', 'busy', TRUE);
+        RETURN jsonb_build_object(
+            'ok', FALSE, 'reason', 'busy', 'busy', TRUE,
+            'bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+            'timeframe_id', v_tf_id,
+            'is_enabled', v_logic.is_enabled,
+            'use_sig', v_logic.use_sig,
+            'diagnostics', logic_lightning_diagnostics(p_logic_id, v_tf_id, v_bar_dt)
+        );
     END IF;
 
-    -- T-Bank может долго не отвечать: ждём не более 1,5 с и уходим в MOEX fallback
-    -- (иначе сетевой таймаут по умолчанию в libcurl не ограничен).
-    BEGIN
-        PERFORM http_set_curlopt('CURLOPT_TIMEOUT_MS', '1500');
-    EXCEPTION
-        WHEN OTHERS THEN
-            NULL;
-    END;
+    -- T-Bank может долго не отвечать: ждём не более 1,5 с и уходим в MOEX fallback.
+    -- Задаём таймаут через session-переменную (transaction-local), а НЕ http_set_curlopt:
+    -- настройки curl живут на соединении и, переиспользуясь пулом, «протекали» в обычную
+    -- загрузку свечей (тайм-аут 1,5 с) → массовые 502 на /api/prices/refresh.
+    -- configure_http_ssl() применяет это значение только к вызовам внутри этого оператора.
+    PERFORM set_config('app.http_timeout_ms', '1500', TRUE);
 
     -- #972: финализируем уже созревшие отложенные подтверждения (вновь созданные
     -- при этом прогоне имеют deadline в будущем — сюда не попадают).
@@ -19628,6 +20030,18 @@ BEGIN
         END;
     END IF;
 
+    -- #990: сколько отложенных подтверждений (logic_signal_confirm_pending) добавит
+    -- этот прогон — нужно кнопке «Запросить сигналы», т.к. open-сигналы с confirm_sec
+    -- выдаются в терминал/на сделку не сразу, а после подтверждения цены.
+    SELECT count(*) INTO v_pend_before
+    FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
+
+    -- #993: не перекачивать уже загруженные минутки. Последняя нужная минута —
+    -- конец закрытого бара (bar_dt + tf_sec - src_sec), т.е. последняя минута,
+    -- входящая в интервал закрытого бара. Если она уже в prices — HTTP пропускаем.
+    v_need_last_min := v_bar_dt
+        + (GREATEST(v_tf_sec - v_src_sec, 0) * INTERVAL '1 second');
+
     -- Подготовка данных на виртуальный бар: свежие минуты + резample в ТФ логики
     -- и доп. ТФ формул сигналов (tf= в формулах).
     FOR v_sec IN
@@ -19636,18 +20050,40 @@ BEGIN
         WHERE logic_id = p_logic_id AND is_active = TRUE
         ORDER BY security_id
     LOOP
-        BEGIN
-            CALL load_prices_http(v_sec.security_id, v_src_id, v_date_from, v_date_to);
-        EXCEPTION
-            WHEN OTHERS THEN
-                PERFORM logic_trade_log(
-                    p_logic_id, 'lightning.prices_http_error', SQLERRM,
-                    jsonb_build_object('security_id', v_sec.security_id),
-                    v_sec.security_id, v_tf_id
-                );
-        END;
+        v_loaded := FALSE;
+        -- Пропускаем HTTP, если минутки уже покрывают закрытый бар ИЛИ сам закрытый
+        -- бар уже собран (у неликвидных бумаг минуты могут заканчиваться раньше).
+        IF NOT EXISTS (
+            SELECT 1 FROM prices p
+            WHERE p.security_id = v_sec.security_id
+              AND p.timeframe_id = v_src_id
+              AND p.dt >= v_need_last_min
+        ) AND NOT EXISTS (
+            SELECT 1 FROM prices p
+            WHERE p.security_id = v_sec.security_id
+              AND p.timeframe_id = v_tf_id
+              AND p.dt = v_bar_dt
+        ) THEN
+            BEGIN
+                CALL load_prices_http(v_sec.security_id, v_src_id, v_date_from, v_date_to);
+                v_loaded := TRUE;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    PERFORM logic_trade_log(
+                        p_logic_id, 'lightning.prices_http_error', SQLERRM,
+                        jsonb_build_object('security_id', v_sec.security_id),
+                        v_sec.security_id, v_tf_id
+                    );
+            END;
+        END IF;
 
-        IF v_tf_sec > v_src_sec THEN
+        IF v_tf_sec > v_src_sec
+           AND (v_loaded OR NOT EXISTS (
+                SELECT 1 FROM prices p
+                WHERE p.security_id = v_sec.security_id
+                  AND p.timeframe_id = v_tf_id
+                  AND p.dt = v_bar_dt
+           )) THEN
             BEGIN
                 CALL resample_prices_to_timeframe(
                     v_sec.security_id, v_src_id, v_tf_id, v_date_from, v_date_to
@@ -19663,19 +20099,30 @@ BEGIN
         END IF;
 
         FOR v_xtf IN
-            SELECT x.tf_id FROM logic_signal_extra_tf_ids(p_logic_id, v_tf_id) x
+            SELECT x.tf_id AS tf_id,
+                   (SELECT t.sec FROM timeframes t WHERE t.id = x.tf_id) AS sec
+            FROM logic_signal_extra_tf_ids(p_logic_id, v_tf_id) x
         LOOP
             IF v_xtf.tf_id IS NULL OR v_xtf.tf_id = v_tf_id OR v_xtf.tf_id <= 0 THEN
                 CONTINUE;
             END IF;
-            BEGIN
-                CALL resample_prices_to_timeframe(
-                    v_sec.security_id, v_src_id, v_xtf.tf_id, v_date_from, v_date_to
-                );
-            EXCEPTION
-                WHEN OTHERS THEN
-                    NULL;
-            END;
+            -- #993: резэмплим доп. ТФ только если обновили минутки или на его
+            -- закрытом баре ещё нет свечи (иначе — повторная сборка зря).
+            IF v_loaded OR NOT EXISTS (
+                SELECT 1 FROM prices p
+                WHERE p.security_id = v_sec.security_id
+                  AND p.timeframe_id = v_xtf.tf_id
+                  AND p.dt = logic_last_closed_bar_dt(v_xtf.sec, v_moment)
+            ) THEN
+                BEGIN
+                    CALL resample_prices_to_timeframe(
+                        v_sec.security_id, v_src_id, v_xtf.tf_id, v_date_from, v_date_to
+                    );
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        NULL;
+                END;
+            END IF;
         END LOOP;
     END LOOP;
 
@@ -19698,9 +20145,14 @@ BEGIN
     IF NOT p_log_only AND v_logic.use_sig THEN
         BEGIN
             PERFORM set_config('app.lightning_bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
+            -- #990: кнопка не должна «глохнуть» из-за дедуп-маркера уже обработанного
+            -- циклом бара — пересчитываем закрытый бар (дубли гасит ON CONFLICT).
+            PERFORM set_config('app.lightning_ignore_dedup', '1', TRUE);
             v_term := process_logic_terminal_signals(p_logic_id);
+            PERFORM set_config('app.lightning_ignore_dedup', '', TRUE);
         EXCEPTION
             WHEN OTHERS THEN
+                PERFORM set_config('app.lightning_ignore_dedup', '', TRUE);
                 v_err := SQLERRM;
                 PERFORM logic_trade_log(
                     p_logic_id, 'lightning.signal_error', v_err, NULL, NULL, v_tf_id
@@ -19708,27 +20160,142 @@ BEGIN
         END;
     END IF;
 
+    -- #990: сколько сигналов на этом баре всего (в т.ч. уже созданных циклом) — кнопка
+    -- показывает это число, даже если новых строк не добавилось.
+    IF v_logic.use_sig THEN
+        SELECT count(*) INTO v_term_on_bar
+        FROM logic_terminal_signals
+        WHERE logic_id = p_logic_id AND bar_dt = v_bar_dt;
+    END IF;
+
+    -- #990: сколько сигналов ушло в отложенное подтверждение за этот прогон, и окно
+    -- ожидания (макс. confirm_sec группы) — чтобы кнопка показала статус и дождалась.
+    SELECT count(*) INTO v_pend_after
+    FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
+    v_pend_created := GREATEST(0, v_pend_after - v_pend_before);
+    v_max_confirm := COALESCE((
+        SELECT max(lis.signal_confirm_sec)
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND lis.signal_confirm_sec > 0
+    ), 0);
+
     RETURN jsonb_build_object(
         'ok', TRUE,
+        'reason', 'ok',
         'bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
         'at', to_char(v_moment, 'YYYY-MM-DD"T"HH24:MI:SS'),
         'timeframe_id', v_tf_id,
         'is_enabled', v_logic.is_enabled,
         'use_sig', v_logic.use_sig,
         'trade_created', v_trade,
-        'terminal_signals_created', v_term
+        'terminal_signals_created', v_term,
+        'terminal_signals_on_bar', v_term_on_bar,
+        'pending_created', v_pend_created,
+        'max_confirm_sec', v_max_confirm,
+        'diagnostics', logic_lightning_diagnostics(p_logic_id, v_tf_id, v_bar_dt)
     );
 END;
 $$;
 
 COMMENT ON FUNCTION logic_lightning_run(INTEGER, TIMESTAMP, BOOLEAN) IS
-'Молния (#960): ручная проверка сигналов логики на виртуальном (частичном) баре на момент '
-'нажатия. Догружает минутные свечи до p_at, резэмплит их в ТФ логики и доп. ТФ, затем боевые '
-'процессы (через session-переменную app.lightning_bar_dt) применяют дедуп и исполняют: '
+'Молния (#960): ручная проверка сигналов логики на последнем ЗАКРЫТОМ баре ТФ (как боевой '
+'цикл; #990 — раньше брался текущий частичный бар и расходился с циклом). Догружает минутные '
+'свечи до p_at, резэмплит их в ТФ логики и доп. ТФ, затем боевые процессы (через '
+'session-переменную app.lightning_bar_dt) применяют дедуп и исполняют: '
 'включённая логика — сделка, use_as_terminal_signal — сигнал в терминал. '
 'p_log_only=TRUE — только подготовка данных без действий. '
 '#987: берёт общий advisory-lock боевого цикла (multilogictrade_run_trade_cycle); при занятости '
 'возвращает {ok:false,reason:''busy''} — иначе молния и цикл конфликтуют на свечах `prices`.';
+
+-- ============================================================
+-- Снимок (#990): сигналы логики на последнем ЗАКРЫТОМ баре её ТФ БЕЗ захвата
+-- advisory-lock боевого цикла. Нужен кнопке «Запросить сигналы»: когда цикл занят
+-- (лок удерживается долгим прогревом цен по бумагам — на M1 это минуты), вместо
+-- ошибки 409 кнопка получает актуальные цифры с того бара, который уже посчитал цикл.
+-- Ничего не пишет: только читает logic_terminal_signals / pending.
+-- ============================================================
+CREATE OR REPLACE FUNCTION logic_lightning_snapshot(
+    p_logic_id INTEGER,
+    p_at TIMESTAMP
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logic RECORD;
+    v_tf_id INTEGER;
+    v_tf_sec INTEGER;
+    v_bar_dt TIMESTAMP;
+    v_moment TIMESTAMP;
+    v_on_bar INTEGER := 0;
+    v_pending INTEGER := 0;
+    v_max_confirm INTEGER := 0;
+BEGIN
+    SELECT l.id, COALESCE(l.is_enabled, FALSE) AS is_enabled,
+           COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
+    INTO v_logic
+    FROM logics l
+    JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id AND a.is_active = TRUE;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'logic_not_found');
+    END IF;
+
+    v_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    IF v_tf_id IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_timeframe');
+    END IF;
+
+    SELECT sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
+    IF v_tf_sec IS NULL OR v_tf_sec <= 0 THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'invalid_timeframe');
+    END IF;
+
+    v_moment := LEAST(COALESCE(p_at, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP);
+    v_bar_dt := logic_last_closed_bar_dt(v_tf_sec, v_moment);
+
+    IF v_bar_dt IS NOT NULL AND v_logic.use_sig THEN
+        SELECT count(*) INTO v_on_bar
+        FROM logic_terminal_signals
+        WHERE logic_id = p_logic_id AND bar_dt = v_bar_dt;
+
+        SELECT count(*) INTO v_pending
+        FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
+
+        SELECT max(lis.signal_confirm_sec) INTO v_max_confirm
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND lis.signal_confirm_sec > 0;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'busy', TRUE,
+        'bar_dt', CASE WHEN v_bar_dt IS NULL THEN NULL
+                       ELSE to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS') END,
+        'at', to_char(v_moment, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'timeframe_id', v_tf_id,
+        'is_enabled', v_logic.is_enabled,
+        'use_sig', v_logic.use_sig,
+        'trade_created', 0,
+        'terminal_signals_created', 0,
+        'terminal_signals_on_bar', COALESCE(v_on_bar, 0),
+        'pending_created', 0,
+        'pending_total', COALESCE(v_pending, 0),
+        'max_confirm_sec', COALESCE(v_max_confirm, 0),
+        'diagnostics', logic_lightning_diagnostics(p_logic_id, v_tf_id, v_bar_dt)
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION logic_lightning_snapshot(INTEGER, TIMESTAMP) IS
+'Снимок (#990): сигналы логики на последнем ЗАКРЫТОМ баре её ТФ без захвата advisory-lock '
+'боевого цикла — читает только logic_terminal_signals (terminal_signals_on_bar) и pending. '
+'Используется кнопкой «Запросить сигналы», когда logic_lightning_run вернул busy: вместо '
+'ошибки 409 отдаём актуальные цифры с бара, который уже посчитал боевой цикл.';
 
 -- @include sql/logic_trading_sessions.sql
 -- ============================================
@@ -24320,6 +24887,8 @@ RETURNS VOID
 LANGUAGE plpgsql AS $$
 DECLARE
     v_path TEXT;
+    v_timeout_ms TEXT;
+    v_connect_ms TEXT;
     v_candidates TEXT[] := ARRAY[
         'C:/Program Files/PostgreSQL/15/ssl/certs/curl-ca-bundle.crt',
         'C:/Program Files/PostgreSQL/15/ssl/certs/cacert.pem',
@@ -24327,6 +24896,21 @@ DECLARE
         '/etc/pki/tls/certs/ca-bundle.crt'
     ];
 BEGIN
+    -- Настройки curl (pgsql-http) живут на соединении и переиспользуются пулом.
+    -- Явно задаём тайм-ауты при каждом http-вызове, иначе «протёкшие» значения рубили
+    -- загрузку свечей — «молния» ставила CURLOPT_TIMEOUT_MS=1500 (см. logic_lightning_run),
+    -- а это уходило в пул и давало 502 на /api/prices/refresh. Override — через
+    -- app.http_timeout_ms / app.http_connect_timeout_ms (transaction-local).
+    v_timeout_ms := COALESCE(NULLIF(current_setting('app.http_timeout_ms', TRUE), ''), '20000');
+    v_connect_ms := COALESCE(NULLIF(current_setting('app.http_connect_timeout_ms', TRUE), ''), '5000');
+    BEGIN
+        PERFORM http_set_curlopt('CURLOPT_TIMEOUT_MS', v_timeout_ms);
+        PERFORM http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS', v_connect_ms);
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+
     FOREACH v_path IN ARRAY v_candidates
     LOOP
         BEGIN
@@ -24342,7 +24926,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION configure_http_ssl() IS
-'Указывает libcurl путь к CA-bundle для HTTPS (pgsql-http). См. scripts/fix_pgsql_http_ssl.ps1';
+'Настраивает pgsql-http: CA-bundle для HTTPS и тайм-ауты (CURLOPT_TIMEOUT_MS/CONNECTTIMEOUT_MS; override через app.http_*_timeout_ms). См. scripts/fix_pgsql_http_ssl.ps1';
 
 -- @begin logic_cash_fund_park_http
 -- ============================================
@@ -24899,6 +25483,15 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
+
+
+
+
+
+
+
 
 
 

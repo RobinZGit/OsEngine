@@ -1111,6 +1111,12 @@ describe('TerminalComponent - #970: кнопка «Запросить сигна
   });
 
   function makeComponent(logicsMock: any): any {
+    if (!logicsMock.lightningAllStatus) {
+      // #991: по умолчанию фоновая «молния» «висит» (running), чтобы опрос не завершался.
+      logicsMock.lightningAllStatus = jasmine
+        .createSpy('lightningAllStatus')
+        .and.returnValue(of({ ok: true, started: true, running: true, ran: 2, results: [] }));
+    }
     TestBed.overrideProvider(LogicsService, { useValue: logicsMock });
     const fixture = TestBed.createComponent(TerminalComponent);
     const c: any = fixture.componentInstance;
@@ -1161,7 +1167,49 @@ describe('TerminalComponent - #970: кнопка «Запросить сигна
     c.requestAllLogicSignals();
     expect(c.allLightningBusy).toBe(false);
     expect(c.allLightningNote).toContain('2 логик');
+    expect(c.allLightningNote).toContain('2 логик');
     expect(c.allLightningNote).toContain('в фоне');
+  });
+
+  it('#991: при нуле сигналов показывает причину (боевой цикл занят / последние сигналы)', () => {
+    const logics: any = {
+      runLightningAll: jasmine.createSpy('runLightningAll').and.returnValue(
+        of({ ok: true, started: true, ran: 1, sent: 0, signals_created: 0, trades_created: 0 })
+      ),
+      lightningAllStatus: jasmine.createSpy('lightningAllStatus').and.returnValue(
+        of({
+          ok: true,
+          started: true,
+          running: false,
+          finished: true,
+          locked: false,
+          ran: 1,
+          signals_created: 0,
+          trades_created: 0,
+          results: [
+            {
+              id: 18368,
+              ok: true,
+              terminal_signals_on_bar: 0,
+              diagnostics: {
+                active_signals: 2,
+                active_securities: 40,
+                non_trading_period: false,
+                last_signal_bar_dt: '2026-10-13T11:43:00',
+                last_signal_count: 3,
+                price_errors: 0,
+              },
+            },
+          ],
+        })
+      ),
+    };
+    const c = makeComponent(logics);
+    c.requestAllLogicSignals();
+    expect(c.allLightningBusy).toBe(false);
+    expect(c.allLightningNote).toContain('Новых сигналов нет');
+    expect(c.allLightningNote).toContain('боевой цикл занят');
+    expect(c.allLightningNote).toContain('последние сигналы');
   });
 
   it('#970: при нуле логик с сигналом показывает подсказку', () => {

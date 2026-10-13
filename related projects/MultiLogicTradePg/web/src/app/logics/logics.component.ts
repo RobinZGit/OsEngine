@@ -6,6 +6,7 @@ import { Subject, exhaustMap, takeUntil, timer, forkJoin, of, timeout } from 'rx
 import { catchError, debounceTime, filter, finalize, map } from 'rxjs/operators';
 import {
   BacktestReportListItem,
+  LightningDiagnostics,
   LogicsService,
   TradeRunnerHealth,
 } from '../services/logics.service';
@@ -1431,35 +1432,62 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.lightningBusyIds.has(logicId);
   }
 
-  /** Молния (#960): проверить сигналы логики сейчас на виртуальном (частичном) баре. */
+  /** Молния (#960): проверить сигналы логики сейчас на последнем ЗАКРЫТОМ баре её ТФ (#990). */
   runLightning(row: LogicRow, event: Event): void {
     event.stopPropagation();
     if (this.lightningBusyIds.has(row.id) || this.isBacktestRunning(row.id)) return;
     const ok = confirm(
       `Молния: проверить сигналы логики «${row.name}» сейчас?\n\n` +
-        'Виртуальный бар строится из минутных свечей до текущего момента ' +
-        'и НЕ ждёт закрытия свечи таймфрейма.\n' +
+        'Считаем на последнем ЗАКРЫТОМ баре таймфрейма логики (как боевой цикл).\n' +
+        'Если боевой цикл сейчас занят, покажу сигналы, уже посчитанные им на этом баре.\n' +
         'Если сигнал есть, по настройкам логики будет:\n' +
         '  • включённая — создана сделка;\n' +
         '  • «сигнал в терминал» — выдан сигнал в терминал.\n\n' +
-        'Уже обработанный бар не обрабатывается повторно (дубли исключены).'
+        'Повторное нажатие не создаёт дублей (та же бумага/бар/сторона).'
     );
     if (!ok) return;
     this.lightningBusyIds.add(row.id);
     this.logicsService.runLightning(row.id).subscribe({
       next: (resp) => {
-        this.lightningBusyIds.delete(row.id);
         const lines: string[] = [];
-        if (resp.reason) lines.push(`Причина: ${resp.reason}`);
-        if (resp.bar_dt) lines.push(`Виртуальный бар: ${resp.bar_dt}`);
+        if (resp.busy) {
+          lines.push('Боевой цикл сейчас занят — показаны сигналы с последнего закрытого бара.');
+        } else if (resp.reason && resp.reason !== 'ok') {
+          lines.push(`Причина: ${resp.reason}`);
+        }
+        if (resp.bar_dt) lines.push(`Закрытый бар: ${resp.bar_dt}`);
         lines.push(
           `Сделка: ${resp.trade_created ?? 0}` +
-            `, сигналов в терминал: ${resp.terminal_signals_created ?? 0}`
+            `, сигналов на баре: ${resp.terminal_signals_on_bar ?? resp.terminal_signals_created ?? 0}`
         );
+        const onBar = Number(resp.terminal_signals_on_bar ?? 0);
+        if (resp.bar_dt && resp.use_sig) {
+          if (resp.terminal_signals_created) {
+            lines.push(`Новых сигналов в терминал: ${resp.terminal_signals_created}`);
+          } else if (onBar > 0) {
+            lines.push('Новых сигналов нет — на этом баре уже всё учтено.');
+          } else {
+            // #991: сигналов нет — объясняем причину (диагностика с сервера).
+            lines.push('Сигналов на этом баре нет.');
+            lines.push(...this.lightningDiagnosticsLines(resp.diagnostics, !!resp.busy, resp.bar_dt));
+          }
+        }
+        const pending = Number(resp.pending_created ?? 0);
+        if (pending > 0) {
+          lines.push(
+            `Найдено сигналов: ${pending} — проверяю подтверждение цены (${resp.max_confirm_sec ?? 0} с)…`
+          );
+        }
         alert(lines.join('\n'));
         this.loadTradesForLogic(row.id, true);
         this.loadSignalsForLogic(row.id, true);
         this.cdr.markForCheck();
+        if (pending > 0) {
+          const waitMs = Math.max(1500, (Number(resp.max_confirm_sec) || 0) * 1000 + 3000);
+          setTimeout(() => this.finalizeLightningSignals(row.id), waitMs);
+        } else {
+          this.lightningBusyIds.delete(row.id);
+        }
       },
       error: (err) => {
         this.lightningBusyIds.delete(row.id);
@@ -1467,6 +1495,76 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  /** #990: доводим отложенные подтверждения цены до сигналов/сделок и обновляем списки. */
+  private finalizeLightningSignals(logicId: number): void {
+    this.logicsService.confirmFinalize(logicId).subscribe({
+      next: (r) => {
+        this.lightningBusyIds.delete(logicId);
+        this.loadTradesForLogic(logicId, true);
+        this.loadSignalsForLogic(logicId, true);
+        const created = Number(r?.created ?? 0);
+        alert(
+          created > 0
+            ? `Подтверждение цены пройдено: создано сигналов/сделок — ${created}.`
+            : 'Подтверждение цены не пройдено: сигналы не созданы.'
+        );
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.lightningBusyIds.delete(logicId);
+        alert(err?.error?.error || err?.message || 'Не удалось подтвердить сигналы');
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  /** #991: причины, почему «молния» не дала сигналов на баре (диагностика с сервера). */
+  private lightningDiagnosticsLines(
+    diag: LightningDiagnostics | undefined,
+    busy: boolean,
+    barDt: string
+  ): string[] {
+    const out: string[] = [];
+    if (!diag) {
+      if (busy) {
+        out.push('Боевой цикл занят; свежий бар обрабатывается автоматически (обычно ~1 мин).');
+      }
+      return out;
+    }
+    if ((diag.active_signals ?? 0) === 0) {
+      out.push('У логики нет активных open-сигналов — считать нечего.');
+    }
+    if ((diag.active_securities ?? 0) === 0) {
+      out.push('В логике нет активных бумаг — сигналы не считаются.');
+    }
+    if (diag.non_trading_period) {
+      out.push('Сейчас неторговый период — сигналы в терминал не выдаются.');
+    }
+    const lastBar = diag.last_signal_bar_dt ?? null;
+    if (lastBar && lastBar !== barDt) {
+      out.push(
+        `На баре ${barDt} сигналов нет; последние сигналы: бар ${lastBar} (${diag.last_signal_count ?? 0} шт).`
+      );
+    } else if (!lastBar) {
+      out.push('По этой логике сигналов в терминал ещё не было.');
+    }
+    if (busy) {
+      out.push('Боевой цикл занят: свежий бар обрабатывается автоматически (обычно ~1 мин).');
+    }
+    if ((diag.price_errors ?? 0) > 0) {
+      out.push(
+        `Ошибки загрузки цен за 2 ч: ${diag.price_errors}. Последняя: ${diag.last_error ?? '—'}`
+      );
+    }
+    if ((diag.signal_errors ?? 0) > 0) {
+      out.push(`Ошибки расчёта сигналов за 2 ч: ${diag.signal_errors}.`);
+    }
+    if ((diag.pending_total ?? 0) > 0) {
+      out.push(`Ожидают подтверждения цены: ${diag.pending_total}.`);
+    }
+    return out;
   }
 
   private formatPctParam(value: number | string | null | undefined): string {

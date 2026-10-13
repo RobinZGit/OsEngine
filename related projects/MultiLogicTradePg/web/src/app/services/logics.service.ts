@@ -808,22 +808,45 @@ export class LogicsService {
   }
 
   /**
-   * Молния (#960): проверить сигналы логики на виртуальном (частичном) баре —
-   * не ждёт закрытия свечи; по настройкам создаёт сделку и/или сигнал в терминал.
-   */
+   * Молния (#960): проверить сигналы логики на последнем ЗАКРЫТОМ баре её ТФ (#990).
+   * Если боевой цикл держит общий лок — сервер отдаёт снимок с бара (busy: true) вместо 409. */
+  /**
+   * Молния (#960): проверить сигналы логики на последнем ЗАКРЫТОМ баре её ТФ (#990).
+   * Если боевой цикл держит общий лок — сервер отдаёт снимок с бара (busy: true) вместо 409. */
   runLightning(logicId: number): Observable<{
     ok?: boolean;
+    busy?: boolean;
     reason?: string;
     bar_dt?: string;
     at?: string;
+    timeframe_id?: number;
     is_enabled?: boolean;
     use_sig?: boolean;
     trade_created?: number;
     terminal_signals_created?: number;
+    terminal_signals_on_bar?: number;
+    pending_created?: number;
+    pending_total?: number;
+    max_confirm_sec?: number;
+    diagnostics?: LightningDiagnostics;
     error?: string;
   }> {
     return this.http.post(
       `${this.appConfig.apiUrl}/logics/${logicId}/lightning`,
+      {}
+    );
+  }
+
+  /** #990: довести отложенные подтверждения цены (logic_signal_confirm_pending)
+   *  до сигналов/сделок. Вызывается кнопкой «Запросить сигналы» после окна ожидания. */
+  confirmFinalize(logicId: number): Observable<{
+    ok?: boolean;
+    logic_id?: number;
+    created?: number;
+    error?: string;
+  }> {
+    return this.http.post(
+      `${this.appConfig.apiUrl}/logics/${logicId}/confirm-finalize`,
       {}
     );
   }
@@ -848,6 +871,13 @@ export class LogicsService {
     return this.http.post(
       `${this.appConfig.apiUrl}/logics/lightning-all`,
       {}
+    );
+  }
+
+  /** #991: статус фоновой «молнии для всех» — результат по логикам и диагностика. */
+  lightningAllStatus(): Observable<LightningAllStatus> {
+    return this.http.get<LightningAllStatus>(
+      `${this.appConfig.apiUrl}/logics/lightning-all/status`
     );
   }
 
@@ -904,4 +934,47 @@ export class LogicsService {
       `${this.appConfig.apiUrl}/logics/${logicId}/signal-rating-precalc`
     );
   }
+}
+
+/** #991: диагностика «молнии» — почему на баре нет сигналов. */
+export interface LightningDiagnostics {
+  active_signals?: number;
+  active_securities?: number;
+  pending_total?: number;
+  last_signal_bar_dt?: string | null;
+  last_signal_count?: number;
+  last_processed_bar_dt?: string | null;
+  non_trading_period?: boolean;
+  price_errors?: number;
+  signal_errors?: number;
+  trade_errors?: number;
+  last_error?: string | null;
+}
+
+/** #991: результат фоновой «молнии для всех» по одной логике. */
+export interface LightningAllResultRow {
+  id: number;
+  ok?: boolean;
+  busy?: boolean;
+  reason?: string;
+  bar_dt?: string;
+  trade_created?: number;
+  terminal_signals_created?: number;
+  terminal_signals_on_bar?: number;
+  diagnostics?: LightningDiagnostics;
+  error?: string;
+}
+
+/** #991: статус фоновой «молнии для всех». */
+export interface LightningAllStatus {
+  ok?: boolean;
+  started?: boolean;
+  running?: boolean;
+  finished?: boolean;
+  job_id?: string;
+  locked?: boolean | null;
+  ran?: number;
+  signals_created?: number;
+  trades_created?: number;
+  results?: LightningAllResultRow[];
 }

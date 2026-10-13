@@ -1021,10 +1021,10 @@ app.post('/api/logics/:id/shadow-reset', async (req, res) => {
   }
 });
 
-/** Молния (#960): ручная проверка сигналов логики на виртуальном (частичном) баре.
- *  Нажатие имитирует обычный сигнал на сдвинутом таймфрейме: догружаются минутные
- *  свечи до текущего момента, резэмплятся в ТФ логики, и применяются настройки
- *  (is_enabled → сделка, use_as_terminal_signal → сигнал в терминал). */
+/** Молния (#960): ручная проверка сигналов логики на последнем ЗАКРЫТОМ баре её ТФ (#990).
+ *  Совпадает с боевым циклом: догружаются минутные свечи до текущего момента, резэмплятся
+ *  в ТФ логики, и применяются настройки (is_enabled → сделка, use_as_terminal_signal →
+ *  сигнал в терминал). Дедуп-маркер уже обработанного бара кнопку не блокирует. */
 app.post('/api/logics/:id/lightning', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -1033,7 +1033,8 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
   }
   try {
     // #987: цикл уже держит общий advisory-lock — logic_lightning_run вернёт 'busy'.
-    // Немного ждём и повторяем, чтобы ручная кнопка на строке логики не «падала».
+    // #990: сначала немного ждём и повторяем (цикл может освободить лок), а если лок
+    // так и занят — отдаём снимок с последнего закрытого бара вместо ошибки 409.
     let result;
     for (let attempt = 0; attempt < 6; attempt++) {
       const { rows } = await pool.query(
@@ -1046,10 +1047,19 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
     }
     if (!result || result.ok !== true) {
       if (result?.reason === 'busy') {
-        res.status(409).json({
-          ok: false, reason: 'busy',
-          error: 'Боевой цикл занят, повторите через несколько секунд',
-        });
+        // #990: цикл занят общим локом (M1 держит его минутами на прогреве цен).
+        // Вместо ошибки 409 отдаём снимок с последнего ЗАКРЫТОГО бара — то, что уже
+        // посчитал цикл, без захвата лока и без записи.
+        const snapRes = await pool.query(
+          `SELECT logic_lightning_snapshot($1, LOCALTIMESTAMP) AS result`,
+          [id]
+        );
+        const snap = snapRes.rows[0]?.result;
+        if (snap && snap.ok === true) {
+          res.json(snap);
+        } else {
+          res.status(400).json(snap ?? { ok: false, reason: 'no_result' });
+        }
         return;
       }
       res.status(400).json(result ?? { ok: false, reason: 'no_result' });
@@ -1064,12 +1074,18 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
 
 const LIGHTNING_LOCK_KEY = 'multilogictrade_run_trade_cycle';
 
+// #991: состояние последнего запуска «молнии для всех» — чтобы кнопка «Запросить
+// сигналы» могла показать результат и причины (почему сигналов не создано).
+// Работа выполняется в фоне, клиент опрашивает статус.
+let lightningAllJob = null;
+
 /** #987: фоновая часть lightning-all — прогрев цен и прогон logic_lightning_run
  *  на выделенном соединении под общим advisory-lock с боевым циклом
  *  (api/trade-runner.js, run_trade_cycle). Иначе длинные транзакции «молнии» и
  *  цикла вставляют одни и те же свечи `prices` и ловят дедлоки → запрос зависает. */
 async function runLightningAllBackground({ ids, secIds, srcId, today }) {
   const client = await pool.connect();
+  const job = lightningAllJob;
   let locked = false;
   try {
     for (let i = 0; i < 60 && !locked; i++) {
@@ -1080,22 +1096,48 @@ async function runLightningAllBackground({ ids, secIds, srcId, today }) {
       locked = rows[0]?.ok === true;
       if (!locked) await new Promise((r) => setTimeout(r, 2000));
     }
+    job.locked = locked;
     if (!locked) {
-      console.warn('lightning-all: боевой цикл занят, пропуск');
+      // #991: лок так и не освободился — не пропускаем молча, а отдаём снимок с
+      // диагностикой по каждой логике (боевой цикл занят, свежий бар ещё считается).
+      console.warn('lightning-all: боевой цикл занят — отдаю снимок с диагностикой');
+      for (const id of ids) {
+        try {
+          const { rows } = await client.query(
+            `SELECT logic_lightning_snapshot($1, LOCALTIMESTAMP) AS result`,
+            [id]
+          );
+          const r = rows[0]?.result ?? { ok: false, reason: 'no_result' };
+          job.results.push({ id, ...r });
+        } catch (err) {
+          job.results.push({ id, ok: false, error: err.message });
+        }
+      }
       return;
     }
 
     // Единый прогрев цен: минутки по каждой уникальной бумаге из этих логик.
+    // #993: не перекачиваем уже загруженные минутки — если минутная свеча за сегодня
+    // уже есть «до сейчас», HTTP пропускаем (logic_lightning_run затем тоже пропустит).
     for (const s of secIds) {
       try {
+        const freshRes = await client.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM prices
+             WHERE security_id = $1
+               AND timeframe_id = $2
+               AND dt::date = $3::date
+               AND dt >= (LOCALTIMESTAMP - INTERVAL '2 minutes')
+           ) AS fresh`,
+          [s, srcId, today]
+        );
+        if (freshRes.rows[0]?.fresh) continue;
         await client.query(`CALL load_prices_http($1, $2, $3, $4)`, [s, srcId, today, today]);
       } catch (err) {
         console.warn(`lightning-all prices security=${s}:`, err.message);
       }
     }
 
-    let signals = 0;
-    let trades = 0;
     for (const id of ids) {
       try {
         const { rows } = await client.query(
@@ -1103,14 +1145,20 @@ async function runLightningAllBackground({ ids, secIds, srcId, today }) {
           [id]
         );
         const r = rows[0]?.result;
-        if (r && r.ok === true) {
-          signals += Number(r.terminal_signals_created ?? 0);
-          trades += Number(r.trade_created ?? 0);
+        if (r) {
+          job.results.push({ id, ...r });
+          if (r.ok === true) {
+            job.signals += Number(r.terminal_signals_created ?? 0);
+            job.trades += Number(r.trade_created ?? 0);
+          } else {
+            console.warn(`lightning-all logic=${id}:`, r.reason ?? 'no_result');
+          }
         } else {
-          console.warn(`lightning-all logic=${id}:`, r?.reason ?? 'no_result');
+          job.results.push({ id, ok: false, reason: 'no_result' });
         }
       } catch (err) {
         console.error(`lightning-all logic=${id}`, err.message);
+        job.results.push({ id, ok: false, error: err.message });
       }
       try {
         await client.query(`CALL touch_trade_runner_last_ok($1)`, ['lightning']);
@@ -1119,7 +1167,7 @@ async function runLightningAllBackground({ ids, secIds, srcId, today }) {
       }
     }
     console.log(
-      `lightning-all done: logics=${ids.length} signals=${signals} trades=${trades}`
+      `lightning-all done: logics=${ids.length} signals=${job.signals} trades=${job.trades}`
     );
   } finally {
     if (locked) {
@@ -1129,6 +1177,7 @@ async function runLightningAllBackground({ ids, secIds, srcId, today }) {
         /* ignore */
       }
     }
+    job.finishedAt = Date.now();
     client.release();
   }
 }
@@ -1176,17 +1225,76 @@ app.post('/api/logics/lightning-all', async (req, res) => {
     const secIds = secsQ.rows.map((r) => r.id);
     const today = new Date().toISOString().slice(0, 10);
 
-    // Ответ сразу — работу уводим в фон, клиент не блокируется.
+    // #991: запускаем фоновую работу и отдаём id задания. Клиент опрашивает
+    // /lightning-all/status, чтобы показать итог и причины (почему 0 сигналов).
+    lightningAllJob = {
+      id: `lightning-${Date.now()}`,
+      startedAt: Date.now(),
+      finishedAt: null,
+      locked: null,
+      ids,
+      signals: 0,
+      trades: 0,
+      results: [],
+    };
     res.json({
       ok: true, started: true, ran: ids.length, sent: 0,
+      job_id: lightningAllJob.id,
       signals_created: 0, trades_created: 0,
       failed: [], skipped: [],
     });
-    runLightningAllBackground({ ids, secIds, srcId, today }).catch((err) =>
-      console.error('POST /api/logics/lightning-all (bg)', err)
-    );
+    runLightningAllBackground({ ids, secIds, srcId, today }).catch((err) => {
+      console.error('POST /api/logics/lightning-all (bg)', err);
+      if (lightningAllJob) lightningAllJob.finishedAt = Date.now();
+    });
   } catch (err) {
     console.error('POST /api/logics/lightning-all', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** #991: статус последней «молнии для всех» — результат по каждой логике и диагностика
+ *  (почему сигналов не создано). Клиент опрашивает после POST /api/logics/lightning-all. */
+app.get('/api/logics/lightning-all/status', async (req, res) => {
+  if (!lightningAllJob) {
+    res.json({ ok: true, started: false, running: false, ran: 0, results: [] });
+    return;
+  }
+  const j = lightningAllJob;
+  res.json({
+    ok: true,
+    started: true,
+    running: !j.finishedAt,
+    finished: !!j.finishedAt,
+    job_id: j.id,
+    locked: j.locked,
+    ran: j.ids.length,
+    signals_created: j.signals,
+    trades_created: j.trades,
+    started_at: j.startedAt,
+    finished_at: j.finishedAt,
+    results: j.results,
+  });
+});
+
+/** #990: финализация отложенных подтверждений (logic_signal_confirm_pending).
+ *  Open-сигналы с signal_confirm_sec выдаются не сразу: молния кладёт их в очередь,
+ *  а сигнал/сделка создаётся после проверки цены. Кнопка «Запросить сигналы» вызывает
+ *  этот эндпоинт по истечении окна, чтобы довести сигналы. Живую цену финализатор
+ *  добирает сам (#985). Финализация глобальная (все созревшие строки), id — для вида. */
+app.post('/api/logics/:id/confirm-finalize', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid logic id' });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT logic_signal_confirm_finalize()::int AS created`
+    );
+    res.json({ ok: true, logic_id: id, created: Number(rows[0]?.created ?? 0) });
+  } catch (err) {
+    console.error('POST /api/logics/:id/confirm-finalize', err);
     res.status(500).json({ error: err.message });
   }
 });
