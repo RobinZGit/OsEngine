@@ -113,7 +113,11 @@ const tradeEnd = tradeTail.indexOf('COMMENT ON FUNCTION run_trade_cycle()');
 if (tradeStart === -1 || tradeEnd === -1) {
   throw new Error('sync-02: prices_have_closed_bar/logic_refresh/process_logic_trades / run_trade_cycle not found');
 }
-const ratingBlock = read('sql/logic_signal_and_rating.sql').trimEnd() + '\n\n';
+const ratingBlock =
+  read('sql/logic_signal_and_rating.sql').trimEnd() +
+  '\n\n' +
+  read('sql/indicator_rating.sql').trimEnd() +
+  '\n\n';
 // ensure — в core; full park (HTTP/EtfBy) — после CREATE EXTENSION http
 const cashParkStub = `
 CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(

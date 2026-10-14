@@ -262,6 +262,110 @@ $$;
 COMMENT ON FUNCTION logic_sync_real_trade_broker_fees(INTEGER) IS
 'Подтянуть комиссию/цену исполнения с T-Bank GetOrderState для ещё НЕ финальных (status=submitted) боевых заявок; при изменении цены закрытия — сразу пересобрать её пакеты/PnL; заявки с ответом 404 Order not found помечаются broker_order_missing и больше не опрашиваются; в конце полный rebuild_pnl';
 
+-- Ручные сделки терминала по реальному счёту: PostOrder у маркет-заявки комиссию
+-- обычно не возвращает, а фактически исполнилось ЦЕЛОЕ число лотов (не запрошенное).
+-- Дотягиваем комиссию и фактическую цену/количество с GetOrderState. У терминала
+-- status сразу 'filled', поэтому фильтр — по комиссии (commission <= 0 = ещё не синкали).
+CREATE OR REPLACE FUNCTION terminal_sync_real_trade_broker_fees(
+    p_account_id INTEGER DEFAULT NULL,
+    p_trade_id BIGINT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_tr RECORD;
+    v_order JSONB;
+    v_comm NUMERIC;
+    v_unit NUMERIC;
+    v_lots NUMERIC;
+    v_qty NUMERIC;
+    v_new_price NUMERIC;
+    v_new_qty NUMERIC;
+    v_updated INTEGER := 0;
+    v_not_found INTEGER := 0;
+    v_errors JSONB := '[]'::JSONB;
+BEGIN
+    FOR v_tr IN
+        SELECT tt.id, tt.account_id, tt.broker_order_id, tt.quantity, tt.price, tt.commission,
+               COALESCE(s.lot_size, 0) AS lot_size
+        FROM terminal_trades tt
+        JOIN securities s ON s.id = tt.security_id
+        JOIN accounts a ON a.id = tt.account_id
+        WHERE tt.broker_order_id IS NOT NULL
+          AND btrim(tt.broker_order_id) <> ''
+          AND COALESCE(tt.broker_order_missing, FALSE) = FALSE
+          AND tt.status <> 'rejected'
+          -- Комиссия ещё не подтянута с брокера.
+          AND tt.commission <= 0
+          AND (p_account_id IS NULL OR tt.account_id = p_account_id)
+          AND (p_trade_id IS NULL OR tt.id = p_trade_id)
+          AND a.account_type = 'real'
+          AND a.broker_id IN (SELECT id FROM brokers WHERE code = 'T-BANK')
+        ORDER BY tt.id
+    LOOP
+        BEGIN
+            v_order := tbank_get_order_state(v_tr.account_id, v_tr.broker_order_id);
+            v_comm := tbank_order_commission(v_order);
+            v_unit := tbank_order_unit_price(v_order);
+
+            -- Фактически исполненное количество = лоты × размер лота (у терминала quantity в штуках).
+            v_lots := COALESCE(
+                NULLIF(regexp_replace(
+                    COALESCE(v_order->>'lotsExecuted', v_order->>'lots_executed', '0'),
+                    '[^0-9.\-]', '', 'g'
+                ), ''),
+                '0'
+            )::numeric;
+            v_qty := CASE WHEN v_lots > 0 AND v_tr.lot_size > 0
+                          THEN v_lots * v_tr.lot_size END;
+
+            v_new_price := CASE WHEN v_unit IS NOT NULL AND v_unit > 0
+                                THEN round(v_unit, 6) ELSE v_tr.price END;
+            v_new_qty := COALESCE(v_qty, v_tr.quantity);
+
+            IF v_comm > 0
+               OR v_new_price IS DISTINCT FROM v_tr.price
+               OR v_new_qty IS DISTINCT FROM v_tr.quantity THEN
+                UPDATE terminal_trades
+                SET commission = CASE WHEN v_comm > 0 THEN round(v_comm, 6) ELSE commission END,
+                    price = v_new_price,
+                    quantity = v_new_qty,
+                    amount = round(v_new_price * v_new_qty, 2)
+                WHERE id = v_tr.id;
+                v_updated := v_updated + 1;
+            END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                -- T-Bank больше не знает заявку (старая/чужой контур) → помечаем и выводим из синка.
+                IF SQLERRM ILIKE '%order not found%'
+                   OR SQLERRM ILIKE '%not found%'
+                   OR SQLERRM LIKE '%HTTP 404%' THEN
+                    UPDATE terminal_trades SET broker_order_missing = TRUE WHERE id = v_tr.id;
+                    v_not_found := v_not_found + 1;
+                ELSE
+                    v_errors := v_errors || jsonb_build_array(jsonb_build_object(
+                        'trade_id', v_tr.id,
+                        'order_id', v_tr.broker_order_id,
+                        'error', SQLERRM
+                    ));
+                END IF;
+        END;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'updated', v_updated,
+        'order_not_found', v_not_found,
+        'errors', v_errors,
+        'account_id', p_account_id,
+        'trade_id', p_trade_id
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION terminal_sync_real_trade_broker_fees(INTEGER, BIGINT) IS
+'Подтянуть комиссию и фактическую цену/количество (лоты × размер лота) с T-Bank GetOrderState для ручных сделок терминала по реальному счёту; помечает broker_order_missing при 404 (NULL = все счета/сделки)';
+
 -- Детектор испорченного боевого FinRes:
 --  1) finres <> 0 при полном отсутствии пакетов закрытия (значение писалось мимо build_lots
 --     или пакеты потеряны) — как баг MTLRP +20737 (2026-08-18);

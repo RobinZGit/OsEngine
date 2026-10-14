@@ -15,6 +15,7 @@ const BROKER_FEE_SYNC_CHECK_MS =
 
 let running = false;
 let feeSyncRunning = false;
+let terminalFeeSyncRunning = false;
 let errorPurgeRunning = false;
 
 /**
@@ -86,6 +87,36 @@ async function maybeSyncBrokerFees(pool) {
 }
 
 /**
+ * Сверка ручных сделок терминала по реальному счёту: PostOrder у маркет-заявки
+ * комиссию обычно не отдаёт, а исполняется ЦЕЛОЕ число лотов — дотягиваем
+ * комиссию и фактическую цену/количество (лоты × размер лота) с T-Bank.
+ * Отключается тем же APP_BROKER_FEE_SYNC=0.
+ */
+async function maybeSyncTerminalBrokerFees(pool) {
+  if (process.env.APP_BROKER_FEE_SYNC === '0') {
+    return { skipped: true, reason: 'disabled' };
+  }
+  if (terminalFeeSyncRunning) return { skipped: true, reason: 'busy' };
+  terminalFeeSyncRunning = true;
+  try {
+    const { rows } = await pool.query(
+      'SELECT terminal_sync_real_trade_broker_fees(NULL, NULL) AS result'
+    );
+    const result = rows[0]?.result ?? {};
+    if (Number(result.updated) > 0) {
+      console.log(`Terminal broker fee sync: updated=${result.updated}`);
+    }
+    return { ok: true, result };
+  } catch (err) {
+    // Функции может не быть на старой схеме — молча ждать обновления 02.
+    console.error('Terminal broker fee sync error', err.message);
+    return { ok: false, error: err.message };
+  } finally {
+    terminalFeeSyncRunning = false;
+  }
+}
+
+/**
  * Чистка app_error_log: удаляет записи старше retention (по умолчанию 24 ч).
  * Держит журнал «Мониторинг системы» компактным; вызывается каждый час и на старте.
  */
@@ -138,9 +169,13 @@ function startMaintenanceScheduler(pool) {
       maybeSyncBrokerFees(pool).catch((err) => {
         console.error('Broker fee sync tick error', err.message);
       });
+      maybeSyncTerminalBrokerFees(pool).catch((err) => {
+        console.error('Terminal broker fee sync tick error', err.message);
+      });
     }, BROKER_FEE_SYNC_CHECK_MS);
     setTimeout(() => {
       maybeSyncBrokerFees(pool).catch(() => {});
+      maybeSyncTerminalBrokerFees(pool).catch(() => {});
     }, 30000);
   }
 
@@ -164,6 +199,7 @@ function startMaintenanceScheduler(pool) {
 module.exports = {
   maybeRunScheduledCleanup,
   maybeSyncBrokerFees,
+  maybeSyncTerminalBrokerFees,
   purgeErrorLog,
   startMaintenanceScheduler,
 };

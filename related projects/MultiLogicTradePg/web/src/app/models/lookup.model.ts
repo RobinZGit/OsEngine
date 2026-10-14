@@ -169,6 +169,13 @@ export interface IndicatorRow {
   sig_ct_def: string | null;
   /** trend_line | oscillator | channel | zero_line | strength | volume */
   sig_profile?: string | null;
+  /** #994: рейтинг неиспользуемого индикатора (% годовых), null если не считался */
+  rating?: number | null;
+  best_position_side?: string | null;
+  best_signal_kind?: string | null;
+  best_time_kind?: string | null;
+  samples_count?: number | null;
+  computed_at?: string | null;
   value_types: IndicatorValueTypeRow[];
 }
 

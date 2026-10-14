@@ -23,6 +23,22 @@ export class IndicatorsPanelComponent implements OnInit {
   editorOpen = false;
   editTarget: IndicatorRow | null = null;
   createMode = false;
+  ratingSortDir: 'none' | 'desc' | 'asc' = 'none';
+
+  private static readonly SIDE_LABEL: Record<string, string> = {
+    long: 'лонг',
+    short: 'шорт',
+  };
+  private static readonly KIND_LABEL: Record<string, string> = {
+    trend: 'тренд',
+    counter: 'контр-тренд',
+  };
+  private static readonly TIME_LABEL: Record<string, string> = {
+    workday_trade: 'будни, торги',
+    workday_nontrade: 'будни, вне торгов',
+    weekend_trade: 'выходные, торги',
+    weekend_nontrade: 'выходные, вне торгов',
+  };
 
   constructor(
     private readonly refs: ReferencesService,
@@ -64,6 +80,46 @@ export class IndicatorsPanelComponent implements OnInit {
     this.editorOpen = false;
     this.createMode = false;
     this.editTarget = null;
+  }
+
+  ratingText(row: IndicatorRow): string {
+    if (row.rating === null || row.rating === undefined) return '—';
+    return Number(row.rating).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+  }
+
+  ratingTooltip(row: IndicatorRow): string {
+    if (row.rating === null || row.rating === undefined) {
+      return 'Рейтинг не рассчитан (индикатор используется логикой или ещё не тестировался)';
+    }
+    const parts: string[] = [];
+    const side = row.best_position_side ? IndicatorsPanelComponent.SIDE_LABEL[row.best_position_side] : null;
+    const kind = row.best_signal_kind ? IndicatorsPanelComponent.KIND_LABEL[row.best_signal_kind] : null;
+    const time = row.best_time_kind ? IndicatorsPanelComponent.TIME_LABEL[row.best_time_kind] : null;
+    if (side || kind || time) {
+      parts.push(`Лучший разрез: ${[side, kind, time].filter(Boolean).join(', ')}`);
+    }
+    if (row.samples_count != null) parts.push(`сигналов: ${row.samples_count}`);
+    if (row.computed_at) parts.push(`рассчитано: ${new Date(row.computed_at).toLocaleString('ru-RU')}`);
+    parts.push('Рейтинг: средний % годовых до лучшей точки среди загруженных свечей');
+    return parts.join('\n');
+  }
+
+  toggleRatingSort(): void {
+    this.ratingSortDir =
+      this.ratingSortDir === 'none' ? 'desc' : this.ratingSortDir === 'desc' ? 'asc' : 'none';
+    const dir = this.ratingSortDir === 'desc' ? -1 : this.ratingSortDir === 'asc' ? 1 : 0;
+    this.indicators = [...this.indicators].sort((a, b) => {
+      if (dir !== 0) {
+        const av = a.rating ?? null;
+        const bv = b.rating ?? null;
+        if (av !== bv) {
+          if (av === null) return 1;
+          if (bv === null) return -1;
+          return av > bv ? dir : -dir;
+        }
+      }
+      return a.code.localeCompare(b.code);
+    });
   }
 
   descriptionPreview(description: string | null): string {

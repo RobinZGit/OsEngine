@@ -556,8 +556,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
     const securityId = parseId(req.body?.security_id);
     const direction = String(req.body?.direction || '').trim().toUpperCase();
     const execution = String(req.body?.execution || 'market').trim().toLowerCase();
-    const price = Number(req.body?.price);
-    const quantity = Number(req.body?.quantity);
+    let price = Number(req.body?.price);
+    let quantity = Number(req.body?.quantity);
     // #977: сделка по галочке «Исполнять сделки сразу» — только такие
     // ограничиваются лимитом автоисполнения (ручные лимитом не ограничены).
     const isAuto = req.body?.auto === true;
@@ -620,7 +620,7 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         res.status(404).json({ error: 'Бумага не найдена в БД' });
         return;
       }
-      const amount = Number((quantity * price).toFixed(2));
+      let amount = Number((quantity * price).toFixed(2));
       const sideLabel = direction === 'BUY' ? 'Куплено' : 'Продано';
       // Комиссия демо-счёта (% от суммы сделки) — задаётся в терминале.
       const commissionPctRaw = Number(req.body?.commission_pct);
@@ -791,6 +791,36 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         throw err;
       } finally {
         client.release();
+      }
+
+      // Реальный счёт: PostOrder у маркет-заявки комиссию обычно не отдаёт, а брокер
+      // исполняет ЦЕЛОЕ число лотов (не запрошенное). Дотягиваем факт (комиссию,
+      // цену, количество) с GetOrderState и подменяем значения в ответе, чтобы
+      // «Отклонение» и позиция сразу совпадали с брокером. Сбой не роняет сделку —
+      // недостающее догонит фоновый синк.
+      if (!isFake && status !== 'rejected' && brokerOrderId) {
+        try {
+          await pool.query(
+            'SELECT terminal_sync_real_trade_broker_fees($1, $2) AS result',
+            [accountId, tradeId]
+          );
+          const finalRows = await pool.query(
+            `SELECT quantity, price, amount, commission, status, note
+             FROM terminal_trades WHERE id = $1`,
+            [tradeId]
+          );
+          const f = finalRows.rows[0];
+          if (f) {
+            quantity = Number(f.quantity);
+            price = Number(f.price);
+            amount = Number(f.amount);
+            commission = Number(f.commission);
+            status = f.status;
+            note = f.note;
+          }
+        } catch (_e) {
+          /* факт опционален — сделку не роняем */
+        }
       }
 
       const trade = {

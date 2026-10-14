@@ -89,6 +89,12 @@ app.get('/api/indicators', async (req, res) => {
         i.sig_trend_def,
         i.sig_ct_def,
         i.sig_profile,
+        r.rating,
+        r.best_position_side,
+        r.best_signal_kind,
+        r.best_time_kind,
+        r.samples_count AS rating_samples_count,
+        r.computed_at AS rating_computed_at,
         COALESCE(
           json_agg(
             json_build_object(
@@ -106,8 +112,9 @@ app.get('/api/indicators', async (req, res) => {
         ) AS value_types
       FROM indicators i
       LEFT JOIN indicator_value_types vt ON vt.indicator_id = i.id
+      LEFT JOIN indicator_rating r ON r.indicator_id = i.id
       WHERE ($1::boolean = FALSE OR (BTRIM(COALESCE(i.script, '')) <> '' OR BTRIM(COALESCE(i.formula, '')) <> ''))
-      GROUP BY i.id
+      GROUP BY i.id, r.indicator_id
       ORDER BY i.code
     `,
       [withCalc]

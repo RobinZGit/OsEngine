@@ -4686,6 +4686,7 @@ CREATE TABLE IF NOT EXISTS terminal_trades (
     status          VARCHAR(20) NOT NULL DEFAULT 'filled'
         CHECK (status IN ('pending','submitted','filled','rejected','cancelled')),
     broker_order_id VARCHAR(100),
+    broker_order_missing BOOLEAN NOT NULL DEFAULT FALSE,
     note            TEXT,
     executed_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -4695,10 +4696,12 @@ CREATE INDEX IF NOT EXISTS idx_terminal_trades_account_executed
 
 -- Миграция для уже развёрнутых БД (CREATE TABLE IF NOT EXISTS не меняет существующую таблицу).
 ALTER TABLE terminal_trades ADD COLUMN IF NOT EXISTS commission NUMERIC(20,6) NOT NULL DEFAULT 0;
+ALTER TABLE terminal_trades ADD COLUMN IF NOT EXISTS broker_order_missing BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON TABLE terminal_trades IS
 'Сделки терминала: account_id, бумага, направление, количество, цена, сумма, комиссия, статус';
 COMMENT ON COLUMN terminal_trades.broker_order_id IS 'ID заявки T-Bank для реального счёта';
+COMMENT ON COLUMN terminal_trades.broker_order_missing IS 'T-Bank вернул 404 Order not found — заявку больше не опрашиваем';
 COMMENT ON COLUMN terminal_trades.note IS 'Сообщение/причина отклонения';
 COMMENT ON COLUMN terminal_trades.commission IS
 'Комиссия сделки, ₽: у фейка — notional × commission_pct, у реального — из ответа T-Bank';
@@ -5046,6 +5049,95 @@ CROSS JOIN (
 WHERE NOT EXISTS (
     SELECT 1 FROM logic_non_trading_intervals x WHERE x.logic_id = l.id
 );
+
+-- ============================================
+-- Тест неиспользуемых индикаторов → рейтинг в справочнике (фоновый, по остаточному принципу)
+-- Считается на УЖЕ загруженных ценах, без load_prices. Не путать с рейтингом
+-- сигнала на логике (logic_indicator_signals.rating / logic_signal_rating_*).
+-- ============================================
+
+-- Сырые сэмплы: одна строка = (индикатор × бумага × ТФ × сторона × тип × тип времени),
+-- усреднённый % годовых по всем сигналам этого разреза. Живут сутки.
+CREATE TABLE IF NOT EXISTS indicator_rating_sample (
+    id SERIAL PRIMARY KEY,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    -- Логика-источник юниверса (информационно; расчёт не зависит от конкретной логики).
+    logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    position_side VARCHAR(10) NOT NULL CHECK (position_side IN ('long', 'short')),
+    signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
+    -- Разрез по типу времени бара: рабочий день/выходной × торговая/неторговая сессия.
+    time_kind VARCHAR(20) NOT NULL DEFAULT 'workday_trade',
+    signals_count INTEGER NOT NULL DEFAULT 0,
+    avg_annual_pct NUMERIC(14, 4),
+    best_annual_pct NUMERIC(14, 4),
+    computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS indicator_id INTEGER REFERENCES indicators(id) ON DELETE CASCADE;
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE CASCADE;
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS timeframe_id INTEGER REFERENCES timeframes(id) ON DELETE CASCADE;
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS position_side VARCHAR(10);
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS signal_kind VARCHAR(10);
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS time_kind VARCHAR(20) NOT NULL DEFAULT 'workday_trade';
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS signals_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS avg_annual_pct NUMERIC(14, 4);
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS best_annual_pct NUMERIC(14, 4);
+ALTER TABLE indicator_rating_sample ADD COLUMN IF NOT EXISTS computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE indicator_rating_sample ALTER COLUMN logic_id DROP NOT NULL;
+
+-- Уникальный ключ разреза изменился (добавлен time_kind, убран logic_id) — пересоздаём явно.
+DROP INDEX IF EXISTS idx_indicator_rating_sample_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_indicator_rating_sample_unique
+    ON indicator_rating_sample(indicator_id, security_id, timeframe_id, position_side, signal_kind, time_kind);
+CREATE INDEX IF NOT EXISTS idx_indicator_rating_sample_indicator_id ON indicator_rating_sample(indicator_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_rating_sample_computed_at ON indicator_rating_sample(computed_at);
+
+COMMENT ON TABLE indicator_rating_sample IS
+'Сэмплы теста неиспользуемых индикаторов: усреднённый % годовых по разрезу (индикатор×бумага×ТФ×сторона×тип×тип времени). Очистка старше 24 ч.';
+COMMENT ON COLUMN indicator_rating_sample.time_kind IS
+'workday_trade | workday_nontrade | weekend_trade | weekend_nontrade (рабочий день/выходной × торговая/неторговая сессия по шаблону MOEX)';
+
+-- Итоговый рейтинг индикатора (текущий): максимум среднего % годовых по логикам и разрезам.
+CREATE TABLE IF NOT EXISTS indicator_rating (
+    indicator_id INTEGER PRIMARY KEY REFERENCES indicators(id) ON DELETE CASCADE,
+    rating NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    best_logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL,
+    best_position_side VARCHAR(10),
+    best_signal_kind VARCHAR(10),
+    best_time_kind VARCHAR(20),
+    slices_count INTEGER NOT NULL DEFAULT 0,
+    samples_count INTEGER NOT NULL DEFAULT 0,
+    avg_annual_pct NUMERIC(14, 4),
+    computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS rating NUMERIC(14, 4) NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS best_logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS best_position_side VARCHAR(10);
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS best_signal_kind VARCHAR(10);
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS best_time_kind VARCHAR(20);
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS slices_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS samples_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS avg_annual_pct NUMERIC(14, 4);
+ALTER TABLE indicator_rating ADD COLUMN IF NOT EXISTS computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_indicator_rating_rating ON indicator_rating(rating DESC);
+
+COMMENT ON TABLE indicator_rating IS
+'Рейтинг индикатора справочника (% годовых): максимум среднего по логикам и разрезам (сторона × тренд/контр × тип времени). Питает колонку рейтинга в списке индикаторов.';
+
+-- Маркер запуска фонового теста (троттлинг + диагностика).
+CREATE TABLE IF NOT EXISTS indicator_rating_run (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    last_run_at TIMESTAMP,
+    last_status INTEGER,
+    last_message TEXT,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO indicator_rating_run (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;
+
+COMMENT ON TABLE indicator_rating_run IS 'Маркер фонового теста неиспользуемых индикаторов: время и результат последнего запуска';
 
 -- ============================================
 -- Готово: шаг 1 завершён

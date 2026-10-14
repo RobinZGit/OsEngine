@@ -144,6 +144,23 @@ th {
   text-align: right;
 }
 
+.col-rating {
+  width: 5.5rem;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+th.col-rating.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sort-mark {
+  font-size: 0.65rem;
+  color: #2563eb;
+}
+
 .icon-btn {
   border: none;
   background: transparent;

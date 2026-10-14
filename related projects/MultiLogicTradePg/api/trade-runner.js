@@ -6,6 +6,11 @@ const MAX_CYCLE_MS = Number(process.env.TRADE_RUNNER_MAX_CYCLE_MS) || 180000;
 const LOGIC_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_LOGIC_TIMEOUT_MS) || 120000;
 const SIGNAL_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_SIGNAL_TIMEOUT_MS) || 300000;
 const WATCHDOG_MS = Number(process.env.TRADE_WATCHDOG_MS) || 30000;
+// #994: фоновый тест рейтинга НЕиспользуемых индикаторов. Тик лёгкий; реальный
+// тяжёлый прогон и троттл (по умолчанию 180 мин) — внутри run_indicator_rating_test_safe.
+const INDICATOR_RATING_INTERVAL_MS = Number(process.env.INDICATOR_RATING_INTERVAL_MS) || 900000;
+const INDICATOR_RATING_FIRST_DELAY_MS =
+  Number(process.env.INDICATOR_RATING_FIRST_DELAY_MS) || 120000;
 
 const { writeTechLogEvent } = require('./lib/tech-log');
 const { writeErrorLog } = require('./lib/error-log');
@@ -24,6 +29,7 @@ let lastSkipReason = '';
 /** @type {object|null} */
 let lastCycleOut = null;
 let watchdogRunning = false;
+let indicatorRatingRunning = false;
 
 /**
  * Env TRADE_RUNNER_REQUIRE_UI=1|0 overrides DB APP_TRADE_RUNNER_REQUIRE_UI.
@@ -485,6 +491,48 @@ async function runWatchdogTick(pool, opts = {}) {
   }
 }
 
+/**
+ * #994: фоновый рейтинг НЕиспользуемых индикаторов — отдельным тиком, вне
+ * блокировки цикла сделок (не тормозит торговлю). Троттл и advisory lock —
+ * внутри run_indicator_rating_test_safe; при 0 (троттл/занято) тихо выходим.
+ */
+async function runIndicatorRatingTick(pool) {
+  if (indicatorRatingRunning) return { skipped: true, reason: 'busy' };
+  indicatorRatingRunning = true;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 0');
+    const { rows } = await client.query(`SELECT run_indicator_rating_test_safe() AS r`);
+    await client.query('COMMIT');
+    const r = Number(rows[0]?.r);
+    if (r === 1) {
+      console.log('Indicator rating test: ok');
+      await writeTechLogEvent(pool, {
+        threadKey: 'trade-runner',
+        operation: 'indicator_rating.run',
+        message: 'Тест рейтинга индикаторов: выполнено',
+        source: 'node',
+        payload: { result: r },
+      }).catch(() => {});
+    } else if (r === -1) {
+      console.error('Indicator rating test: failed (см. indicator_rating_run)');
+    }
+    return { ok: r === 1, result: r };
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_e) {
+      /* ignore */
+    }
+    console.error('Indicator rating test', decorate(err.message));
+    return { ok: false, error: err.message };
+  } finally {
+    indicatorRatingRunning = false;
+    client.release();
+  }
+}
+
 function startTradeRunner(pool) {
   const enabled = process.env.TRADE_RUNNER_ENABLED !== '0';
   if (!enabled) {
@@ -559,6 +607,18 @@ function startTradeRunner(pool) {
       });
   }, WATCHDOG_MS);
 
+  // #994: рейтинг неиспользуемых индикаторов — отдельным тиком.
+  setTimeout(() => {
+    runIndicatorRatingTick(pool).catch((err) =>
+      console.error('Indicator rating tick', decorate(err.message))
+    );
+  }, INDICATOR_RATING_FIRST_DELAY_MS);
+  setInterval(() => {
+    runIndicatorRatingTick(pool).catch((err) =>
+      console.error('Indicator rating tick', decorate(err.message))
+    );
+  }, INDICATOR_RATING_INTERVAL_MS);
+
   // First health pulse shortly after listen (so UI is not red for 90s on fresh start).
   setTimeout(() => {
     runTradeCycle(pool).catch(() => {});
@@ -570,6 +630,7 @@ module.exports = {
   startTradeRunner,
   getTradeRunnerHealth,
   runWatchdogTick,
+  runIndicatorRatingTick,
   STALE_MS,
   MAX_CYCLE_MS,
 };
