@@ -1,5 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DbSchemaPanelComponent } from './db-schema/db-schema-panel.component';
 import { AppHelpPanelComponent } from './app-help/app-help-panel.component';
@@ -8,6 +8,7 @@ import { AppAboutPanelComponent } from './app-about/app-about-panel.component';
 import { ProjectSchemaPanelComponent } from './project-schema/project-schema-panel.component';
 import { TechLogService } from './services/tech-log.service';
 import { TradeRunnerSessionService } from './services/trade-runner-session.service';
+import { TerminalStateService } from './services/terminal-state.service';
 import { assetUrl } from './shared/asset-url';
 
 @Component({
@@ -295,9 +296,25 @@ export class AppComponent implements OnInit, OnDestroy {
       ? assetUrl('assets/tools/my-projects.html')
       : 'https://robinzgit.github.io/OsEngine/my-projects.html';
 
+  /**
+   * #996: сторож сигналов логик — работает независимо от открытой вкладки.
+   * Терминал (`TerminalComponent`) монтируется только на своей вкладке, а
+   * обработка сигнала (полоса + автоисполнение «Исполнять сделки сразу») живёт
+   * внутри него. Пока вкладка закрыта, новый сигнал теряется. Поэтому корневой
+   * компонент сам следит за непрочитанными сигналами и при их появлении
+   * переводит пользователя на вкладку «Терминал» — тогда полоса рисуется и
+   * автоисполнение срабатывает. Неважно, исполнился сигнал сразу или это просто
+   * появление бумаги: реакция одна.
+   */
+  private signalsWatchTimer: ReturnType<typeof setInterval> | null = null;
+  private signalsWatchFirst: ReturnType<typeof setTimeout> | null = null;
+  private signalsWatchBusy = false;
+
   constructor(
     private readonly techLog: TechLogService,
-    private readonly tradeRunnerSession: TradeRunnerSessionService
+    private readonly tradeRunnerSession: TradeRunnerSessionService,
+    private readonly terminalState: TerminalStateService,
+    private readonly router: Router
   ) {}
 
   ngOnInit(): void {
@@ -307,6 +324,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.techLoggingEnabled = r.enabled;
       },
     });
+    this.startSignalsWatch();
   }
 
   onTechLoggingChange(enabled: boolean): void {
@@ -315,6 +333,55 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.tradeRunnerSession.stop();
+    if (this.signalsWatchTimer) clearInterval(this.signalsWatchTimer);
+    if (this.signalsWatchFirst) clearTimeout(this.signalsWatchFirst);
+  }
+
+  /** #996: опрос непрочитанных сигналов раз в 15 с (как и в терминале). */
+  private startSignalsWatch(): void {
+    if (this.signalsWatchTimer) return;
+    this.signalsWatchTimer = setInterval(() => this.watchLogicSignals(), 15_000);
+    // Первый опрос — после того, как устоится стартовая маршрутизация ('' → 'operations').
+    this.signalsWatchFirst = setTimeout(() => this.watchLogicSignals(), 2000);
+  }
+
+  /** #996: есть непрочитанный сигнал, а открыта не вкладка терминала — открываем её.
+      Сигналы отмечает прочитанными сам терминал, когда смонтируется (иначе был бы
+      бесконечный переход). */
+  private watchLogicSignals(): void {
+    if (this.signalsWatchBusy) return;
+    this.signalsWatchBusy = true;
+    this.terminalState.getLogicSignals(1).subscribe({
+      next: (r) => {
+        this.signalsWatchBusy = false;
+        if ((r?.signals?.length ?? 0) === 0) return;
+        if (this.activeTab() === 'terminal') return;
+        this.focusBrowser();
+        void this.router.navigateByUrl('/terminal');
+      },
+      error: () => {
+        this.signalsWatchBusy = false;
+      },
+    });
+  }
+
+  /** Первый сегмент текущего маршрута ('' — корень/редирект). */
+  private activeTab(): string {
+    const path = this.router.url.split('?')[0].split('#')[0];
+    return path.split('/').filter((s) => s.length > 0)[0] ?? '';
+  }
+
+  /** #997: вместе с автопереходом поднимаем окно браузера поверх остальных
+      окон. window.focus() сам по себе только мигает на панели задач, поэтому
+      локальный API запускает Windows-хелпер (см. scripts/show-browser.ps1).
+      Если API недоступен (не-Windows, удалённый сервер) — просто игнорируем. */
+  private focusBrowser(): void {
+    try {
+      window.focus();
+    } catch {
+      /* noop */
+    }
+    this.terminalState.showBrowser().subscribe({ error: () => undefined });
   }
 
   openHelp(): void {

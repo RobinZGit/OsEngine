@@ -3,6 +3,8 @@
  * Одна строка на счёт; сами настройки — свободный JSON в колонке payload.
  * Плюс план облигаций из фондов (TBRU/SBGB/OBLG) и регистрация выпуска.
  */
+const path = require('path');
+const { execFile } = require('child_process');
 const { resolveBondFund } = require('../lib/bond-fund-fetch');
 const { tbankHttpPost, DEFAULT_API } = require('../lib/tbank-invest-client');
 const { getBondNames } = require('../lib/bond-names');
@@ -1148,5 +1150,50 @@ module.exports = function registerTerminalRoutes(app, ctx) {
     } catch (err) {
       handleDbError(res, err, 'terminal logic signals read');
     }
+  });
+
+  /** #997: поднять окно браузера с приложением поверх всех окон.
+      Браузер не может выйти на передний план из фоновой вкладки штатными
+      средствами, поэтому локальный API (тот же ПК, что и браузер) запускает
+      PowerShell-хелпер scripts/show-browser.ps1, который находит окно по
+      заголовку страницы («MultiLogic Trade») и выводит его вперёд.
+      Лучшее усилие: при неудаче или на не-Windows отвечаем ok:false. */
+  app.post('/api/terminal/show-browser', (req, res) => {
+    if (process.platform !== 'win32') {
+      res.json({ ok: false, reason: 'unsupported-platform' });
+      return;
+    }
+    const scriptPath = path.join(
+      __dirname,
+      '..',
+      '..',
+      'scripts',
+      'show-browser.ps1'
+    );
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        scriptPath,
+      ],
+      { timeout: 10000, windowsHide: true },
+      (err, stdout) => {
+        if (err) {
+          res.json({ ok: false, reason: 'helper-failed' });
+          return;
+        }
+        let ok = false;
+        try {
+          ok = JSON.parse(String(stdout).trim())?.ok === true;
+        } catch {
+          ok = false;
+        }
+        res.json({ ok, reason: ok ? 'focused' : 'window-not-found' });
+      }
+    );
   });
 };

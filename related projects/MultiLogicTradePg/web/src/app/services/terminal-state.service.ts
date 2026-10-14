@@ -298,4 +298,13 @@ export class TerminalStateService {
       { ids }
     );
   }
+
+  /** #997: поднять окно браузера поверх всех окон (локальный API → PowerShell-
+      хелпер). Лучшее усилие: сервер сам решает, возможно ли это. */
+  showBrowser(): Observable<{ ok: boolean; reason?: string }> {
+    return this.http.post<{ ok: boolean; reason?: string }>(
+      `${this.appConfig.apiUrl}/terminal/show-browser`,
+      {}
+    );
+  }
 }
