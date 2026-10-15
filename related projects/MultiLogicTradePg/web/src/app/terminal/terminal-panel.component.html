@@ -413,6 +413,47 @@
         <span class="trade-switch-label" [class.active]="tradeType === 'limit'">Лимит</span>
       </div>
 
+      <div class="trade-stops" role="group" aria-label="Стоп-лосс и тейк-профит, процент от цены входа">
+        <div class="trade-max trade-stop">
+          <label class="trade-max-label" for="trade-sl-input">Стоп-лосс, %</label>
+          <span class="trade-max-input-wrap">
+            <input
+              id="trade-sl-input"
+              type="number"
+              class="trade-max-input"
+              min="0"
+              step="0.1"
+              placeholder="выкл"
+              [ngModel]="stopSlPct"
+              (ngModelChange)="onStopSlChange($event)"
+              [disabled]="tradingBusy"
+              title="Закрыть позицию по бумаге маркетом, если цена уйдёт против входа на этот процент. Пусто — выключено; 0 — мгновенно (на цене входа)."
+              aria-label="Стоп-лосс, процент от цены входа"
+            />
+            <span class="trade-max-currency">%</span>
+          </span>
+        </div>
+        <div class="trade-max trade-stop">
+          <label class="trade-max-label" for="trade-tp-input">Тейк-профит, %</label>
+          <span class="trade-max-input-wrap">
+            <input
+              id="trade-tp-input"
+              type="number"
+              class="trade-max-input"
+              min="0"
+              step="0.1"
+              placeholder="выкл"
+              [ngModel]="stopTpPct"
+              (ngModelChange)="onStopTpChange($event)"
+              [disabled]="tradingBusy"
+              title="Закрыть позицию по бумаге маркетом при прибыли на этот процент от входа. Пусто — выключено."
+              aria-label="Тейк-профит, процент от цены входа"
+            />
+            <span class="trade-max-currency">%</span>
+          </span>
+        </div>
+      </div>
+
       @if (priceMissing) {
         <div class="trade-note">
           Нет цены для расчёта количества — дождитесь загрузки графика.

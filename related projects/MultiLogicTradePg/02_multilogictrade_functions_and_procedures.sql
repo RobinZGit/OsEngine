@@ -5384,6 +5384,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -12939,6 +12940,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -17572,13 +17601,15 @@ COMMENT ON PROCEDURE logic_rating_precalc_ensure_data(INTEGER, INTEGER, INTEGER)
 'Перед боевым предрасчётом рейтинга: load_prices + contango sync + sync индикаторов';
 
 -- ============================================================================
--- Тест НЕиспользуемых индикаторов справочника → рейтинг (% годовых).
+-- Тест ВЫЧИСЛИМЫХ индикаторов справочника → рейтинг (% годовых).
 -- Фоновый, по остаточному принципу, на УЖЕ загруженных ценах (без load_prices).
+-- Пристраивается к работающей логике: после её цикла/загрузки цен пересчитываем
+-- рейтинг по юниверсу пар (бумага × ТФ) именно этой логики (p_logic_id), в фоне.
 --
--- Для каждого индикатора, не задействованного ни одним активным сигналом логики,
--- но вычислимого (есть formula/script и non-threshold типы значений):
---   1) по каждой паре (бумага × ТФ), встречающейся в активных логиках, один раз
---      считаем значения индикатора из существующих цен (инкрементально);
+-- Для каждого вычислимого индикатора (есть formula/script и non-threshold типы):
+--   1) по каждой паре (бумага × ТФ) — из юниверса логики (или всех логик, если
+--      p_logic_id IS NULL) — один раз считаем значения индикатора из существующих
+--      цен (инкрементально);
 --      для оценки берём последние p_bars_window загруженных свечей пары (защита
 --      от роста на длинных историях M1);
 --   2) по каждой закрытой свече проверяем условия тренд/контртренд из
@@ -17744,15 +17775,19 @@ COMMENT ON FUNCTION indicator_simple_condition(TEXT) IS
 'Разбор простого условия «pp <op> VALUE» для инлайна в тесте рейтинга (is_simple, op, pp_left)';
 
 -- Основной расчёт. Возвращает число обработанных индикаторов.
+-- p_logic_id IS NULL — юниверс пар из всех логик (полный прогон);
+-- p_logic_id задан — только пары этой логики (событийный пересчёт после неё).
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
+DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
 CREATE OR REPLACE FUNCTION run_indicator_rating_test(
     p_max_indicators INTEGER DEFAULT 200,
     p_max_securities INTEGER DEFAULT 200,
     p_max_bars INTEGER DEFAULT 500,
     p_bars_window INTEGER DEFAULT 5000,
     p_min_signals INTEGER DEFAULT 5,
-    p_max_annual_pct NUMERIC DEFAULT 1000
+    p_max_annual_pct NUMERIC DEFAULT 1000,
+    p_logic_id INTEGER DEFAULT NULL
 )
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
@@ -17794,15 +17829,10 @@ BEGIN
     DELETE FROM indicator_rating_sample
     WHERE computed_at < CURRENT_TIMESTAMP - INTERVAL '24 hours';
 
-    -- индикатор стал использоваться логикой → рейтинг больше не актуален
-    DELETE FROM indicator_rating r
-    WHERE EXISTS (
-        SELECT 1 FROM logic_indicator_signals lis
-        WHERE lis.indicator_id = r.indicator_id AND lis.is_active = TRUE
-    );
-
     v_cap_sql := CASE WHEN v_cap IS NULL THEN 'NULL' ELSE v_cap::TEXT END;
 
+    -- Рейтингуем ВСЕ вычислимые индикаторы (в т.ч. задействованные сигналами
+    -- логик): сигнальная/исследовательская логика не «расходует» индикатор.
     FOR v_ind IN
         SELECT i.id
         FROM indicators i
@@ -17811,10 +17841,6 @@ BEGIN
           AND EXISTS (
               SELECT 1 FROM indicator_value_types ivt
               WHERE ivt.indicator_id = i.id AND ivt.is_threshold = FALSE
-          )
-          AND NOT EXISTS (
-              SELECT 1 FROM logic_indicator_signals lis
-              WHERE lis.indicator_id = i.id AND lis.is_active = TRUE
           )
         ORDER BY i.id
         LIMIT GREATEST(1, COALESCE(p_max_indicators, 200))
@@ -17850,6 +17876,7 @@ BEGIN
             SELECT ls.security_id, logic_resolve_timeframe_id(l.id) AS tf, min(l.id) AS logic_id
             FROM logics l
             JOIN logic_securities ls ON ls.logic_id = l.id AND ls.is_active = TRUE
+            WHERE p_logic_id IS NULL OR l.id = p_logic_id
             GROUP BY ls.security_id, logic_resolve_timeframe_id(l.id)
             HAVING logic_resolve_timeframe_id(l.id) IS NOT NULL
             ORDER BY ls.security_id, 2
@@ -18061,8 +18088,8 @@ $sql$,
 END;
 $$;
 
-COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC) IS
-'Тест неиспользуемых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; наполняет indicator_rating_sample / indicator_rating';
+COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER) IS
+'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики); наполняет indicator_rating_sample / indicator_rating';
 
 -- Безопасная обёртка для фонового вызова: троттл + advisory lock + глушение ошибок.
 -- Возврат: 1 — считалось, 0 — пропущено (троттл/занято), -1 — ошибка (записана в indicator_rating_run).
@@ -18114,6 +18141,65 @@ $$;
 
 COMMENT ON FUNCTION run_indicator_rating_test_safe(INTEGER) IS
 'Фоновый вызов теста рейтинга индикаторов: троттл, advisory lock, глушение ошибок; 1/0/-1';
+
+-- Событийный пересчёт после работы конкретной логики: юниверс = её пары
+-- (бумага × ТФ). Троттл — по логике (indicator_rating_logic_run); advisory lock
+-- общий с полным прогоном, чтобы тяжёлые расчёты не шли одновременно.
+-- Возврат: 1 — считалось, 0 — пропущено (троттл/занято/нет логики), -1 — ошибка.
+CREATE OR REPLACE FUNCTION run_indicator_rating_for_logic_safe(
+    p_logic_id INTEGER,
+    p_min_interval_minutes INTEGER DEFAULT 60
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_lock BIGINT := hashtext('indicator_rating_test');
+BEGIN
+    IF p_logic_id IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM indicator_rating_logic_run
+        WHERE logic_id = p_logic_id
+          AND last_run_at > CURRENT_TIMESTAMP - make_interval(mins => GREATEST(1, COALESCE(p_min_interval_minutes, 60)))
+    ) THEN
+        RETURN 0;
+    END IF;
+
+    IF NOT pg_try_advisory_lock(v_lock) THEN
+        RETURN 0;
+    END IF;
+
+    BEGIN
+        PERFORM run_indicator_rating_test(p_logic_id => p_logic_id);
+        INSERT INTO indicator_rating_logic_run (logic_id, last_run_at, last_status, last_message, updated_at)
+        VALUES (p_logic_id, CURRENT_TIMESTAMP, 1, NULL, CURRENT_TIMESTAMP)
+        ON CONFLICT (logic_id) DO UPDATE SET
+            last_run_at = EXCLUDED.last_run_at,
+            last_status = EXCLUDED.last_status,
+            last_message = NULL,
+            updated_at = EXCLUDED.updated_at;
+    EXCEPTION WHEN OTHERS THEN
+        INSERT INTO indicator_rating_logic_run (logic_id, last_run_at, last_status, last_message, updated_at)
+        VALUES (p_logic_id, CURRENT_TIMESTAMP, -1, SQLERRM, CURRENT_TIMESTAMP)
+        ON CONFLICT (logic_id) DO UPDATE SET
+            last_run_at = EXCLUDED.last_run_at,
+            last_status = EXCLUDED.last_status,
+            last_message = EXCLUDED.last_message,
+            updated_at = EXCLUDED.updated_at;
+        PERFORM pg_advisory_unlock(v_lock);
+        RETURN -1;
+    END;
+
+    PERFORM pg_advisory_unlock(v_lock);
+    RETURN 1;
+END;
+$$;
+
+COMMENT ON FUNCTION run_indicator_rating_for_logic_safe(INTEGER, INTEGER) IS
+'Событийный пересчёт рейтинга индикаторов по юниверсу одной логики после её работы: '
+'троттл по логике + общий advisory lock с полным прогоном; 1/0/-1';
 
 CREATE OR REPLACE FUNCTION prices_have_closed_bar(
     p_security_id INTEGER,
@@ -26172,6 +26258,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

@@ -309,6 +309,9 @@ export class AppComponent implements OnInit, OnDestroy {
   private signalsWatchTimer: ReturnType<typeof setInterval> | null = null;
   private signalsWatchFirst: ReturnType<typeof setTimeout> | null = null;
   private signalsWatchBusy = false;
+  /** #998: id последнего сигнала, на который уже поднимали окно (чтобы не всплывать
+      повторно на тот же сигнал каждые 15 с). */
+  private lastRaisedSignalId = 0;
 
   constructor(
     private readonly techLog: TechLogService,
@@ -345,19 +348,28 @@ export class AppComponent implements OnInit, OnDestroy {
     this.signalsWatchFirst = setTimeout(() => this.watchLogicSignals(), 2000);
   }
 
-  /** #996: есть непрочитанный сигнал, а открыта не вкладка терминала — открываем её.
-      Сигналы отмечает прочитанными сам терминал, когда смонтируется (иначе был бы
-      бесконечный переход). */
+  /** #996/#998: есть непрочитанный сигнал — поднимаем окно браузера и, если открыта
+      не вкладка терминала, открываем её. Сигналы отмечает прочитанными сам терминал,
+      когда смонтируется (иначе был бы бесконечный переход).
+      #998: подъём окна НЕ пропускается, когда мы уже на терминале (раньше ранний
+      `return` глушил его — окно не всплывало); плюс дедуп по id, чтобы не всплывать
+      повторно на тот же сигнал. */
   private watchLogicSignals(): void {
     if (this.signalsWatchBusy) return;
     this.signalsWatchBusy = true;
     this.terminalState.getLogicSignals(1).subscribe({
       next: (r) => {
         this.signalsWatchBusy = false;
-        if ((r?.signals?.length ?? 0) === 0) return;
-        if (this.activeTab() === 'terminal') return;
-        this.focusBrowser();
-        void this.router.navigateByUrl('/terminal');
+        const signals = r?.signals ?? [];
+        if (signals.length === 0) return;
+        const newestId = signals.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0);
+        if (newestId > this.lastRaisedSignalId) {
+          this.lastRaisedSignalId = newestId;
+          this.focusBrowser();
+        }
+        if (this.activeTab() !== 'terminal') {
+          void this.router.navigateByUrl('/terminal');
+        }
       },
       error: () => {
         this.signalsWatchBusy = false;

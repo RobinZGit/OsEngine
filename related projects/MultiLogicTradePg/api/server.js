@@ -29,6 +29,8 @@ const { Pool } = require('pg');
 const { resumeOrphanBacktests } = require('./logic-backtest');
 const { startTradeRunner } = require('./trade-runner');
 const { startMaintenanceScheduler } = require('./maintenance-scheduler');
+const { startBrowserSignalWatch } = require('./lib/browser-focus');
+const { startTerminalStopWatch } = require('./lib/terminal-stop-watch');
 const { createRouteContext, resumeOrphanWarmups } = require('./lib/server-shared');
 const { describeHttpStatus, decorate } = require('./lib/error-codes');
 const { writeErrorLog, levelForHttpStatus } = require('./lib/error-log');
@@ -172,6 +174,10 @@ app.use((_req, res) => {
       .catch((err) => console.warn('APP_TBANK_ORDER_NODE_URL sync skipped:', err.message));
     startTradeRunner(pool);
     startMaintenanceScheduler(pool);
+    // #998: поднимаем окно браузера при новом сигнале терминала (независимо от вкладки).
+    startBrowserSignalWatch(pool);
+    // #999: стоп-лосс / тейк-профит терминала — закрываем позицию при уходе цены за порог.
+    startTerminalStopWatch(pool, `http://127.0.0.1:${port}`);
     pool
       .query(
         `

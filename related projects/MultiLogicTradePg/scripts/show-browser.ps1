@@ -5,7 +5,9 @@
   (window.focus() лишь подсвечивает кнопку на панели задач). Поэтому локальный
   API (тот же ПК, что и браузер) запускает этот Windows-хелпер: он находит окно
   с заданным фрагментом заголовка (заголовок страницы — «MultiLogic Trade») и
-  выводит его вперёд через SetForegroundWindow (+ трюк с AttachThreadInput).
+  выводит его вперёд через SetForegroundWindow (+ трюк с AttachThreadInput). Если
+  такого заголовка нет (пользователь ушёл на другую вкладку) — фолбэк на любое
+  окно браузера (по имени процесса).
 
   Запускается из api/routes/terminal.js. Возвращает JSON { ok, title }.
   На не-Windows не вызывается.
@@ -20,9 +22,17 @@ Add-Type -TypeDefinition @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 public class MltWin
 {
+    // Процессы браузеров — фолбэк, когда активная вкладка не наше приложение
+    // (тогда заголовок окна не содержит «MultiLogic Trade»).
+    static readonly string[] BrowserProcs = {
+        "chrome", "msedge", "brave", "firefox", "opera", "vivaldi",
+        "chromium", "browser", "yandex"
+    };
+
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -35,6 +45,7 @@ public class MltWin
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")] public static extern uint GetWindowPid(IntPtr hWnd, out uint lpdwProcessId);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
@@ -46,10 +57,28 @@ public class MltWin
 
     public static string LastTitle = "";
 
+    public static bool IsBrowserWindow(IntPtr h)
+    {
+        uint pid;
+        GetWindowPid(h, out pid);
+        if (pid == 0) return false;
+        try
+        {
+            using (Process p = Process.GetProcessById((int)pid))
+            {
+                string n = (p.ProcessName ?? "").ToLowerInvariant();
+                return Array.IndexOf(BrowserProcs, n) >= 0;
+            }
+        }
+        catch { return false; }
+    }
+
     public static IntPtr Find(string match)
     {
-        IntPtr found = IntPtr.Zero;
-        string title = "";
+        IntPtr titleMatch = IntPtr.Zero;
+        string titleText = "";
+        IntPtr browserMatch = IntPtr.Zero;
+        string browserText = "";
         EnumWindows(delegate(IntPtr h, IntPtr l)
         {
             if (!IsWindowVisible(h)) return true;
@@ -58,16 +87,28 @@ public class MltWin
             StringBuilder sb = new StringBuilder(len + 2);
             GetWindowText(h, sb, sb.Capacity);
             string t = sb.ToString();
-            if (t.IndexOf(match, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (titleMatch == IntPtr.Zero &&
+                t.IndexOf(match, StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                found = h;
-                title = t;
-                return false;
+                titleMatch = h;
+                titleText = t;
+            }
+            if (browserMatch == IntPtr.Zero && IsBrowserWindow(h))
+            {
+                browserMatch = h;
+                browserText = t;
             }
             return true;
         }, IntPtr.Zero);
-        LastTitle = title;
-        return found;
+        // Приоритет — окно самого приложения (точный заголовок); иначе любое окно
+        // браузера (пользователь мог уйти на другую вкладку — заголовок не наш).
+        if (titleMatch != IntPtr.Zero)
+        {
+            LastTitle = titleText;
+            return titleMatch;
+        }
+        LastTitle = browserText;
+        return browserMatch;
     }
 
     public static bool Activate(string match)

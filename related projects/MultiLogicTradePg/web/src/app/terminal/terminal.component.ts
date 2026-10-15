@@ -14,6 +14,7 @@ import {
   TerminalLogicSignalEvent,
   TerminalStatePayload,
   TerminalStateService,
+  TerminalStopOrder,
   TerminalTradeRow,
 } from '../services/terminal-state.service';
 import {
@@ -859,6 +860,44 @@ export class TerminalComponent implements OnInit, OnDestroy {
     const pct = Math.min(n, 100);
     if (this.commissionPct === pct) return;
     this.settings = { ...this.settings, commission_pct: pct };
+    this.scheduleSave();
+  }
+
+  /** #999: сохранённые СЛ/ТП бумаги (% от входа). null — нет настроек (поля выключены). */
+  stopOrderFor(securityId: number): TerminalStopOrder | null {
+    const norm = (v: unknown): number | null => {
+      if (v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : null;
+    };
+    const all = this.settings['stop_orders'];
+    if (!all || typeof all !== 'object') return null;
+    const row = (all as Record<string, unknown>)[String(securityId)];
+    if (!row || typeof row !== 'object') return null;
+    const sl = norm((row as Record<string, unknown>)['sl_pct']);
+    const tp = norm((row as Record<string, unknown>)['tp_pct']);
+    if (sl == null && tp == null) return null;
+    return { sl_pct: sl, tp_pct: tp };
+  }
+
+  /** #999: сохранить СЛ/ТП бумаги в настройках счёта; оба пустые — запись удаляем. */
+  onStopOrderChange(securityId: number, s: TerminalStopOrder): void {
+    const norm = (v: unknown): number | null => {
+      if (v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : null;
+    };
+    const sl = norm(s.sl_pct);
+    const tp = norm(s.tp_pct);
+    const all: Record<string, TerminalStopOrder> = {
+      ...((this.settings['stop_orders'] as Record<string, TerminalStopOrder>) ?? {}),
+    };
+    if (sl == null && tp == null) {
+      delete all[String(securityId)];
+    } else {
+      all[String(securityId)] = { sl_pct: sl, tp_pct: tp };
+    }
+    this.settings = { ...this.settings, stop_orders: all };
     this.scheduleSave();
   }
 

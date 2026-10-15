@@ -405,6 +405,7 @@
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"
           [commissionPct]="commissionPct"
+          [stopOrder]="stopOrderFor(panel.security.id)"
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
           [livePrice]="livePriceFor(panel.security.id)"
@@ -422,6 +423,7 @@
           (autoCloseChange)="onPanelAutoCloseChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
           (commissionPctChange)="onCommissionPctChange($event)"
+          (stopOrderChange)="onStopOrderChange(panel.security.id, $event)"
           (dataReady)="onPanelDataReady(panel.uid)"
           (positionSummary)="onPanelPositionSummary(panel.uid, $event)"
         />

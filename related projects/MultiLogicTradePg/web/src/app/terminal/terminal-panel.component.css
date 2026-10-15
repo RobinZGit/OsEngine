@@ -707,6 +707,22 @@
   width: 70px;
 }
 
+/* #999: стоп-лосс / тейк-профит — два узких поля в одну строку. */
+.trade-stops {
+  display: flex;
+  gap: 10px;
+}
+
+.trade-stop {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.trade-stop .trade-max-input {
+  width: 100%;
+}
+
+
 /* Толстый ползунок с крупным бегунком — удобно захватывать мышкой. */
 .trade-slider {
   -webkit-appearance: none;

@@ -2024,6 +2024,31 @@ describe('TerminalPanelComponent', () => {
     expect(spy).toHaveBeenCalledWith(100);
   });
 
+  it('#999: поля «Стоп-лосс, %» и «Тейк-профит, %» есть в блоке сделок', () => {
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('#trade-sl-input'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('#trade-tp-input'))).not.toBeNull();
+  });
+
+  it('#999: правка СЛ/ТП отдаёт терминалу проценты (пустое → null, отрицательное → null)', () => {
+    const spy = jasmine.createSpy('stopOrder');
+    component.stopOrderChange.subscribe(spy);
+    component.onStopSlChange(1.5);
+    expect(spy).toHaveBeenCalledWith({ sl_pct: 1.5, tp_pct: null });
+    component.onStopTpChange(4);
+    expect(spy).toHaveBeenCalledWith({ sl_pct: 1.5, tp_pct: 4 });
+    component.onStopSlChange('');
+    component.onStopTpChange(-2);
+    expect(spy).toHaveBeenCalledWith({ sl_pct: null, tp_pct: null });
+  });
+
+  it('#999: вход stopOrder восстанавливает сохранённые проценты СЛ/ТП', () => {
+    fixture.componentRef.setInput('stopOrder', { sl_pct: 2, tp_pct: 6 });
+    fixture.detectChanges();
+    expect(component.stopSlPct).toBe(2);
+    expect(component.stopTpPct).toBe(6);
+  });
+
   it('сигнал: ввод суммы в поле «Сумма» шапки меняет количество (сброс лота логики)', () => {
     component.chartState = {
       candles: [

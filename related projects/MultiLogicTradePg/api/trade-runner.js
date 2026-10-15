@@ -6,11 +6,6 @@ const MAX_CYCLE_MS = Number(process.env.TRADE_RUNNER_MAX_CYCLE_MS) || 180000;
 const LOGIC_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_LOGIC_TIMEOUT_MS) || 120000;
 const SIGNAL_TIMEOUT_MS = Number(process.env.TRADE_RUNNER_SIGNAL_TIMEOUT_MS) || 300000;
 const WATCHDOG_MS = Number(process.env.TRADE_WATCHDOG_MS) || 30000;
-// #994: фоновый тест рейтинга НЕиспользуемых индикаторов. Тик лёгкий; реальный
-// тяжёлый прогон и троттл (по умолчанию 180 мин) — внутри run_indicator_rating_test_safe.
-const INDICATOR_RATING_INTERVAL_MS = Number(process.env.INDICATOR_RATING_INTERVAL_MS) || 900000;
-const INDICATOR_RATING_FIRST_DELAY_MS =
-  Number(process.env.INDICATOR_RATING_FIRST_DELAY_MS) || 120000;
 
 const { writeTechLogEvent } = require('./lib/tech-log');
 const { writeErrorLog } = require('./lib/error-log');
@@ -29,7 +24,6 @@ let lastSkipReason = '';
 /** @type {object|null} */
 let lastCycleOut = null;
 let watchdogRunning = false;
-let indicatorRatingRunning = false;
 
 /**
  * Env TRADE_RUNNER_REQUIRE_UI=1|0 overrides DB APP_TRADE_RUNNER_REQUIRE_UI.
@@ -282,6 +276,10 @@ async function runTradeCycle(pool, opts = {}) {
       }
     }
 
+    // #994-доработка: пристраиваем фоновый пересчёт рейтинга индикаторов к
+    // отработавшим логикам (юниверс — их пары). Не блокирует цикл (см. хелпер).
+    scheduleIndicatorRatingForLogics(pool, logics.map((r) => r.id));
+
     // #972/#984: финализируем созревшие отложенные подтверждения сигналов — сверяем
     // направление с ЖИВОЙ ценой T-Bank (не со свечой стоп-ТФ, которая у логик не
     // обновляется). Вызов на уровне цикла — срабатывает и при нуле active-логик.
@@ -492,45 +490,77 @@ async function runWatchdogTick(pool, opts = {}) {
 }
 
 /**
- * #994: фоновый рейтинг НЕиспользуемых индикаторов — отдельным тиком, вне
- * блокировки цикла сделок (не тормозит торговлю). Троттл и advisory lock —
- * внутри run_indicator_rating_test_safe; при 0 (троттл/занято) тихо выходим.
+ * #994-доработка: событийный рейтинг индикаторов ПО КОНКРЕТНОЙ ЛОГИКЕ — юниверс
+ * её пар (бумага × ТФ). Пристраивается к работающей логике (после её цикла),
+ * чтобы не ждать медленного полного прогона. Троттл per-logic и advisory lock —
+ * внутри run_indicator_rating_for_logic_safe; при 0 (троттл/занято) тихо выходим.
  */
-async function runIndicatorRatingTick(pool) {
-  if (indicatorRatingRunning) return { skipped: true, reason: 'busy' };
-  indicatorRatingRunning = true;
+async function runIndicatorRatingForLogic(pool, logicId) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query('SET LOCAL statement_timeout = 0');
-    const { rows } = await client.query(`SELECT run_indicator_rating_test_safe() AS r`);
+    const { rows } = await client.query(
+      `SELECT run_indicator_rating_for_logic_safe($1) AS r`,
+      [logicId]
+    );
     await client.query('COMMIT');
     const r = Number(rows[0]?.r);
     if (r === 1) {
-      console.log('Indicator rating test: ok');
+      console.log(`Indicator rating (logic ${logicId}): ok`);
       await writeTechLogEvent(pool, {
         threadKey: 'trade-runner',
-        operation: 'indicator_rating.run',
-        message: 'Тест рейтинга индикаторов: выполнено',
+        operation: 'indicator_rating.logic',
+        message: `Тест рейтинга индикаторов по логике ${logicId}: выполнено`,
         source: 'node',
-        payload: { result: r },
+        payload: { logic_id: logicId, result: r },
       }).catch(() => {});
     } else if (r === -1) {
-      console.error('Indicator rating test: failed (см. indicator_rating_run)');
+      console.error(`Indicator rating (logic ${logicId}): failed (см. indicator_rating_logic_run)`);
     }
-    return { ok: r === 1, result: r };
+    return r;
   } catch (err) {
     try {
       await client.query('ROLLBACK');
     } catch (_e) {
       /* ignore */
     }
-    console.error('Indicator rating test', decorate(err.message));
-    return { ok: false, error: err.message };
+    console.error(`Indicator rating (logic ${logicId})`, decorate(err.message));
+    return null;
   } finally {
-    indicatorRatingRunning = false;
     client.release();
   }
+}
+
+const indicatorRatingQueue = new Set();
+let indicatorRatingQueueRunning = false;
+
+/**
+ * Ставит логики в очередь на событийный пересчёт рейтинга. Прогон фоновый и
+ * последовательный (тяжёлый), не блокирует цикл сделок. Троттл per-logic
+ * отсекает частые повторы (логика обрабатывается каждые ~15 с).
+ */
+function scheduleIndicatorRatingForLogics(pool, logicIds) {
+  for (const id of logicIds || []) {
+    const n = Number(id);
+    if (Number.isFinite(n) && n > 0) indicatorRatingQueue.add(n);
+  }
+  if (indicatorRatingQueueRunning || indicatorRatingQueue.size === 0) return;
+  indicatorRatingQueueRunning = true;
+  (async () => {
+    try {
+      while (indicatorRatingQueue.size > 0) {
+        const id = indicatorRatingQueue.values().next().value;
+        indicatorRatingQueue.delete(id);
+        await runIndicatorRatingForLogic(pool, id);
+      }
+    } finally {
+      indicatorRatingQueueRunning = false;
+    }
+  })().catch((err) => {
+    indicatorRatingQueueRunning = false;
+    console.error('Indicator rating queue', decorate(err.message));
+  });
 }
 
 function startTradeRunner(pool) {
@@ -607,17 +637,8 @@ function startTradeRunner(pool) {
       });
   }, WATCHDOG_MS);
 
-  // #994: рейтинг неиспользуемых индикаторов — отдельным тиком.
-  setTimeout(() => {
-    runIndicatorRatingTick(pool).catch((err) =>
-      console.error('Indicator rating tick', decorate(err.message))
-    );
-  }, INDICATOR_RATING_FIRST_DELAY_MS);
-  setInterval(() => {
-    runIndicatorRatingTick(pool).catch((err) =>
-      console.error('Indicator rating tick', decorate(err.message))
-    );
-  }, INDICATOR_RATING_INTERVAL_MS);
+  // #994-доработка: рейтинг индикаторов — не по таймеру, а событийно, пристроен
+  // к отработавшим логикам в runTradeCycle (см. scheduleIndicatorRatingForLogics).
 
   // First health pulse shortly after listen (so UI is not red for 90s on fresh start).
   setTimeout(() => {
@@ -630,7 +651,8 @@ module.exports = {
   startTradeRunner,
   getTradeRunnerHealth,
   runWatchdogTick,
-  runIndicatorRatingTick,
+  runIndicatorRatingForLogic,
+  scheduleIndicatorRatingForLogics,
   STALE_MS,
   MAX_CYCLE_MS,
 };

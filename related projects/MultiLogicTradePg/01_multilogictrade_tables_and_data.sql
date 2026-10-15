@@ -5139,6 +5139,19 @@ INSERT INTO indicator_rating_run (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;
 
 COMMENT ON TABLE indicator_rating_run IS 'Маркер фонового теста неиспользуемых индикаторов: время и результат последнего запуска';
 
+-- Троттлинг событийного пересчёта рейтинга по конкретной логике (после её
+-- цикла/загрузки цен): последний запуск и статус на каждую логику.
+CREATE TABLE IF NOT EXISTS indicator_rating_logic_run (
+    logic_id INTEGER PRIMARY KEY REFERENCES logics(id) ON DELETE CASCADE,
+    last_run_at TIMESTAMP,
+    last_status INTEGER,
+    last_message TEXT,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE indicator_rating_logic_run IS
+'Маркер событийного пересчёта рейтинга индикаторов по логике: время и результат последнего прогона (троттл per-logic)';
+
 -- ============================================
 -- Готово: шаг 1 завершён
 -- ============================================

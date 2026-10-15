@@ -23,6 +23,7 @@ import { ReferencesService } from '../services/references.service';
 import {
   TerminalStateService,
   TerminalLogicSignalEvent,
+  TerminalStopOrder,
   TerminalTradeRow,
 } from '../services/terminal-state.service';
 import {
@@ -73,6 +74,14 @@ const EMPTY_STATE: SecurityChartState = {
   hasMore: false,
   error: null,
 };
+
+/** #999: процент СЛ/ТП: пусто/отрицательное → null (выключено); иначе число >= 0. */
+function normalizeStopPct(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(n, 1000);
+}
 
 /** Фейковый счёт: стартовая «демо-сумма» для максимальной суммы сделки. */
 const FAKE_DEFAULT_MAX_SUM = 10000;
@@ -147,6 +156,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       барах, поэтому для разницы по позиции берём именно её; null — терминал
       ещё не прислал (или T-Bank недоступен), тогда цена как раньше — свеча. */
   @Input() livePrice: number | null = null;
+  /** #999: стоп-лосс / тейк-профит по бумаге, % от средней цены входа (пусто — выкл).
+      Хранится в настройках счёта; API следит за живой ценой и закрывает позицию
+      маркет-заявкой при уходе за порог. */
+  @Input() stopOrder: TerminalStopOrder | null = null;
   @Output() remove = new EventEmitter<void>();
   /** Изменение состояния полосы: таймфрейм и/или высота графиков. */
   @Output() stateChange = new EventEmitter<{
@@ -166,6 +179,8 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** Сводка позиции: остаток и рыночная стоимость — для суммы по счёту
       (обновляется с каждой новой свечой — меняется текущая цена). */
   @Output() positionSummary = new EventEmitter<PanelPositionSummary>();
+  /** #999: изменение СЛ/ТП по бумаге — терминал сохраняет в настройках счёта. */
+  @Output() stopOrderChange = new EventEmitter<TerminalStopOrder>();
 
   @ViewChild('mainChart') mainChart?: PriceChartComponent;
   @ViewChild('headScroll') headScroll?: ElementRef<HTMLElement>;
@@ -194,6 +209,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       кнопки меняются местами (кнопка покупки продаёт, кнопка продажи покупает),
       чтобы сделать сделку вопреки сигналу. */
   tradeInverted = false;
+  /** #999: ввод СЛ/ТП по бумаге, % от входа (null — выключено; 0 — мгновенный). */
+  stopSlPct: number | null = null;
+  stopTpPct: number | null = null;
   /** Количество из сигнала логики (расчёт лота) — подставлено в блок сделок. */
   private prefillQty: number | null = null;
   /** Сторона, для которой сигнал дал количество (long → buy, short → sell). */
@@ -377,6 +395,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       /** #932: изменился процент комиссии — пересчитываем итог закрытия
           и обновляем сумму по счёту в шапке терминала. */
       this.emitPositionSummary();
+    }
+    if (changes['stopOrder'] != null) {
+      /** #999: терминал прислал сохранённые СЛ/ТП по бумаге. */
+      this.stopSlPct = normalizeStopPct(this.stopOrder?.sl_pct);
+      this.stopTpPct = normalizeStopPct(this.stopOrder?.tp_pct);
     }
     if (changes['signalEvent'] != null) {
       this.applySignalPrefill();
@@ -2336,6 +2359,22 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     const n = Number(v);
     if (!Number.isFinite(n) || n < 0) return;
     this.commissionPctChange.emit(Math.min(n, 100));
+  }
+
+  /** #999: правка «Стоп-лосс, %» — нормализуем и отдаём терминалу (сохраняется). */
+  onStopSlChange(v: unknown): void {
+    this.stopSlPct = normalizeStopPct(v);
+    this.emitStopOrder();
+  }
+
+  /** #999: правка «Тейк-профит, %» — нормализуем и отдаём терминалу (сохраняется). */
+  onStopTpChange(v: unknown): void {
+    this.stopTpPct = normalizeStopPct(v);
+    this.emitStopOrder();
+  }
+
+  private emitStopOrder(): void {
+    this.stopOrderChange.emit({ sl_pct: this.stopSlPct, tp_pct: this.stopTpPct });
   }
 
   /** Разместить заявку на заданное количество. Ноль — сообщение об ошибке.
