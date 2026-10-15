@@ -580,7 +580,7 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
     fixture.detectChanges();
 
     expect(c.executeSignalsNow).toBe(false);
-    const box = fixture.nativeElement.querySelector('.term-field-check .term-check');
+    const box = fixture.nativeElement.querySelector('#term-exec-now');
     expect(box).not.toBeNull();
     expect(box.checked).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('Исполнять сделки сразу');
@@ -596,7 +596,7 @@ describe('TerminalComponent — «Исполнять сделки сразу» (
     fixture.detectChanges();
 
     const label = (): any =>
-      fixture.nativeElement.querySelector('.term-field-check');
+      fixture.nativeElement.querySelector('#term-exec-now').closest('.term-field-check');
     expect(label().classList.contains('term-field-check-on')).toBe(false);
 
     c.onExecuteSignalsNowChange(true); // executeSignalsNow — геттер, пишем через обработчик
@@ -1333,5 +1333,106 @@ describe('TerminalComponent - #970: кнопка «Запросить сигна
     c.closeAllPositions();
     expect(placeTrade).not.toHaveBeenCalled();
     expect(c.closeAllPulse).toBe(1);
+  });
+});
+
+describe('TerminalComponent — единые СЛ/ТП счёта в шапке (#999)', () => {
+  const refs: any = {
+    getAccounts: () => of([]),
+    getExchanges: () => of([]),
+    getBondFunds: () => of([]),
+  };
+  const securitiesSvc: any = {
+    getTimeframes: () =>
+      of([{ id: 15, tf: 'M15', sec: 900, full_name: '15 минут', is_active: true }]),
+  };
+  const stateSvc: any = {
+    markLogicSignalsRead: () => of({ ok: true }),
+    getUiState: () => of({ ok: true, selected_account_id: null }),
+    getBondPlan: () => of({ ok: true, bonds: [] }),
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [TerminalComponent],
+      providers: [
+        { provide: ReferencesService, useValue: refs },
+        { provide: SecuritiesService, useValue: securitiesSvc },
+        { provide: TerminalStateService, useValue: stateSvc },
+        { provide: AppConfigService, useValue: {} },
+        { provide: LogicsService, useValue: { runLightningAll: jasmine.createSpy('runLightningAll') } },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    });
+  });
+
+  function makeComponent(): any {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    const c: any = fixture.componentInstance;
+    c.activeAccountId = null; // scheduleSave() без счёта — no-op
+    c.trades = [];
+    c.panels = [];
+    c.accounts = [];
+    return c;
+  }
+
+  it('#999: СЛ/ТП и «Мгновенный СЛ» — в шапке рядом с «Терминал», порядок полей', () => {
+    const fixture = TestBed.createComponent(TerminalComponent);
+    fixture.detectChanges();
+
+    const sl = fixture.nativeElement.querySelector('#term-sl-input');
+    const tp = fixture.nativeElement.querySelector('#term-tp-input');
+    const instant = fixture.nativeElement.querySelector('#term-sl-instant');
+    const header = fixture.nativeElement.querySelector('.page-header-controls');
+    expect(header).not.toBeNull();
+    expect(sl).not.toBeNull();
+    expect(tp).not.toBeNull();
+    expect(instant).not.toBeNull();
+    // Поля переехали в шапку к «Терминал»; порядок: СЛ → Мгновенный СЛ → ТП.
+    expect(header.contains(sl)).toBe(true);
+    expect(header.contains(tp)).toBe(true);
+    expect(header.contains(instant)).toBe(true);
+    expect(sl.compareDocumentPosition(instant) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(instant.compareDocumentPosition(tp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('#999: ввод СЛ/ТП хранится единой настройкой счёта; пустое/мусор → null', () => {
+    const c = makeComponent();
+
+    c.onStopLossPctChange('2.5');
+    expect(c.stopLossPct).toBe(2.5);
+    expect(c.settings['stop_order']).toEqual({ sl_pct: 2.5, tp_pct: null, sl_instant: false });
+
+    c.onTakeProfitPctChange('6');
+    expect(c.takeProfitPct).toBe(6);
+    expect(c.settings['stop_order']).toEqual({ sl_pct: 2.5, tp_pct: 6, sl_instant: false });
+
+    c.onStopLossPctChange('');
+    expect(c.settings['stop_order']).toEqual({ sl_pct: null, tp_pct: 6, sl_instant: false });
+
+    c.onTakeProfitPctChange('abc');
+    // Оба пустые — запись из настроек удаляем полностью.
+    expect(c.settings['stop_order']).toBeUndefined();
+  });
+
+  it('#999: галочка «Мгновенный СЛ» сохраняется и учитывается при удалении записи', () => {
+    const c = makeComponent();
+
+    c.onStopLossInstantChange(true);
+    expect(c.stopLossInstant).toBe(true);
+    expect(c.settings['stop_order']).toEqual({ sl_pct: null, tp_pct: null, sl_instant: true });
+
+    // Галочка выключена, проценты пустые — запись удаляется целиком.
+    c.onStopLossInstantChange(false);
+    expect(c.stopLossInstant).toBe(false);
+    expect(c.settings['stop_order']).toBeUndefined();
+  });
+
+  it('#999: геттеры читают сохранённый settings.stop_order (единый для всех бумаг)', () => {
+    const c = makeComponent();
+    c.settings = { ...c.settings, stop_order: { sl_pct: 3, tp_pct: 8, sl_instant: true } };
+    expect(c.stopLossPct).toBe(3);
+    expect(c.takeProfitPct).toBe(8);
+    expect(c.stopLossInstant).toBe(true);
   });
 });

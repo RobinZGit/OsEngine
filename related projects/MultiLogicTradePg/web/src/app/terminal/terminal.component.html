@@ -22,17 +22,70 @@
               <span class="term-empty">Счета не найдены</span>
             }
           </label>
-          <label class="term-field">
-            <span>Таймфрейм (для новых)</span>
+          <label class="term-field term-field-tf">
+            <span>Таймфрейм</span>
             <select
               [(ngModel)]="commonTimeframeId"
               (ngModelChange)="onCommonTimeframeChange()"
-              title="Таймфрейм по умолчанию для добавляемых бумаг. У каждой добавленной бумаги таймфрейм меняется отдельно — селектор в шапке панели."
+              title="Таймфрейм по умолчанию для добавляемых бумаг (для новых). У каждой добавленной бумаги таймфрейм меняется отдельно — селектор в шапке панели."
             >
               @for (tf of timeframes; track tf.id) {
-                <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }} — {{ tf.full_name }}</option>
+                <option [ngValue]="tf.id" [title]="tf.full_name">{{ tf.tf }}</option>
               }
             </select>
+          </label>
+          <!-- #999: стоп-лосс / тейк-профит — единые для всего счёта (все бумаги),
+               % от средней цены входа. API следит за живой ценой и закрывает любую
+               открытую позицию счёта маркетом при уходе за порог. Рядом с
+               «Терминал»; бар под шапкой разгружен. -->
+          <label
+            class="term-field term-field-stop"
+            title="Стоп-лосс, % от средней цены входа: позиция закрывается маркетом, если цена уйдёт против входа на этот процент. Единый для всех бумаг счёта. Пусто — выключен; 0 — порог на самой цене входа."
+          >
+            <span>Стоп-лосс, %</span>
+            <input
+              id="term-sl-input"
+              type="number"
+              class="term-stop-input"
+              min="0"
+              step="0.1"
+              placeholder="выкл"
+              [disabled]="stopLossInstant"
+              [value]="stopLossPct"
+              (change)="onStopLossPctChange($any($event.target).value)"
+            />
+          </label>
+          <!-- #999: «мгновенный» стоп-лосс — закрыть все позиции счёта сразу, без
+               ожидания движения цены. Пока галочка включена, поле % не используется. -->
+          <label
+            class="term-field term-field-check"
+            [class.term-field-check-on]="stopLossInstant"
+            title="Мгновенный стоп-лосс: закрывает ВСЕ открытые позиции счёта маркетом сразу, как только придёт живая цена — без ожидания движения цены. Поле «Стоп-лосс, %» при этом не используется. Снимите галочку, чтобы вернуться к порогу по проценту."
+          >
+            <input
+              id="term-sl-instant"
+              type="checkbox"
+              class="term-check"
+              [checked]="stopLossInstant"
+              (change)="onStopLossInstantChange($any($event.target).checked)"
+            />
+            <span>Мгновенный СЛ</span>
+          </label>
+          <label
+            class="term-field term-field-stop"
+            title="Тейк-профит, % от средней цены входа: позиция закрывается маркетом при прибыли на этот процент. Единый для всех бумаг счёта. Пусто — выключен."
+          >
+            <span>Тейк-профит, %</span>
+            <input
+              id="term-tp-input"
+              type="number"
+              class="term-stop-input"
+              min="0"
+              step="0.1"
+              placeholder="выкл"
+              [value]="takeProfitPct"
+              (change)="onTakeProfitPctChange($any($event.target).value)"
+            />
           </label>
         </div>
       }
@@ -80,6 +133,7 @@
       >
         <input
           type="checkbox"
+          id="term-exec-now"
           class="term-check"
           [checked]="executeSignalsNow"
           (change)="onExecuteSignalsNowChange($any($event.target).checked)"
@@ -405,7 +459,6 @@
           [accountId]="accountId"
           [accountIsFake]="selectedAccountIsFake"
           [commissionPct]="commissionPct"
-          [stopOrder]="stopOrderFor(panel.security.id)"
           [tradeMaxSum]="tradeMaxSum"
           [trades]="trades"
           [livePrice]="livePriceFor(panel.security.id)"
@@ -423,7 +476,6 @@
           (autoCloseChange)="onPanelAutoCloseChange($event, panel.uid)"
           (tradeExecuted)="onTradeExecuted()"
           (commissionPctChange)="onCommissionPctChange($event)"
-          (stopOrderChange)="onStopOrderChange(panel.security.id, $event)"
           (dataReady)="onPanelDataReady(panel.uid)"
           (positionSummary)="onPanelPositionSummary(panel.uid, $event)"
         />

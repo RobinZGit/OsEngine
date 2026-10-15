@@ -26,7 +26,13 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: 0.5rem 0.85rem;
+}
+
+/* #999: стоп-лосс / тейк-профит переехали в шапку к «Терминал». Поле таймфрейма
+   делаем уже, чтобы шапка с новыми полями не растягивалась. */
+.term-field-tf select {
+  min-width: 150px;
 }
 
 .subtitle {
@@ -783,10 +789,28 @@
 
 /* #957: лимит автоисполнения - поле ввода и расход рядом с галочкой. */
 .term-field-limit input {
-  width: 100px;
+  width: 100%;
   padding: 0.3rem 0.45rem;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 0.85rem;
   background: #fff;
 }
+
+/* #999: единые для счёта стоп-лосс / тейк-профит — узкие поля в шапке. */
+.term-field-stop input {
+  width: 72px;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+/* #999: при включённом «Мгновенном СЛ» поле % неактивно. */
+.term-field-stop input:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+

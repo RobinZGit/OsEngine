@@ -14,7 +14,6 @@ import {
   TerminalLogicSignalEvent,
   TerminalStatePayload,
   TerminalStateService,
-  TerminalStopOrder,
   TerminalTradeRow,
 } from '../services/terminal-state.service';
 import {
@@ -863,42 +862,68 @@ export class TerminalComponent implements OnInit, OnDestroy {
     this.scheduleSave();
   }
 
-  /** #999: сохранённые СЛ/ТП бумаги (% от входа). null — нет настроек (поля выключены). */
-  stopOrderFor(securityId: number): TerminalStopOrder | null {
-    const norm = (v: unknown): number | null => {
-      if (v == null || v === '') return null;
-      const n = Number(v);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : null;
-    };
-    const all = this.settings['stop_orders'];
-    if (!all || typeof all !== 'object') return null;
-    const row = (all as Record<string, unknown>)[String(securityId)];
-    if (!row || typeof row !== 'object') return null;
-    const sl = norm((row as Record<string, unknown>)['sl_pct']);
-    const tp = norm((row as Record<string, unknown>)['tp_pct']);
-    if (sl == null && tp == null) return null;
-    return { sl_pct: sl, tp_pct: tp };
+  /** #999: единый для счёта стоп-лосс, % от средней цены входа (null — выключен).
+      Применяется ко всем открытым позициям счёта (всем бумагам). */
+  get stopLossPct(): number | null {
+    return this.currentStopOrder().sl_pct;
   }
 
-  /** #999: сохранить СЛ/ТП бумаги в настройках счёта; оба пустые — запись удаляем. */
-  onStopOrderChange(securityId: number, s: TerminalStopOrder): void {
-    const norm = (v: unknown): number | null => {
-      if (v == null || v === '') return null;
-      const n = Number(v);
-      return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : null;
+  /** #999: единый для счёта тейк-профит, % от цены входа (null — выключен). */
+  get takeProfitPct(): number | null {
+    return this.currentStopOrder().tp_pct;
+  }
+
+  /** #999: включён ли «мгновенный» СЛ — закрыть все позиции счёта сразу. */
+  get stopLossInstant(): boolean {
+    return this.currentStopOrder().sl_instant;
+  }
+
+  private normStopPct(v: unknown): number | null {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.min(n, 1000) : null;
+  }
+
+  private currentStopOrder(): { sl_pct: number | null; tp_pct: number | null; sl_instant: boolean } {
+    const so = this.settings['stop_order'];
+    const o = so && typeof so === 'object' ? (so as Record<string, unknown>) : {};
+    return {
+      sl_pct: this.normStopPct(o['sl_pct']),
+      tp_pct: this.normStopPct(o['tp_pct']),
+      sl_instant: o['sl_instant'] === true,
     };
-    const sl = norm(s.sl_pct);
-    const tp = norm(s.tp_pct);
-    const all: Record<string, TerminalStopOrder> = {
-      ...((this.settings['stop_orders'] as Record<string, TerminalStopOrder>) ?? {}),
-    };
-    if (sl == null && tp == null) {
-      delete all[String(securityId)];
+  }
+
+  private saveStopOrder(next: { sl_pct: number | null; tp_pct: number | null; sl_instant: boolean }): void {
+    if (next.sl_pct == null && next.tp_pct == null && !next.sl_instant) {
+      const copy = { ...this.settings };
+      delete copy['stop_order'];
+      this.settings = copy;
     } else {
-      all[String(securityId)] = { sl_pct: sl, tp_pct: tp };
+      this.settings = { ...this.settings, stop_order: next };
     }
-    this.settings = { ...this.settings, stop_orders: all };
     this.scheduleSave();
+  }
+
+  /** #999: правка «Стоп-лосс, %» — сохраняем единую настройку счёта. */
+  onStopLossPctChange(v: unknown): void {
+    const next = this.currentStopOrder();
+    next.sl_pct = this.normStopPct(v);
+    this.saveStopOrder(next);
+  }
+
+  /** #999: правка «Тейк-профит, %» — сохраняем единую настройку счёта. */
+  onTakeProfitPctChange(v: unknown): void {
+    const next = this.currentStopOrder();
+    next.tp_pct = this.normStopPct(v);
+    this.saveStopOrder(next);
+  }
+
+  /** #999: галочка «Мгновенный СЛ» — закрыть позиции счёта сразу, без движения. */
+  onStopLossInstantChange(checked: boolean): void {
+    const next = this.currentStopOrder();
+    next.sl_instant = checked === true;
+    this.saveStopOrder(next);
   }
 
   /** Восстановление сохранённых полос и настроек для текущего счёта.

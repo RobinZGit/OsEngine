@@ -81,8 +81,8 @@ export interface TerminalStateResponse {
   payload: TerminalStatePayload;
 }
 
-/** #999: стоп-лосс / тейк-профит по бумаге, % от средней цены входа.
-    null — выключено; 0 — мгновенный (порог на цене входа). */
+/** #999: стоп-лосс / тейк-профит, единая настройка счёта (все бумаги),
+    % от средней цены входа. null — выключен; 0 — мгновенный (порог на цене входа). */
 export interface TerminalStopOrder {
   sl_pct: number | null;
   tp_pct: number | null;

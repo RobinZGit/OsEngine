@@ -1,16 +1,22 @@
 /** #999: стоп-лосс / тейк-профит терминала.
  *
- * СЛ/ТП задаются в блоке «Сделки» полосы в ПРОЦЕНТАХ от средней цены входа и
- * хранятся в настройках счёта: terminal_state.payload.settings.stop_orders =
- * { "<security_id>": { sl_pct, tp_pct } }. «Мгновенный» стоп-лосс — это тот же
- * процент, но проверяется на КАЖДОМ опросе живой цены (без ожидания закрытия
- * свечи): при уходе цены за порог позиция по бумаге закрывается маркет-заявкой.
+ * СЛ/ТП задаются в верхнем блоке терминала (полоса с «Запросить сигналы»,
+ * после инпута лимита автоисполнения): стоп-лосс — в ПРОЦЕНТАХ от средней цены
+ * входа либо галочкой «Мгновенный СЛ»; тейк-профит — в процентах. Хранятся в
+ * настройках счёта: terminal_state.payload.settings.stop_order =
+ * { sl_pct, tp_pct, sl_instant }. «Мгновенный СЛ» (`sl_instant`) закрывает
+ * позиции сразу, без движения цены. Обычный порог тоже проверяется на КАЖДОМ
+ * опросе живой цены (без ожидания закрытия свечи), при уходе цены за порог
+ * позиция закрывается маркет-заявкой.
  *
  * Сторож работает на стороне API (вкладка браузера не нужна). Исполнение
  * переиспользует боевой путь терминала (POST /api/terminal/trade), поэтому
  * реальная заявка T-Bank, комиссия, запись в terminal_trades и advisory-лок —
  * те же, что у ручной сделки. Живые котировки берутся из GET /api/prices/last
  * (source === 'tbank'; цена последней свечи не годится — по ней стоп не считаем).
+ *
+ * Настройка стопа единая для счёта (settings.stop_order = { sl_pct, tp_pct,
+ * sl_instant }) и применяется ко ВСЕМ открытым позициям счёта (всем бумагам сразу).
  */
 'use strict';
 
@@ -23,6 +29,7 @@ const DEFAULT_MAX_QUOTE_AGE_MS = 15 * 60 * 1000;
 const DEFAULT_RETRY_COOLDOWN_MS = 20_000;
 
 function toNum(v) {
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -31,29 +38,27 @@ function round2(v) {
   return Math.round(Number(v) * 100) / 100;
 }
 
-/** Настройки стопов: Map<securityId, { sl_pct, tp_pct }>. Пустые/нулевые → нет
-    записи; процент 0 допустим (срабатывает на самой цене входа — «мгновенный»). */
-function parseStopsSafe(raw) {
-  const out = new Map();
-  if (!raw || typeof raw !== 'object') return out;
-  for (const [k, v] of Object.entries(raw)) {
-    const sid = Number(k);
-    if (!Number.isInteger(sid) || sid <= 0) continue;
-    if (!v || typeof v !== 'object') continue;
-    const sl = toNum(v.sl_pct);
-    const tp = toNum(v.tp_pct);
-    const slOk = sl != null && sl >= 0;
-    const tpOk = tp != null && tp >= 0;
-    if (!slOk && !tpOk) continue;
-    out.set(sid, { sl_pct: slOk ? sl : null, tp_pct: tpOk ? tp : null });
-  }
-  return out;
+/** Настройки стопа счёта: { sl_pct, tp_pct, sl_instant } | null. Пустые/отрицательные
+    проценты → null; процент 0 допустим (срабатывает на самой цене входа). `sl_instant`
+    — «мгновенный стоп-лосс»: закрыть позиции сразу, без движения цены. Настройка
+    единая для счёта и применяется ко всем его открытым позициям (всем бумагам). */
+function parseStopOrder(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const sl = toNum(raw.sl_pct);
+  const tp = toNum(raw.tp_pct);
+  const slOk = sl != null && sl >= 0;
+  const tpOk = tp != null && tp >= 0;
+  const instant = raw.sl_instant === true;
+  if (!slOk && !tpOk && !instant) return null;
+  return { sl_pct: slOk ? sl : null, tp_pct: tpOk ? tp : null, sl_instant: instant };
 }
 
 /** Что сработало: 'stop_loss' | 'take_profit' | null.
+    `instant` — мгновенный стоп-лосс: закрыть сразу, независимо от цены.
     Лонг (qty>0): СЛ ниже входа, ТП выше. Шорт (qty<0): СЛ выше, ТП ниже. */
-function evalStop(qty, avg, price, slPct, tpPct) {
+function evalStop(qty, avg, price, slPct, tpPct, instant) {
   if (qty === 0 || !(avg > 0) || !(price > 0)) return null;
+  if (instant) return 'stop_loss';
   const hasSl = slPct != null && slPct >= 0;
   const hasTp = tpPct != null && tpPct >= 0;
   if (qty > 0) {
@@ -97,7 +102,9 @@ async function loadOpenPositions(pool) {
   return out;
 }
 
-/** Настройки стопов по счетам: Map<accountId, { is_fake, commission_pct, stops }>. */
+/** Настройки стопа по счетам: Map<accountId, { is_fake, commission_pct, stop }>.
+    stop — единый { sl_pct, tp_pct } счёта (settings.stop_order), применяется ко всем
+    открытым позициям счёта. */
 async function loadStopSettings(pool) {
   const { rows } = await pool.query(
     `SELECT ts.account_id,
@@ -109,13 +116,13 @@ async function loadStopSettings(pool) {
   const out = new Map();
   for (const r of rows) {
     const settings = r.settings && typeof r.settings === 'object' ? r.settings : {};
-    const stops = parseStopsSafe(settings.stop_orders);
-    if (stops.size === 0) continue;
+    const stop = parseStopOrder(settings.stop_order);
+    if (!stop) continue;
     const cp = Number(settings.commission_pct);
     out.set(Number(r.account_id), {
       is_fake: r.is_fake === true,
       commission_pct: Number.isFinite(cp) && cp >= 0 ? Math.min(cp, 100) : 0.03,
-      stops,
+      stop,
     });
   }
   return out;
@@ -147,11 +154,11 @@ async function pollOnce(pool, baseUrl, state) {
   const positions = await loadOpenPositions(pool);
   if (positions.size === 0) return;
 
-  // Цели: есть открытая позиция И задан стоп по этой бумаге на этот счёт.
+  // Цели: есть открытая позиция И на счёте задан стоп (единый для всех бумаг).
   const targets = [];
   const secIds = new Set();
   for (const pos of positions.values()) {
-    const cfg = settingsByAccount.get(pos.account_id)?.stops.get(pos.security_id);
+    const cfg = settingsByAccount.get(pos.account_id);
     if (!cfg) continue;
     targets.push({ pos, cfg });
     secIds.add(pos.security_id);
@@ -162,19 +169,26 @@ async function pollOnce(pool, baseUrl, state) {
   if (quotes.size === 0) return;
 
   for (const { pos, cfg } of targets) {
+    const stop = cfg.stop;
     const key = `${pos.account_id}:${pos.security_id}`;
     if (state.busy.has(key)) continue;
     if (Date.now() - (state.lastTry.get(key) ?? 0) < state.retryCooldownMs) continue;
     const quote = quotes.get(pos.security_id);
     if (!quote) continue;
-    const hit = evalStop(pos.qty, pos.avg, quote.price, cfg.sl_pct, cfg.tp_pct);
+    const hit = evalStop(pos.qty, pos.avg, quote.price, stop.sl_pct, stop.tp_pct, stop.sl_instant);
     if (!hit) continue;
 
-    const acct = settingsByAccount.get(pos.account_id);
     const direction = pos.qty > 0 ? 'sell' : 'buy';
-    const pct = hit === 'stop_loss' ? cfg.sl_pct : cfg.tp_pct;
-    const label = hit === 'stop_loss' ? 'Стоп-лосс' : 'Тейк-профит';
-    const note = `${label} ${pct}%: цена ${quote.price} против входа ${round2(pos.avg)}`;
+    const instant = hit === 'stop_loss' && stop.sl_instant === true;
+    const pct = hit === 'stop_loss' ? stop.sl_pct : stop.tp_pct;
+    const label = instant
+      ? 'Мгновенный стоп-лосс'
+      : hit === 'stop_loss'
+        ? 'Стоп-лосс'
+        : 'Тейк-профит';
+    const note = instant
+      ? `${label}: цена ${quote.price} против входа ${round2(pos.avg)}`
+      : `${label} ${pct}%: цена ${quote.price} против входа ${round2(pos.avg)}`;
     state.busy.add(key);
     state.lastTry.set(key, Date.now());
     try {
@@ -185,9 +199,7 @@ async function pollOnce(pool, baseUrl, state) {
         execution: 'market',
         price: quote.price,
         quantity: Math.abs(pos.qty),
-        ...(settingsByAccount.get(pos.account_id)?.is_fake
-          ? { commission_pct: settingsByAccount.get(pos.account_id).commission_pct }
-          : {}),
+        ...(cfg.is_fake ? { commission_pct: cfg.commission_pct } : {}),
         note,
       });
       const ok = r?.json?.ok === true;
@@ -286,6 +298,6 @@ module.exports = {
   startTerminalStopWatch,
   pollOnce,
   evalStop,
-  parseStopsSafe,
+  parseStopOrder,
   loadOpenPositions,
 };
