@@ -7,6 +7,7 @@ const { resolveBondFund } = require('../lib/bond-fund-fetch');
 const { raiseBrowserWindow } = require('../lib/browser-focus');
 const { tbankHttpPost, DEFAULT_API } = require('../lib/tbank-invest-client');
 const { getBondNames } = require('../lib/bond-names');
+const { pokeTerminalStopWatch } = require('../lib/terminal-stop-watch');
 
 /** Приоритет торговых площадочных classCode для облигаций (после «10000»/мусора). */
 const BOND_CLASS_PREFERENCE = ['TQCB', 'TQOB', 'TQBR'];
@@ -881,6 +882,8 @@ module.exports = function registerTerminalRoutes(app, ctx) {
           ? `Демо: ${sideLabel} ${quantity} шт ${sec.prefix} по ~${price} — сумма ≈ ${amount} ₽${commission > 0 ? `, комиссия ≈ ${commission} ₽` : ''}. Остаток: ${Math.round(cash ?? 0).toLocaleString('ru-RU')} ₽`
           : `Сделка размещена: ${sideLabel} ${quantity} шт ${sec.prefix}`,
       });
+      // #1002: немедленная проверка мгновенного СЛ после исполнения сделки
+      pokeTerminalStopWatch();
     } catch (err) {
       const status = Number(err.status) || 502;
       if (status >= 500) console.error('POST /api/terminal/trade', err);
@@ -898,6 +901,18 @@ module.exports = function registerTerminalRoutes(app, ctx) {
         lockConn.release();
       }
     }
+  });
+
+  /**
+   * #1002: ОБЩАЯ проверка всех стопов СЛ/ТП терминала — одна процедура, одна и та же
+   * для всех вызовов: таймер сторожа, конец рабочего цикла trade-runner, кнопка
+   * «Отклонение» в шапке счёта. Принудительный опрос: ничего не ждём — если позиция
+   * уже вне стопа, закроется в этом же вызове. Синхронно не делаем, чтобы не
+   * держать ответ HTTP (закрытие уходит отдельным POST /api/terminal/trade).
+   */
+  app.post('/api/terminal/stops/check', (_req, res) => {
+    pokeTerminalStopWatch();
+    res.json({ ok: true });
   });
 
   /** Сделки терминала по счёту (новые сверху), с именем и префиксом бумаги. */

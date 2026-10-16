@@ -7,6 +7,7 @@ const {
 } = require('./lib/backtest-report');
 const { buildPaperChartsForRun } = require('./lib/backtest-paper-charts');
 const { LOGIC_TRADE_SELECT_TEST_PANEL } = require('./lib/logic-trade-sql');
+const { writeErrorLog } = require('./lib/error-log');
 
 /** Prevent overlapping persist for the same run_id. */
 const persistInFlight = new Map();
@@ -25,6 +26,14 @@ function schedulePersistBacktestReport(pool, runId, opts = {}) {
   const job = persistBacktestReport(pool, id, opts)
     .catch((err) => {
       console.error('persistBacktestReport failed', id, err?.message || err);
+      writeErrorLog(pool, {
+        level: 'error',
+        source: 'backtest',
+        category: 'report',
+        code: 'BACKTEST_REPORT_PERSIST',
+        message: `Не удалось сохранить отчёт бэктеста run=${id}: ${err?.message || err}`,
+        detail: err?.stack || err?.message || String(err),
+      });
     })
     .finally(() => {
       persistInFlight.delete(id);

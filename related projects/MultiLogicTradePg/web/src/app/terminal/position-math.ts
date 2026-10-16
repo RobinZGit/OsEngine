@@ -116,9 +116,59 @@ export function realizedPnl(
   return Number.isFinite(realized) ? round2(realized) : 0;
 }
 
+/** Реализованный П/У по КАЖДОЙ сделке, которая закрыла часть позиции
+    (встречная сторона к текущему остатку), методом средней цены — тот же
+    расчёт, что в `realizedPnl`, но результат относится к конкретной сделке.
+    Сделки открытия/добавления в карту не попадают (реализации нет). Ключ —
+    id сделки, значение — рубли с учётом комиссий обеих сторон (копейки).
+    При частичном закрытии учитывается закрытая доля — «привести к проданному
+    количеству». */
+export function realizedPnlByTrade(
+  trades: readonly TerminalTradeRow[] | null | undefined
+): Map<number, number> {
+  const out = new Map<number, number>();
+  const secIds = new Set<number>();
+  for (const t of trades ?? []) {
+    if (isFilled(t)) secIds.add(t.security_id);
+  }
+  for (const secId of secIds) {
+    let qty = 0;
+    let cost = 0;
+    for (const t of filledRowsInOrder(trades, secId)) {
+      const p = Number(t.price);
+      const q = Number(t.quantity);
+      if (!(Number.isFinite(p) && p >= 0 && Number.isFinite(q) && q > 0)) continue;
+      const c = Number(t.commission);
+      const commission = Number.isFinite(c) && c > 0 ? c : 0;
+      const signedQ = t.direction === 'BUY' ? q : -q;
+      if (qty === 0 || Math.sign(qty) === Math.sign(signedQ)) {
+        // Открытие или добавление в сторону текущей позиции.
+        qty += signedQ;
+        cost += signedQ > 0 ? p * q + commission : -p * q + commission;
+        continue;
+      }
+      // Встречная сделка: закрываем часть текущей позиции по средней цене.
+      const closing = Math.min(Math.abs(qty), q);
+      const avg = cost / qty;
+      const exitCommission = commission * (closing / q);
+      const gross = (p - avg) * closing * Math.sign(qty);
+      const id = Number(t.id);
+      if (Number.isFinite(id)) out.set(id, round2(gross - exitCommission));
+      cost -= avg * closing * Math.sign(qty);
+      qty += signedQ;
+      if (qty === 0) {
+        cost = 0;
+      } else if (Math.sign(qty) === Math.sign(signedQ)) {
+        const openCommission = commission - exitCommission;
+        cost = qty > 0 ? p * qty + openCommission : -p * -qty + openCommission;
+      }
+    }
+  }
+  return out;
+}
+
 /** Остаток позиции по бумаге: исполненные покупки минус исполненные продажи.
-    > 0 — лонг, < 0 — шорт. */
-export function positionQty(
+    > 0 — лонг, < 0 — шорт. */export function positionQty(
   trades: readonly TerminalTradeRow[] | null | undefined,
   securityId: number
 ): number {

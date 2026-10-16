@@ -2,7 +2,12 @@ import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { MonitoringComponent } from './monitoring.component';
-import { ErrorLogRow, MonitoringService } from '../services/monitoring.service';
+import {
+  ErrorLogRow,
+  MonitoringService,
+  MonitoringSummary,
+  formatErrorShort,
+} from '../services/monitoring.service';
 import { AppConfigService } from '../services/app-config.service';
 
 function row(id: number, level: 'warning' | 'error' | 'fatal', message: string): ErrorLogRow {
@@ -25,20 +30,33 @@ function row(id: number, level: 'warning' | 'error' | 'fatal', message: string):
   };
 }
 
+function summary(latestCritical: ErrorLogRow | null): MonitoringSummary {
+  return {
+    windowHours: 24,
+    counts: { warning: 0, error: latestCritical ? 1 : 0, fatal: 0, total: latestCritical ? 1 : 0 },
+    latestCritical,
+    latestWarning: null,
+  };
+}
+
 describe('MonitoringComponent (#989)', () => {
   let errors: ErrorLogRow[];
   let stats: { minutes: number; total: number; rows: Array<{ ts: string; count: number }> };
+  let summaryData: MonitoringSummary;
   let serviceStub: {
     getErrors: jasmine.Spy;
     getStats: jasmine.Spy;
+    getSummary: jasmine.Spy;
   };
 
   beforeEach(() => {
     errors = [];
     stats = { minutes: 60, total: 0, rows: [] };
+    summaryData = summary(null);
     serviceStub = {
       getErrors: jasmine.createSpy('getErrors').and.callFake(() => of({ rows: errors })),
       getStats: jasmine.createSpy('getStats').and.callFake(() => of(stats)),
+      getSummary: jasmine.createSpy('getSummary').and.callFake(() => of(summaryData)),
     };
 
     TestBed.configureTestingModule({
@@ -100,5 +118,35 @@ describe('MonitoringComponent (#989)', () => {
     const c = fixture.componentInstance;
     expect(c.loadError).toBeTruthy();
     expect(c.errors.length).toBe(0);
+  });
+
+  it('formatErrorShort: код + сообщение без хвоста «→ HTTP xxx»', () => {
+    expect(formatErrorShort(row(1, 'error', 'POST /api/prices/refresh → HTTP 502'))).toBe(
+      'HTTP 500: POST /api/prices/refresh'
+    );
+    expect(formatErrorShort(null)).toBe('');
+  });
+
+  it('заголовок показывает последнюю критичную ошибку в скобках (сводка)', () => {
+    summaryData = summary(row(9, 'error', 'POST /api/prices/refresh → HTTP 502'));
+    const fixture = TestBed.createComponent(MonitoringComponent);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance;
+    expect(serviceStub.getSummary).toHaveBeenCalled();
+    expect(c.criticalText).toBe('HTTP 500: POST /api/prices/refresh');
+    const text = (fixture.nativeElement as HTMLElement).textContent || '';
+    expect(text).toContain('(HTTP 500: POST /api/prices/refresh)');
+  });
+
+  it('без критичных ошибок заголовок без текста в скобках', () => {
+    summaryData = summary(null);
+    const fixture = TestBed.createComponent(MonitoringComponent);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance;
+    expect(c.criticalText).toBe('');
+    const text = (fixture.nativeElement as HTMLElement).textContent || '';
+    expect(text).not.toContain('(HTTP');
   });
 });

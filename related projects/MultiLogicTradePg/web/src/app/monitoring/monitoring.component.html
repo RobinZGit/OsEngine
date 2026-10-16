@@ -1,6 +1,11 @@
 <div class="page-scroll monitoring">
   <header class="page-header monitoring-header">
-    <h2>Мониторинг системы</h2>
+    <h2>
+      Мониторинг системы
+      @if (criticalText) {
+        <span class="mon-head-alert" [attr.title]="criticalTitle">({{ criticalText }})</span>
+      }
+    </h2>
     <div class="monitoring-controls">
       <label class="mon-level">
         Уровень:

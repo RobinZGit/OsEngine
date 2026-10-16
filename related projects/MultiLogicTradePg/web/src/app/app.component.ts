@@ -9,6 +9,7 @@ import { ProjectSchemaPanelComponent } from './project-schema/project-schema-pan
 import { TechLogService } from './services/tech-log.service';
 import { TradeRunnerSessionService } from './services/trade-runner-session.service';
 import { TerminalStateService } from './services/terminal-state.service';
+import { MonitoringService, MonitoringSummary, formatErrorShort } from './services/monitoring.service';
 import { assetUrl } from './shared/asset-url';
 
 @Component({
@@ -158,8 +159,21 @@ import { assetUrl } from './shared/asset-url';
       <a routerLink="/terminal" routerLinkActive="active">
         Терминал
       </a>
-      <a routerLink="/monitoring" routerLinkActive="active">
+      <a
+        routerLink="/monitoring"
+        routerLinkActive="active"
+        class="tab-monitoring"
+        [class.tab-alert-critical]="monitoringCritical"
+        [class.tab-alert-warning]="monitoringWarning && !monitoringCritical"
+        [attr.title]="monitoringTitle"
+      >
+        @if (monitoringCritical || monitoringWarning) {
+          <span class="tab-light" [class.tab-light-critical]="monitoringCritical"></span>
+        }
         Мониторинг системы
+        @if (monitoringCritical && monitoringText) {
+          <span class="tab-error-text">({{ monitoringText }})</span>
+        }
       </a>
     </nav>
     <main>
@@ -270,6 +284,56 @@ import { assetUrl } from './shared/asset-url';
         border-bottom-color: #2563eb;
         font-weight: 600;
       }
+      .app-tabs a.tab-monitoring {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+      .app-tabs a.tab-alert-warning {
+        color: #b45309;
+      }
+      .app-tabs a.tab-alert-critical {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+      .app-tabs a.tab-alert-critical.active {
+        color: #dc2626;
+        border-bottom-color: #dc2626;
+      }
+      .tab-light {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #f59e0b;
+        flex: none;
+        animation: tab-light-pulse 1.6s ease-out infinite;
+      }
+      .tab-light.tab-light-critical {
+        background: #dc2626;
+      }
+      @keyframes tab-light-pulse {
+        0% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.35);
+          opacity: 0.55;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      .tab-error-text {
+        max-width: 26ch;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.82rem;
+        font-weight: 500;
+        opacity: 0.9;
+      }
       main {
         min-height: calc(100vh - 96px);
         background: #f3f4f6;
@@ -313,10 +377,19 @@ export class AppComponent implements OnInit, OnDestroy {
       повторно на тот же сигнал каждые 15 с). */
   private lastRaisedSignalId = 0;
 
+  /** Мониторинг системы: «свет» вкладки и текст последней критичной ошибки. */
+  monitoringCritical = false;
+  monitoringWarning = false;
+  monitoringText = '';
+  monitoringTitle = 'Мониторинг системы: журнал ошибок';
+  private monitorTimer: ReturnType<typeof setInterval> | null = null;
+  private monitorFirst: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     private readonly techLog: TechLogService,
     private readonly tradeRunnerSession: TradeRunnerSessionService,
     private readonly terminalState: TerminalStateService,
+    private readonly monitoring: MonitoringService,
     private readonly router: Router
   ) {}
 
@@ -328,6 +401,7 @@ export class AppComponent implements OnInit, OnDestroy {
       },
     });
     this.startSignalsWatch();
+    this.startMonitoringWatch();
   }
 
   onTechLoggingChange(enabled: boolean): void {
@@ -338,6 +412,39 @@ export class AppComponent implements OnInit, OnDestroy {
     this.tradeRunnerSession.stop();
     if (this.signalsWatchTimer) clearInterval(this.signalsWatchTimer);
     if (this.signalsWatchFirst) clearTimeout(this.signalsWatchFirst);
+    if (this.monitorTimer) clearInterval(this.monitorTimer);
+    if (this.monitorFirst) clearTimeout(this.monitorFirst);
+  }
+
+  /** Мониторинг системы: опрос сводки журнала ошибок каждые 15 с.
+      Критичные (error/fatal) зажигают красный «свет» и текст в заголовке вкладки,
+      только предупреждения (warning) — жёлтый «свет» без текста. */
+  private startMonitoringWatch(): void {
+    if (this.monitorTimer) return;
+    this.monitorTimer = setInterval(() => this.loadMonitoringSummary(), 15_000);
+    this.monitorFirst = setTimeout(() => this.loadMonitoringSummary(), 2500);
+  }
+
+  private loadMonitoringSummary(): void {
+    this.monitoring.getSummary().subscribe({
+      next: (s) => this.applyMonitoringSummary(s),
+      error: () => {
+        /* API недоступен — оставляем прежнее состояние «света» */
+      },
+    });
+  }
+
+  private applyMonitoringSummary(s: MonitoringSummary): void {
+    const critical = s.latestCritical ?? null;
+    const warnings = Number(s.counts?.warning ?? 0);
+    this.monitoringCritical = !!critical;
+    this.monitoringWarning = !critical && warnings > 0;
+    this.monitoringText = critical ? formatErrorShort(critical) : '';
+    this.monitoringTitle = critical
+      ? `Последняя критичная ошибка: ${critical.message}`
+      : this.monitoringWarning
+        ? `Только предупреждения: ${warnings}`
+        : 'Мониторинг системы: ошибок нет';
   }
 
   /** #996: опрос непрочитанных сигналов раз в 15 с (как и в терминале). */

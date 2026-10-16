@@ -310,7 +310,7 @@
                       <td>@if (tr.commission > 0) { {{tr.commission | number: '1.0-2' : 'ru' }} } @else { — }</td>
                       <td
                         class="trade-reject-reason-cell"
-                        [title]="tr.note || ''"
+                        [title]="tradeNote(tr)"
                       >{{ tradeNote(tr) }}</td>
                       <td
                         class="trade-status-cell"

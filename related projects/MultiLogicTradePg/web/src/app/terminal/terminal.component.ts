@@ -24,7 +24,12 @@ import { LightningAllStatus, LogicsService } from '../services/logics.service';
 import { AccountRow, BondFundInfo, ExchangeRow } from '../models/lookup.model';
 import { SecurityRow, TimeframeRow } from '../models/market.model';
 import { tradeStatusLabel } from '../shared/logic-trade';
-import { AccountPnl, accountPnl, openPositionsSpent } from './position-math';
+import {
+  AccountPnl,
+  accountPnl,
+  openPositionsSpent,
+  realizedPnlByTrade,
+} from './position-math';
 
 interface PanelModel {
   uid: number;
@@ -127,6 +132,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
   /** История сделок терминала выбранного счёта (новые сверху). */
   trades: TerminalTradeRow[] = [];
   tradesLoading = false;
+  /** #1002: реализованный П/У по закрывающим сделкам (id сделки → рубли),
+      пересчитывается при каждом обновлении списка — для колонки «Причина». */
+  private tradeResults = new Map<number, number>();
   tradesError: string | null = null;
   /** #955: счёт, чья история сейчас загружена — при смене счёта старую
       историю чистим сразу, при повторной загрузке того же счёта — держим. */
@@ -157,7 +165,10 @@ export class TerminalComponent implements OnInit, OnDestroy {
   /** #922: опрос живых цен по бумагам с открытыми позициями (раз в 30 с). */
   private lastPricesTimer?: ReturnType<typeof setInterval>;
   private lastPricesBusy = false;
-  /** Идёт ручной пересчёт цен кнопкой «Отклонение» в шапке. */
+  /** #1002: тихий опрос списка сделок (раз в 15 с) — серверные закрытия по
+      стоп-лоссу (сторож/конец цикла trade-runner) появляются в UI сами, без
+      ручной перезагрузки. Тихо: не мигает «Загрузка сделок…». */
+  private tradesTimer?: ReturnType<typeof setInterval>;  /** Идёт ручной пересчёт цен кнопкой «Отклонение» в шапке. */
   pricesRefreshing = false;
   private destroyed = false;
   /** Живые цены бумаг с позициями: security_id → цена последней сделки. */
@@ -218,6 +229,7 @@ export class TerminalComponent implements OnInit, OnDestroy {
     if (this.allLightningNoteTimer) clearTimeout(this.allLightningNoteTimer);
     if (this.closeAllNoteTimer) clearTimeout(this.closeAllNoteTimer);
     if (this.lastPricesTimer) clearInterval(this.lastPricesTimer);
+    if (this.tradesTimer) clearInterval(this.tradesTimer);
     if (this.signalsToastTimer) clearTimeout(this.signalsToastTimer);
     this.stopAllLightningPoll();
   }
@@ -332,13 +344,43 @@ export class TerminalComponent implements OnInit, OnDestroy {
 
   /** Кнопка «Отклонение» в шапке: принудительно тянем живые цены по всем
       бумагам с открытой позицией (вне 30-секундного цикла) и пересчитываем
-      отклонение. Общая сумма по счёту = сумма отклонений по всем этим бумагам. */
+      отклонение. Общая сумма по счёту = сумма отклонений по всем этим бумагам.
+      #1002: после обновления цен просим сервер тут же проверить все стопы СЛ/ТП
+      (та же процедура, что по таймеру) — позиция вне порога закроется сразу. */
   refreshAllPrices(): void {
     if (this.destroyed || this.lastPricesBusy) return;
     this.pricesRefreshing = true;
     this.pollLastPrices(true, () => {
       this.pricesRefreshing = false;
+      this.checkStopsNow();
     });
+  }
+
+  /** #1002: общая принудительная проверка стопов СЛ/ТП на сервере (не блокирует UI). */
+  private checkStopsNow(): void {
+    if (this.destroyed) return;
+    this.stateSvc.checkStops().subscribe({
+      next: () => this.reloadTradesAfterStops(),
+      error: () => undefined,
+    });
+  }
+
+  /** #1002: сервер закрывает позицию стопом УЖЕ после ответа /stops/check
+      (сделка асинхронная) — перечитываем сделки с задержкой, чтобы закрытие
+      сразу появилось в UI без ручной перезагрузки. Два раза: страховка на
+      медленный ответ брокера по реальному счёту. */
+  private reloadTradesAfterStops(): void {
+    if (this.destroyed) return;
+    setTimeout(() => this.loadTrades(true), 1200);
+    setTimeout(() => this.loadTrades(true), 3500);
+  }
+
+  /** #1002: раз в 15 с тихо перечитываем сделки счёта, чтобы серверные
+      закрытия (стоп-лосс по таймеру сторожа и в конце цикла trade-runner)
+      отражались в UI сами. Тихо — без мигания «Загрузка сделок…». */
+  private startTradesPolling(): void {
+    if (this.tradesTimer) clearInterval(this.tradesTimer);
+    this.tradesTimer = setInterval(() => this.loadTrades(true), 15_000);
   }
 
   private pollLastPrices(force = false, done?: () => void): void {
@@ -509,6 +551,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.startSignalsPolling();
         // #922: живые цены по бумагам с позициями (цикл 30 с).
         this.startLastPricesPolling();
+        // #1002: тихий опрос сделок (цикл 15 с) — серверные закрытия по стопу
+        // появляются в списке сами, без перезагрузки страницы.
+        this.startTradesPolling();
       },
       error: () => {
         this.futures = [];
@@ -543,12 +588,13 @@ export class TerminalComponent implements OnInit, OnDestroy {
       счёта прежние сделки остаются на экране, пока не придёт новый ответ;
       старая история чистится только при смене счёта; (3) ошибка не затирает
       уже загруженные сделки — показываем tradesError рядом с прежним списком. */
-  loadTrades(): void {
+  loadTrades(silent = false): void {
     const id = this.accountId;
     const seq = ++this.tradesReqSeq;
     if (id !== this.tradesAccountId) {
       this.tradesAccountId = id;
       this.trades = [];
+      this.tradeResults = new Map();
       // Новый счёт — новая база открытых позиций и заявок в полёте.
       this.spentAutoExecBase = 0;
       this.pendingAutoExec = 0;
@@ -558,12 +604,13 @@ export class TerminalComponent implements OnInit, OnDestroy {
       this.tradesLoading = false;
       return;
     }
-    this.tradesLoading = true;
+    if (!silent) this.tradesLoading = true;
     this.stateSvc.getTrades(id, 100).subscribe({
       next: (r) => {
         if (seq !== this.tradesReqSeq) return; // запоздавший ответ
         this.tradesLoading = false;
         this.trades = r?.trades ?? [];
+        this.tradeResults = realizedPnlByTrade(this.trades);
         // #969: база расхода лимита — только фактические открытые позиции
         // счёта. Резервы в полёте поверх неё добавляются отдельно.
         // #971: резерв по факту подтверждения сделки не снимается (снимок
@@ -1783,8 +1830,23 @@ export class TerminalComponent implements OnInit, OnDestroy {
     return tradeStatusLabel(tr.status);
   }
 
-  /** Причина из заметки сделки (у отклонённых/отменённых). */
+  /** Причина из заметки сделки (у отклонённых/отменённых).
+      #1002: к закрывающей сделке дописывается реализованный результат по
+      закрытой доле позиции («· результат −58,09 ₽»); если заметки нет, сама
+      закрывающая сделка помечается «Закрытие позиции». */
   tradeNote(tr: TerminalTradeRow): string {
-    return (tr.note || '').trim() || '—';
+    const base = (tr.note || '').trim();
+    const result = this.tradeResults.get(Number(tr.id));
+    if (result === undefined) return base || '—';
+    return `${base || 'Закрытие позиции'} · результат ${this.formatRub(result)}`;
+  }
+
+  /** Сумма в рублях как в ru-локали: «−58,09 ₽». */
+  private formatRub(v: number): string {
+    return new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: 'RUB',
+      maximumFractionDigits: 2,
+    }).format(v);
   }
 }

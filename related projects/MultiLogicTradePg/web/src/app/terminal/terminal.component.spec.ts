@@ -1,4 +1,4 @@
-﻿import { TestBed } from '@angular/core/testing';
+﻿import { fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TerminalComponent } from './terminal.component';
 import { ReferencesService } from '../services/references.service';
@@ -442,12 +442,14 @@ describe('TerminalComponent — остаток на счёте и отклоне
       trade(202, 'SELL', 5, 200),
     ];
     const calls: Array<{ ids: number[]; force: boolean }> = [];
+    const stopChecks: number[] = [];
     (c as any).securitiesSvc = {
       getLastPrices: (ids: number[], force: boolean) => {
         calls.push({ ids, force });
         return of({ ok: true, source: 'tbank', prices: [{ security_id: 101, price: 110 }] });
       },
     };
+    (c as any).stateSvc = { checkStops: () => { stopChecks.push(1); return of({ ok: true }); } };
     c.refreshAllPrices();
     // Только бумага с ненулевым остатком; запрос идёт с force=1 (мимо троттлинга).
     expect(calls.length).toBe(1);
@@ -456,6 +458,59 @@ describe('TerminalComponent — остаток на счёте и отклоне
     // Отклонение пересчиталось (сумма по бумагам): 10 × (110 − 100) = 100.
     expect(c.accountPnlRub).toBe(100);
     expect(c.pricesRefreshing).toBe(false);
+    // #1002: после обновления цен просим сервер проверить все стопы СЛ/ТП.
+    expect(stopChecks.length).toBe(1);
+  });
+
+  it('#1002: к закрывающей сделке в «Причине» дописывается результат, открывающая — без него', () => {
+    const c = makeComponent();
+    c.accountId = 1;
+    const buy: any = { ...trade(101, 'BUY', 10, 100), id: 1, note: 'Ручная сделка' };
+    const sell: any = {
+      ...trade(101, 'SELL', 4, 120),
+      id: 2,
+      note: 'Сигнал логики «Логика» M15 · лонг',
+    };
+    (c as any).securitiesSvc = {
+      getLastPrices: () => of({ ok: true, source: 'tbank', prices: [] }),
+    };
+    (c as any).stateSvc = { getTrades: () => of({ trades: [buy, sell] }) };
+    c.loadTrades();
+    // (120 − 100) × 4 = 80.
+    expect(c.tradeNote(sell)).toContain('Сигнал логики «Логика» M15 · лонг');
+    expect(c.tradeNote(sell)).toContain('результат');
+    expect(c.tradeNote(sell)).toContain('80');
+    expect(c.tradeNote(buy)).toBe('Ручная сделка');
+  });
+
+  it('#1002: после проверки стопов список сделок перечитывается сам (без перезагрузки страницы)', fakeAsync(() => {
+    const c = makeComponent();
+    c.accountId = 1;
+    c.trades = [trade(101, 'BUY', 10, 100)];
+    (c as any).securitiesSvc = {
+      getLastPrices: () => of({ ok: true, source: 'tbank', prices: [{ security_id: 101, price: 110 }] }),
+    };
+    (c as any).stateSvc = {
+      checkStops: () => of({ ok: true }),
+      getTrades: () => of({ trades: [] }),
+    };
+    const spy = spyOn(c, 'loadTrades').and.callThrough();
+    c.refreshAllPrices();
+    expect(spy).not.toHaveBeenCalled(); // закрытие на сервере ещё асинхронно
+    tick(1200);
+    expect(spy.calls.count()).toBe(1);
+    tick(2300);
+    expect(spy.calls.count()).toBe(2);
+  }));
+
+  it('#1002: тихое обновление сделок не мигает «Загрузка сделок…»', () => {
+    const c = makeComponent();
+    c.accountId = 1;
+    (c as any).stateSvc = { getTrades: () => NEVER };
+    c.loadTrades(true);
+    expect(c.tradesLoading).toBe(false);
+    c.loadTrades();
+    expect(c.tradesLoading).toBe(true);
   });
 
   it('кнопка «Закрыть все позиции»: в подписи суммарный итог закрытия (#933)', () => {

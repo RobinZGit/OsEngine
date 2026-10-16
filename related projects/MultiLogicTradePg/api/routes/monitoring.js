@@ -79,4 +79,53 @@ module.exports = function registerMonitoringRoutes(app, ctx) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Сводка для «света» вкладки и заголовка: счётчики по уровням + последняя
+  // критичная (error/fatal) и последняя предупреждающая (warning) записи.
+  // Лёгкий запрос — вызывается из шапки каждые несколько секунд.
+  app.get('/api/monitoring/summary', async (_req, res) => {
+    try {
+      const { rows: countRows } = await pool.query(
+        `
+        SELECT
+          count(*) FILTER (WHERE level = 'warning')::int AS warning,
+          count(*) FILTER (WHERE level = 'error')::int AS error,
+          count(*) FILTER (WHERE level = 'fatal')::int AS fatal,
+          count(*)::int AS total
+        FROM app_error_log
+        `
+      );
+      const { rows: criticalRows } = await pool.query(
+        `
+        SELECT
+          id, created_at, level, source, category, code, message, detail,
+          endpoint, http_status, method, logic_id, security_id
+        FROM app_error_log
+        WHERE level IN ('error', 'fatal')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        `
+      );
+      const { rows: warningRows } = await pool.query(
+        `
+        SELECT
+          id, created_at, level, source, category, code, message, detail,
+          endpoint, http_status, method, logic_id, security_id
+        FROM app_error_log
+        WHERE level = 'warning'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        `
+      );
+      res.json({
+        windowHours: 24,
+        counts: countRows[0] ?? { warning: 0, error: 0, fatal: 0, total: 0 },
+        latestCritical: criticalRows[0] ?? null,
+        latestWarning: warningRows[0] ?? null,
+      });
+    } catch (err) {
+      console.error('GET /api/monitoring/summary', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 };

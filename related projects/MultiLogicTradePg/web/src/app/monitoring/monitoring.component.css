@@ -9,6 +9,20 @@
 .monitoring-header h2 {
   margin: 0;
   font-size: 1.1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.mon-head-alert {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #b91c1c;
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .monitoring-controls {

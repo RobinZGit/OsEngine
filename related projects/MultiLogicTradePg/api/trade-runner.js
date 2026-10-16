@@ -11,6 +11,7 @@ const { writeTechLogEvent } = require('./lib/tech-log');
 const { writeErrorLog } = require('./lib/error-log');
 const { isUiSessionActive } = require('./lib/trade-runner-session');
 const { decorate } = require('./lib/error-codes');
+const { pokeTerminalStopWatch } = require('./lib/terminal-stop-watch');
 const { tbankHttpPost, DEFAULT_API: TBANK_DEFAULT_API } = require('./lib/tbank-invest-client');
 
 const TRADE_CYCLE_LOCK_KEY = 'multilogictrade_run_trade_cycle';
@@ -315,6 +316,15 @@ async function runTradeCycle(pool, opts = {}) {
       }
     } catch (confirmErr) {
       console.error('logic_signal_confirm_finalize', decorate(confirmErr.message));
+    }
+
+    // #1002: в конце цикла — общая принудительная проверка стопов СЛ/ТП терминала
+    // (та же процедура, что по таймеру сторожа): открытие позиций в этом же цикле
+    // закроется сразу, не дожидаясь следующего 10-секундного опроса.
+    try {
+      pokeTerminalStopWatch();
+    } catch (_e) {
+      /* стопы — не повод ронять цикл */
     }
 
     try {

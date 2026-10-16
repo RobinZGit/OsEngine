@@ -9,6 +9,11 @@
  * опросе живой цены (без ожидания закрытия свечи), при уходе цены за порог
  * позиция закрывается маркет-заявкой.
  *
+ * #1001: «мгновенный» СЛ не зависит от живости котировки T-Bank — если свежей
+ * цены нет (брокер недоступен, бумага без котировки), позиция всё равно
+ * закрывается (для записи берётся средняя цена входа). Обычный процентный
+ * СЛ/ТП по-прежнему требует свежую котировку T-Bank — без цены порог не оценить.
+ *
  * Сторож работает на стороне API (вкладка браузера не нужна). Исполнение
  * переиспользует боевой путь терминала (POST /api/terminal/trade), поэтому
  * реальная заявка T-Bank, комиссия, запись в terminal_trades и advisory-лок —
@@ -166,7 +171,6 @@ async function pollOnce(pool, baseUrl, state) {
   if (targets.length === 0) return;
 
   const quotes = await fetchLivePrices(baseUrl, [...secIds], state.maxQuoteAgeMs);
-  if (quotes.size === 0) return;
 
   for (const { pos, cfg } of targets) {
     const stop = cfg.stop;
@@ -174,12 +178,16 @@ async function pollOnce(pool, baseUrl, state) {
     if (state.busy.has(key)) continue;
     if (Date.now() - (state.lastTry.get(key) ?? 0) < state.retryCooldownMs) continue;
     const quote = quotes.get(pos.security_id);
-    if (!quote) continue;
-    const hit = evalStop(pos.qty, pos.avg, quote.price, stop.sl_pct, stop.tp_pct, stop.sl_instant);
+    // #1001: «мгновенному» СЛ живая цена не нужна — закрываем даже без котировки
+    // T-Bank (например, при недоступности брокера). Цена для записи — средняя входа,
+    // для реального счёта её потом уточняет синк из ответа брокера (#995).
+    const instant = stop.sl_instant === true;
+    if (!quote && !instant) continue;
+    const price = quote ? quote.price : pos.avg;
+    const hit = evalStop(pos.qty, pos.avg, price, stop.sl_pct, stop.tp_pct, instant);
     if (!hit) continue;
 
     const direction = pos.qty > 0 ? 'sell' : 'buy';
-    const instant = hit === 'stop_loss' && stop.sl_instant === true;
     const pct = hit === 'stop_loss' ? stop.sl_pct : stop.tp_pct;
     const label = instant
       ? 'Мгновенный стоп-лосс'
@@ -187,8 +195,8 @@ async function pollOnce(pool, baseUrl, state) {
         ? 'Стоп-лосс'
         : 'Тейк-профит';
     const note = instant
-      ? `${label}: цена ${quote.price} против входа ${round2(pos.avg)}`
-      : `${label} ${pct}%: цена ${quote.price} против входа ${round2(pos.avg)}`;
+      ? `${label}: цена ${price} против входа ${round2(pos.avg)}`
+      : `${label} ${pct}%: цена ${price} против входа ${round2(pos.avg)}`;
     state.busy.add(key);
     state.lastTry.set(key, Date.now());
     try {
@@ -197,7 +205,7 @@ async function pollOnce(pool, baseUrl, state) {
         security_id: pos.security_id,
         direction,
         execution: 'market',
-        price: quote.price,
+        price,
         quantity: Math.abs(pos.qty),
         ...(cfg.is_fake ? { commission_pct: cfg.commission_pct } : {}),
         note,
@@ -205,7 +213,7 @@ async function pollOnce(pool, baseUrl, state) {
       const ok = r?.json?.ok === true;
       console.log(
         `Terminal stop watch: ${hit} ${key} → close ${direction} ${Math.abs(pos.qty)} ` +
-          `@ ${quote.price} ${ok ? 'OK' : 'FAILED'}${
+          `@ ${price} ${ok ? 'OK' : 'FAILED'}${
             ok ? '' : ` (${r?.json?.error || r?.status})`
           }`
       );
@@ -272,6 +280,9 @@ function httpPostJson(baseUrl, path, payload) {
 }
 
 let watchTimer = null;
+let pokePool = null;
+let pokeBaseUrl = null;
+let pokeState = null;
 
 /** #999: событийный сторож стопов терминала (на стороне API, вкладка не нужна). */
 function startTerminalStopWatch(pool, baseUrl) {
@@ -291,7 +302,20 @@ function startTerminalStopWatch(pool, baseUrl) {
       console.error('Terminal stop watch poll failed:', err.message || err)
     );
   }, intervalMs);
+  pokePool = pool;
+  pokeBaseUrl = url;
+  pokeState = state;
   console.log(`Terminal stop watch: every ${intervalMs}ms (SL/TP → market close)`);
+}
+
+function pokeTerminalStopWatch() {
+  if (!pokePool || !pokeBaseUrl || !pokeState) return;
+  // отложим немного, чтобы транзакция сделки успела закоммититься
+  setTimeout(() => {
+    pollOnce(pokePool, pokeBaseUrl, pokeState).catch((err) =>
+      console.error('Terminal stop watch poke failed:', err.message || err)
+    );
+  }, 25);
 }
 
 module.exports = {
@@ -300,4 +324,5 @@ module.exports = {
   evalStop,
   parseStopOrder,
   loadOpenPositions,
+  pokeTerminalStopWatch,
 };

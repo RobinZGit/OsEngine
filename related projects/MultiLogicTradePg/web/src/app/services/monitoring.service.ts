@@ -36,6 +36,37 @@ export interface ErrorStats {
   rows: ErrorStatPoint[];
 }
 
+/** Счётчики журнала по уровням (за окно хранения, 24 ч). */
+export interface ErrorCounts {
+  warning: number;
+  error: number;
+  fatal: number;
+  total: number;
+}
+
+/** Сводка для «света» вкладки и заголовка «Мониторинг системы». */
+export interface MonitoringSummary {
+  windowHours: number;
+  counts: ErrorCounts;
+  latestCritical: ErrorLogRow | null;
+  latestWarning: ErrorLogRow | null;
+}
+
+/**
+ * Короткий текст последней ошибки для заголовка/вкладки: «HTTP 502: POST /api/prices/refresh».
+ * Код (HTTP-статус или технический код) + обрезанное сообщение без хвоста «→ HTTP xxx».
+ */
+export function formatErrorShort(row: ErrorLogRow | null | undefined): string {
+  if (!row) return '';
+  const code = row.http_status ? `HTTP ${row.http_status}` : row.code || row.level;
+  let msg = (row.message || '').trim();
+  const arrow = msg.indexOf(' → ');
+  if (arrow >= 0) msg = msg.slice(0, arrow).trim();
+  if (!msg) msg = (row.endpoint || '').trim();
+  const clipped = msg.length > 64 ? `${msg.slice(0, 63)}…` : msg;
+  return clipped && clipped !== code ? `${code}: ${clipped}` : code;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MonitoringService {
   constructor(
@@ -57,5 +88,9 @@ export class MonitoringService {
     return this.http.get<ErrorStats>(
       `${this.appConfig.apiUrl}/monitoring/stats?minutes=${minutes}`
     );
+  }
+
+  getSummary(): Observable<MonitoringSummary> {
+    return this.http.get<MonitoringSummary>(`${this.appConfig.apiUrl}/monitoring/summary`);
   }
 }

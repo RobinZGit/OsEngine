@@ -1,6 +1,7 @@
 'use strict';
 
 const { writeTechLogEvent } = require('./lib/tech-log');
+const { writeErrorLog } = require('./lib/error-log');
 const { waitWhileBacktestActive, sleep } = require('./lib/work-isolation');
 
 /** In-memory jobs: logicId → status (фон, не блокирует бой). */
@@ -68,6 +69,15 @@ async function startRatingPrecalc(pool, logicId) {
   setImmediate(() => {
     runRatingPrecalc(pool, logicId).catch((err) => {
       console.error('rating precalc', logicId, err);
+      writeErrorLog(pool, {
+        level: 'error',
+        source: 'rating',
+        category: 'precalc',
+        code: 'RATING_PRECALC',
+        message: `Предрасчёт рейтинга логики ${logicId} не удался: ${err.message || err}`,
+        detail: err.stack || err.message || String(err),
+        logicId,
+      });
       patchJob(logicId, {
         status: 'failed',
         progress_pct: 100,

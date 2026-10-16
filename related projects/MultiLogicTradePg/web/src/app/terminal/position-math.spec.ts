@@ -4,6 +4,7 @@ import {
   positionCost,
   positionQty,
   realizedPnl,
+  realizedPnlByTrade,
   securityPnl,
 } from './position-math';
 import { TerminalTradeRow } from '../services/terminal-state.service';
@@ -259,6 +260,49 @@ describe('#946 realizedPnl (реализованный П/У по закрыты
       expect(openPositionsSpent([trade(1, 'BUY', 10, 100), trade(1, 'SELL', 10, 100)])).toBe(0);
       expect(openPositionsSpent([])).toBe(0);
       expect(openPositionsSpent(null)).toBe(0);
+    });
+  });
+
+  describe('#1002 realizedPnlByTrade (результат по закрывающей сделке)', () => {
+    it('результат привязан к встречной сделке, открывающие в карту не попадают', () => {
+      const buy = trade(1, 'BUY', 10, 100);
+      const sell = trade(1, 'SELL', 4, 120);
+      const map = realizedPnlByTrade([buy, sell]);
+      expect(map.has(buy.id)).toBeFalse();
+      expect(map.get(sell.id)).toBe(80); // (120 − 100) × 4
+    });
+
+    it('частичное закрытие приводится к проданному количеству и к комиссии выхода', () => {
+      const buy = trade(1, 'BUY', 10, 100, 'filled', 5);
+      const sell = trade(1, 'SELL', 4, 120, 'filled', 3);
+      const map = realizedPnlByTrade([buy, sell]);
+      // Средняя с входной комиссией = 1005/10 = 100,5; выход = 3 → 78 − 3 = 75.
+      expect(map.get(sell.id)).toBe(75);
+    });
+
+    it('шорт: результат положителен, когда выкуп ниже цены продажи', () => {
+      const sell = trade(1, 'SELL', 10, 100);
+      const buy = trade(1, 'BUY', 10, 90);
+      const map = realizedPnlByTrade([sell, buy]);
+      expect(map.get(buy.id)).toBe(100); // (100 − 90) × 10
+    });
+
+    it('разворот: закрытие старой позиции и новая — учитывается только закрытая часть', () => {
+      const buy = trade(1, 'BUY', 10, 100);
+      const sell = trade(1, 'SELL', 14, 120);
+      const map = realizedPnlByTrade([buy, sell]);
+      // Закрыто 10 шт: (120 − 100) × 10 = 200; остаток 4 шт — новая позиция.
+      expect(map.get(sell.id)).toBe(200);
+    });
+
+    it('несколько бумаг: результат считается по каждой отдельно', () => {
+      const buyA = trade(1, 'BUY', 5, 100);
+      const sellA = trade(1, 'SELL', 5, 110);
+      const buyB = trade(2, 'BUY', 5, 200);
+      const sellB = trade(2, 'SELL', 5, 180);
+      const map = realizedPnlByTrade([buyA, sellA, buyB, sellB]);
+      expect(map.get(sellA.id)).toBe(50);
+      expect(map.get(sellB.id)).toBe(-100);
     });
   });
 });

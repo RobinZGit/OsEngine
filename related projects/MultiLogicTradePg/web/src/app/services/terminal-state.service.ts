@@ -135,6 +135,10 @@ export interface TerminalTradeParams {
   /** Сделка по галочке «Исполнять сделки сразу» — её сервер ограничивает
       лимитом автоисполнения счёта (ручные лимитом не ограничены). */
   auto?: boolean;
+  /** #1002: причина сделки в списке («Причина»): логика, породившая сигнал,
+      либо признак ручного действия. Пишется только при успехе; при отказе
+      сервер кладёт туда текст ошибки. */
+  note?: string;
 }
 
 /** Сделка терминала (история в блоке «Сделки»). */
@@ -245,6 +249,15 @@ export class TerminalStateService {
     return this.http.post<TerminalTradeResult>(
       `${this.appConfig.apiUrl}/terminal/trade`,
       params
+    );
+  }
+
+  /** #1002: общая принудительная проверка всех стопов СЛ/ТП терминала (та же
+      процедура, что по таймеру сторожа): сразу закрывает позиции вне порога. */
+  checkStops(): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(
+      `${this.appConfig.apiUrl}/terminal/stops/check`,
+      {}
     );
   }
 

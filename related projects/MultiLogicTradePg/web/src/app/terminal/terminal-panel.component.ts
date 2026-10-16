@@ -362,7 +362,11 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
       this.closeSignalPulse.security_id === this.security.id
     ) {
       /** Адресный импульс от терминала именно по этой бумаге (сигнал/стоп логики). */
-      if (this.remainingPositionQty !== 0) this.closePosition();
+      if (this.remainingPositionQty !== 0) {
+        this.closePosition(
+          this.logicSignalNote() ?? 'Закрытие по сигналу логики'
+        );
+      }
     }
     if (changes['trades'] != null) {
       /** Терминал перечитал сделки счёта — позиция полосы могла измениться. */
@@ -1114,7 +1118,12 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     this.autoWaitKey = null;
     this.skippedSignalKey = '';
     this.cancelSignalRetry();
-    this.placeTradeWithQty(side, qty, { price, signalKey: key });
+    // #1002: в причину попадает логика, породившая сигнал.
+    this.placeTradeWithQty(side, qty, {
+      price,
+      signalKey: key,
+      note: this.signalNote(side) ?? 'Сделка по сигналу',
+    });
   }
 
   /** #953: показать причину, по которой сигнал пока не исполнен, — один раз на
@@ -2320,15 +2329,21 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   }
 
   /** Купить/продать по рассчитанному количеству. Ноль — сообщение об ошибке. */
+  /** Кнопка-сигнал в шапке полосы: #1002 — в причину попадает логика,
+      породившая сигнал (без сигнала — обычная ручная сделка). */
   placeTrade(direction: 'buy' | 'sell'): void {
-    this.placeTradeWithQty(direction, this.resolveTradeQuantity(direction));
+    this.placeTradeWithQty(direction, this.resolveTradeQuantity(direction), {
+      note: this.signalNote(direction) ?? 'Ручная сделка',
+    });
   }
 
   /** Кнопки «Купить»/«Продать» в блоке «Сделки»: то же количество, что у
       кнопки сигнала в шапке (количество лота логики), — меняется только
       направление сделки, количество общее. */
   placeTradeFixed(direction: 'buy' | 'sell'): void {
-    this.placeTradeWithQty(direction, this.tradeButtonsQty);
+    this.placeTradeWithQty(direction, this.tradeButtonsQty, {
+      note: 'Ручная сделка',
+    });
   }
 
   /** «Комиссия, %»: ограничиваем 0..100 и сообщаем терминалу (сохраняется). */
@@ -2347,7 +2362,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   private placeTradeWithQty(
     direction: 'buy' | 'sell',
     qty: number,
-    opts?: { price?: number; signalKey?: string }
+    opts?: { price?: number; signalKey?: string; note?: string }
   ): void {
     const signalKey = opts?.signalKey;
     this.tradeMessage = null;
@@ -2384,6 +2399,9 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         // #977: заявку по галочке «Исполнять сделки сразу» помечаем авто — её
         // сервер ограничивает лимитом автоисполнения счёта (общим для всех окон).
         ...(signalKey ? { auto: true } : {}),
+        // #1002: причина в списке сделок (логика, породившая сигнал, либо
+        // пометка ручного действия).
+        ...(opts?.note ? { note: opts.note } : {}),
       })
       .subscribe({
         next: (r) => {
@@ -2440,10 +2458,37 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
   }
 
+  /** #1002: «Сигнал логики „X“ M15» без указания стороны. */
+  private logicSignalNote(): string | null {
+    const ev = this.signalEvent;
+    if (!ev) return null;
+    const name = (ev.logic_name || '').trim() || `логика ${ev.logic_id}`;
+    const tf = (ev.timeframe || '').trim();
+    return `Сигнал логики «${name}»${tf ? ` ${tf}` : ''}`;
+  }
+
+  /** #1002: причина сделки для поля «Причина» в списке сделок — логика,
+      породившая сигнал, с таймфреймом и стороной. Без сигнала — null. */
+  private signalNote(side: 'buy' | 'sell'): string | null {
+    const base = this.logicSignalNote();
+    if (!base) return null;
+    const ev = this.signalEvent;
+    const dir =
+      ev?.position_side === 'long'
+        ? 'лонг'
+        : ev?.position_side === 'short'
+          ? 'шорт'
+          : side === 'buy'
+            ? 'покупка'
+            : 'продажа';
+    return `${base} · ${dir}`;
+  }
+
   /** Кнопка «Закрыть позиции» в шапке: закрыть всю позицию по бумаге
       целиком — продать остаток при покупках или выкупить весь объём при
-      продажах (шорт), чтобы количество стало нулевым. Маркет-заявка. */
-  closePosition(): void {
+      продажах (шорт), чтобы количество стало нулевым. Маркет-заявка.
+      #1002: `reason` — причина в списке сделок (ручное действие или сигнал). */
+  closePosition(reason = 'Ручное закрытие позиции'): void {
     this.tradeMessage = null;
     this.tradeError = null;
     const qty = this.remainingPositionQty;
@@ -2473,6 +2518,7 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
         price,
         quantity,
         ...(this.accountIsFake ? { commission_pct: this.commissionPct } : {}),
+        note: reason,
       })
       .subscribe({
         next: (r) => {

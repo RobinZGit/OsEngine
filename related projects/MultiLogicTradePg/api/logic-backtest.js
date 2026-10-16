@@ -1,6 +1,7 @@
 'use strict';
 
 const { writeTechLogEvent } = require('./lib/tech-log');
+const { writeErrorLog } = require('./lib/error-log');
 const { schedulePersistBacktestReport } = require('./backtest-report-persist');
 
 /**
@@ -1921,6 +1922,15 @@ async function resumeOrphanBacktests(pool) {
         resume: true,
       }).catch((err) => {
         console.error(`backtest resume run ${runId} failed`, err);
+        writeErrorLog(pool, {
+          level: 'error',
+          source: 'backtest',
+          category: 'run',
+          code: 'BACKTEST_RESUME',
+          message: `Возобновление бэктеста run=${runId} (логика ${logicId}) не удалось: ${err?.message || err}`,
+          detail: err?.stack || err?.message || String(err),
+          logicId,
+        });
       });
     });
   }
@@ -2047,6 +2057,15 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null, sl
   setImmediate(() => {
     runBacktestAsync(pool, logicId, dateFrom, dateTo, runId).catch((err) => {
       console.error('backtest run failed', err);
+      writeErrorLog(pool, {
+        level: 'error',
+        source: 'backtest',
+        category: 'run',
+        code: 'BACKTEST_RUN',
+        message: `Бэктест run=${runId} (логика ${logicId}) не удался: ${err?.message || err}`,
+        detail: err?.stack || err?.message || String(err),
+        logicId,
+      });
     });
   });
   return runId;

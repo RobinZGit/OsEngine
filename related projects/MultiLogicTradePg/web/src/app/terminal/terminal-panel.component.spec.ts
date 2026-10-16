@@ -1126,6 +1126,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 10,
+      note: 'Ручное закрытие позиции',
     });
   });
 
@@ -1164,6 +1165,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 240,
       quantity: 10,
+      note: 'Ручное закрытие позиции',
     });
   });
 
@@ -1197,6 +1199,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 260,
       quantity: 4,
+      note: 'Ручная сделка',
     });
   });
 
@@ -1231,6 +1234,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'limit',
       price: 250,
       quantity: 4,
+      note: 'Ручная сделка',
     });
   });
 
@@ -1709,6 +1713,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 5,
+      note: 'Ручное закрытие позиции',
     });
   });
 
@@ -1753,6 +1758,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 5,
+      note: 'Закрытие по сигналу логики',
     });
   });
 
@@ -1825,6 +1831,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 4,
+      note: 'Сигнал логики «Логика X» M15 · лонг',
     });
   });
 
@@ -1873,6 +1880,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 3,
+      note: 'Сигнал логики «Логика Y» M15 · шорт',
     });
   });
 
@@ -1923,6 +1931,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 4,
+      note: 'Ручная сделка',
     });
     stateSvc.placeTrade.calls.reset();
     sell.nativeElement.click();
@@ -1933,6 +1942,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 4,
+      note: 'Ручная сделка',
     });
   });
 
@@ -1968,6 +1978,7 @@ describe('TerminalPanelComponent', () => {
       execution: 'market',
       price: 250,
       quantity: 4,
+      note: 'Ручная сделка',
     });
   });
 
@@ -2005,6 +2016,7 @@ describe('TerminalPanelComponent', () => {
       price: 250,
       quantity: 4,
       commission_pct: 0.05,
+      note: 'Ручная сделка',
     });
   });
 
@@ -2546,6 +2558,8 @@ describe('TerminalPanelComponent', () => {
         quantity: 4,
         // #977: автосделка помечается флагом — сервер считает её лимитом счёта.
         auto: true,
+        // #1002: в причину попадает логика, породившая сигнал.
+        note: 'Сигнал логики «Логика» M15 · лонг',
       });
       // Сделка отображается как обычно: терминал перезапрашивает сделки.
       expect(done.length).toBe(1);
