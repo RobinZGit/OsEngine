@@ -1,0 +1,151 @@
+.dialog-info {
+  width: min(680px, calc(100vw - 2rem));
+}
+
+.dialog-info .dialog-body {
+  max-height: 72vh;
+  overflow-y: auto;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.chip-off {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.chip-rating {
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+.block {
+  margin-bottom: 1rem;
+}
+
+.block-ref {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.ref-source {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.block h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  color: #111827;
+}
+
+.text {
+  margin: 0.15rem 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: #1f2937;
+  white-space: pre-wrap;
+}
+
+.muted {
+  margin: 0.15rem 0;
+  font-size: 0.88rem;
+  color: #6b7280;
+}
+
+.lbl {
+  font-weight: 600;
+  color: #374151;
+}
+
+.formula-label {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6b7280;
+}
+
+.code {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code-scroll {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.param {
+  display: inline-block;
+  margin: 0 0.3rem 0.25rem 0;
+  padding: 0.1rem 0.4rem;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 5px;
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 0.82rem;
+}
+
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.info-table th,
+.info-table td {
+  padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.info-table th {
+  font-weight: 600;
+  color: #6b7280;
+  background: #f9fafb;
+  white-space: nowrap;
+}
+
+.info-table .mono {
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+}
+
+.info-table .muted {
+  color: #9ca3af;
+}
+
+.info-table .period {
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: #6b7280;
+}

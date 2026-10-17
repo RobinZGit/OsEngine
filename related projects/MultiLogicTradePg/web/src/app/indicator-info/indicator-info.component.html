@@ -1,0 +1,192 @@
+@if (open && indicator) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog dialog-info" open>
+    <header class="dialog-header">
+      <h2>{{ title }}</h2>
+      <button type="button" class="icon-btn" title="Закрыть" aria-label="Закрыть" (click)="close()">✕</button>
+    </header>
+    <div class="dialog-body">
+      <div class="meta">
+        @if (indicator.category) {
+          <span class="chip">категория: {{ indicator.category }}</span>
+        }
+        <span class="chip">{{ indicator.is_custom ? 'пользовательский' : 'стандартный' }}</span>
+        <span class="chip" [class.chip-off]="!indicator.is_active">
+          {{ indicator.is_active ? 'активен' : 'выключен' }}
+        </span>
+        @if (indicator.sig_profile) {
+          <span class="chip">профиль: {{ profileLabel(indicator.sig_profile) }}</span>
+        }
+        @if (hasRating) {
+          <span class="chip chip-rating">рейтинг: {{ formatPct(ratingValue) }}</span>
+        }
+      </div>
+
+      @if (reference; as ref) {
+        <section class="block block-ref">
+          <h3>Справочник: что это и как считается</h3>
+          <p class="text">{{ ref.summary }}</p>
+
+          <div class="formula-label">Формула расчёта</div>
+          <pre class="code">{{ ref.formula }}</pre>
+
+          <div class="formula-label">Как считается</div>
+          <p class="text">{{ ref.calculation }}</p>
+
+          <div class="formula-label">Как читать</div>
+          <p class="text">{{ ref.interpretation }}</p>
+
+          @if (ref.parameters?.length) {
+            <div class="formula-label">Типовые параметры</div>
+            <table class="info-table">
+              <thead>
+                <tr>
+                  <th>Параметр</th>
+                  <th>Значение</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (p of ref.parameters; track p.name) {
+                  <tr>
+                    <td class="mono">{{ p.name }}</td>
+                    <td>{{ p.description }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+
+          @if (ref.source) {
+            <p class="ref-source">Источник: {{ ref.source }}</p>
+          }
+        </section>
+      }
+
+      <section class="block">
+        <h3>Описание</h3>
+        @if (indicator.description) {
+          <p class="text">{{ indicator.description }}</p>
+        } @else {
+          <p class="muted">Описание не заполнено.</p>
+        }
+      </section>
+
+      <section class="block">
+        <h3>Формула расчёта</h3>
+        @if (indicator.formula) {
+          <div class="formula-label">Многочленная формула</div>
+          <pre class="code">{{ indicator.formula }}</pre>
+        }
+        @if (indicator.script) {
+          <div class="formula-label">SQL-скрипт расчёта</div>
+          <pre class="code code-scroll">{{ indicator.script }}</pre>
+        }
+        @if (!indicator.formula && !indicator.script) {
+          <p class="muted">Inline-формула не задана — расчёт реализован в БД.</p>
+        }
+      </section>
+
+      <section class="block">
+        <h3>Параметры и серии</h3>
+        @if (scriptParams.length) {
+          <p class="text">
+            Параметры расчёта:
+            @for (p of scriptParams; track p) {
+              <code class="param">{{ p }}</code>
+            }
+          </p>
+        }
+        @if (valueTypes.length) {
+          <table class="info-table">
+            <thead>
+              <tr>
+                <th>Код</th>
+                <th>Название</th>
+                <th>Тип</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of valueTypes; track t.id) {
+                <tr>
+                  <td class="mono">{{ t.code }}</td>
+                  <td>{{ t.name }}</td>
+                  <td>{{ t.value_type }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <p class="muted">Серии не заданы.</p>
+        }
+        @if (thresholds.length) {
+          <p class="text">
+            Пороговые значения:
+            @for (t of thresholds; track t.id) {
+              <span class="param">{{ t.code }} = {{ t.threshold_value }}</span>
+            }
+          </p>
+        }
+      </section>
+
+      <section class="block">
+        <h3>Применение в сигналах</h3>
+        @if (indicator.sig_trend_def) {
+          <p class="text"><span class="lbl">Сигнал тренда:</span> {{ indicator.sig_trend_def }}</p>
+        }
+        @if (indicator.sig_ct_def) {
+          <p class="text"><span class="lbl">Сигнал контр-тренда:</span> {{ indicator.sig_ct_def }}</p>
+        }
+        @if (!hasSignals) {
+          <p class="muted">Сигналы по индикатору не заданы.</p>
+        }
+        <p class="text">
+          <span class="lbl">Ссылка в формулах:</span> <code class="param">{{ seriesRef }}</code>
+        </p>
+      </section>
+
+      @if (hasRating) {
+        <section class="block">
+          <h3>Рейтинг</h3>
+          <p class="text">
+            Рейтинг: <strong>{{ formatPct(ratingValue) }}</strong>
+            @if (rawRating !== null && rawRating !== ratingValue) {
+              (сырой {{ formatPct(rawRating) }})
+            }
+            · лучший разрез: {{ bestSliceLabel(indicator.best_position_side, indicator.best_signal_kind, indicator.best_time_kind) }}
+            · сигналов: {{ formatInt(indicator.samples_count) }}
+            · средн. годовых: {{ formatPct(indicator.rating_avg_annual_pct) }}%
+            · расчёт: {{ formatDate(indicator.rating_computed_at ?? indicator.computed_at) }}
+          </p>
+          @if (indicator.rating_timeframes?.length) {
+            <table class="info-table">
+              <thead>
+                <tr>
+                  <th>ТФ</th>
+                  <th>Рейтинг</th>
+                  <th>Сырой</th>
+                  <th>Лучший разрез</th>
+                  <th>Сигналов</th>
+                  <th>Свечей</th>
+                  <th>Период</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (tf of indicator.rating_timeframes; track tf.timeframe_id) {
+                  <tr>
+                    <td class="mono">{{ tf.tf ?? tf.full_name }}</td>
+                    <td>{{ formatPct(tf.rating_effective ?? tf.rating) }}</td>
+                    <td class="muted">{{ formatPct(tf.rating) }}</td>
+                    <td>{{ bestSliceLabel(tf.best_position_side, tf.best_signal_kind, tf.best_time_kind) }}</td>
+                    <td>{{ formatInt(tf.samples_count) }}</td>
+                    <td>{{ formatInt(tf.bars_count) }}</td>
+                    <td class="period">{{ formatDate(tf.bars_from) }} — {{ formatDate(tf.bars_to) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </section>
+      }
+    </div>
+  </dialog>
+}

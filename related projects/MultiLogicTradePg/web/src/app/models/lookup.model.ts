@@ -176,7 +176,45 @@ export interface IndicatorRow {
   best_time_kind?: string | null;
   samples_count?: number | null;
   computed_at?: string | null;
+  /** #994-доработка: рейтинг с учётом устаревания (линейно угасает за rating_decay_hours) */
+  rating_effective?: number | null;
+  rating_decay_hours?: number | null;
+  rating_avg_annual_pct?: number | null;
+  rating_samples_count?: number | null;
+  /** #1005: сколько разрезов (side × kind × time) усреднено в рейтинге. */
+  rating_slices_count?: number | null;
+  rating_computed_at?: string | null;
+  /** #994-доработка: разбивка рейтинга по таймфреймам (для разворота строки) */
+  rating_timeframes?: IndicatorRatingTimeframeRow[];
   value_types: IndicatorValueTypeRow[];
+}
+
+/** #994-доработка: рейтинг индикатора в разрезе одного таймфрейма. */
+export interface IndicatorRatingTimeframeRow {
+  timeframe_id: number;
+  tf: string | null;
+  full_name: string | null;
+  rating: number | null;
+  rating_effective?: number | null;
+  best_position_side?: string | null;
+  best_signal_kind?: string | null;
+  best_time_kind?: string | null;
+  slices_count?: number | null;
+  samples_count?: number | null;
+  avg_annual_pct?: number | null;
+  bars_count?: number | null;
+  bars_from?: string | null;
+  bars_to?: string | null;
+  computed_at?: string | null;
+}
+
+/** #1005: статус последнего прогона расчёта рейтинга индикаторов. */
+export interface IndicatorRatingStatus {
+  last_run_at: string | null;
+  last_status: number | null;
+  last_message: string | null;
+  updated_at?: string | null;
+  ok: boolean;
 }
 
 export interface IndicatorPayload {

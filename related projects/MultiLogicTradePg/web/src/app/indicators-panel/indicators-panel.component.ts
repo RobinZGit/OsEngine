@@ -1,17 +1,18 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReferencesService } from '../services/references.service';
-import { IndicatorRow } from '../models/lookup.model';
+import { IndicatorRatingStatus, IndicatorRatingTimeframeRow, IndicatorRow } from '../models/lookup.model';
 import {
   AppConfigService,
   logicsLoadErrorMessage,
 } from '../services/app-config.service';
 import { IndicatorEditorComponent } from '../indicator-editor/indicator-editor.component';
+import { IndicatorInfoComponent } from '../indicator-info/indicator-info.component';
 
 @Component({
   selector: 'app-indicators-panel',
   standalone: true,
-  imports: [CommonModule, IndicatorEditorComponent],
+  imports: [CommonModule, IndicatorEditorComponent, IndicatorInfoComponent],
   templateUrl: './indicators-panel.component.html',
   styleUrl: './indicators-panel.component.css',
 })
@@ -23,7 +24,13 @@ export class IndicatorsPanelComponent implements OnInit {
   editorOpen = false;
   editTarget: IndicatorRow | null = null;
   createMode = false;
+  /** #1005: подробная справка по индикатору. */
+  infoOpen = false;
+  infoTarget: IndicatorRow | null = null;
   ratingSortDir: 'none' | 'desc' | 'asc' = 'none';
+  expandedId: number | null = null;
+  /** #1005: статус последнего прогона расчёта рейтинга (ошибка на развороте). */
+  ratingStatus: IndicatorRatingStatus | null = null;
 
   private static readonly SIDE_LABEL: Record<string, string> = {
     long: 'лонг',
@@ -62,6 +69,14 @@ export class IndicatorsPanelComponent implements OnInit {
         this.error = logicsLoadErrorMessage(this.appConfig.apiUrl, err);
       },
     });
+    this.refs.getIndicatorRatingStatus().subscribe({
+      next: (status) => {
+        this.ratingStatus = status;
+      },
+      error: () => {
+        this.ratingStatus = null;
+      },
+    });
   }
 
   openEdit(row: IndicatorRow): void {
@@ -82,25 +97,149 @@ export class IndicatorsPanelComponent implements OnInit {
     this.editTarget = null;
   }
 
+  /** #1005: открыть подробную справку по индикатору. */
+  openInfo(row: IndicatorRow): void {
+    this.infoTarget = row;
+    this.infoOpen = true;
+  }
+
+  onInfoClosed(): void {
+    this.infoOpen = false;
+    this.infoTarget = null;
+  }
+
   ratingText(row: IndicatorRow): string {
-    if (row.rating === null || row.rating === undefined) return '—';
-    return Number(row.rating).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+    const value = this.ratingValue(row);
+    if (value === null) return '—';
+    return value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+  }
+
+  /** #994-доработка: эффективный рейтинг (с учётом устаревания). */
+  ratingValue(row: IndicatorRow): number | null {
+    const value = row.rating_effective ?? row.rating;
+    return value === null || value === undefined ? null : Number(value);
+  }
+
+  /** #994-доработка: максимум эффективного рейтинга среди видимых — база градиента. */
+  get maxRating(): number {
+    let max = 0;
+    for (const row of this.indicators) {
+      const value = this.ratingValue(row);
+      if (value !== null && value > max) max = value;
+    }
+    return max;
+  }
+
+  /**
+   * #994-доработка: цвет ячейки рейтинга пропорционален величине: самый
+   * рейтинговый — насыщенный красно-коричневый, слабый — почти незаметный.
+   */
+  ratingStyle(row: IndicatorRow): Record<string, string> {
+    return this.gradientStyle(this.ratingValue(row), this.maxRating);
+  }
+
+  tfRatingStyle(tf: IndicatorRatingTimeframeRow): Record<string, string> {
+    const value = tf.rating_effective ?? tf.rating;
+    return this.gradientStyle(value == null ? null : Number(value), this.maxRating);
+  }
+
+  private gradientStyle(value: number | null, max: number): Record<string, string> {
+    if (value === null || !(max > 0)) return {};
+    const t = Math.max(0, Math.min(1, value / max));
+    const hue = 40 - 25 * t;
+    const sat = Math.round(85 - 8 * t);
+    const light = Math.round(94 - 50 * t);
+    return {
+      background: `hsl(${hue.toFixed(1)}, ${sat}%, ${light}%)`,
+      color: light < 60 ? '#fff' : '#7c2d12',
+      fontWeight: t >= 0.66 ? '600' : '500',
+    };
+  }
+
+  toggleExpand(row: IndicatorRow): void {
+    this.expandedId = this.expandedId === row.id ? null : row.id;
+  }
+
+  isExpanded(row: IndicatorRow): boolean {
+    return this.expandedId === row.id;
+  }
+
+  sideLabel(value?: string | null): string {
+    return value ? IndicatorsPanelComponent.SIDE_LABEL[value] ?? value : '';
+  }
+
+  kindLabel(value?: string | null): string {
+    return value ? IndicatorsPanelComponent.KIND_LABEL[value] ?? value : '';
+  }
+
+  timeLabel(value?: string | null): string {
+    return value ? IndicatorsPanelComponent.TIME_LABEL[value] ?? value : '';
+  }
+
+  bestSliceLabel(side?: string | null, kind?: string | null, time?: string | null): string {
+    const parts = [this.sideLabel(side), this.kindLabel(kind), this.timeLabel(time)].filter(Boolean);
+    return parts.length ? parts.join(', ') : '—';
+  }
+
+  formatPct(value?: number | null): string {
+    if (value === null || value === undefined) return '—';
+    return Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+  }
+
+  formatInt(value?: number | null): string {
+    if (value === null || value === undefined) return '—';
+    return Number(value).toLocaleString('ru-RU');
+  }
+
+  formatDate(value?: string | null): string {
+    if (!value) return '—';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU');
+  }
+
+  decayNote(row: IndicatorRow): string {
+    const hours = row.rating_decay_hours;
+    if (!hours) return '';
+    return `Рейтинг показан с учётом устаревания (гаснет за ${hours} ч с момента расчёта).`;
+  }
+
+  /** #1005: текст ошибки последнего прогона расчёта рейтинга (пусто, если ошибки нет). */
+  ratingStatusError(): string {
+    const status = this.ratingStatus;
+    if (!status || status.ok) return '';
+    return status.last_message?.trim() || 'неизвестная ошибка';
+  }
+
+  /** #1005: когда был последний прогон расчёта рейтинга. */
+  ratingStatusWhen(): string {
+    return this.formatDate(this.ratingStatus?.last_run_at ?? this.ratingStatus?.updated_at ?? null);
+  }
+
+  /** #1005: рассчитан ли для строки рейтинг (есть цифра, которую можно объяснить). */
+  hasRating(row: IndicatorRow): boolean {
+    return this.ratingValue(row) !== null;
   }
 
   ratingTooltip(row: IndicatorRow): string {
-    if (row.rating === null || row.rating === undefined) {
-      return 'Рейтинг не рассчитан (индикатор используется логикой или ещё не тестировался)';
+    const value = this.ratingValue(row);
+    if (value === null) {
+      return 'Рейтинг ещё не рассчитан (индикатор без движения на свежих данных или расчёт в очереди)';
     }
     const parts: string[] = [];
-    const side = row.best_position_side ? IndicatorsPanelComponent.SIDE_LABEL[row.best_position_side] : null;
-    const kind = row.best_signal_kind ? IndicatorsPanelComponent.KIND_LABEL[row.best_signal_kind] : null;
-    const time = row.best_time_kind ? IndicatorsPanelComponent.TIME_LABEL[row.best_time_kind] : null;
-    if (side || kind || time) {
-      parts.push(`Лучший разрез: ${[side, kind, time].filter(Boolean).join(', ')}`);
+    const raw = row.rating;
+    if (raw != null && Math.abs(Number(raw) - value) >= 0.05) {
+      parts.push(`Сырой рейтинг: ${this.formatPct(Number(raw))} (${this.decayNote(row)})`);
     }
-    if (row.samples_count != null) parts.push(`сигналов: ${row.samples_count}`);
-    if (row.computed_at) parts.push(`рассчитано: ${new Date(row.computed_at).toLocaleString('ru-RU')}`);
-    parts.push('Рейтинг: средний % годовых до лучшей точки среди загруженных свечей');
+    if (row.best_position_side || row.best_signal_kind || row.best_time_kind) {
+      parts.push(`Лучший разрез: ${this.bestSliceLabel(row.best_position_side, row.best_signal_kind, row.best_time_kind)}`);
+    }
+    if (row.rating_samples_count != null || row.samples_count != null) {
+      parts.push(`сигналов: ${this.formatInt(row.rating_samples_count ?? row.samples_count)}`);
+    }
+    if (row.rating_computed_at ?? row.computed_at) {
+      parts.push(`рассчитано: ${new Date((row.rating_computed_at ?? row.computed_at) as string).toLocaleString('ru-RU')}`);
+    }
+    parts.push('Нажмите на индикатор, чтобы раскрыть разбивку по таймфреймам');
     return parts.join('\n');
   }
 
@@ -110,8 +249,8 @@ export class IndicatorsPanelComponent implements OnInit {
     const dir = this.ratingSortDir === 'desc' ? -1 : this.ratingSortDir === 'asc' ? 1 : 0;
     this.indicators = [...this.indicators].sort((a, b) => {
       if (dir !== 0) {
-        const av = a.rating ?? null;
-        const bv = b.rating ?? null;
+        const av = this.ratingValue(a);
+        const bv = this.ratingValue(b);
         if (av !== bv) {
           if (av === null) return 1;
           if (bv === null) return -1;

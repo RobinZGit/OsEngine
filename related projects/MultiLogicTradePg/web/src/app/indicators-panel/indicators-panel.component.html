@@ -10,7 +10,7 @@
         (click)="openCreate()"
       >+</button>
     </div>
-    <p class="panel-note">Перетащите индикатор на бумагу справа</p>
+    <p class="panel-note">Перетащите индикатор на бумагу выше</p>
   </header>
 
   @if (loading) {
@@ -30,7 +30,7 @@
             <th>Код</th>
             <th>Название</th>
             <th>Описание</th>
-            <th class="col-rating sortable" (click)="toggleRatingSort()" title="Рейтинг: средний % годовых для неиспользуемых индикаторов. Нажмите для сортировки.">
+            <th class="col-rating sortable" (click)="toggleRatingSort()" title="Рейтинг: средний % годовых до лучшей точки. Цвет = величина рейтинга. Нажмите для сортировки.">
               Рейтинг
               @if (ratingSortDir === 'desc') { <span class="sort-mark">▼</span> }
               @else if (ratingSortDir === 'asc') { <span class="sort-mark">▲</span> }
@@ -42,13 +42,25 @@
           @for (row of indicators; track row.id) {
             <tr
               class="indicator-draggable"
+              [class.row-expanded]="isExpanded(row)"
               draggable="true"
               [class.row-inactive]="!row.is_active"
               [class.row-custom]="row.is_custom"
               (dragstart)="onDragStart($event, row)"
               (dragend)="onDragEnd()"
             >
-              <td class="mono">{{ row.code }}</td>
+              <td class="mono">
+                <button
+                  type="button"
+                  class="expand-btn"
+                  [class.open]="isExpanded(row)"
+                  [attr.aria-expanded]="isExpanded(row)"
+                  [title]="isExpanded(row) ? 'Свернуть разбивку по таймфреймам' : 'Показать разбивку по таймфреймам'"
+                  (mousedown)="$event.stopPropagation()"
+                  (click)="$event.stopPropagation(); toggleExpand(row)"
+                >▸</button>
+                {{ row.code }}
+              </td>
               <td>
                 {{ row.name }}
                 @if (row.formula) {
@@ -56,13 +68,90 @@
                 }
               </td>
               <td class="desc-cell" [title]="row.description || ''">{{ descriptionPreview(row.description) }}</td>
-              <td class="col-rating" [title]="ratingTooltip(row)">{{ ratingText(row) }}</td>
+              <td class="col-rating" [style]="ratingStyle(row)" [title]="ratingTooltip(row)">{{ ratingText(row) }}</td>
               <td class="col-actions">
                 <button type="button" class="icon-btn" title="Редактировать" aria-label="Редактировать" (click)="openEdit(row)">
                   <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/></svg>
                 </button>
+                <button
+                  type="button"
+                  class="icon-btn info-icon-btn"
+                  title="Подробная справка по индикатору"
+                  aria-label="Подробная справка по индикатору"
+                  (mousedown)="$event.stopPropagation()"
+                  (click)="$event.stopPropagation(); openInfo(row)"
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                </button>
               </td>
             </tr>
+            @if (isExpanded(row)) {
+              <tr class="detail-row">
+                <td colspan="5">
+                  @if (hasRating(row)) {
+                    <div class="detail-title">
+                      Состав рейтинга
+                      <span class="detail-hint">{{ decayNote(row) }}</span>
+                    </div>
+                    <div class="detail-grid">
+                      <span><b>Рейтинг:</b> {{ formatPct(row.rating) }}
+                        @if (ratingValue(row) !== row.rating) { → с учётом устаревания {{ formatPct(ratingValue(row)) }} }
+                      </span>
+                      <span><b>Лучший разрез:</b> {{ bestSliceLabel(row.best_position_side, row.best_signal_kind, row.best_time_kind) }}</span>
+                      <span><b>Разрезов:</b> {{ formatInt(row.rating_slices_count) }}</span>
+                      <span><b>Сигналов:</b> {{ formatInt(row.rating_samples_count ?? row.samples_count) }}</span>
+                      <span><b>Средн. годовых:</b> {{ formatPct(row.rating_avg_annual_pct) }}%</span>
+                      <span><b>Рассчитано:</b> {{ formatDate(row.rating_computed_at) }}</span>
+                    </div>
+                    <p class="detail-hint detail-explain">
+                      Рейтинг = лучшее среднее «% годовых» по разрезам (сторона × тренд/контр-тренд × тип времени);
+                      «ход» — движение до лучшей точки среди последующих свечей.
+                    </p>
+                    @if (row.rating_timeframes && row.rating_timeframes.length) {
+                      <div class="detail-title">Рейтинг по таймфреймам</div>
+                      <table class="detail-table">
+                        <thead>
+                          <tr>
+                            <th>ТФ</th>
+                            <th class="num">Рейтинг</th>
+                            <th class="num">Сырой</th>
+                            <th class="num">Разрезов</th>
+                            <th>Лучший разрез</th>
+                            <th class="num">Сигналов</th>
+                            <th class="num">Свечей</th>
+                            <th>Период расчёта</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (tf of row.rating_timeframes; track tf.timeframe_id) {
+                            <tr>
+                              <td class="mono" [title]="tf.full_name || ''">{{ tf.tf || '—' }}</td>
+                              <td class="num rating-cell" [style]="tfRatingStyle(tf)">{{ formatPct(tf.rating_effective) }}</td>
+                              <td class="num">{{ formatPct(tf.rating) }}</td>
+                              <td class="num">{{ formatInt(tf.slices_count) }}</td>
+                              <td>{{ bestSliceLabel(tf.best_position_side, tf.best_signal_kind, tf.best_time_kind) }}</td>
+                              <td class="num">{{ formatInt(tf.samples_count) }}</td>
+                              <td class="num">{{ formatInt(tf.bars_count) }}</td>
+                              <td class="period">{{ formatDate(tf.bars_from) }} — {{ formatDate(tf.bars_to) }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    } @else {
+                      <div class="detail-hint">Разбивка по таймфреймам для этого расчёта не сохранена — показан сводный состав рейтинга.</div>
+                    }
+                  } @else {
+                    <div class="detail-empty">Рейтинг ещё не рассчитан — нет свежих данных по паре (бумага × таймфрейм) или расчёт в очереди.</div>
+                  }
+                  @if (ratingStatusError(); as err) {
+                    <div class="detail-error">
+                      Последний прогон расчёта рейтинга завершился ошибкой: {{ err }}
+                      @if (ratingStatusWhen() !== '—') { ({{ ratingStatusWhen() }}) }
+                    </div>
+                  }
+                </td>
+              </tr>
+            }
           } @empty {
             <tr><td colspan="5" class="empty">Нет индикаторов</td></tr>
           }
@@ -78,5 +167,11 @@
     [createMode]="createMode"
     (closed)="onEditorClosed()"
     (saved)="load()"
+  />
+
+  <app-indicator-info
+    [open]="infoOpen"
+    [indicator]="infoTarget"
+    (closed)="onInfoClosed()"
   />
 </section>

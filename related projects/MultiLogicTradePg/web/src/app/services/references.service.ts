@@ -15,6 +15,7 @@ import {
   ExchangeRow,
   IndicatorCreatePayload,
   IndicatorPayload,
+  IndicatorRatingStatus,
   IndicatorRow,
 } from '../models/lookup.model';
 
@@ -172,6 +173,13 @@ export class ReferencesService {
     return this.http.get<IndicatorRow[]>(`${this.appConfig.apiUrl}/indicators`, {
       params,
     });
+  }
+
+  /** #1005: статус последнего прогона расчёта рейтинга (ошибка показывается на развороте). */
+  getIndicatorRatingStatus(): Observable<IndicatorRatingStatus> {
+    return this.http.get<IndicatorRatingStatus>(
+      `${this.appConfig.apiUrl}/indicators/rating-status`
+    );
   }
 
   updateIndicator(id: number, payload: IndicatorPayload): Observable<IndicatorRow> {

@@ -140,8 +140,30 @@ th {
 }
 
 .col-actions {
-  width: 2.5rem;
+  width: 4rem;
+  white-space: nowrap;
   text-align: right;
+  position: sticky;
+  right: 0;
+  background: #fff;
+  z-index: 2;
+}
+
+th.col-actions {
+  background: #f9fafb;
+  z-index: 3;
+}
+
+tr.row-custom > td.col-actions {
+  background: #eff6ff;
+}
+
+tr.row-custom:hover > td.col-actions {
+  background: #dbeafe;
+}
+
+tr.row-expanded > td.col-actions {
+  background: #f9fafb;
 }
 
 .col-rating {
@@ -174,7 +196,130 @@ th.col-rating.sortable {
   background: #f3f4f6;
 }
 
+.info-icon-btn {
+  color: #2563eb;
+}
+
+.info-icon-btn:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .empty {
   text-align: center;
   color: #6b7280;
+}
+
+.expand-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0 0.25rem 0 0;
+  margin-right: 0.15rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.expand-btn.open {
+  transform: rotate(90deg);
+  color: #2563eb;
+}
+
+.row-expanded {
+  background: #f9fafb;
+}
+
+.detail-row > td {
+  background: #f9fafb;
+  padding: 0.6rem 0.8rem 0.9rem 1.6rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.detail-title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: #374151;
+  margin-bottom: 0.4rem;
+}
+
+.detail-hint {
+  font-weight: 400;
+  color: #6b7280;
+  margin-left: 0.5rem;
+}
+
+.detail-empty {
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.2rem;
+  font-size: 0.82rem;
+  color: #374151;
+  margin-bottom: 0.35rem;
+}
+
+.detail-grid b {
+  color: #111827;
+}
+
+.detail-explain {
+  display: block;
+  margin: 0 0 0.6rem;
+  margin-left: 0;
+  line-height: 1.4;
+}
+
+.detail-error {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  font-size: 0.8rem;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.detail-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  font-size: 0.76rem;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  position: static;
+}
+
+.detail-table td {
+  padding: 0.35rem 0.5rem;
+  border-top: 1px solid #eef0f2;
+}
+
+.detail-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rating-cell {
+  border-radius: 4px;
+}
+
+.detail-table .period {
+  white-space: nowrap;
+  color: #4b5563;
+  font-size: 0.78rem;
 }

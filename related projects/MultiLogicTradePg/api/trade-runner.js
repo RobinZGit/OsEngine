@@ -280,6 +280,10 @@ async function runTradeCycle(pool, opts = {}) {
     // #994-доработка: пристраиваем фоновый пересчёт рейтинга индикаторов к
     // отработавшим логикам (юниверс — их пары). Не блокирует цикл (см. хелпер).
     scheduleIndicatorRatingForLogics(pool, logics.map((r) => r.id));
+    // #994-доработка: если активных/сигнальных логик нет — полный прогон по
+    // бумагам с недавними свечами (любой активный ТФ), чтобы рейтинг обновлялся
+    // всегда. Троттл по времени внутри run_indicator_rating_test_safe.
+    if (logics.length === 0) scheduleIndicatorRatingIdle(pool);
 
     // #972/#984: финализируем созревшие отложенные подтверждения сигналов — сверяем
     // направление с ЖИВОЙ ценой T-Bank (не со свечой стоп-ТФ, которая у логик не
@@ -573,6 +577,57 @@ function scheduleIndicatorRatingForLogics(pool, logicIds) {
   });
 }
 
+const IDLE_RATING_MINUTES = Number(process.env.INDICATOR_RATING_IDLE_MINUTES) || 30;
+
+/**
+ * #994-доработка: полный прогон рейтинга индикаторов, когда нет ни одной
+ * активной/сигнальной логики. Юниверс — бумаги с недавними свечами (любой
+ * активный ТФ). Троттл по времени внутри run_indicator_rating_test_safe, чтобы
+ * не сжигать машинное время зря. Фоновый, не блокирует цикл сделок.
+ */
+function scheduleIndicatorRatingIdle(pool) {
+  runIndicatorRatingFull(pool, IDLE_RATING_MINUTES).catch((err) => {
+    console.error('Indicator rating (idle)', decorate(err.message));
+  });
+}
+
+async function runIndicatorRatingFull(pool, minIntervalMinutes) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 0');
+    const { rows } = await client.query(
+      `SELECT run_indicator_rating_test_safe($1) AS r`,
+      [minIntervalMinutes]
+    );
+    await client.query('COMMIT');
+    const r = Number(rows[0]?.r);
+    if (r === 1) {
+      console.log('Indicator rating (idle): ok');
+      await writeTechLogEvent(pool, {
+        threadKey: 'trade-runner',
+        operation: 'indicator_rating.idle',
+        message: 'Тест рейтинга индикаторов (простой, без логик): выполнено',
+        source: 'node',
+        payload: { result: r, min_interval_minutes: minIntervalMinutes },
+      }).catch(() => {});
+    } else if (r === -1) {
+      console.error('Indicator rating (idle): failed (см. indicator_rating_run)');
+    }
+    return r;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_e) {
+      /* ignore */
+    }
+    console.error('Indicator rating (idle)', decorate(err.message));
+    return null;
+  } finally {
+    client.release();
+  }
+}
+
 function startTradeRunner(pool) {
   const enabled = process.env.TRADE_RUNNER_ENABLED !== '0';
   if (!enabled) {
@@ -663,6 +718,8 @@ module.exports = {
   runWatchdogTick,
   runIndicatorRatingForLogic,
   scheduleIndicatorRatingForLogics,
+  runIndicatorRatingFull,
+  scheduleIndicatorRatingIdle,
   STALE_MS,
   MAX_CYCLE_MS,
 };

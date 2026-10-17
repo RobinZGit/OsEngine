@@ -5152,6 +5152,49 @@ CREATE TABLE IF NOT EXISTS indicator_rating_logic_run (
 COMMENT ON TABLE indicator_rating_logic_run IS
 'Маркер событийного пересчёта рейтинга индикаторов по логике: время и результат последнего прогона (троттл per-logic)';
 
+-- #994-доработка: рейтинг индикатора В РАЗРЕЗЕ КАЖДОГО ТАЙМФРЕЙМА + окно расчёта.
+-- Питает разворот строки индикатора в списке (по какому ТФ какой рейтинг, на каком
+-- окне свечей он посчитан). Пересчитывается вместе с общим indicator_rating.
+CREATE TABLE IF NOT EXISTS indicator_rating_timeframe (
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    rating NUMERIC(14, 4) NOT NULL DEFAULT 0,
+    best_position_side VARCHAR(10),
+    best_signal_kind VARCHAR(10),
+    best_time_kind VARCHAR(20),
+    slices_count INTEGER NOT NULL DEFAULT 0,
+    samples_count INTEGER NOT NULL DEFAULT 0,
+    avg_annual_pct NUMERIC(14, 4),
+    bars_count INTEGER NOT NULL DEFAULT 0,
+    bars_from TIMESTAMP,
+    bars_to TIMESTAMP,
+    computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (indicator_id, timeframe_id)
+);
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS rating NUMERIC(14, 4) NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS best_position_side VARCHAR(10);
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS best_signal_kind VARCHAR(10);
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS best_time_kind VARCHAR(20);
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS slices_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS samples_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS avg_annual_pct NUMERIC(14, 4);
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS bars_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS bars_from TIMESTAMP;
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS bars_to TIMESTAMP;
+ALTER TABLE indicator_rating_timeframe ADD COLUMN IF NOT EXISTS computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_indicator_rating_timeframe_rating ON indicator_rating_timeframe(rating DESC);
+CREATE INDEX IF NOT EXISTS idx_indicator_rating_timeframe_tf ON indicator_rating_timeframe(timeframe_id);
+
+COMMENT ON TABLE indicator_rating_timeframe IS
+'Рейтинг индикатора в разрезе таймфрейма (% годовых): тот же расчёт, что indicator_rating, но отдельно по каждому ТФ + окно свечей (bars_from/bars_to/bars_count). Питает разворот строки индикатора в списке.';
+COMMENT ON COLUMN indicator_rating_timeframe.bars_count IS
+'Сколько последних свечей ТФ реально участвовало в расчёте (по данным prices, limit p_bars_window)';
+COMMENT ON COLUMN indicator_rating_timeframe.bars_from IS
+'Начало окна свечей, на котором считался рейтинг по этому ТФ';
+COMMENT ON COLUMN indicator_rating_timeframe.bars_to IS
+'Конец окна свечей, на котором считался рейтинг по этому ТФ';
+
 -- ============================================
 -- Готово: шаг 1 завершён
 -- ============================================

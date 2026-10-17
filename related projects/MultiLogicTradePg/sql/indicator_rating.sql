@@ -173,7 +173,8 @@ COMMENT ON FUNCTION indicator_simple_condition(TEXT) IS
 'Разбор простого условия «pp <op> VALUE» для инлайна в тесте рейтинга (is_simple, op, pp_left)';
 
 -- Основной расчёт. Возвращает число обработанных индикаторов.
--- p_logic_id IS NULL — юниверс пар из всех логик (полный прогон);
+-- p_logic_id IS NULL — юниверс пар из всех логик (полный прогон); если логик нет —
+--   откат к бумагам с недавними свечами (любой активный ТФ), чтобы считать всегда.
 -- p_logic_id задан — только пары этой логики (событийный пересчёт после неё).
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
@@ -222,12 +223,63 @@ DECLARE
     v_best_side TEXT;
     v_best_kind TEXT;
     v_best_time TEXT;
+    v_pb INTEGER;
+    v_pf TIMESTAMP;
+    v_pt TIMESTAMP;
+    v_tf INTEGER;
+    v_tf_slices INTEGER;
+    v_tf_samples INTEGER;
+    v_tf_rating NUMERIC;
+    v_tf_avg NUMERIC;
+    v_tf_side TEXT;
+    v_tf_kind TEXT;
+    v_tf_time TEXT;
 BEGIN
     -- сэмплы живут сутки (как прочие диагностические записи)
     DELETE FROM indicator_rating_sample
     WHERE computed_at < CURRENT_TIMESTAMP - INTERVAL '24 hours';
 
     v_cap_sql := CASE WHEN v_cap IS NULL THEN 'NULL' ELSE v_cap::TEXT END;
+
+    -- Юниверс пар (бумага × ТФ) считаем ОДИН раз. Источник — активные логики;
+    -- если таких пар нет (нет включённых/сигнальных логик), откатываемся на
+    -- бумаги, по которым недавно были свечи (любой активный ТФ) — рейтинг
+    -- считается всегда, без простоя машинного времени.
+    DROP TABLE IF EXISTS irt_pairs;
+    DROP TABLE IF EXISTS irt_window;
+    CREATE TEMP TABLE irt_pairs (
+        security_id INTEGER,
+        tf INTEGER,
+        logic_id INTEGER
+    ) ON COMMIT DROP;
+    CREATE TEMP TABLE irt_window (
+        tf INTEGER PRIMARY KEY,
+        bars INTEGER NOT NULL DEFAULT 0,
+        from_dt TIMESTAMP,
+        to_dt TIMESTAMP
+    ) ON COMMIT DROP;
+
+    INSERT INTO irt_pairs (security_id, tf, logic_id)
+    SELECT ls.security_id, logic_resolve_timeframe_id(l.id), min(l.id)
+    FROM logics l
+    JOIN logic_securities ls ON ls.logic_id = l.id AND ls.is_active = TRUE
+    WHERE p_logic_id IS NULL OR l.id = p_logic_id
+    GROUP BY ls.security_id, logic_resolve_timeframe_id(l.id)
+    HAVING logic_resolve_timeframe_id(l.id) IS NOT NULL
+    ORDER BY ls.security_id, 2
+    LIMIT GREATEST(1, COALESCE(p_max_securities, 200));
+
+    IF p_logic_id IS NULL AND NOT EXISTS (SELECT 1 FROM irt_pairs) THEN
+        INSERT INTO irt_pairs (security_id, tf, logic_id)
+        SELECT p.security_id, p.timeframe_id, NULL
+        FROM prices p
+        JOIN timeframes tf ON tf.id = p.timeframe_id AND COALESCE(tf.is_active, TRUE)
+        WHERE p.close_price > 0
+          AND p.dt >= CURRENT_TIMESTAMP - INTERVAL '3 days'
+        GROUP BY p.security_id, p.timeframe_id
+        ORDER BY count(*) DESC
+        LIMIT GREATEST(1, COALESCE(p_max_securities, 200));
+    END IF;
 
     -- Рейтингуем ВСЕ вычислимые индикаторы (в т.ч. задействованные сигналами
     -- логик): сигнальная/исследовательская логика не «расходует» индикатор.
@@ -271,14 +323,7 @@ BEGIN
             ELSE 'evaluate_signal_condition(' || quote_literal(v_cond_c) || ', b.close_price, b.cv)' END;
 
         FOR v_pair IN
-            SELECT ls.security_id, logic_resolve_timeframe_id(l.id) AS tf, min(l.id) AS logic_id
-            FROM logics l
-            JOIN logic_securities ls ON ls.logic_id = l.id AND ls.is_active = TRUE
-            WHERE p_logic_id IS NULL OR l.id = p_logic_id
-            GROUP BY ls.security_id, logic_resolve_timeframe_id(l.id)
-            HAVING logic_resolve_timeframe_id(l.id) IS NOT NULL
-            ORDER BY ls.security_id, 2
-            LIMIT GREATEST(1, COALESCE(p_max_securities, 200))
+            SELECT security_id, tf, logic_id FROM irt_pairs ORDER BY security_id, tf
         LOOP
             BEGIN
                 -- Значения индикатора: один расчёт на пару (бумага × ТФ).
@@ -427,6 +472,27 @@ $sql$,
                     v_min_signals::TEXT, v_min_signals::TEXT, v_min_signals::TEXT, v_min_signals::TEXT
                 );
                 EXECUTE v_sql;
+
+                -- Окно свечей пары (для статистики разворота строки): сколько
+                -- последних свечей ТФ реально взято в расчёт и по каким датам.
+                SELECT count(*)::INTEGER, min(dt), max(dt)
+                INTO v_pb, v_pf, v_pt
+                FROM (
+                    SELECT p.dt
+                    FROM prices p
+                    WHERE p.security_id = v_pair.security_id
+                      AND p.timeframe_id = v_pair.tf
+                      AND p.close_price > 0
+                    ORDER BY p.dt DESC
+                    LIMIT v_window
+                ) z;
+
+                INSERT INTO irt_window (tf, bars, from_dt, to_dt)
+                VALUES (v_pair.tf, COALESCE(v_pb, 0), v_pf, v_pt)
+                ON CONFLICT (tf) DO UPDATE SET
+                    bars = GREATEST(irt_window.bars, EXCLUDED.bars),
+                    from_dt = LEAST(irt_window.from_dt, EXCLUDED.from_dt),
+                    to_dt = GREATEST(irt_window.to_dt, EXCLUDED.to_dt);
             EXCEPTION WHEN OTHERS THEN
                 CONTINUE;
             END;
@@ -480,6 +546,66 @@ $sql$,
                 avg_annual_pct = EXCLUDED.avg_annual_pct,
                 computed_at = EXCLUDED.computed_at;
         END IF;
+
+        -- Рейтинг по каждому ТФ отдельно + окно свечей — для разворота строки
+        -- индикатора в списке (какой ТФ, на скольких свечах, с какого по какое число).
+        FOR v_tf IN
+            SELECT DISTINCT s.timeframe_id
+            FROM indicator_rating_sample s
+            WHERE s.indicator_id = v_ind.id AND s.computed_at = v_now
+        LOOP
+            SELECT
+                count(*)::INTEGER,
+                COALESCE(sum(signals_count), 0)::INTEGER,
+                max(slice_avg),
+                sum(slice_avg * signals_count) / NULLIF(sum(signals_count), 0)
+            INTO v_tf_slices, v_tf_samples, v_tf_rating, v_tf_avg
+            FROM (
+                SELECT position_side, signal_kind, time_kind,
+                       avg(avg_annual_pct) AS slice_avg,
+                       sum(signals_count) AS signals_count
+                FROM indicator_rating_sample
+                WHERE indicator_id = v_ind.id AND timeframe_id = v_tf AND computed_at = v_now
+                GROUP BY position_side, signal_kind, time_kind
+            ) g;
+
+            IF v_tf_rating IS NOT NULL THEN
+                SELECT position_side, signal_kind, time_kind
+                INTO v_tf_side, v_tf_kind, v_tf_time
+                FROM (
+                    SELECT position_side, signal_kind, time_kind,
+                           avg(avg_annual_pct) AS slice_avg
+                    FROM indicator_rating_sample
+                    WHERE indicator_id = v_ind.id AND timeframe_id = v_tf AND computed_at = v_now
+                    GROUP BY position_side, signal_kind, time_kind
+                ) g
+                ORDER BY slice_avg DESC NULLS LAST
+                LIMIT 1;
+
+                INSERT INTO indicator_rating_timeframe (
+                    indicator_id, timeframe_id, rating, best_position_side, best_signal_kind,
+                    best_time_kind, slices_count, samples_count, avg_annual_pct,
+                    bars_count, bars_from, bars_to, computed_at
+                )
+                SELECT v_ind.id, v_tf, v_tf_rating, v_tf_side, v_tf_kind, v_tf_time,
+                       v_tf_slices, v_tf_samples, v_tf_avg,
+                       COALESCE(w.bars, 0), w.from_dt, w.to_dt, v_now
+                FROM (SELECT 1) one
+                LEFT JOIN irt_window w ON w.tf = v_tf
+                ON CONFLICT (indicator_id, timeframe_id) DO UPDATE SET
+                    rating = EXCLUDED.rating,
+                    best_position_side = EXCLUDED.best_position_side,
+                    best_signal_kind = EXCLUDED.best_signal_kind,
+                    best_time_kind = EXCLUDED.best_time_kind,
+                    slices_count = EXCLUDED.slices_count,
+                    samples_count = EXCLUDED.samples_count,
+                    avg_annual_pct = EXCLUDED.avg_annual_pct,
+                    bars_count = EXCLUDED.bars_count,
+                    bars_from = EXCLUDED.bars_from,
+                    bars_to = EXCLUDED.bars_to,
+                    computed_at = EXCLUDED.computed_at;
+            END IF;
+        END LOOP;
     END LOOP;
 
     RETURN v_processed;
@@ -487,7 +613,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER) IS
-'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики); наполняет indicator_rating_sample / indicator_rating';
+'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики; если логик нет — откат к бумагам с недавними свечами, любой активный ТФ, чтобы считать без простоя); наполняет indicator_rating_sample / indicator_rating / indicator_rating_timeframe (рейтинг в разрезе ТФ + окно свечей)';
 
 -- Безопасная обёртка для фонового вызова: троттл + advisory lock + глушение ошибок.
 -- Возврат: 1 — считалось, 0 — пропущено (троттл/занято), -1 — ошибка (записана в indicator_rating_run).

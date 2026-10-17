@@ -1,6 +1,28 @@
 /**
  * Indicators, series, values, calculate.
  */
+
+// #994-доработка: рейтинг «стареет». Эффективный рейтинг = сырой рейтинг,
+// линейно угасающий до нуля за RATING_DECAY_HOURS часов с момента расчёта.
+const RATING_DECAY_HOURS = Math.max(0, Number(process.env.INDICATOR_RATING_DECAY_HOURS) || 6);
+
+function ratingDecayFactor(computedAt, hours) {
+  if (!computedAt) return 0;
+  const t = new Date(computedAt).getTime();
+  if (!Number.isFinite(t)) return 0;
+  if (!(hours > 0)) return 1;
+  const ageHours = (Date.now() - t) / 3600000;
+  if (ageHours <= 0) return 1;
+  return Math.max(0, 1 - ageHours / hours);
+}
+
+function effectiveRating(rawRating, computedAt, hours) {
+  if (rawRating == null) return null;
+  const value = Number(rawRating);
+  if (!Number.isFinite(value)) return null;
+  return Number((value * ratingDecayFactor(computedAt, hours)).toFixed(4));
+}
+
 module.exports = function registerIndicatorsRoutes(app, ctx) {
   const {
     pool,
@@ -93,8 +115,37 @@ app.get('/api/indicators', async (req, res) => {
         r.best_position_side,
         r.best_signal_kind,
         r.best_time_kind,
+        r.slices_count AS rating_slices_count,
         r.samples_count AS rating_samples_count,
+        r.avg_annual_pct AS rating_avg_annual_pct,
         r.computed_at AS rating_computed_at,
+        (
+          SELECT COALESCE(
+            json_agg(
+              json_build_object(
+                'timeframe_id', t.timeframe_id,
+                'tf', tf.tf,
+                'full_name', tf.full_name,
+                'rating', t.rating,
+                'best_position_side', t.best_position_side,
+                'best_signal_kind', t.best_signal_kind,
+                'best_time_kind', t.best_time_kind,
+                'slices_count', t.slices_count,
+                'samples_count', t.samples_count,
+                'avg_annual_pct', t.avg_annual_pct,
+                'bars_count', t.bars_count,
+                'bars_from', t.bars_from,
+                'bars_to', t.bars_to,
+                'computed_at', t.computed_at
+              )
+              ORDER BY t.rating DESC NULLS LAST, tf.tf
+            ),
+            '[]'::json
+          )
+          FROM indicator_rating_timeframe t
+          JOIN timeframes tf ON tf.id = t.timeframe_id
+          WHERE t.indicator_id = i.id
+        ) AS rating_timeframes,
         COALESCE(
           json_agg(
             json_build_object(
@@ -119,9 +170,51 @@ app.get('/api/indicators', async (req, res) => {
     `,
       [withCalc]
     );
-    res.json(rows);
+    const rowsWithRating = rows.map((row) => {
+      const timeframes = Array.isArray(row.rating_timeframes) ? row.rating_timeframes : [];
+      return {
+        ...row,
+        rating: row.rating == null ? null : Number(row.rating),
+        rating_decay_hours: RATING_DECAY_HOURS,
+        rating_effective: effectiveRating(row.rating, row.rating_computed_at, RATING_DECAY_HOURS),
+        rating_timeframes: timeframes.map((t) => ({
+          ...t,
+          rating: t.rating == null ? null : Number(t.rating),
+          rating_effective: effectiveRating(t.rating, t.computed_at, RATING_DECAY_HOURS),
+        })),
+      };
+    });
+    res.json(rowsWithRating);
   } catch (err) {
     console.error('GET /api/indicators', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// #1005: статус последнего прогона расчёта рейтинга — UI показывает ошибку
+// при разворачивании строки, если прогон завершился неудачно (last_status < 0).
+app.get('/api/indicators/rating-status', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, last_run_at, last_status, last_message, updated_at
+       FROM indicator_rating_run
+       ORDER BY updated_at DESC NULLS LAST
+       LIMIT 1`
+    );
+    const row = rows[0] ?? null;
+    res.json(
+      row
+        ? {
+            last_run_at: row.last_run_at,
+            last_status: row.last_status,
+            last_message: row.last_message,
+            updated_at: row.updated_at,
+            ok: row.last_status != null && row.last_status >= 0,
+          }
+        : { last_run_at: null, last_status: null, last_message: null, ok: false }
+    );
+  } catch (err) {
+    console.error('GET /api/indicators/rating-status', err);
     res.status(500).json({ error: err.message });
   }
 });
