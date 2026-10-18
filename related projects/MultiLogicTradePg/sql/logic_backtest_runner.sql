@@ -2296,7 +2296,7 @@ BEGIN
     SELECT id INTO v_action_short_id FROM actions WHERE name = 'Short' LIMIT 1;
 
     v_position_size_pct := get_logic_param_numeric(p_logic_id, 'position_size_pct', 10);
-    v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 5)::INTEGER);
+    v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 10)::INTEGER);
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_size_mode := lower(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'position_size_base'),

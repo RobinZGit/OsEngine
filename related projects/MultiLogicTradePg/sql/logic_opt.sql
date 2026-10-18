@@ -1275,7 +1275,7 @@ BEGIN
     END IF;
 
     v_position_size_pct := get_logic_param_numeric(p_logic_id, 'position_size_pct', 10);
-    v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 5)::INTEGER);
+    v_max_positions := GREATEST(1, get_logic_param_numeric(p_logic_id, 'max_open_positions', 10)::INTEGER);
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
 

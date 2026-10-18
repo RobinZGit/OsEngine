@@ -4,13 +4,14 @@
  * Запись в app_error_log — журнал для закладки «Мониторинг системы».
  *
  * Единая точка для ошибок API (HTTP >= 400), необработанных исключений процесса
- * и сбоев внешних сервисов/раннера. В отличие от app_tech_log пишем только сбои,
- * с уровнем severity и кодом — так закладка показывает «что сломалось», а не трассу.
+ * и сбоев внешних сервисов/раннера. В отличие от app_tech_log пишем сбои с
+ * уровнем severity и кодом, а также «success» — успешные проверки сервисов
+ * (кнопка «Пинг»), чтобы пользователь видел, что всё в порядке.
  */
 
 const MAX_MESSAGE = 2000;
 const MAX_DETAIL = 8000;
-const VALID_LEVELS = new Set(['warning', 'error', 'fatal']);
+const VALID_LEVELS = new Set(['warning', 'error', 'fatal', 'success']);
 
 function truncate(value, max) {
   if (value == null) return null;

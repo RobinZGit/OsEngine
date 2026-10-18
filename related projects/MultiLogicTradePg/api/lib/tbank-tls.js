@@ -136,7 +136,7 @@ function httpsGetText(urlString, agent) {
  * POST JSON via https (not fetch) so Russian CA Agent is applied.
  * @returns {Promise<{ status: number, json: any, text: string, headers: object }>}
  */
-const DEFAULT_HTTP_TIMEOUT_MS = 3000;
+const DEFAULT_HTTP_TIMEOUT_MS = Math.max(1000, Number(process.env.TBANK_HTTP_TIMEOUT_MS) || 10000);
 
 function httpsJsonPost(urlString, { headers = {}, body = '', agent, timeoutMs = DEFAULT_HTTP_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {

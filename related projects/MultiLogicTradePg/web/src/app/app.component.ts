@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { DbSchemaPanelComponent } from './db-schema/db-schema-panel.component';
 import { AppHelpPanelComponent } from './app-help/app-help-panel.component';
 import { AppSettingsPanelComponent } from './app-settings/app-settings-panel.component';
@@ -384,6 +385,7 @@ export class AppComponent implements OnInit, OnDestroy {
   monitoringTitle = 'Мониторинг системы: журнал ошибок';
   private monitorTimer: ReturnType<typeof setInterval> | null = null;
   private monitorFirst: ReturnType<typeof setTimeout> | null = null;
+  private monitorRefreshSub: Subscription | null = null;
 
   constructor(
     private readonly techLog: TechLogService,
@@ -414,6 +416,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.signalsWatchFirst) clearTimeout(this.signalsWatchFirst);
     if (this.monitorTimer) clearInterval(this.monitorTimer);
     if (this.monitorFirst) clearTimeout(this.monitorFirst);
+    if (this.monitorRefreshSub) this.monitorRefreshSub.unsubscribe();
   }
 
   /** Мониторинг системы: опрос сводки журнала ошибок каждые 15 с.
@@ -423,6 +426,10 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.monitorTimer) return;
     this.monitorTimer = setInterval(() => this.loadMonitoringSummary(), 15_000);
     this.monitorFirst = setTimeout(() => this.loadMonitoringSummary(), 2500);
+    // Немедленное обновление «света» после успешного «Пинга» из мониторинга.
+    this.monitorRefreshSub = this.monitoring.refresh$.subscribe(() =>
+      this.loadMonitoringSummary()
+    );
   }
 
   private loadMonitoringSummary(): void {
@@ -436,15 +443,29 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private applyMonitoringSummary(s: MonitoringSummary): void {
     const critical = s.latestCritical ?? null;
+    const warning = s.latestWarning ?? null;
+    const ping = s.latestPing ?? null;
     const warnings = Number(s.counts?.warning ?? 0);
-    this.monitoringCritical = !!critical;
-    this.monitoringWarning = !critical && warnings > 0;
-    this.monitoringText = critical ? formatErrorShort(critical) : '';
-    this.monitoringTitle = critical
-      ? `Последняя критичная ошибка: ${critical.message}`
+
+    // Успешный «Пинг» (кнопка в мониторинге) гасит «свет», если после него
+    // не было новых ошибок/предупреждений: пользователь видит «всё хорошо».
+    const pingOk = !!ping && ping.level === 'success';
+    const pingTs = pingOk ? Date.parse(ping.created_at) : 0;
+    const criticalAfter =
+      !!critical && (!pingOk || Date.parse(critical.created_at) > pingTs);
+    const warningAfter =
+      !!warning && (!pingOk || Date.parse(warning.created_at) > pingTs);
+
+    this.monitoringCritical = criticalAfter;
+    this.monitoringWarning = !criticalAfter && warnings > 0 && (!pingOk || warningAfter);
+    this.monitoringText = criticalAfter ? formatErrorShort(critical) : '';
+    this.monitoringTitle = criticalAfter
+      ? `Последняя критичная ошибка: ${critical!.message}`
       : this.monitoringWarning
         ? `Только предупреждения: ${warnings}`
-        : 'Мониторинг системы: ошибок нет';
+        : pingOk
+          ? 'Мониторинг системы: пинг успешен, ошибок нет'
+          : 'Мониторинг системы: ошибок нет';
   }
 
   /** #996: опрос непрочитанных сигналов раз в 15 с (как и в терминале). */

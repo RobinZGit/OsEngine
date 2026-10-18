@@ -7,6 +7,7 @@ import {
   ErrorLogRow,
   MonitoringService,
   MonitoringSummary,
+  PingResult,
   formatErrorShort,
 } from '../services/monitoring.service';
 import { ErrorTrendChartComponent, ErrorTrendPoint } from './error-trend-chart.component';
@@ -37,6 +38,10 @@ export class MonitoringComponent implements OnInit, OnDestroy {
   lastUpdated: string | null = null;
   loadError: string | null = null;
   loading = false;
+  /** Кнопка «Пинг»: идёт проверка / итог / ошибка запроса. */
+  pingRunning = false;
+  pingResult: PingResult | null = null;
+  pingError: string | null = null;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -86,9 +91,35 @@ export class MonitoringComponent implements OnInit, OnDestroy {
         return 'предупреждение';
       case 'fatal':
         return 'критично';
+      case 'success':
+        return 'успех';
       default:
         return 'ошибка';
     }
+  }
+
+  /** Проверить все сервисы без торговли (кнопка «Пинг»). */
+  runPing(): void {
+    if (this.pingRunning) return;
+    this.pingRunning = true;
+    this.pingError = null;
+    this.monitoring.ping().subscribe({
+      next: (result) => {
+        this.pingResult = result;
+        this.pingRunning = false;
+        // Обновляем журнал и сводку, чтобы результат и «свет» вкладки обновились сразу.
+        this.load(true);
+        this.monitoring.notifyRefresh();
+      },
+      error: (err) => {
+        this.pingError = apiErrorMessage(this.appConfig.apiUrl, err);
+        this.pingRunning = false;
+      },
+    });
+  }
+
+  pingCheckClass(ok: boolean): string {
+    return ok ? 'ping-ok' : 'ping-fail';
   }
 
   private load(silent = false): void {

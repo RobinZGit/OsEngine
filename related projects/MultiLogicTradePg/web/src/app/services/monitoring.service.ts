@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { AppConfigService } from './app-config.service';
 
-export type ErrorLevel = 'warning' | 'error' | 'fatal';
+export type ErrorLevel = 'warning' | 'error' | 'fatal' | 'success';
 
 /** Запись журнала ошибок (таблица app_error_log). */
 export interface ErrorLogRow {
@@ -50,6 +50,25 @@ export interface MonitoringSummary {
   counts: ErrorCounts;
   latestCritical: ErrorLogRow | null;
   latestWarning: ErrorLogRow | null;
+  /** Последний «пинг» сервисов (кнопка «Пинг») — по нему сбрасывается «свет» вкладки. */
+  latestPing: ErrorLogRow | null;
+}
+
+/** Один результат проверки сервиса при «пинге». */
+export interface PingCheck {
+  key: string;
+  label: string;
+  severity: 'error' | 'warning';
+  ok: boolean;
+  latencyMs: number;
+  detail: string;
+}
+
+/** Итог проверки всех сервисов (POST /api/monitoring/ping). */
+export interface PingResult {
+  ok: boolean;
+  checkedAt: string;
+  checks: PingCheck[];
 }
 
 /**
@@ -69,10 +88,19 @@ export function formatErrorShort(row: ErrorLogRow | null | undefined): string {
 
 @Injectable({ providedIn: 'root' })
 export class MonitoringService {
+  /** Сигнал «перечитать сводку мониторинга» — после успешного «Пинга» сразу
+      обновляем «свет» вкладки в app.component.ts, не дожидаясь 15-секундного опроса. */
+  private readonly refreshSubject = new Subject<void>();
+  readonly refresh$ = this.refreshSubject.asObservable();
+
   constructor(
     private readonly http: HttpClient,
     private readonly appConfig: AppConfigService
   ) {}
+
+  notifyRefresh(): void {
+    this.refreshSubject.next();
+  }
 
   getErrors(opts?: { limit?: number; level?: ErrorLevel }): Observable<{ rows: ErrorLogRow[] }> {
     const params = new URLSearchParams();
@@ -92,5 +120,13 @@ export class MonitoringService {
 
   getSummary(): Observable<MonitoringSummary> {
     return this.http.get<MonitoringSummary>(`${this.appConfig.apiUrl}/monitoring/summary`);
+  }
+
+  /**
+   * Проверить все сервисы (PostgreSQL, T-Bank, MOEX) без сделок — по кнопке «Пинг».
+   * Результаты (включая успешные) пишутся сервером в журнал мониторинга.
+   */
+  ping(): Observable<PingResult> {
+    return this.http.post<PingResult>(`${this.appConfig.apiUrl}/monitoring/ping`, {});
   }
 }

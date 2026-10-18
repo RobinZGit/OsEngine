@@ -14,6 +14,7 @@
           <option value="warning">предупреждения</option>
           <option value="error">ошибки</option>
           <option value="fatal">критические</option>
+          <option value="success">успешные</option>
         </select>
       </label>
       <span class="mon-updated">
@@ -28,6 +29,39 @@
 
   @if (loadError) {
     <p class="mon-error">{{ loadError }}</p>
+  }
+
+  <section class="ping-bar">
+    <button type="button" class="ping-btn" [disabled]="pingRunning" (click)="runPing()">
+      {{ pingRunning ? 'Checking…' : 'Ping' }}
+    </button>
+    <div class="ping-summary">
+      @if (pingResult) {
+        <span class="ping-verdict" [class.ping-ok]="pingResult.ok" [class.ping-fail]="!pingResult.ok">
+          {{ pingResult.ok ? 'Все сервисы отвечают' : 'Есть сбои — см. журнал ниже' }}
+        </span>
+        <span class="ping-when">{{ pingResult.checkedAt | date: 'HH:mm:ss' }}</span>
+      } @else if (pingError) {
+        <span class="ping-verdict ping-fail">Пинг не выполнен: {{ pingError }}</span>
+      } @else {
+        <span class="ping-hint">
+          Проверить все сервисы (PostgreSQL, T-Bank, MOEX) без реальных и тестовых сделок
+        </span>
+      }
+    </div>
+  </section>
+
+  @if (pingResult) {
+    <section class="ping-results">
+      @for (c of pingResult.checks; track c.key) {
+        <div class="ping-row" [ngClass]="pingCheckClass(c.ok)">
+          <span class="ping-dot"></span>
+          <span class="ping-label">{{ c.label }}</span>
+          <span class="ping-detail">{{ c.detail }}</span>
+          <span class="ping-latency">{{ c.latencyMs }} мс</span>
+        </div>
+      }
+    </section>
   }
 
   <section class="monitoring-chart">
@@ -47,7 +81,7 @@
           <th class="col-src">Источник</th>
           <th class="col-cat">Категория</th>
           <th class="col-code">Код</th>
-          <th class="col-msg">Ошибка</th>
+          <th class="col-msg">Сообщение</th>
         </tr>
       </thead>
       <tbody>

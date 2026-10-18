@@ -46,7 +46,7 @@ const DEFAULTS = {
   [PARAM_KEYS.TIMEFRAME]: { value: 'M15', type: 'text' },
   [PARAM_KEYS.POSITION_SIZE_BASE]: { value: 'free_cash', type: 'text' },
   [PARAM_KEYS.POSITION_SIZE_PCT]: { value: '10', type: 'number' },
-  [PARAM_KEYS.MAX_OPEN_POSITIONS]: { value: '5', type: 'integer' },
+  [PARAM_KEYS.MAX_OPEN_POSITIONS]: { value: '10', type: 'integer' },
   [PARAM_KEYS.MAX_ORDER_AMOUNT]: { value: '', type: 'money' },
   [PARAM_KEYS.ORDER_GAP_BUFFER_PCT]: { value: '', type: 'number' },
   [PARAM_KEYS.MAX_OPEN_GAP_PCT]: { value: '', type: 'number' },
@@ -135,7 +135,7 @@ function rowsToTradingParams(rows) {
     max_open_positions:
       map[PARAM_KEYS.MAX_OPEN_POSITIONS] != null
         ? Number(map[PARAM_KEYS.MAX_OPEN_POSITIONS])
-        : 5,
+        : 10,
     max_order_amount: map[PARAM_KEYS.MAX_ORDER_AMOUNT],
     order_gap_buffer_pct: map[PARAM_KEYS.ORDER_GAP_BUFFER_PCT],
     max_open_gap_pct: map[PARAM_KEYS.MAX_OPEN_GAP_PCT],

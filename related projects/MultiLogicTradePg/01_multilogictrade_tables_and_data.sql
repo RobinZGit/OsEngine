@@ -1447,7 +1447,7 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'free_cash (по умолчанию) — % от свободных денег; portfolio — % от портфеля без ден. фонда; portfolio_incl_fund — весь портфель с фондом', 1),
     ('position_size_pct', '% депозита на сделку', 'number', '10',
      'Доля выбранной базы (портфель или свободные) на одну покупку (1–100)', 2),
-    ('max_open_positions', 'Макс. открытых позиций', 'integer', '5',
+    ('max_open_positions', 'Макс. открытых позиций', 'integer', '10',
      'Число одновременных позиций. Потолок номинала long+short = база × (%/100) × это число (10×10%=100% базы; 20×10%=200%)', 3),
     ('max_order_amount', 'Макс. сумма на сделку, ₽', 'money', '',
      'Потолок номинала одной покупки (пусто = без лимита), после расчёта %', 4),
@@ -4589,15 +4589,16 @@ COMMENT ON COLUMN app_tech_log.phase IS 'start | end | event';
 
 -- ============================================
 -- Таблица: app_error_log (журнал ошибок для закладки «Мониторинг системы»)
--- Отдельная от app_tech_log: только ошибки/сбои (внешние сервисы, API, БД, процессы).
--- Уровни по общепринятой шкале severity (warning < error < fatal). Хранение 24 ч:
--- фоновый планировщик API чистит записи старше суток каждый час (+ на старте).
+-- Отдельная от app_tech_log: ошибки/сбои (внешние сервисы, API, БД, процессы), а также
+-- «success» — успешные результаты проверки сервисов (кнопка «Пинг»), чтобы пользователь
+-- видел, что всё в порядке. Уровни severity (warning < error < fatal) + success.
+-- Хранение 24 ч: фоновый планировщик API чистит записи старше суток каждый час (+ на старте).
 -- ============================================
 CREATE TABLE IF NOT EXISTS app_error_log (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     level VARCHAR(10) NOT NULL DEFAULT 'error'
-        CHECK (level IN ('warning', 'error', 'fatal')),
+        CHECK (level IN ('warning', 'error', 'fatal', 'success')),
     source VARCHAR(32) NOT NULL DEFAULT 'api',
     category VARCHAR(32) NOT NULL DEFAULT 'internal',
     code VARCHAR(64),
@@ -4626,6 +4627,10 @@ ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS trace_id UUID;
 ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
 ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS security_id INTEGER REFERENCES securities(id) ON DELETE SET NULL;
 ALTER TABLE app_error_log ADD COLUMN IF NOT EXISTS context JSONB;
+-- Upgrade existing DBs: расширяем CHECK до нового уровня «success» (кнопка «Пинг»).
+ALTER TABLE app_error_log DROP CONSTRAINT IF EXISTS app_error_log_level_check;
+ALTER TABLE app_error_log ADD CONSTRAINT app_error_log_level_check
+    CHECK (level IN ('warning', 'error', 'fatal', 'success'));
 
 CREATE INDEX IF NOT EXISTS idx_app_error_log_created_at ON app_error_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_app_error_log_level ON app_error_log(level, created_at DESC);
@@ -4633,9 +4638,9 @@ CREATE INDEX IF NOT EXISTS idx_app_error_log_source ON app_error_log(source, cre
 CREATE INDEX IF NOT EXISTS idx_app_error_log_category ON app_error_log(category, created_at DESC);
 
 COMMENT ON TABLE app_error_log IS
-'Журнал ошибок проекта для закладки «Мониторинг системы»: сбои внешних сервисов, API, БД и процессов. Хранение 24 ч';
-COMMENT ON COLUMN app_error_log.level IS 'Уровень: warning | error | fatal';
-COMMENT ON COLUMN app_error_log.source IS 'Источник: api | web | trade-runner | maintenance | tbank | moex | postgresql | process';
+'Журнал событий для закладки «Мониторинг системы»: сбои внешних сервисов, API, БД и процессов, а также успешные результаты проверки сервисов (кнопка «Пинг», уровень success). Хранение 24 ч';
+COMMENT ON COLUMN app_error_log.level IS 'Уровень: warning | error | fatal | success (успешная проверка сервисов)';
+COMMENT ON COLUMN app_error_log.source IS 'Источник: api | web | trade-runner | maintenance | tbank | moex | postgresql | process | ping';
 COMMENT ON COLUMN app_error_log.category IS 'Категория: http | external | internal | db | runner | signal | process';
 COMMENT ON COLUMN app_error_log.code IS 'Код ошибки: HTTP_500, ETIMEDOUT, SQLSTATE и т.п.';
 COMMENT ON COLUMN app_error_log.message IS 'Краткое сообщение об ошибке';

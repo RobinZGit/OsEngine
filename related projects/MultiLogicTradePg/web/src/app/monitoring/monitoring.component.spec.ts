@@ -36,6 +36,7 @@ function summary(latestCritical: ErrorLogRow | null): MonitoringSummary {
     counts: { warning: 0, error: latestCritical ? 1 : 0, fatal: 0, total: latestCritical ? 1 : 0 },
     latestCritical,
     latestWarning: null,
+    latestPing: null,
   };
 }
 
@@ -47,6 +48,8 @@ describe('MonitoringComponent (#989)', () => {
     getErrors: jasmine.Spy;
     getStats: jasmine.Spy;
     getSummary: jasmine.Spy;
+    ping: jasmine.Spy;
+    notifyRefresh: jasmine.Spy;
   };
 
   beforeEach(() => {
@@ -57,6 +60,8 @@ describe('MonitoringComponent (#989)', () => {
       getErrors: jasmine.createSpy('getErrors').and.callFake(() => of({ rows: errors })),
       getStats: jasmine.createSpy('getStats').and.callFake(() => of(stats)),
       getSummary: jasmine.createSpy('getSummary').and.callFake(() => of(summaryData)),
+      ping: jasmine.createSpy('ping'),
+      notifyRefresh: jasmine.createSpy('notifyRefresh'),
     };
 
     TestBed.configureTestingModule({
@@ -148,5 +153,54 @@ describe('MonitoringComponent (#989)', () => {
     expect(c.criticalText).toBe('');
     const text = (fixture.nativeElement as HTMLElement).textContent || '';
     expect(text).not.toContain('(HTTP');
+  });
+
+  it('уровень success подписывается как «успех»', () => {
+    const fixture = TestBed.createComponent(MonitoringComponent);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.levelLabel('success')).toBe('успех');
+  });
+
+  it('«Пинг» проверяет сервисы, рисует результаты и просит обновить «свет»', () => {
+    serviceStub.ping.and.returnValue(
+      of({
+        ok: false,
+        checkedAt: new Date(2026, 9, 18, 11, 0, 0).toISOString(),
+        checks: [
+          { key: 'postgresql', label: 'PostgreSQL', severity: 'error' as const, ok: true, latencyMs: 3, detail: 'OK' },
+          { key: 'moex', label: 'MOEX ISS', severity: 'warning' as const, ok: false, latencyMs: 5001, detail: 'HTTP 502' },
+        ],
+      })
+    );
+    const fixture = TestBed.createComponent(MonitoringComponent);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance;
+    c.runPing();
+    fixture.detectChanges();
+
+    expect(serviceStub.ping).toHaveBeenCalled();
+    expect(c.pingRunning).toBe(false);
+    expect(c.pingResult?.checks.length).toBe(2);
+    expect(c.pingCheckClass(true)).toBe('ping-ok');
+    expect(c.pingCheckClass(false)).toBe('ping-fail');
+    expect(serviceStub.notifyRefresh).toHaveBeenCalled();
+    const text = (fixture.nativeElement as HTMLElement).textContent || '';
+    expect(text).toContain('PostgreSQL');
+    expect(text).toContain('MOEX ISS');
+  });
+
+  it('ошибка запроса «Пинг» показывается, но не роняет страницу', () => {
+    serviceStub.ping.and.returnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    const fixture = TestBed.createComponent(MonitoringComponent);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance;
+    c.runPing();
+    fixture.detectChanges();
+
+    expect(c.pingRunning).toBe(false);
+    expect(c.pingError).toBeTruthy();
+    expect(c.pingResult).toBeNull();
   });
 });

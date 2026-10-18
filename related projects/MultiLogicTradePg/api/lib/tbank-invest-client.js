@@ -32,6 +32,9 @@ const rpcCache = new Map();
 /** Повтор при 429 (Retry-After или экспоненциальная пауза). */
 const RATE_LIMIT_RETRIES = 2;
 const RATE_LIMIT_BASE_DELAY_MS = 1000;
+/** Повтор read-only RPC при сетевом сбое/таймауте (никогда — для PostOrder). */
+const NETWORK_RETRIES = 2;
+const NETWORK_BASE_DELAY_MS = 400;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -135,6 +138,12 @@ async function tbankHttpPost(apiUrl, rpcPath, token, body = {}) {
         body: body ?? {},
       }));
     } catch (err) {
+      // Сетевой сбой/таймаут: read-only RPC повторяем (T-Bank иногда отвечает
+      // дольше таймаута). Заявку PostOrder не повторяем — иначе дубль сделки.
+      if (path !== RPC_POST_ORDER && attempt < NETWORK_RETRIES) {
+        await sleep(NETWORK_BASE_DELAY_MS * (attempt + 1));
+        continue;
+      }
       const wrapped = new Error(formatError(err));
       wrapped.cause = err.cause || err;
       wrapped.code = err.code;

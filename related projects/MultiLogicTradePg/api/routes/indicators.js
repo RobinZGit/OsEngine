@@ -46,6 +46,40 @@ async function uniqueLogicName(queryable, baseName) {
   return name;
 }
 
+// #1006: бумаги логики из рейтинга. Основной источник — таблица-универсум
+// (indicator_rating_universe), но она заполняется только для текущего прогона расчёта,
+// поэтому если по ТФ в ней строк нет — берём бумаги из сырого состава расчёта
+// (indicator_rating_sample), который живёт дольше. Сначала по выбранным индикаторам,
+// при пустом результате — по всему ТФ; иначе логика останется без бумаг и не сможет
+// работать (бэктест падает «Нет активных бумаг в логике»).
+async function collectLogicSecurities(queryable, timeframeId, indicatorIds) {
+  const sources = [
+    [
+      `SELECT DISTINCT security_id FROM indicator_rating_universe
+       WHERE timeframe_id = $1 AND indicator_id = ANY($2::int[])`,
+      [timeframeId, indicatorIds],
+    ],
+    [
+      `SELECT DISTINCT security_id FROM indicator_rating_universe WHERE timeframe_id = $1`,
+      [timeframeId],
+    ],
+    [
+      `SELECT DISTINCT security_id FROM indicator_rating_sample
+       WHERE timeframe_id = $1 AND indicator_id = ANY($2::int[])`,
+      [timeframeId, indicatorIds],
+    ],
+    [
+      `SELECT DISTINCT security_id FROM indicator_rating_sample WHERE timeframe_id = $1`,
+      [timeframeId],
+    ],
+  ];
+  for (const [text, values] of sources) {
+    const { rows } = await queryable.query(text, values);
+    if (rows.length) return rows.map((r) => Number(r.security_id));
+  }
+  return [];
+}
+
 module.exports = function registerIndicatorsRoutes(app, ctx) {
   const {
     pool,
@@ -263,9 +297,19 @@ app.get('/api/indicators/create-logic-options', async (req, res) => {
         t.best_time_kind,
         t.samples_count,
         (
-          SELECT count(*)::int
-          FROM indicator_rating_universe u
-          WHERE u.indicator_id = t.indicator_id AND u.timeframe_id = t.timeframe_id
+          SELECT COALESCE(
+            NULLIF((
+              SELECT count(DISTINCT u.security_id)::int
+              FROM indicator_rating_universe u
+              WHERE u.indicator_id = t.indicator_id AND u.timeframe_id = t.timeframe_id
+            ), 0),
+            (
+              SELECT count(DISTINCT s.security_id)::int
+              FROM indicator_rating_sample s
+              WHERE s.indicator_id = t.indicator_id AND s.timeframe_id = t.timeframe_id
+            ),
+            0
+          )
         ) AS securities_count
       FROM indicator_rating_timeframe t
       JOIN timeframes tf ON tf.id = t.timeframe_id
@@ -399,24 +443,17 @@ app.post('/api/indicators/create-logics', async (req, res) => {
         }
       }
 
-      // Бумаги: все из универсума расчёта выбранных индикаторов на этом ТФ.
+      // Бумаги: все из универсума расчёта выбранных индикаторов на этом ТФ; если универсум
+      // по ТФ ещё пуст (расчёт не дошёл до него) — из сырого состава расчёта (sample).
       const indicatorIds = items.map((it) => it.indicator_id);
-      let { rowCount: securitiesCount } = await client.query(
-        `INSERT INTO logic_securities (logic_id, security_id, display_order)
-         SELECT $1, u.security_id, ROW_NUMBER() OVER (ORDER BY u.security_id) - 1
-         FROM (
-           SELECT DISTINCT security_id
-           FROM indicator_rating_universe
-           WHERE timeframe_id = $2 AND indicator_id = ANY($3::int[])
-         ) u`,
-        [logicId, timeframeId, indicatorIds]
-      );
-      if (!securitiesCount) {
+      const securityIds = await collectLogicSecurities(client, timeframeId, indicatorIds);
+      let securitiesCount = 0;
+      if (securityIds.length) {
         const { rowCount } = await client.query(
           `INSERT INTO logic_securities (logic_id, security_id, display_order)
-           SELECT $1, u.security_id, ROW_NUMBER() OVER (ORDER BY u.security_id) - 1
-           FROM (SELECT DISTINCT security_id FROM indicator_rating_universe WHERE timeframe_id = $2) u`,
-          [logicId, timeframeId]
+           SELECT $1, s.security_id, (s.ord - 1)
+           FROM unnest($2::int[]) WITH ORDINALITY AS s(security_id, ord)`,
+          [logicId, securityIds]
         );
         securitiesCount = rowCount;
       }
