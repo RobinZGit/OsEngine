@@ -23,6 +23,29 @@ function effectiveRating(rawRating, computedAt, hours) {
   return Number((value * ratingDecayFactor(computedAt, hours)).toFixed(4));
 }
 
+// #1006: создание логик из лучших рейтингов. Маркеры в имени: O — открытие, C — закрытие.
+function logicNameMarkers(open, close) {
+  return `${open ? 'O' : ''}${close ? 'C' : ''}`;
+}
+
+// Открытие идёт по kind разреза, закрытие — по противоположному условию того же индикатора.
+function oppositeSignalKind(kind) {
+  return kind === 'trend' ? 'counter' : 'trend';
+}
+
+// Уникальное имя логики (<=100 символов): базовое, при занятости — «база 2», «база 3»…
+async function uniqueLogicName(queryable, baseName) {
+  const base = String(baseName || '').slice(0, 100).trim() || 'Логика';
+  let name = base;
+  for (let n = 2; n <= 500; n += 1) {
+    const { rows } = await queryable.query('SELECT 1 FROM logics WHERE name = $1', [name]);
+    if (rows.length === 0) return name;
+    const suffix = ` ${n}`;
+    name = `${base.slice(0, 100 - suffix.length)}${suffix}`;
+  }
+  return name;
+}
+
 module.exports = function registerIndicatorsRoutes(app, ctx) {
   const {
     pool,
@@ -216,6 +239,203 @@ app.get('/api/indicators/rating-status', async (req, res) => {
   } catch (err) {
     console.error('GET /api/indicators/rating-status', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// #1006: опции для формы «Создать логику из лучших рейтингов». По каждому ТФ — список
+// индикаторов с рейтингом (лучший разрез + число бумаг в универсуме расчёта). ТФ без
+// рассчитанного рейтинга в список не попадают.
+app.get('/api/indicators/create-logic-options', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT
+        t.timeframe_id,
+        tf.tf,
+        tf.full_name,
+        tf.sec,
+        t.indicator_id,
+        i.code,
+        i.name,
+        t.rating,
+        t.best_position_side,
+        t.best_signal_kind,
+        t.best_time_kind,
+        t.samples_count,
+        (
+          SELECT count(*)::int
+          FROM indicator_rating_universe u
+          WHERE u.indicator_id = t.indicator_id AND u.timeframe_id = t.timeframe_id
+        ) AS securities_count
+      FROM indicator_rating_timeframe t
+      JOIN timeframes tf ON tf.id = t.timeframe_id
+      JOIN indicators i ON i.id = t.indicator_id
+      ORDER BY tf.sec, t.rating DESC NULLS LAST, i.code
+      `
+    );
+    const byTf = new Map();
+    for (const row of rows) {
+      const key = Number(row.timeframe_id);
+      let group = byTf.get(key);
+      if (!group) {
+        group = {
+          timeframe_id: key,
+          tf: row.tf,
+          full_name: row.full_name,
+          indicators: [],
+        };
+        byTf.set(key, group);
+      }
+      group.indicators.push({
+        indicator_id: Number(row.indicator_id),
+        code: row.code,
+        name: row.name,
+        rating: row.rating == null ? null : Number(row.rating),
+        position_side: row.best_position_side,
+        signal_kind: row.best_signal_kind,
+        time_kind: row.best_time_kind,
+        samples_count: row.samples_count == null ? null : Number(row.samples_count),
+        securities_count: Number(row.securities_count) || 0,
+      });
+    }
+    res.json({ groups: [...byTf.values()] });
+  } catch (err) {
+    console.error('GET /api/indicators/create-logic-options', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// #1006: создать логики из выбранных в форме индикаторов. На каждый ТФ с хотя бы одной
+// галочкой — одна логика: сигналы открытия (условие разреза) и закрытия (условие
+// противоположного разреза того же индикатора) + привязка всех бумаг универсума.
+// Логика всегда создаётся ВЫКЛЮЧЕННОЙ (is_enabled = FALSE), чтобы случайно не начать
+// торговлю на реальном счёте: пользователь включает её вручную.
+app.post('/api/indicators/create-logics', async (req, res) => {
+  const accountId = parseId(req.body && req.body.account_id);
+  if (!accountId) {
+    res.status(400).json({ error: 'Укажите счёт (account_id)' });
+    return;
+  }
+  const rawGroups = Array.isArray(req.body && req.body.groups) ? req.body.groups : [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const created = [];
+    for (const rawGroup of rawGroups) {
+      const timeframeId = parseId(rawGroup && rawGroup.timeframe_id);
+      if (!timeframeId) continue;
+      const items = (Array.isArray(rawGroup && rawGroup.items) ? rawGroup.items : [])
+        .map((it) => ({
+          indicator_id: parseId(it && it.indicator_id),
+          code: String((it && it.code) || '').trim().toUpperCase(),
+          position_side: it && it.position_side === 'short' ? 'short' : 'long',
+          signal_kind: it && it.signal_kind === 'counter' ? 'counter' : 'trend',
+          open: Boolean(it && it.open === true),
+          close: Boolean(it && it.close === true),
+        }))
+        .filter((it) => it.indicator_id && (it.open || it.close));
+      if (items.length === 0) continue;
+
+      const { rows: tfRows } = await client.query('SELECT tf FROM timeframes WHERE id = $1', [timeframeId]);
+      if (tfRows.length === 0) continue;
+      const tf = tfRows[0].tf;
+
+      const parts = items.map((it) => {
+        const markers = logicNameMarkers(it.open, it.close);
+        const code = it.code || `IND${it.indicator_id}`;
+        return markers ? `${code}-${markers}` : code;
+      });
+      const name = await uniqueLogicName(client, `${tf} ${parts.join(' ')}`);
+
+      const note =
+        `Создано из лучших рейтингов: ${tf}; ` +
+        items.map((it) => `${it.code || it.indicator_id} (${it.position_side}, ${it.signal_kind})`).join(', ') +
+        '; логика создана выключенной — включите вручную';
+
+      const { rows: insLogic } = await client.query(
+        `INSERT INTO logics (name, account_id, is_enabled, use_as_terminal_signal, note)
+         VALUES ($1, $2, FALSE, FALSE, $3)
+         RETURNING id`,
+        [name, accountId, note]
+      );
+      const logicId = insLogic[0].id;
+
+      // Дефолтные параметры логики (как ensureDefaultParams, но в этой же транзакции).
+      await client.query(
+        `INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+         SELECT $1, d.param_key, d.default_value, d.value_type
+         FROM logic_param_defs d
+         ON CONFLICT (logic_id, param_key) DO NOTHING`,
+        [logicId]
+      );
+      try {
+        await client.query('SELECT logic_ensure_non_trading_periods($1)', [logicId]);
+      } catch (_e) {
+        /* необязательный шаг */
+      }
+      await client.query(`SELECT logic_upsert_param($1, 'timeframe', $2, 'text')`, [logicId, tf]);
+
+      let displayOrder = 0;
+      let signalsCount = 0;
+      for (const it of items) {
+        const events = [];
+        if (it.open) events.push({ event: 'open', kind: it.signal_kind });
+        if (it.close) events.push({ event: 'close', kind: oppositeSignalKind(it.signal_kind) });
+        for (const ev of events) {
+          const { rows: formulaRows } = await client.query(
+            'SELECT indicator_signal_formula($1, $2) AS formula',
+            [it.indicator_id, ev.kind]
+          );
+          const formula = formulaRows[0] && formulaRows[0].formula;
+          if (!formula) continue;
+          displayOrder += 1;
+          await client.query(
+            `INSERT INTO logic_indicator_signals
+               (logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [logicId, it.indicator_id, ev.event, it.position_side, ev.kind, formula, displayOrder]
+          );
+          signalsCount += 1;
+        }
+      }
+
+      // Бумаги: все из универсума расчёта выбранных индикаторов на этом ТФ.
+      const indicatorIds = items.map((it) => it.indicator_id);
+      let { rowCount: securitiesCount } = await client.query(
+        `INSERT INTO logic_securities (logic_id, security_id, display_order)
+         SELECT $1, u.security_id, ROW_NUMBER() OVER (ORDER BY u.security_id) - 1
+         FROM (
+           SELECT DISTINCT security_id
+           FROM indicator_rating_universe
+           WHERE timeframe_id = $2 AND indicator_id = ANY($3::int[])
+         ) u`,
+        [logicId, timeframeId, indicatorIds]
+      );
+      if (!securitiesCount) {
+        const { rowCount } = await client.query(
+          `INSERT INTO logic_securities (logic_id, security_id, display_order)
+           SELECT $1, u.security_id, ROW_NUMBER() OVER (ORDER BY u.security_id) - 1
+           FROM (SELECT DISTINCT security_id FROM indicator_rating_universe WHERE timeframe_id = $2) u`,
+          [logicId, timeframeId]
+        );
+        securitiesCount = rowCount;
+      }
+
+      created.push({
+        logic_id: logicId,
+        name,
+        timeframe: tf,
+        signals: signalsCount,
+        securities: securitiesCount,
+      });
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ created });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    handleDbError(res, err, 'POST /api/indicators/create-logics');
+  } finally {
+    client.release();
   }
 });
 

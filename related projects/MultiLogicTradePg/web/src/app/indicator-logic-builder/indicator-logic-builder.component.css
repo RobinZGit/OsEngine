@@ -1,0 +1,161 @@
+.dialog-builder {
+  width: min(860px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-builder .dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.panel-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+  line-height: 1.35;
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.group {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  background: #f9fafb;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-head:hover {
+  background: #f3f4f6;
+}
+
+.collapse-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.25rem;
+}
+
+.group-tf {
+  font-weight: 700;
+  color: #111827;
+  min-width: 3.5rem;
+}
+
+.group-name {
+  color: #6b7280;
+  font-size: 0.85rem;
+  flex: 1;
+}
+
+.group-badge {
+  font-size: 0.78rem;
+  color: #374151;
+  background: #e5e7eb;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+}
+
+.group-name-preview {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.8rem;
+  color: #6b7280;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.group-name-preview .mono {
+  color: #374151;
+}
+
+.scroll-list-panel {
+  max-height: min(320px, 40vh);
+  overflow: auto;
+}
+
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.info-table th,
+.info-table td {
+  text-align: left;
+  padding: 0.35rem 0.65rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.info-table thead th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+  font-weight: 600;
+  color: #374151;
+}
+
+.col-rating {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.col-check {
+  text-align: center;
+  width: 3.5rem;
+}
+
+.col-check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.row-selected {
+  background: #eff6ff;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.dialog-footer {
+  align-items: center;
+}
+
+.footer-info {
+  margin-right: auto;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.result h3 {
+  margin: 0 0 0.5rem;
+}
+
+.result .info-table {
+  margin-bottom: 0.5rem;
+}
+
+.muted {
+  color: #6b7280;
+}

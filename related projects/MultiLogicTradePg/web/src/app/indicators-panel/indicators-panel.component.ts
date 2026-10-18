@@ -1,18 +1,29 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReferencesService } from '../services/references.service';
-import { IndicatorRatingStatus, IndicatorRatingTimeframeRow, IndicatorRow } from '../models/lookup.model';
+import {
+  CreatedLogicResult,
+  IndicatorRatingStatus,
+  IndicatorRatingTimeframeRow,
+  IndicatorRow,
+} from '../models/lookup.model';
 import {
   AppConfigService,
   logicsLoadErrorMessage,
 } from '../services/app-config.service';
 import { IndicatorEditorComponent } from '../indicator-editor/indicator-editor.component';
 import { IndicatorInfoComponent } from '../indicator-info/indicator-info.component';
+import { IndicatorLogicBuilderComponent } from '../indicator-logic-builder/indicator-logic-builder.component';
 
 @Component({
   selector: 'app-indicators-panel',
   standalone: true,
-  imports: [CommonModule, IndicatorEditorComponent, IndicatorInfoComponent],
+  imports: [
+    CommonModule,
+    IndicatorEditorComponent,
+    IndicatorInfoComponent,
+    IndicatorLogicBuilderComponent,
+  ],
   templateUrl: './indicators-panel.component.html',
   styleUrl: './indicators-panel.component.css',
 })
@@ -27,6 +38,10 @@ export class IndicatorsPanelComponent implements OnInit {
   /** #1005: подробная справка по индикатору. */
   infoOpen = false;
   infoTarget: IndicatorRow | null = null;
+  /** #1006: форма создания логик из лучших рейтинговых индикаторов. */
+  logicBuilderOpen = false;
+  /** #1006: последнее сообщение о создании логик (для ненавязчивой подсказки). */
+  logicBuilderNote: string | null = null;
   ratingSortDir: 'none' | 'desc' | 'asc' = 'none';
   expandedId: number | null = null;
   /** #1005: статус последнего прогона расчёта рейтинга (ошибка на развороте). */
@@ -106,6 +121,23 @@ export class IndicatorsPanelComponent implements OnInit {
   onInfoClosed(): void {
     this.infoOpen = false;
     this.infoTarget = null;
+  }
+
+  /** #1006: открыть форму создания логик из лучших рейтинговых индикаторов. */
+  openLogicBuilder(): void {
+    this.logicBuilderNote = null;
+    this.logicBuilderOpen = true;
+  }
+
+  onLogicBuilderClosed(): void {
+    this.logicBuilderOpen = false;
+  }
+
+  /** #1006: логики созданы — показать подсказку и обновить список логик на странице. */
+  onLogicsCreated(created: CreatedLogicResult[]): void {
+    this.logicBuilderNote = created.length
+      ? `Создано логик: ${created.length} (${created.map((c) => c.name).join('; ')})`
+      : 'Логики не созданы';
   }
 
   ratingText(row: IndicatorRow): string {

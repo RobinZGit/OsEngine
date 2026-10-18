@@ -1,0 +1,162 @@
+@if (open) {
+  <div class="backdrop" (click)="close()" role="presentation"></div>
+  <dialog class="dialog dialog-builder" open>
+    <header class="dialog-header">
+      <h2>Создать логику из лучших рейтингов</h2>
+      <button type="button" class="icon-btn" title="Закрыть" aria-label="Закрыть" (click)="close()">✕</button>
+    </header>
+
+    <div class="dialog-body">
+      @if (results; as createdList) {
+        <section class="result">
+          <h3>Создано логик: {{ createdList.length }}</h3>
+          @if (createdList.length === 0) {
+            <p class="muted">Ничего не создано — отметьте хотя бы один индикатор.</p>
+          } @else {
+            <p class="panel-note">
+              Логики созданы <strong>выключенными</strong> — включите нужные вручную на странице логик.
+            </p>
+            <table class="info-table">
+              <thead>
+                <tr>
+                  <th>Логика</th>
+                  <th>ТФ</th>
+                  <th>Сигналов</th>
+                  <th>Бумаг</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (r of createdList; track r.logic_id) {
+                  <tr>
+                    <td class="mono">{{ r.name }}</td>
+                    <td>{{ r.timeframe }}</td>
+                    <td>{{ r.signals }}</td>
+                    <td>{{ r.securities }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+          <div class="dialog-footer">
+            <button type="button" class="btn btn-primary" (click)="close()">Готово</button>
+          </div>
+        </section>
+      } @else {
+        <div class="form">
+          <div class="field">
+            <label class="label" for="lb-account">Счёт логики</label>
+            <select id="lb-account" [value]="accountId ?? ''" (change)="onAccountChange($event)">
+              @if (accounts.length === 0) {
+                <option value="" disabled>Нет доступных счетов</option>
+              }
+              @for (acc of accounts; track acc.id) {
+                <option [value]="acc.id">{{ accountLabel(acc) }}</option>
+              }
+            </select>
+          </div>
+
+          <p class="panel-note">
+            По умолчанию выбран демо-счёт, а логика создаётся <strong>выключенной</strong> — включите
+            её вручную, чтобы случайно не начать торговлю на реальном счёте.
+          </p>
+
+          <p class="panel-note">
+            Отметьте, что должна делать логика по каждому индикатору: «Откр.» — открытие позиции,
+            «Закр.» — закрытие по противоположному условию. На каждый ТФ с галочками создаётся
+            отдельная логика; имя — ТФ + коды индикаторов + O/C.
+          </p>
+
+          @if (loading) {
+            <p class="status">Загрузка…</p>
+          }
+
+          @if (error) {
+            <div class="error" role="alert">{{ error }}</div>
+          }
+
+          @if (!loading && !error && !hasOptions) {
+            <p class="muted">
+              Нет таймфреймов с рассчитанным рейтингом. Дождитесь расчёта рейтинга индикаторов.
+            </p>
+          }
+
+          @if (!loading && hasOptions) {
+            <div class="groups">
+              @for (group of groups; track group.timeframe_id) {
+                <section class="group" [class.group-collapsed]="isCollapsed(group.timeframe_id)">
+                  <header class="group-head" (click)="toggleCollapse(group.timeframe_id)">
+                    <button type="button" class="collapse-btn" [attr.aria-expanded]="!isCollapsed(group.timeframe_id)">
+                      {{ isCollapsed(group.timeframe_id) ? '▶' : '▼' }}
+                    </button>
+                    <span class="group-tf">{{ group.tf ?? group.full_name }}</span>
+                    <span class="group-name">{{ group.full_name }}</span>
+                    <span class="group-badge">{{ groupSelectedCount(group.timeframe_id) }} / {{ group.indicators.length }}</span>
+                  </header>
+
+                  @if (!isCollapsed(group.timeframe_id)) {
+                    <div class="group-name-preview">
+                      имя логики: <span class="mono">{{ namePreview(group) }}</span>
+                    </div>
+                    <div class="scroll-list-panel">
+                      <table class="info-table">
+                        <thead>
+                          <tr>
+                            <th>Код</th>
+                            <th>Название</th>
+                            <th class="col-rating">Рейтинг</th>
+                            <th>Лучший разрез</th>
+                            <th class="col-check">Откр.</th>
+                            <th class="col-check">Закр.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (ind of group.indicators; track ind.indicator_id) {
+                            <tr [class.row-selected]="isOpen(ind, group.timeframe_id) || isClose(ind, group.timeframe_id)">
+                              <td class="mono">{{ ind.code }}</td>
+                              <td>{{ ind.name }}</td>
+                              <td class="col-rating">{{ ratingText(ind) }}</td>
+                              <td>{{ sliceLabel(ind) }}</td>
+                              <td class="col-check">
+                                <input
+                                  type="checkbox"
+                                  [checked]="isOpen(ind, group.timeframe_id)"
+                                  (change)="toggle(ind, group.timeframe_id, 'open')"
+                                  [attr.aria-label]="'Открытие ' + ind.code"
+                                />
+                              </td>
+                              <td class="col-check">
+                                <input
+                                  type="checkbox"
+                                  [checked]="isClose(ind, group.timeframe_id)"
+                                  (change)="toggle(ind, group.timeframe_id, 'close')"
+                                  [attr.aria-label]="'Закрытие ' + ind.code"
+                                />
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+                </section>
+              }
+            </div>
+          }
+        </div>
+
+        @if (!results) {
+          <div class="dialog-footer">
+            <span class="footer-info">
+              Логик к созданию: {{ selectionSummary.groups }}
+              (индикаторов: {{ selectionSummary.indicators }})
+            </span>
+            <button type="button" class="btn btn-secondary" (click)="close()">Отмена</button>
+            <button type="button" class="btn btn-primary" [disabled]="!canSave" (click)="save()">
+              {{ saving ? 'Создание…' : 'Создать логики' }}
+            </button>
+          </div>
+        }
+      }
+    </div>
+  </dialog>
+}

@@ -11,6 +11,9 @@ import {
   BrokerPayload,
   BrokerRow,
   BuyBondsResult,
+  CreateLogicOptionsResponse,
+  CreateLogicsPayload,
+  CreateLogicsResponse,
   ExchangePayload,
   ExchangeRow,
   IndicatorCreatePayload,
@@ -179,6 +182,21 @@ export class ReferencesService {
   getIndicatorRatingStatus(): Observable<IndicatorRatingStatus> {
     return this.http.get<IndicatorRatingStatus>(
       `${this.appConfig.apiUrl}/indicators/rating-status`
+    );
+  }
+
+  /** #1006: опции формы «Создать логику из лучших рейтингов» (ТФ → лучшие индикаторы). */
+  getCreateLogicOptions(): Observable<CreateLogicOptionsResponse> {
+    return this.http.get<CreateLogicOptionsResponse>(
+      `${this.appConfig.apiUrl}/indicators/create-logic-options`
+    );
+  }
+
+  /** #1006: создать логики из выбранных индикаторов (по одной логике на ТФ). */
+  createLogicsFromRating(payload: CreateLogicsPayload): Observable<CreateLogicsResponse> {
+    return this.http.post<CreateLogicsResponse>(
+      `${this.appConfig.apiUrl}/indicators/create-logics`,
+      payload
     );
   }
 

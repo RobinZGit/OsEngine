@@ -9,8 +9,17 @@
         aria-label="Добавить индикатор"
         (click)="openCreate()"
       >+</button>
+      <button
+        type="button"
+        class="btn-logic-builder"
+        title="Создать логики из лучших рейтинговых индикаторов"
+        (click)="openLogicBuilder()"
+      >Создать логику</button>
     </div>
     <p class="panel-note">Перетащите индикатор на бумагу выше</p>
+    @if (logicBuilderNote) {
+      <p class="panel-note logic-note">{{ logicBuilderNote }}</p>
+    }
   </header>
 
   @if (loading) {
@@ -173,5 +182,11 @@
     [open]="infoOpen"
     [indicator]="infoTarget"
     (closed)="onInfoClosed()"
+  />
+
+  <app-indicator-logic-builder
+    [open]="logicBuilderOpen"
+    (closed)="onLogicBuilderClosed()"
+    (created)="onLogicsCreated($event)"
   />
 </section>

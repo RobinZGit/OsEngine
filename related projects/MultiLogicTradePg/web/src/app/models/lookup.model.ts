@@ -217,6 +217,63 @@ export interface IndicatorRatingStatus {
   ok: boolean;
 }
 
+/** #1006: индикатор в форме «Создать логику из лучших рейтингов» (лучший разрез на ТФ). */
+export interface CreateLogicOptionIndicator {
+  indicator_id: number;
+  code: string;
+  name: string;
+  rating: number | null;
+  position_side: string | null;
+  signal_kind: string | null;
+  time_kind: string | null;
+  samples_count: number | null;
+  securities_count: number;
+}
+
+/** #1006: ТФ с рассчитанным рейтингом + его лучшие индикаторы. */
+export interface CreateLogicOptionGroup {
+  timeframe_id: number;
+  tf: string | null;
+  full_name: string | null;
+  indicators: CreateLogicOptionIndicator[];
+}
+
+export interface CreateLogicOptionsResponse {
+  groups: CreateLogicOptionGroup[];
+}
+
+/** #1006: выбранный индикатор для создания логики (галочки открытия/закрытия). */
+export interface CreateLogicSignalItem {
+  indicator_id: number;
+  code: string;
+  position_side: string;
+  signal_kind: string;
+  open: boolean;
+  close: boolean;
+}
+
+export interface CreateLogicGroupPayload {
+  timeframe_id: number;
+  items: CreateLogicSignalItem[];
+}
+
+export interface CreateLogicsPayload {
+  account_id: number;
+  groups: CreateLogicGroupPayload[];
+}
+
+export interface CreatedLogicResult {
+  logic_id: number;
+  name: string;
+  timeframe: string;
+  signals: number;
+  securities: number;
+}
+
+export interface CreateLogicsResponse {
+  created: CreatedLogicResult[];
+}
+
 export interface IndicatorPayload {
   name: string;
   description: string | null;

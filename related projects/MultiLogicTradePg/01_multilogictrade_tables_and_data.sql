@@ -5195,6 +5195,30 @@ COMMENT ON COLUMN indicator_rating_timeframe.bars_from IS
 COMMENT ON COLUMN indicator_rating_timeframe.bars_to IS
 'Конец окна свечей, на котором считался рейтинг по этому ТФ';
 
+-- #1006: универсум бумаг рейтинга (индикатор × ТФ × бумага): по каким именно бумагам
+-- считался рейтинг. Переживает очистку indicator_rating_sample (TTL 24 ч) и питает
+-- создание логики из лучших рейтингов — в новую логику добавляются все бумаги,
+-- участвовавшие в расчёте, а не только бумаги уже существующих логик.
+CREATE TABLE IF NOT EXISTS indicator_rating_universe (
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    security_id INTEGER NOT NULL REFERENCES securities(id) ON DELETE CASCADE,
+    logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL,
+    signals_count INTEGER NOT NULL DEFAULT 0,
+    computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (indicator_id, timeframe_id, security_id)
+);
+ALTER TABLE indicator_rating_universe ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE SET NULL;
+ALTER TABLE indicator_rating_universe ADD COLUMN IF NOT EXISTS signals_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE indicator_rating_universe ADD COLUMN IF NOT EXISTS computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_indicator_rating_universe_tf ON indicator_rating_universe(timeframe_id);
+
+COMMENT ON TABLE indicator_rating_universe IS
+'#1006: универсум бумаг рейтинга индикатора в разрезе ТФ (переживает очистку сэмплов). Питает создание логики из лучших рейтингов — привязывает к новой логике все бумаги, по которым был посчитан рейтинг.';
+COMMENT ON COLUMN indicator_rating_universe.signals_count IS
+'Сумма сигналов по разрезам этой бумаги в этом ТФ (информационно, из indicator_rating_sample)';
+
 -- ============================================
 -- Готово: шаг 1 завершён
 -- ============================================

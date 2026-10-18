@@ -5386,6 +5386,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10056,6 +10057,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -18237,6 +18266,21 @@ $sql$,
                     computed_at = EXCLUDED.computed_at;
             END IF;
         END LOOP;
+
+        -- #1006: универсум бумаг, по которым реально посчитан рейтинг (переживает
+        -- очистку indicator_rating_sample). Питает создание логики из лучших рейтингов.
+        INSERT INTO indicator_rating_universe (
+            indicator_id, timeframe_id, security_id, logic_id, signals_count, computed_at
+        )
+        SELECT s.indicator_id, s.timeframe_id, s.security_id,
+               min(s.logic_id), sum(s.signals_count), v_now
+        FROM indicator_rating_sample s
+        WHERE s.indicator_id = v_ind.id AND s.computed_at = v_now
+        GROUP BY s.indicator_id, s.timeframe_id, s.security_id
+        ON CONFLICT (indicator_id, timeframe_id, security_id) DO UPDATE SET
+            logic_id = EXCLUDED.logic_id,
+            signals_count = EXCLUDED.signals_count,
+            computed_at = EXCLUDED.computed_at;
     END LOOP;
 
     RETURN v_processed;
@@ -18244,7 +18288,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER) IS
-'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики; если логик нет — откат к бумагам с недавними свечами, любой активный ТФ, чтобы считать без простоя); наполняет indicator_rating_sample / indicator_rating / indicator_rating_timeframe (рейтинг в разрезе ТФ + окно свечей)';
+'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики; если логик нет — откат к бумагам с недавними свечами, любой активный ТФ, чтобы считать без простоя); наполняет indicator_rating_sample / indicator_rating / indicator_rating_timeframe (рейтинг в разрезе ТФ + окно свечей) / indicator_rating_universe (бумаги расчёта)';
 
 -- Безопасная обёртка для фонового вызова: троттл + advisory lock + глушение ошибок.
 -- Возврат: 1 — считалось, 0 — пропущено (троттл/занято), -1 — ошибка (записана в indicator_rating_run).
@@ -26413,6 +26457,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 
