@@ -162,7 +162,7 @@ th {
 }
 
 .col-actions {
-  width: 4rem;
+  width: 6.5rem;
   white-space: nowrap;
   text-align: right;
   position: sticky;
@@ -225,6 +225,47 @@ th.col-rating.sortable {
 .info-icon-btn:hover {
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+/* #1011: кнопка ручного расчёта рейтинга индикатора (M1 → M5..H1). */
+.rating-run-btn {
+  color: #059669;
+}
+
+.rating-run-btn:hover {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.rating-run-btn.running {
+  color: #6b7280;
+  cursor: default;
+}
+
+.rating-run-btn.running:hover {
+  background: transparent;
+}
+
+.rating-run-btn.failed {
+  color: #dc2626;
+}
+
+.rating-run-btn.failed:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.rating-run-btn .spin {
+  animation: rating-spin 0.9s linear infinite;
+}
+
+@keyframes rating-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .empty {

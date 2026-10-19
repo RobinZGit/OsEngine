@@ -41,13 +41,25 @@ BEGIN
         v_keep_from := CURRENT_TIMESTAMP
             - (GREATEST(COALESCE(p_keep_days, 120), 14) || ' days')::INTERVAL;
 
+        -- Защита окна тестов: активные прогоны + последний завершённый прогон
+        -- каждой логики, завершившийся за последние 7 дней. Иначе после теста
+        -- его собственное окно вычищается, и повторный прогон за то же
+        -- историческое окно падает («Нет индикаторов»). Ограничение 7 дней
+        -- не даёт старым (заброшенным) прогонам выключить чистку целиком.
         SELECT MIN(r.date_from::TIMESTAMP)
             - (GREATEST(COALESCE(p_warmup_days, 45), 7) || ' days')::INTERVAL
         INTO v_test_from
         FROM logic_backtest_runs r
         WHERE r.status IN (
             'pending', 'loading_prices', 'loading_indicators', 'running'
-        );
+        )
+           OR r.id IN (
+               SELECT DISTINCT ON (r2.logic_id) r2.id
+               FROM logic_backtest_runs r2
+               WHERE r2.status IN ('completed', 'cancelled', 'failed')
+                 AND COALESCE(r2.finished_at, r2.created_at) >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+               ORDER BY r2.logic_id, COALESCE(r2.finished_at, r2.created_at) DESC, r2.id DESC
+           );
 
         IF v_test_from IS NOT NULL AND v_test_from < v_keep_from THEN
             v_keep_from := v_test_from;
@@ -75,8 +87,31 @@ BEGIN
             EXIT WHEN v_n = 0;
         END LOOP;
 
-        -- 2) Старые точки даже у активных серий (окно + защита running-тестов)
+        -- 2) Старые точки даже у активных серий (окно + защита running-тестов).
+        -- Каждую пачку пересчитываем границу: между батчами мог стартовать новый
+        -- прогон, чьё окно нельзя удалять (иначе гонка → «Нет индикаторов»).
         LOOP
+            SELECT MIN(r.date_from::TIMESTAMP)
+                - (GREATEST(COALESCE(p_warmup_days, 45), 7) || ' days')::INTERVAL
+            INTO v_test_from
+            FROM logic_backtest_runs r
+            WHERE r.status IN (
+                'pending', 'loading_prices', 'loading_indicators', 'running'
+            )
+               OR r.id IN (
+                   SELECT DISTINCT ON (r2.logic_id) r2.id
+                   FROM logic_backtest_runs r2
+                   WHERE r2.status IN ('completed', 'cancelled', 'failed')
+                     AND COALESCE(r2.finished_at, r2.created_at) >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+                   ORDER BY r2.logic_id, COALESCE(r2.finished_at, r2.created_at) DESC, r2.id DESC
+               );
+
+            v_keep_from := CURRENT_TIMESTAMP
+                - (GREATEST(COALESCE(p_keep_days, 120), 14) || ' days')::INTERVAL;
+            IF v_test_from IS NOT NULL AND v_test_from < v_keep_from THEN
+                v_keep_from := v_test_from;
+            END IF;
+
             DELETE FROM indicator_values iv
             WHERE iv.id IN (
                 SELECT x.id
@@ -109,7 +144,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION cleanup_unused_indicator_values(INTEGER, INTEGER, INTEGER) IS
-'Автообрезка indicator_values: сироты без активной sis + старше keep_days; running бэктесты защищены (date_from-warmup).';
+'Автообрезка indicator_values: сироты без активной sis + старше keep_days; защищены окна активных и последнего завершённого прогона каждой логики (date_from-warmup).';
 
 CREATE OR REPLACE FUNCTION cleanup_trading_disk_space(
     p_keep_days_active INTEGER DEFAULT 90,

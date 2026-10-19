@@ -1774,8 +1774,13 @@ tbody tr.logic-main-row:hover {
 }
 
 .col-sig-actions {
-  width: 2.5rem;
+  width: 5rem;
   text-align: right;
+  white-space: nowrap;
+}
+
+.col-sig-actions .icon-btn + .icon-btn {
+  margin-left: 0.25rem;
 }
 
 .signals-help {

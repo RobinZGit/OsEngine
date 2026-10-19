@@ -978,4 +978,83 @@ app.get('/api/indicator-values', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+  // #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке в списке. Расчёт
+  // тяжёлый (чтение M1 → агрегация в M5..H1 → тест), поэтому выполняется в фоне;
+  // очередь в памяти процесса не даёт повторным кликам запускать параллельные прогоны.
+  const manualRatingQueue = new Set();
+  let manualRatingRunning = false;
+  let manualRatingCurrent = null;
+
+  async function drainManualRatingQueue() {
+    if (manualRatingRunning) return;
+    manualRatingRunning = true;
+    try {
+      while (manualRatingQueue.size) {
+        const indicatorId = manualRatingQueue.values().next().value;
+        manualRatingQueue.delete(indicatorId);
+        manualRatingCurrent = indicatorId;
+        try {
+          await pool.query('SELECT run_indicator_rating_for_indicator_safe($1) AS r', [indicatorId]);
+        } catch (err) {
+          console.error(`Indicator rating (manual ${indicatorId}): failed`, err.message);
+        } finally {
+          manualRatingCurrent = null;
+        }
+      }
+    } finally {
+      manualRatingRunning = false;
+    }
+  }
+
+  // Поставить в фон расчёт рейтинга индикатора (чтение M1 → M5..H1).
+  app.post('/api/indicators/:id/rating-run', async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: 'Некорректный индикатор' });
+      return;
+    }
+    try {
+      const { rows } = await pool.query('SELECT id FROM indicators WHERE id = $1', [id]);
+      if (!rows.length) {
+        res.status(404).json({ error: 'Индикатор не найден' });
+        return;
+      }
+      manualRatingQueue.add(id);
+      drainManualRatingQueue();
+      res.status(202).json({ ok: true, indicator_id: id, queued: true });
+    } catch (err) {
+      handleDbError(res, err, 'POST /api/indicators/:id/rating-run');
+    }
+  });
+
+  // Статус ручного расчёта рейтинга индикатора (для индикатора прогресса в UI).
+  app.get('/api/indicators/:id/rating-run', async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: 'Некорректный индикатор' });
+      return;
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT m.last_run_at, m.last_status, m.last_message, m.updated_at,
+                (SELECT max(computed_at) FROM indicator_rating_timeframe WHERE indicator_id = $1) AS rating_computed_at
+         FROM indicator_rating_manual_run m
+         WHERE m.indicator_id = $1`,
+        [id]
+      );
+      const row = rows[0] ?? null;
+      res.json({
+        indicator_id: id,
+        running: manualRatingCurrent === id || manualRatingQueue.has(id),
+        last_run_at: row ? row.last_run_at : null,
+        last_status: row ? row.last_status : null,
+        last_message: row ? row.last_message : null,
+        rating_computed_at: row ? row.rating_computed_at : null,
+        ok: row ? row.last_status != null && row.last_status >= 0 : false,
+      });
+    } catch (err) {
+      handleDbError(res, err, 'GET /api/indicators/:id/rating-run');
+    }
+  });
 };

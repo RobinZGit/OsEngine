@@ -1630,6 +1630,31 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
     res.status(400).json({ error: 'signal_confirm_sec must be an integer 0..86400' });
     return;
   }
+  // #1012: редактирование сигнала — смена индикатора, действия, стороны, типа.
+  const hasIndicator = Object.prototype.hasOwnProperty.call(req.body || {}, 'indicator_id');
+  const indicatorId = hasIndicator ? Number(req.body?.indicator_id) : null;
+  if (hasIndicator && (!Number.isInteger(indicatorId) || indicatorId <= 0)) {
+    res.status(400).json({ error: 'indicator_id must be a positive integer' });
+    return;
+  }
+  const hasEvent = Object.prototype.hasOwnProperty.call(req.body || {}, 'position_event');
+  const positionEvent = hasEvent ? String(req.body?.position_event) : null;
+  if (hasEvent && positionEvent !== 'open' && positionEvent !== 'close') {
+    res.status(400).json({ error: 'position_event must be open or close' });
+    return;
+  }
+  const hasSide = Object.prototype.hasOwnProperty.call(req.body || {}, 'position_side');
+  const positionSide = hasSide ? String(req.body?.position_side) : null;
+  if (hasSide && positionSide !== 'long' && positionSide !== 'short') {
+    res.status(400).json({ error: 'position_side must be long or short' });
+    return;
+  }
+  const hasKind = Object.prototype.hasOwnProperty.call(req.body || {}, 'signal_kind');
+  const signalKind = hasKind ? String(req.body?.signal_kind) : null;
+  if (hasKind && signalKind !== 'trend' && signalKind !== 'counter') {
+    res.status(400).json({ error: 'signal_kind must be trend or counter' });
+    return;
+  }
   try {
     const { rows: curRows } = await pool.query(
       `SELECT logic_id FROM logic_indicator_signals WHERE id = $1`,
@@ -1658,11 +1683,15 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
       SET formula = $2,
           is_active = COALESCE($3::boolean, is_active),
           signal_acts_on = COALESCE($4::varchar, signal_acts_on),
-          signal_confirm_sec = COALESCE($5::int, signal_confirm_sec)
+          signal_confirm_sec = COALESCE($5::int, signal_confirm_sec),
+          indicator_id = COALESCE($6::int, indicator_id),
+          position_event = COALESCE($7::varchar, position_event),
+          position_side = COALESCE($8::varchar, position_side),
+          signal_kind = COALESCE($9::varchar, signal_kind)
       WHERE id = $1
       RETURNING id, logic_id, indicator_id, position_event, position_side, signal_kind, signal_acts_on, signal_confirm_sec, formula, rating, rating_test, display_order, is_active
     `,
-      [id, formula, isActive === undefined ? null : isActive, signalActsOn, signalConfirmSec]
+      [id, formula, isActive === undefined ? null : isActive, signalActsOn, signalConfirmSec, indicatorId, positionEvent, positionSide, signalKind]
     );
     const row = rows[0];
     const { rows: meta } = await pool.query(

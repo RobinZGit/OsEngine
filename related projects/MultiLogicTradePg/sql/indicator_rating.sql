@@ -172,6 +172,53 @@ $$;
 COMMENT ON FUNCTION indicator_simple_condition(TEXT) IS
 'Разбор простого условия «pp <op> VALUE» для инлайна в тесте рейтинга (is_simple, op, pp_left)';
 
+-- #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке. Набор внутридневных ТФ
+-- «от минутного до часового»: M1, M5, M15, M30, H1.
+CREATE OR REPLACE FUNCTION indicator_rating_intraday_timeframes()
+RETURNS INTEGER[]
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT ARRAY[1, 4, 6, 8, 9]::INTEGER[];
+$$;
+
+COMMENT ON FUNCTION indicator_rating_intraday_timeframes() IS
+'Внутридневные ТФ для ручного расчёта рейтинга одного индикатора (M1,M5,M15,M30,H1)';
+
+-- #1011: агрегация 1-минутных свечей в старшие внутридневные ТФ перед ручным
+-- расчётом (читаем M1 и строим из них M5/M15/M30/H1). Обёртка над существующим
+-- resample_prices_to_timeframe; ошибка по одной бумаге/ТФ не рушит весь расчёт.
+CREATE OR REPLACE PROCEDURE indicator_rating_resample_intraday(
+    p_security_ids INTEGER[],
+    p_dst_timeframe_ids INTEGER[],
+    p_date_from DATE,
+    p_date_to DATE
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_sec INTEGER;
+    v_tf INTEGER;
+BEGIN
+    IF p_security_ids IS NULL OR p_dst_timeframe_ids IS NULL THEN
+        RETURN;
+    END IF;
+
+    FOREACH v_sec IN ARRAY p_security_ids LOOP
+        FOREACH v_tf IN ARRAY p_dst_timeframe_ids LOOP
+            IF v_tf IS NULL OR v_tf = 1 THEN
+                CONTINUE;
+            END IF;
+            BEGIN
+                CALL resample_prices_to_timeframe(v_sec, 1, v_tf, p_date_from, p_date_to);
+            EXCEPTION WHEN OTHERS THEN
+                CONTINUE;
+            END;
+        END LOOP;
+    END LOOP;
+END;
+$$;
+
+COMMENT ON PROCEDURE indicator_rating_resample_intraday(INTEGER[], INTEGER[], DATE, DATE) IS
+'#1011: агрегация M1 → старшие внутридневные ТФ (M5/M15/M30/H1) перед ручным расчётом рейтинга';
+
 -- Основной расчёт. Возвращает число обработанных индикаторов.
 -- p_logic_id IS NULL — юниверс пар из всех логик (полный прогон); если логик нет —
 --   откат к бумагам с недавними свечами (любой активный ТФ), чтобы считать всегда.
@@ -179,6 +226,7 @@ COMMENT ON FUNCTION indicator_simple_condition(TEXT) IS
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
+DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER);
 CREATE OR REPLACE FUNCTION run_indicator_rating_test(
     p_max_indicators INTEGER DEFAULT 200,
     p_max_securities INTEGER DEFAULT 200,
@@ -186,7 +234,9 @@ CREATE OR REPLACE FUNCTION run_indicator_rating_test(
     p_bars_window INTEGER DEFAULT 5000,
     p_min_signals INTEGER DEFAULT 5,
     p_max_annual_pct NUMERIC DEFAULT 1000,
-    p_logic_id INTEGER DEFAULT NULL
+    p_logic_id INTEGER DEFAULT NULL,
+    p_indicator_id INTEGER DEFAULT NULL,
+    p_timeframe_ids INTEGER[] DEFAULT NULL
 )
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
@@ -259,26 +309,49 @@ BEGIN
         to_dt TIMESTAMP
     ) ON COMMIT DROP;
 
-    INSERT INTO irt_pairs (security_id, tf, logic_id)
-    SELECT ls.security_id, logic_resolve_timeframe_id(l.id), min(l.id)
-    FROM logics l
-    JOIN logic_securities ls ON ls.logic_id = l.id AND ls.is_active = TRUE
-    WHERE p_logic_id IS NULL OR l.id = p_logic_id
-    GROUP BY ls.security_id, logic_resolve_timeframe_id(l.id)
-    HAVING logic_resolve_timeframe_id(l.id) IS NOT NULL
-    ORDER BY ls.security_id, 2
-    LIMIT GREATEST(1, COALESCE(p_max_securities, 200));
-
-    IF p_logic_id IS NULL AND NOT EXISTS (SELECT 1 FROM irt_pairs) THEN
+    IF p_indicator_id IS NOT NULL THEN
+        -- #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке. Юниверс —
+        -- бумаги со свежими M1-свечами × внутридневные ТФ (по умолчанию M1..H1).
+        -- Старшие внутридневные свечи агрегируются из M1 ДО вызова (обёртка).
         INSERT INTO irt_pairs (security_id, tf, logic_id)
-        SELECT p.security_id, p.timeframe_id, NULL
-        FROM prices p
-        JOIN timeframes tf ON tf.id = p.timeframe_id AND COALESCE(tf.is_active, TRUE)
-        WHERE p.close_price > 0
-          AND p.dt >= CURRENT_TIMESTAMP - INTERVAL '3 days'
-        GROUP BY p.security_id, p.timeframe_id
-        ORDER BY count(*) DESC
+        SELECT s.security_id, t.tf_id, NULL
+        FROM (
+            SELECT DISTINCT p.security_id
+            FROM prices p
+            WHERE p.timeframe_id = 1 AND p.close_price > 0
+              AND p.dt >= CURRENT_TIMESTAMP - INTERVAL '3 days'
+            ORDER BY p.security_id
+            LIMIT GREATEST(1, COALESCE(p_max_securities, 200))
+        ) s
+        CROSS JOIN unnest(COALESCE(p_timeframe_ids, indicator_rating_intraday_timeframes())) AS t(tf_id)
+        ORDER BY s.security_id, t.tf_id;
+    ELSE
+        INSERT INTO irt_pairs (security_id, tf, logic_id)
+        SELECT ls.security_id, logic_resolve_timeframe_id(l.id), min(l.id)
+        FROM logics l
+        JOIN logic_securities ls ON ls.logic_id = l.id AND ls.is_active = TRUE
+        WHERE p_logic_id IS NULL OR l.id = p_logic_id
+        GROUP BY ls.security_id, logic_resolve_timeframe_id(l.id)
+        HAVING logic_resolve_timeframe_id(l.id) IS NOT NULL
+        ORDER BY ls.security_id, 2
         LIMIT GREATEST(1, COALESCE(p_max_securities, 200));
+
+        IF p_logic_id IS NULL AND NOT EXISTS (SELECT 1 FROM irt_pairs) THEN
+            INSERT INTO irt_pairs (security_id, tf, logic_id)
+            SELECT p.security_id, p.timeframe_id, NULL
+            FROM prices p
+            JOIN timeframes tf ON tf.id = p.timeframe_id AND COALESCE(tf.is_active, TRUE)
+            WHERE p.close_price > 0
+              AND p.dt >= CURRENT_TIMESTAMP - INTERVAL '3 days'
+            GROUP BY p.security_id, p.timeframe_id
+            ORDER BY count(*) DESC
+            LIMIT GREATEST(1, COALESCE(p_max_securities, 200));
+        END IF;
+    END IF;
+
+    -- Ограничение набора ТФ (для ручного расчёта одного индикатора — M1..H1).
+    IF p_timeframe_ids IS NOT NULL THEN
+        DELETE FROM irt_pairs WHERE NOT (tf = ANY(p_timeframe_ids));
     END IF;
 
     -- Рейтингуем ВСЕ вычислимые индикаторы (в т.ч. задействованные сигналами
@@ -287,6 +360,7 @@ BEGIN
         SELECT i.id
         FROM indicators i
         WHERE COALESCE(i.is_active, TRUE)
+          AND (p_indicator_id IS NULL OR i.id = p_indicator_id)
           AND (COALESCE(btrim(i.formula), '') <> '' OR COALESCE(btrim(i.script), '') <> '')
           AND EXISTS (
               SELECT 1 FROM indicator_value_types ivt
@@ -627,8 +701,8 @@ $sql$,
 END;
 $$;
 
-COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER) IS
-'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики; если логик нет — откат к бумагам с недавними свечами, любой активный ТФ, чтобы считать без простоя); наполняет indicator_rating_sample / indicator_rating / indicator_rating_timeframe (рейтинг в разрезе ТФ + окно свечей) / indicator_rating_universe (бумаги расчёта)';
+COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER, INTEGER, INTEGER[]) IS
+'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики; если логик нет — откат к бумагам с недавними свечами, любой активный ТФ, чтобы считать без простоя); p_indicator_id — считать только этот индикатор по внутридневным бумагам со свежими M1 (ручной расчёт по кнопке), p_timeframe_ids — ограничить набор ТФ (по умолчанию для ручного расчёта M1..H1); наполняет indicator_rating_sample / indicator_rating / indicator_rating_timeframe (рейтинг в разрезе ТФ + окно свечей) / indicator_rating_universe (бумаги расчёта)';
 
 -- Безопасная обёртка для фонового вызова: троттл + advisory lock + глушение ошибок.
 -- Возврат: 1 — считалось, 0 — пропущено (троттл/занято), -1 — ошибка (записана в indicator_rating_run).
@@ -739,3 +813,110 @@ $$;
 COMMENT ON FUNCTION run_indicator_rating_for_logic_safe(INTEGER, INTEGER) IS
 'Событийный пересчёт рейтинга индикаторов по юниверсу одной логики после её работы: '
 'троттл по логике + общий advisory lock с полным прогоном; 1/0/-1';
+
+-- #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке в списке индикаторов.
+-- Читает 1-минутные свечи бумаг со свежим M1 и агрегирует их в старшие внутридневные
+-- ТФ (M5/M15/M30/H1), затем считает рейтинг только этого индикатора по M1..H1.
+-- Троттл — по индикатору (indicator_rating_manual_run); advisory lock общий с полным
+-- прогоном, чтобы тяжёлые расчёты не шли одновременно.
+-- Возврат: 1 — считалось, 0 — пропущено (троттл/занято/нет индикатора), -1 — ошибка.
+CREATE OR REPLACE FUNCTION run_indicator_rating_for_indicator_safe(
+    p_indicator_id INTEGER,
+    p_min_interval_minutes INTEGER DEFAULT 10,
+    p_resample_days INTEGER DEFAULT NULL
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_lock BIGINT := hashtext('indicator_rating_test');
+    v_secs INTEGER[];
+    v_from DATE;
+    v_to DATE := CURRENT_DATE;
+    v_intraday INTEGER[] := indicator_rating_intraday_timeframes();
+BEGIN
+    IF p_indicator_id IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM indicators i
+        WHERE i.id = p_indicator_id
+          AND (COALESCE(btrim(i.formula), '') <> '' OR COALESCE(btrim(i.script), '') <> '')
+          AND EXISTS (
+              SELECT 1 FROM indicator_value_types ivt
+              WHERE ivt.indicator_id = i.id AND ivt.is_threshold = FALSE
+          )
+    ) THEN
+        RETURN 0;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM indicator_rating_manual_run
+        WHERE indicator_id = p_indicator_id
+          AND last_run_at > CURRENT_TIMESTAMP - make_interval(mins => GREATEST(1, COALESCE(p_min_interval_minutes, 10)))
+    ) THEN
+        RETURN 0;
+    END IF;
+
+    IF NOT pg_try_advisory_lock(v_lock) THEN
+        RETURN 0;
+    END IF;
+
+    BEGIN
+        -- Юниверс: бумаги со свежими 1-минутными свечами.
+        SELECT array_agg(DISTINCT p.security_id)
+        INTO v_secs
+        FROM prices p
+        WHERE p.timeframe_id = 1 AND p.close_price > 0
+          AND p.dt >= CURRENT_TIMESTAMP - INTERVAL '3 days';
+
+        -- Глубина агрегации: вся доступная история M1 (чтобы старшим ТФ хватило
+        -- свечей на окно расчёта). Необязательный p_resample_days ограничивает.
+        SELECT min(p.dt::date)
+        INTO v_from
+        FROM prices p
+        WHERE p.timeframe_id = 1 AND p.close_price > 0;
+
+        IF v_from IS NULL THEN
+            v_from := v_to - COALESCE(GREATEST(1, p_resample_days), 30);
+        ELSIF p_resample_days IS NOT NULL THEN
+            v_from := GREATEST(v_from, v_to - GREATEST(1, p_resample_days));
+        END IF;
+
+        -- Агрегация M1 → M5/M15/M30/H1 (берём только нужный участок истории).
+        IF v_secs IS NOT NULL THEN
+            CALL indicator_rating_resample_intraday(v_secs, v_intraday, v_from, v_to);
+        END IF;
+
+        PERFORM run_indicator_rating_test(
+            p_indicator_id => p_indicator_id,
+            p_timeframe_ids => v_intraday
+        );
+
+        INSERT INTO indicator_rating_manual_run (indicator_id, last_run_at, last_status, last_message, updated_at)
+        VALUES (p_indicator_id, CURRENT_TIMESTAMP, 1, NULL, CURRENT_TIMESTAMP)
+        ON CONFLICT (indicator_id) DO UPDATE SET
+            last_run_at = EXCLUDED.last_run_at,
+            last_status = EXCLUDED.last_status,
+            last_message = NULL,
+            updated_at = EXCLUDED.updated_at;
+    EXCEPTION WHEN OTHERS THEN
+        INSERT INTO indicator_rating_manual_run (indicator_id, last_run_at, last_status, last_message, updated_at)
+        VALUES (p_indicator_id, CURRENT_TIMESTAMP, -1, SQLERRM, CURRENT_TIMESTAMP)
+        ON CONFLICT (indicator_id) DO UPDATE SET
+            last_run_at = EXCLUDED.last_run_at,
+            last_status = EXCLUDED.last_status,
+            last_message = EXCLUDED.last_message,
+            updated_at = EXCLUDED.updated_at;
+        PERFORM pg_advisory_unlock(v_lock);
+        RETURN -1;
+    END;
+
+    PERFORM pg_advisory_unlock(v_lock);
+    RETURN 1;
+END;
+$$;
+
+COMMENT ON FUNCTION run_indicator_rating_for_indicator_safe(INTEGER, INTEGER, INTEGER) IS
+'#1011: ручной расчёт рейтинга одного индикатора по кнопке — агрегирует M1 в M5/M15/M30/H1 '
+'и считает только этот индикатор по M1..H1; троттл по индикатору + общий advisory lock; 1/0/-1';

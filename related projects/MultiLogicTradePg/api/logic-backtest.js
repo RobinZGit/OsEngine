@@ -495,6 +495,52 @@ async function countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo) {
   return rows[0]?.cnt ?? 0;
 }
 
+/**
+ * Форс-пересчёт индикаторов по логике — fallback, если кэш сообщил «cached», но в
+ * периоде 0 значений (значения удалила автоочистка indicator_values / гонка).
+ * Best-effort: ошибки логируются и не валят прогон. Возвращает {synced, errors}.
+ */
+async function forceSyncIndicatorsForLogic(pool, runId, logicId, tfId, endDt, pointCount) {
+  const { rows: secRows } = await pool.query(
+    `SELECT DISTINCT ls.security_id
+     FROM logic_securities ls
+     WHERE ls.logic_id = $1 AND ls.is_active = TRUE`,
+    [logicId]
+  );
+  const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
+  let synced = 0;
+  let errors = 0;
+  for (const { security_id: secId } of secRows) {
+    for (const indicatorId of indicatorIds) {
+      try {
+        await pool.query('CALL ensure_security_indicator_series($1, $2)', [secId, indicatorId]);
+        await pool.query('CALL logic_apply_indicator_params_from_signals($1, $2)', [
+          logicId,
+          secId,
+        ]);
+        await pool.query(
+          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
+          [secId, indicatorId, tfId, endDt, pointCount, false]
+        );
+        synced += 1;
+      } catch (e) {
+        errors += 1;
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.indicator.error',
+          e.message,
+          { security_id: secId, indicator_id: indicatorId, phase: 'force_sync' },
+          secId,
+          tfId
+        );
+      }
+    }
+  }
+  return { synced, errors };
+}
+
 async function logicTimeframeSec(pool, logicId) {
   const { rows } = await pool.query(
     `SELECT t.sec FROM timeframes t
@@ -1604,7 +1650,7 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         return;
       }
 
-      const indInPeriod = await countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo);
+      let indInPeriod = await countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo);
       await backtestLog(
         pool,
         runId,
@@ -1620,6 +1666,35 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         null,
         tfId
       );
+
+      // Кэш подтвердил наличие индикаторов, но в периоде 0 значений: значения могла
+      // удалить автоочистка indicator_values между проверкой кэша и подсчётом (гонка).
+      // Форсируем пересчёт, а не падаем сразу.
+      if (indInPeriod === 0 && stats.indCached > 0) {
+        const forced = await forceSyncIndicatorsForLogic(
+          pool,
+          runId,
+          logicId,
+          tfId,
+          endDt,
+          pointCount
+        );
+        indInPeriod = await countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo);
+        await backtestLog(
+          pool,
+          runId,
+          logicId,
+          'backtest.indicators.forced',
+          `Форс-пересчёт индикаторов: sync=${forced.synced} err=${forced.errors} в периоде=${indInPeriod}`,
+          {
+            forced_synced: forced.synced,
+            forced_errors: forced.errors,
+            indicator_values_in_period: indInPeriod,
+          },
+          null,
+          tfId
+        );
+      }
 
       if (indInPeriod === 0) {
         await updateRun(pool, runId, {
@@ -1867,25 +1942,29 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
     } catch (err) {
       console.warn('logic_opt_restore_formulas_from_run', err?.message || err);
     }
-    // Обрезка ненужных indicator_values (сироты + старые), без удаления чужих тестов.
-    // Не блокируем завершение прогона: fire-and-forget.
-    pool
-      .query('SELECT cleanup_unused_indicator_values() AS result')
-      .then((res) => {
-        const r = res.rows?.[0]?.result;
-        if (r && r.skipped) {
-          console.log('cleanup_unused_indicator_values skipped', r.reason || r);
-        } else if (r) {
-          console.log(
-            'cleanup_unused_indicator_values',
-            `orphans=${r.orphans_deleted ?? 0} aged=${r.aged_deleted ?? 0}`
-          );
-        }
-      })
-      .catch((err) => {
-        console.warn('cleanup_unused_indicator_values', err?.message || err);
-      });
     activeBacktestRuns.delete(runKey);
+    // Обрезка ненужных indicator_values (сироты + старые), без удаления чужих тестов.
+    // Не блокируем завершение прогона: fire-and-forget. Запускаем только когда больше
+    // нет активных прогонов: очистка удаляет старые indicator_values и может «съесть»
+    // окно ещё идущего/стартующего теста (гонка → «Нет индикаторов»).
+    if (activeBacktestRuns.size === 0) {
+      pool
+        .query('SELECT cleanup_unused_indicator_values() AS result')
+        .then((res) => {
+          const r = res.rows?.[0]?.result;
+          if (r && r.skipped) {
+            console.log('cleanup_unused_indicator_values skipped', r.reason || r);
+          } else if (r) {
+            console.log(
+              'cleanup_unused_indicator_values',
+              `orphans=${r.orphans_deleted ?? 0} aged=${r.aged_deleted ?? 0}`
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('cleanup_unused_indicator_values', err?.message || err);
+        });
+    }
   }
 }
 

@@ -79,6 +79,8 @@ type SignalPickerState = {
   positionEvent: PositionEvent;
   positionSide: PositionSide;
   signalKind: SignalKind;
+  /** #1012: id редактируемого сигнала; null/undefined — режим добавления. */
+  editSignalId?: number;
 } | null;
 
 type StopFormState = {
@@ -3257,6 +3259,32 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     }
   }
 
+  // #1012: редактирование сигнала — карандаш в строке. Открывает тот же
+  // picker, но в режиме изменения: предвыбран текущий индикатор, сохраняется
+  // один сигнал, формула пересчитывается из выбранного индикатора и типа.
+  openSignalEdit(signal: LogicIndicatorSignalRow, event: Event): void {
+    event.stopPropagation();
+    const logicId = signal.logic_id;
+    this.signalPicker = {
+      logicId,
+      positionEvent: signal.position_event,
+      positionSide: signal.position_side,
+      signalKind: signal.signal_kind,
+      editSignalId: signal.id,
+    };
+    this.pickerSelectedIds.clear();
+    this.pickerSelectedIds.add(signal.indicator_id);
+    if (!this.expandedLogics.has(logicId)) {
+      this.expandedLogics.add(logicId);
+    }
+    this.expandedSignalsBlocks.add(logicId);
+    this.loadSignalsForLogic(logicId);
+  }
+
+  isPickerEditing(): boolean {
+    return this.signalPicker?.editSignalId != null;
+  }
+
   pickerPreviewFormula(indicator: IndicatorRow): string {
     if (!this.signalPicker) return '';
     return buildLogicSignalFormula(indicator, this.signalPicker.signalKind);
@@ -3272,6 +3300,12 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
   }
 
   togglePickerSelection(indicatorId: number): void {
+    if (this.signalPicker?.editSignalId != null) {
+      // Режим редактирования: ровно один индикатор на сигнал.
+      this.pickerSelectedIds.clear();
+      this.pickerSelectedIds.add(indicatorId);
+      return;
+    }
     if (this.pickerSelectedIds.has(indicatorId)) {
       this.pickerSelectedIds.delete(indicatorId);
     } else {
@@ -3292,6 +3326,10 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   addSelectedSignals(): void {
     if (!this.signalPicker || this.pickerSelectedIds.size === 0) return;
+    if (this.signalPicker.editSignalId != null) {
+      this.saveSignalEdit(this.signalPicker.editSignalId);
+      return;
+    }
     // #831: одинаковые сигналы разрешены — дубликаты не отфильтровываем.
     const { logicId, positionEvent, positionSide, signalKind } = this.signalPicker;
     const toAdd = [...this.pickerSelectedIds];
@@ -3340,6 +3378,53 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
           },
         });
     }
+  }
+
+  // #1012: сохранение отредактированного сигнала. Формула пересчитывается из
+  // выбранного индикатора и типа; таймфрейм (tf=) из прежней формулы сохраняется.
+  private saveSignalEdit(signalId: number): void {
+    const picker = this.signalPicker;
+    if (!picker) return;
+    const indicatorId = [...this.pickerSelectedIds][0];
+    const ind = this.indicatorsCatalog.find((i) => i.id === indicatorId);
+    if (ind == null) {
+      this.closeSignalPicker();
+      return;
+    }
+    const signal = this.signalsFor(picker.logicId).find((s) => s.id === signalId);
+    let formula = buildLogicSignalFormula(ind, picker.signalKind);
+    if (signal) {
+      const tf = extractSignalTf(this.formulaDraft(signal));
+      if (tf.base) {
+        formula = applySignalTf(formula, tf.base, tf.mult);
+      }
+    }
+    this.savingFormulaIds.add(signalId);
+    this.logicsService
+      .updateLogicIndicatorSignal(signalId, {
+        indicator_id: indicatorId,
+        position_event: picker.positionEvent,
+        position_side: picker.positionSide,
+        signal_kind: picker.signalKind,
+        formula,
+      })
+      .subscribe({
+        next: (updated) => {
+          const list = this.logicSignals.get(updated.logic_id) ?? [];
+          this.logicSignals.set(
+            updated.logic_id,
+            list.map((s) => (s.id === updated.id ? updated : s))
+          );
+          this.formulaDrafts.set(updated.id, updated.formula);
+          this.savingFormulaIds.delete(signalId);
+          this.closeSignalPicker();
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.savingFormulaIds.delete(signalId);
+          this.cdr.markForCheck();
+        },
+      });
   }
 
   formulaDraft(signal: LogicIndicatorSignalRow): string {

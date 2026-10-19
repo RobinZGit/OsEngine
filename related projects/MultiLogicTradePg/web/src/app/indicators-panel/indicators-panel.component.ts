@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReferencesService } from '../services/references.service';
 import {
@@ -27,7 +27,7 @@ import { IndicatorLogicBuilderComponent } from '../indicator-logic-builder/indic
   templateUrl: './indicators-panel.component.html',
   styleUrl: './indicators-panel.component.css',
 })
-export class IndicatorsPanelComponent implements OnInit {
+export class IndicatorsPanelComponent implements OnInit, OnDestroy {
   indicators: IndicatorRow[] = [];
   loading = true;
   error: string | null = null;
@@ -46,6 +46,11 @@ export class IndicatorsPanelComponent implements OnInit {
   expandedId: number | null = null;
   /** #1005: статус последнего прогона расчёта рейтинга (ошибка на развороте). */
   ratingStatus: IndicatorRatingStatus | null = null;
+  /** #1011: индикаторы, для которых сейчас идёт ручной расчёт рейтинга. */
+  ratingRunningIds = new Set<number>();
+  /** #1011: сообщения об ошибках ручного расчёта по индикатору. */
+  ratingRunErrors: Record<number, string> = {};
+  private ratingPollTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   private static readonly SIDE_LABEL: Record<string, string> = {
     long: 'лонг',
@@ -121,6 +126,73 @@ export class IndicatorsPanelComponent implements OnInit {
   onInfoClosed(): void {
     this.infoOpen = false;
     this.infoTarget = null;
+  }
+
+  ngOnDestroy(): void {
+    for (const timer of this.ratingPollTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.ratingPollTimers.clear();
+  }
+
+  /** #1011: идёт ли сейчас ручной расчёт рейтинга для строки (для иконки-спиннера). */
+  isRatingRunning(row: IndicatorRow): boolean {
+    return this.ratingRunningIds.has(row.id);
+  }
+
+  /** #1011: текст ошибки ручного расчёта по строке (для подсказки иконки). */
+  ratingRunError(row: IndicatorRow): string | null {
+    return this.ratingRunErrors[row.id] ?? null;
+  }
+
+  /**
+   * #1011: запустить ручной расчёт рейтинга индикатора. Тяжёлый (читает 1-минутные
+   * свечи → агрегирует M5..H1 → считает рейтинг), поэтому POST запускает фоновую
+   * задачу, а строка опрашивает статус до завершения и затем перечитывает список.
+   */
+  runRating(event: Event, row: IndicatorRow): void {
+    event.stopPropagation();
+    if (this.ratingRunningIds.has(row.id)) {
+      return;
+    }
+    this.ratingRunningIds.add(row.id);
+    delete this.ratingRunErrors[row.id];
+    this.refs.runIndicatorRating(row.id).subscribe({
+      next: () => this.pollRating(row.id),
+      error: (err) => {
+        this.ratingRunningIds.delete(row.id);
+        this.ratingRunErrors[row.id] = logicsLoadErrorMessage(
+          this.appConfig.apiUrl,
+          err
+        );
+      },
+    });
+  }
+
+  private pollRating(id: number): void {
+    const startedAt = Date.now();
+    const tick = () => {
+      this.refs.getIndicatorRatingRunStatus(id).subscribe({
+        next: (status) => {
+          if (status.running && Date.now() - startedAt < 600000) {
+            this.ratingPollTimers.set(id, setTimeout(tick, 2000));
+            return;
+          }
+          this.ratingRunningIds.delete(id);
+          this.ratingPollTimers.delete(id);
+          if (!status.ok && status.last_message) {
+            this.ratingRunErrors[id] = status.last_message;
+          }
+          this.load();
+        },
+        error: () => {
+          this.ratingRunningIds.delete(id);
+          this.ratingPollTimers.delete(id);
+          this.load();
+        },
+      });
+    };
+    this.ratingPollTimers.set(id, setTimeout(tick, 1500));
   }
 
   /** #1006: открыть форму создания логик из лучших рейтинговых индикаторов. */

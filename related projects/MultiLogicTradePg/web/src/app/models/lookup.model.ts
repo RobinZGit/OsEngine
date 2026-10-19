@@ -217,6 +217,17 @@ export interface IndicatorRatingStatus {
   ok: boolean;
 }
 
+/** #1011: статус ручного расчёта рейтинга одного индикатора по кнопке. */
+export interface IndicatorManualRatingStatus {
+  indicator_id: number;
+  running: boolean;
+  last_run_at: string | null;
+  last_status: number | null;
+  last_message: string | null;
+  rating_computed_at: string | null;
+  ok: boolean;
+}
+
 /** #1006: индикатор в форме «Создать логику из лучших рейтингов» (лучший разрез на ТФ). */
 export interface CreateLogicOptionIndicator {
   indicator_id: number;

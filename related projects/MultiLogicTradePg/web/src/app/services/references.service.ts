@@ -17,6 +17,7 @@ import {
   ExchangePayload,
   ExchangeRow,
   IndicatorCreatePayload,
+  IndicatorManualRatingStatus,
   IndicatorPayload,
   IndicatorRatingStatus,
   IndicatorRow,
@@ -182,6 +183,21 @@ export class ReferencesService {
   getIndicatorRatingStatus(): Observable<IndicatorRatingStatus> {
     return this.http.get<IndicatorRatingStatus>(
       `${this.appConfig.apiUrl}/indicators/rating-status`
+    );
+  }
+
+  /** #1011: запустить ручной расчёт рейтинга одного индикатора (в фоне, читает M1 → M5..H1). */
+  runIndicatorRating(id: number): Observable<{ ok: boolean; indicator_id: number; queued: boolean }> {
+    return this.http.post<{ ok: boolean; indicator_id: number; queued: boolean }>(
+      `${this.appConfig.apiUrl}/indicators/${id}/rating-run`,
+      {}
+    );
+  }
+
+  /** #1011: статус ручного расчёта рейтинга индикатора (прогресс в UI). */
+  getIndicatorRatingRunStatus(id: number): Observable<IndicatorManualRatingStatus> {
+    return this.http.get<IndicatorManualRatingStatus>(
+      `${this.appConfig.apiUrl}/indicators/${id}/rating-run`
     );
   }
 

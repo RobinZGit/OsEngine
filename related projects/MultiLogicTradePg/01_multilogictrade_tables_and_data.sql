@@ -5157,6 +5157,19 @@ CREATE TABLE IF NOT EXISTS indicator_rating_logic_run (
 COMMENT ON TABLE indicator_rating_logic_run IS
 'Маркер событийного пересчёта рейтинга индикаторов по логике: время и результат последнего прогона (троттл per-logic)';
 
+-- #1011: троттлинг РУЧНОГО расчёта рейтинга одного индикатора по кнопке в списке.
+-- Последний запуск и статус на каждый индикатор.
+CREATE TABLE IF NOT EXISTS indicator_rating_manual_run (
+    indicator_id INTEGER PRIMARY KEY REFERENCES indicators(id) ON DELETE CASCADE,
+    last_run_at TIMESTAMP,
+    last_status INTEGER,
+    last_message TEXT,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE indicator_rating_manual_run IS
+'#1011: маркер ручного расчёта рейтинга индикатора по кнопке: время и результат последнего прогона (троттл per-indicator)';
+
 -- #994-доработка: рейтинг индикатора В РАЗРЕЗЕ КАЖДОГО ТАЙМФРЕЙМА + окно расчёта.
 -- Питает разворот строки индикатора в списке (по какому ТФ какой рейтинг, на каком
 -- окне свечей он посчитан). Пересчитывается вместе с общим indicator_rating.

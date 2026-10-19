@@ -1458,8 +1458,13 @@
                         <div class="indicator-picker">
 
                           <p class="picker-title">
-                            Добавить индикатор —
-                            <strong>{{ positionEventLabel(signalPicker.positionEvent) }}</strong>
+                            @if (isPickerEditing()) {
+                              Изменить сигнал —
+                              <strong>{{ positionEventLabel(signalPicker.positionEvent) }}</strong>
+                            } @else {
+                              Добавить индикатор —
+                              <strong>{{ positionEventLabel(signalPicker.positionEvent) }}</strong>
+                            }
                           </p>
 
                           <div class="signal-picker-options" (click)="$event.stopPropagation()">
@@ -1515,6 +1520,9 @@
                             Шаблон формулы — <code>sig_trend_def</code> (по течению) /
                             <code>sig_ct_def</code> (против); для коридоров: пробой UPPER / зона LOWER.
                             Сейчас: {{ signalKindLabel(signalPicker.signalKind) }}.
+                            @if (isPickerEditing()) {
+                              Формула сигнала будет пересчитана из выбранного индикатора и типа.
+                            }
                           </p>
 
                           @if (!indicatorsLoaded) {
@@ -1567,7 +1575,7 @@
                               [disabled]="pickerSelectedIds.size === 0"
                               (click)="addSelectedSignals()"
                             >
-                              Добавить ({{ pickerSelectedIds.size }})
+                              {{ isPickerEditing() ? 'Сохранить' : 'Добавить' }} ({{ pickerSelectedIds.size }})
                             </button>
 
                             <button type="button" class="btn btn-sm btn-muted" (click)="closeSignalPicker()">
@@ -1827,6 +1835,16 @@
                               </td>
 
                               <td class="col-sig-actions">
+
+                                <button
+                                  type="button"
+                                  class="icon-btn"
+                                  title="Изменить сигнал: индикатор, сторона, тип (формула пересчитается)"
+                                  aria-label="Изменить сигнал"
+                                  (click)="openSignalEdit(sig, $event)"
+                                >
+                                  ✎
+                                </button>
 
                                 <button
 
@@ -2611,7 +2629,7 @@
                                                   </label>
                                                 </td>
 
-                                                <td class="col-sig-actions">
+<td class="col-sig-actions">
 
                                                   <button
                                                     type="button"

@@ -2046,8 +2046,14 @@ BEGIN
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio_ltp_renew' THEN
-            -- Линейный TP: arm на всплеске; продажа при откате от пика >= TP%; latch против чопа
-            v_initial := get_logic_param_numeric(p_logic_id, 'initial_balance', NULL);
+            -- Линейный TP: arm на всплеске; продажа при откате от пика >= TP%; latch против чопа.
+            -- База — старт теста (test_initial_balance), иначе live initial_balance, иначе 1 000 000
+            -- (как баланс прогона в logic-backtest.js). Иначе в тесте без live initial_balance TP молчит.
+            v_initial := COALESCE(
+                NULLIF(get_logic_param_numeric(p_logic_id, 'test_initial_balance', NULL), 0),
+                NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', NULL), 0),
+                1000000
+            );
             IF v_initial IS NOT NULL AND v_initial > 0 THEN
                 SELECT COALESCE(r.portfolio_trading_paused, FALSE)
                 INTO v_port_paused
