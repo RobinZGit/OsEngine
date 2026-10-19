@@ -110,6 +110,7 @@ type StopFormDraft = {
 })
 export class LogicsComponent implements OnInit, OnDestroy {
   @ViewChild('logicImportFile') logicImportFile?: ElementRef<HTMLInputElement>;
+  @ViewChild('copyLogicNameInput') copyLogicNameInput?: ElementRef<HTMLInputElement>;
 
   logics: LogicRow[] = [];
 
@@ -210,6 +211,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
   reportPrevId: number | null = null;
   reportNextId: number | null = null;
   reportNavBusy = false;
+  /** Диалог копирования логики: имя и примечание новой логики. */
+  copyDialogOpen = false;
+  copyDialogSource: LogicRow | null = null;
+  copyDialogName = '';
+  copyDialogNote = '';
+  copyDialogBusy = false;
+  copyDialogError: string | null = null;
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
   testPnlByLogic: Map<
     number,
@@ -325,6 +333,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private signalFormulaHelpIds = new Set<number>();
   /** Логики с открытой справкой «?» в шапке блока «Сигналы логики и стоп-лосс и тейк-профит» (#831). */
   private signalsHelpBlocks = new Set<number>();
+  /** Логики с раскрытой справкой по алгоритму «Авто оптимизация». */
+  private autoOptHelpBlocks = new Set<number>();
   private signalFormulaHelpCache: string | null = null;
   private savingStopIds = new Set<number>();
   private savingParamsIds = new Set<number>();
@@ -351,6 +361,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: string;
       inversion: boolean;
       warmup_pretest: boolean;
+      auto_optimize: boolean;
       resume_sl_no_reduce: boolean;
       cash_fund_code: string;
       cash_fund_threshold: string;
@@ -1119,6 +1130,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.paramsSaveErrors.delete(logicId);
   }
 
+  onParamsAutoOptimizeChange(logicId: number, value: boolean): void {
+    this.getParamsDraft(logicId).auto_optimize = value;
+    this.paramsDirtyIds.add(logicId);
+    this.paramsSaveErrors.delete(logicId);
+  }
+
   onParamsResumeSlNoReduceChange(logicId: number, value: boolean): void {
     this.getParamsDraft(logicId).resume_sl_no_reduce = value;
     this.paramsDirtyIds.add(logicId);
@@ -1652,6 +1669,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days?: number;
       inversion?: boolean;
       warmup_pretest?: boolean;
+      auto_optimize?: boolean;
       resume_sl_no_reduce?: boolean;
       cash_fund_code?: string;
       cash_fund_threshold?: number;
@@ -1688,6 +1706,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     rating_lookback_days?: number;
     inversion?: boolean;
     warmup_pretest?: boolean;
+    auto_optimize?: boolean;
     resume_sl_no_reduce?: boolean;
     cash_fund_code?: string;
     cash_fund_threshold?: number;
@@ -1716,6 +1735,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     rating_lookback_days: string;
     inversion: boolean;
     warmup_pretest: boolean;
+    auto_optimize: boolean;
     resume_sl_no_reduce: boolean;
     cash_fund_code: string;
     cash_fund_threshold: string;
@@ -1756,6 +1776,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: this.formatIntParam(trading.rating_lookback_days ?? 7, 7),
       inversion: !!trading.inversion,
       warmup_pretest: trading.warmup_pretest !== false,
+      auto_optimize: trading.auto_optimize === true,
       resume_sl_no_reduce: trading.resume_sl_no_reduce === true,
       cash_fund_code,
       cash_fund_threshold: this.formatBalanceDraft(
@@ -1819,6 +1840,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       rating_lookback_days: row.rating_lookback_days,
       inversion: row.inversion,
       warmup_pretest: row.warmup_pretest,
+      auto_optimize: row.auto_optimize,
       resume_sl_no_reduce: row.resume_sl_no_reduce,
       cash_fund_code: row.cash_fund_code,
       cash_fund_threshold: row.cash_fund_threshold,
@@ -1993,6 +2015,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
         rating_lookback_days,
         inversion: draft.inversion,
         warmup_pretest: draft.warmup_pretest,
+        auto_optimize: draft.auto_optimize,
         resume_sl_no_reduce: draft.resume_sl_no_reduce,
         cash_fund_code,
         cash_fund_threshold,
@@ -3474,6 +3497,45 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     this.cdr.markForCheck();
   }
 
+  isAutoOptHelpOpen(logicId: number): boolean {
+    return this.autoOptHelpBlocks.has(logicId);
+  }
+
+  toggleAutoOptHelp(logicId: number, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.autoOptHelpBlocks.has(logicId)) {
+      this.autoOptHelpBlocks.delete(logicId);
+    } else {
+      this.autoOptHelpBlocks.add(logicId);
+    }
+    this.cdr.markForCheck();
+  }
+
+  autoOptimizeHelpText(): string {
+    return [
+      'Авто оптимизация (по умолчанию выкл.).',
+      '',
+      'При КАЖДОМ закрытии позиции логика подстраивает главный период (period)',
+      'сигналов входа этой стороны. Работает и в бою, и в бэктесте.',
+      '',
+      '1. Закрытие в плюс:',
+      '   Сравниваем фактическую цену входа с ценой на предыдущем баре.',
+      '   Если вход на бар раньше дал бы больше прибыли для этой стороны',
+      '   (лонг: цена раньше ниже входа; шорт: выше входа),',
+      '   меняем period так, чтобы сигнал сработал на этом более раннем баре',
+      '   (подбирается ближайший ±period, дающий срабатывание).',
+      '   Если ранний вход не выгоднее — ничего не меняем.',
+      '',
+      '2. Закрытие в минус:',
+      '   Ужесточаем требование сигнала так, чтобы на баре фактического входа',
+      '   сигнал БОЛЬШЕ не срабатывал (подбирается ближайший ±period).',
+      '',
+      'Изменённый период сохраняется в формулу сигнала и применяется к индикатору.',
+      'Действие пишется в техжурнал.',
+    ].join('\n');
+  }
+
   onFormulaInput(signal: LogicIndicatorSignalRow, value: string): void {
     this.formulaDrafts.set(signal.id, value);
   }
@@ -3724,30 +3786,71 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     });
   }
 
+  /** Открыть диалог копирования: спрашиваем имя и примечание новой логики. */
   copyLogic(row: LogicRow, event: Event): void {
     event.stopPropagation();
     if (this.copyingLogicIds.has(row.id)) return;
-    this.copyingLogicIds.add(row.id);
-    this.logicsService.copyLogic(row.id).subscribe({
-      next: (created) => {
-        this.copyingLogicIds.delete(row.id);
-        this.logics = [...this.logics, created].sort((a, b) => a.id - b.id);
-        this.showAllLogics = true;
-        this.sortColumn = null;
-        this.expandedLogics.add(created.id);
-        this.ensureParamsDraft(created.id, true);
-        this.loadSignalsForLogic(created.id, true);
-        this.loadStopsForLogic(created.id);
-        this.loadSecuritiesForLogic(created.id);
-        alert(`Логика скопирована: ${created.name}`);
-        // After OK: list is already updated/expanded — scroll so the new row is on screen.
-        setTimeout(() => this.scrollLogicIntoView(created.id), 0);
-      },
-      error: (err) => {
-        this.copyingLogicIds.delete(row.id);
-        alert(err?.error?.error || 'Не удалось скопировать логику');
-      },
-    });
+    this.copyDialogSource = row;
+    this.copyDialogName = `${row.name} copy`;
+    this.copyDialogNote = row.note ?? '';
+    this.copyDialogError = null;
+    this.copyDialogBusy = false;
+    this.copyDialogOpen = true;
+    setTimeout(() => {
+      const input = this.copyLogicNameInput?.nativeElement;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 0);
+  }
+
+  cancelCopyLogic(): void {
+    if (this.copyDialogBusy) return;
+    this.copyDialogOpen = false;
+    this.copyDialogSource = null;
+    this.copyDialogError = null;
+  }
+
+  confirmCopyLogic(): void {
+    const source = this.copyDialogSource;
+    if (!source) return;
+    const name = this.copyDialogName.trim();
+    if (!name) {
+      this.copyDialogError = 'Укажите имя новой логики';
+      return;
+    }
+    if (this.copyingLogicIds.has(source.id)) return;
+    this.copyingLogicIds.add(source.id);
+    this.copyDialogBusy = true;
+    this.copyDialogError = null;
+    const note = this.copyDialogNote.trim();
+    this.logicsService
+      .copyLogic(source.id, { name, note: note.length ? note : null })
+      .subscribe({
+        next: (created) => {
+          this.copyingLogicIds.delete(source.id);
+          this.copyDialogBusy = false;
+          this.copyDialogOpen = false;
+          this.copyDialogSource = null;
+          this.logics = [...this.logics, created].sort((a, b) => a.id - b.id);
+          this.showAllLogics = true;
+          this.sortColumn = null;
+          this.expandedLogics.add(created.id);
+          this.ensureParamsDraft(created.id, true);
+          this.loadSignalsForLogic(created.id, true);
+          this.loadStopsForLogic(created.id);
+          this.loadSecuritiesForLogic(created.id);
+          // After OK: list is already updated/expanded — scroll so the new row is on screen.
+          setTimeout(() => this.scrollLogicIntoView(created.id), 0);
+        },
+        error: (err) => {
+          this.copyingLogicIds.delete(source.id);
+          this.copyDialogBusy = false;
+          this.copyDialogError =
+            err?.error?.error || 'Не удалось скопировать логику';
+        },
+      });
   }
 
   isExportSelected(logicId: number): boolean {

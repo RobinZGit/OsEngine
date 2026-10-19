@@ -29,6 +29,7 @@ const PARAM_KEYS = {
   SELL_FUTURES_DAYS_BEFORE_EXPIRY: 'sell_futures_days_before_expiry',
   ORDER_EXECUTION: 'order_execution',
   OPT_EVAL_CANDLES: 'opt_eval_candles',
+  AUTO_OPTIMIZE: 'auto_optimize',
 };
 
 const CASH_FUND_CODES = new Set(['', 'TMON', 'LQDT', 'SBMM']);
@@ -70,6 +71,7 @@ const DEFAULTS = {
   [PARAM_KEYS.SELL_FUTURES_DAYS_BEFORE_EXPIRY]: { value: '3', type: 'integer' },
   [PARAM_KEYS.ORDER_EXECUTION]: { value: 'market', type: 'text' },
   [PARAM_KEYS.OPT_EVAL_CANDLES]: { value: '200', type: 'integer' },
+  [PARAM_KEYS.AUTO_OPTIMIZE]: { value: 'false', type: 'boolean' },
 };
 
 function parseParamValue(paramKey, raw, valueType) {
@@ -199,6 +201,7 @@ function rowsToTradingParams(rows) {
       const v = n != null ? Number(n) : 200;
       return Number.isInteger(v) && v >= 1 ? v : 200;
     })(),
+    auto_optimize: map[PARAM_KEYS.AUTO_OPTIMIZE] === true,
   };
 }
 
@@ -521,6 +524,16 @@ async function saveTradingParams(pool, logicId, payload) {
       logicId,
       PARAM_KEYS.WARMUP_PRETEST,
       payload.warmup_pretest ? 'true' : 'false',
+      'boolean'
+    );
+  }
+
+  if (payload.auto_optimize !== undefined) {
+    await upsertParam(
+      pool,
+      logicId,
+      PARAM_KEYS.AUTO_OPTIMIZE,
+      payload.auto_optimize ? 'true' : 'false',
       'boolean'
     );
   }

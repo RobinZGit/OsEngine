@@ -45,6 +45,8 @@ export interface LogicRow {
   has_portfolio_resume_sl?: boolean;
   /** Перед включением боя: предварительный тест для stop resume / inversion states. */
   warmup_pretest?: boolean;
+  /** Авто оптимизация: по закрытию позиции подстраивает главный период (period) сигналов входа. */
+  auto_optimize?: boolean;
   /**
    * security_resume: при повторном стопе цель возобновления не ниже прежнего максимума (HWM).
    * По умолчанию выкл.
@@ -96,6 +98,7 @@ export interface LogicTradingParamsPayload {
   rating_lookback_days?: number;
   inversion?: boolean;
   warmup_pretest?: boolean;
+  auto_optimize?: boolean;
   resume_sl_no_reduce?: boolean;
   cash_fund_code?: string;
   cash_fund_threshold?: number;
@@ -125,6 +128,7 @@ export interface LogicTradingParamsResponse {
   rating_lookback_days: number;
   inversion: boolean;
   warmup_pretest: boolean;
+  auto_optimize: boolean;
   resume_sl_no_reduce: boolean;
   cash_fund_code: string;
   cash_fund_threshold: number;

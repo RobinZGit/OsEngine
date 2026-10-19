@@ -5426,6 +5426,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -8238,6 +8239,20 @@ BEGIN
         END IF;
     END IF;
 
+    -- Авто оптимизация: по факту закрытия подстраиваем период сигналов входа.
+    IF v_closed > 0 AND NOT p_is_shadow THEN
+        IF v_closed_long > 0 THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, v_tf_id, v_bar_dt, 'long', FALSE, NULL
+            );
+        END IF;
+        IF v_closed_short > 0 THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, v_tf_id, v_bar_dt, 'short', FALSE, NULL
+            );
+        END IF;
+    END IF;
+
     RETURN v_closed;
 END;
 $$;
@@ -10096,6 +10111,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -16936,6 +16979,275 @@ $$;
 COMMENT ON FUNCTION logic_opt_grid_finalize(BIGINT) IS
 'После теста с opt_grid_arms: FinRes чемпиона и каждой grid-ветки, rank; пишет opt_grid_results и logics.last_opt_grid_*.';
 
+-- ============================================
+-- Авто оптимизация (auto_optimize): подстройка ГЛАВНОГО периода индикатора
+-- по факту закрытия позиции. Эмпирически (пересчётом сигнала), без угадывания
+-- направления: для проигранной сделки ищем ближайший период, при котором сигнал
+-- входа НЕ сработал бы на баре входа (условия жёстче); для выигранной — ближайший
+-- период, при котором сигнал сработал бы на ПРЕДЫДУЩЕМ баре, если вход там был бы
+-- выгоднее. Параметры живут в formula сигнала (period=), как у OPT; база
+-- перезаписывается, OPT() в формуле сохраняется.
+-- ============================================
+
+CREATE OR REPLACE FUNCTION logic_autoopt_find_period(
+    p_signal_id INTEGER,
+    p_security_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_base INTEGER,
+    p_want_ok BOOLEAN,
+    p_max_shift INTEGER DEFAULT 10
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_d INTEGER;
+    v_cand INTEGER;
+    v_ev RECORD;
+BEGIN
+    IF p_base IS NULL OR p_base < 1 THEN
+        RETURN NULL;
+    END IF;
+
+    FOR v_d IN 1..GREATEST(COALESCE(p_max_shift, 10), 1) LOOP
+        FOREACH v_cand IN ARRAY ARRAY[p_base - v_d, p_base + v_d] LOOP
+            IF v_cand < 2 OR v_cand = p_base THEN
+                CONTINUE;
+            END IF;
+            SELECT * INTO v_ev
+            FROM logic_signal_evaluate_at_opt(
+                p_signal_id, p_security_id, p_tf_id, p_bar_dt, FALSE,
+                jsonb_build_object('period', v_cand)
+            );
+            IF v_ev.bar_dt IS NOT NULL
+               AND COALESCE(v_ev.ok, FALSE) = p_want_ok THEN
+                RETURN v_cand;
+            END IF;
+        END LOOP;
+    END LOOP;
+
+    RETURN NULL;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_autoopt_find_period(INTEGER, INTEGER, INTEGER, TIMESTAMP, INTEGER, BOOLEAN, INTEGER) IS
+'Авто оптимизация: ближайший к base период (±), дающий нужно срабатывание сигнала на баре.';
+
+CREATE OR REPLACE FUNCTION logic_auto_optimize_on_close(
+    p_logic_id INTEGER,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_position_side TEXT DEFAULT NULL,
+    p_is_test BOOLEAN DEFAULT FALSE,
+    p_run_id BIGINT DEFAULT NULL
+)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_enabled TEXT;
+    v_max_shift INTEGER := 10;
+    v_tf_sec INTEGER;
+    v_tf_id INTEGER;
+    v_sides TEXT[];
+    v_side TEXT;
+    v_close RECORD;
+    v_pnl NUMERIC;
+    v_entry_price NUMERIC;
+    v_entry_bar_dt TIMESTAMP;
+    v_prev_bar_dt TIMESTAMP;
+    v_prev_price NUMERIC;
+    v_earlier_better BOOLEAN;
+    v_is_profit BOOLEAN;
+    v_sig RECORD;
+    v_parsed RECORD;
+    v_base INTEGER;
+    v_new INTEGER;
+    v_new_formula TEXT;
+    v_changed INTEGER := 0;
+BEGIN
+    v_enabled := lower(btrim(COALESCE(get_logic_param_text(p_logic_id, 'auto_optimize'), 'false')));
+    IF v_enabled NOT IN ('true', 't', '1', 'on', 'yes', 'да') THEN
+        RETURN 0;
+    END IF;
+
+    v_tf_id := p_timeframe_id;
+    IF v_tf_id IS NULL THEN
+        v_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    END IF;
+    SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
+    IF v_tf_sec IS NULL OR v_tf_sec <= 0 THEN
+        RETURN 0;
+    END IF;
+
+    v_sides := CASE logic_normalize_position_side(p_position_side)
+        WHEN 'long' THEN ARRAY['long']
+        WHEN 'short' THEN ARRAY['short']
+        ELSE ARRAY['long', 'short']
+    END;
+
+    FOREACH v_side IN ARRAY v_sides LOOP
+        SELECT lt.id, lt.price, lt.bar_dt,
+               COALESCE(
+                   lt.financial_result,
+                   (SELECT SUM(l.financial_result)
+                    FROM logic_trade_lots l
+                    WHERE l.close_trade_id = lt.id)
+               ) AS pnl
+        INTO v_close
+        FROM logic_trades lt
+        JOIN sides sd ON sd.id = lt.side_id
+        JOIN actions ac ON ac.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.security_id = p_security_id
+          AND lt.position_event = 'close'
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND COALESCE(lt.is_test, FALSE) = COALESCE(p_is_test, FALSE)
+          AND lt.status IN ('filled', 'submitted')
+          AND lower(ac.name) = v_side
+          AND lt.bar_dt <= p_bar_dt
+        ORDER BY lt.bar_dt DESC, lt.id DESC
+        LIMIT 1;
+
+        IF NOT FOUND THEN
+            CONTINUE;
+        END IF;
+
+        v_pnl := v_close.pnl;
+        IF v_pnl IS NULL THEN
+            CONTINUE;
+        END IF;
+        v_is_profit := v_pnl > 0;
+
+        -- Точная цена/бар входа из пакетов закрытия; иначе — последняя открывающая сделка.
+        SELECT SUM(l.open_amount) / NULLIF(SUM(l.quantity), 0), MIN(o.bar_dt)
+        INTO v_entry_price, v_entry_bar_dt
+        FROM logic_trade_lots l
+        JOIN logic_trades o ON o.id = l.open_trade_id
+        WHERE l.close_trade_id = v_close.id;
+
+        IF v_entry_price IS NULL OR v_entry_bar_dt IS NULL THEN
+            SELECT lt.price, lt.bar_dt
+            INTO v_entry_price, v_entry_bar_dt
+            FROM logic_trades lt
+            JOIN sides sd ON sd.id = lt.side_id
+            JOIN actions ac ON ac.id = lt.action_id
+            WHERE lt.logic_id = p_logic_id
+              AND lt.security_id = p_security_id
+              AND lt.position_event = 'open'
+              AND COALESCE(lt.opt_lane, '') = ''
+              AND COALESCE(lt.is_test, FALSE) = COALESCE(p_is_test, FALSE)
+              AND lt.status IN ('filled', 'submitted')
+              AND lower(ac.name) = v_side
+              AND lt.bar_dt <= v_close.bar_dt
+            ORDER BY lt.bar_dt DESC, lt.id DESC
+            LIMIT 1;
+        END IF;
+
+        IF v_entry_price IS NULL OR v_entry_bar_dt IS NULL THEN
+            CONTINUE;
+        END IF;
+
+        v_prev_bar_dt := v_entry_bar_dt - make_interval(secs => v_tf_sec);
+        SELECT p.close_price INTO v_prev_price
+        FROM prices p
+        WHERE p.security_id = p_security_id
+          AND p.timeframe_id = v_tf_id
+          AND p.dt = v_prev_bar_dt
+        LIMIT 1;
+
+        IF v_prev_price IS NULL OR v_prev_price <= 0 THEN
+            CONTINUE;
+        END IF;
+
+        -- Выгоднее ли был бы вход на предыдущем баре (для нашей стороны).
+        v_earlier_better := CASE v_side
+            WHEN 'long' THEN v_prev_price < v_entry_price
+            ELSE v_prev_price > v_entry_price
+        END;
+
+        IF v_is_profit AND NOT v_earlier_better THEN
+            CONTINUE;
+        END IF;
+
+        FOR v_sig IN
+            SELECT lis.id, lis.formula
+            FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id
+              AND lis.is_active = TRUE
+              AND lis.position_event = 'open'
+              AND lower(COALESCE(lis.position_side, '')) = v_side
+        LOOP
+            SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
+            IF NOT COALESCE(v_parsed.valid, FALSE) THEN
+                CONTINUE;
+            END IF;
+            -- Сигналы со своим tf= не трогаем: оценка идёт по TF логики.
+            IF parse_signal_param_num(v_parsed.params, 'tf') IS NOT NULL THEN
+                CONTINUE;
+            END IF;
+            v_base := parse_signal_param_num(v_parsed.params, 'period')::INTEGER;
+            IF v_base IS NULL OR v_base < 1 THEN
+                CONTINUE;
+            END IF;
+
+            IF v_is_profit THEN
+                v_new := logic_autoopt_find_period(
+                    v_sig.id, p_security_id, v_tf_id, v_prev_bar_dt, v_base, TRUE, v_max_shift
+                );
+            ELSE
+                v_new := logic_autoopt_find_period(
+                    v_sig.id, p_security_id, v_tf_id, v_entry_bar_dt, v_base, FALSE, v_max_shift
+                );
+            END IF;
+
+            IF v_new IS NULL OR v_new = v_base THEN
+                CONTINUE;
+            END IF;
+
+            v_new_formula := logic_opt_rewrite_formula_bases(
+                v_sig.formula, jsonb_build_object('period', v_new)
+            );
+            IF v_new_formula IS DISTINCT FROM v_sig.formula THEN
+                UPDATE logic_indicator_signals SET formula = v_new_formula WHERE id = v_sig.id;
+                v_changed := v_changed + 1;
+            END IF;
+        END LOOP;
+
+        IF v_changed > 0 THEN
+            PERFORM logic_trade_log(
+                p_logic_id,
+                'auto_opt.adjust',
+                format(
+                    'Авто оптимизация (%s): период сигналов входа изменён, %s сигн.; PnL=%s, вход=%s, пред.%s',
+                    v_side, v_changed, v_pnl, v_entry_price, v_prev_price
+                ),
+                jsonb_build_object(
+                    'side', v_side,
+                    'changed', v_changed,
+                    'pnl', v_pnl,
+                    'entry_price', v_entry_price,
+                    'entry_bar_dt', v_entry_bar_dt,
+                    'prev_price', v_prev_price,
+                    'prev_bar_dt', v_prev_bar_dt
+                ),
+                p_security_id,
+                v_tf_id
+            );
+        END IF;
+    END LOOP;
+
+    IF v_changed > 0 AND NOT p_is_test THEN
+        CALL logic_apply_indicator_params_from_signals(p_logic_id, p_security_id);
+    END IF;
+
+    RETURN v_changed;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_auto_optimize_on_close(INTEGER, INTEGER, INTEGER, TIMESTAMP, TEXT, BOOLEAN, BIGINT) IS
+'Авто оптимизация: по закрытию позиции подбирает главный период (period) сигналов входа — проигрыш: период, при котором сигнал не сработал бы на баре входа; выигрыш: период, при котором сигнал сработал бы на предыдущем баре (если вход там выгоднее).';
+
 -- Рейтинг сигнала на логике: боевой (rating) и тестовый (rating_test) раздельно.
 -- Не путать с рейтингом индикатора в справочнике indicators.
 --
@@ -23143,6 +23455,20 @@ BEGIN
 
     o_closed := v_closed;
     o_new_balance := v_balance;
+
+    -- Авто оптимизация: по факту закрытия подстраиваем период сигналов входа.
+    IF v_closed > 0 AND NOT COALESCE(p_is_shadow, FALSE) THEN
+        IF v_close_long THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, p_timeframe_id, p_bar_dt, 'long', TRUE, p_run_id
+            );
+        END IF;
+        IF v_close_short THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, p_timeframe_id, p_bar_dt, 'short', TRUE, p_run_id
+            );
+        END IF;
+    END IF;
 END;
 $$;
 
@@ -24326,7 +24652,11 @@ BEGIN
         v_size_mode := 'free_cash';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
-    v_use_opt := logic_opt_logic_has_opt(p_logic_id);
+    -- Авто оптимизация меняет period сигналов по ходу прогона; чтобы изменение
+    -- влияло на оценку без пересчёта общей серии indicator_values, оцениваем
+    -- сигналы на лету (как при OPT), а не из предрассчитанной серии.
+    v_use_opt := logic_opt_logic_has_opt(p_logic_id)
+        OR get_logic_param_boolean(p_logic_id, 'auto_optimize', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
     -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN
@@ -26795,6 +27125,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

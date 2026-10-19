@@ -971,6 +971,20 @@ BEGIN
         END IF;
     END IF;
 
+    -- Авто оптимизация: по факту закрытия подстраиваем период сигналов входа.
+    IF v_closed > 0 AND NOT p_is_shadow THEN
+        IF v_closed_long > 0 THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, v_tf_id, v_bar_dt, 'long', FALSE, NULL
+            );
+        END IF;
+        IF v_closed_short > 0 THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, v_tf_id, v_bar_dt, 'short', FALSE, NULL
+            );
+        END IF;
+    END IF;
+
     RETURN v_closed;
 END;
 $$;

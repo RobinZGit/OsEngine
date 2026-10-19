@@ -618,6 +618,11 @@ function parseLogicTradingParams(body) {
     hasField = true;
   }
 
+  if (body?.auto_optimize !== undefined) {
+    out.auto_optimize = Boolean(body.auto_optimize);
+    hasField = true;
+  }
+
   if (body?.resume_sl_no_reduce !== undefined) {
     out.resume_sl_no_reduce = Boolean(body.resume_sl_no_reduce);
     hasField = true;

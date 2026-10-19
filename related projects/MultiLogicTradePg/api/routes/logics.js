@@ -352,7 +352,6 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     const { rows: sourceRows } = await client.query(
       `
       SELECT id, name, account_id, note,
-             COALESCE(use_as_terminal_signal, FALSE) AS use_as_terminal_signal,
              last_opt_grid_results, last_opt_grid_run_id, last_opt_grid_at
       FROM logics WHERE id = $1
       `,
@@ -364,24 +363,39 @@ app.post('/api/logics/:id/copy', async (req, res) => {
       return;
     }
     const source = sourceRows[0];
-    const baseName = `${source.name} copy`;
-    let copyName = baseName;
-    for (let i = 2; i <= 100; i += 1) {
-      const { rows: existing } = await client.query(
-        'SELECT 1 FROM logics WHERE name = $1 LIMIT 1',
-        [copyName]
-      );
-      if (existing.length === 0) break;
-      copyName = `${baseName} ${i}`;
+
+    // Имя копии: из запроса (пользователь задаёт в диалоге), иначе «… copy».
+    const requestedName =
+      typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    let copyName;
+    if (requestedName) {
+      copyName = requestedName;
+    } else {
+      const baseName = `${source.name} copy`;
+      copyName = baseName;
+      for (let i = 2; i <= 100; i += 1) {
+        const { rows: existing } = await client.query(
+          'SELECT 1 FROM logics WHERE name = $1 LIMIT 1',
+          [copyName]
+        );
+        if (existing.length === 0) break;
+        copyName = `${baseName} ${i}`;
+      }
     }
 
+    // Примечание: из запроса (можно очистить), иначе — как у источника.
+    const copyNote =
+      req.body?.note === undefined ? source.note : req.body.note;
+
+    // use_as_terminal_signal намеренно НЕ копируется — копия стартует без
+    // подачи сигналов в терминал; пользователь включает вручную.
     const { rows: inserted } = await client.query(
       `
       INSERT INTO logics (name, account_id, is_enabled, use_as_terminal_signal, note)
-      VALUES ($1, $2, FALSE, $3, $4)
+      VALUES ($1, $2, FALSE, FALSE, $3)
       RETURNING id, name, account_id, is_enabled, use_as_terminal_signal, note
       `,
-      [copyName, source.account_id, source.use_as_terminal_signal, source.note]
+      [copyName, source.account_id, copyNote]
     );
     const copy = inserted[0];
 
@@ -514,7 +528,7 @@ app.post('/api/logics/:id/copy', async (req, res) => {
     await client.query('ROLLBACK');
     console.error('POST /api/logics/:id/copy', err);
     if (err.code === '23505') {
-      res.status(409).json({ error: 'Could not create a unique copy name' });
+      res.status(409).json({ error: 'Логика с таким именем уже существует' });
       return;
     }
     res.status(500).json({ error: err.message });

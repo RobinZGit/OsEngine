@@ -1129,6 +1129,20 @@ BEGIN
 
     o_closed := v_closed;
     o_new_balance := v_balance;
+
+    -- Авто оптимизация: по факту закрытия подстраиваем период сигналов входа.
+    IF v_closed > 0 AND NOT COALESCE(p_is_shadow, FALSE) THEN
+        IF v_close_long THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, p_timeframe_id, p_bar_dt, 'long', TRUE, p_run_id
+            );
+        END IF;
+        IF v_close_short THEN
+            PERFORM logic_auto_optimize_on_close(
+                p_logic_id, p_security_id, p_timeframe_id, p_bar_dt, 'short', TRUE, p_run_id
+            );
+        END IF;
+    END IF;
 END;
 $$;
 
@@ -2312,7 +2326,11 @@ BEGIN
         v_size_mode := 'free_cash';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
-    v_use_opt := logic_opt_logic_has_opt(p_logic_id);
+    -- Авто оптимизация меняет period сигналов по ходу прогона; чтобы изменение
+    -- влияло на оценку без пересчёта общей серии indicator_values, оцениваем
+    -- сигналы на лету (как при OPT), а не из предрассчитанной серии.
+    v_use_opt := logic_opt_logic_has_opt(p_logic_id)
+        OR get_logic_param_boolean(p_logic_id, 'auto_optimize', FALSE);
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
     -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN

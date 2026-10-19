@@ -221,12 +221,16 @@ export class LogicsService {
 
   /**
    * Копия логики: params/signals/stops/securities, без сделок.
-   * Имя «… copy», is_enabled=false.
+   * Имя/примечание задаёт пользователь (диалог); is_enabled=false,
+   * use_as_terminal_signal у копии всегда выключен.
    */
-  copyLogic(id: number): Observable<LogicRow> {
+  copyLogic(
+    id: number,
+    payload: { name: string; note?: string | null } = { name: '' }
+  ): Observable<LogicRow> {
     return this.http.post<LogicRow>(
       `${this.appConfig.apiUrl}/logics/${id}/copy`,
-      {}
+      payload
     );
   }
 

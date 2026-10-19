@@ -124,6 +124,69 @@
     </button>
   </section>
 
+  @if (copyDialogOpen) {
+    <div class="copy-modal-backdrop" (click)="cancelCopyLogic()" role="presentation"></div>
+    <div
+      class="copy-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Копирование логики"
+      (click)="$event.stopPropagation()"
+    >
+      <header class="copy-modal-head">
+        <strong>Копирование логики</strong>
+        <span class="copy-modal-sub">{{ copyDialogSource?.name }}</span>
+      </header>
+      <div class="copy-modal-body">
+        <label class="copy-modal-field">
+          <span>Имя новой логики</span>
+          <input
+            #copyLogicNameInput
+            type="text"
+            [(ngModel)]="copyDialogName"
+            (keydown.enter)="confirmCopyLogic()"
+            (keydown.escape)="cancelCopyLogic()"
+            placeholder="Название логики"
+          />
+        </label>
+        <label class="copy-modal-field">
+          <span>Примечание</span>
+          <textarea
+            rows="3"
+            [(ngModel)]="copyDialogNote"
+            (keydown.escape)="cancelCopyLogic()"
+            placeholder="Примечание (необязательно)"
+          ></textarea>
+        </label>
+        <p class="copy-modal-hint">
+          Копия создаётся выключенной. Сигналы в терминал у копии выключены —
+          включаются вручную. Сделки и история теста не копируются.
+        </p>
+        @if (copyDialogError) {
+          <p class="copy-modal-error">{{ copyDialogError }}</p>
+        }
+      </div>
+      <footer class="copy-modal-actions">
+        <button
+          type="button"
+          class="btn-copy-cancel"
+          [disabled]="copyDialogBusy"
+          (click)="cancelCopyLogic()"
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          class="btn-copy-confirm"
+          [disabled]="copyDialogBusy"
+          (click)="confirmCopyLogic()"
+        >
+          {{ copyDialogBusy ? 'Копирование…' : 'Скопировать' }}
+        </button>
+      </footer>
+    </div>
+  }
+
   @if (reportsOpen) {
     <div class="reports-modal-backdrop" (click)="closeTestReports()" role="presentation"></div>
     <div
@@ -535,7 +598,7 @@
                   <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                     <path
                       fill="currentColor"
-                      d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"
+                      d="M13 1 L7 13 L11 13 L9 23 L17 10 L13 10 Z"
                     />
                   </svg>
                 </button>
@@ -1325,6 +1388,45 @@
                                 >
                                   {{ isParamsSaving(row.id) ? 'Сохранение…' : 'Сохранить параметры' }}
                                 </button>
+
+                              </td>
+
+                            </tr>
+
+                            <tr class="params-actions-row params-band-b auto-opt-row">
+
+                              <td colspan="3">
+
+                                <label class="params-reset" (click)="$event.stopPropagation()">
+
+                                  <input
+                                    type="checkbox"
+                                    [ngModel]="getParamsDraft(row.id).auto_optimize"
+                                    (ngModelChange)="onParamsAutoOptimizeChange(row.id, $event)"
+                                  />
+
+                                  Авто оптимизация
+
+                                </label>
+
+                                <button
+                                  type="button"
+                                  class="formula-help-btn auto-opt-help-btn"
+                                  [class.open]="isAutoOptHelpOpen(row.id)"
+                                  [attr.aria-expanded]="isAutoOptHelpOpen(row.id)"
+                                  title="Алгоритм авто оптимизации"
+                                  aria-label="Справка: алгоритм авто оптимизации"
+                                  (click)="toggleAutoOptHelp(row.id, $event)"
+                                >i</button>
+
+                                <span class="params-hint auto-opt-hint">
+                                  При закрытии позиции подстраивает главный период (period) сигналов входа.
+                                  Работает в бою и в бэктесте. Подробнее — по «i».
+                                </span>
+
+                                @if (isAutoOptHelpOpen(row.id)) {
+                                  <pre class="formula-help-panel auto-opt-help-panel" aria-live="polite">{{ autoOptimizeHelpText() }}</pre>
+                                }
 
                               </td>
 
