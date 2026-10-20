@@ -4036,7 +4036,13 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
               alert(proto);
               return;
             }
-            alert(err?.error?.error || 'Не удалось импортировать логики');
+            const msg = err?.error?.error || err?.message || 'Не удалось импортировать логики';
+            const det = err?.error?.detail;
+            if (det) {
+              alert(msg + '\n' + det);
+              return;
+            }
+            alert(msg);
           },
         });
       } catch {
