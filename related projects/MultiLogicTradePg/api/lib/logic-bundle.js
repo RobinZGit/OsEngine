@@ -356,8 +356,20 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
     [logicId]
   );
 
+  const { rows: allowedParamDefs } = await client.query(
+    `SELECT param_key FROM logic_param_defs`
+  );
+  const allowedParams = new Set(allowedParamDefs.map((r) => r.param_key));
+
   for (const p of item.params || []) {
     if (!p?.param_key) continue;
+    const key = String(p.param_key);
+    if (!allowedParams.has(key)) {
+      warnings.push(
+        `${nameForWarn}: параметр ${key} отсутствует в logic_param_defs на целевом сервере — пропущен`
+      );
+      continue;
+    }
     await client.query(
       `
       INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
@@ -369,10 +381,10 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
       `,
       [
         logicId,
-        String(p.param_key),
+        key,
         p.param_value != null ? String(p.param_value) : '',
         p.value_type != null ? String(p.value_type) : 'text',
-      ]
+      ],
     );
   }
 
