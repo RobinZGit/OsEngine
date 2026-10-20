@@ -436,11 +436,23 @@ app.post('/api/prices/load', async (req, res) => {
         date_to: win.date_to,
         closed_bar_dt: closedBar,
       });
-    } catch (err) {
-      console.error('POST /api/prices/refresh', err.message || err);
-      res.status(502).json({ error: err.message });
-    }
-  });
+  } catch (err) {
+    console.error('POST /api/prices/refresh', err.message || err);
+    try {
+      const { logError } = await import('../lib/error-log.js');
+      await logError(pool, {
+        level: 'error',
+        source: 'api',
+        category: 'prices',
+        message: 'Ошибка загрузки/обновления цен',
+        detail: err?.message || String(err),
+        endpoint: '/api/prices/refresh',
+        method: 'POST',
+      });
+    } catch {}
+    res.status(502).json({ error: err.message });
+  }
+});
 
   // #922: живые цены (последняя сделка) пачкой по бумагам с открытыми позициями.
   // График живёт на закрытых свечах (POST /prices/refresh), поэтому между закрытиями
@@ -515,17 +527,66 @@ app.post('/api/prices/load', async (req, res) => {
               if (!figi || !(price > 0)) continue;
               byFigi.set(figi, { price, time: q.time ?? null });
             }
-            if (byFigi.size > 0) source = 'tbank';
-            else error = 'T-Bank вернул пустой ответ';
-          } catch (err) {
-            error = err?.message || String(err);
-          }
-        } else {
-          error = 'Не задан T-Bank API-токен';
+        if (byFigi.size > 0) source = 'tbank';
+        else {
+          error = 'T-Bank вернул пустой ответ';
+          try {
+            const { logError } = await import('../lib/error-log.js');
+            await logError(pool, {
+              level: 'error',
+              source: 'api',
+              category: 'prices',
+              message: 'T-Bank GetLastPrices вернул пустой ответ',
+              detail: `figis=${figis.join(',')}`,
+              endpoint: '/api/prices/last',
+              method: 'GET',
+            });
+          } catch {}
         }
-      } else {
-        error = 'У бумаг нет FIGI T-Bank';
+      } catch (err) {
+        error = err?.message || String(err);
+        try {
+          const { logError } = await import('../lib/error-log.js');
+          await logError(pool, {
+            level: 'error',
+            source: 'api',
+            category: 'prices',
+            message: 'Ошибка запроса цен в T-Bank (GetLastPrices)',
+            detail: err?.message || String(err),
+            endpoint: '/api/prices/last',
+            method: 'GET',
+          });
+        } catch {}
       }
+    } else {
+      error = 'Не задан T-Bank API-токен';
+      try {
+        const { logError } = await import('../lib/error-log.js');
+        await logError(pool, {
+          level: 'error',
+          source: 'api',
+          category: 'prices',
+          message: 'Не задан T-Bank API-токен для загрузки цен',
+          endpoint: '/api/prices/last',
+          method: 'GET',
+        });
+      } catch {}
+    }
+  } else {
+    error = 'У бумаг нет FIGI T-Bank';
+    try {
+      const { logError } = await import('../lib/error-log.js');
+      await logError(pool, {
+        level: 'error',
+        source: 'api',
+        category: 'prices',
+        message: 'У запрошенных бумаг нет FIGI для получения цен T-Bank',
+        detail: `security_ids=${securityIds.join(',')}`,
+        endpoint: '/api/prices/last',
+        method: 'GET',
+      });
+    } catch {}
+  }
       // Фолбэк на последнюю закрытую свечу — полоса остаётся с ценой, даже если
       // T-Bank недоступен (вход в терминал не должен ломаться).
       const { rows: candleRows } = await pool.query(
@@ -567,6 +628,18 @@ app.post('/api/prices/load', async (req, res) => {
       res.json({ ok: true, source, error, prices, ts: new Date().toISOString() });
     } catch (err) {
       console.error('GET /api/prices/last', err);
+      try {
+        const { logError } = await import('../lib/error-log.js');
+        await logError(pool, {
+          level: 'error',
+          source: 'api',
+          category: 'prices',
+          message: 'Ошибка получения последних цен',
+          detail: err?.message || String(err),
+          endpoint: '/api/prices/last',
+          method: 'GET',
+        });
+      } catch {}
       res.status(500).json({ error: err.message });
     }
   });
