@@ -207,6 +207,15 @@
   color: #1f2937;
 }
 
+.help-body a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.help-body a:hover {
+  color: #1e3a8a;
+}
+
 @media (max-width: 720px) {
   .panel-body.context-mode {
     grid-template-columns: 1fr;

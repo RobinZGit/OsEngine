@@ -83,6 +83,40 @@ export function splitMarkdownChapters(
   return chapters;
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+};
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"]/g, (ch) => HTML_ESCAPES[ch]);
+}
+
+/**
+ * Превратить markdown-ссылки вида [текст](https://…) в кликабельные <a>.
+ * Остальной текст HTML-экранируется, поэтому `<`, `>`, `&` выводятся буквально
+ * (в справке много формул вида `pp < VALUE`). Ссылки `<…>` без http(s) не трогаем —
+ * плейсхолдеры вроде `[<короткий-sha>](<ссылка>)` остаются как есть.
+ */
+export function renderInlineLinks(source: string): string {
+  const text = source ?? '';
+  const linkRe = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let html = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(text)) !== null) {
+    html += escapeHtml(text.slice(last, m.index));
+    const label = escapeHtml(m[1]);
+    const href = escapeHtml(m[2]);
+    html += `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    last = m.index + m[0].length;
+  }
+  html += escapeHtml(text.slice(last));
+  return html;
+}
+
 export const APP_HELP_SECTIONS: HelpSection[] = [
   {
     id: 'overview',

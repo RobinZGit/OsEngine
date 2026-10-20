@@ -59,11 +59,11 @@
             </p>
             @if (activeChapter; as ch) {
               <h4 class="chapter-title">{{ ch.title }}</h4>
-              <pre class="help-body">{{ ch.body }}</pre>
+              <pre class="help-body" [innerHTML]="bodyHtml(ch.body)"></pre>
             }
           } @else {
             <h3>{{ sec.title }}</h3>
-            <pre class="help-body">{{ sec.body }}</pre>
+            <pre class="help-body" [innerHTML]="bodyHtml(sec.body)"></pre>
           }
         }
       </article>

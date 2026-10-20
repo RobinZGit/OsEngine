@@ -5,6 +5,7 @@ import {
   APP_HELP_SECTIONS,
   HelpSection,
   PROJECT_CONTEXT_DOCS,
+  renderInlineLinks,
   splitMarkdownChapters,
 } from './app-help-content';
 import { assetUrl } from '../shared/asset-url';
@@ -30,8 +31,21 @@ export class AppHelpPanelComponent implements OnChanges {
   contextError: string | null = null;
 
   private readonly chapterCache = new Map<string, { id: string; title: string; body: string }[]>();
+  private readonly bodyHtmlCache = new Map<string, string>();
 
   constructor(private readonly http: HttpClient) {}
+
+  /** Текст справки с кликабельными markdown-ссылками (для [innerHTML] в <pre>). */
+  bodyHtml(body: string): string {
+    const text = body ?? '';
+    const cached = this.bodyHtmlCache.get(text);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const html = renderInlineLinks(text);
+    this.bodyHtmlCache.set(text, html);
+    return html;
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['open'] && this.open) {
