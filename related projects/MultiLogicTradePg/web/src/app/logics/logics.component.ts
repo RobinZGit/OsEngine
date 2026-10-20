@@ -4031,6 +4031,11 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
           },
           error: (err) => {
             this.exportImportBusy = false;
+            const proto = err?.error?.protocol;
+            if (proto && typeof proto === 'string') {
+              alert(proto);
+              return;
+            }
             alert(err?.error?.error || 'Не удалось импортировать логики');
           },
         });

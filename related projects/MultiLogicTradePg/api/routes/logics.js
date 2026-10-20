@@ -336,7 +336,31 @@ app.post('/api/logics/import', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.error('POST /api/logics/import', err);
-    res.status(err.status || 500).json({ error: err.message });
+    const detail = [];
+    detail.push(`Код: ${err.code || 'N/A'}`);
+    detail.push(`Сообщение: ${err.message || 'N/A'}`);
+    if (err.detail) detail.push(`DETAIL: ${err.detail}`);
+    if (err.hint) detail.push(`HINT: ${err.hint}`);
+    if (err.constraint) detail.push(`CONSTRAINT: ${err.constraint}`);
+    if (err.table) detail.push(`TABLE: ${err.table}`);
+    if (err.column) detail.push(`COLUMN: ${err.column}`);
+    if (err.schema) detail.push(`SCHEMA: ${err.schema}`);
+    if (err.position) detail.push(`POSITION: ${err.position}`);
+    if (err.where) detail.push(`WHERE: ${err.where}`);
+    if (err.file) detail.push(`FILE: ${err.file}`);
+    if (err.line) detail.push(`LINE: ${err.line}`);
+    if (err.routine) detail.push(`ROUTINE: ${err.routine}`);
+    if (err.stack) detail.push(`STACK: ${err.stack}`);
+    const protocol = [
+      '=== ПРОТОКОЛ ИМПОРТА ЛОГИК ===',
+      `Время: ${new Date().toISOString()}`,
+      `URL: POST /api/logics/import`,
+      '',
+      ...detail,
+      '',
+      '=== КОНЕЦ ПРОТОКОЛА ===',
+    ].join('\n');
+    res.status(err.status || 500).json({ error: err.message, protocol, detail: err });
   }
 });
 
