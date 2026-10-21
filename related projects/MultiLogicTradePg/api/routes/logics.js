@@ -351,16 +351,22 @@ app.post('/api/logics/import', async (req, res) => {
     if (err.line) detail.push(`LINE: ${err.line}`);
     if (err.routine) detail.push(`ROUTINE: ${err.routine}`);
     if (err.stack) detail.push(`STACK: ${err.stack}`);
-    const protocol = [
-      '=== ПРОТОКОЛ ИМПОРТА ЛОГИК ===',
-      `Время: ${new Date().toISOString()}`,
-      `URL: POST /api/logics/import`,
-      '',
-      ...detail,
-      '',
-      '=== КОНЕЦ ПРОТОКОЛА ===',
-    ].join('\n');
-    res.status(err.status || 500).json({ error: err.message, protocol, detail: err });
+    const protocol =
+      typeof err.protocol === 'string' && err.protocol
+        ? err.protocol
+        : [
+            '=== ПРОТОКОЛ ИМПОРТА ЛОГИК ===',
+            `Время: ${new Date().toISOString()}`,
+            `URL: POST /api/logics/import`,
+            '',
+            ...detail,
+            '',
+            '=== КОНЕЦ ПРОТОКОЛА ===',
+          ].join('\n');
+    const errors = Array.isArray(err.importErrors)
+      ? err.importErrors
+      : [err.message || 'Ошибка импорта'];
+    res.status(err.status || 500).json({ error: err.message, protocol, errors, detail: err });
   }
 });
 

@@ -142,6 +142,10 @@ export interface LogicImportResult {
     has_opt_grid?: boolean;
   }>;
   warnings?: string[];
+  /** Per-logic import errors (import continues with the rest, savepoint rollback). */
+  errors?: string[];
+  /** Full import protocol text (steps, skipped items, DB error details). */
+  protocol?: string;
 }
 
 /** Full trades + logic context dump for AI/debug (test or live). */

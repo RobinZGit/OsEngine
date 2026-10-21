@@ -345,7 +345,20 @@ async function writeLastOptGrid(client, logicId, lastOptGrid) {
 /**
  * Replace params/signals/stops/securities (+ last OPT) for an existing or new logic id.
  */
-async function replaceLogicContents(client, logicId, item, warnings, nameForWarn) {
+async function replaceLogicContents(client, logicId, item, warnings, nameForWarn, proto) {
+  const stats = {
+    params: 0,
+    paramsSkipped: 0,
+    signals: 0,
+    signalsSkipped: 0,
+    stops: 0,
+    securities: 0,
+    securitiesSkipped: 0,
+  };
+  const warn = (msg) => {
+    warnings.push(`${nameForWarn}: ${msg}`);
+    proto.push(`  ! ${msg}`);
+  };
   await client.query(
     `
     INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
@@ -365,9 +378,8 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
     if (!p?.param_key) continue;
     const key = String(p.param_key);
     if (!allowedParams.has(key)) {
-      warnings.push(
-        `${nameForWarn}: параметр ${key} отсутствует в logic_param_defs на целевом сервере — пропущен`
-      );
+      stats.paramsSkipped += 1;
+      warn(`параметр ${key} отсутствует в logic_param_defs на целевом сервере — пропущен`);
       continue;
     }
     await client.query(
@@ -386,6 +398,7 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
         p.value_type != null ? String(p.value_type) : 'text',
       ],
     );
+    stats.params += 1;
   }
 
   await client.query(`DELETE FROM logic_indicator_signals WHERE logic_id = $1`, [
@@ -397,9 +410,8 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
   for (const sig of item.signals || []) {
     const indicatorId = await resolveIndicatorId(client, sig.indicator_code);
     if (!indicatorId) {
-      warnings.push(
-        `${nameForWarn}: индикатор ${sig.indicator_code || '?'} не найден — сигнал пропущен`
-      );
+      stats.signalsSkipped += 1;
+      warn(`индикатор ${sig.indicator_code || '?'} не найден — сигнал пропущен`);
       continue;
     }
     await client.query(
@@ -426,6 +438,7 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
         sig.is_active === false ? false : true,
       ]
     );
+    stats.signals += 1;
   }
 
   for (const st of item.stops || []) {
@@ -457,14 +470,15 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
         st.is_active === false ? false : true,
       ]
     );
+    stats.stops += 1;
   }
 
-  let papersAdded = 0;
   for (const paper of item.securities || []) {
     const securityId = await resolveSecurityId(client, paper);
     if (!securityId) {
-      warnings.push(
-        `${nameForWarn}: бумага ${paper.prefix || paper.security_name || '?'} (${paper.instrument_market || 'stock'}) не найдена — пропущена`
+      stats.securitiesSkipped += 1;
+      warn(
+        `бумага ${paper.prefix || paper.security_name || '?'} (${paper.instrument_market || 'stock'}) не найдена — пропущена`
       );
       continue;
     }
@@ -483,12 +497,29 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
         paper.is_active === false ? false : true,
       ]
     );
-    papersAdded += 1;
+    stats.securities += 1;
   }
 
   await writeLastOptGrid(client, logicId, item.last_opt_grid || null);
   await syncRealAccountBalancesIfNeeded(client, logicId, { force: true });
-  return papersAdded;
+  return stats;
+}
+
+/** Protocol lines describing a DB/import error (code, constraint, detail…). */
+function describeImportError(err) {
+  const lines = [];
+  lines.push(`Код: ${err?.code || 'N/A'}`);
+  lines.push(`Сообщение: ${err?.message || String(err)}`);
+  if (err?.detail) lines.push(`DETAIL: ${err.detail}`);
+  if (err?.hint) lines.push(`HINT: ${err.hint}`);
+  if (err?.constraint) lines.push(`CONSTRAINT: ${err.constraint}`);
+  if (err?.table) lines.push(`TABLE: ${err.table}`);
+  if (err?.column) lines.push(`COLUMN: ${err.column}`);
+  if (err?.schema) lines.push(`SCHEMA: ${err.schema}`);
+  if (err?.routine) lines.push(`ROUTINE: ${err.routine}`);
+  if (err?.file) lines.push(`FILE: ${err.file}`);
+  if (err?.line) lines.push(`LINE: ${err.line}`);
+  return lines;
 }
 
 /**
@@ -498,105 +529,190 @@ async function replaceLogicContents(client, logicId, item, warnings, nameForWarn
  *   overwriteByName (default true): same name → replace contents; else create with unique name.
  */
 async function importLogicBundle(pool, bundle, opts = {}) {
+  const proto = [];
+  const finish = () => {
+    proto.push('=== КОНЕЦ ПРОТОКОЛА ===');
+    return proto.join('\n');
+  };
+  proto.push('=== ПРОТОКОЛ ИМПОРТА ЛОГИК ===');
+  proto.push(`Время: ${new Date().toISOString()}`);
+  proto.push(`Формат файла: ${bundle?.format || 'N/A'} v${bundle?.version ?? '?'}`);
+
+  const fatal = (message, status) => {
+    proto.push('');
+    proto.push(`ОШИБКА: ${message}`);
+    const err = new Error(message);
+    if (status) err.status = status;
+    err.protocol = finish();
+    err.importErrors = [message];
+    return err;
+  };
+
   if (!bundle || bundle.format !== FORMAT) {
-    const err = new Error(`Неверный формат файла (ожидается ${FORMAT})`);
-    err.status = 400;
-    throw err;
+    throw fatal(`Неверный формат файла (ожидается ${FORMAT})`, 400);
   }
   const list = Array.isArray(bundle.logics) ? bundle.logics : [];
+  proto.push(`Логик в файле: ${list.length}`);
   if (list.length === 0) {
-    const err = new Error('В файле нет логик для импорта');
-    err.status = 400;
-    throw err;
+    throw fatal('В файле нет логик для импорта', 400);
   }
   const overwriteByName = opts.overwriteByName !== false;
+  proto.push(
+    `Режим: ${overwriteByName ? 'по имени — перезапись, иначе новая' : 'всегда новая (уникальное имя)'}`
+  );
+  proto.push('Сделки, свечи и тесты не переносятся.');
+  proto.push('');
 
   const imported = [];
   const warnings = [];
+  const errors = [];
   const client = await pool.connect();
+  let index = 0;
   try {
     await client.query('BEGIN');
 
     for (const item of list) {
+      index += 1;
       const desiredName = String(item?.name || '').trim() || 'Imported logic';
-      const accountId = await resolveAccountId(client, item?.account);
-      const note = item?.note != null ? String(item.note) : null;
+      proto.push(`[${index}/${list.length}] «${desiredName}»`);
+      const warningsBefore = warnings.length;
+      await client.query('SAVEPOINT logic_item');
+      try {
+        const accountId = await resolveAccountId(client, item?.account);
+        const note = item?.note != null ? String(item.note) : null;
 
-      let logicId = null;
-      let name = desiredName;
-      let action = 'created';
+        let logicId = null;
+        let name = desiredName;
+        let action = 'created';
 
-      if (overwriteByName) {
-        const { rows: existing } = await client.query(
-          `SELECT id, name FROM logics WHERE name = $1 LIMIT 1`,
-          [desiredName]
-        );
-        if (existing.length > 0) {
-          logicId = existing[0].id;
-          name = existing[0].name;
-          action = 'updated';
-          await client.query(
-            `
-            UPDATE logics
-            SET account_id = $2, note = $3, is_enabled = FALSE
-            WHERE id = $1
-            `,
-            [logicId, accountId, note]
+        if (overwriteByName) {
+          const { rows: existing } = await client.query(
+            `SELECT id, name FROM logics WHERE name = $1 LIMIT 1`,
+            [desiredName]
           );
+          if (existing.length > 0) {
+            logicId = existing[0].id;
+            name = existing[0].name;
+            action = 'updated';
+            await client.query(
+              `
+              UPDATE logics
+              SET account_id = $2, note = $3, is_enabled = FALSE
+              WHERE id = $1
+              `,
+              [logicId, accountId, note]
+            );
+          }
         }
-      }
 
-      if (logicId == null) {
-        if (!overwriteByName) {
-          name = await uniqueLogicName(client, desiredName, 'import');
-        } else {
-          // Name free — create with exact name
-          name = desiredName;
+        if (logicId == null) {
+          if (!overwriteByName) {
+            name = await uniqueLogicName(client, desiredName, 'import');
+          } else {
+            // Name free — create with exact name
+            name = desiredName;
+          }
+          const { rows: inserted } = await client.query(
+            `
+            INSERT INTO logics (name, account_id, is_enabled, note)
+            VALUES ($1, $2, FALSE, $3)
+            RETURNING id, name
+            `,
+            [name, accountId, note]
+          );
+          logicId = inserted[0].id;
+          name = inserted[0].name;
+          action = 'created';
         }
-        const { rows: inserted } = await client.query(
-          `
-          INSERT INTO logics (name, account_id, is_enabled, note)
-          VALUES ($1, $2, FALSE, $3)
-          RETURNING id, name
-          `,
-          [name, accountId, note]
+
+        const stats = await replaceLogicContents(
+          client,
+          logicId,
+          item,
+          warnings,
+          name,
+          proto
         );
-        logicId = inserted[0].id;
-        name = inserted[0].name;
-        action = 'created';
-      }
 
-      const papersAdded = await replaceLogicContents(
-        client,
-        logicId,
-        item,
-        warnings,
-        name
-      );
-
-      imported.push({
-        id: logicId,
-        name,
-        source_name: desiredName,
-        action,
-        securities_count: papersAdded,
-        has_opt_grid: !!(
+        const hasOptGrid = !!(
           item.last_opt_grid &&
           Array.isArray(item.last_opt_grid.results) &&
           item.last_opt_grid.results.length > 0
-        ),
-      });
+        );
+
+        imported.push({
+          id: logicId,
+          name,
+          source_name: desiredName,
+          action,
+          securities_count: stats.securities,
+          has_opt_grid: hasOptGrid,
+        });
+
+        proto.push(`  ${action === 'updated' ? 'Обновлена' : 'Создана'} (id ${logicId})`);
+        proto.push(
+          `  Параметры: ${stats.params} записано` +
+            (stats.paramsSkipped ? `, ${stats.paramsSkipped} пропущено` : '')
+        );
+        proto.push(
+          `  Сигналы: ${stats.signals} записано` +
+            (stats.signalsSkipped ? `, ${stats.signalsSkipped} пропущено` : '')
+        );
+        proto.push(`  Стопы: ${stats.stops} записано`);
+        proto.push(
+          `  Бумаги: ${stats.securities} записано` +
+            (stats.securitiesSkipped ? `, ${stats.securitiesSkipped} пропущено` : '')
+        );
+        proto.push(`  Кэш OPT: ${hasOptGrid ? 'восстановлен' : 'нет'}`);
+        proto.push('');
+      } catch (itemErr) {
+        warnings.length = warningsBefore;
+        try {
+          await client.query('ROLLBACK TO SAVEPOINT logic_item');
+        } catch (rollbackErr) {
+          proto.push(`  Не удалось откатить изменения логики: ${rollbackErr.message}`);
+          throw itemErr;
+        }
+        const msg = `${desiredName}: ${itemErr?.message || itemErr}`;
+        errors.push(msg);
+        proto.push('  ОШИБКА:');
+        for (const line of describeImportError(itemErr)) proto.push(`    ${line}`);
+        proto.push('  Логика не импортирована (её изменения откатаны).');
+        proto.push('');
+      }
     }
 
     await client.query('COMMIT');
   } catch (e) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (_e) {
+      /* ignore */
+    }
+    proto.push('');
+    proto.push('=== ИМПОРТ ОСТАНОВЛЕН, ИЗМЕНЕНИЯ ОТКАТАНЫ ===');
+    for (const line of describeImportError(e)) proto.push(line);
+    e.protocol = finish();
+    e.importErrors = errors.length ? [...errors, e.message] : [e.message];
     throw e;
   } finally {
     client.release();
   }
 
-  return { imported, warnings };
+  proto.push('=== ИТОГ ===');
+  proto.push(`Импортировано логик: ${imported.length} из ${list.length}`);
+  for (const r of imported) {
+    proto.push(`  + ${r.name} (${r.action === 'updated' ? 'обновлена' : 'создана'})`);
+  }
+  if (errors.length) {
+    proto.push(`Ошибок: ${errors.length}`);
+    for (const e of errors) proto.push(`  - ${e}`);
+  }
+  if (warnings.length) {
+    proto.push(`Предупреждений: ${warnings.length}`);
+    for (const w of warnings) proto.push(`  ! ${w}`);
+  }
+  return { imported, warnings, errors, protocol: finish() };
 }
 
 module.exports = {

@@ -187,6 +187,93 @@
     </div>
   }
 
+  @if (importDialog; as dlg) {
+    @if (importDialogOpen) {
+      <div class="import-modal-backdrop" (click)="closeImportDialog()" role="presentation"></div>
+      <div
+        class="import-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Результат импорта логик"
+        (click)="$event.stopPropagation()"
+      >
+        <header class="import-modal-head" [class.import-modal-head-error]="!dlg.ok">
+          <span class="import-badge" [class.import-badge-error]="!dlg.ok" aria-hidden="true">
+            {{ dlg.ok ? '✓' : '!' }}
+          </span>
+          <div class="import-titles">
+            <strong>{{ dlg.title }}</strong>
+            <span class="import-sub">Импорт логик из JSON</span>
+          </div>
+          <button
+            type="button"
+            class="btn-import-close"
+            title="Закрыть (Esc)"
+            aria-label="Закрыть"
+            (click)="closeImportDialog()"
+          >
+            ×
+          </button>
+        </header>
+        <div class="import-modal-body">
+          <ul class="import-summary">
+            @for (line of dlg.summary; track $index) {
+              <li>{{ line }}</li>
+            }
+          </ul>
+          @if (dlg.errors.length) {
+            <div class="import-block import-block-error">
+              <span class="import-block-title">Ошибки ({{ dlg.errors.length }})</span>
+              <ul>
+                @for (e of dlg.errors; track $index) {
+                  <li>{{ e }}</li>
+                }
+              </ul>
+            </div>
+          }
+          @if (dlg.warnings.length) {
+            <div class="import-block import-block-warn">
+              <span class="import-block-title">Предупреждения</span>
+              <ul>
+                @for (w of dlg.warnings; track $index) {
+                  <li>{{ w }}</li>
+                }
+              </ul>
+            </div>
+          }
+          @if (dlg.protocol) {
+            <button
+              type="button"
+              class="btn-import-protocol"
+              [class.open]="importProtocolOpen"
+              title="Показать полный протокол импорта"
+              (click)="toggleImportProtocol()"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M6 2h8l4 4v16H6V2zm7 1.5V7h3.5L13 3.5zM8 11h8v1.6H8V11zm0 3.2h8v1.6H8v-1.6zm0 3.2h6V19H8v-1.6z"
+                />
+              </svg>
+              {{ importProtocolOpen ? 'Скрыть протокол импорта' : 'Протокол импорта' }}
+            </button>
+          }
+          @if (dlg.protocol && importProtocolOpen) {
+            <pre class="import-protocol">{{ dlg.protocol }}</pre>
+            <div class="import-protocol-actions">
+              <button type="button" class="btn-import-copy" (click)="copyImportProtocol()">
+                {{ importProtocolCopied ? 'Скопировано' : 'Копировать протокол' }}
+              </button>
+            </div>
+          }
+        </div>
+        <footer class="import-modal-actions">
+          <button type="button" class="btn-import-ok" (click)="closeImportDialog()">Закрыть</button>
+        </footer>
+      </div>
+    }
+  }
+
   @if (reportsOpen) {
     <div class="reports-modal-backdrop" (click)="closeTestReports()" role="presentation"></div>
     <div

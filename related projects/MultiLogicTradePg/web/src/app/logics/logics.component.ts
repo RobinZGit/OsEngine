@@ -66,7 +66,17 @@ import {
   LogicPositionsPanelComponent,
 } from './logic-positions-panel.component';
 import { LogicCombatSignalDetailComponent } from './logic-combat-signal-detail.component';
-import type { ProcessStatusItem, SignalRatingPrecalcStatus } from '../services/logics.service';
+import {
+  buildImportFailureModel,
+  buildImportLocalErrorModel,
+  buildImportSuccessModel,
+  ImportDialogModel,
+} from './import-protocol';
+import type {
+  LogicExportBundle,
+  ProcessStatusItem,
+  SignalRatingPrecalcStatus,
+} from '../services/logics.service';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -134,6 +144,11 @@ export class LogicsComponent implements OnInit, OnDestroy {
   /** Checkbox selection for export (right column). */
   selectedExportIds = new Set<number>();
   exportImportBusy = false;
+  /** Import result dialog: summary, errors and full protocol (toggle). */
+  importDialogOpen = false;
+  importDialog: ImportDialogModel | null = null;
+  importProtocolOpen = false;
+  importProtocolCopied = false;
   /** Busy keys: `${logicId}:test` | `${logicId}:live` for trades JSON export. */
   private tradesExportBusy = new Set<string>();
 
@@ -762,6 +777,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   @HostListener('document:keydown', ['$event'])
   onReportsKeydown(ev: KeyboardEvent): void {
+    if (this.importDialogOpen) {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        this.closeImportDialog();
+        this.cdr.markForCheck();
+      }
+      return;
+    }
     if (!this.reportsOpen) return;
     if (ev.key === 'Escape') {
       ev.preventDefault();
@@ -3999,62 +4022,98 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     this.exportImportBusy = true;
     const reader = new FileReader();
     reader.onload = () => {
+      let bundle: LogicExportBundle;
       try {
-        const text = String(reader.result || '');
-        const bundle = JSON.parse(text);
-        this.logicsService.importLogics(bundle, { overwriteByName: true }).subscribe({
+        bundle = JSON.parse(String(reader.result || '')) as LogicExportBundle;
+      } catch {
+        this.exportImportBusy = false;
+        this.openImportDialog(
+          buildImportLocalErrorModel('Файл не является корректным JSON')
+        );
+        this.cdr.markForCheck();
+        return;
+      }
+      this.logicsService
+        .importLogics(bundle, { overwriteByName: true })
+        .subscribe({
           next: (result) => {
             this.exportImportBusy = false;
             this.loadLogicsOnce();
-            const lines = (result.imported || []).map((r) => {
-              const act = r.action === 'updated' ? 'обновлена' : 'создана';
-              const opt = r.has_opt_grid ? ', OPT' : '';
-              return `${r.name} (${act}${opt})`;
-            });
-            let msg =
-              lines.length === 1
-                ? `Импорт: ${lines[0]}`
-                : `Импортировано (${lines.length}):\n${lines.join('\n')}`;
-            msg +=
-              '\nПо имени — перезапись; иначе новая. Сделки/тесты не переносятся.';
-            if (result.warnings?.length) {
-              msg += `\n\nПредупреждения:\n${result.warnings.slice(0, 12).join('\n')}`;
-              if (result.warnings.length > 12) {
-                msg += `\n… ещё ${result.warnings.length - 12}`;
-              }
-            }
             for (const r of result.imported || []) {
               this.refreshOptGridAvailability(r.id);
             }
-            alert(msg);
+            this.openImportDialog(buildImportSuccessModel(result));
             this.cdr.markForCheck();
           },
           error: (err) => {
             this.exportImportBusy = false;
-            const proto = err?.error?.protocol;
-            if (proto && typeof proto === 'string') {
-              alert(proto);
-              return;
-            }
-            const msg = err?.error?.error || err?.message || 'Не удалось импортировать логики';
-            const det = err?.error?.detail;
-            if (det) {
-              alert(msg + '\n' + det);
-              return;
-            }
-            alert(msg);
+            const body = err?.error;
+            const protocol =
+              typeof body?.protocol === 'string' ? body.protocol : '';
+            const msg =
+              body?.error || err?.message || 'Не удалось импортировать логики';
+            this.openImportDialog(
+              buildImportFailureModel(msg, protocol, body?.detail)
+            );
+            this.cdr.markForCheck();
           },
         });
-      } catch {
-        this.exportImportBusy = false;
-        alert('Файл не является корректным JSON');
-      }
     };
     reader.onerror = () => {
       this.exportImportBusy = false;
-      alert('Не удалось прочитать файл');
+      this.openImportDialog(
+        buildImportLocalErrorModel('Не удалось прочитать файл')
+      );
+      this.cdr.markForCheck();
     };
     reader.readAsText(file, 'utf-8');
+  }
+
+  private openImportDialog(model: ImportDialogModel): void {
+    this.importDialog = model;
+    this.importDialogOpen = true;
+    this.importProtocolOpen = false;
+    this.importProtocolCopied = false;
+  }
+
+  closeImportDialog(): void {
+    this.importDialogOpen = false;
+    this.importProtocolOpen = false;
+    this.importProtocolCopied = false;
+  }
+
+  toggleImportProtocol(): void {
+    this.importProtocolOpen = !this.importProtocolOpen;
+  }
+
+  async copyImportProtocol(): Promise<void> {
+    const text = this.importDialog?.protocol || '';
+    if (!text) return;
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+    if (!copied) {
+      try {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(area);
+      } catch {
+        copied = false;
+      }
+    }
+    this.importProtocolCopied = copied;
+    this.cdr.markForCheck();
   }
 
   private scrollLogicIntoView(logicId: number): void {
