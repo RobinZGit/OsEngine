@@ -418,7 +418,8 @@ async function snapshotIndicatorSeriesParams(pool, secId, indicatorId) {
 
 async function fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo) {
   const { rows } = await pool.query(
-    `SELECT pll.source, pll.records_loaded, pll.error_message, pll.date_from, pll.date_to
+    `SELECT pll.security_id, pll.source, pll.records_loaded, pll.error_message,
+            pll.date_from, pll.date_to
      FROM price_load_log pll
      JOIN logic_securities ls ON ls.security_id = pll.security_id
      WHERE ls.logic_id = $1 AND ls.is_active = TRUE
@@ -1627,6 +1628,26 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         null,
         tfId
       );
+
+      // #1024: сбои источников цен при подготовке бэктеста — в «Мониторинг
+      // системы» (app_error_log), чтобы «Нет свечей» не выглядело молчаливым.
+      if (stats.pricesErr > 0) {
+        const errLog = await fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo);
+        for (const pl of errLog) {
+          if (!pl.error_message) continue;
+          await writeErrorLog(pool, {
+            level: 'warning',
+            source: 'backtest',
+            category: 'prices',
+            code: `price_provider_${String(pl.source || 'unknown').toLowerCase()}`,
+            message: `Бэктест: ${pl.source || 'источник'} не отдал цены (security=${pl.security_id}): ${String(pl.error_message).slice(0, 300)}`,
+            detail: pl.error_message,
+            logicId,
+            securityId: pl.security_id,
+            context: { source: pl.source, timeframe_id: tfId, run_id: runId },
+          });
+        }
+      }
 
       if (pricesInPeriod === 0) {
         const priceLog = await fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo);
