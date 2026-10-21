@@ -831,6 +831,12 @@ export class LogicsService {
     busy?: boolean;
     reason?: string;
     bar_dt?: string;
+    /** #1022: бар «сдвинутого» ТФ, на котором реально считался сигнал. */
+    shifted_bar_dt?: string | null;
+    shifted_ok?: boolean;
+    shifted_bars?: number;
+    shifted_depth?: number;
+    shifted_error?: string | null;
     at?: string;
     timeframe_id?: number;
     is_enabled?: boolean;
@@ -971,6 +977,12 @@ export interface LightningAllResultRow {
   busy?: boolean;
   reason?: string;
   bar_dt?: string;
+  /** #1022: бар «сдвинутого» ТФ (правый край — последняя закрытая минута). */
+  shifted_bar_dt?: string | null;
+  shifted_ok?: boolean;
+  shifted_bars?: number;
+  shifted_depth?: number;
+  shifted_error?: string | null;
   trade_created?: number;
   terminal_signals_created?: number;
   terminal_signals_on_bar?: number;

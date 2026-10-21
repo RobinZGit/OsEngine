@@ -1497,7 +1497,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
         } else if (resp.reason && resp.reason !== 'ok') {
           lines.push(`Причина: ${resp.reason}`);
         }
-        if (resp.bar_dt) lines.push(`Закрытый бар: ${resp.bar_dt}`);
+        // #1022: сигнал считается на «сдвинутом» ТФ — показываем его бар
+        // (правый край = последняя закрытая минута), а не только сетку.
+        if (resp.shifted_bar_dt) {
+          lines.push(`Сдвинутый бар: ${resp.shifted_bar_dt}`);
+        } else if (resp.bar_dt) {
+          lines.push(`Закрытый бар: ${resp.bar_dt}`);
+        }
         lines.push(
           `Сделка: ${resp.trade_created ?? 0}` +
             `, сигналов на баре: ${resp.terminal_signals_on_bar ?? resp.terminal_signals_created ?? 0}`

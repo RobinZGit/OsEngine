@@ -5427,6 +5427,11 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
+
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10111,6 +10116,146 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -19371,6 +19516,12 @@ DECLARE
     v_skip_http BOOLEAN := FALSE;
     v_missing_prices INTEGER;
 BEGIN
+    -- #1022: «сдвинутая» молния считает сигналы на временном ряде prices —
+    -- догрузка/резэмплинг нативных баров сюда не нужны и только смешают ряд.
+    IF current_setting('app.lightning_skip_refresh', TRUE) = '1' THEN
+        RETURN;
+    END IF;
+
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
 
     v_point_count := logic_trade_sync_point_count(v_tf_sec);
@@ -19623,7 +19774,8 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP, BOOLEAN) IS
-'Перед проверкой сигналов: load_prices (кроме активного бэктеста / p_skip_http=TRUE) + ensure/sync индикаторов логики на TF';
+'Догружает/резэмплит закрытые свечи ТФ логики и доп. ТФ формул, применяет параметры индикаторов; '
+'p_skip_http=TRUE или session app.lightning_skip_refresh=1 — без HTTP (молния/бэктест).';
 
 CREATE OR REPLACE FUNCTION process_logic_trades(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -21506,6 +21658,189 @@ COMMENT ON FUNCTION logic_lightning_diagnostics(INTEGER, INTEGER, TIMESTAMP) IS
 'Только чтение, без захвата advisory-lock.';
 
 -- ============================================================
+-- #1022: «сдвинутый» ТФ для кнопки «Запросить сигналы» / молнии.
+-- Ряд баров ТФ логики собирается из минуток так, что ПРАВЫЙ край каждого
+-- бара совпадает с последней закрытой минутой момента нажатия (например,
+-- 15:07–15:22), а не с сеткой :00/:15/:30/:45. Сигнал считается на последнем
+-- таком баре. Ряд существует только внутри вызова: чтение prices подменяется
+-- временной таблицей (search_path = pg_temp, public) и удаляется до коммита;
+-- в БД ничего не сохраняется. Минутки читаются из public.prices как обычно и
+-- остаются в базе.
+-- ============================================================
+CREATE OR REPLACE FUNCTION logic_lightning_shifted_signals(
+    p_logic_id INTEGER,
+    p_tf_id INTEGER,
+    p_tf_sec INTEGER,
+    p_anchor TIMESTAMP
+)
+RETURNS JSONB
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_src_id INTEGER;
+    v_src_sec INTEGER;
+    v_shift_dt TIMESTAMP;
+    v_depth INTEGER;
+    v_max_period INTEGER := 0;
+    v_warmup INTEGER := 0;
+    v_from TIMESTAMP;
+    v_sec_ids INTEGER[];
+    v_xtf RECORD;
+    v_created INTEGER := 0;
+    v_bars INTEGER := 0;
+    v_old_path TEXT := current_setting('search_path');
+    v_prev_marker TEXT;
+BEGIN
+    IF p_tf_sec IS NULL OR p_tf_sec <= 0 OR p_anchor IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'bad_args');
+    END IF;
+
+    SELECT id, sec INTO v_src_id, v_src_sec
+    FROM timeframes WHERE sec >= 60 AND sec <= 300 ORDER BY sec LIMIT 1;
+    IF v_src_id IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_minute_source');
+    END IF;
+
+    v_shift_dt := p_anchor - (p_tf_sec * INTERVAL '1 second');
+
+    -- Глубина истории: по максимальному period в формулах (+ прогрев),
+    -- с запасом ×3 и минимумом 120 бар (Longer periods need more warmup).
+    SELECT COALESCE(MAX(m.period), 0) INTO v_max_period
+    FROM logic_indicator_signals lis
+    CROSS JOIN LATERAL (
+        SELECT (regexp_matches(lis.formula, 'period[[:space:]]*=[[:space:]]*([0-9]{1,4})', 'g'))[1]::INT AS period
+    ) m
+    WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE;
+
+    v_depth := GREATEST(120, 3 * COALESCE(v_max_period, 0) + 10);
+    v_depth := LEAST(v_depth, 2000);
+    v_from := v_shift_dt - (v_depth * p_tf_sec * INTERVAL '1 second');
+
+    SELECT array_agg(security_id) INTO v_sec_ids
+    FROM logic_securities WHERE logic_id = p_logic_id AND is_active = TRUE;
+    IF v_sec_ids IS NULL THEN
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_securities');
+    END IF;
+
+    -- Сдвинутый ряд — только на время вызова.
+    DROP TABLE IF EXISTS pg_temp.prices;
+    CREATE TEMP TABLE prices (LIKE public.prices INCLUDING DEFAULTS) ON COMMIT DROP;
+    CREATE UNIQUE INDEX ON pg_temp.prices (security_id, timeframe_id, dt);
+
+    -- Бары логики: правый край кратен p_anchor, минутки группируются в бары.
+    INSERT INTO pg_temp.prices (
+        security_id, timeframe_id, dt, open_price, high_price, low_price,
+        close_price, volume, value, contract_prefix
+    )
+    SELECT p.security_id, p_tf_id, g.bar_dt,
+           (array_agg(p.open_price ORDER BY p.dt))[1],
+           MAX(p.high_price), MIN(p.low_price),
+           (array_agg(p.close_price ORDER BY p.dt DESC))[1],
+           SUM(p.volume), SUM(p.value), MAX(p.contract_prefix)
+    FROM public.prices p
+    CROSS JOIN LATERAL (
+        SELECT p_anchor
+             - CEIL(EXTRACT(EPOCH FROM (p_anchor - p.dt)) / p_tf_sec)
+               * (p_tf_sec * INTERVAL '1 second') AS bar_dt
+    ) g
+    WHERE p.timeframe_id = v_src_id
+      AND p.security_id = ANY(v_sec_ids)
+      AND p.dt > v_from
+      AND p.dt <= p_anchor - INTERVAL '1 minute'
+    GROUP BY p.security_id, g.bar_dt
+    HAVING g.bar_dt >= v_from;
+
+    -- Доп. ТФ формул (tf=): тот же приём, своя глубина по своему секундному шагу.
+    FOR v_xtf IN
+        SELECT x.tf_id AS tf_id, t.sec AS sec
+        FROM logic_signal_extra_tf_ids(p_logic_id, p_tf_id) x
+        JOIN timeframes t ON t.id = x.tf_id
+        WHERE x.tf_id IS NOT NULL
+          AND x.tf_id <> p_tf_id
+          AND t.sec > 0
+    LOOP
+        INSERT INTO pg_temp.prices (
+            security_id, timeframe_id, dt, open_price, high_price, low_price,
+            close_price, volume, value, contract_prefix
+        )
+        SELECT p.security_id, v_xtf.tf_id, g.bar_dt,
+               (array_agg(p.open_price ORDER BY p.dt))[1],
+               MAX(p.high_price), MIN(p.low_price),
+               (array_agg(p.close_price ORDER BY p.dt DESC))[1],
+               SUM(p.volume), SUM(p.value), MAX(p.contract_prefix)
+        FROM public.prices p
+        CROSS JOIN LATERAL (
+            SELECT p_anchor
+                 - CEIL(EXTRACT(EPOCH FROM (p_anchor - p.dt)) / v_xtf.sec)
+                   * (v_xtf.sec * INTERVAL '1 second') AS bar_dt
+        ) g
+        WHERE p.timeframe_id = v_src_id
+          AND p.security_id = ANY(v_sec_ids)
+          AND p.dt > (v_shift_dt - (v_depth * v_xtf.sec * INTERVAL '1 second'))
+          AND p.dt <= p_anchor - INTERVAL '1 minute'
+        GROUP BY p.security_id, g.bar_dt
+        HAVING g.bar_dt >= (v_shift_dt - (v_depth * v_xtf.sec * INTERVAL '1 second'));
+    END LOOP;
+
+    SELECT count(*) INTO v_bars FROM pg_temp.prices;
+
+    -- Дальше все чтения prices внутри оценки сигналов идут в сдвинутый ряд.
+    PERFORM set_config('search_path', 'pg_temp, public', TRUE);
+    PERFORM set_config('app.lightning_bar_dt',
+                       to_char(v_shift_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
+    PERFORM set_config('app.lightning_ignore_dedup', '1', TRUE);
+    -- #1022: не догружать/не резэмплить нативные бары в сдвинутый ряд.
+    PERFORM set_config('app.lightning_skip_refresh', '1', TRUE);
+    -- #1022: маркер обработанного бара цикла не должен сдвигаться сдвинутым ТФ —
+    -- иначе цикл пропустит следующий настоящий бар (например, 15:30).
+    v_prev_marker := NULLIF(btrim(COALESCE(
+        get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), '')), '');
+    v_created := process_logic_terminal_signals(p_logic_id);
+    IF v_prev_marker IS NULL THEN
+        -- Удаляем только свой сдвинутый маркер — запись боевого цикла не трогаем.
+        DELETE FROM logic_params
+        WHERE logic_id = p_logic_id
+          AND param_key = 'terminal_signal_last_bar_dt'
+          AND param_value = to_char(v_shift_dt, 'YYYY-MM-DD"T"HH24:MI:SS');
+    ELSE
+        PERFORM logic_upsert_param(
+            p_logic_id, 'terminal_signal_last_bar_dt', v_prev_marker, 'text'
+        );
+    END IF;
+    PERFORM set_config('app.lightning_skip_refresh', '', TRUE);
+    PERFORM set_config('app.lightning_ignore_dedup', '', TRUE);
+    PERFORM set_config('search_path', v_old_path, TRUE);
+
+    DROP TABLE pg_temp.prices;
+
+    RETURN jsonb_build_object(
+        'ok', TRUE,
+        'created', v_created,
+        'bar_dt', to_char(v_shift_dt, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'anchor', to_char(p_anchor, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'depth', v_depth,
+        'max_period', v_max_period,
+        'bars', v_bars,
+        'history_from', to_char(v_from, 'YYYY-MM-DD"T"HH24:MI:SS')
+    );
+EXCEPTION
+    WHEN OTHERS THEN
+        BEGIN
+            PERFORM set_config('search_path', v_old_path, TRUE);
+            DROP TABLE IF EXISTS pg_temp.prices;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+        RETURN jsonb_build_object('ok', FALSE, 'reason', 'shifted_error', 'error', SQLERRM);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_lightning_shifted_signals(INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
+'#1022: считает сигналы логики на «сдвинутом» ТФ — бары собираются из минуток так, '
+'что правый край совпадает с последней закрытой минутой (не сетка :00/:15/...); '
+'ряд живёт только внутри вызова (temp prices + search_path) и в БД не сохраняется.';
+
+
+-- ============================================================
 -- Молния (#960): ручная проверка сигналов логики на момент нажатия.
 -- Виртуальный бар логики = начало интервала её ТФ, в котором находится
 -- момент нажатия (последний бар частичный — не ждём его закрытия).
@@ -21543,6 +21878,8 @@ DECLARE
     v_pend_created INTEGER := 0;
     v_max_confirm INTEGER := 0;
     v_err TEXT;
+    v_shift JSONB;               -- #1022: результат сдвинутого ТФ
+    v_shift_dt TIMESTAMP;        -- #1022: бар сдвинутого ряда
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.is_enabled, FALSE) AS is_enabled,
@@ -21762,15 +22099,25 @@ BEGIN
 
     IF NOT p_log_only AND v_logic.use_sig THEN
         BEGIN
-            PERFORM set_config('app.lightning_bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
-            -- #990: кнопка не должна «глохнуть» из-за дедуп-маркера уже обработанного
-            -- циклом бара — пересчитываем закрытый бар (дубли гасит ON CONFLICT).
-            PERFORM set_config('app.lightning_ignore_dedup', '1', TRUE);
-            v_term := process_logic_terminal_signals(p_logic_id);
-            PERFORM set_config('app.lightning_ignore_dedup', '', TRUE);
+            -- #1022: сигналы считаются на «сдвинутом» ТФ — ряд из минуток, у
+            -- которого правый край совпадает с последней закрытой минутой
+            -- (а не с сеткой :00/:15/:30/:45). Ряд временный: живёт внутри
+            -- вызова (temp prices), в БД не сохраняется.
+            v_shift := logic_lightning_shifted_signals(
+                p_logic_id, v_tf_id, v_tf_sec, date_trunc('minute', v_moment)
+            );
+            IF COALESCE((v_shift->>'ok')::boolean, FALSE) THEN
+                v_term := COALESCE((v_shift->>'created')::INT, 0);
+                v_shift_dt := (v_shift->>'bar_dt')::TIMESTAMP;
+            ELSE
+                v_err := COALESCE(v_shift->>'error', v_shift->>'reason');
+                PERFORM logic_trade_log(
+                    p_logic_id, 'lightning.shifted_error', v_err,
+                    v_shift, NULL, v_tf_id
+                );
+            END IF;
         EXCEPTION
             WHEN OTHERS THEN
-                PERFORM set_config('app.lightning_ignore_dedup', '', TRUE);
                 v_err := SQLERRM;
                 PERFORM logic_trade_log(
                     p_logic_id, 'lightning.signal_error', v_err, NULL, NULL, v_tf_id
@@ -21778,12 +22125,12 @@ BEGIN
         END;
     END IF;
 
-    -- #990: сколько сигналов на этом баре всего (в т.ч. уже созданных циклом) — кнопка
-    -- показывает это число, даже если новых строк не добавилось.
-    IF v_logic.use_sig THEN
+    -- #990/#1022: сколько сигналов на сдвинутом баре всего (в т.ч. уже
+    -- созданных циклом) — кнопка показывает это число, даже если новых нет.
+    IF v_logic.use_sig AND v_shift_dt IS NOT NULL THEN
         SELECT count(*) INTO v_term_on_bar
         FROM logic_terminal_signals
-        WHERE logic_id = p_logic_id AND bar_dt = v_bar_dt;
+        WHERE logic_id = p_logic_id AND bar_dt = v_shift_dt;
     END IF;
 
     -- #990: сколько сигналов ушло в отложенное подтверждение за этот прогон, и окно
@@ -21810,6 +22157,14 @@ BEGIN
         'trade_created', v_trade,
         'terminal_signals_created', v_term,
         'terminal_signals_on_bar', v_term_on_bar,
+        'shifted_bar_dt', CASE
+            WHEN v_shift_dt IS NULL THEN NULL
+            ELSE to_char(v_shift_dt, 'YYYY-MM-DD"T"HH24:MI:SS')
+        END,
+        'shifted_ok', COALESCE((v_shift->>'ok')::boolean, FALSE),
+        'shifted_bars', COALESCE((v_shift->>'bars')::int, 0),
+        'shifted_depth', COALESCE((v_shift->>'depth')::int, 0),
+        'shifted_error', v_shift->>'error',
         'pending_created', v_pend_created,
         'max_confirm_sec', v_max_confirm,
         'diagnostics', logic_lightning_diagnostics(p_logic_id, v_tf_id, v_bar_dt)
@@ -21823,6 +22178,8 @@ COMMENT ON FUNCTION logic_lightning_run(INTEGER, TIMESTAMP, BOOLEAN) IS
 'свечи до p_at, резэмплит их в ТФ логики и доп. ТФ, затем боевые процессы (через '
 'session-переменную app.lightning_bar_dt) применяют дедуп и исполняют: '
 'включённая логика — сделка, use_as_terminal_signal — сигнал в терминал. '
+'#1022: сигналы считаются на «сдвинутом» ТФ (бары из минуток, правый край — последняя '
+'закрытая минута), ряд временный и в БД не сохраняется; сделки — по обычному закрытому бару. '
 'p_log_only=TRUE — только подготовка данных без действий. '
 '#987: берёт общий advisory-lock боевого цикла (multilogictrade_run_trade_cycle); при занятости '
 'возвращает {ok:false,reason:''busy''} — иначе молния и цикл конфликтуют на свечах `prices`.';
@@ -27125,6 +27482,11 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
+
+
+
 
 
 
