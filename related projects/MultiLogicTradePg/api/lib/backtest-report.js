@@ -469,6 +469,11 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
     },
     paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
     paperCharts: Array.isArray(opts.paperCharts) ? opts.paperCharts : [],
+    // #1028: конфигурация логики — сигналы, стопы и все параметры/галочки.
+    signals: Array.isArray(opts.signals) ? opts.signals : [],
+    stops: Array.isArray(opts.stops) ? opts.stops : [],
+    flags:
+      opts.paramsMap && typeof opts.paramsMap === 'object' ? opts.paramsMap : {},
     all: computeSideStats(allDeals, initial, rate, true, num(logic.commission_pct)),
     long: computeSideStats(longDeals, initial, rate, false, num(logic.commission_pct)),
     short: computeSideStats(shortDeals, initial, rate, false, num(logic.commission_pct)),
@@ -478,6 +483,125 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
     dealCount: allDeals.length,
   };
 }
+
+/** #1028: подписи конфигурации логики для отчёта. */
+function signalKindRu(kind) {
+  return String(kind) === 'counter' ? 'контртренд' : 'тренд';
+}
+
+function signalSideRu(event, side) {
+  const ev = String(event) === 'close' ? 'выход' : 'вход';
+  const sd = String(side) === 'short' ? 'шорт' : 'лонг';
+  return `${ev} / ${sd}`;
+}
+
+function stopRuleRu(rule) {
+  return String(rule) === 'take_profit' ? 'Тейк-профит' : 'Стоп-лосс';
+}
+
+function stopScopeRu(scope) {
+  switch (String(scope)) {
+    case 'security':
+      return 'по бумаге';
+    case 'security_resume':
+      return 'по бумаге и стороне (возобновление)';
+    case 'security_inversion':
+      return 'по бумаге и стороне (инверсия)';
+    case 'portfolio':
+      return 'по всему портфелю';
+    case 'portfolio_resume':
+      return 'по портфелю с обновлением';
+    case 'portfolio_ltp_renew':
+      return 'линейный TP по портфелю с возобновлением';
+    case 'security_ltp_renew':
+      return 'линейный TP (устаревший тип)';
+    default:
+      return String(scope || '—');
+  }
+}
+
+function flagRu(value) {
+  const s = String(value ?? '').trim();
+  if (/^(true|1|yes|on|да)$/i.test(s)) return 'вкл';
+  if (/^(false|0|no|off|нет)$/i.test(s)) return 'выкл';
+  return s || '—';
+}
+
+/** #1028: блок «Логика: параметры, сигналы, стопы и галочки». */
+function logicConfigSectionHtml(model) {
+  const p = model.params || {};
+  const rows = model.signals || [];
+  const stops = model.stops || [];
+  const flags = model.flags && typeof model.flags === 'object' ? model.flags : {};
+  const flagKeys = Object.keys(flags).sort();
+
+  const signalRows = rows.length
+    ? rows
+        .map(
+          (s) => `<tr>
+        <td>${esc(signalSideRu(s.position_event, s.position_side))}</td>
+        <td>${esc(signalKindRu(s.signal_kind))}</td>
+        <td><code>${esc(s.formula || '')}</code></td>
+        <td>${s.is_active ? 'вкл' : 'выкл'}</td>
+      </tr>`
+        )
+        .join('')
+    : '<tr><td colspan="4">Сигналы не найдены</td></tr>';
+
+  const stopRows = stops.length
+    ? stops
+        .map(
+          (s) => `<tr>
+        <td>${esc(stopRuleRu(s.rule_kind))}</td>
+        <td>${esc(stopScopeRu(s.scope_type))}</td>
+        <td class="num">${esc(fmtNum(s.value, 4))} ${esc(
+          s.value_unit === 'atr' ? 'ATR' : '%'
+        )}</td>
+        <td>${s.is_active ? 'вкл' : 'выкл'}</td>
+      </tr>`
+        )
+        .join('')
+    : '<tr><td colspan="4">Стопы и тейк-профиты не заданы</td></tr>';
+
+  const flagRows = flagKeys.length
+    ? flagKeys
+        .map(
+          (k) => `<div><dt>${esc(k)}</dt><dd>${esc(flagRu(flags[k]))}</dd></div>`
+        )
+        .join('')
+    : '<div><dt>—</dt><dd>—</dd></div>';
+
+  return `<section>
+      <h2>Логика: параметры, сигналы и стопы</h2>
+      <dl class="params">
+        <div><dt>Название</dt><dd>${esc(model.logicName)}</dd></div>
+        <div><dt>ID</dt><dd>#${esc(String(model.logicId))}</dd></div>
+        <div><dt>Счёт</dt><dd>${esc(p.accountName || '—')} (${esc(p.accountType || '—')})</dd></div>
+        <div><dt>Таймфрейм</dt><dd>${esc(p.timeframe || '—')}</dd></div>
+        <div><dt>% позиции</dt><dd>${esc(fmtNum(p.positionSizePct, 2))}</dd></div>
+        <div><dt>Макс. позиций</dt><dd>${esc(fmtNum(p.maxOpenPositions, 0))}</dd></div>
+        <div><dt>Нач. баланс</dt><dd>${esc(fmtMoney(p.initialBalance))}</dd></div>
+        <div><dt>Комиссия %</dt><dd>${esc(fmtNum(p.commissionPct, 4))}</dd></div>
+        <div><dt>Учёт</dt><dd>${esc(p.costMethod || '—')}</dd></div>
+        <div><dt>Баз. ставка %</dt><dd>${esc(fmtNum(p.baseAnnualRatePct, 2))}</dd></div>
+        <div><dt>Инверсия</dt><dd>${p.inversion ? 'вкл' : 'выкл'}</dd></div>
+        <div><dt>Ден. фонд</dt><dd>${esc(p.cashFundCode || '—')}</dd></div>
+      </dl>
+      <h3>Сигналы</h3>
+      <table class="deals">
+        <thead><tr><th>Событие / сторона</th><th>Тип</th><th>Формула</th><th>Вкл</th></tr></thead>
+        <tbody>${signalRows}</tbody>
+      </table>
+      <h3>Стопы и тейк-профиты</h3>
+      <table class="deals">
+        <thead><tr><th>Правило</th><th>Область</th><th>Значение</th><th>Вкл</th></tr></thead>
+        <tbody>${stopRows}</tbody>
+      </table>
+      <h3>Все параметры и галочки</h3>
+      <dl class="params">${flagRows}</dl>
+    </section>`;
+}
+
 
 function cellMoney(v) {
   const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : '';
@@ -775,27 +899,12 @@ function renderBacktestReportHtml(model) {
       <div class="card"><div class="lbl">Сделок</div><div class="val">${esc(fmtNum(a.dealCount, 0))}</div></div>
       ${breakevenCardHtml(a, model.params.commissionPct)}
     </div>
-    <section>
-      <h2>Параметры логики</h2>
-      <dl class="params">
-        <div><dt>Таймфрейм</dt><dd>${esc(model.params.timeframe)}</dd></div>
-        <div><dt>% позиции</dt><dd>${esc(fmtNum(model.params.positionSizePct, 2))}</dd></div>
-        <div><dt>Макс. позиций</dt><dd>${esc(fmtNum(model.params.maxOpenPositions, 0))}</dd></div>
-        <div><dt>Нач. баланс</dt><dd>${esc(fmtMoney(model.params.initialBalance))}</dd></div>
-        <div><dt>Комиссия %</dt><dd>${esc(fmtNum(model.params.commissionPct, 4))}</dd></div>
-        <div><dt>Учёт</dt><dd>${esc(model.params.costMethod)}</dd></div>
-        <div><dt>Баз. ставка %</dt><dd>${esc(fmtNum(model.params.baseAnnualRatePct, 2))}</dd></div>
-        <div><dt>Инверсия</dt><dd>${model.params.inversion ? 'да' : 'нет'}</dd></div>
-        <div><dt>Ден. фонд</dt><dd>${esc(model.params.cashFundCode)}</dd></div>
-        <div><dt>Счёт</dt><dd>${esc(model.params.accountName)} (${esc(model.params.accountType)})</dd></div>
-      </dl>
-    </section>
+    ${logicConfigSectionHtml(model)}
     ${paramHistorySectionHtml(model.paramHistory)}
     <section>
       <h2>Эквити (кумулятивный П\\У)</h2>
       <div class="chart">${model.equitySvg}</div>
     </section>
-    ${paperChartsModule.paperChartsSectionHtml(model.paperCharts)}
     <section>
       <h2>Статистика (Все / Лонг / Шорт)</h2>
       <table class="stats">
@@ -817,6 +926,7 @@ function renderBacktestReportHtml(model) {
         <tbody>${dealRows(model.topLosses)}</tbody>
       </table>
     </section>
+    ${paperChartsModule.paperChartsSectionHtml(model.paperCharts)}
     <p class="foot">MultiLogic Trade · архив отчёта теста · PostgreSQL</p>
   </div>
   <script>

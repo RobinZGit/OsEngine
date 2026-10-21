@@ -135,6 +135,39 @@ async function persistBacktestReport(pool, runId, opts = {}) {
   const logic = logicRows[0];
   if (!logic) return null;
 
+  // #1028: полная конфигурация логики для отчёта — сигналы, стопы и все
+  // параметры/галочки (прогрев, инверсия, EOD, фонд и т.д.).
+  let reportSignals = [];
+  let reportStops = [];
+  let reportParamsMap = {};
+  try {
+    const { rows: sigRows } = await pool.query(
+      `SELECT position_event, position_side, signal_kind, formula, is_active
+         FROM logic_indicator_signals
+        WHERE logic_id = $1
+        ORDER BY display_order, id`,
+      [run.logic_id]
+    );
+    reportSignals = sigRows;
+    const { rows: stopRows } = await pool.query(
+      `SELECT rule_kind, scope_type, value::float8 AS value, value_unit, is_active
+         FROM logic_stops
+        WHERE logic_id = $1
+        ORDER BY display_order, id`,
+      [run.logic_id]
+    );
+    reportStops = stopRows;
+    const { rows: paramRows } = await pool.query(
+      `SELECT param_key, param_value FROM logic_params WHERE logic_id = $1 ORDER BY param_key`,
+      [run.logic_id]
+    );
+    reportParamsMap = Object.fromEntries(
+      paramRows.map((r) => [r.param_key, r.param_value])
+    );
+  } catch (err) {
+    console.warn('logic config for report', err?.message || err);
+  }
+
   const { rows: trades } = await pool.query(
     `${LOGIC_TRADE_SELECT_TEST_PANEL}
     WHERE lt.logic_id = $2
@@ -237,6 +270,9 @@ async function persistBacktestReport(pool, runId, opts = {}) {
     tradeLots,
     paramHistory,
     paperCharts,
+    signals: reportSignals,
+    stops: reportStops,
+    paramsMap: reportParamsMap,
   });
   const html = renderBacktestReportHtml(model);
   const downloadName = buildBacktestReportDownloadName(model);

@@ -1,4 +1,4 @@
-﻿-- ============================================
+-- ============================================
 -- Ensure default seed logics (install-on-top / upgrade).
 -- Run after 01_multilogictrade_tables_and_data.sql.
 -- Does not overwrite user copies or edits (INSERT … ON CONFLICT DO NOTHING).
@@ -92,7 +92,9 @@ BEGIN
         ('LinReg Fade Trend', 'Двухтаймфреймовая fade по LinReg. TF=H2 + M15, оптимизированная.'),
         ('CCI Fade Trend 2023', 'Fade по CCI20 на M15 + trend-фильтр H2 LinReg100. Как боевая логика 8511.'),
         ('CMO Stoch Trend', 'Трендовая CMO(14)+Стохастик %K(14,3,3). Лонг CMO>0 и K>50, шорт CMO<0 и K<50. СПЯЩАЯ: бэктест #367 ≈ −384 528₽.'),
-        ('CMO Stoch Counter', 'Контр-тренд CMO(14)+Стохастик %K(14,3,3). Лонг CMO<0 и K<50, шорт CMO>0 и K>50. Версия по умолчанию: бэктест #368 ≈ +93 441₽.')
+        ('CMO Stoch Counter', 'Контр-тренд CMO(14)+Стохастик %K(14,3,3). Лонг CMO<0 и K<50, шорт CMO>0 и K>50. Версия по умолчанию: бэктест #368 ≈ +93 441₽.'),
+        ('Тренд M5: SMA20 + ROC10 (TP 0.5%)', 'Трендовый вариант M5 SMA-OC (#29586): только лонг-входы при цене выше SMA(20) и ROC(10)>0; TP 0.5% по бумаге, без SL.'),
+        ('Контртренд M5: SMA20 + ROC10 (TP 0.5%)', 'Контртрендовый вариант M5 SMA-OC (#29586): только лонг-входы при цене ниже SMA(20) и ROC(10)<0; TP 0.5% по бумаге, без SL.')
     ) AS v(name, note)
     ON CONFLICT (name) DO NOTHING;
 
@@ -268,7 +270,9 @@ BEGIN
         'ATR Quiet RSI', 'SMA Stretch Fade', 'Stoch RSI Combo', 'PACC Reversal', 'EMA RSI Fade',
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
-        'LinReg Fade Trend'
+        'LinReg Fade Trend',
+        'Тренд M5: SMA20 + ROC10 (TP 0.5%)',
+        'Контртренд M5: SMA20 + ROC10 (TP 0.5%)'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = l.id)
     ON CONFLICT (logic_id, security_id) DO NOTHING;
@@ -402,6 +406,73 @@ BEGIN
     WHERE src.name = 'LinReg Fade Trend'
       AND NOT EXISTS (SELECT 1 FROM logic_securities z WHERE z.logic_id = dst.id)
     ON CONFLICT (logic_id, security_id) DO NOTHING;
+
+    -- #1028: две логики M5 на базе 29586 — тренд и контртренд, только лонг,
+    -- TP 0.5% по бумаге, без SL. Параметры/сигналы/стопы добавляются один раз
+    -- (NOT EXISTS), чтобы не перетирать ручные правки существующих логик.
+    INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+    SELECT l.id, v.param_key, v.param_value, v.value_type
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('timeframe', 'M5', 'text'),
+        ('position_size_pct', '10', 'number'),
+        ('max_open_positions', '5', 'integer'),
+        ('position_size_base', 'free_cash', 'text'),
+        ('test_initial_balance', '1000000', 'money'),
+        ('commission_pct', '0.03', 'number'),
+        ('cost_method', 'FIFO', 'text'),
+        ('stop_loss_timeframe', 'M5', 'text'),
+        ('base_annual_rate_pct', '20', 'number'),
+        ('warmup_pretest', 'false', 'boolean'),
+        ('inversion', 'false', 'boolean'),
+        ('close_positions_eod', 'false', 'boolean'),
+        ('sell_futures_before_expiry', 'false', 'boolean'),
+        ('sell_futures_days_before_expiry', '3', 'integer'),
+        ('use_non_trading_periods', 'false', 'boolean'),
+        ('non_trading_periods_mode', 'off', 'text'),
+        ('order_execution', 'market', 'text')
+    ) AS v(param_key, param_value, value_type)
+    WHERE l.name IN (
+        'Тренд M5: SMA20 + ROC10 (TP 0.5%)',
+        'Контртренд M5: SMA20 + ROC10 (TP 0.5%)'
+    )
+      AND NOT EXISTS (SELECT 1 FROM logic_params z WHERE z.logic_id = l.id)
+    ON CONFLICT (logic_id, param_key) DO NOTHING;
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, 'open', 'long', 'trend', v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('SMA', '@SMA(period=20,series=VALUE) pp > VALUE', 0),
+        ('ROC', '@ROC(period=10,series=VALUE) VALUE > 0', 1)
+    ) AS v(ind_code, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'Тренд M5: SMA20 + ROC10 (TP 0.5%)'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, 'open', 'long', 'counter', v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('SMA', '@SMA(period=20,series=VALUE) pp < VALUE', 0),
+        ('ROC', '@ROC(period=10,series=VALUE) VALUE < 0', 1)
+    ) AS v(ind_code, formula, display_order)
+    JOIN indicators i ON i.code = v.ind_code
+    WHERE l.name = 'Контртренд M5: SMA20 + ROC10 (TP 0.5%)'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    INSERT INTO logic_stops (logic_id, rule_kind, scope_type, value, value_unit, display_order, is_active)
+    SELECT l.id, 'take_profit', 'security', 0.5, 'percent', 0, TRUE
+    FROM logics l
+    WHERE l.name IN (
+        'Тренд M5: SMA20 + ROC10 (TP 0.5%)',
+        'Контртренд M5: SMA20 + ROC10 (TP 0.5%)'
+    )
+      AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
     SELECT COUNT(*) INTO v_opt_count
     FROM logics
