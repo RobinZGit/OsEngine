@@ -2654,3 +2654,14 @@ tbody tr.logic-main-row:hover {
   background: #2563eb;
 }
 
+/* #1035: фон полосы сигнала (светло-красный → светло-голубой) должен быть
+   виден: ячейки прозрачные, фон рисуется на самой строке. */
+.sig-main-row {
+  transition: background-color 0.15s ease;
+}
+
+.sig-main-row > td {
+  background: transparent;
+}
+
+

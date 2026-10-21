@@ -100,15 +100,9 @@ describe('signal-strictness (#1030/#1033)', () => {
     expect(strictnessPositionFromFormula('@ROC(period=10)', [])).toBe(50);
   });
 
-  it('row background: rose on strict, neutral in the middle, blue on loose', () => {
-    const strict = strictnessRowBackground(0);
-    const mid = strictnessRowBackground(50);
-    const loose = strictnessRowBackground(100);
-    expect(strict).toContain('rgba(244, 63, 94');
-    expect(mid).toContain('rgba(244, 63, 94');
-    expect(loose).toContain('rgba(59, 130, 246');
-    const alpha = (s: string) => Number(s.match(/, ([0-9.]+)\)$/)?.[1] ?? 0);
-    expect(alpha(strict)).toBeGreaterThan(alpha(mid));
-    expect(alpha(loose)).toBeGreaterThan(alpha(mid));
+  it('row background: light red on strict, white in the middle, light blue on loose', () => {
+    expect(strictnessRowBackground(0)).toBe('rgb(252, 205, 211)');
+    expect(strictnessRowBackground(50)).toBe('rgb(255, 255, 255)');
+    expect(strictnessRowBackground(100)).toBe('rgb(205, 227, 255)');
   });
 });

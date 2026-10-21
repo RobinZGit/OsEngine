@@ -7,7 +7,7 @@
     "01_multilogictrade_tables_and_data.sql",
     "02_multilogictrade_functions_and_procedures.sql"
   ],
-  "generatedAt": "2026-10-21T17:10:00.394Z",
+  "generatedAt": "2026-10-21T17:17:40.625Z",
   "stats": {
     "tables": 50,
     "routines": 362,

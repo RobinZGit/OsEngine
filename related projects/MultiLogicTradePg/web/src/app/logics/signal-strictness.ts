@@ -160,18 +160,20 @@ export function strictnessPositionFromFormula(
 }
 
 /**
- * #1033: фон полосы сигнала по положению ползунка.
- * Строго (0) — приглушённый розово-красный, мягко (100) — приглушённый голубой,
- * в середине — почти нейтральный.
+ * #1033/#1035: фон полосы сигнала по положению ползунка.
+ * Строго (0) — светло-красный, мягко (100) — светло-голубой,
+ * в середине — белый. Цвета непрозрачные, чтобы фон реально было видно.
  */
 export function strictnessRowBackground(position: number): string {
   const p = Math.min(100, Math.max(0, Number(position) || 0)) / 100;
-  if (p <= 0.5) {
-    const t = p / 0.5;
-    const alpha = 0.18 * (1 - t) + 0.02 * t;
-    return `rgba(244, 63, 94, ${alpha.toFixed(3)})`;
-  }
-  const t = (p - 0.5) / 0.5;
-  const alpha = 0.02 + 0.17 * t;
-  return `rgba(59, 130, 246, ${alpha.toFixed(3)})`;
+  const strict: [number, number, number] = [252, 205, 211]; // светло-красный
+  const white: [number, number, number] = [255, 255, 255];
+  const loose: [number, number, number] = [205, 227, 255]; // светло-голубой
+  const mix = (a: [number, number, number], b: [number, number, number], t: number): string => {
+    const r = Math.round(a[0] + (b[0] - a[0]) * t);
+    const g = Math.round(a[1] + (b[1] - a[1]) * t);
+    const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+    return `rgb(${r}, ${g}, ${bl})`;
+  };
+  return p <= 0.5 ? mix(strict, white, p / 0.5) : mix(white, loose, (p - 0.5) / 0.5);
 }
