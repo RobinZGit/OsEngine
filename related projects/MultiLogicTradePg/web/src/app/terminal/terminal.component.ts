@@ -588,6 +588,13 @@ export class TerminalComponent implements OnInit, OnDestroy {
       счёта прежние сделки остаются на экране, пока не придёт новый ответ;
       старая история чистится только при смене счёта; (3) ошибка не затирает
       уже загруженные сделки — показываем tradesError рядом с прежним списком. */
+  /** #1025: подпись списка сделок и время последнего обновления баланса.
+      Баланс/остаток теперь освежается не только после сделки из UI, но и при
+      серверных закрытиях (сторож СЛ/ТП, trade-runner): иначе «Остаток на счёте»
+      оставался отрицательным (снимок времён открытой позиции), хотя позиций уже нет. */
+  private lastTradesSignature = '';
+  private accountsRefreshAt = 0;
+
   loadTrades(silent = false): void {
     const id = this.accountId;
     const seq = ++this.tradesReqSeq;
@@ -626,6 +633,15 @@ export class TerminalComponent implements OnInit, OnDestroy {
         }
         this.spentAutoExecBase = nextSpent;
         this.applyPanelOrder();
+        // #1025: список сделок изменился (в т.ч. серверное закрытие по СЛ/ТП) —
+        // сразу подтягиваем баланс; без изменений — раз в минуту.
+        const sig = `${this.trades.length}:${this.trades[0]?.id ?? ''}`;
+        const now = Date.now();
+        if (sig !== this.lastTradesSignature || now - this.accountsRefreshAt > 60_000) {
+          this.lastTradesSignature = sig;
+          this.accountsRefreshAt = now;
+          this.refreshAccountBalance();
+        }
         // #923: после обновления сделок сразу чистим полосы без позиции,
         // у которых истёк срок таймфрейма последнего сигнала.
         this.removeFlatPanelsAfterSignalTimeout();
@@ -638,6 +654,17 @@ export class TerminalComponent implements OnInit, OnDestroy {
         this.tradesError =
           err?.error?.error || err?.message || 'Не удалось загрузить сделки';
       },
+    });
+  }
+
+  /** #1025: тихое обновление счетов с балансом (остаток на счёте) без спиннера. */
+  private refreshAccountBalance(): void {
+    if (typeof this.refs.getAccounts !== 'function') return;
+    this.refs.getAccounts(undefined, true).subscribe({
+      next: (updated) => {
+        this.accounts = updated;
+      },
+      error: () => undefined,
     });
   }
 
