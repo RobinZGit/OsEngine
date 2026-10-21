@@ -44,6 +44,7 @@ import {
   applyStrictnessToFormula,
   formulaParamValues,
   IndicatorParamBound,
+  strictnessPositionFromFormula,
 } from './signal-strictness';
 import {
   LOGIC_STOP_UNITS,
@@ -350,11 +351,6 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private formulaDrafts = new Map<number, string>();
   /** #1030: границы параметров индикаторов для ползунка «строже/мягче». */
   private indicatorBoundsByCode = new Map<string, IndicatorParamBound[]>();
-  private strictnessPositions = new Map<number, number>();
-  private strictnessBases = new Map<
-    number,
-    { formula: string; values: Record<string, number> }
-  >();
   private savingFormulaIds = new Set<number>();
   /** Сигналы с открытой справкой «?» по формуле. */
   private signalFormulaHelpIds = new Set<number>();
@@ -3618,46 +3614,43 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     return all.filter((b) => values[b.param_key] != null);
   }
 
+  /** #1030: положение ползунка вычисляется из текущих параметров формулы. */
   strictnessValue(sig: LogicIndicatorSignalRow): number {
-    return this.strictnessPositions.get(sig.id) ?? 50;
+    return strictnessPositionFromFormula(
+      this.formulaDraft(sig),
+      this.signalBounds(sig),
+      sig.indicator_code
+    );
   }
 
-  /** Запомнить исходные параметры в начале перетаскивания ползунка. */
-  beginStrictness(sig: LogicIndicatorSignalRow): void {
-    if (this.strictnessBases.has(sig.id)) return;
-    const formula = this.formulaDraft(sig);
-    this.strictnessBases.set(sig.id, {
-      formula,
-      values: formulaParamValues(formula),
-    });
-  }
-
-  /** Ползунок 0..100: 50 — значения не меняются, 0 — строже, 100 — мягче. */
+  /** Ползунок 0..100 — абсолютное положение: 0 строже, 100 мягче. */
   onStrictnessInput(sig: LogicIndicatorSignalRow, raw: number | string): void {
     const pos = Math.min(100, Math.max(0, Number(raw) || 0));
-    this.strictnessPositions.set(sig.id, pos);
-    const base =
-      this.strictnessBases.get(sig.id) ??
-      (() => {
-        const formula = this.formulaDraft(sig);
-        return { formula, values: formulaParamValues(formula) };
-      })();
-    this.strictnessBases.set(sig.id, base);
     const next = applyStrictnessToFormula(
-      base.formula,
+      this.formulaDraft(sig),
       this.signalBounds(sig),
-      base.values,
       pos,
       sig.indicator_code
     );
     this.formulaDrafts.set(sig.id, next);
   }
 
-  /** Отпустили ползунок — сохраняем формулу; 50 снова = текущие значения. */
+  /** Отпустили ползунок — сохраняем формулу; положение остаётся на месте. */
   applyStrictness(sig: LogicIndicatorSignalRow): void {
     this.saveSignalFormula(sig);
-    this.strictnessBases.delete(sig.id);
-    this.strictnessPositions.set(sig.id, 50);
+  }
+
+  /** #1031: клик по метке в центре — сброс строгости на середину диапазона. */
+  resetStrictness(sig: LogicIndicatorSignalRow, event?: Event): void {
+    event?.stopPropagation();
+    const next = applyStrictnessToFormula(
+      this.formulaDraft(sig),
+      this.signalBounds(sig),
+      50,
+      sig.indicator_code
+    );
+    this.formulaDrafts.set(sig.id, next);
+    this.applyStrictness(sig);
   }
 
   /** Каталог базовых ТФ для tf= сигнала (#843). */

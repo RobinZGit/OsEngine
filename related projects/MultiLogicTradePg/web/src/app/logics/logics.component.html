@@ -2030,19 +2030,30 @@
 
                                     <span class="sig-strict-cap">Строже</span>
 
-                                    <input
-                                      type="range"
-                                      min="0"
-                                      max="100"
-                                      step="1"
-                                      class="sig-strict-slider"
-                                      [value]="strictnessValue(sig)"
-                                      [disabled]="isFormulaSaving(sig.id)"
-                                      aria-label="Строгость сигнала"
-                                      (pointerdown)="beginStrictness(sig)"
-                                      (input)="onStrictnessInput(sig, $any($event.target).valueAsNumber)"
-                                      (change)="applyStrictness(sig)"
-                                    />
+                                    <span class="sig-strict-slider-wrap">
+
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        class="sig-strict-slider"
+                                        [value]="strictnessValue(sig)"
+                                        [disabled]="isFormulaSaving(sig.id)"
+                                        aria-label="Строгость сигнала"
+                                        (input)="onStrictnessInput(sig, $any($event.target).valueAsNumber)"
+                                        (change)="applyStrictness(sig)"
+                                      />
+
+                                      <button
+                                        type="button"
+                                        class="sig-strict-mid"
+                                        title="Сбросить на середину"
+                                        aria-label="Сбросить строгость на середину"
+                                        (click)="resetStrictness(sig, $event)"
+                                      ></button>
+
+                                    </span>
 
                                     <span class="sig-strict-cap">Мягче</span>
 

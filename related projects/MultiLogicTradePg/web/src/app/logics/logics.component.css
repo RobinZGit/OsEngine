@@ -2615,9 +2615,16 @@ tbody tr.logic-main-row:hover {
   white-space: nowrap;
 }
 
-.sig-strict-slider {
+.sig-strict-slider-wrap {
+  position: relative;
   flex: 1;
   min-width: 90px;
+  display: flex;
+  align-items: center;
+}
+
+.sig-strict-slider {
+  width: 100%;
   accent-color: #2563eb;
   cursor: pointer;
 }
@@ -2625,5 +2632,25 @@ tbody tr.logic-main-row:hover {
 .sig-strict-slider:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+/* #1031: метка в центре ползунка — клик сбрасывает на середину. */
+.sig-strict-mid {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: #94a3b8;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.sig-strict-mid:hover {
+  background: #2563eb;
 }
 

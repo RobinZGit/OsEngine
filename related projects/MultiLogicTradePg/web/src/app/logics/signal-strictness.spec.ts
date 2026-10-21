@@ -2,6 +2,7 @@ import {
   applyStrictnessToFormula,
   formulaParamValues,
   IndicatorParamBound,
+  strictnessPositionFromFormula,
 } from './signal-strictness';
 
 describe('signal-strictness (#1030)', () => {
@@ -20,38 +21,31 @@ describe('signal-strictness (#1030)', () => {
     ).toEqual({ period: 21, std_dev: 2.5 });
   });
 
-  it('middle keeps the current values', () => {
-    const f = '@SMA(period=20,series=VALUE) pp > VALUE';
-    expect(applyStrictnessToFormula(f, sma, formulaParamValues(f), 50, 'SMA')).toBe(f);
-  });
-
   it('strict end uses strict bound, loose end uses loose bound', () => {
     const f = '@SMA(period=20,series=VALUE) pp > VALUE';
-    expect(applyStrictnessToFormula(f, sma, formulaParamValues(f), 0, 'SMA')).toContain('period=100');
-    expect(applyStrictnessToFormula(f, sma, formulaParamValues(f), 100, 'SMA')).toContain('period=5');
+    expect(applyStrictnessToFormula(f, sma, 0, 'SMA')).toContain('period=100');
+    expect(applyStrictnessToFormula(f, sma, 100, 'SMA')).toContain('period=5');
   });
 
-  it('interpolates proportionally and rounds integers', () => {
+  it('middle is the middle of the range and rounds integers', () => {
     const f = '@SMA(period=20,series=VALUE)';
-    // 25% → 100 + (20-100)*0.5 = 60
-    expect(applyStrictnessToFormula(f, sma, { period: 20 }, 25, 'SMA')).toContain('period=60');
-    // 75% → 20 + (5-20)*0.5 = 12.5 → 13
-    expect(applyStrictnessToFormula(f, sma, { period: 20 }, 75, 'SMA')).toContain('period=13');
+    // 100 + (5-100)*0.5 = 52.5 → 53
+    expect(applyStrictnessToFormula(f, sma, 50, 'SMA')).toContain('period=53');
   });
 
   it('changes all bounded params of the indicator, floats keep 2 digits', () => {
     const f = '@BB(period=21,std_dev=2,series=UPPER) pp >= VALUE';
-    const out = applyStrictnessToFormula(f, bb, formulaParamValues(f), 0, 'BB');
-    expect(out).toContain('period=50');
-    expect(out).toContain('std_dev=3');
-    const mid = applyStrictnessToFormula(f, bb, formulaParamValues(f), 75, 'BB');
-    expect(mid).toContain('period=16');
-    expect(mid).toContain('std_dev=1.5');
+    const strict = applyStrictnessToFormula(f, bb, 0, 'BB');
+    expect(strict).toContain('period=50');
+    expect(strict).toContain('std_dev=3');
+    const p75 = applyStrictnessToFormula(f, bb, 75, 'BB');
+    expect(p75).toContain('period=20');
+    expect(p75).toContain('std_dev=1.5');
   });
 
-  it('does not touch params without bounds or other formula text', () => {
+  it('does not touch params of other indicators in the same formula', () => {
     const f = '@SMA(tf=H2,period=20,series=VALUE) pp > VALUE AND @ROC(period=10) VALUE > 0';
-    const out = applyStrictnessToFormula(f, sma, formulaParamValues(f), 0, 'SMA');
+    const out = applyStrictnessToFormula(f, sma, 0, 'SMA');
     expect(out).toContain('tf=H2');
     expect(out).toContain('@ROC(period=10)');
     expect(out).toContain('period=100,series=VALUE');
@@ -59,7 +53,23 @@ describe('signal-strictness (#1030)', () => {
 
   it('clamps position to 0..100', () => {
     const f = '@SMA(period=20,series=VALUE)';
-    expect(applyStrictnessToFormula(f, sma, { period: 20 }, -50, 'SMA')).toContain('period=100');
-    expect(applyStrictnessToFormula(f, sma, { period: 20 }, 500, 'SMA')).toContain('period=5');
+    expect(applyStrictnessToFormula(f, sma, -50, 'SMA')).toContain('period=100');
+    expect(applyStrictnessToFormula(f, sma, 500, 'SMA')).toContain('period=5');
+  });
+
+  it('derives the slider position from current params (persists after save)', () => {
+    // period=20 при границах 100 (строго) / 5 (мягко) → ближе к мягкому краю:
+    // (20-100)/(5-100) ≈ 0.842 → 84
+    expect(
+      strictnessPositionFromFormula('@SMA(period=20,series=VALUE)', sma, 'SMA')
+    ).toBe(84);
+    const applied = applyStrictnessToFormula('@SMA(period=20)', sma, 75, 'SMA');
+    const pos = strictnessPositionFromFormula(applied, sma, 'SMA');
+    expect(Math.abs(pos - 75)).toBeLessThanOrEqual(1);
+  });
+
+  it('returns 50 when there are no bounded params', () => {
+    expect(strictnessPositionFromFormula('@SMA(series=VALUE)', sma, 'SMA')).toBe(50);
+    expect(strictnessPositionFromFormula('@ROC(period=10)', [])).toBe(50);
   });
 });

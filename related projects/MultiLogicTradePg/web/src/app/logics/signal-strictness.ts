@@ -1,8 +1,8 @@
 /**
  * #1030: ползунок «строже / мягче» в списке сигналов логики.
- * Меняет числовые параметры индикатора в формуле сигнала: середина (50) —
- * значения не меняются; влево — «строже» (периоды длиннее, пороги уже),
- * вправо — «мягче» (периоды короче, пороги шире).
+ * Положение 0..100 — АБСОЛЮТНОЕ: 0 = строгая граница параметра, 100 = мягкая,
+ * 50 = середина диапазона. Значение параметра в формуле однозначно задаёт
+ * положение ползунка, поэтому после сохранения он остаётся там, где его оставили.
  */
 export interface IndicatorParamBound {
   indicator_code: string;
@@ -27,16 +27,42 @@ export function formulaParamValues(formula: string): Record<string, number> {
   return out;
 }
 
+/** Только параметры внутри вызовов @indicatorCode(...) (с учётом вложенных скобок). */
+export function indicatorCallParams(
+  formula: string,
+  indicatorCode?: string
+): Record<string, number> {
+  const src = String(formula || '');
+  const code = String(indicatorCode || '').trim().toUpperCase();
+  if (!code) return formulaParamValues(src);
+  const out: Record<string, number> = {};
+  const marker = `@${code}(`;
+  let cursor = 0;
+  while (cursor < src.length) {
+    const idx = src.toUpperCase().indexOf(marker, cursor);
+    if (idx < 0) break;
+    let depth = 1;
+    let i = idx + marker.length;
+    while (i < src.length && depth > 0) {
+      if (src[i] === '(') depth += 1;
+      else if (src[i] === ')') depth -= 1;
+      i += 1;
+    }
+    const inner = src.slice(idx + marker.length, depth === 0 ? i - 1 : i);
+    Object.assign(out, formulaParamValues(inner));
+    cursor = i;
+  }
+  return out;
+}
+
 /**
- * Пересчитать параметры формулы под положение ползунка 0..100.
- * 50 — вернуть исходные значения; 0 — строгие границы; 100 — мягкие.
- * Меняются только параметры из bounds и только внутри вызовов @indicatorCode(...):
- * другие индикаторы в той же формуле (например, @ROC рядом с @SMA) не трогаются.
+ * Пересчитать параметры формулы под абсолютное положение ползунка 0..100.
+ * 0 — строгие границы, 100 — мягкие, 50 — середина диапазона.
+ * Меняются только параметры из bounds и только внутри вызовов @indicatorCode(...).
  */
 export function applyStrictnessToFormula(
   formula: string,
   bounds: IndicatorParamBound[],
-  baseValues: Record<string, number>,
   position: number,
   indicatorCode?: string
 ): string {
@@ -45,20 +71,13 @@ export function applyStrictnessToFormula(
   const rewrite = (text: string): string =>
     text.replace(
       /([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(-?\d+(?:[.,]\d+)?)/g,
-      (whole, key: string, num: string) => {
+      (whole, key: string) => {
         const b = byKey.get(key);
         if (!b) return whole;
         const strict = Number(b.strict_value);
         const loose = Number(b.loose_value);
         if (!Number.isFinite(strict) || !Number.isFinite(loose)) return whole;
-        const parsed = Number(num.replace(',', '.'));
-        const cur = Number.isFinite(baseValues[key]) ? baseValues[key] : parsed;
-        let v: number;
-        if (p <= 0.5) {
-          v = strict + (cur - strict) * (p / 0.5);
-        } else {
-          v = cur + (loose - cur) * ((p - 0.5) / 0.5);
-        }
+        let v = strict + (loose - strict) * p;
         v = b.is_integer ? Math.round(v) : Math.round(v * 100) / 100;
         return `${key}=${v}`;
       }
@@ -68,7 +87,6 @@ export function applyStrictnessToFormula(
   const code = String(indicatorCode || '').trim().toUpperCase();
   if (!code) return rewrite(src);
 
-  // Идём по вызовам @CODE( … ) с учётом вложенных скобок (OPT(...)).
   const marker = `@${code}(`;
   let out = '';
   let cursor = 0;
@@ -88,13 +106,35 @@ export function applyStrictnessToFormula(
     }
     const inner = src.slice(idx + marker.length, depth === 0 ? i - 1 : i);
     out += rewrite(inner);
-    if (depth === 0) {
-      out += ')';
-      cursor = i;
-    } else {
-      cursor = i;
-    }
+    if (depth === 0) out += ')';
+    cursor = i;
   }
   return out;
 }
 
+/**
+ * Положение ползунка, соответствующее текущим параметрам формулы.
+ * Среднее по всем параметрам индикатора (каждый нормируется в 0..100).
+ * Нет значений/границ — 50 (середина).
+ */
+export function strictnessPositionFromFormula(
+  formula: string,
+  bounds: IndicatorParamBound[],
+  indicatorCode?: string
+): number {
+  if (!bounds.length) return 50;
+  const values = indicatorCallParams(formula, indicatorCode);
+  const positions: number[] = [];
+  for (const b of bounds) {
+    const cur = values[b.param_key];
+    const strict = Number(b.strict_value);
+    const loose = Number(b.loose_value);
+    if (!Number.isFinite(cur) || !Number.isFinite(strict) || !Number.isFinite(loose)) continue;
+    if (strict === loose) continue;
+    const p = ((cur - strict) / (loose - strict)) * 100;
+    positions.push(Math.min(100, Math.max(0, p)));
+  }
+  if (!positions.length) return 50;
+  const avg = positions.reduce((a, b) => a + b, 0) / positions.length;
+  return Math.round(Math.min(100, Math.max(0, avg)));
+}
