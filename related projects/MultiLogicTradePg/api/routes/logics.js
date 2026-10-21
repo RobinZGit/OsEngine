@@ -1,6 +1,8 @@
 /**
  * Logics CRUD, params, export/import, OPT, shadow, signals, stops, securities, NTP.
  */
+const { writeErrorLog } = require('../lib/error-log');
+
 module.exports = function registerLogicsRoutes(app, ctx) {
   const {
     pool,
@@ -1076,6 +1078,7 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
     return;
   }
   try {
+    const priceLogSince = new Date(Date.now() - 2 * 60 * 1000);
     // #987: цикл уже держит общий advisory-lock — logic_lightning_run вернёт 'busy'.
     // #990: сначала немного ждём и повторяем (цикл может освободить лок), а если лок
     // так и занят — отдаём снимок с последнего закрытого бара вместо ошибки 409.
@@ -1089,6 +1092,9 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
       if (result?.ok === true || result?.reason !== 'busy') break;
       await new Promise((r) => setTimeout(r, 2000));
     }
+    // #1022: сбои источников цен (T-Bank и/или MOEX) — в «Мониторинг системы»,
+    // даже если fallback на второй источник сработал и данные пришли.
+    await logLightningPriceErrorsForLogic(pool, id, priceLogSince);
     if (!result || result.ok !== true) {
       if (result?.reason === 'busy') {
         // #990: цикл занят общим локом (M1 держит его минутами на прогреве цен).
@@ -1117,6 +1123,63 @@ app.post('/api/logics/:id/lightning', async (req, res) => {
 });
 
 const LIGHTNING_LOCK_KEY = 'multilogictrade_run_trade_cycle';
+
+/** #1022: сбои источников цен в «молнии» — в журнал «Мониторинг системы».
+ *  price_load_log фиксирует каждый источник отдельно (T-BANK / MOEX), даже если
+ *  затем сработал fallback на второй: строка с error_message появляется у
+ *  упавшего источника, и её надо показать как предупреждение, а не терять за
+ *  успешной загрузкой с резервного. */
+async function logLightningPriceErrors(runner, securityIds, since) {
+  if (!Array.isArray(securityIds) || securityIds.length === 0) return 0;
+  let logged = 0;
+  try {
+    const { rows } = await runner.query(
+      `SELECT security_id, timeframe_id, source, error_message, loaded_at
+         FROM price_load_log
+        WHERE security_id = ANY($1::int[])
+          AND loaded_at >= $2::timestamp
+          AND COALESCE(error_message, '') <> ''
+        ORDER BY id DESC
+        LIMIT 100`,
+      [securityIds, since]
+    );
+    for (const r of rows) {
+      const provider = String(r.source || 'unknown');
+      await writeErrorLog(pool, {
+        level: 'warning',
+        source: 'prices',
+        category: 'provider',
+        code: `price_provider_${provider.toLowerCase()}`,
+        message: `Источник цен ${provider} не отдал данные: ${String(r.error_message).slice(0, 300)}`,
+        detail: r.error_message,
+        securityId: r.security_id,
+        context: { provider, timeframe_id: r.timeframe_id, logged_at: r.loaded_at },
+      });
+      logged += 1;
+    }
+  } catch (err) {
+    console.warn('lightning price-provider log:', err.message);
+  }
+  return logged;
+}
+
+/** #1022: показать в журнале сбои источников по бумагам одной логики. */
+async function logLightningPriceErrorsForLogic(runner, logicId, since) {
+  try {
+    const { rows } = await runner.query(
+      `SELECT security_id FROM logic_securities WHERE logic_id = $1 AND is_active = TRUE`,
+      [logicId]
+    );
+    return await logLightningPriceErrors(
+      runner,
+      rows.map((r) => r.security_id),
+      since
+    );
+  } catch (err) {
+    console.warn('lightning price-provider log (logic):', err.message);
+    return 0;
+  }
+}
 
 // #991: состояние последнего запуска «молнии для всех» — чтобы кнопка «Запросить
 // сигналы» могла показать результат и причины (почему сигналов не создано).
@@ -1179,8 +1242,21 @@ async function runLightningAllBackground({ ids, secIds, srcId, today }) {
         await client.query(`CALL load_prices_http($1, $2, $3, $4)`, [s, srcId, today, today]);
       } catch (err) {
         console.warn(`lightning-all prices security=${s}:`, err.message);
+        // #1022: оба источника недоступны — это ошибка, а не «нет свечей».
+        await writeErrorLog(pool, {
+          level: 'error',
+          source: 'prices',
+          category: 'provider',
+          code: 'price_provider_unavailable',
+          message: `Цены недоступны (security=${s}): ${err.message}`,
+          detail: err.message,
+          securityId: s,
+        });
       }
     }
+
+    // #1022: ошибки отдельных источников, даже когда fallback спас загрузку.
+    await logLightningPriceErrors(client, secIds, new Date(job.startedAt));
 
     for (const id of ids) {
       try {
