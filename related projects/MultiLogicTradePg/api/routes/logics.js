@@ -1893,7 +1893,7 @@ app.post('/api/logic-stops', async (req, res) => {
     res.status(400).json({
       error:
         ruleKind === 'take_profit'
-          ? 'scope_type for take_profit must be security, portfolio or portfolio_ltp_renew'
+          ? 'scope_type for take_profit must be security or portfolio_ltp_renew'
           : 'scope_type must be security, security_resume, security_inversion, portfolio or portfolio_resume',
     });
     return;

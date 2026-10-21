@@ -89,7 +89,10 @@ function isScopeChoosableForRuleKind(ruleKind, scopeType) {
     return scopeType !== 'portfolio_resume';
   }
   if (ruleKind === 'take_profit') {
-    return scopeType === 'security';
+    // #1026: синхронно с UI (shared/logic-stop.ts, #833) — линейный TP по
+    // портфелю с возобновлением снова доступен к выбору. Раньше здесь
+    // разрешался только 'security', и смена типа TP откатывалась с 400.
+    return scopeType === 'security' || scopeType === 'portfolio_ltp_renew';
   }
   return false;
 }

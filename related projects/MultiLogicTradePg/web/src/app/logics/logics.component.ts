@@ -3220,6 +3220,10 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       error: (err) => {
         this.savingStopIds.delete(stop.id);
         alert(err?.error?.error || 'Не удалось сохранить правило стопа');
+        // #1026: сервер отклонил изменение (например, тип TP) — возвращаем
+        // в список его фактическое состояние, иначе select остаётся на
+        // отвергнутом типе и выглядит как «сбилось».
+        this.loadStopsForLogic(stop.logic_id, true);
       },
     });
   }
