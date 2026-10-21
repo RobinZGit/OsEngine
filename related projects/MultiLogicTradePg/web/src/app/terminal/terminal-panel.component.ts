@@ -270,6 +270,10 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   /** #946: ключ уже исполненного сигнала (см. signalKey) — чтобы один и тот
       же сигнал логики не исполнить дважды. */
   private executedSignalKey: string | null = null;
+  /** #1021: ключ сигнала, который автоисполнение отбросило окончательно —
+      устарел, не влез в лимит или позиция уже открыта. Повторно (в том числе
+      после ручного закрытия позиции, освободившего лимит) он не исполняется. */
+  private droppedSignalKey: string | null = null;
   /** #952: ключ сигнала, который мы один раз пропустили из-за открытой позиции —
       чтобы сообщение об этом не переписывалось на каждом тике. */
   private skippedSignalKey: string | null = null;
@@ -1021,6 +1025,40 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     ].join('|');
   }
 
+  /** #1021: сколько таймфреймов сигнала он остаётся свежим для автоисполнения.
+      Сигнал, прождавший дольше (лимит, цена, счёт), уже не актуален: после
+      ручного закрытия позиции терминал не должен открывать её по старому
+      сигналу. Свежий сигнал следующего бара (новый ключ) исполняется как обычно. */
+  private static readonly AUTO_EXEC_FRESH_BARS = 2;
+
+  /** #1021: причина, по которой сигнал уже нельзя исполнять (устарел), или null. */
+  private staleSignalText(): string | null {
+    const ev = this.signalEvent;
+    if (!ev) return null;
+    const frame = this.signalFrameSeconds();
+    const fire = this.signalStartMs();
+    if (frame == null || frame <= 0 || !Number.isFinite(fire)) return null;
+    const windowMs =
+      frame * 1000 * TerminalPanelComponent.AUTO_EXEC_FRESH_BARS;
+    if (Date.now() - fire <= windowMs) return null;
+    const tf = ev.timeframe || `${Math.round(frame / 60)} мин`;
+    const bars = TerminalPanelComponent.AUTO_EXEC_FRESH_BARS;
+    return `Сигнал устарел (старше ${bars} бар ${tf}) — не исполняется`;
+  }
+
+  /** #1021: окончательно отбросить сигнал от автоисполнения — причина
+      показывается один раз, повторных попыток (в т.ч. по обновлению сделок)
+      больше нет. */
+  private dropAutoSignal(key: string, text: string): void {
+    this.droppedSignalKey = key;
+    this.autoWaitKey = key;
+    this.tradeMessage = text;
+    this.tradeError = null;
+    this.cancelSignalRetry();
+    this.execAttempts = 0;
+    this.execAttemptsKey = null;
+  }
+
   /** #946: автоисполнение сигнала логики («Исполнять сделки сразу»). Ставим
       заявку тем же путём, что и кнопка сигнала: сторона — с учётом инверсии,
       количество — количество логики (иначе по сумме), цена — актуальная
@@ -1030,8 +1068,16 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
   private maybeExecuteSignal(): void {
     if (!this.executeSignalsNow || this.signalEvent == null) return;
     const key = this.signalKey;
-    if (!key || this.executedSignalKey === key) {
+    if (!key || this.executedSignalKey === key || this.droppedSignalKey === key) {
       this.cancelSignalRetry();
+      return;
+    }
+    // #1021: сигнал, прождавший больше окна свежести, не исполняем задним
+    // числом. Раньше сигнал, упёршийся в лимит, «висел» в очереди и исполнялся,
+    // как только ручное закрытие позиции освобождало сумму.
+    const stale = this.staleSignalText();
+    if (stale != null) {
+      this.dropAutoSignal(key, stale);
       return;
     }
     // Новый сигнал — прежние ожидания сбрасываем (иначе причина от старого
@@ -1066,8 +1112,12 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     if (this.remainingPositionQty !== 0) {
       if (this.skippedSignalKey !== key) {
         this.skippedSignalKey = key;
-        this.tradeMessage =
-          'Позиция по этой бумаге уже открыта — сигнал пропущен, наращивание отключено';
+        // #1021: сигнал при открытой позиции отбрасываем окончательно — после
+        // ручного закрытия той же позиции он не должен открывать её заново.
+        this.dropAutoSignal(
+          key,
+          'Позиция по этой бумаге уже открыта — сигнал пропущен, наращивание отключено'
+        );
       }
       return;
     }
@@ -1105,14 +1155,23 @@ export class TerminalPanelComponent implements OnInit, OnChanges, OnDestroy, Aft
     }
     if (this.autoLimitCheck != null) {
       if (!this.autoLimitCheck(entryAmount)) {
-        this.noteAutoWait(key, 'Достигнут лимит — сделка не исполнена');
+        // #1021: в очередь не ставим — сигнал, не влезший в лимит, отбрасывается
+        // окончательно; иначе он исполнялся бы задним числом, как только
+        // закрытие позиции освободит сумму.
+        this.dropAutoSignal(
+          key,
+          'Достигнут лимит — сигнал не исполнен (в очередь не ставится)'
+        );
         return;
       }
       this.autoReserved = entryAmount;
     } else if (
       entryAmount + openPositionsSpent(this.trades) > this.autoExecMaxSum
     ) {
-      this.noteAutoWait(key, 'Достигнут лимит — сделка не исполнена');
+      this.dropAutoSignal(
+        key,
+        'Достигнут лимит — сигнал не исполнен (в очередь не ставится)'
+      );
       return;
     }
     this.autoWaitKey = null;

@@ -2501,6 +2501,11 @@ describe('TerminalPanelComponent', () => {
       signal_id: 777,
       logic_name: 'Логика',
       bar_dt: '2026-09-19T10:15:00',
+      // #1021: сигнал в тестах — свежий (окно автоисполнения — 2 бара ТФ).
+      // created_at чуть в будущем: заливка кнопки закрытия (#939) считается от
+      // него через Date.now() на каждом CD; с «сейчас» значение дрожало между
+      // проверками и dev-режим кидал NG0100 в тестах.
+      created_at: new Date(Date.now() + 3_600_000).toISOString(),
       position_side: 'long',
       price: 250,
       timeframe_id: 6,
@@ -2883,22 +2888,72 @@ describe('TerminalPanelComponent', () => {
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
     });
 
-    it('#957: увеличение лимита после блокировки исполняет тот же сигнал', () => {
+    // #1021: сигнал, не влезший в лимит, отбрасывается сразу — в очередь не
+    // ставится. Раньше ручное закрытие позиции освобождало сумму, и старый
+    // сигнал исполнялся «тотчас же» после закрытия.
+    it('#1021: сигнал, заблокированный лимитом, не исполняется после освобождения лимита', fakeAsync(() => {
       component.chartState = candles();
       component.accountId = 1;
       fixture.componentRef.setInput('autoExecMaxSum', 900);
       fixture.componentRef.setInput('executeSignalsNow', true);
-      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 804 }));
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 831 }));
       fixture.detectChanges();
       expect(stateSvc.placeTrade).not.toHaveBeenCalled();
       expect(component.tradeMessage).toContain('Достигнут лимит');
 
-      // Пользователь поднял лимит — сигнал не потерян, исполняется.
+      // Лимит поднят — старый сигнал не «оживает».
       fixture.componentRef.setInput('autoExecMaxSum', 5000);
       fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      // Новый сигнал следующего бара исполняется как обычно.
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 832 }));
+      fixture.detectChanges();
       expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
-      expect(component.tradeMessage).toContain('Сделка размещена');
-    });
+      tick();
+    }));
+
+    it('#1021: старый сигнал (старше двух бар ТФ) не исполняется', fakeAsync(() => {
+      component.chartState = candles();
+      component.accountId = 1;
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput(
+        'signalEvent',
+        signal({
+          signal_id: 833,
+          // Окно свежести M15 — 2 бара = 30 минут; сигналу 31 минута.
+          created_at: new Date(Date.now() - 31 * 60_000).toISOString(),
+        })
+      );
+      fixture.detectChanges();
+
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+      expect(component.tradeMessage).toContain('устарел');
+      tick();
+    }));
+
+    it('#1021: сигнал, пропущенный при открытой позиции, не исполняется после её закрытия', fakeAsync(() => {
+      component.chartState = candles();
+      component.accountId = 1;
+      component.trades = [trade(1, { security_id: 29, quantity: 10, price: 250 })];
+      fixture.componentRef.setInput('trades', component.trades);
+      fixture.componentRef.setInput('executeSignalsNow', true);
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 834 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      // Позицию закрыли вручную — тот же сигнал не открывает её заново.
+      component.trades = [];
+      fixture.componentRef.setInput('trades', []);
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).not.toHaveBeenCalled();
+
+      // Свежий сигнал нового бара — исполняется.
+      fixture.componentRef.setInput('signalEvent', signal({ signal_id: 835 }));
+      fixture.detectChanges();
+      expect(stateSvc.placeTrade).toHaveBeenCalledTimes(1);
+      tick();
+    }));
 
     it('#957: расход лимита считается заново от открытых позиций — после закрытия сигнал исполняется', () => {
       // По другой бумаге позиция на 2500 ₽ (10 × 250): сделкой 1000 ₽ занятое
