@@ -168,10 +168,10 @@ export function strictnessRowBackground(position: number): string {
   const p = Math.min(100, Math.max(0, Number(position) || 0)) / 100;
   if (p <= 0.5) {
     const t = p / 0.5;
-    const alpha = 0.13 * (1 - t) + 0.015 * t;
+    const alpha = 0.18 * (1 - t) + 0.02 * t;
     return `rgba(244, 63, 94, ${alpha.toFixed(3)})`;
   }
   const t = (p - 0.5) / 0.5;
-  const alpha = 0.015 + 0.12 * t;
+  const alpha = 0.02 + 0.17 * t;
   return `rgba(59, 130, 246, ${alpha.toFixed(3)})`;
 }

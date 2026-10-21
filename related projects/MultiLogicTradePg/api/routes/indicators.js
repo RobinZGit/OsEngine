@@ -158,6 +158,7 @@ app.get('/api/indicator-param-bounds', async (_req, res) => {
       `SELECT indicator_code, param_key,
               strict_value::float8 AS strict_value,
               loose_value::float8 AS loose_value,
+              default_value::float8 AS default_value,
               is_integer
          FROM indicator_param_bounds
         ORDER BY indicator_code, param_key`
