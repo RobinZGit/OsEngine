@@ -11,6 +11,8 @@ export interface IndicatorParamBound {
   strict_value: number;
   /** Значение на «мягком» конце. */
   loose_value: number;
+  /** Значение в середине (дефолт индикатора); пусто — середина диапазона. */
+  default_value?: number | null;
   /** Округление до целого (period и т.п.). */
   is_integer: boolean;
 }
@@ -76,8 +78,16 @@ export function applyStrictnessToFormula(
         if (!b) return whole;
         const strict = Number(b.strict_value);
         const loose = Number(b.loose_value);
+        const mid = Number.isFinite(Number(b.default_value))
+          ? Number(b.default_value)
+          : (strict + loose) / 2;
         if (!Number.isFinite(strict) || !Number.isFinite(loose)) return whole;
-        let v = strict + (loose - strict) * p;
+        let v: number;
+        if (p <= 0.5) {
+          v = strict + (mid - strict) * (p / 0.5);
+        } else {
+          v = mid + (loose - mid) * ((p - 0.5) / 0.5);
+        }
         v = b.is_integer ? Math.round(v) : Math.round(v * 100) / 100;
         return `${key}=${v}`;
       }
@@ -131,10 +141,37 @@ export function strictnessPositionFromFormula(
     const loose = Number(b.loose_value);
     if (!Number.isFinite(cur) || !Number.isFinite(strict) || !Number.isFinite(loose)) continue;
     if (strict === loose) continue;
-    const p = ((cur - strict) / (loose - strict)) * 100;
+    const mid = Number.isFinite(Number(b.default_value))
+      ? Number(b.default_value)
+      : (strict + loose) / 2;
+    let p: number;
+    if (cur >= mid && mid !== strict) {
+      p = 50 * ((cur - strict) / (mid - strict));
+    } else if (mid !== loose) {
+      p = 50 + 50 * ((cur - mid) / (loose - mid));
+    } else {
+      p = 50;
+    }
     positions.push(Math.min(100, Math.max(0, p)));
   }
   if (!positions.length) return 50;
   const avg = positions.reduce((a, b) => a + b, 0) / positions.length;
   return Math.round(Math.min(100, Math.max(0, avg)));
+}
+
+/**
+ * #1033: фон полосы сигнала по положению ползунка.
+ * Строго (0) — приглушённый розово-красный, мягко (100) — приглушённый голубой,
+ * в середине — почти нейтральный.
+ */
+export function strictnessRowBackground(position: number): string {
+  const p = Math.min(100, Math.max(0, Number(position) || 0)) / 100;
+  if (p <= 0.5) {
+    const t = p / 0.5;
+    const alpha = 0.13 * (1 - t) + 0.015 * t;
+    return `rgba(244, 63, 94, ${alpha.toFixed(3)})`;
+  }
+  const t = (p - 0.5) / 0.5;
+  const alpha = 0.015 + 0.12 * t;
+  return `rgba(59, 130, 246, ${alpha.toFixed(3)})`;
 }

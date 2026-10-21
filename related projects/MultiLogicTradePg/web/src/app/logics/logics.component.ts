@@ -45,6 +45,7 @@ import {
   formulaParamValues,
   IndicatorParamBound,
   strictnessPositionFromFormula,
+  strictnessRowBackground,
 } from './signal-strictness';
 import {
   LOGIC_STOP_UNITS,
@@ -3612,6 +3613,12 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     if (all.length === 0) return [];
     const values = formulaParamValues(this.formulaDraft(sig));
     return all.filter((b) => values[b.param_key] != null);
+  }
+
+  /** #1033: фон полосы сигнала — розовый к «строже», голубой к «мягче». */
+  signalRowBackground(sig: LogicIndicatorSignalRow): string {
+    if (!this.sigHasStrictness(sig)) return '';
+    return strictnessRowBackground(this.strictnessValue(sig));
   }
 
   /** #1030: положение ползунка вычисляется из текущих параметров формулы. */

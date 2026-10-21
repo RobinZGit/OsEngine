@@ -7,7 +7,7 @@
     "01_multilogictrade_tables_and_data.sql",
     "02_multilogictrade_functions_and_procedures.sql"
   ],
-  "generatedAt": "2026-10-21T16:51:40.657Z",
+  "generatedAt": "2026-10-21T17:02:28.006Z",
   "stats": {
     "tables": 50,
     "routines": 362,
@@ -744,6 +744,13 @@
           "type": "BOOLEAN",
           "nullable": false,
           "default": "TRUE",
+          "comment": null
+        },
+        {
+          "name": "default_value",
+          "type": "NUMERIC",
+          "nullable": true,
+          "default": null,
           "comment": null
         }
       ],

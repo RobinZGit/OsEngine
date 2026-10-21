@@ -3,15 +3,37 @@ import {
   formulaParamValues,
   IndicatorParamBound,
   strictnessPositionFromFormula,
+  strictnessRowBackground,
 } from './signal-strictness';
 
-describe('signal-strictness (#1030)', () => {
+describe('signal-strictness (#1030/#1033)', () => {
   const sma: IndicatorParamBound[] = [
-    { indicator_code: 'SMA', param_key: 'period', strict_value: 100, loose_value: 5, is_integer: true },
+    {
+      indicator_code: 'SMA',
+      param_key: 'period',
+      strict_value: 100,
+      loose_value: 5,
+      default_value: 20,
+      is_integer: true,
+    },
   ];
   const bb: IndicatorParamBound[] = [
-    { indicator_code: 'BB', param_key: 'period', strict_value: 50, loose_value: 10, is_integer: true },
-    { indicator_code: 'BB', param_key: 'std_dev', strict_value: 3, loose_value: 1, is_integer: false },
+    {
+      indicator_code: 'BB',
+      param_key: 'period',
+      strict_value: 50,
+      loose_value: 10,
+      default_value: 20,
+      is_integer: true,
+    },
+    {
+      indicator_code: 'BB',
+      param_key: 'std_dev',
+      strict_value: 3,
+      loose_value: 1,
+      default_value: 2,
+      is_integer: false,
+    },
   ];
 
   it('parses numeric params', () => {
@@ -27,19 +49,25 @@ describe('signal-strictness (#1030)', () => {
     expect(applyStrictnessToFormula(f, sma, 100, 'SMA')).toContain('period=5');
   });
 
-  it('middle is the middle of the range and rounds integers', () => {
-    const f = '@SMA(period=20,series=VALUE)';
-    // 100 + (5-100)*0.5 = 52.5 → 53
-    expect(applyStrictnessToFormula(f, sma, 50, 'SMA')).toContain('period=53');
+  it('middle restores the default value (not the range midpoint)', () => {
+    // 20 — дефолт, середина диапазона была бы 53.
+    expect(applyStrictnessToFormula('@SMA(period=53)', sma, 50, 'SMA')).toContain('period=20');
+  });
+
+  it('interpolates proportionally around the default and rounds integers', () => {
+    // 75%: 20 + (5-20)*0.5 = 12.5 → 13
+    expect(applyStrictnessToFormula('@SMA(period=20)', sma, 75, 'SMA')).toContain('period=13');
+    // 25%: 100 + (20-100)*0.5 = 60
+    expect(applyStrictnessToFormula('@SMA(period=20)', sma, 25, 'SMA')).toContain('period=60');
   });
 
   it('changes all bounded params of the indicator, floats keep 2 digits', () => {
-    const f = '@BB(period=21,std_dev=2,series=UPPER) pp >= VALUE';
+    const f = '@BB(period=20,std_dev=2,series=UPPER) pp >= VALUE';
     const strict = applyStrictnessToFormula(f, bb, 0, 'BB');
     expect(strict).toContain('period=50');
     expect(strict).toContain('std_dev=3');
     const p75 = applyStrictnessToFormula(f, bb, 75, 'BB');
-    expect(p75).toContain('period=20');
+    expect(p75).toContain('period=15');
     expect(p75).toContain('std_dev=1.5');
   });
 
@@ -57,19 +85,30 @@ describe('signal-strictness (#1030)', () => {
     expect(applyStrictnessToFormula(f, sma, 500, 'SMA')).toContain('period=5');
   });
 
-  it('derives the slider position from current params (persists after save)', () => {
-    // period=20 при границах 100 (строго) / 5 (мягко) → ближе к мягкому краю:
-    // (20-100)/(5-100) ≈ 0.842 → 84
+  it('derives the slider position from current params (default → middle)', () => {
     expect(
       strictnessPositionFromFormula('@SMA(period=20,series=VALUE)', sma, 'SMA')
-    ).toBe(84);
+    ).toBe(50);
     const applied = applyStrictnessToFormula('@SMA(period=20)', sma, 75, 'SMA');
     const pos = strictnessPositionFromFormula(applied, sma, 'SMA');
-    expect(Math.abs(pos - 75)).toBeLessThanOrEqual(1);
+    // округление периода (13 вместо 12.5) даёт сдвиг позиции ~2 п.п.
+    expect(Math.abs(pos - 75)).toBeLessThanOrEqual(3);
   });
 
   it('returns 50 when there are no bounded params', () => {
     expect(strictnessPositionFromFormula('@SMA(series=VALUE)', sma, 'SMA')).toBe(50);
     expect(strictnessPositionFromFormula('@ROC(period=10)', [])).toBe(50);
+  });
+
+  it('row background: rose on strict, neutral in the middle, blue on loose', () => {
+    const strict = strictnessRowBackground(0);
+    const mid = strictnessRowBackground(50);
+    const loose = strictnessRowBackground(100);
+    expect(strict).toContain('rgba(244, 63, 94');
+    expect(mid).toContain('rgba(244, 63, 94');
+    expect(loose).toContain('rgba(59, 130, 246');
+    const alpha = (s: string) => Number(s.match(/, ([0-9.]+)\)$/)?.[1] ?? 0);
+    expect(alpha(strict)).toBeGreaterThan(alpha(mid));
+    expect(alpha(loose)).toBeGreaterThan(alpha(mid));
   });
 });

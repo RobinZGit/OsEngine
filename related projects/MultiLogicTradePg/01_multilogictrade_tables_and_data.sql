@@ -919,6 +919,7 @@ ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS param_key VARCHAR(64
 ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS strict_value NUMERIC;
 ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS loose_value NUMERIC;
 ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS is_integer BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS default_value NUMERIC;
 
 INSERT INTO indicator_param_bounds (indicator_code, param_key, strict_value, loose_value, is_integer) VALUES
     ('SMA', 'period', 100, 5, TRUE),
@@ -952,6 +953,26 @@ INSERT INTO indicator_param_bounds (indicator_code, param_key, strict_value, loo
     ('PSAR', 'step', 0.05, 0.01, FALSE),
     ('PSAR', 'max', 0.5, 0.1, FALSE)
 ON CONFLICT (indicator_code, param_key) DO NOTHING;
+
+-- #1033: дефолт параметра — «середина» ползунка (период 20 и т.п.).
+UPDATE indicator_param_bounds b
+SET default_value = v.def
+FROM (VALUES
+    ('SMA','period',20), ('EMA','period',20), ('WMA','period',20),
+    ('HMA','period',20), ('ZLEMA','period',20), ('SMAT3','period',20),
+    ('RSI','period',14), ('CMO','period',14), ('CCI','period',20),
+    ('ROC','period',10), ('ADX','period',14), ('ATR','period',14),
+    ('MFI','period',14), ('WILLR','period',14),
+    ('STOCH','k_period',14), ('STOCH','d_period',3), ('STOCH','smooth',3),
+    ('MACD','fast_period',12), ('MACD','slow_period',26), ('MACD','signal_period',9),
+    ('BB','period',20), ('BB','std_dev',2),
+    ('LINREG','period',20), ('LINREG','std_dev',2),
+    ('SQUARE','period',20), ('SQUARE','std_dev',2),
+    ('DONCHIAN','period',20), ('KELTNER','period',20),
+    ('PSAR','step',0.02), ('PSAR','max',0.2)
+) AS v(code, key, def)
+WHERE b.indicator_code = v.code AND b.param_key = v.key
+  AND b.default_value IS DISTINCT FROM v.def;
 
 -- Шаблоны расчёта (функция + параметры; :series подставляется для каждой линии индикатора)
 UPDATE indicators SET script = 'SELECT calc_ind_rsi(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'RSI';
