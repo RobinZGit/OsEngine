@@ -7,9 +7,9 @@
     "01_multilogictrade_tables_and_data.sql",
     "02_multilogictrade_functions_and_procedures.sql"
   ],
-  "generatedAt": "2026-10-21T15:25:41.117Z",
+  "generatedAt": "2026-10-21T16:32:23.361Z",
   "stats": {
-    "tables": 49,
+    "tables": 50,
     "routines": 362,
     "createStatementsIn02": 642,
     "dedupedFromCreates": 280
@@ -706,6 +706,49 @@
           "definition": "FOREIGN KEY (security_id) REFERENCES securities(id)"
         }
       ]
+    },
+    {
+      "name": "indicator_param_bounds",
+      "comment": null,
+      "columns": [
+        {
+          "name": "indicator_code",
+          "type": "VARCHAR(32)",
+          "nullable": false,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "param_key",
+          "type": "VARCHAR(64)",
+          "nullable": false,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "strict_value",
+          "type": "NUMERIC",
+          "nullable": false,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "loose_value",
+          "type": "NUMERIC",
+          "nullable": false,
+          "default": null,
+          "comment": null
+        },
+        {
+          "name": "is_integer",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": "TRUE",
+          "comment": null
+        }
+      ],
+      "indexes": [],
+      "constraints": []
     },
     {
       "name": "indicator_rating",

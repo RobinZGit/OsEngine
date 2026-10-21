@@ -1,5 +1,5 @@
 ﻿Product: MultiLogicTradePg
-Version: 1.0.438
-Build: 438
-Built: 2026-10-21 19:17:52
-Git: fcababa
+Version: 1.0.439
+Build: 439
+Built: 2026-10-21 19:32:59
+Git: e061741

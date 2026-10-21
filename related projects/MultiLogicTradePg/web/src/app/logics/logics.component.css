@@ -2598,3 +2598,32 @@ tbody tr.logic-main-row:hover {
   background: #ffe4e6;
   border-color: #fda4af;
 }
+
+/* #1030: ползунок «строже / мягче» под формулой сигнала. */
+.sig-strict-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.sig-strict-cap {
+  font-size: 0.66rem;
+  color: var(--muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.sig-strict-slider {
+  flex: 1;
+  min-width: 90px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.sig-strict-slider:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+

@@ -24,6 +24,7 @@ import type {
   LogicStopValueUnit,
 } from '../shared/logic-stop';
 import type { BacktestRunStatus } from '../logics/logic-positions-panel.component';
+import type { IndicatorParamBound } from '../logics/signal-strictness';
 import { LogicPayload } from '../models/lookup.model';
 
 export interface SignalRatingPrecalcStatus {
@@ -436,8 +437,14 @@ export class LogicsService {
     );
   }
 
-  getLogicStops(logicId: number): Observable<LogicStopRow[]> {
-    return this.http.get<LogicStopRow[]>(
+  /** #1030: границы параметров индикаторов для ползунка «строже/мягче». */
+  getIndicatorParamBounds(): Observable<IndicatorParamBound[]> {
+    return this.http.get<IndicatorParamBound[]>(
+      `${this.appConfig.apiUrl}/indicator-param-bounds`
+    );
+  }
+
+  getLogicStops(logicId: number): Observable<LogicStopRow[]> {    return this.http.get<LogicStopRow[]>(
       `${this.appConfig.apiUrl}/logic-stops`,
       { params: { logic_id: String(logicId) } }
     );

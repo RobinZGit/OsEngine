@@ -41,6 +41,11 @@ import {
 } from '../shared/signal-formula';
 import { buildSignalFormulaHelp } from '../shared/indicator-formula-help';
 import {
+  applyStrictnessToFormula,
+  formulaParamValues,
+  IndicatorParamBound,
+} from './signal-strictness';
+import {
   LOGIC_STOP_UNITS,
   LogicStopRuleKind,
   LogicStopScopeType,
@@ -343,6 +348,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private savingIds = new Set<number>();
   savingSignalIds = new Set<number>();
   private formulaDrafts = new Map<number, string>();
+  /** #1030: границы параметров индикаторов для ползунка «строже/мягче». */
+  private indicatorBoundsByCode = new Map<string, IndicatorParamBound[]>();
+  private strictnessPositions = new Map<number, number>();
+  private strictnessBases = new Map<
+    number,
+    { formula: string; values: Record<string, number> }
+  >();
   private savingFormulaIds = new Set<number>();
   /** Сигналы с открытой справкой «?» по формуле. */
   private signalFormulaHelpIds = new Set<number>();
@@ -493,6 +505,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.loadIndicatorBounds();
     this.backtestUi.attach();
     for (const logicId of this.backtestUi.expandTestBlocks) {
       this.expandedTestTradesBlocks.add(logicId);
@@ -3571,6 +3584,80 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   onFormulaInput(signal: LogicIndicatorSignalRow, value: string): void {
     this.formulaDrafts.set(signal.id, value);
+  }
+
+  /** #1030: один раз загружаем границы параметров индикаторов. */
+  private loadIndicatorBounds(): void {
+    this.logicsService.getIndicatorParamBounds().subscribe({
+      next: (rows) => {
+        const map = new Map<string, IndicatorParamBound[]>();
+        for (const r of rows || []) {
+          const code = String(r.indicator_code || '').toUpperCase();
+          if (!code) continue;
+          const list = map.get(code) ?? [];
+          list.push(r);
+          map.set(code, list);
+        }
+        this.indicatorBoundsByCode = map;
+        this.cdr.markForCheck();
+      },
+      error: () => undefined,
+    });
+  }
+
+  /** #1030: есть ли у сигнала параметры с заданными границами. */
+  sigHasStrictness(sig: LogicIndicatorSignalRow): boolean {
+    return this.signalBounds(sig).length > 0;
+  }
+
+  private signalBounds(sig: LogicIndicatorSignalRow): IndicatorParamBound[] {
+    const code = String(sig.indicator_code || '').toUpperCase();
+    const all = this.indicatorBoundsByCode.get(code) ?? [];
+    if (all.length === 0) return [];
+    const values = formulaParamValues(this.formulaDraft(sig));
+    return all.filter((b) => values[b.param_key] != null);
+  }
+
+  strictnessValue(sig: LogicIndicatorSignalRow): number {
+    return this.strictnessPositions.get(sig.id) ?? 50;
+  }
+
+  /** Запомнить исходные параметры в начале перетаскивания ползунка. */
+  beginStrictness(sig: LogicIndicatorSignalRow): void {
+    if (this.strictnessBases.has(sig.id)) return;
+    const formula = this.formulaDraft(sig);
+    this.strictnessBases.set(sig.id, {
+      formula,
+      values: formulaParamValues(formula),
+    });
+  }
+
+  /** Ползунок 0..100: 50 — значения не меняются, 0 — строже, 100 — мягче. */
+  onStrictnessInput(sig: LogicIndicatorSignalRow, raw: number | string): void {
+    const pos = Math.min(100, Math.max(0, Number(raw) || 0));
+    this.strictnessPositions.set(sig.id, pos);
+    const base =
+      this.strictnessBases.get(sig.id) ??
+      (() => {
+        const formula = this.formulaDraft(sig);
+        return { formula, values: formulaParamValues(formula) };
+      })();
+    this.strictnessBases.set(sig.id, base);
+    const next = applyStrictnessToFormula(
+      base.formula,
+      this.signalBounds(sig),
+      base.values,
+      pos,
+      sig.indicator_code
+    );
+    this.formulaDrafts.set(sig.id, next);
+  }
+
+  /** Отпустили ползунок — сохраняем формулу; 50 снова = текущие значения. */
+  applyStrictness(sig: LogicIndicatorSignalRow): void {
+    this.saveSignalFormula(sig);
+    this.strictnessBases.delete(sig.id);
+    this.strictnessPositions.set(sig.id, 50);
   }
 
   /** Каталог базовых ТФ для tf= сигнала (#843). */

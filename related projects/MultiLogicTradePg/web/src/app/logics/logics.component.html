@@ -2021,6 +2021,35 @@
 
                                 }
 
+                                @if (sigHasStrictness(sig)) {
+
+                                  <div
+                                    class="sig-strict-row"
+                                    title="Сдвинь влево — строже (меньше сделок), вправо — мягче. Середина не меняет параметры"
+                                  >
+
+                                    <span class="sig-strict-cap">Строже</span>
+
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      step="1"
+                                      class="sig-strict-slider"
+                                      [value]="strictnessValue(sig)"
+                                      [disabled]="isFormulaSaving(sig.id)"
+                                      aria-label="Строгость сигнала"
+                                      (pointerdown)="beginStrictness(sig)"
+                                      (input)="onStrictnessInput(sig, $any($event.target).valueAsNumber)"
+                                      (change)="applyStrictness(sig)"
+                                    />
+
+                                    <span class="sig-strict-cap">Мягче</span>
+
+                                  </div>
+
+                                }
+
                               </td>
 
                               <td class="col-sig-actions">

@@ -150,6 +150,25 @@ module.exports = function registerIndicatorsRoutes(app, ctx) {
     handleDbError,
   } = ctx;
 
+/** #1030: границы параметров индикаторов для ползунка «строже / мягче»
+ *  в списке сигналов логики (strict = меньше сделок, loose = мягче). */
+app.get('/api/indicator-param-bounds', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT indicator_code, param_key,
+              strict_value::float8 AS strict_value,
+              loose_value::float8 AS loose_value,
+              is_integer
+         FROM indicator_param_bounds
+        ORDER BY indicator_code, param_key`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /api/indicator-param-bounds', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/indicators', async (req, res) => {
   const withCalc = req.query.with_calc === '1';
   try {

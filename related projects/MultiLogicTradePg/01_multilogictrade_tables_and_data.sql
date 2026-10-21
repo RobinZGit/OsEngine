@@ -902,6 +902,57 @@ INSERT INTO indicators (code, name, description, category) VALUES
     ('SQUARE', 'Quadratic Regression Channel', 'Квадратичный канал (b+a·x+c·x²; mid ± Dev·σ остатков)', 'trend')
 ON CONFLICT (code) DO NOTHING;
 
+-- #1030: границы параметров индикаторов для ползунка «строже / мягче»
+-- в списке сигналов логики. strict_value — «строже» (меньше сделок),
+-- loose_value — «мягче»; ползунок в середине не меняет текущие значения.
+CREATE TABLE IF NOT EXISTS indicator_param_bounds (
+    indicator_code VARCHAR(32) NOT NULL,
+    param_key VARCHAR(64) NOT NULL,
+    strict_value NUMERIC NOT NULL,
+    loose_value NUMERIC NOT NULL,
+    is_integer BOOLEAN NOT NULL DEFAULT TRUE,
+    PRIMARY KEY (indicator_code, param_key)
+);
+
+ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS indicator_code VARCHAR(32);
+ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS param_key VARCHAR(64);
+ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS strict_value NUMERIC;
+ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS loose_value NUMERIC;
+ALTER TABLE indicator_param_bounds ADD COLUMN IF NOT EXISTS is_integer BOOLEAN NOT NULL DEFAULT TRUE;
+
+INSERT INTO indicator_param_bounds (indicator_code, param_key, strict_value, loose_value, is_integer) VALUES
+    ('SMA', 'period', 100, 5, TRUE),
+    ('EMA', 'period', 100, 5, TRUE),
+    ('WMA', 'period', 100, 5, TRUE),
+    ('HMA', 'period', 100, 5, TRUE),
+    ('ZLEMA', 'period', 100, 5, TRUE),
+    ('SMAT3', 'period', 100, 5, TRUE),
+    ('RSI', 'period', 30, 5, TRUE),
+    ('CMO', 'period', 30, 5, TRUE),
+    ('CCI', 'period', 40, 10, TRUE),
+    ('ROC', 'period', 30, 5, TRUE),
+    ('ADX', 'period', 30, 7, TRUE),
+    ('ATR', 'period', 40, 7, TRUE),
+    ('MFI', 'period', 40, 7, TRUE),
+    ('WILLR', 'period', 40, 7, TRUE),
+    ('STOCH', 'k_period', 40, 5, TRUE),
+    ('STOCH', 'd_period', 10, 2, TRUE),
+    ('STOCH', 'smooth', 10, 1, TRUE),
+    ('MACD', 'fast_period', 30, 5, TRUE),
+    ('MACD', 'slow_period', 60, 10, TRUE),
+    ('MACD', 'signal_period', 20, 5, TRUE),
+    ('BB', 'period', 50, 10, TRUE),
+    ('BB', 'std_dev', 3, 1, FALSE),
+    ('LINREG', 'period', 100, 10, TRUE),
+    ('LINREG', 'std_dev', 3, 1, FALSE),
+    ('SQUARE', 'period', 100, 10, TRUE),
+    ('SQUARE', 'std_dev', 3, 1, FALSE),
+    ('DONCHIAN', 'period', 100, 10, TRUE),
+    ('KELTNER', 'period', 50, 10, TRUE),
+    ('PSAR', 'step', 0.05, 0.01, FALSE),
+    ('PSAR', 'max', 0.5, 0.1, FALSE)
+ON CONFLICT (indicator_code, param_key) DO NOTHING;
+
 -- Шаблоны расчёта (функция + параметры; :series подставляется для каждой линии индикатора)
 UPDATE indicators SET script = 'SELECT calc_ind_rsi(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'RSI';
 UPDATE indicators SET script = 'SELECT calc_ind_sma(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'SMA';
