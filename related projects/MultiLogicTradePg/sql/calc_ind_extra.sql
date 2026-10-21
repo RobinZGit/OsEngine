@@ -1112,22 +1112,13 @@ BEGIN
         );
         v_smooth := parse_signal_param_num(v_parsed.params, 'smooth');
 
-        UPDATE security_indicator_series sis
-        SET
-            param_period = COALESCE(v_period::INTEGER, sis.param_period),
-            param_std_dev = COALESCE(v_std, sis.param_std_dev),
-            param_fast_period = COALESCE(v_fast::INTEGER, sis.param_fast_period),
-            param_slow_period = COALESCE(v_slow::INTEGER, sis.param_slow_period),
-            param_signal_period = COALESCE(v_signal::INTEGER, sis.param_signal_period),
-            param_k_period = COALESCE(v_k::INTEGER, sis.param_k_period),
-            param_d_period = COALESCE(v_d::INTEGER, sis.param_d_period),
-            param_smooth = COALESCE(v_smooth::INTEGER, sis.param_smooth)
-        WHERE sis.security_id = p_security_id
-          AND sis.indicator_id = v_sig.indicator_id
-          AND sis.is_active = TRUE;
+        -- #1032: параметры из формулы больше НЕ пишутся в общую серию
+        -- security_indicator_series — иначе последняя логика меняла параметры
+        -- индикатора для всех. Каждая логика считает по своей формуле.
+        NULL;
     END LOOP;
 END;
 $$;
 
 COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER) IS
-'Проставляет param_* серий бумаги из formula сигналов логики перед sync.';
+'Устарела (#1032): ничего не делает — параметры индикатора берутся из формулы сигнала своей логики, общая серия не перезаписывается.';
