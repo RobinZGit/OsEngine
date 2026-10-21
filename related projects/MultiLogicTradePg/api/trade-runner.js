@@ -508,12 +508,29 @@ async function runWatchdogTick(pool, opts = {}) {
  * её пар (бумага × ТФ). Пристраивается к работающей логике (после её цикла),
  * чтобы не ждать медленного полного прогона. Троттл per-logic и advisory lock —
  * внутри run_indicator_rating_for_logic_safe; при 0 (троттл/занято) тихо выходим.
+ * #1029: во время бэктеста рейтинг пропускается, а сам прогон ограничен 120 с —
+ * иначе его длинная транзакция блокирует подготовку теста.
  */
 async function runIndicatorRatingForLogic(pool, logicId) {
+  // #1029: пока идёт бэктест, рейтинг не запускаем. Он идёт одной длинной
+  // транзакцией и держит блокировки `indicator_values`, из-за чего подготовка
+  // теста (`ensure_security_indicator_series`) висела минутами.
+  try {
+    const { rows: active } = await pool.query(
+      `SELECT 1 FROM logic_backtest_runs
+        WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+        LIMIT 1`
+    );
+    if (active.length > 0) return 0;
+  } catch (_e) {
+    /* проверка не должна ломать цикл */
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('SET LOCAL statement_timeout = 0');
+    // Ограничиваем один прогон рейтинга: раньше стоял 0 (без лимита) и
+    // зависший рейтинг блокировал другие процессы на много минут.
+    await client.query('SET LOCAL statement_timeout = 120000');
     const { rows } = await client.query(
       `SELECT run_indicator_rating_for_logic_safe($1) AS r`,
       [logicId]
