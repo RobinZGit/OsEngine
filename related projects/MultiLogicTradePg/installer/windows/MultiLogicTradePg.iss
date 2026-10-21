@@ -39,7 +39,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 SetupLogging=yes
-UninstallDisplayIcon={sys}\cmd.exe
+; Иконка приложения: Setup.exe, ярлыки и «Программы и компоненты».
+SetupIconFile=MultiLogicTrade.ico
+UninstallDisplayIcon={app}\MultiLogicTrade.ico
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -70,6 +72,7 @@ Source: "{#SourceRoot}\03_multilogictrade_examples.sql"; DestDir: "{app}"; Flags
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\VERSION.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\installer\windows\INSTALL_PROTOCOL.placeholder.txt"; DestDir: "{app}"; DestName: "INSTALL_PROTOCOL.txt"; Flags: ignoreversion
+Source: "{#SourceRoot}\installer\windows\MultiLogicTrade.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceRoot}\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "_tmp_http_ext\*"
 Source: "{#SourceRoot}\sql\*"; DestDir: "{app}\sql"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -79,10 +82,10 @@ Source: "{#SourceRoot}\installer\windows\*"; DestDir: "{app}\installer\windows";
 
 [Icons]
 ; Launch via cmd.exe /k so the console stays open (Explorer shortcuts to .bat/.cmd often flash and close).
-Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"
-Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade Server (API only)"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; Comment: "Только API — без Angular (явно без UI)"
+Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; IconFilename: "{app}\MultiLogicTrade.ico"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"
+Name: "{autoprograms}\MultiLogic Trade\MultiLogic Trade Server (API only)"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppServerBatName}"""; WorkingDir: "{app}\web"; IconFilename: "{app}\MultiLogicTrade.ico"; Comment: "Только API — без Angular (явно без UI)"
 Name: "{autoprograms}\MultiLogic Trade\Install protocol"; Filename: "{win}\notepad.exe"; Parameters: """{app}\INSTALL_PROTOCOL.txt"""; WorkingDir: "{app}"; Comment: "Открыть протокол установки MultiLogicTradePg"
-Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"; Tasks: desktopicon
+Name: "{autodesktop}\MultiLogic Trade"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}\web"" && call ""{app}\web\{#MyAppBatName}"""; WorkingDir: "{app}\web"; IconFilename: "{app}\MultiLogicTrade.ico"; Comment: "Запустить MultiLogic Trade (API + Angular UI)"; Tasks: desktopicon
 
 [Run]
 ; DbMode / UpdateSslCerts written in PreparePostInstall (read by run_postinstall.cmd).
