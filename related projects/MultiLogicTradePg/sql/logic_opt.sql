@@ -539,6 +539,14 @@ BEGIN
         );
     END IF;
 
+    -- #1036-fix: у ROC и подобных индикаторов indicators.script пуст —
+    -- считаем нативно, иначе on-the-fly оценка всегда даёт NULL/false.
+    IF v_code = 'ROC' THEN
+        RETURN calc_ind_roc(
+            v_period, v_series, p_security_id, p_tf_id, p_bar_dt
+        );
+    END IF;
+
     IF v_script IS NULL OR btrim(v_script) = '' THEN
         RETURN NULL;
     END IF;
