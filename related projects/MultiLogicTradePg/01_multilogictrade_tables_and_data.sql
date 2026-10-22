@@ -4256,6 +4256,14 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     opt_grid_arms JSONB,
     opt_grid_results JSONB
 );
+
+-- #1040: переоценка открытых позиций на каждом баре — equity без «обрыва» в конце.
+CREATE TABLE IF NOT EXISTS logic_backtest_equity_points (
+    run_id BIGINT NOT NULL REFERENCES logic_backtest_runs(id) ON DELETE CASCADE,
+    dt TIMESTAMP NOT NULL,
+    equity NUMERIC(20, 6) NOT NULL,
+    PRIMARY KEY (run_id, dt)
+);
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;

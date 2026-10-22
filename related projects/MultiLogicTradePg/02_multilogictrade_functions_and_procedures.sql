@@ -5428,6 +5428,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10112,6 +10113,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -25972,6 +26001,16 @@ BEGIN
     v_balance := logic_backtest_park_excess_cash(
         p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
     );
+    -- #1040: снимок equity на каждом баре — с нереализованным P&L открытых
+    -- позиций, чтобы график не «обрывался» только на закрытиях.
+    INSERT INTO logic_backtest_equity_points (run_id, dt, equity)
+    VALUES (
+        p_run_id, p_bar_dt,
+        COALESCE(logic_backtest_portfolio_equity(
+            p_logic_id, p_tf_id, p_bar_dt, v_balance
+        ), v_balance)
+    )
+    ON CONFLICT (run_id, dt) DO UPDATE SET equity = EXCLUDED.equity;
     RETURN v_balance;
 END;
 $$;
@@ -26126,12 +26165,9 @@ BEGIN
         v_balance := logic_backtest_park_excess_cash(
             p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
         );
-        -- #1039: закрыть все открытые позиции на последнем баре. Без этого
-        -- equity/финрез учитывали только закрытые сделки (в прогоне 473 — 5 из 44).
-        v_balance := logic_backtest_close_all_except_funds(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id,
-            v_bars[v_total], v_balance
-        );
+        -- #1040: позиции не продаём в конце — equity считается по снимкам
+        -- с переоценкой открытых позиций на каждом баре (logic_backtest_equity_points).
+        NULL;
     END IF;
 
     -- #1039: теневые (shadow) сделки — бумажные, в финрез прогона не входят.
@@ -27650,6 +27686,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

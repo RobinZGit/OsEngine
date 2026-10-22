@@ -1896,18 +1896,27 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       }
     }
 
-    // #1039: закрыть все открытые позиции на последнем баре (реальные и теневые),
-    // иначе отчёт и equity учитывают только закрытые сделки — в прогоне 473
-    // было 5 закрытий из 44 открытий, и график выглядел «схлопнутым».
-    if (bars.length > 0) {
-      const { rows: liqRows } = await pool.query(
-        `SELECT logic_backtest_close_all_except_funds($1, $2, $3, $4, $5::timestamp, $6::numeric) AS balance`,
-        [runId, logicId, logic.account_id, tfId, bars[bars.length - 1], balance]
-      );
-      balance = Number(liqRows[0]?.balance ?? balance);
+    // #1040: позиции в конце НЕ продаём — equity считается по снимкам
+    // logic_backtest_equity_points с переоценкой открытых позиций на каждом баре.
+    // Финрез прогона = изменение equity (включая нереализованный P&L).
+    let pnl = await sumTestPnl(pool, logicId, runId);
+    const { rows: eqRows } = await pool.query(
+      `
+      SELECT
+        (SELECT equity::float8 FROM logic_backtest_equity_points
+          WHERE run_id = $1 ORDER BY dt DESC LIMIT 1) AS last_equity,
+        COALESCE((
+          SELECT param_value::numeric FROM logic_params
+          WHERE logic_id = $2 AND param_key = 'test_initial_balance'
+        ), 1000000)::float8 AS initial_equity
+      `,
+      [runId, logicId]
+    );
+    const lastEquity = Number(eqRows[0]?.last_equity);
+    const initialEquity = Number(eqRows[0]?.initial_equity);
+    if (Number.isFinite(lastEquity) && Number.isFinite(initialEquity)) {
+      pnl = lastEquity - initialEquity;
     }
-
-    const pnl = await sumTestPnl(pool, logicId, runId);
     const { rows: diagRows } = await pool.query(
       `SELECT logic_backtest_diagnose($1, $2, $3, $4, $5) AS d`,
       [runId, logicId, tfId, dateFrom, dateTo]

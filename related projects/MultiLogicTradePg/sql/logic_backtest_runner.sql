@@ -3145,6 +3145,16 @@ BEGIN
     v_balance := logic_backtest_park_excess_cash(
         p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
     );
+    -- #1040: снимок equity на каждом баре — с нереализованным P&L открытых
+    -- позиций, чтобы график не «обрывался» только на закрытиях.
+    INSERT INTO logic_backtest_equity_points (run_id, dt, equity)
+    VALUES (
+        p_run_id, p_bar_dt,
+        COALESCE(logic_backtest_portfolio_equity(
+            p_logic_id, p_tf_id, p_bar_dt, v_balance
+        ), v_balance)
+    )
+    ON CONFLICT (run_id, dt) DO UPDATE SET equity = EXCLUDED.equity;
     RETURN v_balance;
 END;
 $$;
@@ -3299,12 +3309,9 @@ BEGIN
         v_balance := logic_backtest_park_excess_cash(
             p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
         );
-        -- #1039: закрыть все открытые позиции на последнем баре. Без этого
-        -- equity/финрез учитывали только закрытые сделки (в прогоне 473 — 5 из 44).
-        v_balance := logic_backtest_close_all_except_funds(
-            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id,
-            v_bars[v_total], v_balance
-        );
+        -- #1040: позиции не продаём в конце — equity считается по снимкам
+        -- с переоценкой открытых позиций на каждом баре (logic_backtest_equity_points).
+        NULL;
     END IF;
 
     -- #1039: теневые (shadow) сделки — бумажные, в финрез прогона не входят.

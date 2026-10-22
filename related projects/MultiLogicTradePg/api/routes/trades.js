@@ -597,6 +597,42 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
         is_shadow: Boolean(r.is_shadow),
       }));
 
+    // #1040: для теста — equity по снимкам на каждом баре (переоценка открытых
+    // позиций), а не только по закрытиям. Старые прогоны без снимков — fallback.
+    let mtmTotal = null;
+    if (isTest) {
+      const { rows: eqRows } = await pool.query(
+        `
+        SELECT dt::text AS dt, equity::float8 AS equity
+        FROM logic_backtest_equity_points
+        WHERE run_id = (
+          SELECT id FROM logic_backtest_runs
+          WHERE logic_id = $1
+            AND ($2::bigint IS NULL OR id = $2::bigint)
+          ORDER BY id DESC LIMIT 1
+        )
+        ORDER BY dt
+        `,
+        [logicId, runIdFilter]
+      );
+      if (eqRows.length > 0) {
+        const { rows: initRows } = await pool.query(
+          `
+          SELECT COALESCE((
+            SELECT param_value::numeric FROM logic_params
+            WHERE logic_id = $1 AND param_key = 'test_initial_balance'
+          ), 1000000)::float8 AS initial_equity
+          `,
+          [logicId]
+        );
+        const initial = Number(initRows[0]?.initial_equity) || 0;
+        mtmTotal = eqRows.map((r) => ({
+          dt: String(r.dt),
+          value: Number(r.equity) - initial,
+        }));
+      }
+    }
+
     let dateFromFinal =
       rows.find((r) => r.date_from != null)?.date_from != null
         ? String(rows.find((r) => r.date_from != null).date_from)
@@ -676,16 +712,18 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
       run_id: runIdOut ?? null,
       date_from: dateFromFinal,
       date_to: dateToFinal,
-      total: buildSeries(null, false),
+      total: mtmTotal ?? buildSeries(null, false),
       long: buildSeries('long', false),
       short: buildSeries('short', false),
       shadow_total: buildSeries(null, true),
       close_count: closes.filter((c) => !c.is_shadow).length,
       shadow_close_count: closes.filter((c) => c.is_shadow).length,
       financial_result:
-        closes.filter((c) => !c.is_shadow).length > 0
-          ? closes.filter((c) => !c.is_shadow).reduce((s, c) => s + c.financial_result, 0)
-          : 0,
+        mtmTotal && mtmTotal.length > 0
+          ? mtmTotal[mtmTotal.length - 1].value
+          : closes.filter((c) => !c.is_shadow).length > 0
+            ? closes.filter((c) => !c.is_shadow).reduce((s, c) => s + c.financial_result, 0)
+            : 0,
     });
   } catch (err) {
     console.error('GET /api/logic-trades/equity-curve', err);
