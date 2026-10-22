@@ -1896,6 +1896,17 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       }
     }
 
+    // #1039: закрыть все открытые позиции на последнем баре (реальные и теневые),
+    // иначе отчёт и equity учитывают только закрытые сделки — в прогоне 473
+    // было 5 закрытий из 44 открытий, и график выглядел «схлопнутым».
+    if (bars.length > 0) {
+      const { rows: liqRows } = await pool.query(
+        `SELECT logic_backtest_close_all_except_funds($1, $2, $3, $4, $5::timestamp, $6::numeric) AS balance`,
+        [runId, logicId, logic.account_id, tfId, bars[bars.length - 1], balance]
+      );
+      balance = Number(liqRows[0]?.balance ?? balance);
+    }
+
     const pnl = await sumTestPnl(pool, logicId, runId);
     const { rows: diagRows } = await pool.query(
       `SELECT logic_backtest_diagnose($1, $2, $3, $4, $5) AS d`,

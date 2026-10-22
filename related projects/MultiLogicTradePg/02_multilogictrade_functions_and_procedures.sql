@@ -5426,6 +5426,8 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10110,6 +10112,62 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -23857,6 +23915,18 @@ BEGIN
     SELECT id INTO v_action_short_id FROM actions WHERE name = 'Short' LIMIT 1;
 
     v_price := logic_backtest_price_at(p_security_id, p_timeframe_id, p_bar_dt);
+    -- #1039: на последнем баре точной свечи может не быть (торги закрылись
+    -- раньше) — берём последнюю цену не позже бара, иначе ликвидация в конце
+    -- прогона молча пропускалась и открытые позиции оставались висеть.
+    IF v_price IS NULL OR v_price <= 0 THEN
+        SELECT p.close_price INTO v_price
+        FROM prices p
+        WHERE p.security_id = p_security_id
+          AND p.timeframe_id = p_timeframe_id
+          AND p.dt <= p_bar_dt
+        ORDER BY p.dt DESC
+        LIMIT 1;
+    END IF;
     IF v_price IS NULL OR v_price <= 0 THEN
         o_closed := 0;
         o_new_balance := v_balance;
@@ -25103,7 +25173,8 @@ BEGIN
     -- indicator_values (её параметры), поэтому правка formula и ползунок
     -- «строже/мягче» не влияли на бэктест — число сделок не менялось.
     v_use_opt := TRUE;
-    v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
+    v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE)
+        + logic_backtest_count_open_positions(p_logic_id, TRUE);
     -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN
         -- p_balance растёт от short Open; equity = cash + long − short уже «свой» капитал.
@@ -25279,7 +25350,7 @@ BEGIN
 
             IF v_eff_side = 'long' THEN
                 IF v_is_open_event THEN
-                    IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
+                    IF v_held_long > 0 OR v_open_positions >= v_max_positions THEN
                         CONTINUE;
                     END IF;
                     v_sizing_base := v_cycle_budget;
@@ -25312,7 +25383,7 @@ BEGIN
                 END IF;
             ELSE
                 IF v_is_open_event THEN
-                    IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
+                    IF v_held_short > 0 OR v_open_positions >= v_max_positions THEN
                         CONTINUE;
                     END IF;
                     v_sizing_base := v_cycle_budget;
@@ -25353,11 +25424,11 @@ BEGIN
                 p_balance, v_grp.position_event
             );
 
-            IF v_trade_id IS NOT NULL AND v_is_open_event AND NOT v_is_shadow
+            IF v_trade_id IS NOT NULL AND v_is_open_event
                AND v_side_id = v_side_open_id THEN
                 v_open_positions := v_open_positions + 1;
                 v_spent_notional := v_spent_notional + (v_quantity * v_pp);
-            ELSIF v_trade_id IS NOT NULL AND NOT v_is_open_event AND NOT v_is_shadow THEN
+            ELSIF v_trade_id IS NOT NULL AND NOT v_is_open_event THEN
                 v_open_positions := GREATEST(0, v_open_positions - 1);
                 -- Switch same bar: free exposure + refresh % base from post-close cash/equity.
                 -- Open still does not refresh the base (short must not inflate mid-bar).
@@ -26055,12 +26126,20 @@ BEGIN
         v_balance := logic_backtest_park_excess_cash(
             p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
         );
+        -- #1039: закрыть все открытые позиции на последнем баре. Без этого
+        -- equity/финрез учитывали только закрытые сделки (в прогоне 473 — 5 из 44).
+        v_balance := logic_backtest_close_all_except_funds(
+            p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id,
+            v_bars[v_total], v_balance
+        );
     END IF;
 
+    -- #1039: теневые (shadow) сделки — бумажные, в финрез прогона не входят.
     SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
     FROM logic_trades
     WHERE logic_id = v_run.logic_id
       AND is_test = TRUE
+      AND COALESCE(is_shadow, FALSE) = FALSE
       AND COALESCE(opt_lane, '') = '';
 
     SELECT COUNT(*)::INTEGER INTO v_trades_created
@@ -27571,6 +27650,8 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
 
 
 
