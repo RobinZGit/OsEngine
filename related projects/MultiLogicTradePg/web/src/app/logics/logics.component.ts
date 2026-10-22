@@ -352,6 +352,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private formulaDrafts = new Map<number, string>();
   /** #1030: границы параметров индикаторов для ползунка «строже/мягче». */
   private indicatorBoundsByCode = new Map<string, IndicatorParamBound[]>();
+  /** #1038: актуализация формулы при начале перетаскивания ползунка. */
+  readonly strictnessDragging = new Set<number>();
+  private strictnessRefreshing = new Set<number>();
+  private strictnessOverride = new Map<number, number>();
+  private strictnessPending = new Map<number, number>();
+  private strictnessDirty = new Set<number>();
   private savingFormulaIds = new Set<number>();
   /** Сигналы с открытой справкой «?» по формуле. */
   private signalFormulaHelpIds = new Set<number>();
@@ -3623,6 +3629,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   /** #1030: положение ползунка вычисляется из текущих параметров формулы. */
   strictnessValue(sig: LogicIndicatorSignalRow): number {
+    const override = this.strictnessOverride.get(sig.id);
+    if (override != null) return override;
     return strictnessPositionFromFormula(
       this.formulaDraft(sig),
       this.signalBounds(sig),
@@ -3630,9 +3638,59 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     );
   }
 
+  /**
+   * #1038: начало перетаскивания — подтягиваем актуальную формулу с сервера,
+   * чтобы ползунок не сохранил устаревший текст из открытой страницы
+   * (был случай: старое условие ROC > 50 перезаписывало исправленное > 0).
+   */
+  beginStrictness(sig: LogicIndicatorSignalRow): void {
+    this.strictnessDragging.add(sig.id);
+    if (this.strictnessRefreshing.has(sig.id)) return;
+    this.strictnessRefreshing.add(sig.id);
+    this.logicsService.getLogicIndicatorSignals(sig.logic_id).subscribe({
+      next: (rows) => {
+        const fresh = (rows || []).find((r) => r.id === sig.id);
+        if (fresh) {
+          sig.formula = fresh.formula;
+          // если ещё не двигали — показываем актуальную формулу сразу
+          if (!this.strictnessDirty.has(sig.id)) {
+            this.formulaDrafts.set(sig.id, fresh.formula);
+          }
+        }
+        this.strictnessRefreshing.delete(sig.id);
+        const pending = this.strictnessPending.get(sig.id);
+        this.strictnessPending.delete(sig.id);
+        if (pending != null) this.applyStrictnessAt(sig, pending);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.strictnessRefreshing.delete(sig.id);
+        const pending = this.strictnessPending.get(sig.id);
+        this.strictnessPending.delete(sig.id);
+        if (pending != null) this.applyStrictnessAt(sig, pending);
+      },
+    });
+  }
+
+  /** #1038: ползунок отпущен — снимаем подсветку «идёт перетаскивание». */
+  endStrictness(sig: LogicIndicatorSignalRow): void {
+    this.strictnessDragging.delete(sig.id);
+  }
+
   /** Ползунок 0..100 — абсолютное положение: 0 строже, 100 мягче. */
   onStrictnessInput(sig: LogicIndicatorSignalRow, raw: number | string): void {
     const pos = Math.min(100, Math.max(0, Number(raw) || 0));
+    this.strictnessOverride.set(sig.id, pos);
+    this.strictnessDirty.add(sig.id);
+    // формула ещё не обновилась с сервера — применим позицию после ответа
+    if (this.strictnessRefreshing.has(sig.id)) {
+      this.strictnessPending.set(sig.id, pos);
+      return;
+    }
+    this.applyStrictnessAt(sig, pos);
+  }
+
+  private applyStrictnessAt(sig: LogicIndicatorSignalRow, pos: number): void {
     const next = applyStrictnessToFormula(
       this.formulaDraft(sig),
       this.signalBounds(sig),
@@ -3644,20 +3702,44 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   /** Отпустили ползунок — сохраняем формулу; положение остаётся на месте. */
   applyStrictness(sig: LogicIndicatorSignalRow): void {
-    this.saveSignalFormula(sig);
+    this.endStrictness(sig);
+    this.strictnessOverride.delete(sig.id);
+    if (this.strictnessDirty.delete(sig.id)) {
+      this.saveSignalFormula(sig);
+    }
   }
 
   /** #1031: клик по метке в центре — сброс строгости на середину диапазона. */
   resetStrictness(sig: LogicIndicatorSignalRow, event?: Event): void {
     event?.stopPropagation();
-    const next = applyStrictnessToFormula(
-      this.formulaDraft(sig),
-      this.signalBounds(sig),
-      50,
-      sig.indicator_code
-    );
-    this.formulaDrafts.set(sig.id, next);
-    this.applyStrictness(sig);
+    this.strictnessOverride.set(sig.id, 50);
+    this.strictnessDirty.add(sig.id);
+    const applyNow = () => {
+      this.applyStrictnessAt(sig, 50);
+      this.applyStrictness(sig);
+    };
+    if (this.strictnessRefreshing.has(sig.id)) {
+      this.strictnessPending.set(sig.id, 50);
+      return;
+    }
+    this.strictnessRefreshing.add(sig.id);
+    this.logicsService.getLogicIndicatorSignals(sig.logic_id).subscribe({
+      next: (rows) => {
+        const fresh = (rows || []).find((r) => r.id === sig.id);
+        if (fresh) {
+          sig.formula = fresh.formula;
+          this.formulaDrafts.set(sig.id, fresh.formula);
+        }
+        this.strictnessRefreshing.delete(sig.id);
+        this.strictnessPending.delete(sig.id);
+        applyNow();
+      },
+      error: () => {
+        this.strictnessRefreshing.delete(sig.id);
+        this.strictnessPending.delete(sig.id);
+        applyNow();
+      },
+    });
   }
 
   /** Каталог базовых ТФ для tf= сигнала (#843). */

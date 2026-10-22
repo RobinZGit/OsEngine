@@ -1817,6 +1817,7 @@
                               class="sig-main-row"
                               [class.sig-inactive]="!sig.is_active"
                               [class.sig-combat-open]="isCombatSignalExpanded(row.id, sig.id)"
+                              [class.sig-strict-dragging]="strictnessDragging.has(sig.id)"
                               [style.background]="signalRowBackground(sig)"
                             >
 
@@ -2042,6 +2043,8 @@
                                         [value]="strictnessValue(sig)"
                                         [disabled]="isFormulaSaving(sig.id)"
                                         aria-label="Строгость сигнала"
+                                        (pointerdown)="beginStrictness(sig)"
+                                        (pointerup)="endStrictness(sig)"
                                         (input)="onStrictnessInput(sig, $any($event.target).valueAsNumber)"
                                         (change)="applyStrictness(sig)"
                                       />
@@ -2057,6 +2060,16 @@
                                     </span>
 
                                     <span class="sig-strict-cap">Мягче</span>
+
+                                    @if (strictnessDragging.has(sig.id)) {
+
+                                      <span class="sig-strict-hint" aria-live="polite">
+
+                                        отпустите — сохранится
+
+                                      </span>
+
+                                    }
 
                                   </div>
 
