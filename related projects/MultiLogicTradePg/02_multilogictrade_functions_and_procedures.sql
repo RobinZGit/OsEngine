@@ -5424,6 +5424,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -10108,6 +10109,34 @@ $$;
 
 COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 'True если у бумаги есть prefix с instrument_market = futures';
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -25032,8 +25061,11 @@ BEGIN
     -- Авто оптимизация меняет period сигналов по ходу прогона; чтобы изменение
     -- влияло на оценку без пересчёта общей серии indicator_values, оцениваем
     -- сигналы на лету (как при OPT), а не из предрассчитанной серии.
-    v_use_opt := logic_opt_logic_has_opt(p_logic_id)
-        OR get_logic_param_boolean(p_logic_id, 'auto_optimize', FALSE);
+    -- #1036: ВСЕГДА считаем сигналы на лету по формуле своей логики.
+    -- Раньше для логик без OPT брались значения из общей серии
+    -- indicator_values (её параметры), поэтому правка formula и ползунок
+    -- «строже/мягче» не влияли на бэктест — число сделок не менялось.
+    v_use_opt := TRUE;
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
     -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN
@@ -27502,6 +27534,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

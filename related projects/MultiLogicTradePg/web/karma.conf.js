@@ -2,6 +2,9 @@
 module.exports = function (config) {
   config.set({
     basePath: '',
+    // Явный порт: иначе Karma подхватывает PORT из окружения (у API это 3000)
+    // и не может поднять сервер, пока приложение запущено.
+    port: 9876,
     frameworks: ['jasmine', '@angular-devkit/build-angular'],
     plugins: [
       require('karma-jasmine'),

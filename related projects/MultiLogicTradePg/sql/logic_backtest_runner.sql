@@ -2329,8 +2329,11 @@ BEGIN
     -- Авто оптимизация меняет period сигналов по ходу прогона; чтобы изменение
     -- влияло на оценку без пересчёта общей серии indicator_values, оцениваем
     -- сигналы на лету (как при OPT), а не из предрассчитанной серии.
-    v_use_opt := logic_opt_logic_has_opt(p_logic_id)
-        OR get_logic_param_boolean(p_logic_id, 'auto_optimize', FALSE);
+    -- #1036: ВСЕГДА считаем сигналы на лету по формуле своей логики.
+    -- Раньше для логик без OPT брались значения из общей серии
+    -- indicator_values (её параметры), поэтому правка formula и ползунок
+    -- «строже/мягче» не влияли на бэктест — число сделок не менялось.
+    v_use_opt := TRUE;
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE);
     -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN
