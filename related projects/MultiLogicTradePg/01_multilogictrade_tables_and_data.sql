@@ -2100,6 +2100,61 @@ CREATE INDEX IF NOT EXISTS idx_logic_stops_rule_kind ON logic_stops(logic_id, ru
 
 COMMENT ON TABLE logic_stops IS
 'Стоп-лосс и тейк-профит для logics: security (по бумаге) или portfolio (портфель логики)';
+
+-- #1041: аудит изменений стопов/ТП — видно, кто и когда сменил тип/значение.
+CREATE TABLE IF NOT EXISTS logic_stops_audit (
+    id BIGSERIAL PRIMARY KEY,
+    stop_id BIGINT,
+    logic_id INTEGER,
+    action TEXT NOT NULL,
+    old_scope TEXT,
+    new_scope TEXT,
+    old_value NUMERIC,
+    new_value NUMERIC,
+    old_active BOOLEAN,
+    new_active BOOLEAN,
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_logic_stops_audit_logic
+    ON logic_stops_audit(logic_id, changed_at DESC);
+
+CREATE OR REPLACE FUNCTION logic_stops_audit_trg() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO logic_stops_audit
+            (stop_id, logic_id, action, new_scope, new_value, new_active)
+        VALUES (NEW.id, NEW.logic_id, 'insert', NEW.scope_type, NEW.value, NEW.is_active);
+        RETURN NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF NEW.scope_type IS DISTINCT FROM OLD.scope_type
+           OR NEW.value IS DISTINCT FROM OLD.value
+           OR NEW.is_active IS DISTINCT FROM OLD.is_active THEN
+            INSERT INTO logic_stops_audit
+                (stop_id, logic_id, action, old_scope, new_scope, old_value,
+                 new_value, old_active, new_active)
+            VALUES (NEW.id, NEW.logic_id, 'update', OLD.scope_type, NEW.scope_type,
+                    OLD.value, NEW.value, OLD.is_active, NEW.is_active);
+        END IF;
+        RETURN NEW;
+    ELSE
+        INSERT INTO logic_stops_audit
+            (stop_id, logic_id, action, old_scope, old_value, old_active)
+        VALUES (OLD.id, OLD.logic_id, 'delete', OLD.scope_type, OLD.value, OLD.is_active);
+        RETURN OLD;
+    END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS logic_stops_audit_ins ON logic_stops;
+DROP TRIGGER IF EXISTS logic_stops_audit_upd ON logic_stops;
+DROP TRIGGER IF EXISTS logic_stops_audit_del ON logic_stops;
+CREATE TRIGGER logic_stops_audit_ins AFTER INSERT ON logic_stops
+    FOR EACH ROW EXECUTE FUNCTION logic_stops_audit_trg();
+CREATE TRIGGER logic_stops_audit_upd AFTER UPDATE ON logic_stops
+    FOR EACH ROW EXECUTE FUNCTION logic_stops_audit_trg();
+CREATE TRIGGER logic_stops_audit_del AFTER DELETE ON logic_stops
+    FOR EACH ROW EXECUTE FUNCTION logic_stops_audit_trg();
 COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
 COMMENT ON COLUMN logic_stops.scope_type IS
 'stop_loss: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|portfolio_ltp_renew';
