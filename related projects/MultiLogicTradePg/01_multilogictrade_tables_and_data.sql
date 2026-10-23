@@ -2155,6 +2155,26 @@ CREATE TRIGGER logic_stops_audit_upd AFTER UPDATE ON logic_stops
     FOR EACH ROW EXECUTE FUNCTION logic_stops_audit_trg();
 CREATE TRIGGER logic_stops_audit_del AFTER DELETE ON logic_stops
     FOR EACH ROW EXECUTE FUNCTION logic_stops_audit_trg();
+
+-- #1046: запрет на переписывание типа TP «по бумаге» → портфельный без
+-- явного разрешения (set_config('app.allow_tp_scope_change','1')).
+CREATE OR REPLACE FUNCTION logic_stops_scope_guard_trg() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.rule_kind = 'take_profit'
+       AND NEW.scope_type IS DISTINCT FROM OLD.scope_type
+       AND NEW.scope_type = 'portfolio_ltp_renew'
+       AND current_setting('app.allow_tp_scope_change', true) IS DISTINCT FROM '1'
+    THEN
+        RAISE EXCEPTION 'TP scope portfolio_ltp_renew требует подтверждения';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS logic_stops_scope_guard_upd ON logic_stops;
+CREATE TRIGGER logic_stops_scope_guard_upd BEFORE UPDATE ON logic_stops
+    FOR EACH ROW EXECUTE FUNCTION logic_stops_scope_guard_trg();
 COMMENT ON COLUMN logic_stops.rule_kind IS 'stop_loss | take_profit';
 COMMENT ON COLUMN logic_stops.scope_type IS
 'stop_loss: security|security_resume|security_inversion|portfolio|portfolio_resume; take_profit: security|portfolio|portfolio_ltp_renew';

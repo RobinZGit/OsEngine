@@ -2004,8 +2004,7 @@ app.put('/api/logic-stops/:id', async (req, res) => {
       }
     }
 
-    const { rows } = await pool.query(
-      `
+    const updateSql = `
       UPDATE logic_stops
       SET scope_type = COALESCE($2, scope_type),
           value = COALESCE($3, value),
@@ -2017,15 +2016,33 @@ app.put('/api/logic-stops/:id', async (req, res) => {
         value::float8 AS value,
         inversion_value::float8 AS inversion_value,
         value_unit, display_order, is_active, created_at
-      `,
-      [
-        id,
-        scopeType || null,
-        value != null ? value : null,
-        valueUnit || null,
-        isActive === undefined ? null : isActive,
-      ]
-    );
+      `;
+    const updateParams = [
+      id,
+      scopeType || null,
+      value != null ? value : null,
+      valueUnit || null,
+      isActive === undefined ? null : isActive,
+    ];
+    // #1046: смена TP на портфельный разрешена только с подтверждением —
+    // выставляем сессионный флаг для guard-триггера в той же транзакции.
+    let rows;
+    if (req.body?.confirm_scope_change === true && scopeType === 'portfolio_ltp_renew') {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SET LOCAL app.allow_tp_scope_change = '1'`);
+        ({ rows } = await client.query(updateSql, updateParams));
+        await client.query('COMMIT');
+      } catch (errUpdate) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw errUpdate;
+      } finally {
+        client.release();
+      }
+    } else {
+      ({ rows } = await pool.query(updateSql, updateParams));
+    }
     if (rows.length === 0) {
       res.status(404).json({ error: 'Stop rule not found' });
       return;
