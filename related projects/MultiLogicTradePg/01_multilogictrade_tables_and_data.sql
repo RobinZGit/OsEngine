@@ -4173,6 +4173,51 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     opt_lane TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- #1045: демо-счёт (fake): автоматические сделки логик должны менять остаток
+-- так же, как ручные заявки терминала (покупка списывает, продажа зачисляет).
+CREATE OR REPLACE FUNCTION logic_trades_demo_cash_trg() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_type TEXT;
+    v_side TEXT;
+    v_action TEXT;
+    v_amount NUMERIC;
+    v_commission NUMERIC := COALESCE(NEW.commission, 0);
+BEGIN
+    IF COALESCE(NEW.is_test, TRUE)
+       OR COALESCE(NEW.is_shadow, FALSE)
+       OR NEW.status NOT IN ('filled', 'submitted')
+       OR COALESCE(NEW.opt_lane, '') <> '' THEN
+        RETURN NEW;
+    END IF;
+    SELECT account_type INTO v_type FROM accounts WHERE id = NEW.account_id;
+    IF COALESCE(v_type, '') <> 'fake' THEN
+        RETURN NEW;
+    END IF;
+    SELECT name INTO v_side FROM sides WHERE id = NEW.side_id;
+    SELECT name INTO v_action FROM actions WHERE id = NEW.action_id;
+    v_amount := NEW.quantity * NEW.price;
+    IF v_side = 'Open' AND v_action = 'Long' THEN
+        UPDATE accounts SET terminal_cash = COALESCE(terminal_cash, 0) - (v_amount + v_commission),
+            updated_at = now() WHERE id = NEW.account_id;
+    ELSIF v_side = 'Close' AND v_action = 'Long' THEN
+        UPDATE accounts SET terminal_cash = COALESCE(terminal_cash, 0) + (v_amount - v_commission),
+            updated_at = now() WHERE id = NEW.account_id;
+    ELSIF v_side = 'Open' AND v_action = 'Short' THEN
+        UPDATE accounts SET terminal_cash = COALESCE(terminal_cash, 0) + (v_amount - v_commission),
+            updated_at = now() WHERE id = NEW.account_id;
+    ELSIF v_side = 'Close' AND v_action = 'Short' THEN
+        UPDATE accounts SET terminal_cash = COALESCE(terminal_cash, 0) - (v_amount + v_commission),
+            updated_at = now() WHERE id = NEW.account_id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS logic_trades_demo_cash_ins ON logic_trades;
+CREATE TRIGGER logic_trades_demo_cash_ins AFTER INSERT ON logic_trades
+    FOR EACH ROW EXECUTE FUNCTION logic_trades_demo_cash_trg();
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES accounts(id) ON DELETE RESTRICT;
