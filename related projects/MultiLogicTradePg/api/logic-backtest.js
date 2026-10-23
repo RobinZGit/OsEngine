@@ -1649,6 +1649,125 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         }
       }
 
+      // #1047: подробная ошибка в «Мониторинг системы», если по активным бумагам
+      // цен в периоде нет вообще или данные начинаются позже запрошенной даты.
+      try {
+        const { rows: coverRows } = await pool.query(
+          `
+          SELECT
+            s.id AS security_id,
+            s.name,
+            sp.prefix,
+            (SELECT count(*) FROM prices p
+              WHERE p.security_id = s.id AND p.timeframe_id = $2
+                AND p.dt >= $3::date AND p.dt < ($4::date + 1)) AS bars,
+            (SELECT min(p.dt) FROM prices p
+              WHERE p.security_id = s.id AND p.timeframe_id = $2
+                AND p.dt >= $3::date AND p.dt < ($4::date + 1)) AS first_dt,
+            (SELECT max(p.dt) FROM prices p
+              WHERE p.security_id = s.id AND p.timeframe_id = $2
+                AND p.dt < ($4::date + 1)) AS last_dt
+          FROM logic_securities ls
+          JOIN securities s ON s.id = ls.security_id
+          LEFT JOIN security_prefixes sp
+            ON sp.security_id = s.id AND sp.exchange_id = 1
+          WHERE ls.logic_id = $1 AND COALESCE(ls.is_active, TRUE)
+          `,
+          [logicId, tfId, dateFrom, dateTo]
+        );
+        const missing = coverRows.filter((r) => Number(r.bars) === 0);
+        stats.priceMissingCount = missing.length;
+        let firstBar = null;
+        for (const r of coverRows) {
+          if (r.first_dt && (!firstBar || r.first_dt < firstBar)) firstBar = r.first_dt;
+        }
+        if (missing.length > 0) {
+          const loadRows = await fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo);
+          for (const r of missing) {
+            const secLoad = loadRows.filter(
+              (x) => Number(x.security_id) === Number(r.security_id)
+            );
+            const srcErr = secLoad
+              .filter((x) => x.error_message)
+              .map((x) => `${x.source || 'источник'}: ${x.error_message}`)
+              .join('; ');
+            await writeErrorLog(pool, {
+              level: 'error',
+              source: 'backtest',
+              category: 'prices',
+              code: 'price_missing_instrument',
+              message:
+                `Бэктест: нет цен по бумаге ${r.prefix || r.name} ` +
+                `(id=${r.security_id}) за ${dateFrom}…${dateTo} (TF ${tfName}) — ` +
+                'ни один сервис не отдал цену',
+              detail:
+                srcErr ||
+                `Нет ни одной свечи. Последняя цена до периода: ${
+                  r.last_dt ? localIsoDate(new Date(r.last_dt)) : '—'
+                }`,
+              logicId,
+              securityId: r.security_id,
+              context: {
+                run_id: runId,
+                timeframe: tfName,
+                prefix: r.prefix,
+                name: r.name,
+                date_from: dateFrom,
+                date_to: dateTo,
+                last_dt: r.last_dt,
+              },
+            });
+          }
+          await backtestLog(
+            pool,
+            runId,
+            logicId,
+            'backtest.prices.missing',
+            `Нет цен по ${missing.length} бумагам из ${coverRows.length}`,
+            {
+              missing: missing.map((r) => ({
+                security_id: r.security_id,
+                prefix: r.prefix,
+                name: r.name,
+                last_dt: r.last_dt,
+              })),
+              date_from: dateFrom,
+              date_to: dateTo,
+            },
+            null,
+            tfId
+          );
+        }
+        if (firstBar) {
+          const actualFrom = localIsoDate(new Date(firstBar));
+          if (actualFrom > dateFrom) {
+            stats.priceLateFrom = actualFrom;
+            await writeErrorLog(pool, {
+              level: 'error',
+              source: 'backtest',
+              category: 'prices',
+              code: 'price_period_start_late',
+              message:
+                `Бэктест: цены начинаются позже запрошенной даты — ` +
+                `запрошено с ${dateFrom}, данные с ${actualFrom} (TF ${tfName})`,
+              detail:
+                `Фактический первый бар: ${actualFrom}. Период до ${actualFrom} ` +
+                'не тестировался — источники не отдали более раннюю историю.',
+              logicId,
+              context: {
+                run_id: runId,
+                timeframe: tfName,
+                requested_from: dateFrom,
+                actual_from: actualFrom,
+                date_to: dateTo,
+              },
+            });
+          }
+        }
+      } catch (_covErr) {
+        /* диагностика цен не должна ломать прогон */
+      }
+
       if (pricesInPeriod === 0) {
         const priceLog = await fetchPriceLoadLog(pool, logicId, tfId, dateFrom, dateTo);
         await backtestLog(
@@ -1789,7 +1908,9 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         status: 'completed',
         progress_pct: 100,
         phase_message: tradesCreated > 0 ? 'Тестирование завершено' : 'Тест завершён — сделок нет',
-        phase_detail: `${totalBars} баров, ${knownSecIds.size} бумаг, сделок: ${tradesCreated}`,
+        phase_detail: `${totalBars} баров, ${knownSecIds.size} бумаг, сделок: ${tradesCreated}` +
+        (stats.priceLateFrom ? `, данные с ${stats.priceLateFrom}` : '') +
+        (stats.priceMissingCount ? `, без цен: ${stats.priceMissingCount}` : ''),
         processed_bars: totalBars,
         test_balance: balance,
         financial_result: pnl,
@@ -1958,7 +2079,9 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       status: 'completed',
       progress_pct: 100,
       phase_message: tradesCreated > 0 ? 'Тестирование завершено' : 'Тест завершён — сделок нет',
-      phase_detail: `${totalBars} баров, ${knownSecIds.size} бумаг, сделок: ${tradesCreated}`,
+      phase_detail: `${totalBars} баров, ${knownSecIds.size} бумаг, сделок: ${tradesCreated}` +
+        (stats.priceLateFrom ? `, данные с ${stats.priceLateFrom}` : '') +
+        (stats.priceMissingCount ? `, без цен: ${stats.priceMissingCount}` : ''),
       processed_bars: totalBars,
       test_balance: balance,
       financial_result: pnl,
