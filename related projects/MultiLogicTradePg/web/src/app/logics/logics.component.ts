@@ -3207,13 +3207,35 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       });
   }
 
+  /** #1044: смена типа TP на портфельный — только с подтверждением. */
+  onStopScopeChange(stop: LogicStopRow, scope: LogicStopScopeType): void {
+    if (
+      scope === 'portfolio_ltp_renew' &&
+      stop.scope_type !== 'portfolio_ltp_renew'
+    ) {
+      if (
+        !confirm(
+          'Сменить тип TP на «линейный TP по портфелю с возобновлением»? ' +
+            'TP по каждой бумаге будет отключён.'
+        )
+      ) {
+        this.loadStopsForLogic(stop.logic_id, true);
+        return;
+      }
+      this.saveStopRow(stop, { scope_type: scope }, true);
+      return;
+    }
+    this.saveStopRow(stop, { scope_type: scope });
+  }
+
   saveStopRow(
     stop: LogicStopRow,
     patch: {
       scope_type?: LogicStopScopeType;
       value?: number;
       value_unit?: LogicStopValueUnit;
-    }
+    },
+    confirmScopeChange = false
   ): void {
     if (this.savingStopIds.has(stop.id)) return;
     if (
@@ -3223,7 +3245,9 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       return;
     }
     this.savingStopIds.add(stop.id);
-    this.logicsService.updateLogicStop(stop.id, patch).subscribe({
+    this.logicsService
+      .updateLogicStop(stop.id, { ...patch, confirm_scope_change: confirmScopeChange })
+      .subscribe({
       next: (updated) => {
         const list = this.logicStops.get(stop.logic_id) ?? [];
         this.logicStops.set(

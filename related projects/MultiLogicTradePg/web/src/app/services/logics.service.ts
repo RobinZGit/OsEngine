@@ -470,6 +470,8 @@ export class LogicsService {
       value?: number;
       value_unit?: LogicStopValueUnit;
       is_active?: boolean;
+      /** #1044: явное подтверждение смены типа TP на портфельный. */
+      confirm_scope_change?: boolean;
     }
   ): Observable<LogicStopRow> {
     return this.http.put<LogicStopRow>(

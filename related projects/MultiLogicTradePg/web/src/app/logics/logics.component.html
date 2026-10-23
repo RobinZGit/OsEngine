@@ -2325,7 +2325,7 @@
                                     class="stop-inline-select"
                                     [ngModel]="stop.scope_type"
                                     [disabled]="isStopSaving(stop.id)"
-                                    (ngModelChange)="saveStopRow(stop, { scope_type: $event })"
+                                    (ngModelChange)="onStopScopeChange(stop, $event)"
                                   >
                                     @for (sc of stopScopesFor(stop.rule_kind); track sc) {
                                       <option

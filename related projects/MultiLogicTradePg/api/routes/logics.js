@@ -1988,6 +1988,20 @@ app.put('/api/logic-stops/:id', async (req, res) => {
         });
         return;
       }
+      // #1044: защита от случайного сброса TP «по бумаге» на портфельный —
+      // смена на portfolio_ltp_renew требует явного подтверждения.
+      if (
+        ruleKind === 'take_profit' &&
+        scopeType === 'portfolio_ltp_renew' &&
+        existingRows[0].scope_type !== 'portfolio_ltp_renew' &&
+        req.body?.confirm_scope_change !== true
+      ) {
+        res.status(400).json({
+          error:
+            'Смена типа TP на портфельный требует подтверждения (confirm_scope_change)',
+        });
+        return;
+      }
     }
 
     const { rows } = await pool.query(
