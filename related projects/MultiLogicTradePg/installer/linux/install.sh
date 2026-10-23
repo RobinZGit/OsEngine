@@ -441,6 +441,10 @@ deploy_schema() {
   psql_q multilogictrade -f "$PREFIX/01_multilogictrade_tables_and_data.sql"
   step "Ensuring default seed logics (LinReg Fade Optimized, …)"
   psql_q multilogictrade -f "$PREFIX/sql/ensure_seed_logics.sql"
+  if [[ -f "$PREFIX/sql/ensure_contango_bases.sql" ]]; then
+    step "Ensuring contango base securities (CNY/USD/gold/silver spot)"
+    psql_q multilogictrade -f "$PREFIX/sql/ensure_contango_bases.sql"
+  fi
   local opt_count
   opt_count="$(psql_scalar multilogictrade "SELECT COUNT(*) FROM logics WHERE name = 'LinReg Fade Optimized';")"
   if [[ "$opt_count" != "1" ]]; then

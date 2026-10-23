@@ -2485,9 +2485,18 @@ BEGIN
 
                 IF v_signal_kind IS NULL THEN
                     v_signal_kind := v_sig.signal_kind;
+                    -- #1042: contango-сигнал считается по синтетике
+                    -- (v_eval.close_price), а сделка исполняется по цене
+                    -- самой бумаги (фьючерса), иначе лот/номинал ломаются.
                     v_pp := logic_backtest_fill_at(
                         p_run_id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
-                        v_eval.close_price, v_slippage_pct
+                        COALESCE(
+                            logic_backtest_price_at(
+                                v_sec.security_id, v_pt.tf_id, v_pt.bar_dt
+                            ),
+                            v_eval.close_price
+                        ),
+                        v_slippage_pct
                     );
                     v_bar_dt := v_eval.bar_dt;
                 END IF;

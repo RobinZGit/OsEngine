@@ -43,6 +43,17 @@ BEGIN
     FROM security_prefixes sp
     WHERE sp.security_id = p_security_id AND sp.exchange_id = 1;
 
+    -- #1042: базовые бумаги для контанго (CNY/USD, золото, серебро) грузим из
+    -- T-Bank по figi: MOEX ISS не отдаёт intraday-свечи по валютному рынку.
+    IF upper(COALESCE(v_group_prefix, '')) IN (
+        'CNYRUB_TOM', 'USD000UTSTOM', 'GLDRUB_TOM', 'SLVRUB_TOM'
+    ) THEN
+        CALL load_prices_from_tbank_http(
+            p_security_id, p_timeframe_id, p_date_from, p_date_to
+        );
+        RETURN;
+    END IF;
+
     IF v_is_future AND is_perpetual_future_group(v_group_prefix, v_note) THEN
         BEGIN
             CALL load_prices_from_tbank_http(p_security_id, p_timeframe_id, p_date_from, p_date_to);

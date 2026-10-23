@@ -673,6 +673,11 @@ try {
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sql01)
             Write-Step "Ensuring default seed logics (LinReg Fade Optimized, ...)"
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sqlEnsure)
+            $sqlContango = Join-Path $InstallDir "sql\ensure_contango_bases.sql"
+            if (Test-Path $sqlContango) {
+                Write-Step "Ensuring contango base securities (CNY/USD/gold/silver spot)"
+                Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sqlContango)
+            }
             $optCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics WHERE name = 'LinReg Fade Optimized';"
             if ($optCount -ne "1") {
                 throw ("Seed check failed: LinReg Fade Optimized count={0} (expected 1)." -f $optCount)
