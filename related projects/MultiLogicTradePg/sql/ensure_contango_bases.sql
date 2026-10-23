@@ -46,6 +46,13 @@ BEGIN
             VALUES (v_base, 1, r.base_prefix, 'other', r.base_figi, 'CETS currency');
         END IF;
 
+        -- связка фьючерс → база: по ней бэктест грузит историю спота
+        UPDATE security_prefixes sp
+        SET underlying_security_id = v_base
+        WHERE sp.security_id = v_future
+          AND sp.exchange_id = 1
+          AND sp.underlying_security_id IS DISTINCT FROM v_base;
+
         -- если пара уже есть — не трогаем
         CONTINUE WHEN EXISTS (
             SELECT 1 FROM contango_securities cs WHERE cs.future_security_id = v_future
