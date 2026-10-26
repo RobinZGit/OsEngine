@@ -1,4 +1,4 @@
-﻿import { fakeAsync, TestBed, tick } from '@angular/core/testing';
+import { fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { TerminalComponent } from './terminal.component';
 import { ReferencesService } from '../services/references.service';
@@ -142,6 +142,19 @@ describe('TerminalComponent — удаление полос без позици�
   it('полоса без сигнала (добавлена вручную) не удаляется, даже при нулевом остатке', () => {
     const c = makeComponent();
     c.panels = [panel(1, 101, null)];
+    c.removeFlatPanelsAfterSignalTimeout();
+    expect(c.panels.length).toBe(1);
+  });
+
+  it('развёрнутый график (#1049): полоса не удаляется автоматически по таймауту', () => {
+    const c = makeComponent();
+    const p = panel(
+      1,
+      101,
+      ev(Date.now() - 7 * 86_400_000, 15, 'M15', Date.now() - 7 * 86_400_000)
+    );
+    p.collapsed = false; // график развёрнут — пользователь торгует вручную
+    c.panels = [p];
     c.removeFlatPanelsAfterSignalTimeout();
     expect(c.panels.length).toBe(1);
   });

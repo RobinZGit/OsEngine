@@ -1432,6 +1432,9 @@ export class TerminalComponent implements OnInit, OnDestroy {
     for (const p of this.panels) {
       const ev = p.signal_event;
       if (!ev) continue; // полоса добавлена без сигнала — не трогаем
+      // #1049: пользователь развернул график — считаем, что он торгует вручную,
+      // такую полосу автоматически не удаляем.
+      if (!p.collapsed) continue;
       if (this.securityRemainderQty(p.security.id) !== 0) continue;
       if (!this.signalPastKeepWindow(ev)) continue;
       stale.push(p.uid);
