@@ -426,6 +426,30 @@ async function saveTradingParams(pool, logicId, payload) {
         payload.initial_balance,
         'money'
       );
+    } else if (!onReal && payload.initial_balance != null) {
+      // #1048: если открытых позиций нет — синхронизируем остаток с новым
+      // начальным, иначе логика продолжает сайзить от старого (например, 1 млн).
+      const { rows: openRows } = await pool.query(
+        `
+        SELECT COUNT(*)::int AS n
+        FROM logic_securities ls
+        WHERE ls.logic_id = $1
+          AND (
+            logic_long_position_qty($1, ls.security_id, FALSE, FALSE) > 0
+            OR logic_short_position_qty($1, ls.security_id, FALSE, FALSE) > 0
+          )
+        `,
+        [logicId]
+      );
+      if (Number(openRows[0]?.n ?? 0) === 0) {
+        await upsertParam(
+          pool,
+          logicId,
+          PARAM_KEYS.CURRENT_BALANCE,
+          payload.initial_balance,
+          'money'
+        );
+      }
     }
   }
 

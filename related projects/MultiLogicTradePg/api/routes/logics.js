@@ -456,6 +456,33 @@ app.post('/api/logics/:id/copy', async (req, res) => {
       SELECT $1, param_key, param_value, value_type
       FROM logic_params
       WHERE logic_id = $2
+        AND param_key NOT IN (
+          'current_balance',
+          'last_cash_fund_bar_dt',
+          'last_opt_eval_bar_dt',
+          'last_stop_bar_dt',
+          'last_trade_bar_dt',
+          'last_trade_check_at',
+          'terminal_signal_last_bar_dt',
+          'last_opt_grid_run_id',
+          'last_opt_grid_at'
+        )
+      ON CONFLICT (logic_id, param_key) DO UPDATE SET
+        param_value = EXCLUDED.param_value,
+        value_type = EXCLUDED.value_type,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [copy.id, id]
+    );
+
+    // #1048: current_balance — runtime-состояние, не копируем из шаблона:
+    // иначе новая логика с initial_balance=10000 торгует как с миллионом.
+    await client.query(
+      `
+      INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+      SELECT $1, 'current_balance', param_value, value_type
+      FROM logic_params
+      WHERE logic_id = $2 AND param_key = 'initial_balance'
       ON CONFLICT (logic_id, param_key) DO UPDATE SET
         param_value = EXCLUDED.param_value,
         value_type = EXCLUDED.value_type,
