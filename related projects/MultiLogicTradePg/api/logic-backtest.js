@@ -73,6 +73,44 @@ function splitDateRangeChunks(dateFrom, dateTo, chunkDays = BACKTEST_PRICE_CHUNK
  *   error?: Error
  * }>}
  */
+/**
+ * #1050: жёсткий таймаут на CALL load_prices/load_prices_http.
+ * HTTP к T-Bank/MOEX может «зависнуть» на SSL-соединении на десятки минут;
+ * ставим statement_timeout на выделенном соединении и watchdog-отмену,
+ * чтобы подготовка бэктеста не висела вечно.
+ */
+async function callPriceLoadWithTimeout(pool, sql, params, timeoutMs = 180000) {
+  const client = await pool.connect();
+  let pid = 0;
+  let finished = false;
+  let watchdog = null;
+  try {
+    const pidRes = await client.query('SELECT pg_backend_pid() AS pid');
+    pid = Number(pidRes.rows[0]?.pid) || 0;
+    await client.query(
+      `SET statement_timeout = '${Math.max(1000, Math.floor(timeoutMs))}'`
+    );
+    if (pid) {
+      watchdog = setTimeout(() => {
+        if (!finished) {
+          pool.query('SELECT pg_cancel_backend($1)', [pid]).catch(() => {});
+        }
+      }, timeoutMs + 5000);
+      if (typeof watchdog.unref === 'function') watchdog.unref();
+    }
+    await client.query(sql, params);
+  } finally {
+    finished = true;
+    if (watchdog) clearTimeout(watchdog);
+    try {
+      await client.query('RESET statement_timeout');
+    } catch (_e) {
+      /* соединение могло быть уже сброшено таймаутом */
+    }
+    client.release();
+  }
+}
+
 async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, dateTo, onChunk = null) {
   const key = priceLoadKey(secId, tfId, loadDateFrom, dateTo);
 
@@ -103,12 +141,12 @@ async function ensurePricesReady(pool, secId, tfId, loadDateFrom, dateFrom, date
           if (typeof onChunk === 'function') {
             await onChunk(chunk);
           }
-          await pool.query('CALL load_prices($1, $2, $3, $4)', [
-            secId,
-            tfId,
-            chunk.from,
-            chunk.to,
-          ]);
+          await callPriceLoadWithTimeout(
+            pool,
+            'CALL load_prices($1, $2, $3, $4)',
+            [secId, tfId, chunk.from, chunk.to],
+            180000
+          );
         }
         const okAfterLoad = await pricesCached(
           pool,
@@ -165,12 +203,12 @@ async function ensureFundPricesReady(pool, fundSecId, tfId, loadDateFrom, loadDa
     isLeader = true;
     flight = (async () => {
       try {
-        await pool.query(`CALL load_prices_http($1, $2, $3::date, $4::date)`, [
-          fundSecId,
-          tfId,
-          loadDateFrom,
-          loadDateTo,
-        ]);
+        await callPriceLoadWithTimeout(
+          pool,
+          `CALL load_prices_http($1, $2, $3::date, $4::date)`,
+          [fundSecId, tfId, loadDateFrom, loadDateTo],
+          120000
+        );
         return { status: 'loaded', error: null };
       } catch (error) {
         return { status: 'error', error };
