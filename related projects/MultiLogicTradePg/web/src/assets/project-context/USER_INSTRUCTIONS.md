@@ -6,6 +6,8 @@
 
 Полный контекст разработки — `docs/PROJECT_CONTEXT.md`. Эта справка в приложении: раздел «Инструкции пользователя».
 
+1051. «Ты делаешь каждый раз релиз — не стоит. Оставь последний релиз `deepseek`, предыдущий удали, если есть; релизы с другими именами не трогай». Проверено `gh release list`: релиз с тегом `deepseek` **один** — DEEPSEEK v1.0.464, удалять нечего; релизы `semi-auto-terminal`, `optimize-and-real-trade-safe-2`, `optimize-and-real-trade-safe`, `optimize-and-real-trade`, `real-trade-1`, `test-1` не тронуты. Правило зафиксировано в `.cursor/rules/installer-freshness.mdc`: GitHub-релиз `deepseek` обновляется **только по явной просьбе**; пересборка установщиков остаётся обязательной после каждой правки, но без автопубликации релиза. Установщики **v1.0.465**.
+
 1050. «Идёт тестирование логики 33792 — она зависла, почему?» Прогон 539 стоял в `loading_prices` на «Цены Нефть Brent: 2026-07-27–2026-08-25 (1/4)» ~59 минут: два `CALL load_prices` висели в `pg_stat_activity` без `wait_event`, в `price_load_log` по security 48 — частичные загрузки с **SSL connection timeout** к T-Bank; таймаут внутри `load_prices_http` не прерывал зависший HTTP. После `pg_cancel_backend` прогон продолжил и пошёл по барам. Сделано: в `api/logic-backtest.js` добавлен `callPriceLoadWithTimeout` — выделенное соединение, `statement_timeout` (180 с на чанк цен, 120 с на денежный фонд) + watchdog `pg_cancel_backend`; при таймауте чанк завершается ошибкой, прогон не висит, а в мониторинг пишутся `price_missing_instrument`/`price_period_start_late`. `node --check` OK. Установщики **v1.0.464**.
 Коммит: [b21a272](https://github.com/RobinZGit/OsEngine/commit/b21a27207740d5a12a56e403d5f680a17a3d3f55).
 
