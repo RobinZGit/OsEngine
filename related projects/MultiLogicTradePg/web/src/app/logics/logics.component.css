@@ -452,6 +452,28 @@
   background: #fffbeb;
 }
 
+/* #1052/#1054: чип тестового процесса кликабелен и выделен цветом —
+   ведёт к строке логики, поэтому отличается от остальных процессов. */
+.process-chip-link {
+  cursor: pointer;
+  border-color: #a78bfa;
+  background: #f5f3ff;
+  color: #4c1d95;
+  font-weight: 600;
+}
+
+.process-chip-link .process-dot {
+  background: #7c3aed;
+}
+
+.process-chip-link:hover,
+.process-chip-link:focus-visible {
+  border-color: #7c3aed;
+  background: #ede9fe;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.22);
+  outline: none;
+}
+
 .process-error {
   border-color: #fca5a5;
   background: #fef2f2;

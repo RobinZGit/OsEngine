@@ -694,10 +694,45 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.activeProcesses().length > 0 || !!this.processError;
   }
 
+  /** #1052: клик по тестовому процессу — свернуть остальные логики, раскрыть
+      нужную и прокрутить список к её строке (развёрнута всегда только одна). */
+  focusLogicFromProcess(p: ProcessStatusItem, event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const logicId = Number(p?.logic_id);
+    if (!Number.isInteger(logicId) || logicId <= 0) return;
+    for (const id of Array.from(this.expandedLogics)) {
+      if (id !== logicId) this.collapseLogic(id);
+    }
+    if (!this.expandedLogics.has(logicId)) {
+      this.expandedLogics.add(logicId);
+      this.ensureParamsDraft(logicId);
+      this.loadSignalsForLogic(logicId);
+      this.loadStopsForLogic(logicId);
+      this.refreshOptGridAvailability(logicId);
+    }
+    this.cdr.markForCheck();
+    const scrollToRow = () => {
+      const el = document.querySelector(
+        `tr[data-logic-id="${logicId}"]`
+      ) as HTMLElement | null;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(scrollToRow);
+    } else {
+      setTimeout(scrollToRow, 0);
+    }
+  }
+
   processTitle(p: ProcessStatusItem): string {
-    return [p.label, p.status, p.detail, p.wait, p.age]
+    const base = [p.label, p.status, p.detail, p.wait, p.age]
       .filter(Boolean)
       .join(' · ');
+    // #1053: подсказка для кликабельного чипа тестового процесса.
+    return p?.logic_id
+      ? `${base} · Кликните, чтобы перейти к логике`
+      : base;
   }
 
   openTestReports(event?: Event): void {
@@ -828,6 +863,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
     if (this.expandedLogics.has(row.id)) {
       this.collapseLogic(row.id);
       return;
+    }
+    // #1052: развёрнутой может быть только одна логика — остальные сворачиваем.
+    for (const id of Array.from(this.expandedLogics)) {
+      if (id !== row.id) this.collapseLogic(id);
     }
     this.expandedLogics.add(row.id);
     this.ensureParamsDraft(row.id);
