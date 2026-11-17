@@ -2207,7 +2207,7 @@ BEGIN
         FROM prices
         WHERE security_id = p_security_id
           AND timeframe_id = p_timeframe_id
-          AND dt <= p_dt
+          AND dt < p_dt
         ORDER BY dt DESC
         LIMIT p_period
     ) s;
@@ -2265,13 +2265,15 @@ BEGIN
         ORDER BY p.dt DESC LIMIT v_bars
     ) x;
 
-    IF v_n IS NULL OR v_n < p_period THEN RETURN; END IF;
+    IF v_n IS NULL OR v_n < p_period + 1 THEN RETURN; END IF;
 
-    v_start := GREATEST(p_period, v_n - p_point_count + 1);
+    -- Канал по ПРЕДЫДУЩИМ p_period барам (dt < текущего): пробой сравнивается
+    -- с уже сформированным каналом, а не с баром, в котором он считается.
+    v_start := GREATEST(p_period + 1, v_n - p_point_count + 1);
     FOR i IN v_start .. v_n LOOP
         v_upper := NULL;
         v_lower := NULL;
-        FOR j IN i - p_period + 1 .. i LOOP
+        FOR j IN i - p_period .. i - 1 LOOP
             v_upper := CASE WHEN v_upper IS NULL OR v_highs[j] > v_upper THEN v_highs[j] ELSE v_upper END;
             v_lower := CASE WHEN v_lower IS NULL OR v_lows[j] < v_lower THEN v_lows[j] ELSE v_lower END;
         END LOOP;

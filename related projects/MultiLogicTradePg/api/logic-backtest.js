@@ -539,6 +539,101 @@ async function countIndicatorsInPeriod(pool, logicId, tfId, dateFrom, dateTo) {
  * периоде 0 значений (значения удалила автоочистка indicator_values / гонка).
  * Best-effort: ошибки логируются и не валят прогон. Возвращает {synced, errors}.
  */
+/**
+ * #1055: точечная синхронизация серий, которых нет в периоде у конкретной
+ * бумаги/индикатора. Раньше проверка была на всю логику: если значения были
+ * хоть у одной бумаги, sync пропускался, и по остальным сигналы молчали.
+ */
+async function syncMissingIndicatorSeriesForLogic(
+  pool,
+  runId,
+  logicId,
+  tfId,
+  dateFrom,
+  dateTo,
+  endDt,
+  pointCount
+) {
+  const { rows } = await pool.query(
+    `
+    WITH req AS (
+      SELECT DISTINCT
+        ls.security_id,
+        lis.indicator_id,
+        upper(COALESCE(parse_signal_series(psf.params), 'VALUE')) AS series_code
+      FROM logic_securities ls
+      JOIN logic_indicator_signals lis ON lis.logic_id = ls.logic_id
+      LEFT JOIN LATERAL parse_signal_formula(lis.formula) psf ON TRUE
+      WHERE ls.logic_id = $1
+        AND ls.is_active = TRUE
+        AND lis.is_active = TRUE
+    )
+    SELECT r.security_id, r.indicator_id, r.series_code
+    FROM req r
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM indicator_values iv
+      JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
+      WHERE iv.security_id = r.security_id
+        AND iv.timeframe_id = $2
+        AND iv.indicator_id = r.indicator_id
+        AND upper(ivt.code) = r.series_code
+        AND iv.dt::date BETWEEN $3 AND $4
+    )
+    `,
+    [logicId, tfId, dateFrom, dateTo]
+  );
+  let synced = 0;
+  let errors = 0;
+  for (const r of rows) {
+    try {
+      await pool.query('CALL ensure_security_indicator_series($1, $2)', [
+        r.security_id,
+        r.indicator_id,
+      ]);
+      await pool.query('CALL logic_apply_indicator_params_from_signals($1, $2)', [
+        logicId,
+        r.security_id,
+      ]);
+      await pool.query(
+        'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
+        [r.security_id, r.indicator_id, tfId, endDt, pointCount, false]
+      );
+      synced += 1;
+    } catch (e) {
+      errors += 1;
+      await backtestLog(
+        pool,
+        runId,
+        logicId,
+        'backtest.indicator.error',
+        e.message,
+        {
+          security_id: r.security_id,
+          indicator_id: r.indicator_id,
+          series_code: r.series_code,
+          phase: 'missing_series',
+        },
+        r.security_id,
+        tfId
+      );
+    }
+  }
+  if (rows.length > 0) {
+    await backtestLog(
+      pool,
+      runId,
+      logicId,
+      'backtest.indicators.missing_synced',
+      `Точечный пересчёт отсутствующих серий: sync=${synced} err=${errors}`,
+      { missing: rows.length, synced, errors },
+      null,
+      tfId
+    );
+  }
+  return { missing: rows.length, synced, errors };
+}
+
 async function forceSyncIndicatorsForLogic(pool, runId, logicId, tfId, endDt, pointCount) {
   const { rows: secRows } = await pool.query(
     `SELECT DISTINCT ls.security_id
@@ -1844,6 +1939,29 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
         null,
         tfId
       );
+
+      // #1055: даже когда в периоде есть значения у части бумаг, по конкретным
+      // бумагам/сериям их может не быть — досинхронизируем точечно, иначе
+      // сигналы по ним молчат и прогон даёт 0 сделок.
+      const missingSeries = await syncMissingIndicatorSeriesForLogic(
+        pool,
+        runId,
+        logicId,
+        tfId,
+        dateFrom,
+        dateTo,
+        endDt,
+        pointCount
+      );
+      if (missingSeries.synced > 0) {
+        indInPeriod = await countIndicatorsInPeriod(
+          pool,
+          logicId,
+          tfId,
+          dateFrom,
+          dateTo
+        );
+      }
 
       // Кэш подтвердил наличие индикаторов, но в периоде 0 значений: значения могла
       // удалить автоочистка indicator_values между проверкой кэша и подсчётом (гонка).
