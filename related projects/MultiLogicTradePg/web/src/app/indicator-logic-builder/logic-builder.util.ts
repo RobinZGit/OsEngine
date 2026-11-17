@@ -119,3 +119,32 @@ export function emptySelection(options: CreateLogicOptionsResponse | null): Buil
   }
   return out;
 }
+
+/**
+ * #1058: «Показать все индикаторы» для одного ТФ. Добавляет в видимый список
+ * ещё не показанные индикаторы и создаёт для них пустые галочки. Уже отмеченные
+ * галочки не сбрасываются — карта выбора расширяется, а не пересоздаётся.
+ */
+export function revealExtraIndicators(
+  group: CreateLogicOptionGroup,
+  selection: BuilderSelectionMap
+): {
+  indicators: CreateLogicOptionIndicator[];
+  extra_indicators: CreateLogicOptionIndicator[];
+  selection: BuilderSelectionMap;
+} {
+  const extra = group.extra_indicators ?? [];
+  if (extra.length === 0) {
+    return { indicators: group.indicators, extra_indicators: [], selection };
+  }
+  const nextSelection = { ...selection };
+  for (const ind of extra) {
+    const key = selectionKey(group.timeframe_id, ind.indicator_id);
+    if (!nextSelection[key]) nextSelection[key] = { open: false, close: false };
+  }
+  return {
+    indicators: [...group.indicators, ...extra],
+    extra_indicators: [],
+    selection: nextSelection,
+  };
+}

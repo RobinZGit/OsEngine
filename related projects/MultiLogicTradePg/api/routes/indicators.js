@@ -360,7 +360,35 @@ app.get('/api/indicators/create-logic-options', async (req, res) => {
         time_kind: row.best_time_kind,
         samples_count: row.samples_count == null ? null : Number(row.samples_count),
         securities_count: Number(row.securities_count) || 0,
+        is_best: true,
       });
+    }
+    // #1058: помимо «лучших» (с рейтингом) отдаём остальные активные индикаторы —
+    // они попадают в форму по кнопке «Показать все индикаторы» в шапке ТФ.
+    // Формула сигнала строится для любого индикатора с кодом (indicator_signal_formula),
+    // поэтому такие индикаторы тоже можно использовать в логике.
+    const { rows: allIndicatorRows } = await pool.query(
+      `SELECT i.id, i.code, i.name
+       FROM indicators i
+       WHERE i.is_active
+       ORDER BY i.code`
+    );
+    for (const group of byTf.values()) {
+      const present = new Set(group.indicators.map((x) => x.indicator_id));
+      group.extra_indicators = allIndicatorRows
+        .filter((r) => !present.has(Number(r.id)))
+        .map((r) => ({
+          indicator_id: Number(r.id),
+          code: r.code,
+          name: r.name,
+          rating: null,
+          position_side: null,
+          signal_kind: null,
+          time_kind: null,
+          samples_count: null,
+          securities_count: 0,
+          is_best: false,
+        }));
     }
     res.json({ groups: [...byTf.values()] });
   } catch (err) {

@@ -155,6 +155,15 @@ try {
     '0'
   );
 
+  assertEq(
+    'calc_ind_soldiers_array empty without prices',
+    runPsql(
+      psql,
+      `SELECT COUNT(*)::text FROM calc_ind_soldiers_array(3, 'VALUE', ${sberId}, ${m15Id}, 100, NULL)`
+    ),
+    '0'
+  );
+
   const rsiId = runPsql(psql, `SELECT id::text FROM indicators WHERE code = 'RSI' LIMIT 1`);
   runPsql(psql, `CALL ensure_security_indicator_series(${sberId}, ${rsiId})`);
   assertGte(
@@ -163,6 +172,21 @@ try {
       psql,
       `SELECT COUNT(*)::text FROM security_indicator_series
        WHERE security_id = ${sberId} AND indicator_id = ${rsiId}`
+    ),
+    1
+  );
+
+  const soldiersId = runPsql(
+    psql,
+    `SELECT id::text FROM indicators WHERE code = 'SOLDIERS' LIMIT 1`
+  );
+  runPsql(psql, `CALL ensure_security_indicator_series(${sberId}, ${soldiersId})`);
+  assertGte(
+    'ensure_security_indicator_series SOLDIERS',
+    runPsql(
+      psql,
+      `SELECT COUNT(*)::text FROM security_indicator_series
+       WHERE security_id = ${sberId} AND indicator_id = ${soldiersId}`
     ),
     1
   );
@@ -199,6 +223,26 @@ try {
       `SELECT COUNT(*)::text FROM indicator_values iv
        JOIN indicators i ON i.id = iv.indicator_id AND i.code = 'STOCH'
        WHERE iv.security_id = ${sberId} AND iv.timeframe_id = ${m15Id}`
+    ),
+    1
+  );
+
+  // SOLDIERS: синтетические свечи бычьи и каждая следующая открывается внутри тела предыдущей
+  assertEq(
+    'SOLDIERS bullish N=3',
+    runPsql(
+      psql,
+      `SELECT value::text FROM calc_ind_soldiers_array(3, 'VALUE', ${sberId}, ${m15Id}, 100, NULL)
+       ORDER BY dt DESC LIMIT 1`
+    ),
+    '1'
+  );
+  assertGte(
+    'SOLDIERS indicator_values after sync',
+    runPsql(
+      psql,
+      `SELECT COUNT(*)::text FROM indicator_values
+       WHERE security_id = ${sberId} AND timeframe_id = ${m15Id} AND indicator_id = ${soldiersId}`
     ),
     1
   );
@@ -352,6 +396,44 @@ try {
     process.exit(1);
   }
   console.log('verify-indicators: OK PACC linear close accel ~0');
+
+  // SOLDIERS: медвежий паттерн (зеркальный) на отдельном таймфрейме
+  const m5Id = runPsql(psql, `SELECT id::text FROM timeframes WHERE tf = 'M5' LIMIT 1`);
+  runPsql(
+    psql,
+    `INSERT INTO prices (security_id, timeframe_id, dt, open_price, high_price, low_price, close_price, volume)
+     SELECT ${sberId}, ${m5Id},
+            ('2026-02-02 10:00:00'::timestamp + (n - 1) * interval '5 minutes'),
+            300 - (n * 0.01), 301 - (n * 0.01), 298 - (n * 0.01), 299.5 - (n * 0.01), 1000
+     FROM generate_series(1, 6) AS n
+     ON CONFLICT (security_id, timeframe_id, dt) DO NOTHING`
+  );
+  assertEq(
+    'SOLDIERS bearish N=3',
+    runPsql(
+      psql,
+      `SELECT value::text FROM calc_ind_soldiers_array(3, 'VALUE', ${sberId}, ${m5Id}, 100, NULL)
+       ORDER BY dt DESC LIMIT 1`
+    ),
+    '-1'
+  );
+  assertEq(
+    'SOLDIERS bearish N=5 (any N)',
+    runPsql(
+      psql,
+      `SELECT value::text FROM calc_ind_soldiers_array(5, 'VALUE', ${sberId}, ${m5Id}, 100, NULL)
+       ORDER BY dt DESC LIMIT 1`
+    ),
+    '-1'
+  );
+  assertEq(
+    'SOLDIERS not enough candles for N=7',
+    runPsql(
+      psql,
+      `SELECT COUNT(*)::text FROM calc_ind_soldiers_array(7, 'VALUE', ${sberId}, ${m5Id}, 100, NULL)`
+    ),
+    '0'
+  );
 
   const sigNulls = runPsql(
     psql,

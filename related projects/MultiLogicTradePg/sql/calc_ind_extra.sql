@@ -2,6 +2,116 @@
 -- ADX, CCI, LINREG (+ ATR series GROWTH5).
 -- Подключается в 02 через маркеры begin/end calc_ind_extra (см. sync-sql-modules-to-02.mjs)
 
+-- ========== SOLDIERS: паттерн «N солдат» (обобщение «3 солдат» OsEngine) ==========
+-- На каждом баре возвращает +1 — бычьи N солдат, −1 — медвежьи N солдат, 0 — паттерна нет.
+-- Бычьи: у всех N последних свечей Open < Close; у каждой следующей свечи Open лежит
+-- строго между Open и Close предыдущей, а Close строго больше Close предыдущей.
+-- Медвежьи — зеркально: Open > Close, Open следующей между Open/Close предыдущей,
+-- Close следующей строго меньше Close предыдущей.
+CREATE OR REPLACE FUNCTION calc_ind_soldiers_array(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_opens NUMERIC[];
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    v_soldiers INTEGER;
+    v_start INTEGER;
+    i INTEGER;
+    j INTEGER;
+    v_bull BOOLEAN;
+    v_bear BOOLEAN;
+BEGIN
+    IF upper(btrim(COALESCE(p_series, 'VALUE'))) NOT IN ('VALUE', 'SOLDIERS') THEN
+        RETURN;
+    END IF;
+
+    v_soldiers := GREATEST(COALESCE(p_period, 3), 1);
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(v_soldiers, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.open_price ORDER BY x.dt),
+           array_agg(x.close_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_opens, v_closes, v_n
+    FROM (
+        SELECT p.dt, p.open_price, p.close_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    IF v_n IS NULL OR v_n < v_soldiers THEN RETURN; END IF;
+
+    v_start := GREATEST(v_soldiers, v_n - COALESCE(p_point_count, 100) + 1);
+    FOR i IN v_start .. v_n LOOP
+        v_bull := TRUE;
+        v_bear := TRUE;
+        FOR j IN (i - v_soldiers + 1) .. i LOOP
+            -- Тело свечи: бычья Open < Close, медвежья Open > Close (доджи не подходит).
+            IF v_opens[j] >= v_closes[j] THEN v_bull := FALSE; END IF;
+            IF v_opens[j] <= v_closes[j] THEN v_bear := FALSE; END IF;
+
+            -- Для 2-й и последующих свечей: Open внутри тела предыдущей и Close дальше.
+            IF j > i - v_soldiers + 1 THEN
+                IF NOT (v_opens[j] > LEAST(v_opens[j - 1], v_closes[j - 1])
+                    AND v_opens[j] < GREATEST(v_opens[j - 1], v_closes[j - 1])) THEN
+                    v_bull := FALSE;
+                    v_bear := FALSE;
+                END IF;
+                IF v_closes[j] <= v_closes[j - 1] THEN v_bull := FALSE; END IF;
+                IF v_closes[j] >= v_closes[j - 1] THEN v_bear := FALSE; END IF;
+            END IF;
+
+            IF NOT v_bull AND NOT v_bear THEN EXIT; END IF;
+        END LOOP;
+
+        dt := v_dts[i];
+        value := CASE WHEN v_bull THEN 1 WHEN v_bear THEN -1 ELSE 0 END;
+        RETURN NEXT;
+    END LOOP;
+END;
+$$;
+
+COMMENT ON FUNCTION calc_ind_soldiers_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
+'Паттерн «N солдат»: +1 бычьи N свечей (Open<Close, Open следующей внутри тела предыдущей, Close выше), −1 медвежьи (зеркально), 0 — нет паттерна; p_period = число солдат.';
+
+CREATE OR REPLACE FUNCTION calc_ind_soldiers(
+    p_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    RETURN (
+        SELECT a.value
+        FROM calc_ind_soldiers_array(
+            COALESCE(p_period, 3), p_series, p_security_id, p_timeframe_id, 1, p_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1
+    );
+END;
+$$;
+
+COMMENT ON FUNCTION calc_ind_soldiers(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
+'Значение паттерна «N солдат» на одном баре (+1/−1/0) для оценок сигналов логик и бэктеста.';
+
 -- ========== ATR: GROWTH5 = % роста ATR за 5 баров (бывший GrOk: Gr=3%, Lb=5) ==========
 CREATE OR REPLACE FUNCTION calc_ind_atr_array(
     p_period INTEGER,

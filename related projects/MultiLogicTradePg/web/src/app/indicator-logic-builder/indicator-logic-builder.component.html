@@ -63,7 +63,8 @@
           <p class="panel-note">
             Отметьте, что должна делать логика по каждому индикатору: «Откр.» — открытие позиции,
             «Закр.» — закрытие по противоположному условию. На каждый ТФ с галочками создаётся
-            отдельная логика; имя — ТФ + коды индикаторов + O/C.
+            отдельная логика; имя — ТФ + коды индикаторов + O/C. По умолчанию показаны только
+            лучшие по рейтингу — кнопка «Показать все индикаторы» в шапке ТФ добавит остальные.
           </p>
 
           @if (loading) {
@@ -90,6 +91,16 @@
                     </button>
                     <span class="group-tf">{{ group.tf ?? group.full_name }}</span>
                     <span class="group-name">{{ group.full_name }}</span>
+                    @if (extraCount(group) > 0) {
+                      <button
+                        type="button"
+                        class="show-all-btn"
+                        [title]="'Добавить ещё ' + extraCount(group) + ' индикаторов этого таймфрейма'"
+                        (click)="onShowAll($event, group)"
+                      >
+                        Показать все индикаторы (+{{ extraCount(group) }})
+                      </button>
+                    }
                     <span class="group-badge">{{ groupSelectedCount(group.timeframe_id) }} / {{ group.indicators.length }}</span>
                   </header>
 
@@ -113,7 +124,12 @@
                           @for (ind of group.indicators; track ind.indicator_id) {
                             <tr [class.row-selected]="isOpen(ind, group.timeframe_id) || isClose(ind, group.timeframe_id)">
                               <td class="mono">{{ ind.code }}</td>
-                              <td>{{ ind.name }}</td>
+                              <td>
+                                {{ ind.name }}
+                                @if (ind.is_best === false) {
+                                  <span class="extra-tag" title="Добавлен кнопкой «Показать все индикаторы»">добавлен</span>
+                                }
+                              </td>
                               <td class="col-rating">{{ ratingText(ind) }}</td>
                               <td>{{ sliceLabel(ind) }}</td>
                               <td class="col-check">

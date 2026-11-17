@@ -239,6 +239,8 @@ export interface CreateLogicOptionIndicator {
   time_kind: string | null;
   samples_count: number | null;
   securities_count: number;
+  /** true — индикатор из рейтинга; false — добавлен кнопкой «Показать все индикаторы» (#1058). */
+  is_best?: boolean;
 }
 
 /** #1006: ТФ с рассчитанным рейтингом + его лучшие индикаторы. */
@@ -247,6 +249,8 @@ export interface CreateLogicOptionGroup {
   tf: string | null;
   full_name: string | null;
   indicators: CreateLogicOptionIndicator[];
+  /** #1058: остальные активные индикаторы, пока не показанные в списке. */
+  extra_indicators?: CreateLogicOptionIndicator[];
 }
 
 export interface CreateLogicOptionsResponse {

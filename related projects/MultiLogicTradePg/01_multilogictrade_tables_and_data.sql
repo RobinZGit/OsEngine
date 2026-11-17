@@ -899,7 +899,8 @@ INSERT INTO indicators (code, name, description, category) VALUES
     ('ZLEMA', 'Zero Lag EMA', 'EMA с нулевым запаздыванием', 'trend'),
     ('SMAT3', 'SMA Triple', 'Тройное SMA (тройная свёртка)', 'trend'),
     ('LINREG', 'Linear Regression Channel', 'Канал линейной регрессии (mid ± Dev·σ остатков)', 'trend'),
-    ('SQUARE', 'Quadratic Regression Channel', 'Квадратичный канал (b+a·x+c·x²; mid ± Dev·σ остатков)', 'trend')
+    ('SQUARE', 'Quadratic Regression Channel', 'Квадратичный канал (b+a·x+c·x²; mid ± Dev·σ остатков)', 'trend'),
+    ('SOLDIERS', 'N Soldiers', 'Солдаты: N последовательных бычьих/медвежьих свечей; +1/−1/0', 'trend')
 ON CONFLICT (code) DO NOTHING;
 
 -- #1030: границы параметров индикаторов для ползунка «строже / мягче»
@@ -949,6 +950,7 @@ INSERT INTO indicator_param_bounds (indicator_code, param_key, strict_value, loo
     ('SQUARE', 'period', 100, 10, TRUE),
     ('SQUARE', 'std_dev', 3, 1, FALSE),
     ('DONCHIAN', 'period', 100, 10, TRUE),
+    ('SOLDIERS', 'period', 10, 2, TRUE),
     ('KELTNER', 'period', 50, 10, TRUE),
     ('PSAR', 'step', 0.05, 0.01, FALSE),
     ('PSAR', 'max', 0.5, 0.1, FALSE)
@@ -968,7 +970,7 @@ FROM (VALUES
     ('BB','period',20), ('BB','std_dev',2),
     ('LINREG','period',20), ('LINREG','std_dev',2),
     ('SQUARE','period',20), ('SQUARE','std_dev',2),
-    ('DONCHIAN','period',20), ('KELTNER','period',20),
+    ('DONCHIAN','period',20), ('SOLDIERS','period',3), ('KELTNER','period',20),
     ('PSAR','step',0.02), ('PSAR','max',0.2)
 ) AS v(code, key, def)
 WHERE b.indicator_code = v.code AND b.param_key = v.key
@@ -990,6 +992,7 @@ UPDATE indicators SET script = 'SELECT calc_ind_cci(:period, :series, :security_
 UPDATE indicators SET script = 'SELECT calc_ind_adx(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ADX';
 UPDATE indicators SET script = 'SELECT calc_ind_linreg(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'LINREG';
 UPDATE indicators SET script = 'SELECT calc_ind_square(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'SQUARE';
+UPDATE indicators SET script = 'SELECT calc_ind_soldiers(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'SOLDIERS';
 
 -- Профиль шаблонов сигнала: какие двоичные смыслы «по течению / против» типичны для индикатора
 
@@ -1043,7 +1046,7 @@ UPDATE indicators SET
     sig_profile = 'zero_line',
     sig_trend_def = 'VALUE > 0',
     sig_ct_def = 'VALUE < 0'
-WHERE code IN ('MACD', 'PACC', 'ATR', 'OBV', 'VWAP');
+WHERE code IN ('MACD', 'PACC', 'ATR', 'OBV', 'VWAP', 'SOLDIERS');
 
 UPDATE indicators SET sig_profile = 'volume' WHERE category = 'volume' AND sig_profile IS NULL;
 
@@ -1160,6 +1163,19 @@ S = sma(…), затем ((S * S) * S) с нормализацией при ра
 Применение: тройная свёртка многочленов; запись через * без скобок и без композиции.
 $desc$ WHERE code = 'SMAT3';
 
+UPDATE indicators SET description = $desc$
+N Soldiers (Солдаты) — обобщение паттерна «Три солдата» (OsEngine ThreeSoldier) на произвольное число свечей N.
+
+Расчёт: на баре t проверяются N последних свечей [t−N+1 .. t].
+Бычий паттерн (+1): у каждой из N свечей Open < Close; у каждой следующей свечи Open строго между Open и Close предыдущей, а Close строго больше Close предыдущей.
+Медвежий паттерн (−1): зеркально — Open > Close у каждой свечи, Open следующей внутри тела предыдущей, Close следующей строго меньше Close предыдущей.
+Если условия не выполняются — 0. Число свечей N задаётся параметром period (по умолчанию 3); N=1 — просто бычья/медвежья свеча.
+
+Сигналы: VALUE > 0 — бычьи солдаты (лонг), VALUE < 0 — медвежьи солдаты (шорт/выход из лонга), VALUE = 0 — паттерна нет.
+
+Применение: трендовая логика с открытием и закрытием позиций; чем больше N, тем строже паттерн и реже сигналы.
+$desc$ WHERE code = 'SOLDIERS';
+
 -- SMAT3COMP удалён (композиция sma(sma(...)) не используется)
 
 -- ============================================
@@ -1239,6 +1255,7 @@ JOIN (VALUES
     ('SQUARE', 'SLOPE', 'Наклон Square', 'float', FALSE, NULL, 'Мгновенный наклон a+2·c·x на конце окна', 4),
     ('SQUARE', 'C', 'Коэффициент C', 'float', FALSE, NULL, 'Квадратичный коэффициент c в b+a·x+c·x²', 5),
     ('PACC', 'VALUE', 'Ускорение цены', 'float', FALSE, NULL, 'pp * (1;-2;1)', 1),
+    ('SOLDIERS', 'VALUE', 'Сигнал солдат', 'float', FALSE, NULL, '+1 бычьи N солдат, −1 медвежьи, 0 нет паттерна', 1),
     ('SMAT3', 'VALUE', 'SMA³ свёртка', 'float', FALSE, NULL, 'sma(period=20,series=VALUE)*3', 1),
     ('SMA', 'VALUE', 'Значение MA', 'float', FALSE, NULL, 'SMA value', 1),
     ('EMA', 'VALUE', 'Значение EMA', 'float', FALSE, NULL, 'EMA value', 1),
@@ -1563,6 +1580,10 @@ INSERT INTO logic_param_defs (param_key, name_ru, value_type, default_value, des
      'В конце сессии закрыть открытые фьючерсы, если до экспирации осталось не больше N календарных дней (параметр ниже). Вечные фьючерсы не трогает', 21),
     ('sell_futures_days_before_expiry', 'Дней до экспирации (продажа)', 'integer', '3',
      'Порог в календарных днях: при sell_futures_before_expiry закрыть фьючерс, если (дата экспирации − дата бара) ≤ N. По умолчанию 3', 22),
+    -- Присутствует в рабочих БД (у части логик, напр. M15 DONCHIAN-OC = 12), но отсутствовал в сиде:
+    -- при импорте логики в свежую/целевую БД параметр пропускался с предупреждением.
+    ('futures_guarantee_pct', 'Гарантийное обеспечение фьючерса, % от стоимости контракта', 'number', '12',
+     'GO futures for margin position sizing in backtest', 25),
     ('order_execution', 'Тип исполнения заявок', 'text', 'market',
      'market — рыночная заявка (сразу в сессию); limit — лимитная по цене сигнала (может висеть в стакане). По умолчанию market', 18),
     ('opt_eval_candles', 'Свечей окна OPT', 'integer', '200',

@@ -1,10 +1,12 @@
 import { CreateLogicOptionGroup } from '../models/lookup.model';
 import {
+  BuilderSelectionMap,
   buildCreateLogicsPayload,
   buildLogicNamePreview,
   countSelectedGroups,
   emptySelection,
   logicNamePart,
+  revealExtraIndicators,
   selectionKey,
 } from './logic-builder.util';
 
@@ -132,5 +134,69 @@ describe('logic-builder.util', () => {
       '4:30': { open: false, close: true },
     };
     expect(countSelectedGroups(groups, selection)).toEqual({ groups: 2, indicators: 2 });
+  });
+
+  it('revealExtraIndicators appends missing ones and keeps existing checkboxes', () => {
+    const group: CreateLogicOptionGroup = {
+      timeframe_id: 6,
+      tf: 'M15',
+      full_name: '15 минут',
+      indicators: [
+        {
+          indicator_id: 10,
+          code: 'RSI',
+          name: 'RSI',
+          rating: 120,
+          position_side: 'long',
+          signal_kind: 'counter',
+          time_kind: null,
+          samples_count: 1,
+          securities_count: 40,
+          is_best: true,
+        },
+      ],
+      extra_indicators: [
+        {
+          indicator_id: 9880,
+          code: 'SOLDIERS',
+          name: 'N Soldiers',
+          rating: null,
+          position_side: null,
+          signal_kind: null,
+          time_kind: null,
+          samples_count: null,
+          securities_count: 0,
+          is_best: false,
+        },
+      ],
+    };
+    const selection: BuilderSelectionMap = { '6:10': { open: true, close: false } };
+    const revealed = revealExtraIndicators(group, selection);
+
+    expect(revealed.indicators.map((x) => x.indicator_id)).toEqual([10, 9880]);
+    expect(revealed.extra_indicators).toEqual([]);
+    expect(revealed.selection['6:10']).toEqual({ open: true, close: false });
+    expect(revealed.selection['6:9880']).toEqual({ open: false, close: false });
+    expect(selection['6:9880']).toBeUndefined();
+
+    const payload = buildCreateLogicsPayload(1, [{ ...group, indicators: revealed.indicators }], revealed.selection);
+    expect(payload.groups[0].items).toEqual([
+      {
+        indicator_id: 10,
+        code: 'RSI',
+        position_side: 'long',
+        signal_kind: 'counter',
+        open: true,
+        close: false,
+      },
+    ]);
+  });
+
+  it('revealExtraIndicators is a no-op when nothing is left to show', () => {
+    const group = groups[0];
+    const selection: BuilderSelectionMap = { '6:10': { open: true, close: false } };
+    const revealed = revealExtraIndicators(group, selection);
+    expect(revealed.indicators).toBe(group.indicators);
+    expect(revealed.selection).toBe(selection);
   });
 });

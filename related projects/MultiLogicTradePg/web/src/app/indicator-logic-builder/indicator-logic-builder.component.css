@@ -67,12 +67,39 @@
   flex: 1;
 }
 
+.show-all-btn {
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 5px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.show-all-btn:hover {
+  background: #dbeafe;
+}
+
 .group-badge {
   font-size: 0.78rem;
   color: #374151;
   background: #e5e7eb;
   border-radius: 999px;
   padding: 0.1rem 0.55rem;
+  white-space: nowrap;
+}
+
+.extra-tag {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  white-space: nowrap;
 }
 
 .group-name-preview {

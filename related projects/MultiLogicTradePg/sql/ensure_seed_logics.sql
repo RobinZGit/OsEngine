@@ -93,6 +93,7 @@ BEGIN
         ('CCI Fade Trend 2023', 'Fade по CCI20 на M15 + trend-фильтр H2 LinReg100. Как боевая логика 8511.'),
         ('CMO Stoch Trend', 'Трендовая CMO(14)+Стохастик %K(14,3,3). Лонг CMO>0 и K>50, шорт CMO<0 и K<50. СПЯЩАЯ: бэктест #367 ≈ −384 528₽.'),
         ('CMO Stoch Counter', 'Контр-тренд CMO(14)+Стохастик %K(14,3,3). Лонг CMO<0 и K<50, шорт CMO>0 и K>50. Версия по умолчанию: бэктест #368 ≈ +93 441₽.'),
+        ('Солдаты N3: тренд (лонг/шорт)', 'Трендовая на индикаторе SOLDIERS: вход лонг при +1 (3 бычьих солдата), вход шорт при −1 (3 медвежьих), выход по противоположному сигналу. СПЯЩАЯ — включите в UI после проверки.'),
         ('Тренд M5: SMA20 + ROC10 (TP 0.5%)', 'Трендовый вариант M5 SMA-OC (#29586): только лонг-входы при цене выше SMA(20) и ROC(10)>0; TP 0.5% по бумаге, без SL.'),
         ('Контртренд M5: SMA20 + ROC10 (TP 0.5%)', 'Контртрендовый вариант M5 SMA-OC (#29586): только лонг-входы при цене ниже SMA(20) и ROC(10)<0; TP 0.5% по бумаге, без SL.')
     ) AS v(name, note)
@@ -124,7 +125,8 @@ BEGIN
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
         'CCI Fade Trend 2023',
-        'CMO Stoch Trend', 'CMO Stoch Counter'
+        'CMO Stoch Trend', 'CMO Stoch Counter',
+        'Солдаты N3: тренд (лонг/шорт)'
     )
       AND EXISTS (SELECT 1 FROM logic_param_defs d WHERE d.param_key = v.param_key)
     ON CONFLICT (logic_id, param_key) DO NOTHING;
@@ -271,6 +273,7 @@ BEGIN
         'NRTR ROC Fade', 'RAVI BB Fade', 'Stoch Aroon Fade', 'MI SMA Reversal',
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
         'LinReg Fade Trend',
+        'Солдаты N3: тренд (лонг/шорт)',
         'Тренд M5: SMA20 + ROC10 (TP 0.5%)',
         'Контртренд M5: SMA20 + ROC10 (TP 0.5%)'
     )
@@ -321,7 +324,8 @@ BEGIN
         'SuperTrend CMO Fade', 'Force Index Fade', 'BB StdDev Fade', 'BB Volume Fade',
         'LinReg Fade Trend',
         'CCI Fade Trend 2023',
-        'CMO Stoch Trend', 'CMO Stoch Counter'
+        'CMO Stoch Trend', 'CMO Stoch Counter',
+        'Солдаты N3: тренд (лонг/шорт)'
     )
       AND NOT EXISTS (SELECT 1 FROM logic_stops z WHERE z.logic_id = l.id);
 
@@ -396,6 +400,22 @@ BEGIN
     ) AS v(ind_code, position_event, position_side, signal_kind, formula, display_order)
     JOIN indicators i ON i.code = v.ind_code
     WHERE l.name = 'CMO Stoch Counter'
+      AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
+
+    -- Солдаты N3: трендовая логика — открытие/закрытие в лонг и шорт по PATTERN ±1.
+    INSERT INTO logic_indicator_signals (
+        logic_id, indicator_id, position_event, position_side, signal_kind, formula, display_order
+    )
+    SELECT l.id, i.id, v.position_event, v.position_side, 'trend', v.formula, v.display_order
+    FROM logics l
+    CROSS JOIN (VALUES
+        ('open',  'long',  '@SOLDIERS(period=3,series=VALUE) VALUE > 0', 0),
+        ('close', 'long',  '@SOLDIERS(period=3,series=VALUE) VALUE < 0', 1),
+        ('open',  'short', '@SOLDIERS(period=3,series=VALUE) VALUE < 0', 2),
+        ('close', 'short', '@SOLDIERS(period=3,series=VALUE) VALUE > 0', 3)
+    ) AS v(position_event, position_side, formula, display_order)
+    JOIN indicators i ON i.code = 'SOLDIERS'
+    WHERE l.name = 'Солдаты N3: тренд (лонг/шорт)'
       AND NOT EXISTS (SELECT 1 FROM logic_indicator_signals z WHERE z.logic_id = l.id);
 
     INSERT INTO logic_securities (logic_id, security_id, display_order, is_active)

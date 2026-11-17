@@ -46,6 +46,7 @@ const IMPLEMENTED_CODES = new Set([
   'STOCH',
   'PACC',
   'SMAT3',
+  'SOLDIERS',
 ]);
 
 function seriesRef(code: string, seriesCode: string, isThreshold: boolean): string {

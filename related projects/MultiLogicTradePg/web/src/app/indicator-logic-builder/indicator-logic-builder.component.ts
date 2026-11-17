@@ -15,6 +15,7 @@ import {
   buildLogicNamePreview,
   countSelectedGroups,
   emptySelection,
+  revealExtraIndicators,
   selectionKey,
 } from './logic-builder.util';
 
@@ -157,6 +158,22 @@ export class IndicatorLogicBuilderComponent implements OnChanges {
     } else {
       this.collapsed.add(timeframeId);
     }
+  }
+
+  /** #1058: сколько индикаторов ещё можно показать для ТФ. */
+  extraCount(group: CreateLogicOptionGroup): number {
+    return group.extra_indicators?.length ?? 0;
+  }
+
+  /** #1058: кнопка в шапке ТФ — добавить индикаторы, которых нет в списке лучших. */
+  onShowAll(event: Event, group: CreateLogicOptionGroup): void {
+    event.stopPropagation();
+    if (this.extraCount(group) === 0) return;
+    const revealed = revealExtraIndicators(group, this.selection);
+    group.indicators = revealed.indicators;
+    group.extra_indicators = revealed.extra_indicators;
+    this.selection = revealed.selection;
+    this.collapsed.delete(group.timeframe_id);
   }
 
   isOpen(ind: CreateLogicOptionIndicator, timeframeId: number): boolean {
