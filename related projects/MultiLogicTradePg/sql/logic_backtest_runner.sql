@@ -3193,7 +3193,8 @@ DECLARE
     v_diag JSONB;
     v_commit_every INTEGER := 5;
 BEGIN
-    SELECT r.id, r.logic_id, r.date_from, r.date_to, r.status, r.cancel_requested, r.test_balance
+    SELECT r.id, r.logic_id, r.date_from, r.date_to, r.status, r.cancel_requested, r.test_balance,
+           r.close_all_at_end
     INTO v_run
     FROM logic_backtest_runs r
     WHERE r.id = p_run_id;
@@ -3318,9 +3319,14 @@ BEGIN
         v_balance := logic_backtest_park_excess_cash(
             p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
         );
-        -- #1040: позиции не продаём в конце — equity считается по снимкам
-        -- с переоценкой открытых позиций на каждом баре (logic_backtest_equity_points).
-        NULL;
+        -- #1061: галочка «По окончании теста закрыть все позиции» (default TRUE).
+        -- #1040 оставил equity с переоценкой на каждом баре; теперь последним
+        -- актом прогона становится ликвидация, если галочка включена.
+        IF COALESCE(v_run.close_all_at_end, TRUE) THEN
+            v_balance := logic_backtest_close_all_except_funds(
+                p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
+            );
+        END IF;
     END IF;
 
     -- #1039: теневые (shadow) сделки — бумажные, в финрез прогона не входят.

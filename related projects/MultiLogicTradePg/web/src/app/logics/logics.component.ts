@@ -221,6 +221,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private combatPnlInFlight = false;
   processRows: ProcessStatusItem[] = [];
   processError: string | null = null;
+  /** #1060: порядок появления зелёных чипов включённых логик (слева направо).
+      Переключение is_enabled не меняет updated_at, поэтому порядок держим здесь. */
+  private workChipOrder: number[] = [];
 
   /** Archived backtest reports viewer (PostgreSQL). */
   reportsOpen = false;
@@ -335,6 +338,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       date_from: string;
       date_to: string;
       slippage_pct?: number;
+      close_all_at_end?: boolean;
       opt_grid?: {
         config?: unknown;
         arms?: { lane: string; values: Record<string, number> }[];
@@ -674,11 +678,23 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   activeProcesses(): ProcessStatusItem[] {
-    // Рабочий процесс включённой логики берём из загруженного списка логик,
-    // а не из pg_stat_activity: там строка исчезает, как только запрос ушёл в idle.
-    // Пока is_enabled=TRUE чип есть всегда; он первый и не выпадает из slice.
-    const work: ProcessStatusItem[] = this.logics
-      .filter((l) => l.is_enabled)
+    // #1060: зелёные и жёлтые чипы — сплошной блок у левого края полосы:
+    // сначала все зелёные (включённые логики), сразу за ними все жёлтые
+    // (тесты / расчёты), и только потом прочие процессы. Никакие другие
+    // кнопки не вклиниваются между ними и не меняют их порядок.
+
+    // Зелёный чип берём из списка логик, а не из pg_stat_activity: там строка
+    // исчезает, как только запрос ушёл в idle. Пока is_enabled=TRUE — чип есть всегда.
+    const enabled = this.logics.filter((l) => l.is_enabled);
+    const enabledIds = new Set(enabled.map((l) => l.id));
+    // Выключенные убираем из порядка; заново включённая логика встанет в конец зелёных.
+    this.workChipOrder = this.workChipOrder.filter((id) => enabledIds.has(id));
+    for (const l of enabled) {
+      if (!this.workChipOrder.includes(l.id)) this.workChipOrder.push(l.id);
+    }
+    const work: ProcessStatusItem[] = this.workChipOrder
+      .map((id) => enabled.find((l) => l.id === id))
+      .filter((l): l is LogicRow => !!l)
       .map((l) => ({
         type: 'trade',
         label: `Работа: ${l.name}`,
@@ -686,6 +702,10 @@ export class LogicsComponent implements OnInit, OnDestroy {
         detail: `Логика #${l.id} включена`,
         logic_id: l.id,
       }));
+
+    // Жёлтые: локальные расчёты и пришедшие из API тесты. API отдаёт тесты
+    // started_at DESC (новые первыми) — переворачиваем, чтобы новый тест
+    // вставал ПОСЛЕ всех уже идущих, не сдвигая их и не прыгая.
     const local: ProcessStatusItem[] = [];
     for (const s of this.ratingPrecalcByLogic.values()) {
       if (s.status === 'pending' || s.status === 'running') {
@@ -699,7 +719,14 @@ export class LogicsComponent implements OnInit, OnDestroy {
         });
       }
     }
-    return [...work, ...local, ...this.processRows].slice(0, 12);
+    const tests = this.processRows
+      .filter((p) => !!p.logic_id)
+      .slice()
+      .sort((a, b) => String(a.started_at || '').localeCompare(String(b.started_at || '')));
+
+    // Прочие (PostgreSQL, trade runner, pg_cron) — после блока зелёных/жёлтых.
+    const other = this.processRows.filter((p) => !p.logic_id);
+    return [...work, ...local, ...tests, ...other].slice(0, 12);
   }
 
   hasActiveProcesses(): boolean {
@@ -4763,6 +4790,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       date_from: string;
       date_to: string;
       slippage_pct?: number;
+      close_all_at_end?: boolean;
       opt_grid?: {
         config?: unknown;
         arms?: { lane: string; values: Record<string, number> }[];
@@ -4791,6 +4819,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       date_from: string;
       date_to: string;
       slippage_pct?: number;
+      close_all_at_end?: boolean;
       opt_grid?: {
         config?: unknown;
         arms?: { lane: string; values: Record<string, number> }[];
@@ -4803,6 +4832,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
         date_from: period.date_from,
         date_to: period.date_to,
         slippage_pct: period.slippage_pct ?? 0,
+        close_all_at_end: period.close_all_at_end !== false,
         opt_grid: period.opt_grid ?? null,
       })
       .subscribe({

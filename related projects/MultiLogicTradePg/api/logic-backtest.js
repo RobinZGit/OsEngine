@@ -2173,9 +2173,22 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
       }
     }
 
-    // #1040: позиции в конце НЕ продаём — equity считается по снимкам
-    // logic_backtest_equity_points с переоценкой открытых позиций на каждом баре.
-    // Финрез прогона = изменение equity (включая нереализованный P&L).
+    // #1040: equity считается по снимкам logic_backtest_equity_points с переоценкой
+    // открытых позиций на каждом баре. #1061: при включённой галочке (default TRUE)
+    // последним актом теста становится ликвидация всех позиций (как в #1039).
+    const { rows: closeOptRows } = await pool.query(
+      `SELECT COALESCE(close_all_at_end, TRUE) AS close_all_at_end
+       FROM logic_backtest_runs WHERE id = $1`,
+      [runId]
+    );
+    if (closeOptRows[0]?.close_all_at_end !== false && bars.length > 0) {
+      const { rows: liqRows } = await pool.query(
+        `SELECT logic_backtest_close_all_except_funds($1, $2, $3, $4, $5::timestamp, $6::numeric) AS balance`,
+        [runId, logicId, logic.account_id, tfId, bars[bars.length - 1], balance]
+      );
+      const closedBalance = Number(liqRows[0]?.balance);
+      if (Number.isFinite(closedBalance)) balance = closedBalance;
+    }
     let pnl = await sumTestPnl(pool, logicId, runId);
     const { rows: eqRows } = await pool.query(
       `
@@ -2401,7 +2414,9 @@ async function finishCancelled(pool, runId, logicId, balance, processed, total) 
   schedulePersistBacktestReport(pool, runId, { isSnapshot: false });
 }
 
-async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null, slippagePct = 0) {
+async function startBacktest(
+  pool, logicId, dateFrom, dateTo, optGrid = null, slippagePct = 0, closeAllAtEnd = true
+) {
   const arms =
     optGrid && Array.isArray(optGrid.arms) && optGrid.arms.length > 0
       ? optGrid.arms.map((a) => ({
@@ -2421,7 +2436,7 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null, sl
     `
     INSERT INTO logic_backtest_runs (
       logic_id, date_from, date_to, status, progress_pct, phase_message, started_at,
-      slippage_pct,
+      slippage_pct, close_all_at_end,
       opt_grid_config, opt_grid_arms
     )
     VALUES (
@@ -2429,6 +2444,7 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null, sl
       CASE WHEN $4::jsonb IS NOT NULL THEN 'Старт (тест + оптимизация)' ELSE 'Старт' END,
       CURRENT_TIMESTAMP,
       $6::numeric,
+      $7::boolean,
       $5::jsonb,
       $4::jsonb
     )
@@ -2441,6 +2457,7 @@ async function startBacktest(pool, logicId, dateFrom, dateTo, optGrid = null, sl
       arms ? JSON.stringify(arms) : null,
       config ? JSON.stringify(config) : null,
       slippagePct ?? 0,
+      closeAllAtEnd !== false,
     ]
   );
   const runId = rows[0].id;
@@ -2484,6 +2501,7 @@ async function getBacktestStatus(pool, logicId, runId) {
       financial_result::float8 AS financial_result,
       cancel_requested, error_message, started_at, finished_at, created_at,
       slippage_pct::float8 AS slippage_pct,
+      close_all_at_end,
       (opt_grid_arms IS NOT NULL AND jsonb_typeof(opt_grid_arms) = 'array'
         AND jsonb_array_length(opt_grid_arms) > 0) AS opt_grid_enabled,
       opt_grid_results

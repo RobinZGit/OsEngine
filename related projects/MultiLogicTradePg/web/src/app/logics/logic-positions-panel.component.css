@@ -565,6 +565,14 @@
   font-size: 0.85rem;
 }
 
+/* Переопределяет .backtest-dialog label (0,1,1): чекбокс и текст в одну строку. */
+.backtest-dialog label.backtest-close-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
 .backtest-dialog-actions {
   display: flex;
   gap: 0.5rem;

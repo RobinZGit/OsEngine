@@ -114,6 +114,8 @@ export interface BacktestReportModel {
   long: SideStats;
   short: SideStats;
   equitySvg: string;
+  /** #1062: ступенчатый график открытий/закрытий по часам (SVG или empty-chart). */
+  hourlyOpenCloseSvg: string;
   topWins: ClosedDeal[];
   topLosses: ClosedDeal[];
   dealCount: number;
@@ -496,6 +498,89 @@ function equitySparklineSvg(
   <line x1="${pad}" y1="${zeroY.toFixed(1)}" x2="${w - pad}" y2="${zeroY.toFixed(1)}" stroke="#cbd5e1" stroke-dasharray="4 4"/>
   <polyline fill="none" stroke="${stroke}" stroke-width="2.5" points="${coords.join(' ')}"/>
 </svg>`;
+}
+
+/**
+ * #1062: счётчики открытий/закрытий по 5-минутным бакетам часа (0..23).
+ * Статистика отчёта исключает shadow и paper-ветки OPT — здесь то же правило.
+ */
+const HOURLY_BUCKETS = 24 * 12;
+
+export function hourlyOpenCloseCounts(trades: LogicTradeRow[]): {
+  open: number[];
+  close: number[];
+  matched: number;
+} {
+  const open: number[] = new Array(HOURLY_BUCKETS).fill(0);
+  const close: number[] = new Array(HOURLY_BUCKETS).fill(0);
+  let matched = 0;
+  for (const t of trades ?? []) {
+    if (!t || t.is_shadow || (t.opt_lane && String(t.opt_lane) !== '')) continue;
+    if (t.status !== 'filled' && t.status !== 'submitted') continue;
+    const side = String(t.side_name || '').toLowerCase();
+    const bucket: number[] | null = side === 'open' ? open : side === 'close' ? close : null;
+    if (!bucket) continue;
+    const dt = String(t.bar_dt || t.executed_at || '');
+    const m = dt.match(/(\d{2}):(\d{2})/);
+    if (!m) continue;
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    if (hour > 23 || minute > 59) continue;
+    bucket[hour * 12 + Math.floor(minute / 5)] += 1;
+    matched += 1;
+  }
+  return { open, close, matched };
+}
+
+/** Две ступенчатые линии на одном графике: open — зелёная, close — красная. */
+export function hourlyOpenCloseSvg(trades: LogicTradeRow[]): string {
+  const { open, close, matched } = hourlyOpenCloseCounts(trades);
+  if (matched === 0) {
+    return '<div class="empty-chart">Нет сделок открытия/закрытия для графика по часам</div>';
+  }
+  const w = 720;
+  const h = 210;
+  const left = 42;
+  const right = 12;
+  const top = 12;
+  const bottom = 32;
+  const max = Math.max(1, ...open, ...close);
+  const X = (i: number): number => left + (i / HOURLY_BUCKETS) * (w - left - right);
+  const Y = (v: number): number => top + (1 - v / max) * (h - top - bottom);
+  const ticks = [...new Set([0, Math.round(max / 2), max])].sort((a, b) => a - b);
+  const parts: string[] = [
+    `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Открытия и закрытия по часам">`,
+  ];
+  for (const t of ticks) {
+    const gy = Y(t);
+    parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
+    parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
+  }
+  for (let hour = 0; hour <= 24; hour += 1) {
+    const gx = X(hour * 12);
+    parts.push(`<line x1="${gx.toFixed(1)}" y1="${top}" x2="${gx.toFixed(1)}" y2="${h - bottom}" stroke="#e2e8f0"/>`);
+    parts.push(`<text x="${gx.toFixed(1)}" y="${h - bottom + 14}" text-anchor="middle" font-size="9" fill="#64748b">${hour}</text>`);
+  }
+  const stepped = (values: number[], color: string): string => {
+    const pts: string[] = [];
+    for (let i = 0; i < HOURLY_BUCKETS; i += 1) {
+      const y = Y(values[i]).toFixed(1);
+      pts.push(`${X(i).toFixed(1)},${y}`);
+      pts.push(`${X(i + 1).toFixed(1)},${y}`);
+    }
+    return `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts.join(' ')}"/>`;
+  };
+  parts.push(stepped(open, '#16a34a'));
+  parts.push(stepped(close, '#dc2626'));
+  parts.push('</svg>');
+  parts.push(
+    '<div class="pchart-legend">' +
+      '<span><span class="pl-swatch" style="background:#16a34a"></span>Открытия (open)</span>' +
+      '<span><span class="pl-swatch" style="background:#dc2626"></span>Закрытия (close)</span>' +
+      '<span class="muted">часы 0–24, шаг 5 мин, все дни теста</span>' +
+      '</div>'
+  );
+  return parts.join('\n');
 }
 
 /* ============= Пер-бумажные блоки отчёта (#848) ============= */
@@ -1541,6 +1626,7 @@ export function buildBacktestReportModel(
     long: computeSideStats(longDeals, initial, rate, false, num(logic.commission_pct)),
     short: computeSideStats(shortDeals, initial, rate, false, num(logic.commission_pct)),
     equitySvg: equitySparklineSvg(trades, opts.backtestRun?.date_from),
+    hourlyOpenCloseSvg: hourlyOpenCloseSvg(trades),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
     dealCount: allDeals.length,
@@ -2104,6 +2190,11 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
           ${rows}
         </tbody>
       </table>
+    </section>
+
+    <section>
+      <h2>Количество открытие закрытие по часам</h2>
+      <div class="chart">${model.hourlyOpenCloseSvg}</div>
     </section>
 
     <section>

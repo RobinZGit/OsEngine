@@ -34,6 +34,14 @@
             <span>%</span>
           </span>
         </label>
+        <label class="backtest-close-row" title="Последним актом теста станет закрытие всех открытых позиций">
+          <input
+            type="checkbox"
+            id="closeAllAtEnd"
+            [(ngModel)]="closeAllAtEnd"
+          />
+          <span for="closeAllAtEnd">По окончании теста закрыть все позиции</span>
+        </label>
         <div class="backtest-dialog-actions">
           <button type="button" class="btn btn-sm btn-ok" (click)="confirmRunDialog()">OK</button>
           <button type="button" class="btn btn-sm btn-muted" (click)="closeRunDialog()">Отмена</button>

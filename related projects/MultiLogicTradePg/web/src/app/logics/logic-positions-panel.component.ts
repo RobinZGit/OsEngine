@@ -119,6 +119,9 @@ export interface BacktestRunStatus {
   /** Проскальзывание теста (%): 0 = выкл., иначе цена каждой сделки сдвигается случайно от -N% до +N%. */
   slippage_pct?: number | null;
 
+  /** #1061: последним актом прогона было закрытие всех позиций. */
+  close_all_at_end?: boolean;
+
   error_message: string | null;
 
   /** Same test run hosted offline grid (paper opt_lanes). */
@@ -240,6 +243,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     date_from: string;
     date_to: string;
     slippage_pct: number;
+    close_all_at_end: boolean;
     opt_grid?: { config: { params: OptGridParamRow[] }; arms: ReturnType<typeof buildOptGridArms> } | null;
   }>();
 
@@ -300,6 +304,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   slippageEnabled = false;
 
   slippagePct = 0.2;
+
+  /** #1061: по окончании теста закрыть все позиции — включено по умолчанию. */
+  closeAllAtEnd = true;
 
   /** Same test run: also trade paper grid lanes. */
   optimizeEnabled = false;
@@ -1395,6 +1402,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
       date_from: this.periodFrom,
       date_to: this.periodTo,
       slippage_pct: this.slippageEnabled ? this.slippagePct : 0,
+      close_all_at_end: this.closeAllAtEnd,
       opt_grid,
     });
   }

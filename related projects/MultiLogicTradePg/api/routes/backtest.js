@@ -102,13 +102,16 @@ app.post('/api/logic-backtest/start', async (req, res) => {
     const slippage = Number.isFinite(slippagePct)
       ? Math.min(100, Math.max(0, slippagePct))
       : 0;
+    // #1061: галочка «По окончании теста закрыть все позиции» — включена по умолчанию.
+    const closeAllAtEnd = req.body?.close_all_at_end !== false;
     const runId = await startBacktest(
       pool,
       logicId,
       dateFrom,
       dateTo,
       optGrid,
-      slippage
+      slippage,
+      closeAllAtEnd
     );
     res.status(202).json({ ok: true, run_id: runId });
   } catch (err) {
