@@ -674,6 +674,18 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   activeProcesses(): ProcessStatusItem[] {
+    // Рабочий процесс включённой логики берём из загруженного списка логик,
+    // а не из pg_stat_activity: там строка исчезает, как только запрос ушёл в idle.
+    // Пока is_enabled=TRUE чип есть всегда; он первый и не выпадает из slice.
+    const work: ProcessStatusItem[] = this.logics
+      .filter((l) => l.is_enabled)
+      .map((l) => ({
+        type: 'trade',
+        label: `Работа: ${l.name}`,
+        status: 'enabled',
+        detail: `Логика #${l.id} включена`,
+        logic_id: l.id,
+      }));
     const local: ProcessStatusItem[] = [];
     for (const s of this.ratingPrecalcByLogic.values()) {
       if (s.status === 'pending' || s.status === 'running') {
@@ -687,15 +699,16 @@ export class LogicsComponent implements OnInit, OnDestroy {
         });
       }
     }
-    return [...this.processRows, ...local].slice(0, 12);
+    return [...work, ...local, ...this.processRows].slice(0, 12);
   }
 
   hasActiveProcesses(): boolean {
     return this.activeProcesses().length > 0 || !!this.processError;
   }
 
-  /** #1052: клик по тестовому процессу — свернуть остальные логики, раскрыть
-      нужную и прокрутить список к её строке (развёрнута всегда только одна). */
+  /** #1052: клик по чипу процесса (тест или включённая логика) — свернуть
+      остальные логики, раскрыть нужную и прокрутить список к её строке
+      (развёрнута всегда только одна). */
   focusLogicFromProcess(p: ProcessStatusItem, event?: Event): void {
     event?.preventDefault();
     event?.stopPropagation();
@@ -729,7 +742,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     const base = [p.label, p.status, p.detail, p.wait, p.age]
       .filter(Boolean)
       .join(' · ');
-    // #1053: подсказка для кликабельного чипа тестового процесса.
+    // #1053: подсказка для любого кликабельного чипа (тест / рабочая логика).
     return p?.logic_id
       ? `${base} · Кликните, чтобы перейти к логике`
       : base;

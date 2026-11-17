@@ -88,7 +88,7 @@
 
   <!-- Fixed height: chips scroll horizontally — table/logics never jump when processes appear. -->
   <section class="process-strip" aria-label="Активные процессы">
-    <div class="process-strip-head" title="PostgreSQL / тесты / расчёты Angular">
+    <div class="process-strip-head" title="Включённые логики / PostgreSQL / тесты / расчёты Angular">
       <strong>Процессы</strong>
     </div>
     <div class="process-strip-chips">
@@ -99,7 +99,8 @@
         <span
           class="process-chip"
           [class.process-chip-warn]="p.type === 'postgres'"
-          [class.process-chip-link]="!!p.logic_id"
+          [class.process-chip-link]="!!p.logic_id && p.type !== 'trade'"
+          [class.process-chip-work]="p.type === 'trade'"
           [attr.role]="p.logic_id ? 'button' : null"
           [attr.tabindex]="p.logic_id ? 0 : null"
           [title]="processTitle(p)"

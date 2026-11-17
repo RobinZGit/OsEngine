@@ -452,25 +452,49 @@
   background: #fffbeb;
 }
 
-/* #1052/#1054: чип тестового процесса кликабелен и выделен цветом —
-   ведёт к строке логики, поэтому отличается от остальных процессов. */
+/* #1052/#1054: чип тестового процесса кликабелен и жёлтый — как полоса
+   идущего теста в строке логики (.row-testing). Ведёт к строке логики. */
 .process-chip-link {
   cursor: pointer;
-  border-color: #a78bfa;
-  background: #f5f3ff;
-  color: #4c1d95;
+  border-color: #f59e0b;
+  background: #fde68a;
+  color: #92400e;
   font-weight: 600;
 }
 
 .process-chip-link .process-dot {
-  background: #7c3aed;
+  background: #f59e0b;
 }
 
 .process-chip-link:hover,
 .process-chip-link:focus-visible {
-  border-color: #7c3aed;
-  background: #ede9fe;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.22);
+  border-color: #d97706;
+  background: #fcd34d;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.28);
+  outline: none;
+}
+
+/* #1059: рабочий процесс включённой логики — ярко-зелёный, заметнее
+   тестового; клик ведёт к раскрытию этой логики (по клику разворачиваем). */
+.process-chip-work {
+  cursor: pointer;
+  border-color: #22c55e;
+  background: #dcfce7;
+  color: #14532d;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.28), 0 0 6px rgba(34, 197, 94, 0.4);
+}
+
+.process-chip-work .process-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.35), 0 0 5px rgba(34, 197, 94, 0.75);
+}
+
+.process-chip-work:hover,
+.process-chip-work:focus-visible {
+  border-color: #16a34a;
+  background: #bbf7d0;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.38), 0 0 9px rgba(34, 197, 94, 0.5);
   outline: none;
 }
 
