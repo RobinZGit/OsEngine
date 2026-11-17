@@ -1736,6 +1736,29 @@ WHERE lp.logic_id = l.id
   AND lower(COALESCE(a.account_type, 'fake')) <> 'fake'
   AND lp.param_key IN ('initial_balance', 'current_balance');
 
+-- #1064: paper-логики с пустыми initial/current не создают сделки:
+-- logic_ensure_balance() = NULL → sizing base = 0 → qty = 0 (33978 DONCHIAN-OC).
+-- Ставим 1000000 только если ОБА баланса пустые. Явные '0', PnL и real-счета
+-- (баланс синхронизируется с брокера в 02) не трогаем. Повторный прогон безопасен.
+UPDATE logic_params lp
+SET param_value = '1000000',
+    value_type = 'money',
+    updated_at = CURRENT_TIMESTAMP
+FROM logics l
+LEFT JOIN accounts a ON a.id = l.account_id
+WHERE lp.logic_id = l.id
+  AND lower(COALESCE(a.account_type, 'fake')) = 'fake'
+  AND lp.param_key IN ('initial_balance', 'current_balance')
+  AND btrim(COALESCE(lp.param_value, '')) = ''
+  AND NOT EXISTS (
+      SELECT 1
+      FROM logic_params other
+      WHERE other.logic_id = l.id
+        AND other.param_key <> lp.param_key
+        AND other.param_key IN ('initial_balance', 'current_balance')
+        AND btrim(COALESCE(other.param_value, '')) <> ''
+  );
+
 -- Демо SMA: параметры в logic_params
 INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
 SELECT l.id, v.param_key, v.param_value, v.value_type
