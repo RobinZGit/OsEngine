@@ -994,6 +994,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   /** Класс чекбокса «включено»: зелёный пульс (ок) / красный (цикл спит или тень портфеля). */
   enableCheckClass(row: LogicRow): Record<string, boolean> {
+    const realAccount = row.account_type !== 'fake';
     if (!row.is_enabled) {
       return { 'enable-check': true };
     }
@@ -1001,6 +1002,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       return {
         'enable-check': true,
         'enable-check--stale': true,
+        'enable-check--real': realAccount,
       };
     }
     const alive = this.isLogicTradeAlive(row);
@@ -1008,7 +1010,15 @@ export class LogicsComponent implements OnInit, OnDestroy {
       'enable-check': true,
       'enable-check--ok': alive === true,
       'enable-check--stale': alive === false,
+      'enable-check--real': realAccount,
     };
+  }
+
+  /** Процесс относится к логике на реальном счёте (не fake). */
+  isProcessLogicReal(p: ProcessStatusItem): boolean {
+    if (!p?.logic_id) return false;
+    const logic = this.logics.find((l) => l.id === p.logic_id);
+    return !!logic && logic.account_type !== 'fake';
   }
 
   enableCheckTitle(row: LogicRow): string {

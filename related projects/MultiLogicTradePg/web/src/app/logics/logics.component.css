@@ -514,6 +514,20 @@
   outline: none;
 }
 
+/* Логика на реальном счёте (не фейк): чипы теста/работы — тот же цвет, но красная обводка. */
+.process-chip.process-chip-real {
+  outline: 2px solid #dc2626;
+  outline-offset: 0;
+}
+
+.process-chip-link.process-chip-real:hover,
+.process-chip-link.process-chip-real:focus-visible,
+.process-chip-work.process-chip-real:hover,
+.process-chip-work.process-chip-real:focus-visible {
+  outline: 2px solid #dc2626;
+  outline-offset: 0;
+}
+
 .process-error {
   border-color: #fca5a5;
   background: #fef2f2;
@@ -1570,6 +1584,37 @@ tbody tr.logic-main-row:hover {
   50% {
     box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.2);
     filter: brightness(1.35);
+  }
+}
+
+/* Включённая логика на реальном счёте: галочка остаётся зелёной, но обведена красным. */
+.enable-check--real {
+  accent-color: #16a34a;
+  outline: 2px solid #dc2626;
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+.enable-check--ok.enable-check--real {
+  accent-color: #16a34a;
+  outline-color: #dc2626;
+  animation: enable-check-real-ok-pulse 1.6s ease-in-out infinite;
+}
+
+.enable-check--stale.enable-check--real {
+  accent-color: #dc2626;
+  outline-color: #dc2626;
+}
+
+@keyframes enable-check-real-ok-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2);
+    filter: brightness(1.15);
   }
 }
 

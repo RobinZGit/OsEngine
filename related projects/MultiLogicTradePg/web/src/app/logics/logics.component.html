@@ -101,6 +101,7 @@
           [class.process-chip-warn]="p.type === 'postgres'"
           [class.process-chip-link]="!!p.logic_id && p.type !== 'trade'"
           [class.process-chip-work]="p.type === 'trade'"
+          [class.process-chip-real]="isProcessLogicReal(p)"
           [attr.role]="p.logic_id ? 'button' : null"
           [attr.tabindex]="p.logic_id ? 0 : null"
           [title]="processTitle(p)"
