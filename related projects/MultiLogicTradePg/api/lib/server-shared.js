@@ -1068,7 +1068,17 @@ async function enrichAccountBalance(row) {
     terminal_cash: row.terminal_cash != null ? Number(row.terminal_cash) : null,
   };
   if (row.account_type === 'fake') {
-    base.balance_display = 'демо';
+    const cashRaw = row.terminal_cash != null ? Number(row.terminal_cash) : 0;
+    const cash = Number.isFinite(cashRaw) ? cashRaw : 0;
+    base.balance = cash;
+    base.cash_amount = cash;
+    base.balance_currency = 'RUB';
+    base.balance_display =
+      cash.toLocaleString('ru-RU', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }) + ' ₽';
+    base.balance_error = null;
     return base;
   }
   if (!row.has_token) {

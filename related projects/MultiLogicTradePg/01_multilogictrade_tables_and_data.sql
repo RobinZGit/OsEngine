@@ -4248,7 +4248,7 @@ DECLARE
     v_side TEXT;
     v_action TEXT;
     v_amount NUMERIC;
-    v_commission NUMERIC := COALESCE(NEW.commission, 0);
+    v_commission NUMERIC;
 BEGIN
     IF COALESCE(NEW.is_test, TRUE)
        OR COALESCE(NEW.is_shadow, FALSE)
@@ -4257,12 +4257,23 @@ BEGIN
         RETURN NEW;
     END IF;
     SELECT account_type INTO v_type FROM accounts WHERE id = NEW.account_id;
-    IF COALESCE(v_type, '') <> 'fake' THEN
+    IF lower(COALESCE(v_type, '')) <> 'fake' THEN
         RETURN NEW;
     END IF;
     SELECT name INTO v_side FROM sides WHERE id = NEW.side_id;
     SELECT name INTO v_action FROM actions WHERE id = NEW.action_id;
-    v_amount := NEW.quantity * NEW.price;
+    v_amount := COALESCE(NEW.quantity, 0) * COALESCE(NEW.price, 0);
+    -- Для симулированных (фейковых) сделок комиссия берётся как в logic_trade_finalize,
+    -- чтобы остаток был верным даже если финализация обновит commission позже/отдельно.
+    IF COALESCE(NEW.is_simulated, FALSE) THEN
+        v_commission := COALESCE(
+            logic_trade_calc_commission(NEW.logic_id, v_amount),
+            COALESCE(NEW.commission, 0),
+            0
+        );
+    ELSE
+        v_commission := COALESCE(NEW.commission, 0);
+    END IF;
     IF v_side = 'Open' AND v_action = 'Long' THEN
         UPDATE accounts SET terminal_cash = COALESCE(terminal_cash, 0) - (v_amount + v_commission),
             updated_at = now() WHERE id = NEW.account_id;
@@ -4277,23 +4288,25 @@ BEGIN
             updated_at = now() WHERE id = NEW.account_id;
     END IF;
 
-    -- #1065: старый параметр логики — зеркало остатка счёта (для UI логики).
-    IF NEW.logic_id IS NOT NULL THEN
-        UPDATE logic_params lp
-        SET param_value = (SELECT COALESCE(a.terminal_cash, 0)::TEXT
-                           FROM accounts a WHERE a.id = NEW.account_id),
-            value_type = 'money',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE lp.logic_id = NEW.logic_id
-          AND lp.param_key = 'current_balance';
-        IF NOT FOUND THEN
-            INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
-            SELECT NEW.logic_id, 'current_balance',
-                   COALESCE(a.terminal_cash, 0)::TEXT, 'money'
-            FROM accounts a WHERE a.id = NEW.account_id
-            ON CONFLICT (logic_id, param_key) DO NOTHING;
-        END IF;
-    END IF;
+    -- #1065: зеркало остатка счёта во все логики этого счёта.
+    UPDATE logic_params lp
+    SET param_value = (SELECT COALESCE(a.terminal_cash, 0)::TEXT
+                       FROM accounts a WHERE a.id = NEW.account_id),
+        value_type = 'money',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE lp.logic_id IN (SELECT l.id FROM logics l WHERE l.account_id = NEW.account_id)
+      AND lp.param_key = 'current_balance';
+    INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+    SELECT l.id, 'current_balance',
+           (SELECT COALESCE(a.terminal_cash, 0)::TEXT FROM accounts a WHERE a.id = NEW.account_id),
+           'money'
+    FROM logics l
+    WHERE l.account_id = NEW.account_id
+    ON CONFLICT (logic_id, param_key) DO UPDATE
+      SET param_value = EXCLUDED.param_value,
+          value_type = EXCLUDED.value_type,
+          updated_at = CURRENT_TIMESTAMP;
+
     RETURN NEW;
 END;
 $$;

@@ -146,9 +146,25 @@
   cursor: not-allowed;
 }
 
+.icon-report {
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+.icon-report:hover:not(:disabled) {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  color: #075985;
+}
+
+.icon-report:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .col-actions {
-  width: 8.5rem;
-  min-width: 8.5rem;
+  width: 10rem;
+  min-width: 10rem;
   white-space: nowrap;
   text-align: right;
   overflow: visible;
@@ -297,7 +313,7 @@
 
 .table-wrap > table th.col-export,
 .table-wrap > table td.col-export {
-  right: 8.5rem;
+  right: 10rem;
 }
 
 /* Always paint sticky ends from the row token (init / expand / hover / testing). */

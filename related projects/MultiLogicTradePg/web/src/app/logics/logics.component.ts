@@ -2,7 +2,7 @@ import { Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, Chan
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { Subject, exhaustMap, takeUntil, timer, forkJoin, of, timeout } from 'rxjs';
+import { Subject, exhaustMap, firstValueFrom, forkJoin, of, takeUntil, timeout, timer } from 'rxjs';
 import { catchError, debounceTime, filter, finalize, map } from 'rxjs/operators';
 import {
   BacktestReportListItem,
@@ -84,6 +84,11 @@ import type {
   ProcessStatusItem,
   SignalRatingPrecalcStatus,
 } from '../services/logics.service';
+import {
+  buildBacktestReportModel,
+  openBacktestReportWindow,
+  renderBacktestReportHtml,
+} from './backtest-report';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -1564,9 +1569,76 @@ export class LogicsComponent implements OnInit, OnDestroy {
   }
 
   private lightningBusyIds = new Set<number>();
+  private liveReportLoadingIds = new Set<number>();
 
   isLightningBusy(logicId: number): boolean {
     return this.lightningBusyIds.has(logicId);
+  }
+
+  isLiveReportLoading(logicId: number): boolean {
+    return this.liveReportLoadingIds.has(logicId);
+  }
+
+  /** Отчёт по реальной торговле (live, не тест) с начала периода торговли логики. */
+  async openLiveReport(row: LogicRow, event: Event): Promise<void> {
+    event.stopPropagation();
+    if (this.liveReportLoadingIds.has(row.id)) return;
+    this.liveReportLoadingIds.add(row.id);
+    this.cdr.markForCheck();
+    try {
+      const dump = await firstValueFrom(
+        this.logicsService.exportLogicTrades(row.id, false)
+      );
+      const trades = (dump?.trades ?? []) as LogicTradeRow[];
+      if (trades.length === 0) {
+        alert('Нет сделок реальной торговли для этой логики.');
+        return;
+      }
+
+      const tradeLots = new Map<number, LogicTradeLotRow[]>();
+      for (const lot of ((dump?.lots ?? []) as LogicTradeLotRow[])) {
+        const closeId = Number(lot.close_trade_id);
+        if (!Number.isFinite(closeId) || closeId <= 0) continue;
+        const arr = tradeLots.get(closeId);
+        if (arr) arr.push(lot);
+        else tradeLots.set(closeId, [lot]);
+      }
+
+      const dates = trades
+        .flatMap((t) => [t.bar_dt, t.executed_at, t.created_at])
+        .filter((d): d is string => !!d)
+        .map((d) => String(d).slice(0, 10))
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        .sort();
+      const dateFrom = dates[0] ?? null;
+      const dateTo = dates[dates.length - 1] ?? null;
+
+      // Для реального отчёта берём живой начальный баланс, а не тестовый.
+      const logicForReport: LogicRow = { ...row, test_initial_balance: null };
+      const model = buildBacktestReportModel(logicForReport, trades, {
+        backtestRun: {
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: 'completed',
+          progress_pct: 100,
+        },
+        tradeLots,
+      });
+      const html = renderBacktestReportHtml(model);
+      const title = `Отчёт (реальная торговля) — ${model.logicName}`;
+      if (!openBacktestReportWindow(html, title)) {
+        alert(
+          'Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.'
+        );
+      }
+    } catch (err) {
+      console.error('Ошибка генерации отчёта по реальной торговле: %O', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Не удалось сформировать отчёт по реальной торговле: ${msg}`);
+    } finally {
+      this.liveReportLoadingIds.delete(row.id);
+      this.cdr.markForCheck();
+    }
   }
 
   /** Молния (#960): проверить сигналы логики сейчас на последнем ЗАКРЫТОМ баре её ТФ (#990). */

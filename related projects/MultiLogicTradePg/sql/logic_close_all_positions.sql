@@ -172,13 +172,15 @@ DECLARE
     v_fill_price NUMERIC;
     v_sold_row JSONB;
     v_books_skip BOOLEAN;
+    v_cash_before NUMERIC;
+    v_demo_delta NUMERIC;
 BEGIN
     v_reason := COALESCE(
         NULLIF(btrim(p_trade_reason), ''),
         CASE WHEN p_except_cash_funds THEN 'eod.close' ELSE 'market:close_all' END
     );
 
-    SELECT l.id, l.account_id, a.account_type
+    SELECT l.id, l.account_id, lower(COALESCE(a.account_type, 'fake')) AS account_type
     INTO v_logic
     FROM logics l
     JOIN accounts a ON a.id = l.account_id
@@ -358,6 +360,15 @@ BEGIN
             END IF;
 
             IF NOT v_books_skip THEN
+            IF v_is_simulated THEN
+                SELECT COALESCE(terminal_cash, 0) INTO v_cash_before
+                FROM accounts
+                WHERE id = v_logic.account_id
+                FOR UPDATE;
+            ELSE
+                v_cash_before := NULL;
+            END IF;
+
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, position_event, signal_kind, signal_formula,
@@ -375,12 +386,25 @@ BEGIN
             IF v_status <> 'rejected' THEN
                 IF v_is_simulated AND v_balance IS NOT NULL THEN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
-                    v_notional := v_quantity * v_price;
-                    v_balance := v_balance + v_notional;
-                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSE
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 END IF;
+
+                IF v_is_simulated THEN
+                    SELECT COALESCE(commission, 0) INTO v_commission
+                    FROM logic_trades WHERE id = v_trade_id;
+                    -- Close Long: продаём лонг → +выручка, -комиссия.
+                    v_demo_delta := (v_quantity * v_price) - COALESCE(v_commission, 0);
+                    UPDATE accounts
+                    SET terminal_cash = COALESCE(v_cash_before, 0) + v_demo_delta,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = v_logic.account_id;
+                    v_balance := COALESCE(v_cash_before, 0) + v_demo_delta;
+                    PERFORM logic_mirror_account_cash(v_logic.account_id);
+                ELSE
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
+                END IF;
+
                 v_closed := v_closed + 1;
                 PERFORM logic_trade_log(
                     p_logic_id,
@@ -510,6 +534,15 @@ BEGIN
             END IF;
 
             IF NOT v_books_skip THEN
+            IF v_is_simulated THEN
+                SELECT COALESCE(terminal_cash, 0) INTO v_cash_before
+                FROM accounts
+                WHERE id = v_logic.account_id
+                FOR UPDATE;
+            ELSE
+                v_cash_before := NULL;
+            END IF;
+
             INSERT INTO logic_trades (
                 logic_id, account_id, security_id, timeframe_id,
                 side_id, action_id, position_event, signal_kind, signal_formula,
@@ -527,12 +560,25 @@ BEGIN
             IF v_status <> 'rejected' THEN
                 IF v_is_simulated AND v_balance IS NOT NULL THEN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
-                    v_notional := v_quantity * v_price;
-                    v_balance := v_balance - v_notional;
-                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSE
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 END IF;
+
+                IF v_is_simulated THEN
+                    SELECT COALESCE(commission, 0) INTO v_commission
+                    FROM logic_trades WHERE id = v_trade_id;
+                    -- Close Short: откуп шорта → -сумма, -комиссия.
+                    v_demo_delta := -((v_quantity * v_price) + COALESCE(v_commission, 0));
+                    UPDATE accounts
+                    SET terminal_cash = COALESCE(v_cash_before, 0) + v_demo_delta,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = v_logic.account_id;
+                    v_balance := COALESCE(v_cash_before, 0) + v_demo_delta;
+                    PERFORM logic_mirror_account_cash(v_logic.account_id);
+                ELSE
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
+                END IF;
+
                 v_closed := v_closed + 1;
                 PERFORM logic_trade_log(
                     p_logic_id,
