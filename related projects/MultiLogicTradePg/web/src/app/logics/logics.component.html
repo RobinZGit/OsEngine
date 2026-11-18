@@ -1610,6 +1610,16 @@
 
                           <button
                             type="button"
+                            class="btn btn-sm"
+                            title="Подобрать фильтры по существующим сделкам (анализ финрезультата)"
+                            [disabled]="filterAnalysisLoading || filterAnalysisAnalyzing"
+                            (click)="openFilterAnalysis(row.id, $event)"
+                          >
+                            Подобрать фильтры
+                          </button>
+
+                          <button
+                            type="button"
                             class="btn btn-sm btn-muted"
                             title="Вернуть базы параметров сигналов к значениям по умолчанию и очистить бумажную книгу OPT"
                             [disabled]="isOptResetting(row.id)"
@@ -1662,6 +1672,148 @@
                         с задержкой, как обычно (сделка или сигнал в терминал). Разверните строку сигнала —
                         список бумаг и график.
                       </p>
+
+                      @if (isFilterAnalysisOpen(row.id)) {
+                        <div class="filter-analysis-modal">
+                          <div class="filter-analysis-head">
+                            <div>
+                              <strong>Подобрать фильтры</strong>
+                              @if (filterAnalysisContext) {
+                                <span class="filter-analysis-sub">
+                                  Сделки: {{ scopeLabel(filterAnalysisContext.scope) }},
+                                  завершённых открытий (лоты): {{ filterAnalysisContext.baseline.completed_opens }},
+                                  лотов: {{ filterAnalysisContext.baseline.lots }},
+                                  базовый финрез: {{ filterAnalysisContext.baseline.pnl | number:'1.2-2' }}
+                                </span>
+                              }
+                            </div>
+                            <button type="button" class="btn btn-sm" (click)="closeFilterAnalysis()" [disabled]="filterAnalysisAnalyzing || filterAnalysisApplying">×</button>
+                          </div>
+
+                          @if (filterAnalysisLoading) {
+                            <p class="picker-hint">Загрузка данных для анализа…</p>
+                          } @else if (filterAnalysisError && !filterAnalysisContext) {
+                            <p class="error-msg">{{ filterAnalysisError }}</p>
+                          } @else if (filterAnalysisContext) {
+                            @if (!filterAnalysisContext.enough) {
+                              <p class="error-msg">
+                                Недостаточно завершённых сделок для анализа: {{ filterAnalysisContext.baseline.completed_opens }} из {{ filterAnalysisContext.min_required }}.
+                                Нужны боевые сделки с финрезультатом (или тестовые, если боевых нет/мало).
+                              </p>
+                            } @else {
+                              @if (!filterAnalysisResult) {
+                                <p class="picker-hint">
+                                  Выберите индикаторы-фильтры и при необходимости измените параметры по умолчанию, затем нажмите «Подобрать».
+                                  SMA отмечен по умолчанию. Проверяются условия тренд/контртренд (по сигналам индикатора) на баре открытия; отсеянное открытие исключается вместе с соответствующей частью лотов (FIFO).
+                                </p>
+                                <div class="filter-analysis-list">
+                                  @for (c of filterAnalysisContext.candidates; track c.indicator_id) {
+                                    <div class="filter-candidate" [class.is-default]="c.is_default">
+                                      <label class="filter-candidate-head">
+                                        <input
+                                          type="checkbox"
+                                          [checked]="filterAnalysisSelectedIndicatorIds.has(c.indicator_id)"
+                                          (change)="toggleFilterAnalysisIndicator(c.indicator_id, $any($event.target).checked)"
+                                        />
+                                        <span class="picker-code">{{ c.indicator_code }}</span>
+                                        <span class="picker-name">{{ c.indicator_name }}</span>
+                                        @if (c.is_default) { <span class="filter-badge">по умолчанию</span> }
+                                      </label>
+                                      @if (filterAnalysisSelectedIndicatorIds.has(c.indicator_id)) {
+                                        <div class="filter-candidate-params">
+                                          @for (key of filterParamKeys(c); track key) {
+                                            <label class="filter-param-field">
+                                              <span>{{ key }}</span>
+                                              <input
+                                                type="text"
+                                                [ngModel]="getFilterParamValue(c, key)"
+                                                (ngModelChange)="onFilterAnalysisParamChange(c.indicator_code, key, $event)"
+                                                [ngModelOptions]="{standalone: true}"
+                                              />
+                                            </label>
+                                          }
+                                          <div class="filter-candidate-formulas">
+                                            @if (c.trend_formula) { <div><span class="filter-dir-tag">тренд</span> <code>{{ c.trend_formula }}</code></div> }
+                                            @if (c.counter_formula) { <div><span class="filter-dir-tag">контртренд</span> <code>{{ c.counter_formula }}</code></div> }
+                                          </div>
+                                        </div>
+                                      }
+                                    </div>
+                                  }
+                                </div>
+                              } @else {
+                                <p class="picker-hint">
+                                  База: {{ filterAnalysisResult.baseline.pnl | number:'1.2-2' }} ({{ scopeLabel(filterAnalysisResult.scope) }}, открытий {{ filterAnalysisResult.baseline.completed_opens }}, лотов {{ filterAnalysisResult.baseline.lots }}).
+                                  Эффективность = (P&L с фильтром − P&L базы) / |P&L базы|. Направление можно изменить перед применением.
+                                </p>
+                                @if (filterAnalysisResult.note) {
+                                  <p class="filter-analysis-note">{{ filterAnalysisResult.note }}</p>
+                                }
+                                <div class="filter-analysis-results-wrap">
+                                  <table class="filter-analysis-results">
+                                    <thead>
+                                      <tr>
+                                        <th>Применить</th>
+                                        <th>Индикатор</th>
+                                        <th>Параметры</th>
+                                        <th>Направление</th>
+                                        <th>Эффективность</th>
+                                        <th>Δ P&L</th>
+                                        <th>P&L с фильтром</th>
+                                        <th>Отсечено откр./лотов</th>
+                                        <th>Нет данных (откр.)</th>
+                                        <th>Формула</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      @for (c of filterAnalysisResult.candidates; track c.indicator_id) {
+                                        <tr [class.positive]="(getFilterDirectionResult(c)?.efficiency_pct ?? 0) > 0" [class.negative]="(getFilterDirectionResult(c)?.efficiency_pct ?? 0) < 0">
+                                          <td>
+                                            <input type="checkbox" [checked]="filterAnalysisApplySelectedIds.has(c.indicator_id)" (change)="toggleFilterApplySelection(c.indicator_id, $any($event.target).checked)" />
+                                          </td>
+                                          <td><span class="picker-code">{{ c.indicator_code }}</span> {{ c.indicator_name }}</td>
+                                          <td class="mono-cell"><code>{{ c.params | json }}</code></td>
+                                          <td>
+                                            <select [ngModel]="getFilterResultDirection(c)" (ngModelChange)="setFilterResultDirection(c.indicator_id, $event)" [ngModelOptions]="{standalone: true}">
+                                              <option value="trend">тренд</option>
+                                              <option value="counter">контртренд</option>
+                                            </select>
+                                          </td>
+                                          <td class="num-cell"><strong>{{ formatEfficiencyPct(getFilterDirectionResult(c)?.efficiency_pct) }}</strong></td>
+                                          <td class="num-cell">{{ getFilterDirectionResult(c)?.delta_pnl | number:'1.2-2' }}</td>
+                                          <td class="num-cell">{{ getFilterDirectionResult(c)?.pnl_with_filter | number:'1.2-2' }}</td>
+                                          <td class="num-cell">{{ getFilterDirectionResult(c)?.opens_excluded ?? 0 }} / {{ getFilterDirectionResult(c)?.lots_excluded ?? 0 }}</td>
+                                          <td class="num-cell">{{ getFilterDirectionResult(c)?.missing_opens ?? 0 }}</td>
+                                          <td class="formula-cell"><code>{{ getFilterDirectionResult(c)?.formula }}</code></td>
+                                        </tr>
+                                      }
+                                    </tbody>
+                                  </table>
+                                </div>
+                              }
+                            }
+                          }
+
+                          @if (filterAnalysisError) {
+                            <p class="error-msg">{{ filterAnalysisError }}</p>
+                          }
+
+                          <div class="picker-actions filter-analysis-actions">
+                            <button type="button" class="btn btn-sm" (click)="closeFilterAnalysis()" [disabled]="filterAnalysisAnalyzing || filterAnalysisApplying">Отмена</button>
+                            @if (filterAnalysisContext?.enough && !filterAnalysisResult) {
+                              <button type="button" class="btn btn-sm btn-primary" (click)="runFilterAnalysis(row.id)" [disabled]="filterAnalysisAnalyzing || filterAnalysisLoading || filterAnalysisSelectedIndicatorIds.size === 0">
+                                {{ filterAnalysisAnalyzing ? 'Анализ…' : 'Подобрать' }}
+                              </button>
+                            }
+                            @if (filterAnalysisResult) {
+                              <button type="button" class="btn btn-sm" (click)="filterAnalysisResetToSelection()" [disabled]="filterAnalysisAnalyzing || filterAnalysisApplying">Назад к выбору</button>
+                              <button type="button" class="btn btn-sm btn-primary" (click)="applySelectedFilterAnalysis(row.id)" [disabled]="filterAnalysisApplying || filterAnalysisApplySelectedIds.size === 0">
+                                {{ filterAnalysisApplying ? 'Применение…' : 'Применить выбранные' }}
+                              </button>
+                            }
+                          </div>
+                        </div>
+                      }
 
                       @if (isPickerOpen(row.id) && signalPicker) {
 

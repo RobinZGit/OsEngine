@@ -6,6 +6,10 @@ import { Subject, exhaustMap, firstValueFrom, forkJoin, of, takeUntil, timeout, 
 import { catchError, debounceTime, filter, finalize, map } from 'rxjs/operators';
 import {
   BacktestReportListItem,
+  FilterAnalysisApplyItem,
+  FilterAnalysisCandidate,
+  FilterAnalysisContext,
+  FilterAnalysisResult,
   LightningDiagnostics,
   LogicsService,
   TradeRunnerHealth,
@@ -1317,6 +1321,19 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private optGridBestIds = new Set<number>();
   private optGridApplyingIds = new Set<number>();
 
+  // «Подобрать фильтры»
+  filterAnalysisOpenLogicId: number | null = null;
+  filterAnalysisLoading = false;
+  filterAnalysisAnalyzing = false;
+  filterAnalysisApplying = false;
+  filterAnalysisError: string | null = null;
+  filterAnalysisContext: FilterAnalysisContext | null = null;
+  filterAnalysisResult: FilterAnalysisResult | null = null;
+  filterAnalysisSelectedIndicatorIds = new Set<number>();
+  filterAnalysisParamsByCode: Record<string, Record<string, string | number>> = {};
+  filterAnalysisResultDirectionByIndicatorId: Record<number, 'trend' | 'counter'> = {};
+  filterAnalysisApplySelectedIds = new Set<number>();
+
   signalFormulasFor(logicId: number): string[] {
     return (this.logicSignals.get(logicId) ?? [])
       .filter((s) => s.is_active !== false)
@@ -1354,6 +1371,205 @@ export class LogicsComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  // ── Подобрать фильтры ──────────────────────────────────────────────
+  openFilterAnalysis(logicId: number, event: Event): void {
+    event.stopPropagation();
+    this.filterAnalysisOpenLogicId = logicId;
+    this.filterAnalysisLoading = true;
+    this.filterAnalysisAnalyzing = false;
+    this.filterAnalysisApplying = false;
+    this.filterAnalysisError = null;
+    this.filterAnalysisContext = null;
+    this.filterAnalysisResult = null;
+    this.filterAnalysisSelectedIndicatorIds = new Set<number>();
+    this.filterAnalysisParamsByCode = {};
+    this.filterAnalysisResultDirectionByIndicatorId = {};
+    this.filterAnalysisApplySelectedIds = new Set<number>();
+    if (!this.expandedLogics.has(logicId)) this.expandedLogics.add(logicId);
+    this.expandedSignalsBlocks.add(logicId);
+    this.logicsService.getFilterAnalysisContext(logicId).subscribe({
+      next: (ctx) => {
+        this.filterAnalysisContext = ctx;
+        const selected = new Set<number>();
+        const paramsByCode: Record<string, Record<string, string | number>> = {};
+        for (const c of (ctx.candidates || [])) {
+          if (c.indicator_code === 'SMA' || c.is_default) selected.add(c.indicator_id);
+          paramsByCode[c.indicator_code] = { ...(c.params || {}) } as any;
+        }
+        this.filterAnalysisSelectedIndicatorIds = selected;
+        this.filterAnalysisParamsByCode = paramsByCode;
+        this.filterAnalysisLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.filterAnalysisLoading = false;
+        this.filterAnalysisError = err?.error?.error || err?.message || 'Не удалось загрузить контекст подбора фильтров';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  closeFilterAnalysis(): void {
+    this.filterAnalysisOpenLogicId = null;
+    this.filterAnalysisLoading = false;
+    this.filterAnalysisAnalyzing = false;
+    this.filterAnalysisApplying = false;
+    this.filterAnalysisError = null;
+    this.filterAnalysisContext = null;
+    this.filterAnalysisResult = null;
+    this.filterAnalysisSelectedIndicatorIds = new Set<number>();
+    this.filterAnalysisParamsByCode = {};
+    this.filterAnalysisResultDirectionByIndicatorId = {};
+    this.filterAnalysisApplySelectedIds = new Set<number>();
+  }
+
+  isFilterAnalysisOpen(logicId: number): boolean {
+    return this.filterAnalysisOpenLogicId === logicId;
+  }
+
+  toggleFilterAnalysisIndicator(indicatorId: number, checked: boolean): void {
+    const next = new Set(this.filterAnalysisSelectedIndicatorIds);
+    if (checked) next.add(indicatorId); else next.delete(indicatorId);
+    this.filterAnalysisSelectedIndicatorIds = next;
+  }
+
+  onFilterAnalysisParamChange(code: string, key: string, value: unknown): void {
+    const byCode = { ...(this.filterAnalysisParamsByCode || {}) };
+    const m = { ...(byCode[code] || {}) };
+    m[key] = value as any;
+    byCode[code] = m;
+    this.filterAnalysisParamsByCode = byCode;
+  }
+
+  runFilterAnalysis(logicId: number): void {
+    if (!this.filterAnalysisContext) return;
+    const selected = [...this.filterAnalysisSelectedIndicatorIds];
+    if (selected.length === 0) {
+      this.filterAnalysisError = 'Выберите хотя бы один индикатор-фильтр';
+      return;
+    }
+    this.filterAnalysisAnalyzing = true;
+    this.filterAnalysisError = null;
+    this.filterAnalysisResult = null;
+    this.filterAnalysisApplySelectedIds = new Set<number>();
+    const params_by_code: Record<string, Record<string, unknown>> = {};
+    for (const c of (this.filterAnalysisContext.candidates || [])) {
+      if (!this.filterAnalysisSelectedIndicatorIds.has(c.indicator_id)) continue;
+      params_by_code[c.indicator_code] = { ...(this.filterAnalysisParamsByCode[c.indicator_code] || c.params || {}) };
+    }
+    this.logicsService.runFilterAnalysis(logicId, {
+      indicator_ids: selected,
+      params_by_code,
+    }).subscribe({
+      next: (res) => {
+        this.filterAnalysisResult = res;
+        const dirMap: Record<number, 'trend' | 'counter'> = {};
+        const applySet = new Set<number>();
+        for (const c of (res.candidates || [])) {
+          const best = (c.best_direction === 'counter' ? 'counter' : 'trend') as 'trend' | 'counter';
+          dirMap[c.indicator_id] = best;
+          if ((c.best_efficiency_pct ?? 0) > 0) applySet.add(c.indicator_id);
+        }
+        this.filterAnalysisResultDirectionByIndicatorId = dirMap;
+        this.filterAnalysisApplySelectedIds = applySet;
+        this.filterAnalysisAnalyzing = false;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.filterAnalysisAnalyzing = false;
+        this.filterAnalysisError = err?.error?.error || err?.message || 'Ошибка анализа фильтров';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  getFilterResultDirection(c: FilterAnalysisCandidate): 'trend' | 'counter' {
+    return this.filterAnalysisResultDirectionByIndicatorId[c.indicator_id] || (c.best_direction === 'counter' ? 'counter' : 'trend');
+  }
+
+  setFilterResultDirection(indicatorId: number, dir: 'trend' | 'counter'): void {
+    this.filterAnalysisResultDirectionByIndicatorId = {
+      ...this.filterAnalysisResultDirectionByIndicatorId,
+      [indicatorId]: dir,
+    };
+  }
+
+  getFilterDirectionResult(c: FilterAnalysisCandidate, dir?: 'trend' | 'counter') {
+    const d = dir || this.getFilterResultDirection(c);
+    return (c.directions || []).find((x) => x.direction === d) || null;
+  }
+
+  toggleFilterApplySelection(indicatorId: number, checked: boolean): void {
+    const next = new Set(this.filterAnalysisApplySelectedIds);
+    if (checked) next.add(indicatorId); else next.delete(indicatorId);
+    this.filterAnalysisApplySelectedIds = next;
+  }
+
+  applySelectedFilterAnalysis(logicId: number): void {
+    if (!this.filterAnalysisResult) return;
+    const selected: FilterAnalysisApplyItem[] = [];
+    for (const c of (this.filterAnalysisResult.candidates || [])) {
+      if (!this.filterAnalysisApplySelectedIds.has(c.indicator_id)) continue;
+      const dir = this.getFilterResultDirection(c);
+      const dr = this.getFilterDirectionResult(c, dir);
+      if (!dr || !dr.formula) continue;
+      selected.push({ indicator_id: c.indicator_id, direction: dir, formula: dr.formula });
+    }
+    if (selected.length === 0) {
+      this.filterAnalysisError = 'Выберите хотя бы один фильтр для применения';
+      return;
+    }
+    this.filterAnalysisApplying = true;
+    this.filterAnalysisError = null;
+    this.logicsService.applyFilterAnalysis(logicId, { selected }).subscribe({
+      next: (res) => {
+        this.filterAnalysisApplying = false;
+        this.loadSignalsForLogic(logicId);
+        const added = res?.added_count ?? selected.length;
+        alert('Добавлено сигналов открытия: ' + added + ' (long/short по каждому фильтру).');
+        this.closeFilterAnalysis();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.filterAnalysisApplying = false;
+        this.filterAnalysisError = err?.error?.error || err?.message || 'Не удалось применить фильтры';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  filterParamKeys(c: FilterAnalysisCandidate): string[] {
+    const params = (this.filterAnalysisParamsByCode[c.indicator_code] || c.params || {}) as Record<string, unknown>;
+    return Object.keys(params);
+  }
+
+  getFilterParamValue(c: FilterAnalysisCandidate, key: string): string | number {
+    const params = (this.filterAnalysisParamsByCode[c.indicator_code] || c.params || {}) as Record<string, unknown>;
+    const v = params[key];
+    if (v == null) return '';
+    return v as any;
+  }
+
+  formatEfficiencyPct(v: number | null | undefined): string {
+    if (v == null || !Number.isFinite(Number(v))) return '—';
+    const n = Number(v);
+    const sign = n > 0 ? '+' : '';
+    return sign + n.toFixed(2) + '%';
+  }
+
+  scopeLabel(scope: string | null | undefined): string {
+    if (scope === 'combat') return 'боевые';
+    if (scope === 'test') return 'тестовые';
+    if (scope === 'mixed') return 'боевые + тестовые';
+    return scope || '—';
+  }
+
+  filterAnalysisResetToSelection(): void {
+    this.filterAnalysisResult = null;
+    this.filterAnalysisApplySelectedIds = new Set<number>();
+    this.filterAnalysisError = null;
   }
 
   applyOptGridBest(logicId: number, event: Event): void {

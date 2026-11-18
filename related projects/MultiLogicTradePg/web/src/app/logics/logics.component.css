@@ -2739,3 +2739,116 @@ tbody tr.logic-main-row:hover {
 
 
 
+
+
+/* Подобрать фильтры */
+.filter-analysis-modal {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+.filter-analysis-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.filter-analysis-sub {
+  display: block;
+  font-size: 12px;
+  color: #555;
+  margin-top: 2px;
+}
+.filter-analysis-list {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  margin: 8px 0;
+}
+.filter-candidate {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef2f7;
+}
+.filter-candidate:last-child { border-bottom: none; }
+.filter-candidate.is-default { background: #f0f7ff; }
+.filter-candidate-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.filter-badge {
+  font-size: 11px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 10px;
+  padding: 1px 6px;
+}
+.filter-candidate-params {
+  margin: 6px 0 2px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+}
+.filter-param-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.filter-param-field span { color: #555; }
+.filter-param-field input {
+  width: 90px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.filter-candidate-formulas {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #444;
+  display: grid;
+  gap: 2px;
+}
+.filter-dir-tag {
+  display: inline-block;
+  min-width: 72px;
+  color: #666;
+}
+.filter-analysis-results-wrap {
+  max-height: 360px;
+  overflow: auto;
+  margin: 8px 0;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+.filter-analysis-results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.filter-analysis-results th,
+.filter-analysis-results td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.filter-analysis-results th {
+  position: sticky;
+  top: 0;
+  background: #f3f4f6;
+  z-index: 1;
+}
+.filter-analysis-results tr.positive td { background: #f0fdf4; }
+.filter-analysis-results tr.negative td { background: #fef2f2; }
+.filter-analysis-results .num-cell { text-align: right; white-space: nowrap; }
+.filter-analysis-results .mono-cell { font-size: 11px; max-width: 220px; }
+.filter-analysis-results .formula-cell { font-size: 11px; max-width: 320px; word-break: break-all; }
+.filter-analysis-actions { margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end; }
+.filter-analysis-note { font-size: 11px; color: #666; margin: 4px 0; }

@@ -180,6 +180,91 @@ export interface LogicTradesExportBundle {
   note?: string;
 }
 
+export interface FilterAnalysisCandidate {
+  indicator_id: number;
+  indicator_code: string;
+  indicator_name: string;
+  category?: string | null;
+  is_default?: boolean;
+  params: Record<string, unknown>;
+  series?: string;
+  params_bounds?: Array<{
+    param_key: string;
+    strict_value: number;
+    loose_value: number;
+    default_value?: number | null;
+    is_integer: boolean;
+  }>;
+  trend_formula?: string | null;
+  counter_formula?: string | null;
+  trend_condition?: string | null;
+  counter_condition?: string | null;
+  directions?: FilterAnalysisDirectionResult[];
+  best_direction?: 'trend' | 'counter' | null;
+  best_efficiency_pct?: number | null;
+  best_delta_pnl?: number | null;
+  best_formula?: string | null;
+}
+
+export interface FilterAnalysisDirectionResult {
+  direction: 'trend' | 'counter';
+  available?: boolean;
+  reason?: string;
+  condition?: string;
+  formula?: string;
+  params?: Record<string, unknown>;
+  series?: string;
+  evaluated_opens?: number;
+  missing_opens?: number;
+  pnl_with_filter?: number;
+  pnl_excluded?: number;
+  delta_pnl?: number;
+  efficiency_pct?: number | null;
+  lots_kept?: number;
+  lots_excluded?: number;
+  opens_excluded?: number;
+}
+
+export interface FilterAnalysisBaseline {
+  pnl: number;
+  lots: number;
+  completed_opens: number;
+}
+
+export interface FilterAnalysisContext {
+  logic_id: number;
+  scope: 'combat' | 'test' | 'mixed' | 'none' | string;
+  supplement_run_id?: number | null;
+  baseline: FilterAnalysisBaseline;
+  enough: boolean;
+  min_required: number;
+  candidates: FilterAnalysisCandidate[];
+}
+
+export interface FilterAnalysisRequest {
+  indicator_ids?: number[];
+  indicator_codes?: string[];
+  params_by_code?: Record<string, Record<string, unknown>>;
+}
+
+export interface FilterAnalysisResult {
+  logic_id: number;
+  logic_name?: string;
+  scope: string;
+  supplement_run_id?: number | null;
+  baseline: FilterAnalysisBaseline;
+  enough: boolean;
+  min_required: number;
+  candidates: FilterAnalysisCandidate[];
+  note?: string;
+}
+
+export interface FilterAnalysisApplyItem {
+  indicator_id: number;
+  direction: 'trend' | 'counter';
+  formula: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class LogicsService {
   constructor(
@@ -961,6 +1046,35 @@ export class LogicsService {
   getSignalRatingPrecalc(logicId: number): Observable<SignalRatingPrecalcStatus> {
     return this.http.get<SignalRatingPrecalcStatus>(
       `${this.appConfig.apiUrl}/logics/${logicId}/signal-rating-precalc`
+    );
+  }
+
+  /** «Подобрать фильтры»: контекст (сделки/база, кандидаты с дефолтными параметрами). */
+  getFilterAnalysisContext(logicId: number): Observable<FilterAnalysisContext> {
+    return this.http.get<FilterAnalysisContext>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/filter-analysis/context`
+    );
+  }
+
+  /** «Подобрать фильтры»: расчёт эффективности выбранных фильтров по сделкам/лотам. */
+  runFilterAnalysis(
+    logicId: number,
+    payload: FilterAnalysisRequest
+  ): Observable<FilterAnalysisResult> {
+    return this.http.post<FilterAnalysisResult>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/filter-analysis`,
+      payload || {}
+    );
+  }
+
+  /** Применить выбранные фильтры как сигналы открытия (long/short) в логику. */
+  applyFilterAnalysis(
+    logicId: number,
+    payload: { selected: FilterAnalysisApplyItem[] }
+  ): Observable<{ added: unknown[]; added_count: number }> {
+    return this.http.post<{ added: unknown[]; added_count: number }>(
+      `${this.appConfig.apiUrl}/logics/${logicId}/filter-analysis/apply`,
+      payload || { selected: [] }
     );
   }
 }
