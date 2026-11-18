@@ -296,30 +296,52 @@ describe('backtest-report metrics', () => {
     expect(rows[0].sources[0].estimated).toBe(false);
   });
 
-  it('builds hourly open/close stepped chart and skips shadow/opt trades', () => {
-    const base = closeTrade({ financial_result: 10, action_name: 'Long' });
+  it('builds hourly open/close/profit/loss stacked charts and skips shadow/opt trades', () => {
+    const baseOpen = (id: number, dt: string): LogicTradeRow => ({
+      ...closeTrade({ id, financial_result: 0, action_name: 'Long' }),
+      side_name: 'Open',
+      financial_result: null,
+      bar_dt: dt,
+      executed_at: dt,
+    });
+    const baseClose = (id: number, dt: string, pnl: number): LogicTradeRow => ({
+      ...closeTrade({ id, financial_result: pnl, action_name: 'Long', bar_dt: dt, executed_at: dt }),
+      side_name: 'Close',
+    });
     const trades: LogicTradeRow[] = [
-      { ...base, id: 1, bar_dt: '2026-01-10 02:03:00', side_name: 'Open' },
-      { ...base, id: 2, bar_dt: '2026-01-10 02:07:00', side_name: 'Open' },
-      { ...base, id: 3, bar_dt: '2026-01-10 02:04:00', side_name: 'Close' },
-      { ...base, id: 4, bar_dt: '2026-01-10 02:09:00', side_name: 'Open', is_shadow: true },
-      { ...base, id: 5, bar_dt: '2026-01-10 02:09:00', side_name: 'Open', opt_lane: 'lane1' },
-      { ...base, id: 6, bar_dt: '2026-01-10 14:31:00', side_name: 'Open' },
+      baseOpen(1, '2026-01-10 02:03:00'),
+      baseOpen(2, '2026-01-10 02:07:00'),
+      baseClose(3, '2026-01-10 02:04:00', 50),
+      baseClose(7, '2026-01-10 02:10:00', -20),
+      baseClose(8, '2026-01-10 02:15:00', 0),
+      { ...baseOpen(4, '2026-01-10 02:09:00'), is_shadow: true },
+      { ...baseOpen(5, '2026-01-10 02:09:00'), opt_lane: 'lane1' },
+      baseOpen(6, '2026-01-10 14:31:00'),
     ];
     const counts = hourlyOpenCloseCounts(trades);
-    expect(counts.matched).toBe(4);
+    expect(counts.matched).toBe(6); // 3 opens + 3 closes (shadow/opt excluded)
     expect(counts.open[2 * 12 + 0]).toBe(1); // 02:03
     expect(counts.open[2 * 12 + 1]).toBe(1); // 02:07
-    expect(counts.close[2 * 12 + 0]).toBe(1); // 02:04
     expect(counts.open[14 * 12 + 6]).toBe(1); // 14:31
+    expect(counts.close[2 * 12 + 0]).toBe(1); // 02:04
+    expect(counts.close[2 * 12 + 2]).toBe(1); // 02:10
+    expect(counts.close[2 * 12 + 3]).toBe(1); // 02:15 (zero pnl)
+    expect(counts.closeProfit[2 * 12 + 0]).toBe(1);
+    expect(counts.closeLoss[2 * 12 + 2]).toBe(1);
+    expect(counts.closeProfit[2 * 12 + 3]).toBe(0);
+    expect(counts.closeLoss[2 * 12 + 3]).toBe(0);
 
     const svg = hourlyOpenCloseSvg(trades);
-    expect(svg.match(/<polyline/g)?.length).toBe(2);
+    expect(svg.match(/<polyline/g)?.length).toBe(4);
+    expect(svg).toContain('Открытия');
+    expect(svg).toContain('Закрытия (все)');
+    expect(svg).toContain('Закрытия в прибыль');
+    expect(svg).toContain('Закрытия в убыток');
     expect(svg).toContain('#16a34a');
+    expect(svg).toContain('#2563eb');
+    expect(svg).toContain('#15803d');
     expect(svg).toContain('#dc2626');
     expect(svg).toContain('>24</text>');
-    expect(svg).toContain('Открытия (open)');
-    expect(svg).toContain('Закрытия (close)');
     expect(hourlyOpenCloseSvg([])).toContain('Нет сделок открытия/закрытия');
   });
 });

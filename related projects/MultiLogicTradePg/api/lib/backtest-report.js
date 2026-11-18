@@ -324,75 +324,91 @@ const HOURLY_BUCKETS = 24 * 12;
 function hourlyOpenCloseCounts(trades) {
   const open = new Array(HOURLY_BUCKETS).fill(0);
   const close = new Array(HOURLY_BUCKETS).fill(0);
+  const closeProfit = new Array(HOURLY_BUCKETS).fill(0);
+  const closeLoss = new Array(HOURLY_BUCKETS).fill(0);
   let matched = 0;
   for (const t of trades || []) {
     if (!t || t.is_shadow || (t.opt_lane && String(t.opt_lane) !== '')) continue;
     if (t.status !== 'filled' && t.status !== 'submitted') continue;
     const side = String(t.side_name || '').toLowerCase();
-    const bucket = side === 'open' ? open : side === 'close' ? close : null;
-    if (!bucket) continue;
+    const isOpen = side === 'open';
+    const isClose = side === 'close';
+    if (!isOpen && !isClose) continue;
     const dt = String(t.bar_dt || t.executed_at || '');
     const m = dt.match(/(\d{2}):(\d{2})/);
     if (!m) continue;
     const hour = Number(m[1]);
     const minute = Number(m[2]);
     if (hour > 23 || minute > 59) continue;
-    bucket[hour * 12 + Math.floor(minute / 5)] += 1;
+    const idx = hour * 12 + Math.floor(minute / 5);
+    if (isOpen) {
+      open[idx] += 1;
+    } else {
+      close[idx] += 1;
+      const pnl = Number(t.financial_result);
+      if (Number.isFinite(pnl)) {
+        if (pnl > 0) closeProfit[idx] += 1;
+        else if (pnl < 0) closeLoss[idx] += 1;
+      }
+    }
     matched += 1;
   }
-  return { open, close, matched };
+  return { open, close, closeProfit, closeLoss, matched };
 }
 
-/** Две ступенчатые линии на одном графике: open — зелёная, close — красная. */
+/** Стек из 4 графиков по часам (5-минутные корзины): открытия, закрытия, закрытия в прибыль, закрытия в убыток.
+ *  Одинаковая геометрия/оси/масштаб Y для синхронного сравнения по времени. */
 function hourlyOpenCloseSvg(trades) {
-  const { open, close, matched } = hourlyOpenCloseCounts(trades);
+  const { open, close, closeProfit, closeLoss, matched } = hourlyOpenCloseCounts(trades);
   if (matched === 0) {
     return '<div class="empty-chart">Нет сделок открытия/закрытия для графика по часам</div>';
   }
   const w = 720;
-  const h = 210;
+  const h = 170;
   const left = 42;
   const right = 12;
   const top = 12;
-  const bottom = 32;
-  const max = Math.max(1, ...open, ...close);
+  const bottom = 28;
+  const maxY = Math.max(1, ...open, ...close, ...closeProfit, ...closeLoss);
   const X = (i) => left + (i / HOURLY_BUCKETS) * (w - left - right);
-  const Y = (v) => top + (1 - v / max) * (h - top - bottom);
-  const ticks = [...new Set([0, Math.round(max / 2), max])].sort((a, b) => a - b);
-  const parts = [
-    `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Открытия и закрытия по часам">`,
-  ];
-  for (const t of ticks) {
-    const gy = Y(t);
-    parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
-    parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
-  }
-  for (let hour = 0; hour <= 24; hour += 1) {
-    const gx = X(hour * 12);
-    parts.push(`<line x1="${gx.toFixed(1)}" y1="${top}" x2="${gx.toFixed(1)}" y2="${h - bottom}" stroke="#e2e8f0"/>`);
-    parts.push(`<text x="${gx.toFixed(1)}" y="${h - bottom + 14}" text-anchor="middle" font-size="9" fill="#64748b">${hour}</text>`);
-  }
-  const stepped = (values, color) => {
+  const Y = (v) => top + (1 - v / maxY) * (h - top - bottom);
+  const ticks = [...new Set([0, Math.round(maxY / 2), maxY])].sort((a, b) => a - b);
+
+  const one = (values, label, color, aria) => {
+    const parts = [];
+    parts.push(`<div style="margin:10px 0 2px;font-size:12px;font-weight:600;color:#334155">${esc(label)}</div>`);
+    parts.push(`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${esc(aria)}">`);
+    for (const t of ticks) {
+      const gy = Y(t);
+      parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
+      parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
+    }
+    for (let hour = 0; hour <= 24; hour += 1) {
+      const gx = X(hour * 12);
+      parts.push(`<line x1="${gx.toFixed(1)}" y1="${top}" x2="${gx.toFixed(1)}" y2="${h - bottom}" stroke="#e2e8f0"/>`);
+      parts.push(`<text x="${gx.toFixed(1)}" y="${h - bottom + 13}" text-anchor="middle" font-size="9" fill="#64748b">${hour}</text>`);
+    }
     const pts = [];
     for (let i = 0; i < HOURLY_BUCKETS; i += 1) {
       const y = Y(values[i]).toFixed(1);
       pts.push(`${X(i).toFixed(1)},${y}`);
       pts.push(`${X(i + 1).toFixed(1)},${y}`);
     }
-    return `<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts.join(' ')}"/>`;
+    parts.push(`<polyline fill="none" stroke="${color}" stroke-width="2" points="${pts.join(' ')}"/>`);
+    parts.push('</svg>');
+    return parts.join('\n');
   };
-  parts.push(stepped(open, '#16a34a'));
-  parts.push(stepped(close, '#dc2626'));
-  parts.push('</svg>');
-  parts.push(
-    '<div class="pchart-legend">' +
-      '<span><span class="pl-swatch" style="background:#16a34a"></span>Открытия (open)</span>' +
-      '<span><span class="pl-swatch" style="background:#dc2626"></span>Закрытия (close)</span>' +
-      '<span class="muted">часы 0–24, шаг 5 мин, все дни теста</span>' +
-      '</div>'
-  );
-  return parts.join('\n');
+
+  const out = ['<div class="hourly-charts-stack">'];
+  out.push(one(open, 'Открытия', '#16a34a', 'Открытия по часам'));
+  out.push(one(close, 'Закрытия (все)', '#2563eb', 'Закрытия по часам'));
+  out.push(one(closeProfit, 'Закрытия в прибыль', '#15803d', 'Закрытия в прибыль по часам'));
+  out.push(one(closeLoss, 'Закрытия в убыток', '#dc2626', 'Закрытия в убыток по часам'));
+  out.push('<div class="muted" style="font-size:11px;margin-top:4px">Ось X: часы 0–24, шаг 5 минут. Одинаковый масштаб по Y для всех графиков.</div>');
+  out.push('</div>');
+  return out.join('\n');
 }
+
 
 function formatParamMap(params) {
   if (!params || typeof params !== 'object') return '—';
@@ -993,7 +1009,7 @@ function renderBacktestReportHtml(model) {
       </table>
     </section>
     <section>
-      <h2>Количество открытие закрытие по часам</h2>
+      <h2>Открытия и закрытия по часам</h2>
       <div class="chart">${model.hourlyOpenCloseSvg}</div>
     </section>
     <section>
