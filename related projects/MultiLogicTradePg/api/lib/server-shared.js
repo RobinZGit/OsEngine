@@ -951,6 +951,20 @@ function parseAccountBody(body) {
     return { error: 'Выберите брокера' };
   }
   const isReal = account_type === 'real';
+  // #1065: остаток редактируем только у фейкового счёта; у реального — с брокера.
+  let terminal_cash = null;
+  if (
+    !isReal &&
+    body?.terminal_cash !== undefined &&
+    body?.terminal_cash !== null &&
+    body?.terminal_cash !== ''
+  ) {
+    const n = Number(body.terminal_cash);
+    if (!Number.isFinite(n)) {
+      return { error: 'Остаток счёта должен быть числом' };
+    }
+    terminal_cash = n;
+  }
   if (!isReal && !account_code) return { error: 'Укажите код счёта' };
   if (account_code && account_code.length > 100) {
     return { error: 'Код счёта не длиннее 100 символов' };
@@ -964,6 +978,7 @@ function parseAccountBody(body) {
     account_type,
     is_efficient,
     is_active,
+    terminal_cash,
     api_token,
   };
 }

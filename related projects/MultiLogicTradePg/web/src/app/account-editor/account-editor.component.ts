@@ -41,8 +41,12 @@ export class AccountEditorComponent implements OnChanges {
   accountCode = '';
   name = '';
   accountType: 'real' | 'fake' = 'fake';
-  isEfficient = false;
-  isActive = true;
+  isEfficient = false;
+  isActive = true;
+  /** #1065: остаток фейкового счёта (редактируется в форме). */
+  terminalCash = 1000000;
+  /** #1065: реальный остаток с брокера — только для чтения. */
+  realBalanceDisplay = '—';
   apiToken = '';
   hasStoredToken = false;
   tbankAccounts: TbankApiAccount[] = [];
@@ -172,9 +176,13 @@ export class AccountEditorComponent implements OnChanges {
       is_efficient: this.isEfficient,
       is_active: this.isActive,
     };
-    if (this.apiToken.trim()) {
-      payload.api_token = this.apiToken.trim();
-    }
+    // #1065: остаток меняем только у фейкового счёта; API не даст изменить реальный.
+    if (!this.isRealTbank) {
+      payload.terminal_cash = this.terminalCash;
+    }
+    if (this.apiToken.trim()) {
+      payload.api_token = this.apiToken.trim();
+    }
 
     this.saving = true;
     const req =
@@ -212,8 +220,12 @@ export class AccountEditorComponent implements OnChanges {
       this.accountCode = this.account.account_code;
       this.name = this.account.name;
       this.accountType = this.account.account_type;
-      this.isEfficient = this.account.is_efficient;
-      this.isActive = this.account.is_active;
+      this.isEfficient = this.account.is_efficient;
+      this.isActive = this.account.is_active;
+      this.terminalCash = this.account.terminal_cash ?? 1000000;
+      this.realBalanceDisplay =
+        this.account.balance_display ||
+        (this.account.balance != null ? String(this.account.balance) : '—');
       this.hasStoredToken = this.account.has_token;
       this.connectionVerified = this.account.has_token;
     } else {
@@ -221,8 +233,10 @@ export class AccountEditorComponent implements OnChanges {
       this.accountCode = '';
       this.name = '';
       this.accountType = 'fake';
-      this.isEfficient = false;
-      this.isActive = true;
+      this.isEfficient = false;
+      this.isActive = true;
+      this.terminalCash = 1000000;
+      this.realBalanceDisplay = '—';
       this.hasStoredToken = false;
     }
 

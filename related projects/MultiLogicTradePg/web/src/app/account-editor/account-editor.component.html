@@ -81,12 +81,35 @@
               </label>
             }
 
-            <label class="field">
-              <span class="label">Название в системе</span>
-              <input type="text" maxlength="100" [(ngModel)]="name" name="name" [disabled]="saving" placeholder="Подставится из T-Bank или введите своё" />
-            </label>
-          }
-
+            <label class="field">
+              <span class="label">Название в системе</span>
+              <input type="text" maxlength="100" [(ngModel)]="name" name="name" [disabled]="saving" placeholder="Подставится из T-Bank или введите своё" />
+            </label>
+          }
+
+          @if (!isRealTbank) {
+            <label class="field">
+              <span class="label">Остаток счёта (демо)</span>
+              <input
+                type="number"
+                step="0.01"
+                [(ngModel)]="terminalCash"
+                name="terminalCash"
+                [disabled]="saving"
+              />
+              <span class="field-hint">
+                Отсюда логики берут капитал при реальной торговле на фейковом счёте;
+                сумма меняется на объём сделок и комиссию.
+              </span>
+            </label>
+          } @else {
+            <label class="field">
+              <span class="label">Остаток с брокера</span>
+              <input type="text" class="readonly" [value]="realBalanceDisplay" readonly name="realBalance" />
+              <span class="field-hint">Только для чтения — сумма приходит из T-Bank.</span>
+            </label>
+          }
+
           <label class="field field-check">
             <input type="checkbox" [(ngModel)]="isEfficient" name="isEfficient" [disabled]="saving" />
             <span>Эффективный счёт</span>

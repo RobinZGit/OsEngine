@@ -330,9 +330,9 @@ app.post('/api/accounts', async (req, res) => {
   try {
     const tokenFields = tokenFieldsFromParsed(parsed);
     const { rows } = await pool.query(
-      `INSERT INTO accounts (broker_id, account_code, name, account_type, is_efficient, is_active, token_encrypted, token_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, broker_id, account_code, name, account_type, is_efficient, is_active,
+      `INSERT INTO accounts (broker_id, account_code, name, account_type, is_efficient, is_active, token_encrypted, token_hash, terminal_cash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, broker_id, account_code, name, account_type, is_efficient, is_active, terminal_cash,
          (token_encrypted IS NOT NULL AND btrim(token_encrypted) <> '') AS has_token`,
       [
         parsed.broker_id,
@@ -343,6 +343,7 @@ app.post('/api/accounts', async (req, res) => {
         parsed.is_active,
         tokenFields.token_encrypted,
         tokenFields.token_hash,
+        parsed.account_type === 'fake' ? (parsed.terminal_cash ?? 1000000) : 0,
       ]
     );
     res.status(201).json(rows[0]);
@@ -368,7 +369,12 @@ app.put('/api/accounts/:id', async (req, res) => {
     return;
   }
   try {
-    const tokenUpdate = buildTokenUpdateClause(filled, 8);
+    // #1065: $8 — остаток фейкового счёта; токен сдвигается на $9/$10.
+    const tokenUpdate = buildTokenUpdateClause(filled, 9);
+    const cashClause =
+      filled.account_type === 'fake' && filled.terminal_cash != null
+        ? ', terminal_cash = $8'
+        : '';
     const values = [
       filled.broker_id,
       filled.account_code,
@@ -377,21 +383,27 @@ app.put('/api/accounts/:id', async (req, res) => {
       filled.is_efficient,
       filled.is_active,
       id,
+      filled.terminal_cash ?? 0,
       ...tokenUpdate.extraValues,
     ];
     const { rows } = await pool.query(
       `UPDATE accounts
        SET broker_id = $1, account_code = $2, name = $3, account_type = $4,
            is_efficient = $5, is_active = $6, updated_at = CURRENT_TIMESTAMP
+           ${cashClause}
            ${tokenUpdate.sql}
        WHERE id = $7
-       RETURNING id, broker_id, account_code, name, account_type, is_efficient, is_active,
+       RETURNING id, broker_id, account_code, name, account_type, is_efficient, is_active, terminal_cash,
          (token_encrypted IS NOT NULL AND btrim(token_encrypted) <> '') AS has_token`,
       values
     );
     if (rows.length === 0) {
       res.status(404).json({ error: 'Account not found' });
       return;
+    }
+    if (cashClause) {
+      // Зеркало в параметрах всех логик счёта (в UI логики тот же остаток).
+      await pool.query('SELECT logic_mirror_account_cash($1)', [id]);
     }
     res.json(rows[0]);
   } catch (err) {

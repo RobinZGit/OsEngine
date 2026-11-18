@@ -377,7 +377,7 @@ BEGIN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
                     v_notional := v_quantity * v_price;
                     v_balance := v_balance + v_notional;
-                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSE
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 END IF;
@@ -529,7 +529,7 @@ BEGIN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
                     v_notional := v_quantity * v_price;
                     v_balance := v_balance - v_notional;
-                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSE
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 END IF;

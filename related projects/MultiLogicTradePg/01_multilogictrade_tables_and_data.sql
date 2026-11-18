@@ -607,6 +607,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     token_encrypted TEXT,
     token_hash VARCHAR(64),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    terminal_cash NUMERIC(20,6) NOT NULL DEFAULT 0,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
@@ -4275,6 +4276,24 @@ BEGIN
         UPDATE accounts SET terminal_cash = COALESCE(terminal_cash, 0) - (v_amount + v_commission),
             updated_at = now() WHERE id = NEW.account_id;
     END IF;
+
+    -- #1065: старый параметр логики — зеркало остатка счёта (для UI логики).
+    IF NEW.logic_id IS NOT NULL THEN
+        UPDATE logic_params lp
+        SET param_value = (SELECT COALESCE(a.terminal_cash, 0)::TEXT
+                           FROM accounts a WHERE a.id = NEW.account_id),
+            value_type = 'money',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE lp.logic_id = NEW.logic_id
+          AND lp.param_key = 'current_balance';
+        IF NOT FOUND THEN
+            INSERT INTO logic_params (logic_id, param_key, param_value, value_type)
+            SELECT NEW.logic_id, 'current_balance',
+                   COALESCE(a.terminal_cash, 0)::TEXT, 'money'
+            FROM accounts a WHERE a.id = NEW.account_id
+            ON CONFLICT (logic_id, param_key) DO NOTHING;
+        END IF;
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -4926,6 +4945,15 @@ COMMENT ON COLUMN terminal_state.updated_at IS 'Время последнего 
 -- Остаток (демо-кэш) фейкового счёта в терминале; у реального — не используется
 -- (там источник — живой баланс брокера).
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS terminal_cash NUMERIC(20,6) NOT NULL DEFAULT 0;
+
+-- #1065: фейковый счёт — единственный источник торгового остатка (читается
+-- сайзингом логик). Старт 1 000 000 только там, где кассы ещё нет (<= 0):
+-- не затираем уже накопленный PnL на удалённом сервере. Идемпотентно.
+UPDATE accounts
+SET terminal_cash = 1000000,
+    updated_at = CURRENT_TIMESTAMP
+WHERE lower(COALESCE(account_type, 'fake')) = 'fake'
+  AND COALESCE(terminal_cash, 0) <= 0;
 
 -- Сделки, размещённые из закладки «Терминал» (фейк — демо; реальные — ордера T-Bank).
 -- По структуре повторяют logic_trades (для отображения блоком «Сделки»).

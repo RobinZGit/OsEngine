@@ -448,9 +448,7 @@ BEGIN
         IF v_trade_id IS NOT NULL THEN
             PERFORM logic_trade_finalize(v_trade_id, v_balance);
             v_balance := v_balance - (v_qty * v_price);
-            PERFORM logic_upsert_param(
-                p_logic_id, 'current_balance', v_balance::TEXT, 'money'
-            );
+            v_balance := logic_cash_set_param(p_logic_id, v_balance);
         END IF;
 
         PERFORM logic_trade_log(

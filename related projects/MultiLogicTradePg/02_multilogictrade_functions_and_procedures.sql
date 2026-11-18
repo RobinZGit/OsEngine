@@ -5545,6 +5545,7 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
 -- Диспетчер массивного расчёта по коду индикатора
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -8214,7 +8215,7 @@ BEGIN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
                     v_notional := v_quantity * v_price;
                     v_balance := v_balance + v_notional;
-                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSIF NOT p_is_shadow THEN
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 ELSE
@@ -8309,7 +8310,7 @@ BEGIN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
                     v_notional := v_quantity * v_price;
                     v_balance := v_balance - v_notional;
-                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSIF NOT p_is_shadow THEN
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 ELSE
@@ -13761,6 +13762,34 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -14321,35 +14350,99 @@ RETURNS NUMERIC
 LANGUAGE plpgsql AS $$
 DECLARE
     v_account_type VARCHAR;
-    v_current NUMERIC;
-    v_initial NUMERIC;
+    v_account_id INTEGER;
+    v_cash NUMERIC;
 BEGIN
-    SELECT lower(COALESCE(a.account_type, 'fake'))
-    INTO v_account_type
+    SELECT lower(COALESCE(a.account_type, 'fake')), l.account_id
+    INTO v_account_type, v_account_id
     FROM logics l
-    JOIN accounts a ON a.id = l.account_id
+    LEFT JOIN accounts a ON a.id = l.account_id
     WHERE l.id = p_logic_id;
 
-    -- Реальный счёт: начальный и текущий — с брокера (или 0), не из параметров теста.
-    IF FOUND AND v_account_type <> 'fake' THEN
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    -- Реальный счёт: текущий — с брокера (или 0), не из параметров теста.
+    IF v_account_type <> 'fake' THEN
         RETURN COALESCE(logic_apply_real_account_balances(p_logic_id, TRUE), 0);
     END IF;
 
-    v_current := get_logic_param_numeric(p_logic_id, 'current_balance', NULL);
-    IF v_current IS NOT NULL THEN
-        RETURN v_current;
-    END IF;
-    v_initial := get_logic_param_numeric(p_logic_id, 'initial_balance', NULL);
-    IF v_initial IS NULL THEN
-        RETURN NULL;
-    END IF;
-    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_initial::TEXT, 'money');
-    RETURN v_initial;
+    -- #1065: фейковый счёт — деньги лежат на accounts.terminal_cash,
+    -- параметр логики current_balance лишь зеркало (для UI). Бэктест сюда не заходит.
+    SELECT COALESCE(terminal_cash, 0) INTO v_cash FROM accounts WHERE id = v_account_id;
+    v_cash := COALESCE(v_cash, 0);
+    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_cash::TEXT, 'money');
+    RETURN v_cash;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_balance(INTEGER) IS
-'Fake: параметры initial/current. Real: оба с T-Bank (или 0).';
+'#1065 Fake: остаток с accounts.terminal_cash (зеркало в current_balance). Real: с T-Bank (или 0).';
+
+-- #1065: запись параметра current_balance после сделки.
+-- Fake: триггер logic_trades_demo_cash_ins уже изменил accounts.terminal_cash —
+-- только зеркалим его в параметр, чтобы не списать сумму дважды.
+-- Real: как и раньше — пишем переданное значение (с брокера).
+CREATE OR REPLACE FUNCTION logic_cash_set_param(
+    p_logic_id INTEGER,
+    p_balance NUMERIC
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_account_type VARCHAR;
+    v_account_id INTEGER;
+    v_cash NUMERIC;
+BEGIN
+    SELECT lower(COALESCE(a.account_type, 'fake')), l.account_id
+    INTO v_account_type, v_account_id
+    FROM logics l
+    LEFT JOIN accounts a ON a.id = l.account_id
+    WHERE l.id = p_logic_id;
+
+    IF NOT FOUND THEN
+        RETURN p_balance;
+    END IF;
+
+    IF v_account_type = 'fake' THEN
+        SELECT COALESCE(terminal_cash, 0) INTO v_cash FROM accounts WHERE id = v_account_id;
+        v_cash := COALESCE(v_cash, 0);
+        PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_cash::TEXT, 'money');
+        RETURN v_cash;
+    END IF;
+
+    PERFORM logic_upsert_param(p_logic_id, 'current_balance', COALESCE(p_balance, 0)::TEXT, 'money');
+    RETURN p_balance;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_cash_set_param(INTEGER, NUMERIC) IS
+'#1065: fake — current_balance = accounts.terminal_cash; real — current_balance = аргумент.';
+
+-- #1065: ручная правка остатка счёта в UI → обновить зеркало у всех логик счёта.
+CREATE OR REPLACE FUNCTION logic_mirror_account_cash(p_account_id INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_cash NUMERIC;
+    v_n INTEGER := 0;
+    r RECORD;
+BEGIN
+    SELECT COALESCE(terminal_cash, 0) INTO v_cash FROM accounts WHERE id = p_account_id;
+    IF NOT FOUND THEN
+        RETURN 0;
+    END IF;
+    FOR r IN SELECT id FROM logics WHERE account_id = p_account_id LOOP
+        PERFORM logic_upsert_param(r.id, 'current_balance', v_cash::TEXT, 'money');
+        v_n := v_n + 1;
+    END LOOP;
+    RETURN v_n;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_mirror_account_cash(INTEGER) IS
+'#1065: синхронизировать current_balance всех логик счёта с accounts.terminal_cash.';
 
 CREATE OR REPLACE FUNCTION logic_trade_load_date_from(
     p_tf_sec INTEGER,
@@ -15124,7 +15217,7 @@ BEGIN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
                     v_notional := v_quantity * v_price;
                     v_balance := v_balance + v_notional;
-                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSE
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 END IF;
@@ -15276,7 +15369,7 @@ BEGIN
                     v_balance := logic_trade_finalize(v_trade_id, v_balance);
                     v_notional := v_quantity * v_price;
                     v_balance := v_balance - v_notional;
-                    PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                    v_balance := logic_cash_set_param(p_logic_id, v_balance);
                 ELSE
                     PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 END IF;
@@ -20989,7 +21082,7 @@ BEGIN
                 ELSIF NOT v_is_open AND NOT v_is_shadow THEN
                     v_open_positions := GREATEST(0, v_open_positions - 1);
                 END IF;
-                PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_balance::TEXT, 'money');
+                v_balance := logic_cash_set_param(p_logic_id, v_balance);
             ELSIF NOT v_is_shadow THEN
                 PERFORM logic_trade_finalize(v_trade_id, v_balance);
                 -- Real: перечитать остаток с брокера (не paper ± notional к миллиону)
@@ -27830,9 +27923,7 @@ BEGIN
         IF v_trade_id IS NOT NULL THEN
             PERFORM logic_trade_finalize(v_trade_id, v_balance);
             v_balance := v_balance - (v_qty * v_price);
-            PERFORM logic_upsert_param(
-                p_logic_id, 'current_balance', v_balance::TEXT, 'money'
-            );
+            v_balance := logic_cash_set_param(p_logic_id, v_balance);
         END IF;
 
         PERFORM logic_trade_log(
@@ -27934,6 +28025,7 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
 
 
 

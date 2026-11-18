@@ -29,7 +29,7 @@ export interface AccountRow {
   balance_currency?: string | null;
   balance_display?: string | null;
   balance_error?: string | null;
-  /** Демо-кэш фейкового счёта терминала (стартует с 0, может быть отрицательным). */
+  /** #1065: торговый остаток фейкового счёта; у реального — только для чтения (с брокера). */
   terminal_cash?: number | null;
 }
 
@@ -121,6 +121,8 @@ export interface AccountPayload {
   account_type: 'real' | 'fake';
   is_efficient: boolean;
   is_active: boolean;
+  /** #1065: редактируемый остаток только фейкового счёта; API игнорирует у реального. */
+  terminal_cash?: number;
   /** Новый токен; не передавать или пустая строка — не менять (при редактировании). */
   api_token?: string;
   clear_token?: boolean;
