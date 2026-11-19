@@ -1035,7 +1035,11 @@ UPDATE indicators SET
     sig_ct_def = 'K < 20'
 WHERE code = 'STOCH';
 
--- channel: follow = пробой верхней (breakout up); fade = цена у нижней (reversion long-zone)
+-- channel: follow = пробой верхней (breakout up); fade = цена у нижней (reversion long-zone).
+-- ВАЖНО: UPPER/LOWER здесь — ИМЯ СЕРИИ в «официальном» условии, а не оператор значения.
+-- Перед использованием в формуле сигнала серию нужно вынести в series=...@CODE(...),
+-- а в условии оставить VALUE: @DONCHIAN(series=LOWER) pp < VALUE. Так делают
+-- SQL-хелпер indicator_signal_series_and_condition и UI buildLogicSignalFormula.
 UPDATE indicators SET
     sig_profile = 'channel',
     sig_trend_def = 'pp > UPPER',

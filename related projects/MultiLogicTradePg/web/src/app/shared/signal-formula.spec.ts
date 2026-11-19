@@ -47,6 +47,62 @@ describe('signal-formula', () => {
     expect(f).toContain('VALUE > 50');
   });
 
+  it('channel signal puts the band into series= and compares price with VALUE', () => {
+    const valueTypes = [
+      { id: 1, code: 'UPPER', name: 'Upper', value_type: 'float', is_threshold: false, threshold_value: null, display_order: 1 },
+      { id: 2, code: 'MIDDLE', name: 'Middle', value_type: 'float', is_threshold: false, threshold_value: null, display_order: 2 },
+      { id: 3, code: 'LOWER', name: 'Lower', value_type: 'float', is_threshold: false, threshold_value: null, display_order: 3 },
+    ];
+    for (const code of ['DONCHIAN', 'BB', 'KELTNER']) {
+      const ind = {
+        code,
+        sig_trend_def: 'pp > UPPER',
+        sig_ct_def: 'pp < LOWER',
+        value_types: valueTypes,
+      };
+      expect(buildLogicSignalFormula(ind, 'trend')).toContain('series=UPPER) pp > VALUE');
+      expect(buildLogicSignalFormula(ind, 'counter')).toContain('series=LOWER) pp < VALUE');
+    }
+  });
+
+  it('normalizes multi-series definitions like STOCH K > D', () => {
+    const ind = {
+      code: 'STOCH',
+      sig_trend_def: 'K > D',
+      sig_ct_def: 'K < 20',
+      value_types: [
+        { id: 1, code: 'K', name: 'K', value_type: 'float', is_threshold: false, threshold_value: null, display_order: 1 },
+        { id: 2, code: 'D', name: 'D', value_type: 'float', is_threshold: false, threshold_value: null, display_order: 2 },
+      ],
+    };
+    expect(buildLogicSignalFormula(ind, 'trend')).toBe(
+      '@STOCH(k=14,d=3,smooth=3,series=K) VALUE > 50'
+    );
+    expect(buildLogicSignalFormula(ind, 'counter')).toBe(
+      '@STOCH(k=14,d=3,smooth=3,series=K) VALUE < 20'
+    );
+  });
+
+  it('keeps explicit series for LINREG and falls back for unknown tokens', () => {
+    const linreg = {
+      code: 'LINREG',
+      sig_trend_def: 'pp > VALUE',
+      sig_ct_def: 'pp < VALUE',
+      value_types: [],
+    };
+    expect(buildLogicSignalFormula(linreg, 'trend')).toBe(
+      '@LINREG(period=20,std_dev=2,series=MIDDLE) pp > VALUE'
+    );
+    const aroon = {
+      code: 'AROON',
+      sig_trend_def: 'UP > DOWN',
+      sig_ct_def: 'DOWN > UP',
+      value_types: [],
+    };
+    expect(buildLogicSignalFormula(aroon, 'trend')).toContain('VALUE > 50');
+    expect(buildLogicSignalFormula(aroon, 'counter')).toContain('VALUE < 50');
+  });
+
   it('parseSignalFormula splits ref and condition', () => {
     const p = parseSignalFormula(
       '@SMA(period=20,series=VALUE) pp > VALUE'

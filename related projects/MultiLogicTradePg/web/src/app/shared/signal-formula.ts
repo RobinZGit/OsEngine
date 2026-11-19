@@ -4,6 +4,16 @@ export type SignalKind = 'trend' | 'counter';
 export type PositionSide = 'long' | 'short';
 export type PositionEvent = 'open' | 'close';
 
+/** Индикатор, достаточно полный для сборки формулы сигнала. */
+export type SignalIndicator = Pick<
+  IndicatorRow,
+  'code' | 'sig_trend_def' | 'sig_ct_def'
+> &
+  Partial<Pick<IndicatorRow, 'value_types'>>;
+
+/** Серии, которые могут встречаться в sig_*_def даже без справочника value_types. */
+const CONDITION_SERIES_FALLBACK = ['VALUE', 'MIDDLE', 'UPPER', 'LOWER'];
+
 export interface ParsedSignalFormula {
   raw: string;
   indicatorCode: string | null;
@@ -14,7 +24,8 @@ export interface ParsedSignalFormula {
 }
 
 /** Параметры @CODE(...) по умолчанию для строки сигнала в логике. */
-export function defaultIndicatorParams(code: string): string {
+export function defaultIndicatorParams(code: string, series?: string | null): string {
+  let params: string;
   switch (code) {
     case 'RSI':
     case 'MFI':
@@ -24,26 +35,38 @@ export function defaultIndicatorParams(code: string): string {
     case 'TRIX':
     case 'TSI':
     case 'UO':
-      return 'period=14,series=VALUE';
+      params = 'period=14,series=VALUE';
+      break;
     case 'ROC':
-      return 'period=10,series=VALUE';
+      params = 'period=10,series=VALUE';
+      break;
     case 'MACD':
-      return 'fast=12,slow=26,signal=9,series=MACD';
+      params = 'fast=12,slow=26,signal=9,series=MACD';
+      break;
     case 'STOCH':
-      return 'k=14,d=3,smooth=3,series=K';
+      params = 'k=14,d=3,smooth=3,series=K';
+      break;
     case 'BB':
     case 'LINREG':
     case 'SQUARE':
-      return 'period=20,std_dev=2,series=MIDDLE';
+      params = 'period=20,std_dev=2,series=MIDDLE';
+      break;
     case 'ATR':
-      return 'period=14,series=VALUE';
+      params = 'period=14,series=VALUE';
+      break;
     case 'PACC':
-      return 'series=VALUE';
+      params = 'series=VALUE';
+      break;
     case 'SMAT3':
-      return 'period=20,series=VALUE';
+      params = 'period=20,series=VALUE';
+      break;
     default:
-      return 'period=20,series=VALUE';
+      params = 'period=20,series=VALUE';
   }
+  if (!series) return params;
+  return /series\s*=/i.test(params)
+    ? params.replace(/series\s*=\s*[^,)]+/i, `series=${series}`)
+    : `${params},series=${series}`;
 }
 
 export function defaultSignalCondition(
@@ -55,14 +78,77 @@ export function defaultSignalCondition(
   return (def ?? '').trim() || (kind === 'trend' ? 'VALUE > 50' : 'VALUE < 50');
 }
 
+function escapeSeriesToken(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function seriesWordPattern(token: string, flags: string): RegExp {
+  return new RegExp(`\\b${escapeSeriesToken(token)}\\b`, flags);
+}
+
+/**
+ * sig_*_def хранит «официальное» условие канала вида `pp < LOWER` / `K > D`.
+ * Движок формул понимает только pp и VALUE, поэтому серию нужно вынести в
+ * `series=`, а в условии оставить VALUE — так же, как делает SQL-хелпер
+ * `indicator_signal_series_and_condition` (#994, #1055).
+ * Возвращает серию для @CODE(...) и нормализованное условие.
+ */
+export function normalizeSignalCondition(
+  indicator: SignalIndicator,
+  condition: string,
+  kind: SignalKind
+): { series: string | null; condition: string } {
+  const src = (condition ?? '').trim();
+  if (!src) return { series: null, condition: src };
+
+  const types = [...(indicator.value_types ?? [])].sort(
+    (a, b) => a.display_order - b.display_order
+  );
+  const tokens = [...new Set([
+    ...types
+      .filter((t) => !t.is_threshold)
+      .map((t) => String(t.code ?? '').toUpperCase())
+      .filter(Boolean),
+    ...CONDITION_SERIES_FALLBACK,
+  ])];
+  const hits = tokens.filter((t) => seriesWordPattern(t, 'i').test(src));
+
+  const unknownLetters = (text: string): boolean => {
+    const rest = text
+      .toUpperCase()
+      .replace(/\b(PP|VALUE|AND|OR)\b/g, '')
+      .replace(/[0-9.,()+\-*/<>=!#\s]/g, '');
+    return rest.length > 0;
+  };
+
+  if (hits.length === 1) {
+    const token = hits[0];
+    const normalized = src.replace(seriesWordPattern(token, 'gi'), 'VALUE');
+    if (!unknownLetters(normalized)) {
+      // VALUE — уже базовая серия, defaults не трогаем (LINREG/SQUARE=MIDDLE и т.п.).
+      return { series: token === 'VALUE' ? null : token, condition: normalized };
+    }
+  }
+
+  const fallback = kind === 'counter' ? 'VALUE < 50' : 'VALUE > 50';
+  if (hits.length > 1 || unknownLetters(src)) {
+    return { series: hits[0] ?? null, condition: fallback };
+  }
+  return { series: null, condition: src };
+}
+
 /** Сборка формулы для logic_indicator_signals из справочника индикатора. */
 export function buildLogicSignalFormula(
-  indicator: Pick<IndicatorRow, 'code' | 'sig_trend_def' | 'sig_ct_def'>,
+  indicator: SignalIndicator,
   kind: SignalKind
 ): string {
-  const params = defaultIndicatorParams(indicator.code);
-  const condition = defaultSignalCondition(indicator, kind);
-  return `@${indicator.code}(${params}) ${condition}`;
+  const normalized = normalizeSignalCondition(
+    indicator,
+    defaultSignalCondition(indicator, kind),
+    kind
+  );
+  const params = defaultIndicatorParams(indicator.code, normalized.series);
+  return `@${indicator.code}(${params}) ${normalized.condition}`;
 }
 
 /**
