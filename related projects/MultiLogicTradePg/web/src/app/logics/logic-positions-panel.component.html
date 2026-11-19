@@ -137,6 +137,7 @@
     class="signals-block trades-block positions-panel"
     [class.panel-backtest-active]="isTest && isBacktestRunning && !backtestRun?.opt_grid_enabled"
     [class.panel-backtest-opt]="isTest && isBacktestRunning && !!backtestRun?.opt_grid_enabled"
+    [style.--bt-p]="backtestProgressFraction"
     [open]="blockExpanded"
   >
     <summary class="signals-summary trades-summary">

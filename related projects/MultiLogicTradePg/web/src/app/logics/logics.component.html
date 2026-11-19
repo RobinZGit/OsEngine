@@ -102,6 +102,7 @@
           [class.process-chip-link]="!!p.logic_id && p.type !== 'trade'"
           [class.process-chip-work]="p.type === 'trade'"
           [class.process-chip-real]="isProcessLogicReal(p)"
+          [style.--bt-p]="processProgressFraction(p)"
           [attr.role]="p.logic_id ? 'button' : null"
           [attr.tabindex]="p.logic_id ? 0 : null"
           [title]="processTitle(p)"
@@ -465,6 +466,8 @@
               [class.row-testing]="isBacktestPlainRunning(row.id)"
               [class.row-testing-opt]="isBacktestOptRunning(row.id)"
               [class.row-portfolio-paused]="row.portfolio_trading_paused"
+              [style.--bt-p]="backtestProgressFraction(row.id)"
+              [style.--bt-end]="backtestRowEndColor(row.id)"
 
               (click)="toggleLogicExpand(row, $event)"
 
@@ -747,6 +750,7 @@
                         [summaryEquityTotal]="testEquityTotal(row.id)"
                         [summaryEquityLong]="testEquityLong(row.id)"
                         [summaryEquityShort]="testEquityShort(row.id)"
+                        [summaryEquityActiveSecurities]="testEquityActiveSecurities(row.id)"
                         [tradeLots]="logicTradeLots"
                         [lotsLoading]="tradeLotsLoading"
                         [blockExpanded]="isTestTradesBlockExpanded(row.id)"

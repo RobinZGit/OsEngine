@@ -181,6 +181,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Input() summaryEquityTotal: ChartEquityPoint[] | null = null;
   @Input() summaryEquityLong: ChartEquityPoint[] | null = null;
   @Input() summaryEquityShort: ChartEquityPoint[] | null = null;
+  /** Серия активных бумаг из /equity-curve (полный run) — приоритет над расчётом из урезанных trades. */
+  @Input() summaryEquityActiveSecurities: ChartEquityPoint[] | null = null;
 
   /** Денежный фонд — первая бумага в блоке «Бумаги» (бой и тест). */
   @Input() pinnedPaper: BacktestPaperRow | null = null;
@@ -378,7 +380,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
       changes['summaryCommission'] ||
       changes['summaryEquityTotal'] ||
       changes['summaryEquityLong'] ||
-      changes['summaryEquityShort']
+      changes['summaryEquityShort'] ||
+      changes['summaryEquityActiveSecurities']
     ) {
       this.rebuildTradeCaches();
     }
@@ -692,7 +695,11 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.cachedPortfolioShadedRanges = shaded;
     this.cachedPortfolioStopMarkers = buildPortfolioStopMarkers(this.trades);
     this.cachedPortfolioResumeTarget = this.portfolioShadowResumeTarget();
-    this.cachedActiveSecurities = buildActiveSecuritiesPoints(this.trades, periodStart);
+    const liveActive = this.summaryEquityActiveSecurities;
+    this.cachedActiveSecurities =
+      liveActive && liveActive.length > 0
+        ? liveActive
+        : buildActiveSecuritiesPoints(this.trades, periodStart);
   }
 
   /**
@@ -758,6 +765,14 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
     return s === 'pending' || s === 'loading_prices' || s === 'loading_indicators' || s === 'running';
 
+  }
+
+  /** Доля выполнения обычного теста (0..1) для градиентной заливки шапки. */
+  get backtestProgressFraction(): number {
+    if (!this.isBacktestRunning || !!this.backtestRun?.opt_grid_enabled) return 0;
+    const pct = Number(this.backtestRun?.progress_pct);
+    if (!Number.isFinite(pct)) return 0;
+    return Math.min(1, Math.max(0, pct / 100));
   }
 
   get isCancelling(): boolean {

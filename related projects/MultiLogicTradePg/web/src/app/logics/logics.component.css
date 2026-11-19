@@ -470,12 +470,34 @@
 
 /* #1052/#1054: чип тестового процесса кликабелен и жёлтый — как полоса
    идущего теста в строке логики (.row-testing). Ведёт к строке логики. */
+/* Жёлтый чип теста — та же прогрессивная заливка, что у строки логики. */
 .process-chip-link {
   cursor: pointer;
   border-color: #f59e0b;
-  background: #fde68a;
   color: #92400e;
   font-weight: 600;
+  --bt-front: calc(108% - var(--bt-p, 0) * 58%);
+  background-color: #fde68a;
+  background-image: linear-gradient(
+    90deg,
+    #fde68a 0%,
+    #fde68a max(50%, calc(var(--bt-front) - 8%)),
+    #dde3ec calc(var(--bt-front) + 8%),
+    #dde3ec 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 102% 100%;
+  background-position: 0% 0;
+  animation: chip-bt-wave 3.4s ease-in-out infinite alternate;
+}
+
+@keyframes chip-bt-wave {
+  from { background-position: 0% 0; }
+  to   { background-position: 100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-chip-link { animation: none; }
 }
 
 .process-chip-link .process-dot {
@@ -485,7 +507,6 @@
 .process-chip-link:hover,
 .process-chip-link:focus-visible {
   border-color: #d97706;
-  background: #fcd34d;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.28);
   outline: none;
 }
@@ -1288,13 +1309,49 @@ tbody tr.logic-main-row:hover {
   background: #d3dae5;
 }
 
-.row-testing {
-  background: #fde68a !important;
+/* Тест без OPT: левая половина — чисто жёлтая, правая — переход жёлтый→серый.
+   Граница перехода смещается влево по мере выполнения (--bt-p, 0..1) и слегка
+   «дрожит» за счёт анимации background-position у картинки на 2% шире строки. */
+.logic-main-row.row-testing {
+  --bt-front: calc(108% - var(--bt-p, 0) * 58%);
+  background-color: #fde68a;
+  background-image: linear-gradient(
+    90deg,
+    #fde68a 0%,
+    #fde68a max(50%, calc(var(--bt-front) - 8%)),
+    #dde3ec calc(var(--bt-front) + 8%),
+    #dde3ec 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 102% 100%;
+  background-position: 0% 0;
   box-shadow: inset 3px 0 0 #f59e0b;
+  animation: logic-bt-wave 3.4s ease-in-out infinite alternate;
 }
 
-.row-testing:hover {
-  background: #fcd34d !important;
+@keyframes logic-bt-wave {
+  from { background-position: 0% 0; }
+  to   { background-position: 100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logic-main-row.row-testing { animation: none; }
+}
+
+/* Sticky-ячейки рисуются поверх строки: слева — жёлтый, справа — цвет правого
+   края градиента (зависит от прогресса). Иначе крайние колонки «залипают» жёлтым. */
+.logic-main-row.row-testing > td.col-expand,
+.logic-main-row.row-testing > td.col-check,
+.logic-main-row.row-testing:hover > td.col-expand,
+.logic-main-row.row-testing:hover > td.col-check {
+  background: #fde68a !important;
+}
+
+.logic-main-row.row-testing > td.col-export,
+.logic-main-row.row-testing > td.col-actions,
+.logic-main-row.row-testing:hover > td.col-export,
+.logic-main-row.row-testing:hover > td.col-actions {
+  background: var(--bt-end, #fde68a) !important;
 }
 
 /* Тест + оптимизация: сиреневый вместо жёлтого */

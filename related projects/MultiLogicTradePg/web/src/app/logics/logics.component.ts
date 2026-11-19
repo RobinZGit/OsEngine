@@ -210,6 +210,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
       total: Array<{ dt: string; value: number }>;
       long: Array<{ dt: string; value: number }>;
       short: Array<{ dt: string; value: number }>;
+      active_securities: Array<{ dt: string; value: number }>;
       run_id?: number | null;
       financial_result?: number;
     }
@@ -736,6 +737,13 @@ export class LogicsComponent implements OnInit, OnDestroy {
     // Прочие (PostgreSQL, trade runner, pg_cron) — после блока зелёных/жёлтых.
     const other = this.processRows.filter((p) => !p.logic_id);
     return [...work, ...local, ...tests, ...other].slice(0, 12);
+  }
+
+  /** Доля выполнения для жёлтого чипа теста в полосе процессов. */
+  processProgressFraction(p: ProcessStatusItem): number {
+    const pct = Number(p?.progress_pct);
+    if (!Number.isFinite(pct)) return 0;
+    return Math.min(1, Math.max(0, pct / 100));
   }
 
   hasActiveProcesses(): boolean {
@@ -3282,6 +3290,28 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return Math.max(0, Math.min(100, Math.round(pct)));
   }
 
+  /** Доля выполнения теста (0..1) для градиентной заливки строки. */
+  backtestProgressFraction(logicId: number): number {
+    if (!this.isBacktestPlainRunning(logicId)) return 0;
+    return this.backtestProgressPct(logicId) / 100;
+  }
+
+  /**
+   * Цвет правого края градиента. Нужен sticky-ячейкам (export/actions),
+   * которые рисуются поверх строки и не видят сам градиент.
+   */
+  backtestRowEndColor(logicId: number): string {
+    if (!this.isBacktestPlainRunning(logicId)) return '#fde68a';
+    const p = this.backtestProgressFraction(logicId);
+    // Границы градиента: жёлтый до (100 - 58p)%, серый от (116 - 58p)%.
+    // Ширина перехода 8%, значит доля серого на правом крае = 58p / 8.
+    const t = Math.min(1, (58 * p) / 8);
+    const r = Math.round(253 + (221 - 253) * t);
+    const g = Math.round(230 + (227 - 230) * t);
+    const b = Math.round(138 + (236 - 138) * t);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
   backtestProgressTitle(logicId: number): string {
     const run = this.backtestRuns.get(logicId);
     const opt = !!run?.opt_grid_enabled;
@@ -5406,6 +5436,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
             total: resp.total ?? [],
             long: resp.long ?? [],
             short: resp.short ?? [],
+            active_securities: resp.active_securities ?? [],
             run_id: currentRun ?? runId,
             financial_result: Number(resp.financial_result) || 0,
           });
@@ -5427,6 +5458,12 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   testEquityShort(logicId: number): Array<{ dt: string; value: number }> | null {
     return this.testEquityByLogic.get(Number(logicId))?.short ?? null;
+  }
+
+  testEquityActiveSecurities(
+    logicId: number
+  ): Array<{ dt: string; value: number }> | null {
+    return this.testEquityByLogic.get(Number(logicId))?.active_securities ?? null;
   }
 
   private refreshPnlSummaries(): void {

@@ -762,6 +762,7 @@ export class LogicsService {
     total: Array<{ dt: string; value: number }>;
     long: Array<{ dt: string; value: number }>;
     short: Array<{ dt: string; value: number }>;
+    active_securities?: Array<{ dt: string; value: number }>;
     close_count: number;
     financial_result: number;
     run_id?: number | null;
@@ -781,6 +782,7 @@ export class LogicsService {
       total: Array<{ dt: string; value: number }>;
       long: Array<{ dt: string; value: number }>;
       short: Array<{ dt: string; value: number }>;
+      active_securities?: Array<{ dt: string; value: number }>;
       close_count: number;
       financial_result: number;
       run_id?: number | null;

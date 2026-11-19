@@ -706,6 +706,108 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
       return points;
     };
 
+    // Количество активных бумаг (с открытыми позициями) по времени.
+    // Считается по полному набору champion Open/Close прогона (не по усечённому
+    // test-panel), иначе mid-run график «сбрасывается» в ноль на пропущенных парах.
+    let activeSecurities = [];
+    {
+      const dtKey = (v) => {
+        if (v == null) return '';
+        if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
+        const s = String(v).trim();
+        return s.length >= 19 ? s.slice(0, 19) : s;
+      };
+      const paramsAS = isTest ? [logicId, runIdOut ?? runIdFilter] : [logicId];
+      const { rows: evRows } = await pool.query(
+        isTest
+          ? `
+          SELECT
+            lt.security_id,
+            sd.name AS side_name,
+            COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
+            lt.quantity::float8 AS quantity,
+            lt.id
+          FROM logic_trades lt
+          JOIN sides sd ON sd.id = lt.side_id
+          WHERE lt.logic_id = $1
+            AND lt.is_test = TRUE
+            AND COALESCE(lt.is_shadow, FALSE) = FALSE
+            AND COALESCE(lt.opt_lane, '') = ''
+            AND lt.status IN ('filled', 'submitted')
+            AND (
+              (lt.run_id IS NOT NULL AND lt.run_id = (
+                SELECT id FROM logic_backtest_runs
+                WHERE logic_id = $1 AND ($2::bigint IS NULL OR id = $2::bigint)
+                ORDER BY id DESC LIMIT 1
+              ))
+              OR (
+                lt.run_id IS NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM logic_trades x
+                  WHERE x.logic_id = lt.logic_id AND x.is_test = TRUE AND x.run_id IS NOT NULL
+                )
+              )
+            )
+          ORDER BY COALESCE(lt.bar_dt, lt.executed_at), CASE sd.name WHEN 'Open' THEN 0 ELSE 1 END, lt.id
+          `
+          : `
+          SELECT
+            lt.security_id,
+            sd.name AS side_name,
+            COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
+            lt.quantity::float8 AS quantity,
+            lt.id
+          FROM logic_trades lt
+          JOIN sides sd ON sd.id = lt.side_id
+          WHERE lt.logic_id = $1
+            AND lt.is_test = FALSE
+            AND COALESCE(lt.is_shadow, FALSE) = FALSE
+            AND COALESCE(lt.opt_lane, '') = ''
+            AND lt.status IN ('filled', 'submitted')
+          ORDER BY COALESCE(lt.bar_dt, lt.executed_at), CASE sd.name WHEN 'Open' THEN 0 ELSE 1 END, lt.id
+          `,
+        paramsAS
+      );
+
+      if (evRows.length > 0) {
+        const bal = new Map();
+        const points = [];
+        let lastDt = '';
+        let count = 0;
+        const push = (dt, value) => {
+          const dk = dtKey(dt);
+          if (dk !== lastDt) {
+            points.push({ dt, value });
+            lastDt = dk;
+          } else if (points.length > 0) {
+            points[points.length - 1] = { dt, value };
+          }
+        };
+
+        const periodKey = dateFromFinal ? dtKey(dateFromFinal) : '';
+        const firstDt = evRows[0].dt;
+        if (periodKey && firstDt && periodKey < dtKey(firstDt)) {
+          push(dateFromFinal, 0);
+        }
+
+        for (const ev of evRows) {
+          const secId = Number(ev.security_id);
+          const qty = Number(ev.quantity) || 0;
+          const before = bal.get(secId) || 0;
+          let after = before;
+          if (ev.side_name === 'Open') after = before + qty;
+          else if (ev.side_name === 'Close') after = Math.max(0, before - qty);
+          if (before <= 0 && after > 0) count += 1;
+          else if (before > 0 && after <= 0) count -= 1;
+          bal.set(secId, after);
+          push(ev.dt, Math.max(0, count));
+        }
+        activeSecurities = points;
+      } else if (dateFromFinal) {
+        activeSecurities = [{ dt: dateFromFinal, value: 0 }];
+      }
+    }
+
     res.json({
       logic_id: logicId,
       is_test: isTest,
@@ -716,6 +818,7 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
       long: buildSeries('long', false),
       short: buildSeries('short', false),
       shadow_total: buildSeries(null, true),
+      active_securities: activeSecurities,
       close_count: closes.filter((c) => !c.is_shadow).length,
       shadow_close_count: closes.filter((c) => c.is_shadow).length,
       financial_result:
