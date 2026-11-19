@@ -208,6 +208,9 @@ export class LogicsComponent implements OnInit, OnDestroy {
     number,
     {
       total: Array<{ dt: string; value: number }>;
+      /** #1077: накопленная комиссия по точкам total (хинт графика). */
+      commission: Array<{ dt: string; value: number }>;
+      initial_balance: number;
       long: Array<{ dt: string; value: number }>;
       short: Array<{ dt: string; value: number }>;
       active_securities: Array<{ dt: string; value: number }>;
@@ -5434,6 +5437,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
           }
           this.testEquityByLogic.set(id, {
             total: resp.total ?? [],
+            commission: resp.commission ?? [],
+            initial_balance: Number(resp.initial_balance) || 1_000_000,
             long: resp.long ?? [],
             short: resp.short ?? [],
             active_securities: resp.active_securities ?? [],
@@ -5450,6 +5455,15 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   testEquityTotal(logicId: number): Array<{ dt: string; value: number }> | null {
     return this.testEquityByLogic.get(Number(logicId))?.total ?? null;
+  }
+
+  /** #1077: накопленная комиссия по точкам эквити (для хинта). */
+  testEquityCommission(logicId: number): Array<{ dt: string; value: number }> | null {
+    return this.testEquityByLogic.get(Number(logicId))?.commission ?? null;
+  }
+
+  testEquityInitialBalance(logicId: number): number | null {
+    return this.testEquityByLogic.get(Number(logicId))?.initial_balance ?? null;
   }
 
   testEquityLong(logicId: number): Array<{ dt: string; value: number }> | null {

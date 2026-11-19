@@ -397,6 +397,8 @@
           <div class="portfolio-equity-host">
             <app-equity-curve-chart
               [total]="cachedPortfolioEquity"
+              [commission]="cachedPortfolioCommission"
+              [initialBalance]="equityInitialBalance()"
               [longs]="cachedPortfolioEquityLong"
               [shorts]="cachedPortfolioEquityShort"
               [shadowTotal]="cachedPortfolioEquityShadow"

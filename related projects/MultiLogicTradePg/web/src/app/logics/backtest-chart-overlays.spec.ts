@@ -1,5 +1,6 @@
 import {
   buildActiveSecuritiesPoints,
+  buildCommissionPoints,
   buildEquityPoints,
   buildPortfolioStopMarkers,
   buildShadedDisabledRanges,
@@ -646,5 +647,44 @@ describe('backtest-chart-overlays', () => {
     // Первая точка — ноль на date_from, как у кривой эквити (горизонтальное выравнивание).
     expect(pts[0].dt).toBe('2026-03-24');
     expect(pts[0].value).toBe(0);
+  });
+
+  it('buildCommissionPoints accumulates Open+Close commission aligned to equity points', () => {
+    const equity = [
+      { dt: '2026-04-01', value: 0 },
+      { dt: '2026-04-02 10:00:00', value: 100 },
+      { dt: '2026-04-03 10:00:00', value: 250 },
+    ];
+    const points = buildCommissionPoints(
+      [
+        trade({ id: 1, side_name: 'Open', bar_dt: '2026-04-02 09:00:00', commission: 3 }),
+        trade({ id: 2, side_name: 'Close', bar_dt: '2026-04-02 10:00:00', commission: 2 }),
+        trade({ id: 3, side_name: 'Open', bar_dt: '2026-04-03 09:00:00', commission: 4 }),
+      ],
+      equity
+    );
+    expect(points.map((p) => p.dt)).toEqual(equity.map((p) => p.dt));
+    expect(points.map((p) => p.value)).toEqual([0, 5, 9]);
+  });
+
+  it('buildCommissionPoints ignores shadow, OPT paper, rejected and non-finite commission', () => {
+    const equity = [
+      { dt: '2026-04-01', value: 0 },
+      { dt: '2026-04-02', value: 10 },
+    ];
+    const points = buildCommissionPoints(
+      [
+        trade({ id: 1, bar_dt: '2026-04-01', commission: 7, is_shadow: true }),
+        trade({ id: 2, bar_dt: '2026-04-01', commission: 8, opt_lane: 'opt-1' }),
+        trade({ id: 3, bar_dt: '2026-04-01', commission: 9, status: 'rejected' }),
+        trade({ id: 4, bar_dt: '2026-04-01', commission: null as never }),
+      ],
+      equity
+    );
+    expect(points.map((p) => p.value)).toEqual([0, 0]);
+  });
+
+  it('buildCommissionPoints returns empty for empty equity', () => {
+    expect(buildCommissionPoints([trade({ commission: 5 })], [])).toEqual([]);
   });
 });

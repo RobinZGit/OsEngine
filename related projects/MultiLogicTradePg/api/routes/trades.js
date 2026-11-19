@@ -597,6 +597,83 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
         is_shadow: Boolean(r.is_shadow),
       }));
 
+    // #1077: данные для хинта на графике эквити — накопленная комиссия на точке
+    // и стартовый баланс для расчёта % / годовых. Комиссия берётся по ВСЕМ
+    // чемпионским сделкам (Open+Close), как в /pnl-summary, а не только по
+    // закрытиям и не из урезанного test-panel (иначе в начале кривой было бы 0).
+    let commissionByDt = new Map();
+    let initialBalance = 1_000_000;
+    {
+      const commissionSql = isTest
+        ? `
+        WITH latest_run AS (
+          SELECT id AS run_id
+          FROM logic_backtest_runs
+          WHERE logic_id = $1
+            AND ($2::bigint IS NULL OR id = $2::bigint)
+          ORDER BY id DESC
+          LIMIT 1
+        )
+        SELECT COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
+               COALESCE(lt.commission, 0)::float8 AS commission
+        FROM logic_trades lt
+        JOIN latest_run lr ON TRUE
+        WHERE lt.logic_id = $1
+          AND lt.is_test = TRUE
+          AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.status IN ('filled', 'submitted')
+          AND (
+            (lt.run_id IS NOT NULL AND lt.run_id = lr.run_id)
+            OR (
+              lt.run_id IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM logic_trades x
+                WHERE x.logic_id = lt.logic_id AND x.is_test = TRUE AND x.run_id IS NOT NULL
+              )
+            )
+          )
+        ORDER BY dt NULLS LAST, lt.id
+        `
+        : `
+        SELECT COALESCE(lt.bar_dt, lt.executed_at)::text AS dt,
+               COALESCE(lt.commission, 0)::float8 AS commission
+        FROM logic_trades lt
+        WHERE lt.logic_id = $1
+          AND lt.is_test = FALSE
+          AND COALESCE(lt.is_shadow, FALSE) = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.status IN ('filled', 'submitted')
+        ORDER BY dt NULLS LAST, lt.id
+        `;
+      const { rows: comRows } = await pool.query(
+        commissionSql,
+        isTest ? [logicId, runIdFilter] : [logicId]
+      );
+      for (const r of comRows) {
+        if (r.dt == null) continue;
+        const key = String(r.dt).slice(0, 19);
+        commissionByDt.set(key, (commissionByDt.get(key) || 0) + (Number(r.commission) || 0));
+      }
+
+      const { rows: initRows } = await pool.query(
+        `SELECT
+           (SELECT param_value::numeric FROM logic_params
+             WHERE logic_id = $1 AND param_key = 'test_initial_balance')::float8 AS test_initial,
+           (SELECT param_value::numeric FROM logic_params
+             WHERE logic_id = $1 AND param_key = 'initial_balance')::float8 AS initial`,
+        [logicId]
+      );
+      const testInitial = Number(initRows[0]?.test_initial);
+      const initial = Number(initRows[0]?.initial);
+      initialBalance =
+        isTest && Number.isFinite(testInitial) && testInitial > 0
+          ? testInitial
+          : Number.isFinite(initial) && initial > 0
+            ? initial
+            : 1_000_000;
+    }
+
     // #1040: для теста — equity по снимкам на каждом баре (переоценка открытых
     // позиций), а не только по закрытиям. Старые прогоны без снимков — fallback.
     let mtmTotal = null;
@@ -808,13 +885,30 @@ app.get('/api/logic-trades/equity-curve', async (req, res) => {
       }
     }
 
+    const totalForResponse = mtmTotal ?? buildSeries(null, false);
+    // Комиссия на точке = сумма комиссий всех сделок с dt <= dt точки.
+    // Массив той же длины и с теми же dt, что и total — хинт берёт по индексу.
+    const commissionKeys = [...commissionByDt.keys()].sort();
+    let commissionCum = 0;
+    let commissionIdx = 0;
+    const commissionForHover = totalForResponse.map((p) => {
+      const key = String(p.dt).slice(0, 19);
+      while (commissionIdx < commissionKeys.length && commissionKeys[commissionIdx] <= key) {
+        commissionCum += commissionByDt.get(commissionKeys[commissionIdx]);
+        commissionIdx += 1;
+      }
+      return { dt: p.dt, value: commissionCum };
+    });
+
     res.json({
       logic_id: logicId,
       is_test: isTest,
       run_id: runIdOut ?? null,
       date_from: dateFromFinal,
       date_to: dateToFinal,
-      total: mtmTotal ?? buildSeries(null, false),
+      total: totalForResponse,
+      commission: commissionForHover,
+      initial_balance: initialBalance,
       long: buildSeries('long', false),
       short: buildSeries('short', false),
       shadow_total: buildSeries(null, true),

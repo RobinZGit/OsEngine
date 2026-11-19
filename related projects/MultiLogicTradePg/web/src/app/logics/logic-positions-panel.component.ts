@@ -46,6 +46,7 @@ import {
 import { EquityCurveChartComponent } from './equity-curve-chart.component';
 import {
   buildActiveSecuritiesPoints,
+  buildCommissionPoints,
   buildEquityPoints,
   buildPortfolioStopMarkers,
   buildShadowEquityPoints,
@@ -179,6 +180,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
    * Used while a backtest is running (full trade dump is skipped to keep the tab responsive).
    */
   @Input() summaryEquityTotal: ChartEquityPoint[] | null = null;
+  /** #1077: накопленная комиссия по точкам summaryEquityTotal (из API полина). */
+  @Input() summaryEquityCommission: ChartEquityPoint[] | null = null;
+  /** #1077: стартовый баланс для % / годовых в хинте. */
+  @Input() summaryEquityInitialBalance: number | null = null;
   @Input() summaryEquityLong: ChartEquityPoint[] | null = null;
   @Input() summaryEquityShort: ChartEquityPoint[] | null = null;
   /** Серия активных бумаг из /equity-curve (полный run) — приоритет над расчётом из урезанных trades. */
@@ -269,6 +274,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
   cachedTotalPnl = 0;
   cachedTotalCommission = 0;
   cachedPortfolioEquity: ChartEquityPoint[] = [];
+  /** #1077: накопленная комиссия, выровненная по точкам cachedPortfolioEquity. */
+  cachedPortfolioCommission: ChartEquityPoint[] = [];
   cachedPortfolioEquityLong: ChartEquityPoint[] = [];
   cachedPortfolioEquityShort: ChartEquityPoint[] = [];
   cachedPortfolioEquityShadow: ChartEquityPoint[] = [];
@@ -379,6 +386,8 @@ export class LogicPositionsPanelComponent implements OnChanges {
       changes['summaryFinancialResult'] ||
       changes['summaryCommission'] ||
       changes['summaryEquityTotal'] ||
+      changes['summaryEquityCommission'] ||
+      changes['summaryEquityInitialBalance'] ||
       changes['summaryEquityLong'] ||
       changes['summaryEquityShort'] ||
       changes['summaryEquityActiveSecurities']
@@ -700,6 +709,22 @@ export class LogicPositionsPanelComponent implements OnChanges {
       liveActive && liveActive.length > 0
         ? liveActive
         : buildActiveSecuritiesPoints(this.trades, periodStart);
+
+    // #1077: комиссия для хинта. В тесте приоритет у API-серии полного прогона
+    // (не урезанный test-panel); в бою и при рассинхроне длин — из сделок панели.
+    const apiCommission = this.summaryEquityCommission;
+    this.cachedPortfolioCommission =
+      apiCommission != null && apiCommission.length === this.cachedPortfolioEquity.length
+        ? apiCommission
+        : buildCommissionPoints(this.trades, this.cachedPortfolioEquity);
+  }
+
+  /** Стартовый баланс для расчёта доходности в хинте графика. */
+  equityInitialBalance(): number {
+    const raw = this.summaryEquityInitialBalance;
+    return raw != null && Number.isFinite(Number(raw)) && Number(raw) > 0
+      ? Number(raw)
+      : this.startBalance();
   }
 
   /**

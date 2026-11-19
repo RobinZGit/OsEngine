@@ -512,6 +512,40 @@ export function buildEquityPoints(
   return points;
 }
 
+/**
+ * #1077: накопленная комиссия, выровненная по точкам эквити (для хинта).
+ * Возвращает массив той же длины и с теми же dt, что и equityPoints — хинт
+ * берёт значение по индексу наведённой точки. Комиссия учитывается по всем
+ * чемпионским сделкам (Open+Close), как в /pnl-summary, а не только по Close.
+ */
+export function buildCommissionPoints(
+  trades: LogicTradeRow[],
+  equityPoints: ChartEquityPoint[]
+): ChartEquityPoint[] {
+  if (equityPoints.length === 0) return [];
+  const byDt = new Map<string, number>();
+  for (const t of trades) {
+    if (t.is_shadow) continue;
+    if ((t.opt_lane ?? '') !== '') continue;
+    if (t.status != null && t.status !== 'filled' && t.status !== 'submitted') continue;
+    if (t.commission == null || !Number.isFinite(Number(t.commission))) continue;
+    const key = dtKey(t.bar_dt || t.executed_at);
+    if (!key) continue;
+    byDt.set(key, (byDt.get(key) || 0) + Number(t.commission));
+  }
+  const keys = [...byDt.keys()].sort();
+  let cum = 0;
+  let i = 0;
+  return equityPoints.map((p) => {
+    const key = dtKey(p.dt);
+    while (i < keys.length && keys[i] <= key) {
+      cum += byDt.get(keys[i]) || 0;
+      i += 1;
+    }
+    return { dt: p.dt, value: cum };
+  });
+}
+
 /** Теневая эквити (только shadow Close) — для пунктира на графике.
  * @param sinceDt — считать только сделки с этой метки (момент паузы портфеля).
  */

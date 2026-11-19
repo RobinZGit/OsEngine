@@ -760,6 +760,10 @@ export class LogicsService {
     date_from: string | null;
     date_to: string | null;
     total: Array<{ dt: string; value: number }>;
+    /** #1077: накопленная комиссия на каждую точку total (для хинта). */
+    commission?: Array<{ dt: string; value: number }>;
+    /** #1077: стартовый баланс для расчёта % и годовых в хинте. */
+    initial_balance?: number;
     long: Array<{ dt: string; value: number }>;
     short: Array<{ dt: string; value: number }>;
     active_securities?: Array<{ dt: string; value: number }>;
@@ -780,6 +784,8 @@ export class LogicsService {
       date_from: string | null;
       date_to: string | null;
       total: Array<{ dt: string; value: number }>;
+      commission?: Array<{ dt: string; value: number }>;
+      initial_balance?: number;
       long: Array<{ dt: string; value: number }>;
       short: Array<{ dt: string; value: number }>;
       active_securities?: Array<{ dt: string; value: number }>;
